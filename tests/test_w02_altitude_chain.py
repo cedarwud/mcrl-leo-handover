@@ -103,7 +103,14 @@ def test_p1_miller_routing_still_mandatory_at_the_measured_altitude():
 
 
 def test_v_39_still_covers_the_measured_altitude_but_barely():
-    """F5 derived ``V=39`` from 29.1 cells at 550 km.  At 485 km it is 37.5."""
+    """F5's own area-ratio heuristic, applied at the measured altitude.
+
+    This reproduces F5's *method* (area ratio x1.5 guard factor), not the
+    truth: the heuristic ignores edge overhang and under-counts by ~15%.
+    ``tests/test_w03_cells.py::test_measured_coverage_against_the_frozen_V``
+    measures the real coverage curve and is the authority — it finds 34
+    cells needed at 550 km (F5 said 29.1) and exactly 39 at 485 km.
+    """
     _bare_550, guarded_550 = cells_for_coverage(550.0)
     bare, guarded = cells_for_coverage(MEASURED_VISIBLE_ALTITUDE_P50_KM)
     assert bare == pytest.approx(25.0, abs=0.1)
