@@ -21,7 +21,7 @@ import math
 
 import numpy as np
 
-from .constants import KM_PER_DEG_LAT, R_E_KM
+from .constants import KM_PER_DEG_LAT, OMEGA_E_RAD_S, R_E_KM
 
 _JD_J2000 = 2451545.0
 _SECONDS_PER_JULIAN_CENTURY = 86400.0 * 36525.0
@@ -109,6 +109,51 @@ def teme_to_ecef(r_teme_km: np.ndarray, gmst: np.ndarray) -> np.ndarray:
     return np.stack(
         [cos_g * x + sin_g * y, -sin_g * x + cos_g * y, z], axis=-1
     )
+
+
+def teme_velocity_to_ecef(
+    v_teme_km_s: np.ndarray,
+    r_ecef_km: np.ndarray,
+    gmst: np.ndarray,
+) -> np.ndarray:
+    """Rotate a TEME velocity into the rotating ECEF frame.
+
+    ``v_ecef = Rz(GMST)·v_teme − ω × r_ecef``.  The second term is not
+    optional: a point fixed on the ground has zero ECEF velocity by
+    definition, so the frame's own rotation has to come out of the
+    satellite's velocity too.  At LEO it is ~0.35 km/s against ~7.5 km/s —
+    5%, far too large to drop from a range rate.
+    """
+    v_rotated = teme_to_ecef(v_teme_km_s, gmst)
+    r = np.asarray(r_ecef_km, dtype=np.float64)
+    # ω × r with ω = (0, 0, OMEGA_E_RAD_S)
+    omega_cross_r = np.stack(
+        [
+            -OMEGA_E_RAD_S * r[..., 1],
+            OMEGA_E_RAD_S * r[..., 0],
+            np.zeros_like(r[..., 2]),
+        ],
+        axis=-1,
+    )
+    return v_rotated - omega_cross_r
+
+
+def range_rate_km_s(
+    sat_ecef_km: np.ndarray,
+    sat_velocity_ecef_km_s: np.ndarray,
+    ground_ecef_km: np.ndarray,
+) -> np.ndarray:
+    """Signed slant-range rate: negative approaching, positive receding.
+
+    ``d|r|/dt = <v, r/|r|>`` for the relative vector.  The ground point is
+    stationary in ECEF, so the relative velocity is the satellite's.
+    """
+    delta = np.asarray(sat_ecef_km, dtype=np.float64) - np.asarray(
+        ground_ecef_km, dtype=np.float64
+    )
+    distance = np.maximum(np.linalg.norm(delta, axis=-1), 1e-12)
+    unit = delta / distance[..., None]
+    return np.sum(np.asarray(sat_velocity_ecef_km_s, dtype=np.float64) * unit, axis=-1)
 
 
 def geodetic_to_ecef(lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:

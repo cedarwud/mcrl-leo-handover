@@ -47,7 +47,9 @@ from .geometry import (
     gmst_rad,
     julian_date,
     look_angles,
+    range_rate_km_s,
     teme_to_ecef,
+    teme_velocity_to_ecef,
 )
 from .tle import TleArchive, TleRecord
 
@@ -517,20 +519,45 @@ class SatelliteSet:
         """
         codes, r_teme, _v = self.propagate_teme(jd, fr)
         if require_all_healthy and bool(np.any(codes != 0)):
-            bad = np.argwhere(codes != 0)
-            first_sat, first_t = int(bad[0][0]), int(bad[0][1])
-            code = int(codes[first_sat, first_t])
-            raise EphemerisError(
-                f"SGP4 error {code} ({SGP4_ERRORS.get(code, 'unknown')}) for "
-                f"NORAD {self.records[first_sat].norad_id} at step {first_t}; "
-                f"{int(np.count_nonzero(np.any(codes != 0, axis=1)))} of "
-                f"{len(self)} satellites affected"
-            )
-        gmst = np.array(
+            self._raise_for_codes(codes)
+        return teme_to_ecef(r_teme, self._gmst(jd, fr))
+
+    def propagate_ecef_state(
+        self,
+        jd: np.ndarray,
+        fr: np.ndarray,
+        *,
+        require_all_healthy: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """ECEF position and velocity, both ``(S,T,3)``, km and km/s.
+
+        The velocity is in the **rotating** frame, so a range rate computed
+        against a fixed ground point needs no further correction.
+        """
+        codes, r_teme, v_teme = self.propagate_teme(jd, fr)
+        if require_all_healthy and bool(np.any(codes != 0)):
+            self._raise_for_codes(codes)
+        gmst = self._gmst(jd, fr)
+        r_ecef = teme_to_ecef(r_teme, gmst)
+        v_ecef = teme_velocity_to_ecef(v_teme, r_ecef, gmst)
+        return r_ecef, v_ecef
+
+    def _gmst(self, jd: np.ndarray, fr: np.ndarray) -> np.ndarray:
+        return np.array(
             [gmst_rad(float(j), float(f)) for j, f in zip(jd, fr)],
             dtype=np.float64,
         )
-        return teme_to_ecef(r_teme, gmst)
+
+    def _raise_for_codes(self, codes: np.ndarray) -> None:
+        bad = np.argwhere(codes != 0)
+        first_sat, first_t = int(bad[0][0]), int(bad[0][1])
+        code = int(codes[first_sat, first_t])
+        raise EphemerisError(
+            f"SGP4 error {code} ({SGP4_ERRORS.get(code, 'unknown')}) for "
+            f"NORAD {self.records[first_sat].norad_id} at step {first_t}; "
+            f"{int(np.count_nonzero(np.any(codes != 0, axis=1)))} of "
+            f"{len(self)} satellites affected"
+        )
 
     def healthy_indices(self, jd: np.ndarray, fr: np.ndarray) -> np.ndarray:
         """Indices whose propagation succeeds at every requested time."""
