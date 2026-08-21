@@ -22,7 +22,11 @@
 | 5 | TTT | 1 步(1 s) | **S** | **待凍結** |
 | 6 | `Thresh2` sweep 軸 | {900,1000,1100,1200,1300} km | **S** | **待凍結** |
 | 7 | outage 門檻 | `1e-3` | **S** | **⚠ 待凍結,且 P1 之前必須凍結** |
-| 8 | dwell `N` | 待測(P2) | **S** | **開放**(Q-E) |
+| 8 | dwell `N` | 待測(P2) | **S** | **開放**(Q-E);`DWELL_N_IS_FROZEN=False` 擋住凍結器 |
+| 8a | 大氣衰減模型 | 平板 `χ·H_atm/sin(el)` | **D** | **待凍結**(偏離來源的 `corrected_lossy`) |
+| 8b | 大氣層高 `H_atm` | 10 km | **S** | **待凍結** |
+| 8c | 貝索路由門檻 | 34.0 | **S** | **待凍結** |
+| 8d | G-2 比較對象 | TR 38.821 SC 6(LEO-600, 20 GHz DL) | — | **待凍結**(選取規則見 L2-2) |
 | 9 | `r3` 重新校準尺度 | 待測 | **S** | **開放**(Q-D) |
 | 10 | 學習率 `α` | **受控變因**,不取預設 | **X** | **待凍結為變因網格** |
 | 11 | 狀態維度 | 125 | **D** | **已定** |
@@ -94,6 +98,44 @@ warmup_steps        max(ttt_steps, 1) = 1                  (S) ← 凍結
 
 **`warmup_steps` 必須凍結**:冷啟動閂鎖會讓每回合第 0 步全員無候選,
 在 PATCH P-03 下丟掉 10% 決策步,是回合邊界的假象而非幾何。
+
+## 3a. 鏈路預算與天線(W-06)
+
+```
+f_c                 20 GHz                                 (P, Table I)
+B                   500 MHz                                (P, Table I)
+FRF                 3  ->  B^w = 166.667 MHz               (P' TR 38.821 / D)
+theta_3dB           3.32 deg  FULL HPBW,型樣傳入一半      (P', 半角慣例 P-2)
+G_0                 2000 (33.010 dBi)                      (P')
+G_R,max             35 dBi                                 (P', Mendonca 2025)
+G_R 包絡            32 - 25 log10(theta_deg),夾 [-10, 35]  (P', ITU-R S.465-6)
+T_a / T_0 / NF      150 K / 290 K / 1.2 dB -> T_sys 242.294 K  (P')
+chi                 0.05 dB/km                             (P, Table I)
+H_atm               10 km                                  (S)
+大氣模型            chi*H_atm/sin(el)  平板                (D) ← 偏離來源,見 §3b
+每波束功率上限      1.65 W                                 (S)
+衛星總功率上限      19.95 W(比例縮放,不砍波束)          (S)
+PA                  P_base 0.25 / P_scale 0.35 / P_exp 0.5  (S)
+QoS floor           1 Mbit/s                               (P', TS 22.261)
+貝索路由門檻        |mu| > 34 -> Miller 下降遞迴            (S, P-1/G-10)
+```
+
+### 3b. 對來源專案大氣模型的宣告偏離
+
+來源 `family_b_geometry.atmos_loss_db` 的 `corrected_lossy` 式 `3·d·χ/(10·h)`
+**除以高度**,而 F3 已把高度變成量測分布 ⇒ 該式不再良定義;
+且它在天頂給 0.015 dB,而 `χ=0.05 dB/km` 配 10 km 大氣層應給 0.5 dB(差 33 倍)。
+**改用平板模型**,類別 **D**(由 Table I 的 `χ` 加宣告的 10 km 層高推出)。
+
+## 3c. dwell(W-05)
+
+```
+N                   待測 {2,3,4}                           (S) ← Q-E,P2 後才凍結
+dwell_phase         正規化到 [0,1),0 為邊界步             (D)
+re-key 規則         邊界時取當時最近的格為 j=0             (S, §4A.2)
+可行性論證的服務窗  >=10 deg 仰角下 378 s(6.3 min p50)   ← 不是 630 s
+DWELL_N_IS_FROZEN   False ← 為 True 前凍結器不得產出 PREREG
+```
 
 ## 4. 動作與狀態(§4A)
 

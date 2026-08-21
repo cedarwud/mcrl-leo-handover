@@ -224,6 +224,31 @@ def look_angles(
     return slant, elevation, off_nadir
 
 
+def angle_between_deg(
+    vertex_ecef_km: np.ndarray,
+    first_ecef_km: np.ndarray,
+    second_ecef_km: np.ndarray,
+) -> np.ndarray:
+    """Angle at ``vertex`` subtended by two points, in **degrees**.
+
+    Degrees, not radians, and the name says so: this feeds the ITU-R S.465
+    receive envelope, whose logarithm is defined on degrees.  Passing
+    radians inflates the gain by ``25·log₁₀(180/π) ≈ 43.95 dB``
+    (SDD §6 G-7).
+    """
+    vertex = np.asarray(vertex_ecef_km, dtype=np.float64)
+    first = np.asarray(first_ecef_km, dtype=np.float64) - vertex
+    second = np.asarray(second_ecef_km, dtype=np.float64) - vertex
+    first = first / np.maximum(
+        np.linalg.norm(first, axis=-1, keepdims=True), 1e-12
+    )
+    second = second / np.maximum(
+        np.linalg.norm(second, axis=-1, keepdims=True), 1e-12
+    )
+    cosine = np.clip(np.sum(first * second, axis=-1), -1.0, 1.0)
+    return np.degrees(np.arccos(cosine))
+
+
 def horizon_off_nadir_deg(altitude_km: np.ndarray | float) -> np.ndarray:
     """Off-nadir angle to the geometric horizon: ``asin(R_E / (R_E + h))``."""
     h = np.asarray(altitude_km, dtype=np.float64)
