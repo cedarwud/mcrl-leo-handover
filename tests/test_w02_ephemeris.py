@@ -11,7 +11,10 @@ import pytest
 
 from mcrl.env.constants import R_E_KM, TLE_ROOT_DEFAULT
 from mcrl.env.ephemeris import (
-    DateSplit,
+    TEST,
+    TRAIN,
+    BlockAlternatingSplit,
+    ContiguousDateSplit,
     EphemerisConfig,
     EphemerisError,
     EpisodeStartSampler,
@@ -62,7 +65,7 @@ def test_step_times_rejects_an_empty_horizon():
 
 def test_split_rejects_overlapping_ranges():
     with pytest.raises(MCRLContractError, match="interleav"):
-        DateSplit(
+        ContiguousDateSplit(
             train_start=dt.date(2025, 7, 27),
             train_end=dt.date(2026, 6, 1),
             test_start=dt.date(2026, 5, 1),
@@ -71,7 +74,7 @@ def test_split_rejects_overlapping_ranges():
 
 
 def test_split_accepts_adjacent_ranges():
-    split = DateSplit(
+    split = ContiguousDateSplit(
         train_start=dt.date(2025, 7, 27),
         train_end=dt.date(2026, 5, 31),
         test_start=dt.date(2026, 6, 1),
@@ -82,7 +85,7 @@ def test_split_accepts_adjacent_ranges():
 
 @requires_archive
 def test_chronological_split_is_ordered_and_covers_the_corpus(archive):
-    split = DateSplit.chronological(archive, test_fraction=0.2)
+    split = ContiguousDateSplit.chronological(archive, test_fraction=0.2)
     assert split.train_start == archive.dates[0]
     assert split.test_end == archive.dates[-1]
     assert split.train_end < split.test_start
@@ -97,7 +100,7 @@ def test_chronological_split_is_ordered_and_covers_the_corpus(archive):
 
 @requires_archive
 def test_sampler_stays_inside_its_own_half(archive):
-    split = DateSplit.chronological(archive)
+    split = ContiguousDateSplit.chronological(archive)
     rng = np.random.default_rng(11)
     train = EpisodeStartSampler.for_archive(archive, split, "train")
     test = EpisodeStartSampler.for_archive(archive, split, "test")
@@ -114,7 +117,7 @@ def test_sampler_stays_inside_its_own_half(archive):
 
 @requires_archive
 def test_sampler_is_deterministic_given_a_seed(archive):
-    split = DateSplit.chronological(archive)
+    split = ContiguousDateSplit.chronological(archive)
     sampler = EpisodeStartSampler.for_archive(archive, split, "train")
     first = [sampler.draw(np.random.default_rng(5)) for _ in range(3)]
     second = [sampler.draw(np.random.default_rng(5)) for _ in range(3)]
@@ -122,15 +125,8 @@ def test_sampler_is_deterministic_given_a_seed(archive):
 
 
 def test_sampler_snaps_to_the_time_step():
-    split = DateSplit(
-        train_start=dt.date(2026, 1, 1),
-        train_end=dt.date(2026, 1, 2),
-        test_start=dt.date(2026, 1, 3),
-        test_end=dt.date(2026, 1, 4),
-    )
     sampler = EpisodeStartSampler(
-        split,
-        "train",
+        TRAIN,
         available_dates=(dt.date(2026, 1, 1), dt.date(2026, 1, 2)),
         time_step_s=10.0,
     )
@@ -372,7 +368,7 @@ def test_file_set_hash_changes_with_content():
 @requires_archive
 def test_freeze_manifest_carries_everything_section_7_1_names(archive, tmp_path):
     config = EphemerisConfig(tle_root=str(_ARCHIVE_ROOT))
-    split = DateSplit.chronological(archive)
+    split = ContiguousDateSplit.chronological(archive)
     manifest = build_freeze_manifest(
         config,
         split,

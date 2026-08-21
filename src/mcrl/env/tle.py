@@ -15,8 +15,18 @@ assumed (see ``docs/EPHEMERIS-NOTES.md``):
 2. Records are one-per-NORAD within a file (10,746 unique ids, zero
    duplicates in the sampled file), so a per-file dict is lossless.
 
-Everything is fail-loud: a malformed line, a bad checksum, or a missing
-file raises rather than silently shrinking the constellation.
+Malformed records are **quarantined, not ignored and not repaired**: the
+record is dropped, recorded with its reason, and the load fails outright if
+the malformed fraction of a file exceeds ``MAX_MALFORMED_RECORD_FRACTION``.
+Silently skipping would shrink the constellation invisibly; failing the
+whole day over one bad line would throw away 10,745 good satellites.
+
+Measured over the entire corpus (373 files, 3,545,756 records): **one**
+malformed record, in ``starlink_20260528.tle``.  Its line 1 is 70 characters
+because the BSTAR field ``-66000-10`` needs a two-digit exponent and the
+fixed-width format has room for one, which pushes the checksum out of
+column 69.  That is an upstream defect; repairing it here would be inventing
+data.
 """
 
 from __future__ import annotations
@@ -32,8 +42,38 @@ from ..errors import MCRLContractError
 _FILENAME_RE = re.compile(r"^starlink_(\d{8})\.tle$")
 
 
+MAX_MALFORMED_RECORD_FRACTION: float = 1e-3
+"""**S** — ceiling on quarantined records per daily file.
+
+Chosen from the two regimes it has to separate, not from the corpus rate.
+The worst real file holds one bad record out of 10,398, i.e. 9.6e-4 — so a
+1e-4 ceiling would reject that whole day over a single upstream typo, while
+a misaligned or truncated file quarantines ~100% of its records and fails
+1e-3 by three orders of magnitude.  1e-3 tolerates roughly ten bad records
+in a full-size file and nothing structural.
+
+It also keeps small inputs strict: any single bad record in a handful-sized
+file is far above 1e-3, so unit-test fixtures still fail loudly.
+"""
+
+
 class TleFormatError(MCRLContractError):
     """A TLE line is malformed, mis-numbered, or fails its checksum."""
+
+
+class TleQuarantineError(MCRLContractError):
+    """Too many records in one file had to be quarantined."""
+
+
+@dataclass(frozen=True)
+class QuarantinedRecord:
+    """A record that could not be parsed, kept for the audit trail."""
+
+    index: int
+    reason: str
+    name: str
+    line1: str
+    line2: str
 
 
 @dataclass(frozen=True)
@@ -93,38 +133,60 @@ def parse_epoch(line1: str) -> dt.datetime:
     )
 
 
-def parse_tle_text(text: str, *, source: str = "<text>") -> list[TleRecord]:
-    """Parse three-line-format TLE text into records."""
+def parse_tle_text(
+    text: str, *, source: str = "<text>"
+) -> tuple[list[TleRecord], list[QuarantinedRecord]]:
+    """Parse three-line-format TLE text.
+
+    Returns ``(records, quarantined)``.  A file whose line count is not a
+    multiple of three is a structural failure and still raises: that is a
+    truncated or misaligned file, not one bad satellite.
+    """
     lines = [line.rstrip() for line in text.splitlines() if line.strip()]
     if len(lines) % 3 != 0:
         raise TleFormatError(
             f"{source}: {len(lines)} non-blank lines is not a multiple of 3"
         )
     records: list[TleRecord] = []
+    quarantined: list[QuarantinedRecord] = []
     for index in range(0, len(lines), 3):
         name = lines[index].strip()
-        line1 = _validate_line(
-            lines[index + 1], expected_number=1, source=f"{source}#{index}"
-        )
-        line2 = _validate_line(
-            lines[index + 2], expected_number=2, source=f"{source}#{index}"
-        )
-        norad_1 = int(line1[2:7])
-        norad_2 = int(line2[2:7])
-        if norad_1 != norad_2:
-            raise TleFormatError(
-                f"{source}#{index}: NORAD id mismatch {norad_1} != {norad_2}"
+        raw1, raw2 = lines[index + 1], lines[index + 2]
+        try:
+            line1 = _validate_line(
+                raw1, expected_number=1, source=f"{source}#{index}"
             )
+            line2 = _validate_line(
+                raw2, expected_number=2, source=f"{source}#{index}"
+            )
+            norad_1 = int(line1[2:7])
+            norad_2 = int(line2[2:7])
+            if norad_1 != norad_2:
+                raise TleFormatError(
+                    f"{source}#{index}: NORAD id mismatch {norad_1} != {norad_2}"
+                )
+            epoch = parse_epoch(line1)
+        except (TleFormatError, ValueError) as error:
+            quarantined.append(
+                QuarantinedRecord(
+                    index=index,
+                    reason=str(error),
+                    name=name,
+                    line1=raw1,
+                    line2=raw2,
+                )
+            )
+            continue
         records.append(
             TleRecord(
                 norad_id=norad_1,
                 name=name,
                 line1=line1,
                 line2=line2,
-                epoch_utc=parse_epoch(line1),
+                epoch_utc=epoch,
             )
         )
-    return records
+    return records, quarantined
 
 
 @dataclass(frozen=True)
@@ -135,13 +197,24 @@ class TleDailyFile:
     file_date: dt.date
     sha256: str
     records: tuple[TleRecord, ...]
+    quarantined: tuple[QuarantinedRecord, ...] = ()
 
     @property
     def by_norad(self) -> dict[int, TleRecord]:
         return {record.norad_id: record for record in self.records}
 
+    @property
+    def malformed_fraction(self) -> float:
+        total = len(self.records) + len(self.quarantined)
+        return len(self.quarantined) / total if total else 0.0
+
     @classmethod
-    def load(cls, path: str | Path) -> TleDailyFile:
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        max_malformed_fraction: float = MAX_MALFORMED_RECORD_FRACTION,
+    ) -> TleDailyFile:
         path = Path(path)
         if not path.is_file():
             raise MCRLContractError(f"TLE file not found: {path}")
@@ -152,7 +225,16 @@ class TleDailyFile:
             )
         raw = path.read_bytes()
         digest = hashlib.sha256(raw).hexdigest()
-        records = parse_tle_text(raw.decode("utf-8"), source=path.name)
+        records, quarantined = parse_tle_text(
+            raw.decode("utf-8"), source=path.name
+        )
+        total = len(records) + len(quarantined)
+        if total and len(quarantined) / total > max_malformed_fraction:
+            raise TleQuarantineError(
+                f"{path.name}: {len(quarantined)} of {total} records malformed "
+                f"({len(quarantined) / total:.2e} > {max_malformed_fraction:.2e}); "
+                f"first reason: {quarantined[0].reason}"
+            )
         seen: set[int] = set()
         for record in records:
             if record.norad_id in seen:
@@ -165,6 +247,7 @@ class TleDailyFile:
             file_date=dt.datetime.strptime(match.group(1), "%Y%m%d").date(),
             sha256=digest,
             records=tuple(records),
+            quarantined=tuple(quarantined),
         )
 
 
@@ -225,6 +308,7 @@ class TleArchive:
                     "date": daily.file_date.isoformat(),
                     "sha256": daily.sha256,
                     "records": str(len(daily.records)),
+                    "quarantined": str(len(daily.quarantined)),
                 }
             )
         return rows

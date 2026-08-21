@@ -6,9 +6,9 @@ Replaces the synthetic Walker constellation of
 What this layer owns
 --------------------
 * the element-selection policy of SDD F3 (nearest epoch, age ≤ 24 h);
-* the train/test **date-range** split, which F3 requires to be
-  non-interleaved (episodes minutes apart share almost the same pass
-  geometry, so interleaving leaks);
+* the train/test date split — block-alternating with an embargo gap, which
+  keeps the corpus's growth and altitude trends off the train/test axis
+  while staying far enough apart in time that no pass geometry is shared;
 * SGP4 propagation and the TEME→ECEF rotation;
 * look angles (slant range, elevation, off-nadir) against the service area;
 * the freeze manifest §7.1 demands before the first probe runs.
@@ -27,7 +27,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Protocol, Sequence
 
 import numpy as np
 from sgp4.api import SGP4_ERRORS, Satrec, SatrecArray, WGS72, accelerated
@@ -158,13 +158,164 @@ def select_elements(
 
 
 # ---------------------------------------------------------------------------
-# Train/test date split (SDD F3)
+# Train/test date split (SDD F3, revised 2026-08-22 by author ruling)
 # ---------------------------------------------------------------------------
+
+TRAIN = "train"
+TEST = "test"
+EMBARGO = "embargo"
+SPLIT_PARTS = (TRAIN, TEST)
+
+
+class Split(Protocol):
+    """What the sampler and the freeze manifest need from any split."""
+
+    def available_dates(
+        self, archive: TleArchive, part: str
+    ) -> tuple[dt.date, ...]: ...
+
+    def as_dict(self) -> dict[str, object]: ...
 
 
 @dataclass(frozen=True)
-class DateSplit:
-    """Non-interleaved train/test date ranges, both inclusive."""
+class BlockAlternatingSplit:
+    """Alternating date blocks with an embargo gap.  **The frozen scheme.**
+
+    F3 originally said "split by date range, do not interleave".  W-02
+    measured what a single contiguous cut costs: the constellation grows
+    ~25% across the corpus and the visible-satellite altitude drifts down
+    from ~540 km to ~485 km, so a chronological split hands test a
+    systematically larger and lower constellation than train.  **Two
+    distribution shifts, both in the same direction.**
+
+    Author ruling (2026-08-22): there is a third option rather than a
+    choice between leakage and shift.  Alternate fixed-length blocks
+    between train and test, and leave an embargo gap between every pair of
+    adjacent blocks::
+
+        |<- 7 d train ->|1 d|<- 7 d test ->|1 d| 7 d train | ... 
+
+    The growth and altitude trends then average out on both sides, while
+    the embargo keeps the two halves far enough apart in time that they
+    cannot share pass geometry.  One embargo day puts the nearest train and
+    test dates two days apart — vastly more than the 10 s episode and more
+    than the ground-track repeat of any Starlink shell, whereas the leak F3
+    was guarding against was episodes *minutes* apart.
+
+    ``block_days`` and ``embargo_days`` are **S**-level and must be frozen
+    in the W-13 PREREG.
+    """
+
+    first_date: dt.date
+    last_date: dt.date
+    block_days: int = 7
+    embargo_days: int = 1
+    first_block_part: str = TRAIN
+
+    def __post_init__(self) -> None:
+        if self.first_date > self.last_date:
+            raise ValueError("date range is inverted")
+        if self.block_days < 1:
+            raise ValueError("block_days must be >= 1")
+        if self.embargo_days < 1:
+            raise MCRLContractError(
+                "embargo_days must be >= 1; a zero embargo puts adjacent "
+                "train and test days next to each other"
+            )
+        if self.first_block_part not in SPLIT_PARTS:
+            raise ValueError(f"unknown part {self.first_block_part!r}")
+
+    @classmethod
+    def for_archive(
+        cls,
+        archive: TleArchive,
+        *,
+        block_days: int = 7,
+        embargo_days: int = 1,
+        first_block_part: str = TRAIN,
+    ) -> BlockAlternatingSplit:
+        first, last = archive.date_range
+        return cls(
+            first_date=first,
+            last_date=last,
+            block_days=block_days,
+            embargo_days=embargo_days,
+            first_block_part=first_block_part,
+        )
+
+    @property
+    def cycle_days(self) -> int:
+        return 2 * (self.block_days + self.embargo_days)
+
+    def _other_part(self) -> str:
+        return TEST if self.first_block_part == TRAIN else TRAIN
+
+    def part_for(self, date: dt.date) -> str:
+        """``"train"``, ``"test"``, or ``"embargo"`` for one calendar date."""
+        if not self.first_date <= date <= self.last_date:
+            raise MCRLContractError(f"{date} is outside the split range")
+        position = (date - self.first_date).days % self.cycle_days
+        if position < self.block_days:
+            return self.first_block_part
+        if position < self.block_days + self.embargo_days:
+            return EMBARGO
+        if position < 2 * self.block_days + self.embargo_days:
+            return self._other_part()
+        return EMBARGO
+
+    def available_dates(
+        self, archive: TleArchive, part: str
+    ) -> tuple[dt.date, ...]:
+        if part not in SPLIT_PARTS:
+            raise ValueError(f"unknown split part {part!r}")
+        return tuple(
+            date
+            for date in archive.dates
+            if self.first_date <= date <= self.last_date
+            and self.part_for(date) == part
+        )
+
+    def embargoed_dates(self, archive: TleArchive) -> tuple[dt.date, ...]:
+        return tuple(
+            date for date in archive.dates if self.part_for(date) == EMBARGO
+        )
+
+    def minimum_gap_days(self, archive: TleArchive) -> int:
+        """Smallest calendar distance between any train date and any test date."""
+        train = self.available_dates(archive, TRAIN)
+        test = self.available_dates(archive, TEST)
+        if not train or not test:
+            raise MCRLContractError("one side of the split is empty")
+        merged = sorted(
+            [(date, TRAIN) for date in train] + [(date, TEST) for date in test]
+        )
+        gap = min(
+            (later[0] - earlier[0]).days
+            for earlier, later in zip(merged, merged[1:])
+            if earlier[1] != later[1]
+        )
+        return int(gap)
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "scheme": "block-alternating-with-embargo",
+            "first_date": self.first_date.isoformat(),
+            "last_date": self.last_date.isoformat(),
+            "block_days": self.block_days,
+            "embargo_days": self.embargo_days,
+            "first_block_part": self.first_block_part,
+            "cycle_days": self.cycle_days,
+        }
+
+
+@dataclass(frozen=True)
+class ContiguousDateSplit:
+    """One chronological cut: train early, test late.  **Superseded.**
+
+    Retained only so the distribution shift that motivated
+    :class:`BlockAlternatingSplit` stays reproducible
+    (``tests/test_w02_ephemeris.py``).  Do not use it for a live run.
+    """
 
     train_start: dt.date
     train_end: dt.date
@@ -187,14 +338,7 @@ class DateSplit:
         archive: TleArchive,
         *,
         test_fraction: float = 0.2,
-    ) -> DateSplit:
-        """Earlier dates train, later dates test.
-
-        **S**-level: F3 fixes "split by date range, do not interleave" but
-        not the fraction.  Chronological order is the non-leaking default —
-        a random contiguous block would still put test geometry inside the
-        training epoch span.
-        """
+    ) -> ContiguousDateSplit:
         dates = archive.dates
         if len(dates) < 2:
             raise MCRLContractError("need at least two dates to split")
@@ -210,19 +354,21 @@ class DateSplit:
         )
 
     def dates_for(self, part: str) -> tuple[dt.date, dt.date]:
-        if part == "train":
+        if part == TRAIN:
             return self.train_start, self.train_end
-        if part == "test":
+        if part == TEST:
             return self.test_start, self.test_end
         raise ValueError(f"unknown split part {part!r}")
 
-    def available_dates(self, archive: TleArchive, part: str) -> tuple[dt.date, ...]:
-        """File dates actually present inside one part of the split."""
+    def available_dates(
+        self, archive: TleArchive, part: str
+    ) -> tuple[dt.date, ...]:
         first, last = self.dates_for(part)
-        return tuple(d for d in archive.dates if first <= d <= last)
+        return tuple(date for date in archive.dates if first <= date <= last)
 
-    def as_dict(self) -> dict[str, str]:
+    def as_dict(self) -> dict[str, object]:
         return {
+            "scheme": "contiguous-chronological-SUPERSEDED",
             "train_start": self.train_start.isoformat(),
             "train_end": self.train_end.isoformat(),
             "test_start": self.test_start.isoformat(),
@@ -232,7 +378,7 @@ class DateSplit:
 
 @dataclass(frozen=True)
 class EpisodeStartSampler:
-    """Draws episode start times inside one half of the split.
+    """Draws episode start times inside one part of a split.
 
     **S**-level sampling distribution (F3 requires it to be frozen):
     date uniform over the part's **available** file dates, time-of-day
@@ -247,33 +393,28 @@ class EpisodeStartSampler:
     distribution equal to the thing that was actually frozen.
     """
 
-    split: DateSplit
     part: str
     available_dates: tuple[dt.date, ...]
     time_step_s: float = TIME_STEP_S
 
     def __post_init__(self) -> None:
+        if self.part not in SPLIT_PARTS:
+            raise ValueError(f"unknown split part {self.part!r}")
         if not self.available_dates:
             raise MCRLContractError(f"no available dates for part {self.part!r}")
-        first, last = self.split.dates_for(self.part)
-        outside = [d for d in self.available_dates if not first <= d <= last]
-        if outside:
-            raise MCRLContractError(
-                f"{len(outside)} sampler dates fall outside the {self.part} range"
-            )
+        if list(self.available_dates) != sorted(set(self.available_dates)):
+            raise MCRLContractError("available_dates must be sorted and unique")
 
     @classmethod
     def for_archive(
         cls,
         archive: TleArchive,
-        split: DateSplit,
+        split: Split,
         part: str,
         *,
         time_step_s: float = TIME_STEP_S,
     ) -> EpisodeStartSampler:
-        first, last = split.dates_for(part)
-        dates = tuple(d for d in archive.dates if first <= d <= last)
-        return cls(split, part, dates, time_step_s)
+        return cls(part, split.available_dates(archive, part), time_step_s)
 
     def draw(self, rng: np.random.Generator) -> dt.datetime:
         day = self.available_dates[int(rng.integers(0, len(self.available_dates)))]
@@ -284,7 +425,7 @@ class EpisodeStartSampler:
         ) + dt.timedelta(seconds=float(snapped))
 
     def as_dict(self) -> dict[str, object]:
-        first, last = self.split.dates_for(self.part)
+        first, last = self.available_dates[0], self.available_dates[-1]
         return {
             "part": self.part,
             "date_first": first.isoformat(),
@@ -523,7 +664,7 @@ def file_set_hash(rows: Sequence[dict[str, str]]) -> str:
 
 def build_freeze_manifest(
     config: EphemerisConfig,
-    split: DateSplit,
+    split: Split,
     *,
     sampled_dates: Sequence[dt.date] | None = None,
     start_utc: dt.datetime | None = None,
@@ -563,7 +704,7 @@ def build_freeze_manifest(
             part: EpisodeStartSampler.for_archive(
                 archive, split, part, time_step_s=config.time_step_s
             ).as_dict()
-            for part in ("train", "test")
+            for part in SPLIT_PARTS
         },
         "sgp4": {
             "version": sgp4.__version__,
@@ -571,6 +712,13 @@ def build_freeze_manifest(
             "gravity_model": config.gravity_model,
         },
     }
+    if isinstance(split, BlockAlternatingSplit):
+        manifest["split"] = dict(split.as_dict()) | {
+            "train_files": len(split.available_dates(archive, TRAIN)),
+            "test_files": len(split.available_dates(archive, TEST)),
+            "embargoed_files": len(split.embargoed_dates(archive)),
+            "minimum_train_test_gap_days": split.minimum_gap_days(archive),
+        }
     if start_utc is not None:
         selection = select_elements(
             archive,

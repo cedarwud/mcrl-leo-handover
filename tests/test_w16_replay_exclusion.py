@@ -44,6 +44,7 @@ def test_fully_valid_episode_stores_every_transition():
     assert trainer.get_masking_diagnostics() == {
         "no_op_transitions_skipped": 0,
         "all_invalid_next_transitions_skipped": 0,
+        "decision_steps_seen": steps * NUM_USERS,
     }
 
 

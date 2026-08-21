@@ -9,9 +9,11 @@ import pytest
 
 from mcrl.env.constants import TLE_ROOT_DEFAULT
 from mcrl.env.tle import (
+    MAX_MALFORMED_RECORD_FRACTION,
     TleArchive,
     TleDailyFile,
     TleFormatError,
+    TleQuarantineError,
     parse_epoch,
     parse_tle_text,
     tle_checksum,
@@ -50,35 +52,68 @@ def test_parse_epoch_applies_the_tle_century_rule():
 
 
 def test_parse_round_trip():
-    (record,) = parse_tle_text(_GOOD)
+    records, quarantined = parse_tle_text(_GOOD)
+    assert not quarantined
+    (record,) = records
     assert record.norad_id == 44714
     assert record.name == "STARLINK-1008"
     assert record.line1 == _L1
 
 
 def test_age_is_absolute():
-    (record,) = parse_tle_text(_GOOD)
+    (record,), _ = parse_tle_text(_GOOD)
     before = record.epoch_utc - dt.timedelta(hours=3)
     after = record.epoch_utc + dt.timedelta(hours=3)
     assert record.age_seconds(before) == pytest.approx(3 * 3600.0)
     assert record.age_seconds(after) == pytest.approx(3 * 3600.0)
 
 
-def test_bad_checksum_is_rejected():
+def test_bad_checksum_is_quarantined_not_silently_kept():
     corrupted = _L1[:68] + str((int(_L1[68]) + 1) % 10)
-    with pytest.raises(TleFormatError, match="checksum"):
-        parse_tle_text(f"NAME\n{corrupted}\n{_L2}\n")
+    records, quarantined = parse_tle_text(f"NAME\n{corrupted}\n{_L2}\n")
+    assert records == []
+    assert len(quarantined) == 1
+    assert "checksum" in quarantined[0].reason
+    assert quarantined[0].line1 == corrupted
 
 
-def test_swapped_line_numbers_are_rejected():
-    with pytest.raises(TleFormatError, match="line number"):
-        parse_tle_text(f"NAME\n{_L2}\n{_L1}\n")
+def test_swapped_line_numbers_are_quarantined():
+    _records, quarantined = parse_tle_text(f"NAME\n{_L2}\n{_L1}\n")
+    assert "line number" in quarantined[0].reason
 
 
-def test_mismatched_norad_ids_are_rejected():
+def test_mismatched_norad_ids_are_quarantined():
     other = "2 44718  53.1503 119.9226 0001985 112.7203 247.4022 15.61217091374178"
-    with pytest.raises(TleFormatError, match="NORAD id mismatch"):
-        parse_tle_text(f"NAME\n{_L1}\n{other}\n")
+    _records, quarantined = parse_tle_text(f"NAME\n{_L1}\n{other}\n")
+    assert "NORAD id mismatch" in quarantined[0].reason
+
+
+def test_a_good_record_survives_alongside_a_quarantined_one():
+    corrupted = _L1[:68] + str((int(_L1[68]) + 1) % 10)
+    records, quarantined = parse_tle_text(
+        _GOOD + f"BAD\n{corrupted}\n{_L2}\n"
+    )
+    assert len(records) == 1 and len(quarantined) == 1
+    assert records[0].norad_id == 44714
+
+
+def test_quarantine_ceiling_rejects_a_structurally_broken_file(tmp_path):
+    corrupted = _L1[:68] + str((int(_L1[68]) + 1) % 10)
+    path = tmp_path / "starlink_20260820.tle"
+    path.write_text(f"BAD\n{corrupted}\n{_L2}\n")
+    with pytest.raises(TleQuarantineError, match="malformed"):
+        TleDailyFile.load(path)
+
+
+def test_quarantine_ceiling_is_configurable(tmp_path):
+    corrupted = _L1[:68] + str((int(_L1[68]) + 1) % 10)
+    path = tmp_path / "starlink_20260820.tle"
+    path.write_text(_GOOD + f"BAD\n{corrupted}\n{_L2}\n")
+    daily = TleDailyFile.load(path, max_malformed_fraction=0.75)
+    assert len(daily.records) == 1
+    assert len(daily.quarantined) == 1
+    assert daily.malformed_fraction == pytest.approx(0.5)
+    assert MAX_MALFORMED_RECORD_FRACTION < 0.5
 
 
 def test_truncated_input_is_rejected():
@@ -139,3 +174,31 @@ def test_every_record_of_a_real_daily_file_validates():
     daily = archive.load(dt.date(2026, 8, 20))
     assert len(daily.records) == 10_746
     assert len(daily.by_norad) == len(daily.records)
+
+
+@requires_archive
+def test_the_one_known_malformed_record_in_the_corpus():
+    """2026-05-28 holds the corpus's only bad record: a 70-character line 1.
+
+    ``-66000-10`` needs a two-digit BSTAR exponent and the fixed-width
+    format has room for one, so the checksum is pushed out of column 69.
+    Quarantining one satellite must not cost the other 10,397.
+    """
+    archive = TleArchive(_ARCHIVE_ROOT)
+    daily = archive.load(dt.date(2026, 5, 28))
+    assert len(daily.quarantined) == 1
+    assert len(daily.records) == 10_397
+    assert daily.malformed_fraction < MAX_MALFORMED_RECORD_FRACTION
+    (bad,) = daily.quarantined
+    assert len(bad.line1) == 70
+    assert "-66000-10" in bad.line1
+    assert "checksum" in bad.reason
+
+
+@requires_archive
+def test_manifest_rows_report_the_quarantine_count():
+    archive = TleArchive(_ARCHIVE_ROOT)
+    rows = archive.manifest_rows([dt.date(2026, 5, 28), dt.date(2026, 8, 20)])
+    by_file = {row["file"]: row for row in rows}
+    assert by_file["starlink_20260528.tle"]["quarantined"] == "1"
+    assert by_file["starlink_20260820.tle"]["quarantined"] == "0"

@@ -154,6 +154,7 @@ class MODQNTrainer:
         # plain dropping is admissible or a semi-MDP transition is required.
         self._no_op_transitions_skipped: int = 0
         self._all_invalid_next_transitions_skipped: int = 0
+        self._decision_steps_seen: int = 0
         self._runtime_real_emission_collector = runtime_real_emission_collector
         self._runtime_real_emission_hook_enabled()
         self._section_6_2_capture: Any | None = None
@@ -192,20 +193,26 @@ class MODQNTrainer:
         no transition.
         ``all_invalid_next_transitions_skipped`` — non-terminal steps whose
         successor mask was empty, so the bootstrap target was undefined.
+        ``decision_steps_seen`` — the denominator: every (user, step) pair
+        the training loop reached.
 
-        Probe P1 reports both rates.  If either is non-negligible the plain
-        drop biases the return and §4A.5a(4) requires the semi-MDP form.
+        Probe P1 reports all three.  See
+        ``mcrl.runtime.outage_gate.evaluate_outage_gate`` for what the rate
+        obliges: dropping is only admissible while outage is rare, because
+        it does not merely lose data — it makes outage **free**.
         """
         return {
             "no_op_transitions_skipped": int(self._no_op_transitions_skipped),
             "all_invalid_next_transitions_skipped": int(
                 self._all_invalid_next_transitions_skipped
             ),
+            "decision_steps_seen": int(self._decision_steps_seen),
         }
 
     def reset_masking_diagnostics(self) -> None:
         self._no_op_transitions_skipped = 0
         self._all_invalid_next_transitions_skipped = 0
+        self._decision_steps_seen = 0
 
     def _runtime_real_emission_hook_enabled(self) -> bool:
         collector = self._runtime_real_emission_collector
@@ -1330,8 +1337,11 @@ class MODQNTrainer:
                     #   (b) done_t or mask_{t+1} non-empty -> the target's
                     #       masked max is defined.  Without (b) the target row
                     #       is all ``-1e9`` and y = r + 0.9*(-1e9).
-                    # Both drop reasons are counted so probe P1 can measure the
-                    # rate §4A.5a(4) requires before the drop is accepted.
+                    # Both drop reasons are counted against decision_steps_seen
+                    # so probe P1 can apply the §4A.5a(4) gate: dropping makes
+                    # outage look FREE (r1~0, r2=0, r3=0 all read as neutral),
+                    # which is the very hole the re-entry phi2 exists to close.
+                    self._decision_steps_seen += 1
                     if is_no_op(int(actions[uid])):
                         self._no_op_transitions_skipped += 1
                         continue

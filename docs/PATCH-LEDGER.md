@@ -57,8 +57,8 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 |---|---|
 | 缺陷 | **L-3** |
 | 來源行 | `algorithms/modqn.py:1235-1252`(`train()` 的逐使用者 push 迴圈) |
-| 補丁內容 | push 前加兩道閘:(a) `is_no_op(actions[uid])` ⇒ 不寫,`_no_op_transitions_skipped += 1`;(b) `not done_t and not mask_{t+1}.any()` ⇒ 不寫,`_all_invalid_next_transitions_skipped += 1`。獎勵累計(`ep_reward`、`ep_handovers`)移到閘之前,**未被服務的步仍完整計入回合報表**。新增 `get_masking_diagnostics()` / `reset_masking_diagnostics()` |
-| 理由 | (a) 是 SDD §4A.5a(2) 逐字要求。(b) 見下方「⚠ 對 §4A.5a(3) 的解讀」 |
+| 補丁內容 | push 前加兩道閘:(a) `is_no_op(actions[uid])` ⇒ 不寫,`_no_op_transitions_skipped += 1`;(b) `not done_t and not mask_{t+1}.any()` ⇒ 不寫,`_all_invalid_next_transitions_skipped += 1`。分母 `_decision_steps_seen` 同步累計。獎勵累計(`ep_reward`、`ep_handovers`)移到閘之前,**未被服務的步仍完整計入回合報表**。新增 `get_masking_diagnostics()` / `reset_masking_diagnostics()`,以及 `runtime/outage_gate.py` |
+| 理由 | (a) 是 SDD §4A.5a(2) 逐字要求。(b) 見下方「§4A.5a(3) 的解讀」。**丟棄的代價見「§4A.5a(4) 已升格為門檻」** |
 | 行為差異(須知) | 「排除於學習、保留於報表」是刻意的:丟掉獎勵會讓回合曲線與實際服務水準脫節,而 §6 G-8 要求 EE 比較必附服務率 |
 | 對應測試 | `tests/test_w16_replay_exclusion.py`(全部 6 項) |
 | 門 | G-9(§4A.7 T12 後半)、T10 |
@@ -88,23 +88,42 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 
 ---
 
-## ⚠ 對 SDD §4A.5a(3) 的解讀(需作者確認)
+## SDD §4A.5a(3) 的解讀 —— **作者已裁決(2026-08-22):採用**
 
-§4A.5a 定案第 3 點寫:
+§4A.5a 定案第 3 點原寫:
 
 > 於是 `mask_{t+1}` 全為 0 的分支**在 replay 中不可達**,被 (2) 消掉。
 
-**這一步推不出來。** (2) 丟掉的是**從**全無效狀態出發的轉移;
+**這一步推不出來**(作者已確認推論有洞)。(2) 丟掉的是**從**全無效狀態出發的轉移;
 `(s_t, a_t, r_t, s_{t+1})` 是在 `t` 決策的,只要 `mask_t` 非空就會被寫入,
 **即使 `s_{t+1}` 的遮罩全為 0**。於是目標那一列全被 `masked_fill(~nm, -1e9)`,
-`max` 得 `-1e9`,非終端時 `y = r + 0.9×(−1e9)` —— 正是同節要防的災難性汙染。
+`max` 得 `-1e9`,非終端時 `y = r + 0.9×(−1e9)`。
 
-**本次採用的解讀(保守、可證安全)**:轉移入 replay 的條件為
+**已採用的解讀**:轉移入 replay 的條件為
 **`mask_t` 非空 ∧(`done_t` ∨ `mask_{t+1}` 非空)**。
 如此 (3) 才真的成立,且與 (1)、(2)、T10 全部相容。
 
-**兩個丟棄理由分開計數**(`get_masking_diagnostics()`),因為 §4A.5a(4) 要求
-「必須量測全無效狀態的發生率」,而**入邊率與出邊率不是同一個量**;
-probe P1 兩者都要報。若任一非可忽略,(4) 的 semi-MDP 改法就被觸發。
+**兩個丟棄理由分開計數**,因為**入邊率與出邊率不是同一個量**;probe P1 兩者都要報。
 
-**若作者認為 (3) 另有所指(例如原意就是連入邊一起丟),本補丁不需改動,只需把 §4A.5a(3) 的文字補明確。**
+## ★ §4A.5a(4) 已升格為**門檻**(作者裁決 2026-08-22)
+
+**丟棄不只是為了避免 `-1e9` 汙染。** outage 期間三個獎勵分量全部讀起來是中性的:
+
+| 分量 | outage 時 | 為何看起來中性 |
+|---|---|---|
+| `r1` | ≈ 0 | 無吞吐量 ⇒ 無能效積分 |
+| `r2` | = 0 | §4A.4:未被服務不是關聯變更 |
+| `r3` | = 0 | 不在任何波束上 ⇒ 對 `U_{b_u}` 無貢獻 |
+
+**若再把未來截斷,outage 就變成「免費」** —— 而那正是 §4A.4 用 re-entry `φ2`
+堵住的漏洞(策略刻意離線以清除換手成本)。丟棄等於**從另一側把同一個洞打開**。
+
+**⇒ 定案:若丟棄率非可忽略,semi-MDP(跨 outage 累計獎勵至恢復服務那一步)
+是強制的,不是可選的** —— 因為丟棄會讓 agent **永遠學不到 outage 有代價**。
+
+實作:`src/mcrl/runtime/outage_gate.py`。
+`assert_drop_is_admissible()` 在超標時拋錯,錯誤訊息明說**這不是 run 的 bug,
+是門檻告訴你 semi-MDP 已成為義務**。
+門檻值 `OUTAGE_RATE_NEGLIGIBLE_DEFAULT = 1e-3` 為 **S,提案中**,
+**W-13 的 PREREG 必須先凍結它,probe P1 才可以跑**(§7.1:門檻須事前凍結,否則就是洩漏)。
+測試:`tests/test_w16_outage_gate.py`(10 項)。
