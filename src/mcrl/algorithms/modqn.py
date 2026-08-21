@@ -46,6 +46,13 @@ from ..env.step import (
     StepEnvironment,
     UserState,
 )
+from ..env.action_contract import NO_OP_ACTION, is_no_op, no_op_actions
+from ..errors import MCRLContractError
+from ..runtime.finiteness import (
+    assert_finite_gradients,
+    assert_finite_loss,
+    assert_finite_parameters,
+)
 from ..runtime.angle_aware_ee import per_ue_energy_efficiency
 from ..runtime.objective_math import (
     apply_reward_calibration,
@@ -143,6 +150,10 @@ class MODQNTrainer:
         self._best_eval_summary: EvalSummary | None = None
         self._best_eval_payload: CheckpointPayloadV1 | None = None
         self._anti_collapse_diagnostics = self._empty_anti_collapse_diagnostics()
+        # PATCH P-03 (L-3, SDD §4A.5a(4)): the drop rates that decide whether
+        # plain dropping is admissible or a semi-MDP transition is required.
+        self._no_op_transitions_skipped: int = 0
+        self._all_invalid_next_transitions_skipped: int = 0
         self._runtime_real_emission_collector = runtime_real_emission_collector
         self._runtime_real_emission_hook_enabled()
         self._section_6_2_capture: Any | None = None
@@ -172,6 +183,29 @@ class MODQNTrainer:
 
     def get_anti_collapse_diagnostics(self) -> dict[str, int]:
         return dict(self._anti_collapse_diagnostics)
+
+    def get_masking_diagnostics(self) -> dict[str, int]:
+        """Replay-exclusion counts owned by PATCH P-03 (SDD §4A.5a(4)).
+
+        ``no_op_transitions_skipped``  — steps where the user had no valid
+        action at all (``mask_t`` empty), executed a no-op, and contributed
+        no transition.
+        ``all_invalid_next_transitions_skipped`` — non-terminal steps whose
+        successor mask was empty, so the bootstrap target was undefined.
+
+        Probe P1 reports both rates.  If either is non-negligible the plain
+        drop biases the return and §4A.5a(4) requires the semi-MDP form.
+        """
+        return {
+            "no_op_transitions_skipped": int(self._no_op_transitions_skipped),
+            "all_invalid_next_transitions_skipped": int(
+                self._all_invalid_next_transitions_skipped
+            ),
+        }
+
+    def reset_masking_diagnostics(self) -> None:
+        self._no_op_transitions_skipped = 0
+        self._all_invalid_next_transitions_skipped = 0
 
     def _runtime_real_emission_hook_enabled(self) -> bool:
         collector = self._runtime_real_emission_collector
@@ -285,13 +319,19 @@ class MODQNTrainer:
         masks: list[ActionMask],
         eps: float,
     ) -> np.ndarray:
-        """Return the normal MODQN epsilon-greedy actions."""
+        """Return the normal MODQN epsilon-greedy actions.
+
+        PATCH P-01 (L-1, SDD §4A.5a(1)): an empty decision mask yields
+        ``NO_OP_ACTION``, never index 0.  Exploration stays masked (P-9).
+        """
         U = len(masks)
-        actions = np.zeros(U, dtype=np.int32)
+        actions = no_op_actions(U)
         for uid in range(U):
             valid = np.where(masks[uid].mask)[0]
             if len(valid) == 0:
-                actions[uid] = 0
+                # PATCH P-01: no valid action -> no-op, user unserved this
+                # step.  Never fall back to any index.
+                actions[uid] = NO_OP_ACTION
                 continue
 
             if self._train_rng.random() < eps:
@@ -301,7 +341,14 @@ class MODQNTrainer:
                     scalarized[uid],
                     masks[uid].mask,
                 )
-                actions[uid] = 0 if selected_action is None else selected_action
+                if selected_action is None:
+                    # Structurally unreachable: ``valid`` is non-empty here.
+                    # Fail loudly rather than restore the index-0 fallback.
+                    raise MCRLContractError(
+                        "masked greedy selection returned None for user "
+                        f"{uid} despite {valid.size} valid actions"
+                    )
+                actions[uid] = selected_action
 
         return actions
 
@@ -316,6 +363,16 @@ class MODQNTrainer:
         This is not part of the frozen MODQN baseline.  The candidate gate uses
         it only when explicitly configured so that learned greedy evaluation
         cannot place more than a declared number of users on one beam.
+
+        ⚠ LATENT DEFECT L-4 (SDD §3.8) — DORMANT PATH, DELIBERATELY UNPATCHED.
+        The ``ranked[0]`` fallback below violates the function's own capacity
+        invariant when every valid action is already full, and the two
+        ``actions[uid] = 0`` fallbacks are the same index-0 defect as L-1.
+        Per the W-16 brief this path is marked latent: **do not wire it up and
+        do not fix it**.  It is unreachable while
+        ``anti_collapse_action_constraint_enabled`` is False, which SDD §8
+        requires for the whole milestone.  Any future work that enables it
+        must first port PATCH P-01 into it.
         """
         U = len(masks)
         actions = np.zeros(U, dtype=np.int32)
@@ -383,7 +440,15 @@ class MODQNTrainer:
         eps: float,
         raw_states: list[UserState] | None,
     ) -> np.ndarray:
-        """Overflow-only sticky reassignment for the QoS-preserving gate."""
+        """Overflow-only sticky reassignment for the QoS-preserving gate.
+
+        ⚠ LATENT (SDD §3.8 L-4 family) — DORMANT PATH, DELIBERATELY UNPATCHED.
+        It consumes ``_select_unconstrained_actions``, which after PATCH P-01
+        can return ``NO_OP_ACTION``.  ``np.bincount`` below rejects negative
+        values, so enabling this path now raises instead of mis-assigning —
+        the intended trip-wire.  Unreachable while SDD §8 keeps
+        ``anti_collapse_action_constraint_enabled`` False.
+        """
         base_actions = self._select_unconstrained_actions(scalarized, masks, eps)
         if raw_states is None:
             raise ValueError(
@@ -563,7 +628,7 @@ class MODQNTrainer:
             raise ValueError(f"top_k must be >= 1, got {top_k}")
 
         U = len(masks)
-        actions = np.zeros(U, dtype=np.int32)
+        actions = no_op_actions(U)
         diagnostics: list[dict[str, Any] | None] = []
         w = objective_weights or self.config.objective_weights
         q_values = self._predict_objective_q_values(states_encoded)
@@ -576,7 +641,9 @@ class MODQNTrainer:
                 mask,
             )
             if selected_action is None:
-                actions[uid] = 0
+                # PATCH P-02 (L-1, SDD §4A.5a(1)): empty mask -> no-op, not
+                # index 0.  Diagnostics stay ``None`` for an absent decision.
+                actions[uid] = NO_OP_ACTION
                 diagnostics.append(None)
                 continue
 
@@ -730,6 +797,10 @@ class MODQNTrainer:
         """Sample a batch from replay and update all 3 DQNs.
 
         Returns per-objective MSE losses (0.0 if replay too small).
+
+        PATCH P-04 (L-2, SDD §3.7 P-3 / §6 G-11): the fail-loud finiteness
+        battery.  Non-finite loss, gradient, or online-network parameter
+        aborts training instead of continuing silently.
         """
         cfg = self.config
         if len(self.replay) < cfg.batch_size:
@@ -765,11 +836,21 @@ class MODQNTrainer:
 
             loss = self._loss_fn(q_current, target)
 
+            # PATCH P-04 (P-3 / G-11): fail loud, never skip-and-continue.
+            assert_finite_loss(loss, objective=obj_idx)
+
             self.optimizers[obj_idx].zero_grad()
             loss.backward()
+            assert_finite_gradients(
+                self.q_nets[obj_idx].parameters(),
+                objective=obj_idx,
+            )
             self.optimizers[obj_idx].step()
 
             losses.append(loss.item())
+
+        # PATCH P-04 (P-3 / G-11): parameters must stay finite after the step.
+        assert_finite_parameters(self.q_nets)
 
         return (losses[0], losses[1], losses[2])
 
@@ -1235,6 +1316,30 @@ class MODQNTrainer:
                 for uid in range(self.num_users):
                     rw = result.rewards[uid]
                     reward_vec = self.reward_vector_from_step_result(result, uid)
+
+                    # Episode reporting covers every user, served or not.
+                    ep_reward += reward_vec
+                    if rw.r2_handover < 0:
+                        ep_handovers += 1
+
+                    # PATCH P-03 (L-3, SDD §4A.5a(2)-(3)).  A transition may
+                    # enter replay only if it is a real decision with a
+                    # well-defined bootstrap target:
+                    #   (a) mask_t non-empty  -> the action was actually chosen
+                    #       by the policy (no-op transitions are dropped), and
+                    #   (b) done_t or mask_{t+1} non-empty -> the target's
+                    #       masked max is defined.  Without (b) the target row
+                    #       is all ``-1e9`` and y = r + 0.9*(-1e9).
+                    # Both drop reasons are counted so probe P1 can measure the
+                    # rate §4A.5a(4) requires before the drop is accepted.
+                    if is_no_op(int(actions[uid])):
+                        self._no_op_transitions_skipped += 1
+                        continue
+                    next_mask = result.action_masks[uid].mask
+                    if not bool(result.done) and not bool(next_mask.any()):
+                        self._all_invalid_next_transitions_skipped += 1
+                        continue
+
                     reward_vec_train = apply_reward_calibration(reward_vec, cfg)
                     self.replay.push(
                         encoded[uid],
@@ -1242,13 +1347,10 @@ class MODQNTrainer:
                         reward_vec_train.astype(np.float32),
                         next_encoded[uid],
                         masks[uid].mask.copy(),
-                        result.action_masks[uid].mask.copy(),
+                        next_mask.copy(),
                         result.done,
                     )
                     self._emit_runtime_real_emission_hook("transition_stored")
-                    ep_reward += reward_vec
-                    if rw.r2_handover < 0:
-                        ep_handovers += 1
 
                 # Update networks
                 step_losses = self.update()
