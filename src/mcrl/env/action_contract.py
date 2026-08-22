@@ -41,7 +41,29 @@ NUM_SATELLITE_SLOTS: int = 4
 """``L_w`` — SDD B12, matching MODQN §IV's four satellites."""
 
 NUM_BEAM_SLOTS: int = 7
-"""``J_w`` — the anchor cell plus its six canonical neighbours (§4A.2)."""
+"""``J_w`` — the anchor cell plus its six canonical neighbours (§4A.2).
+
+⚠ **This 7 is not MODQN Table I's ``V = 7``.  The match is a coincidence.**
+
+Table I's ``V = 7`` is ``|𝒱|`` at *their* granularity: how many beam
+positions one satellite has in total.  In Sun-2024 a "beam" has no geometry
+at all — a full-text grep finds zero hits for off-axis, boresight, pointing,
+3 dB, half-power, footprint, steer, or earth-fixed — so a beam there is a
+non-spatial load channel and the number could have been 7, 3 or 70 without
+changing anything.
+
+This paper adds the geometry they lacked, and once a beam has a pointing and
+a 3 dB footprint it has to cover ground: at the measured 485 km, 95%
+coverage needs 39 cells.  So Table I's ``V = 7`` is **superseded by this
+paper's ``V`` (39, F5 pending)** — that is where it went; it was not left
+homeless.
+
+``J_w = 7`` is a different quantity entirely: how many cells one *user*
+can reach (their own plus the six neighbours), from the hex-neighbourhood
+argument in §3.3.  **The two must never be substituted for each other**, and
+there is deliberately no per-satellite beam-count constant anywhere in this
+project (ruling 2026-08-22 §7.2-7.3).
+"""
 
 NUM_ACTIONS: int = NUM_SATELLITE_SLOTS * NUM_BEAM_SLOTS
 """``C = 28`` — the flat output width.  Frozen; the network is not touched."""

@@ -85,8 +85,28 @@ class ServiceResolution:
 
     @property
     def active_cells(self) -> tuple[int, ...]:
-        """Cells with positive eligible load — activation ⟺ positive load."""
+        """Cells with positive eligible load.
+
+        ``z_{s,v}(t) = 1{ U_{s,v}(t) > 0 }`` — activation is **derived, not
+        chosen** (ruling 2026-08-22 §7.4).  There is no selection step, no
+        ranking, and no ceiling: every cell with at least one served user is
+        lit, always.
+
+        The alternative was measured once already: the repo-invented
+        activation ceiling of 2026-07-15 darkened beams by demand rank and
+        starved 68 of 100 users, inverting the congestion incentive.  It
+        would also fight ``r3 = −U_{b_u}``, which rewards moving to a
+        *quieter* beam, while any demand-ranked darkening rule extinguishes
+        the quiet beams first.
+        """
         return tuple(sorted(self.eligible_load_by_cell))
+
+    def activation_vector(self, cell_ids: Sequence[int]) -> np.ndarray:
+        """``z`` over an explicit cell ordering, derived from the loads alone."""
+        return np.array(
+            [self.eligible_load_by_cell.get(int(cell), 0) > 0 for cell in cell_ids],
+            dtype=bool,
+        )
 
     def user_beam_load(self) -> np.ndarray:
         """``U_{b_u}`` per user: the eligible load of the beam serving them.

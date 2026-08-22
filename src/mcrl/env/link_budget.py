@@ -63,13 +63,17 @@ _MIN_SIN_ELEVATION: float = 1e-3
 BEAM_POWER_MAX_W: float = 1.65
 """**S** — project-set per-beam transmit ceiling."""
 
-SATELLITE_AGGREGATE_POWER_MAX_W: float = 10.0 ** (13.0 / 10.0)
-"""**S** — 19.95 W per satellite (``system-model-formulas.md`` §3.6).
-
-⚠ SDD §2.6 r6 withdrew the reading that this caps the beam *count*: it
-scales power proportionally and darkens nothing.  The simultaneous-beam
-ceiling is 7, from MODQN Table I's ``V``, and lives in the action contract.
-"""
+# NOTE (ruling 2026-08-22, §7.6): there is deliberately NO satellite-level
+# power ceiling here, and none may be added.  The source project's version
+# sits downstream of a ``beam_power_w`` that is gated as a historical
+# negative control, so SDD §2.6's r6 argued on a path that was already
+# disabled.  Reviving it would re-introduce a per-satellite resource
+# mechanism through the back door.  A satellite-level power constraint would
+# be a separate decision needing its own source.
+#
+# The per-satellite resource constraint is carried entirely by PER-LINK power
+# feasibility (``classify_link_power_feasibility`` below): per link,
+# continuously degrading, sourced, and producing no unserved cliff.
 
 PA_BASE_W: float = 0.25
 PA_SCALE_W: float = 0.35
@@ -132,6 +136,11 @@ def beam_transmit_power_w(load: np.ndarray) -> np.ndarray:
 
     Zero load means a dark beam: exactly zero power, no floor.  P-6 ties
     activation to positive load, and P-7 forbids padding a denominator.
+
+    The result is **not clipped** to ``BEAM_POWER_MAX_W``.  A silent clamp
+    would deliver less power than the link needs and still report the user
+    as served; the ceiling is an admission test, not a saturation
+    (:func:`classify_link_power_feasibility`).
     """
     counts = np.asarray(load, dtype=np.float64)
     if np.any(counts < 0.0):
@@ -139,34 +148,35 @@ def beam_transmit_power_w(load: np.ndarray) -> np.ndarray:
     power = PA_BASE_W + PA_SCALE_W * np.power(
         np.maximum(counts, 0.0), PA_EXPONENT
     )
-    power = np.minimum(power, BEAM_POWER_MAX_W)
     return np.where(counts > 0.0, power, 0.0)
 
 
-def apply_satellite_aggregate_cap(
-    beam_power_w: np.ndarray,
-    satellite_slot_of_beam: np.ndarray,
+def classify_link_power_feasibility(
+    required_power_w: np.ndarray,
     *,
-    cap_w: float = SATELLITE_AGGREGATE_POWER_MAX_W,
+    max_power_w: float = BEAM_POWER_MAX_W,
 ) -> np.ndarray:
-    """Scale each satellite's beams proportionally to its aggregate ceiling.
+    """``p_req > p_max`` — the per-link admission test (ruling §7.5).
 
-    Proportional, never a cut: a satellite over budget lowers every beam's
-    power by one common factor and darkens none of them.  That is exactly
-    why SDD §2.6 r6 withdrew the claim that this constrains beam count.
+    This is where a satellite's finite resources bite, and it is the ONLY
+    place they do.  It is **per link**: two users on one beam are judged
+    separately, so a demanding link drops out while its neighbours keep
+    service.  There is no per-satellite beam-count ceiling anywhere in this
+    project — see the note above ``free_space_path_gain`` — because any
+    count-based cap darkens whole beams at once and produces exactly the
+    unserved cliff this test avoids.
+
+    Returns a boolean array: True where the link is infeasible and the user
+    is in ``outage_infeasible``.
     """
-    power = np.array(beam_power_w, dtype=np.float64, copy=True)
-    slots = np.asarray(satellite_slot_of_beam, dtype=np.int64)
-    if power.shape != slots.shape:
-        raise MCRLContractError("power and satellite slots must share shape")
-    if cap_w <= 0.0:
-        raise ValueError("cap must be positive")
-    for slot in np.unique(slots):
-        members = slots == slot
-        total = float(power[members].sum())
-        if total > cap_w:
-            power[members] *= cap_w / total
-    return power
+    required = np.asarray(required_power_w, dtype=np.float64)
+    if np.any(required < 0.0):
+        raise MCRLContractError("required power must be non-negative")
+    if not np.all(np.isfinite(required)):
+        raise MCRLContractError("required power must be finite")
+    if max_power_w <= 0.0:
+        raise ValueError("max_power_w must be positive")
+    return required > max_power_w
 
 
 def consumed_power_w(beam_power_w: np.ndarray) -> float:
