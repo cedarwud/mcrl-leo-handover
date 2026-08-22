@@ -33,7 +33,7 @@ import math
 import numpy as np
 
 from ..errors import MCRLContractError
-from ..runtime.bessel import bessel_j
+from ..runtime.bessel import bessel_j_array
 
 # ---------------------------------------------------------------------------
 # Transmit pattern (HOBS eq. (3))
@@ -60,6 +60,14 @@ G0_DBI: float = 10.0 * math.log10(G0_LINEAR)
 
 _BESSEL_MU_COEFFICIENT: float = 2.07123
 """HOBS eq. (3): ``μ = 2.07123·sin θ / sin θ_half``."""
+
+_MU_LIMIT_EPSILON: float = 1e-10
+"""``ε_μ`` — below this ``μ`` is treated as boresight, where ``F(0) = 1``.
+
+The paper fixes the same 1e-10, so this is a matched constant rather than a
+tolerance of convenience: the bracket is a genuine 0/0 at ``μ = 0`` and the
+limit is exact, not approximated.
+"""
 
 
 def mu_of(theta_deg: np.ndarray, *, theta_3db_deg: float = THETA_3DB_DEG) -> np.ndarray:
@@ -97,17 +105,18 @@ def transmit_gain_linear(
         raise MCRLContractError("off-axis angles must be finite")
 
     mu = mu_of(theta, theta_3db_deg=theta_3db_deg)
-    gains = np.empty(mu.shape, dtype=np.float64)
-    for index in np.ndindex(mu.shape):
-        mu_value = float(mu[index])
-        if abs(mu_value) < 1e-10:
-            gains[index] = float(g0_linear)
-            continue
-        j1 = bessel_j(1, mu_value)
-        j3 = bessel_j(3, mu_value)
-        bracket = j1 / (2.0 * mu_value) + 36.0 * j3 / (mu_value**3)
-        gains[index] = float(g0_linear) * bracket * bracket
-    return gains
+    flat = np.atleast_1d(mu).ravel()
+
+    # The boresight limit: F(0) = 1 exactly, and the bracket is 0/0 there.
+    # 1e-10 is the paper's own epsilon_mu, matched digit for digit.
+    on_axis = np.abs(flat) < _MU_LIMIT_EPSILON
+    safe = np.where(on_axis, 1.0, flat)
+
+    j1, j3 = bessel_j_array((1, 3), safe)
+    bracket = j1 / (2.0 * safe) + 36.0 * j3 / (safe**3)
+    gains = float(g0_linear) * bracket * bracket
+    gains[on_axis] = float(g0_linear)
+    return gains.reshape(np.shape(mu))
 
 
 def transmit_gain_dbi(
@@ -183,29 +192,35 @@ def receive_gain_linear(separation_deg: np.ndarray) -> np.ndarray:
 
 def apply_same_satellite_override(
     receive_linear: np.ndarray,
-    satellite_slot_of_beam: np.ndarray,
-    serving_slot: np.ndarray,
+    satellite_id_of_beam: np.ndarray,
+    serving_satellite_id: np.ndarray,
 ) -> np.ndarray:
     """P-10 — co-satellite beams get full boresight gain, not the envelope.
 
-    ``receive_linear`` is ``(U, B)``, ``satellite_slot_of_beam`` is ``(B,)``,
-    and ``serving_slot`` is ``(U,)``.  Every beam radiated by the user's own
-    serving satellite arrives from the same direction as the wanted signal,
-    so the terminal antenna gives it ``G_R,max``.
+    ``receive_linear`` is ``(U, B)``, ``satellite_id_of_beam`` is ``(B,)``,
+    and ``serving_satellite_id`` is ``(U,)``.  Every beam radiated by the
+    user's own serving satellite arrives from the same direction as the
+    wanted signal, so the terminal antenna gives it ``G_R,max``.
+
+    The two identity arrays are only ever compared for **equality**, so any
+    consistent labelling works — a four-slot window index in a test, a NORAD
+    id in ``env/interference.py``, where the radiating set is global and slot
+    indices do not exist.  ``-1`` marks an unserved user, who has no
+    boresight and therefore no override.
 
     Skipping this under-states co-satellite interference by 15 dB at one
     cell spacing and by up to ~45 dB at the edge of the pattern.
     """
     gains = np.array(receive_linear, dtype=np.float64, copy=True)
-    beams_slot = np.asarray(satellite_slot_of_beam, dtype=np.int64)
-    serving = np.asarray(serving_slot, dtype=np.int64)
+    beams_slot = np.asarray(satellite_id_of_beam, dtype=np.int64)
+    serving = np.asarray(serving_satellite_id, dtype=np.int64)
     if gains.ndim != 2:
         raise MCRLContractError("receive_linear must have shape (U, B)")
     users, beams = gains.shape
     if beams_slot.shape != (beams,):
-        raise MCRLContractError("satellite_slot_of_beam must have shape (B,)")
+        raise MCRLContractError("satellite_id_of_beam must have shape (B,)")
     if serving.shape != (users,):
-        raise MCRLContractError("serving_slot must have shape (U,)")
+        raise MCRLContractError("serving_satellite_id must have shape (U,)")
 
     served = serving >= 0
     same_satellite = np.zeros_like(gains, dtype=bool)

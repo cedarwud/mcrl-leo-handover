@@ -155,3 +155,127 @@ def bessel_j(n: int, x: float) -> float:
 def uses_miller_recursion(x: float) -> bool:
     """Whether :func:`bessel_j` would route ``x`` to Miller recursion."""
     return abs(x) > BESSEL_SERIES_MAX_ABS_X
+
+
+# ---------------------------------------------------------------------------
+# Vectorised twin (W-17)
+# ---------------------------------------------------------------------------
+#
+# The scalar :func:`bessel_j` above is the **reference**: G-10's anchors are
+# measured against it and it stays untouched.  What follows evaluates the
+# same two branches over a whole array, because the interference sums of
+# (3.12a)/(3.12b) need ``G^T`` for every (victim user, radiating beam) pair
+# and the scalar path costs ~28 us each — a hundred users against sixty
+# radiating beams is 6000 evaluations per step before the candidate table is
+# even touched.
+#
+# ``tests/test_w17_bessel_vectorised.py`` pins the two against each other
+# elementwise across the whole live domain, including both sides of the
+# routing threshold and the first four nulls of J1.
+
+
+def bessel_j_array(orders, x):
+    """``J_n(x)`` for several orders over an array, shape ``(len(orders), *x.shape)``.
+
+    Same routing as :func:`bessel_j` — ascending series at or below
+    ``BESSEL_SERIES_MAX_ABS_X``, Miller recursion beyond — applied
+    elementwise, so a mixed array gets each element the branch the scalar
+    function would have given it.
+    """
+    import numpy as np
+
+    requested = [int(order) for order in orders]
+    if any(order < 0 for order in requested):
+        raise ValueError("n must be non-negative")
+    values = np.asarray(x, dtype=np.float64)
+    if not np.all(np.isfinite(values)):
+        raise ValueError("x must be finite")
+
+    magnitude = np.abs(values)
+    out = np.zeros((len(requested),) + values.shape, dtype=np.float64)
+
+    miller = magnitude > BESSEL_SERIES_MAX_ABS_X
+    if np.any(miller):
+        out[:, miller] = _miller_array(requested, magnitude[miller])
+    if np.any(~miller):
+        out[:, ~miller] = _series_array(requested, magnitude[~miller])
+
+    # J_n(-x) = (-1)^n J_n(x); the scalar path takes the same route.
+    negative = values < 0.0
+    for index, order in enumerate(requested):
+        if order % 2:
+            out[index][negative] *= -1.0
+    return out
+
+
+def _miller_array(orders, x):
+    """Downward recurrence over an array of **positive** ``x``.
+
+    One shared starting order for the whole array rather than the scalar
+    path's per-element ``n + x + 20 + 10*sqrt(x)``.  Starting higher than
+    needed is free in accuracy terms — the seed is arbitrary and divided out
+    — so taking the maximum is the conservative choice, not a shortcut.
+    """
+    import numpy as np
+
+    highest = max(orders)
+    peak = float(np.max(x))
+    start = int(highest + peak + 20.0 + 10.0 * math.sqrt(peak))
+    if start % 2 == 1:
+        start += 1
+
+    j_hi = np.zeros_like(x)
+    j_cur = np.full_like(x, 1.0e-30)
+    targets = {order: np.zeros_like(x) for order in orders}
+    norm = np.zeros_like(x)
+
+    wanted = set(orders)
+    for k in range(start, 0, -1):
+        j_low = (2.0 * k / x) * j_cur - j_hi
+        if (k - 1) in wanted:
+            targets[k - 1] = j_low
+        if (k - 1) >= 2 and (k - 1) % 2 == 0:
+            norm += 2.0 * j_low
+        j_hi = j_cur
+        j_cur = j_low
+        overflow = np.abs(j_cur) > 1.0e250
+        if np.any(overflow):
+            # Rescale only the columns that need it, so a single large-|x|
+            # element cannot cost the rest of the array its precision.
+            scale = np.where(overflow, 1.0e-250, 1.0)
+            j_cur = j_cur * scale
+            j_hi = j_hi * scale
+            norm = norm * scale
+            for order in orders:
+                targets[order] = targets[order] * scale
+    norm = norm + j_cur
+    return np.stack([targets[order] / norm for order in orders])
+
+
+def _series_array(orders, x):
+    """Ascending series over an array of ``|x| <= BESSEL_SERIES_MAX_ABS_X``.
+
+    The scalar path stops early once a term stops mattering; here the loop
+    runs its full length with the converged elements simply adding zeros,
+    which is what keeps the two paths agreeing to the last bit rather than
+    to wherever each happened to break.
+    """
+    import numpy as np
+
+    rows = []
+    x2_over_4 = (x * x) / 4.0
+    for order in orders:
+        if order <= 20:
+            term = (0.5 * x) ** order / math.factorial(order)
+        else:
+            with np.errstate(divide="ignore"):
+                log_term = order * np.log(np.maximum(0.5 * x, 1e-300)) - math.lgamma(
+                    order + 1.0
+                )
+            term = np.where(log_term < -700.0, 0.0, np.exp(np.minimum(log_term, 700.0)))
+        total = np.array(term, dtype=np.float64, copy=True)
+        for m in range(200):
+            term = term * (-x2_over_4 / ((m + 1) * (m + order + 1)))
+            total = total + term
+        rows.append(np.where(x == 0.0, 1.0 if order == 0 else 0.0, total))
+    return np.stack(rows)

@@ -210,6 +210,21 @@ class ScenarioDriver:
             raise MCRLContractError("the driver has not been reset")
         return self._satellites.norad_ids
 
+    def user_ecef_km(self) -> np.ndarray:
+        """``(U, 3)`` — where the users are right now.
+
+        Public because the physics layer needs it for every interference
+        term: (3.12b) is evaluated at the victim, not at the service-area
+        centre.  ``user_xy_km`` stays on the mobility model; this is the
+        same population expressed in the frame the geometry uses.
+        """
+        return self._user_ecef()
+
+    @property
+    def user_xy_km(self) -> np.ndarray:
+        """``(U, 2)`` local east/north km — the mobility model's own frame."""
+        return self._users.positions_km
+
     def _user_ecef(self) -> np.ndarray:
         positions = self._users.positions_km
         return local_km_to_ecef(

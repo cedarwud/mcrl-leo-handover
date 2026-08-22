@@ -42,37 +42,48 @@ def _tables(num_users, reachable=None):
 
 
 def _paper_order(actions, tables, infeasible):
-    """select -> z -> x = a·z -> feasibility -> outage, written literally."""
+    """select -> z -> x = a·z -> feasibility -> outage, written literally.
+
+    Keyed by the BEAM ``(s, v)``, because (3.3)/(3.4) are: ``U_{s,v}`` sums
+    one satellite's beam and ``z_{s,v}`` lights one.  This reference used to
+    key on the cell alone and so did the implementation, which is why they
+    agreed — both were wrong together in the one configuration (3.12b)
+    exists to describe, two satellites on one cell.
+    """
     users = len(tables)
-    selected_cell = {}
+    selected_beam = {}
     for uid in range(users):
         action = int(actions[uid])
         if action == NO_OP_ACTION:
             continue
-        selected_cell[uid] = tables[uid].association(action).cell_id
+        association = tables[uid].association(action)
+        selected_beam[uid] = (association.norad_id, association.cell_id)
 
     # z: a beam radiates iff at least one user selects it (3.4).
-    radiating = set(selected_cell.values())
+    radiating = set(selected_beam.values())
 
     served, loads = {}, {}
-    for uid, cell in selected_cell.items():
-        if cell not in radiating:  # x = a·z
+    for uid, beam in selected_beam.items():
+        if beam not in radiating:  # x = a·z
             continue
         if bool(infeasible[uid]):  # then feasibility -> outage
             continue
-        served[uid] = cell
-        loads[cell] = loads.get(cell, 0) + 1
+        served[uid] = beam
+        loads[beam] = loads.get(beam, 0) + 1
     return served, loads
 
 
 def _mine(actions, tables, infeasible):
     resolution = resolve_service(np.array(actions), tables, infeasible)
     served = {
-        uid: int(resolution.serving_cell[uid])
+        uid: (
+            int(resolution.serving_satellite[uid]),
+            int(resolution.serving_cell[uid]),
+        )
         for uid in range(len(tables))
         if resolution.served[uid]
     }
-    return served, dict(resolution.eligible_load_by_cell)
+    return served, dict(resolution.eligible_load_by_beam)
 
 
 def _assert_agree(actions, tables, infeasible):
@@ -103,7 +114,7 @@ def test_a_single_user_alone_on_a_beam_going_infeasible():
     _assert_agree(actions, tables, infeasible)
     served, loads = _mine(actions, tables, infeasible)
     assert 0 not in served
-    assert CELLS[0] not in loads
+    assert (SATS[0], CELLS[0]) not in loads
 
 
 def test_every_user_on_one_beam_going_infeasible_together():
@@ -130,12 +141,18 @@ def test_everyone_a_no_op():
 
 
 def test_the_same_cell_reached_through_two_different_satellites():
-    """§4A.2: cell_id does not depend on the satellite slot."""
+    """§4A.2: ``cell_id`` does not depend on the satellite slot.
+
+    And **two beams**, not one: (3.3) sums over ``u`` for a fixed ``(s, v)``,
+    so a cell illuminated by two satellites carries two independent loads.
+    Merging them charged each of these users the other's load in ``r3`` and
+    halved both their rates in (3.14) while neither was sharing anything.
+    """
     tables = _tables(2)
     actions = [action_index(0, 3), action_index(2, 3)]
     _assert_agree(actions, tables, np.zeros(2, dtype=bool))
     served, loads = _mine(actions, tables, np.zeros(2, dtype=bool))
-    assert loads[CELLS[3]] == 2
+    assert loads == {(SATS[0], CELLS[3]): 1, (SATS[2], CELLS[3]): 1}
 
 
 def test_randomised_sweep_over_the_whole_space():
@@ -169,6 +186,6 @@ def test_the_orderings_would_disagree_if_z_were_formed_after_feasibility():
     infeasible = np.array([True, False])
     served, loads = _mine(actions, tables, infeasible)
     # One user served, and the beam's load counts only the served one.
-    assert served == {1: CELLS[0]}
-    assert loads == {CELLS[0]: 1}
+    assert served == {1: (SATS[0], CELLS[0])}
+    assert loads == {(SATS[0], CELLS[0]): 1}
     _assert_agree(actions, tables, infeasible)

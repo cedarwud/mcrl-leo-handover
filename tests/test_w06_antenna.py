@@ -271,7 +271,7 @@ def test_P10_shape_mismatches_fail_loud():
         apply_same_satellite_override(
             np.ones((2, 4)), np.array([0, 0, 1]), np.array([0, 0])
         )
-    with pytest.raises(MCRLContractError, match="serving_slot"):
+    with pytest.raises(MCRLContractError, match="serving_satellite_id"):
         apply_same_satellite_override(
             np.ones((2, 4)), np.array([0, 0, 1, 1]), np.array([0])
         )

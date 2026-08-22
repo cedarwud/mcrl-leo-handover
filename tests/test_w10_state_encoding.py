@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pathlib
+
 import numpy as np
 import pytest
 
@@ -17,6 +19,8 @@ from mcrl.env.step_types import UserState
 from mcrl.errors import MCRLContractError
 from mcrl.runtime.state_encoding import encode_state, state_dim_for
 from mcrl.runtime.trainer_spec import TrainerConfig
+
+SRC = pathlib.Path(__import__("mcrl").__file__).resolve().parent
 
 CONFIG = TrainerConfig()
 
@@ -181,6 +185,15 @@ def test_user_state_is_imported_from_its_canonical_home():
 
 
 def test_the_algorithm_no_longer_imports_the_old_environment_at_runtime():
+    """PATCH P-09: ``StepEnvironment`` stays a ``TYPE_CHECKING`` name.
+
+    Until W-17 there was no ``mcrl.env.step`` at all, so "absent from
+    ``sys.modules``" was a sufficient check.  Now the module exists and other
+    tests import it, which would make that check pass or fail depending on
+    collection order — so it is measured the only way that is actually
+    decisive: import the trainer, and nothing else, in a fresh interpreter.
+    """
+    import subprocess
     import sys
 
     import mcrl.algorithms.modqn as trainer
@@ -189,9 +202,25 @@ def test_the_algorithm_no_longer_imports_the_old_environment_at_runtime():
     assert trainer.ActionMask.__module__ == "mcrl.env.step_types"
     assert trainer.RewardComponents.__module__ == "mcrl.env.step_types"
 
-    # The test shim no longer installs a stand-in for the old environment
-    # module, and nothing imports it, so it must be absent entirely.
-    assert "mcrl.env.step" not in sys.modules
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, mcrl.algorithms.modqn; "
+            "print('mcrl.env.step' in sys.modules)",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={
+            **__import__("os").environ,
+            "PYTHONPATH": str(SRC.parent),
+        },
+    )
+    assert probe.stdout.strip() == "False", (
+        "importing the trainer pulled in the environment; the "
+        "TYPE_CHECKING guard on StepEnvironment has been lost"
+    )
 
     source = __import__("pathlib").Path(trainer.__file__).read_text()
     assert "from ..env.step_types import" in source

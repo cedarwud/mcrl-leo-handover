@@ -525,3 +525,64 @@ def sinr(
             "the noise term is missing, not that the SINR is infinite"
         )
     return wanted / denominator
+
+
+# ---------------------------------------------------------------------------
+# ⛔ An open contradiction between two frozen constants (W-17)
+# ---------------------------------------------------------------------------
+
+SEGMENT_START_EXCEEDS_BEAM_CEILING: bool = (
+    SEGMENT_START_POWER_W > BEAM_POWER_MAX_W
+)
+"""``p⁰ > p_max`` — **True**, and it makes every link infeasible.
+
+Both numbers come from ch5 table 5-2 as the controller re-filed it on
+2026-08-22 (ruling C-12): ``p⁰ = 2 W`` is "式 (3.11) 每個新 served segment
+的起始值" and ``p_max = 1.65 W`` is "式 (3.15a) 回退後的每波束操作上限,
+**亦為鏈路可行性檢查的門檻**".
+
+Put together they say: every segment starts at 2 W, and any link needing
+more than 1.65 W is an outage.  A segment starts at ``t = τ`` with
+``p(τ) = p⁰`` exactly — the recurrence has nothing to compensate yet — so
+**every link is infeasible on its first step**, no segment ever reaches a
+second step, and the system is in permanent 100% outage.
+
+This is not a modelling choice with an awkward consequence; the two values
+cannot both be right.  ``p_sat = p_max·10^(BO/10) = 5.218 W`` is the only
+other ceiling in the model and ``p⁰`` sits comfortably under it, which is
+the shape a resolution would probably take — but choosing between "raise the
+threshold to ``p_sat``" and "lower ``p⁰``" changes the physics, so it is the
+controller's call and not made here.
+
+What is done here instead: the value is computed rather than asserted, the
+environment reports it in every step's diagnostics, and
+:func:`mcrl.env.step.StepEnvironment.assert_ready_to_train` refuses to start
+training while it stands.  Probes still run — a measured outage rate of
+exactly 1.0 is the evidence the decision needs.
+"""
+
+
+def segment_start_feasibility_report(
+    *,
+    p0_w: float = SEGMENT_START_POWER_W,
+    max_power_w: float = BEAM_POWER_MAX_W,
+    saturation_power_w: float = PA_SATURATION_POWER_W,
+) -> dict[str, object]:
+    """The arithmetic behind :data:`SEGMENT_START_EXCEEDS_BEAM_CEILING`.
+
+    Returned as data rather than raised as text so the PREREG, the step
+    diagnostics and the eventual controller note all quote one computation.
+    """
+    return {
+        "segment_start_power_w": float(p0_w),
+        "beam_power_max_w": float(max_power_w),
+        "pa_saturation_power_w": float(saturation_power_w),
+        "headroom_db": 10.0 * math.log10(max_power_w / p0_w),
+        "every_segment_start_is_infeasible": bool(p0_w > max_power_w),
+        "p0_is_below_saturation": bool(p0_w <= saturation_power_w),
+        "consequence": (
+            "p(tau) = p0 exactly, so a link that starts a segment is judged "
+            "infeasible before it can be served; no segment reaches a second "
+            "step and the outage rate is identically 1.0"
+        ),
+    }

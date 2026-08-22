@@ -128,11 +128,13 @@ def test_every_beam_with_a_user_is_lit_no_matter_how_many():
             for index in range(beams_demanded)
         ]
         resolution, _cells = _resolution(actions, len(actions))
-        demanded_cells = {
-            int(cell) for cell in resolution.serving_cell if cell >= 0
+        demanded = {
+            (int(resolution.serving_satellite[uid]), int(resolution.serving_cell[uid]))
+            for uid in range(len(actions))
+            if resolution.served[uid]
         }
-        assert set(resolution.active_cells) == demanded_cells
-        assert len(resolution.active_cells) == len(demanded_cells)
+        assert set(resolution.active_beams) == demanded
+        assert len(resolution.active_beams) == len(demanded)
 
 
 def test_the_lit_set_never_shrinks_below_the_demanded_set():
@@ -148,21 +150,24 @@ def test_the_lit_set_never_shrinks_below_the_demanded_set():
             for _ in range(users)
         ]
         resolution, _cells = _resolution(actions, users)
-        served_cells = {
-            int(cell) for cell in resolution.serving_cell if cell >= 0
+        served_beams = {
+            (int(resolution.serving_satellite[uid]), int(resolution.serving_cell[uid]))
+            for uid in range(users)
+            if resolution.served[uid]
         }
-        assert set(resolution.active_cells) >= served_cells
-        for cell in served_cells:
-            assert resolution.eligible_load_by_cell[cell] > 0
+        assert set(resolution.active_beams) >= served_beams
+        for beam in served_beams:
+            assert resolution.eligible_load_by_beam[beam] > 0
 
 
 def test_activation_vector_is_a_pure_function_of_load():
     resolution, cells = _resolution(
         [action_index(0, 0), action_index(0, 0), action_index(0, 3)], 3
     )
-    activation = resolution.activation_vector(cells)
+    slot0 = int(resolution.serving_satellite[0])
+    activation = resolution.activation_vector([(slot0, cell) for cell in cells])
     assert activation.tolist() == [True, False, False, True, False, False, False]
-    assert int(activation.sum()) == len(resolution.active_cells)
+    assert int(activation.sum()) == len(resolution.active_beams)
 
 
 def test_one_satellite_may_light_far_more_than_seven_cells():
@@ -170,9 +175,12 @@ def test_one_satellite_may_light_far_more_than_seven_cells():
     actions = [action_index(0, j) for j in range(NUM_BEAM_SLOTS)]
     actions += [action_index(1, j) for j in range(NUM_BEAM_SLOTS)]
     resolution, _cells = _resolution(actions, len(actions))
-    # Slot 0 and slot 1 are different satellites but the same seven cells,
-    # so every one of the seven is lit and nothing is darkened.
-    assert len(resolution.active_cells) == NUM_BEAM_SLOTS
+    # Slot 0 and slot 1 are different satellites over the same seven cells.
+    # That is FOURTEEN beams, not seven: z is indexed (s, v), so the same
+    # patch of ground lit by two satellites is two radiating beams, each
+    # with its own load.  Nothing is darkened.
+    assert len(resolution.active_beams) == 2 * NUM_BEAM_SLOTS
+    assert len({cell for _norad, cell in resolution.active_beams}) == NUM_BEAM_SLOTS
     assert resolution.served_count == len(actions)
     assert not resolution.outage_infeasible.any()
 

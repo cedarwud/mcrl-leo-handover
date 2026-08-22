@@ -56,12 +56,50 @@ def test_the_trainer_imports_without_any_help():
     assert module.MODQNTrainer is not None
 
 
-def test_the_old_environment_module_is_absent_rather_than_stubbed():
-    """``env.step`` is the OLD environment; nothing may resurrect it."""
-    assert not (SRC / "env" / "step.py").exists()
-    assert "mcrl.env.step" not in sys.modules
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("mcrl.env.step")
+def test_env_step_is_the_new_environment_not_a_resurrected_port():
+    """``env.step`` exists again — as W-17's own file, not the old one.
+
+    It was absent for a reason: W-01 ported a trainer that imported an
+    environment nobody had written, and the shim that filled the hole made
+    every test run against a stand-in.  The invariant was "no stub called
+    ``env.step``", and while nothing had been written it was simplest to
+    check that the path did not exist at all.
+
+    W-17 wrote the real thing, so the check moves to what it always meant:
+    the module is a real file, it is not a shim, it exports the environment,
+    and it carries none of the ported surface the rulings deleted.
+    """
+    module = importlib.import_module("mcrl.env.step")
+    assert Path(module.__file__).is_file()
+    assert str(SRC) in module.__file__
+    assert not getattr(module, "__mcrl_test_shim__", False)
+    assert module.StepEnvironment is not None
+    assert module.PhysicsConfig is not None
+
+    source = (SRC / "env" / "step.py").read_text()
+    for deleted in (
+        "PowerSurfaceConfig",
+        "hobs_power_surface_mode",
+        "power_codebook",
+        "total_power_budget_w",
+    ):
+        assert deleted not in source, (
+            f"env/step.py mentions {deleted!r}: ruling C-2 deleted that "
+            "surface and P-16 removed its config"
+        )
+
+
+def test_the_deleted_power_surface_has_no_home_left():
+    """PATCH P-16: ``PowerSurfaceConfig`` is gone from the whole package."""
+    step_types = importlib.import_module("mcrl.env.step_types")
+    for name in (
+        "PowerSurfaceConfig",
+        "HOBS_POWER_SURFACE_STATIC_CONFIG",
+        "HOBS_POWER_SURFACE_ACTIVE_LOAD_CONCAVE",
+        "HOBS_POWER_SURFACE_ANGLE_AWARE_THESIS",
+        "POWER_CODEBOOK_PROFILES",
+    ):
+        assert not hasattr(step_types, name), name
 
 
 def test_conftest_carries_no_installer():

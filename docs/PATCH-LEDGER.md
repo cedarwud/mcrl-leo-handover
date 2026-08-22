@@ -13,16 +13,18 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 
 | 檔案 | 來源 sha256(前 16) | 目前 sha256(前 16) | 狀態 |
 |---|---|---|---|
-| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `7a3cf0ae965cba9d` | **來源 + P-01…P-05、P-09、P-11**(1,333 → 1,093 行) |
-| `src/mcrl/env/step_types.py` | `c4995ba509bbe2e6` | `89b048d4f4072015` | **來源 + P-07、P-08** |
+| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `6385ee8871b76ed0` | **來源 + P-01…P-05、P-09、P-11、P-14**(1,333 → 1,070 行) |
+| `src/mcrl/env/step_types.py` | `c4995ba509bbe2e6` | `7d9f65598a44c06d` | **來源 + P-07、P-08、P-15、P-16**(696 → 343 行) |
 | `src/mcrl/runtime/q_network.py` | `d11318d61ad93a77` | `d11318d61ad93a77` | 逐位元組相同 |
 | `src/mcrl/runtime/replay_buffer.py` | `374a73e1b3a5e9da` | `374a73e1b3a5e9da` | 逐位元組相同 |
-| `src/mcrl/runtime/state_encoding.py` | `723974bcc6db9d5d` | `da1d649b02f246cf` | **來源 + P-09、P-10** |
+| `src/mcrl/runtime/state_encoding.py` | `723974bcc6db9d5d` | `fdb4675b5cc89539` | **來源 + P-09、P-10**(P-10 已依 C-1 改為預設關的消融開關) |
 | `src/mcrl/runtime/objective_math.py` | `e8a55760ee1dc4da` | `e8a55760ee1dc4da` | 逐位元組相同 |
-| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `9bd9e54d8155a43b` | **來源 + P-05、P-06**(250 → 153 行) |
+| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `d48fda5b04a5d4b5` | **來源 + P-05、P-06**(250 → 158 行) |
 
 新增檔(無來源,不屬補丁):`src/mcrl/errors.py`、`src/mcrl/env/action_contract.py`、
+`src/mcrl/env/interference.py`、`src/mcrl/env/step.py`、
 `src/mcrl/runtime/finiteness.py`、各 `__init__.py`、`pyproject.toml`、`tests/`。
+其餘 `env/` 與 `runtime/` 模組亦為新寫,見 `docs/PROVENANCE.md`。
 
 ---
 
@@ -188,6 +190,46 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 | 補丁內容 | `"uniform-circular"` → `"uniform-rectangle"`;`"deterministic-heading"` → `"random-wandering"` |
 | 理由 | §IV 給的是 **200×90 km 矩形**與 **"random wandering"**。裁決明說**不要留著當選項** ——「留著就會有人選到」 |
 | 對應測試 | `test_pointing_and_mobility.py` 的移動段 |
+
+---
+
+## W-17 補丁(接上干擾與 `StepEnvironment`)
+
+### P-16 — 刪除 HOBS 功率介面整組(裁決 C-2)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `env/step_types.py`:`PowerSurfaceConfig` 全類、七個 `HOBS_POWER_SURFACE_*`、三組 `POWER_CODEBOOK_*`、`_HOBS_ACTIVE_TX_EE_EPSILON_P_W`(約 250 行) |
+| 補丁內容 | 整組刪除;`StepResult` 隨之移除 `selected_power_profile` / `total_active_beam_power_w` / `power_budget_violation` / `power_budget_excess_w` 四欄 |
+| 理由 | C-2「載量式 PA 整條移除」。其中兩個模式不只是沒用到,而是**被點名禁止**:`active-load-concave` 就是 `P_base+P_scale·N^exp` 本身,`angle-aware-thesis-3.13-3.15a` 就是「目標 SINR 反推 + 雙重 cap」。其餘五個是來源專案的死介面,與 W-09 的 P-05 同一理由 ——「留著就會有人選到」 |
+| 消費者 | **零。** 刪除前 grep 過:`src/` 與 `tests/` 都沒有任何一處讀這些欄位 |
+| 取代者 | `env/step.PhysicsConfig` + `env/link_budget`,**沒有模式開關** |
+| 對應測試 | `test_no_shim_remains.py::test_the_deleted_power_surface_has_no_home_left` |
+
+### P-17 — 載量鍵值由「格」改為「波束」(本次整合發現的缺陷)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `env/service.py`:`demand_by_cell` / `eligible_load_by_cell` / `active_cells` 全部以 `cell_id` 為鍵 |
+| 補丁內容 | 改為以 `(norad_id, cell_id)` 為鍵,並更名 `demand_by_beam` / `eligible_load_by_beam` / `active_beams`;`activation_vector()` 改吃波束鍵 |
+| 缺陷 | (3.3) 是 `U_{s,v}(t)=Σ_u x_{u,s,v}(t)` —— **對一支波束求和,不是對一塊地面**。兩顆衛星可以同時照同一格,而 (3.12b) 的內層和**沒有** `v'≠v` 限制正是因為這是合法組態。以格為鍵會把這兩支波束併成一支 |
+| 後果(量化) | 兩位使用者分別在兩顆衛星的同格波束上,各自獨佔一支波束,卻雙雙回報載量 2:`r3` 各罰兩倍、(3.14) 各把頻寬砍半、`z` 少報一支輻射中的波束(於是干擾和少一項) |
+| 為何現在才浮現 | 它只在「同格、異星」時發生,而那正是干擾模型第一次要求列舉全域輻射波束時才會構造出來的組態 |
+| ⚠ 連 C-11 的等價性測試也漏了 | 該測試的**參考實作自己也以格為鍵**,兩邊一起錯,所以一直相符。參考實作已一併改為波束鍵 |
+| 對應測試 | `test_c11_gate_order_equivalence.py::test_the_same_cell_reached_through_two_different_satellites`(現在斷言兩支獨立波束各載量 1)、`test_ruling_no_beam_count_cap.py::test_one_satellite_may_light_far_more_than_seven_cells`(7 → **14** 支) |
+
+### 非補丁:向量化 Bessel(效能,數值不變)
+
+`runtime/bessel.py` 新增 `bessel_j_array`,`antenna.transmit_gain_linear` 改走它。
+干擾和要對每個(受害使用者 × 輻射波束)配對算 `G^T`,純量路徑每次約 28 µs,
+100 位使用者對 60 支波束就是每步 6000 次。
+
+**純量 `bessel_j` 一個字都沒動** —— G-10 的錨點仍量在它身上。
+向量版與純量版逐元素比對:全域最大絕對誤差 **2.9e-16**,
+`transmit_gain_linear` 最大絕對誤差 **2.2e-16**(涵蓋 J₁ 前四個零點與 34 的路由分界兩側)。
+10,000 點由 280 ms 降至 8.4 ms。
+
+---
 
 ---
 

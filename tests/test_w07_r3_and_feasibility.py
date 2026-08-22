@@ -45,6 +45,16 @@ def _table(incumbent=None, cells=None):
     return build_slot_table(assignment, cells or CELLS)
 
 
+def _beam(slot=0, beam_slot=0):
+    """The ``(norad_id, cell_id)`` key an action realises.
+
+    ``resolve_service`` keys its two load dicts by BEAM, because (3.3) sums
+    ``x_{u,s,v}`` for a fixed ``(s, v)``.  A cell id alone is not a beam:
+    two satellites can illuminate one cell, and each carries its own load.
+    """
+    return (SATS[slot], CELLS[beam_slot])
+
+
 def _resolve(actions, *, drop=(), users=None):
     """``drop`` names users whose chosen link is power-infeasible."""
     users = len(actions) if users is None else users
@@ -63,8 +73,8 @@ def test_ungated_demand_and_eligible_load_are_reported_separately():
     a0 = action_index(0, 0)
     resolution = _resolve([a0, a0, a0], drop=[(2, a0)])
 
-    assert resolution.demand_by_cell[CELLS[0]] == 3, "state sees all three"
-    assert resolution.eligible_load_by_cell[CELLS[0]] == 2, "only two are served"
+    assert resolution.demand_by_beam[_beam()] == 3, "state sees all three"
+    assert resolution.eligible_load_by_beam[_beam()] == 2, "only two are served"
     assert resolution.served_count == 2
     assert resolution.outage_infeasible.tolist() == [False, False, True]
 
@@ -83,17 +93,17 @@ def test_a_cell_whose_users_are_all_infeasible_is_not_active():
     """Activation ⟺ positive ELIGIBLE load, not positive demand (G-12)."""
     a0 = action_index(0, 0)
     resolution = _resolve([a0], drop=[(0, a0)])
-    assert resolution.demand_by_cell[CELLS[0]] == 1
-    assert CELLS[0] not in resolution.eligible_load_by_cell
-    assert resolution.active_cells == ()
+    assert resolution.demand_by_beam[_beam()] == 1
+    assert _beam() not in resolution.eligible_load_by_beam
+    assert resolution.active_beams == ()
 
 
 def test_no_op_users_contribute_to_neither_quantity():
     a0 = action_index(0, 0)
     resolution = _resolve([a0, NO_OP_ACTION])
     assert resolution.no_op_users.tolist() == [False, True]
-    assert resolution.demand_by_cell == {CELLS[0]: 1}
-    assert resolution.eligible_load_by_cell == {CELLS[0]: 1}
+    assert resolution.demand_by_beam == {_beam(): 1}
+    assert resolution.eligible_load_by_beam == {_beam(): 1}
     assert not resolution.outage_infeasible.any(), "a no-op is not an infeasibility outage"
 
 
@@ -179,7 +189,7 @@ def test_the_degenerate_case_is_min_max_balancing():
     resolution = _resolve([action_index(0, 0)] * 3 + [action_index(0, 1)])
     loads = resolution.user_beam_load()
     assert loads.max() == 3.0
-    assert max(resolution.eligible_load_by_cell.values()) == 3
+    assert max(resolution.eligible_load_by_beam.values()) == 3
 
 
 def test_the_old_form_really_was_load_blind():
@@ -225,12 +235,12 @@ def test_gamma_req_computed_on_ungated_demand_would_overshoot():
     a0 = action_index(0, 0)
     resolution = _resolve([a0, a0, a0], drop=[(2, a0)])
     eligible = required_sinr(
-        np.array([resolution.eligible_load_by_cell[CELLS[0]]], dtype=float),
+        np.array([resolution.eligible_load_by_beam[_beam()]], dtype=float),
         minimum_rate_bps=1e6,
         beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
     )
     ungated = required_sinr(
-        np.array([resolution.demand_by_cell[CELLS[0]]], dtype=float),
+        np.array([resolution.demand_by_beam[_beam()]], dtype=float),
         minimum_rate_bps=1e6,
         beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
     )

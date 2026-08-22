@@ -5,9 +5,18 @@ Guardrails P-5 and P-6, gates G-4 and G-12.
 **Two load quantities, deliberately different, never interchangeable.**
 
 ``demand`` is the global, **ungated, pre-admission** count: how many users
-selected each cell.  It is what the state exposes (ASSUME-MODQN-REP-013's
-``beam_loads``), because a user has to be able to see that a beam is busy
-*before* deciding to pile onto it.
+selected each beam.  It is what the state exposes (ASSUME-MODQN-REP-013's
+``beam_loads`` and (4.1)'s ``n_{s,v}(t−1)``), because a user has to be able
+to see that a beam is busy *before* deciding to pile onto it.
+
+**Both are keyed by the beam ``(s, v)``, never by the cell ``v`` alone.**
+(3.3) is ``U_{s,v}(t) = Σ_u x_{u,s,v}(t)`` — a sum over one satellite's beam,
+not over a patch of ground.  Two satellites may illuminate the same cell at
+once, and (3.12b)'s inner sum has no ``v' ≠ v`` restriction precisely because
+that is a legal configuration.  Keying on the cell alone merges those two
+beams into one: each user is charged the other's load in ``r3``, (3.14)
+divides each one's bandwidth by two when neither is sharing, and the
+activation vector reports one radiating beam where two radiate.
 
 ``eligible_load`` is the count **after** the execution-time mask ``m^e``:
 how many users the beam actually serves.  It is what drives activation,
@@ -67,11 +76,11 @@ class ServiceResolution:
     serving_satellite: np.ndarray
     """``(U,)`` NORAD id, or ``-1`` when unserved."""
 
-    demand_by_cell: dict[int, int]
-    """Ungated pre-admission count per cell — the **state** quantity."""
+    demand_by_beam: dict[tuple[int, int], int]
+    """``n_{s,v}(t)`` — ungated pre-admission count, keyed ``(norad_id, cell_id)``."""
 
-    eligible_load_by_cell: dict[int, int]
-    """Post-``m^e`` count per cell — the **reward and physics** quantity."""
+    eligible_load_by_beam: dict[tuple[int, int], int]
+    """``U_{s,v}(t)`` — post-feasibility count, keyed ``(norad_id, cell_id)``."""
 
     no_op_users: np.ndarray
     """``(U,)`` bool — had no valid action at decision time (§4A.5a)."""
@@ -90,8 +99,8 @@ class ServiceResolution:
         return int(np.count_nonzero(self.served))
 
     @property
-    def active_cells(self) -> tuple[int, ...]:
-        """Cells with positive eligible load.
+    def active_beams(self) -> tuple[tuple[int, int], ...]:
+        """Beams with positive eligible load, as sorted ``(norad_id, cell_id)``.
 
         ``z_{s,v}(t) = 1{ U_{s,v}(t) > 0 }`` — activation is **derived, not
         chosen** (ruling 2026-08-22 §7.4).  There is no selection step, no
@@ -105,12 +114,20 @@ class ServiceResolution:
         *quieter* beam, while any demand-ranked darkening rule extinguishes
         the quiet beams first.
         """
-        return tuple(sorted(self.eligible_load_by_cell))
+        return tuple(sorted(self.eligible_load_by_beam))
 
-    def activation_vector(self, cell_ids: Sequence[int]) -> np.ndarray:
-        """``z`` over an explicit cell ordering, derived from the loads alone."""
+    def activation_vector(
+        self, beam_keys: Sequence[tuple[int, int]]
+    ) -> np.ndarray:
+        """``z`` over an explicit beam ordering, derived from the loads alone."""
         return np.array(
-            [self.eligible_load_by_cell.get(int(cell), 0) > 0 for cell in cell_ids],
+            [
+                self.eligible_load_by_beam.get(
+                    (int(norad), int(cell)), 0
+                )
+                > 0
+                for norad, cell in beam_keys
+            ],
             dtype=bool,
         )
 
@@ -125,7 +142,12 @@ class ServiceResolution:
         for uid in range(self.served.size):
             if self.served[uid]:
                 loads[uid] = float(
-                    self.eligible_load_by_cell[int(self.serving_cell[uid])]
+                    self.eligible_load_by_beam[
+                        (
+                            int(self.serving_satellite[uid]),
+                            int(self.serving_cell[uid]),
+                        )
+                    ]
                 )
         return loads
 
@@ -141,7 +163,7 @@ def resolve_service(
     ``link_infeasible`` is ``(U,)`` — whether each user's chosen link needs
     more power than the per-beam ceiling allows.  Infeasible users are
     excluded from load, activation and power, while their pre-admission
-    demand still appears in ``demand_by_cell``.
+    demand still appears in ``demand_by_beam``.
 
     The ``z`` gate is satisfied by construction: a beam radiates iff someone
     selects it (3.4), so anyone who selected it and is feasible connects.
@@ -164,8 +186,8 @@ def resolve_service(
     outage = np.zeros(users, dtype=bool)
     serving_cell = np.full(users, -1, dtype=np.int64)
     serving_satellite = np.full(users, -1, dtype=np.int64)
-    demand: dict[int, int] = {}
-    eligible: dict[int, int] = {}
+    demand: dict[tuple[int, int], int] = {}
+    eligible: dict[tuple[int, int], int] = {}
 
     for uid in range(users):
         action = int(selected[uid])
@@ -183,8 +205,9 @@ def resolve_service(
 
         association = table.association(action)
         cell = association.cell_id
+        beam = (association.norad_id, cell)
         # Pre-admission demand counts every intent, gated or not.
-        demand[cell] = demand.get(cell, 0) + 1
+        demand[beam] = demand.get(beam, 0) + 1
 
         if bool(infeasible[uid]):
             # (4.5a)'s follow-on: connected, but the link needs more power
@@ -195,14 +218,14 @@ def resolve_service(
         served[uid] = True
         serving_cell[uid] = cell
         serving_satellite[uid] = association.norad_id
-        eligible[cell] = eligible.get(cell, 0) + 1
+        eligible[beam] = eligible.get(beam, 0) + 1
 
     return ServiceResolution(
         served=served,
         serving_cell=serving_cell,
         serving_satellite=serving_satellite,
-        demand_by_cell=demand,
-        eligible_load_by_cell=eligible,
+        demand_by_beam=demand,
+        eligible_load_by_beam=eligible,
         no_op_users=no_op,
         outage_infeasible=outage,
     )
@@ -228,7 +251,7 @@ def load_balance_identity(resolution: ServiceResolution) -> tuple[float, float]:
     """Return ``(Σ_u U_{b_u}, Σ_b U_b²)`` — equal by construction."""
     per_user = float(resolution.user_beam_load().sum())
     per_beam = float(
-        sum(count * count for count in resolution.eligible_load_by_cell.values())
+        sum(count * count for count in resolution.eligible_load_by_beam.values())
     )
     return per_user, per_beam
 

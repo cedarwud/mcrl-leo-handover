@@ -16,7 +16,7 @@
 | 新路徑 | 來源 | 來源 sha256(前 16) | 現況 |
 |---|---|---|---|
 | `src/mcrl/algorithms/modqn.py` | `algorithms/modqn.py` | `10600c208cc13c68` | **來源 + P-01…P-04**(見帳本) |
-| `src/mcrl/env/step_types.py` | `env/step_types.py` | `c4995ba509bbe2e6` | 逐位元組相同 |
+| `src/mcrl/env/step_types.py` | `env/step_types.py` | `c4995ba509bbe2e6` | **來源 −P-16**:`PowerSurfaceConfig`、七個 `HOBS_POWER_SURFACE_*`、三組 `POWER_CODEBOOK_*` 與 `StepResult` 的四個功率欄位已刪除(裁決 C-2) |
 | `src/mcrl/runtime/q_network.py` | `runtime/q_network.py` | `d11318d61ad93a77` | 逐位元組相同 |
 | `src/mcrl/runtime/replay_buffer.py` | `runtime/replay_buffer.py` | `374a73e1b3a5e9da` | 逐位元組相同 |
 | `src/mcrl/runtime/state_encoding.py` | `runtime/state_encoding.py` | `723974bcc6db9d5d` | 逐位元組相同 |
@@ -41,9 +41,9 @@
 
 | 檔案 | 行數 | 理由 |
 |---|---|---|
-| `env/step.py` | 1,446 | **要重寫**(W-02/W-03:TLE+SGP4、D2、dwell) |
-| `env/channel.py` | 407 | 同上 |
-| `env/power_surface.py` | 390 | 同上 |
+| `env/step.py` | 1,446 | **已重寫**(W-17)。新檔 `src/mcrl/env/step.py` 與來源**沒有共用一行**:順序是遞推功率 → 可行性 → 服務 → `z` → 干擾 → SINR → rate → 功率 → 獎勵 |
+| `env/channel.py` | 407 | **已重寫**為 `env/interference.py` + `env/link_budget.py`(W-06/W-17) |
+| `env/power_surface.py` | 390 | **不重寫,整條刪除**:它就是裁決 C-2 移除的載量式 PA。取代者是 `link_budget.recurrence_power_w`(角度遞推) |
 | `env/beam.py` | 284 | 同上(固定網格) |
 | `env/orbit.py` | 283 | 同上(合成軌道 → SGP4) |
 | `runtime/angle_aware_ee.py` | 1,076 | **需改**(dwell `N`);移植時機為 W-05/W-06,貝索 Miller 路由為 W-15 |
@@ -97,7 +97,23 @@ W-01 只記了一項(`state_encoding` 的 import)。**實際有五項**,
 
 ## 尚未處理
 
+- **訓練器與新環境之間還沒有接頭。** `MODQNTrainer` 消費的是 `StepResult`
+  (`rewards` / `done` / `user_states` / `action_masks` 四個欄位),
+  W-17 產出的是 `StepOutcome` / `StepObservation`。兩者未接,
+  `tests/_fake_env.py` 仍以 `StepResult` 驅動訓練器測試。
 - 訓練未跑;訓練屬重計算,另開 brief 並在 Ubuntu server 執行。
+  ⛔ 而且 `assert_ready_to_train()` 目前會擋住 —— 見 F-1。
+
+## W-17 新寫的檔(非移植,無來源)
+
+| 檔案 | 行數 | 內容 |
+|---|---|---|
+| `src/mcrl/env/interference.py` | ~470 | (3.12a)(3.12b) 的兩個和、`RadiatingBeams`、候選表視角 |
+| `src/mcrl/env/step.py` | ~700 | `StepEnvironment`、`PhysicsConfig`、`Segment` |
+
+`runtime/bessel.py` 另加 `bessel_j_array`(向量化)。
+**純量 `bessel_j` 一個字沒動** —— G-10 的錨點仍量在它身上,
+向量版逐元素比對最大絕對誤差 2.9e-16。
 
 ## 已解決(先前列於此)
 

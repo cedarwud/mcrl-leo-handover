@@ -128,7 +128,10 @@ def test_G2_delta_ledger_closes_against_SC6():
         "free_space_loss": -(
             ours["free_space_loss_db"] - SC6["free_space_loss_db"]
         ),
-        # Our slab model at 30° gives 1.0 dB against their 0.5 dB.
+        # C-4: the cosecant law reproduces SC 6's own 0.5 dB at 30°,
+        # so this delta is now identically ZERO.  It is kept as a line
+        # rather than dropped: a term that vanishes is a result, and a
+        # ledger that silently loses rows cannot be audited.
         "atmosphere": -(
             ours["atmospheric_loss_db"] - SC6["atmospheric_loss_db"]
         ),
