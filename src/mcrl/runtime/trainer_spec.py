@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 R1_REWARD_MODE_THROUGHPUT = "throughput"
@@ -10,28 +10,12 @@ R1_REWARD_MODE_PER_USER_EE_CREDIT = "per-user-ee-credit"
 R1_REWARD_MODE_PER_USER_BEAM_EE_CREDIT = "per-user-beam-ee-credit"
 R1_REWARD_MODE_HOBS_ACTIVE_TX_EE = "hobs-active-tx-ee"
 R1_REWARD_MODE_ANGLE_AWARE_EE = "angle_aware_ee"
-PHASE_04_B_SINGLE_CATFISH_KIND = "phase-04-b-single-catfish-feasibility"
-HOBS_ACTIVE_TX_EE_MODQN_FEASIBILITY_KIND = "hobs-active-tx-ee-modqn-feasibility"
-HOBS_ACTIVE_TX_EE_ANTI_COLLAPSE_KIND = (
-    "hobs-active-tx-ee-anti-collapse-design-gate"
-)
-HOBS_ACTIVE_TX_EE_QOS_STICKY_BROADER_EFFECTIVENESS_KIND = (
-    "hobs-active-tx-ee-qos-sticky-broader-effectiveness-gate"
-)
-HOBS_ACTIVE_TX_EE_NON_CODEBOOK_CONTINUOUS_POWER_IMPLEMENTATION_READINESS_KIND = (
-    "hobs-active-tx-ee-non-codebook-continuous-power-implementation-readiness"
-)
-HOBS_ACTIVE_TX_EE_NON_CODEBOOK_CONTINUOUS_POWER_BOUNDED_PILOT_KIND = (
-    "hobs-active-tx-ee-non-codebook-continuous-power-bounded-pilot"
-)
-PHASE_05_B_MULTI_CATFISH_KIND = "phase-05-b-multi-catfish-bounded-pilot"
-V3_MULTI_CATFISH_KIND = "multi-catfish-v3-redesign-bounded"
-PHASE_07_B_SINGLE_CATFISH_UTILITY_KIND = (
-    "phase-07-b-single-catfish-intervention-utility"
-)
-PHASE_07_D_R2_GUARDED_ROBUSTNESS_KIND = (
-    "phase-07-d-r2-guarded-single-catfish-robustness"
-)
+# NOTE (W-09): the Phase-04B/05B/07B/07D and HOBS collapse-pilot
+# experiment-kind constants are removed.  SDD §8 keeps that code for later
+# ablation, but it lives in the source project and was deliberately not
+# ported here (docs/PROVENANCE.md).  Constants naming experiments this repo
+# cannot run retain none of the ablation value and all of the trap: a reader
+# sets one and nothing happens.
 
 
 @dataclass(frozen=True)
@@ -62,7 +46,12 @@ class TrainerConfig:
     # -- ASSUME-MODQN-REP-004: epsilon schedule ----------------------------
     epsilon_start: float = 1.0
     epsilon_end: float = 0.01
-    epsilon_decay_episodes: int = 7000
+    # PATCH P-06 (W-09): the register's REP-004 value of 7000 is stale.
+    # ``family_b_r3/common_trainer.py:296`` uses 2000, 8 of the source
+    # project's 9 resolved configs use 2000, and the parameter spec §6.1
+    # names 7000 as out of date.  A stale default is exactly what the
+    # freeze flags elsewhere exist to stop being frozen by inertia.
+    epsilon_decay_episodes: int = 2000
 
     # -- ASSUME-MODQN-REP-005: target-network update -----------------------
     target_update_every_episodes: int = 50
@@ -102,110 +91,24 @@ class TrainerConfig:
     reward_normalization_mode: str = "raw-unscaled"
     load_balance_calibration_mode: str = "baseline-paper-weight"
 
-    # -- Phase 04-B Catfish-MODQN opt-in surface ---------------------------
-    catfish_enabled: bool = False
-    catfish_ablation: str = "none"
-    catfish_discount_factor: float = 0.9
-    catfish_replay_capacity: int = 50_000
-    catfish_quality_weights: tuple[float, float, float] = (0.5, 0.3, 0.2)
-    catfish_quality_threshold_mode: str = "quantile"
-    catfish_quality_quantile: float = 0.8
-    catfish_quality_fixed_threshold: float | None = None
-    catfish_quality_threshold_window: int = 1_000
-    catfish_warmup_transitions: int = 256
-    catfish_warmup_trigger: str = "main-replay-size"
-    catfish_partition_mode: str = "duplicate-high-value"
-    catfish_intervention_enabled: bool = False
-    catfish_intervention_period_updates: int = 1
-    catfish_intervention_catfish_ratio: float = 0.3
-    catfish_min_catfish_replay_size: int = 32
-    catfish_competitive_shaping_enabled: bool = False
-
-    # -- Phase 05-B Multi-Catfish opt-in surface --------------------------
-    catfish_phase05b_variant: str = "not-applicable"
-    catfish_objective_admission_rule: str = "disabled"
-    catfish_objective_tie_policy: str = "not-applicable"
-    catfish_source_ratios: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    catfish_total_intervention_ratio: float = 0.0
-    catfish_specialist_mode: str = "disabled"
-    catfish_r1_threshold: float = 131.66555786132812
-    catfish_r1_r3_guardrail: float = -2.155817623138428
-    catfish_r2_best_value: float = 0.0
-    catfish_r3_threshold: float = -1.4955613708496094
-    catfish_r3_r1_guardrail: float = 96.77507400512695
-    catfish_random_buffer_admission_probability: float = 0.15
-    catfish_phase05b_seed_triplets: tuple[tuple[int, int, int], ...] = ()
-
-    # -- Multi-Catfish v3 method-machinery opt-in surface -----------------
-    catfish_v3_role_weights: dict[str, dict[str, float]] = field(
-        default_factory=lambda: {
-            "catfish-ee": {"r1": 0.50, "r2": 0.30, "r3": 0.20},
-            "catfish-ho": {"r1": 0.20, "r2": 0.60, "r3": 0.20},
-            "catfish-qos": {"r1": 0.30, "r2": 0.20, "r3": 0.50},
-        }
-    )
-    catfish_v3_role_quota_floor: dict[str, int] = field(
-        default_factory=lambda: {
-            "catfish-ee": 2,
-            "catfish-ho": 1,
-            "catfish-qos": 1,
-        }
-    )
-    catfish_v3_flexible_quota_slots: int = 4
-    catfish_v3_role_quota_cap: dict[str, int] = field(
-        default_factory=lambda: {
-            "catfish-ee": 4,
-            "catfish-ho": 3,
-            "catfish-qos": 4,
-        }
-    )
-    catfish_v3_anti_starvation_threshold: int = 16
-    catfish_v3_main_replay_min_share: float = 0.875
-    catfish_v3_random_equal_budget_skip_enabled: bool = True
-    catfish_v3_random_equal_budget_quality_tolerance: float = 1e-9
-    catfish_v3_admission_warmup_transitions: int = 256
-    catfish_v3_admission_quality_threshold: float = 0.0
-
-    # -- Phase 07-B single-Catfish recovery opt-in surface ----------------
-    catfish_phase07b_variant: str = "not-applicable"
-    catfish_intervention_source_mode: str = "catfish-replay"
-    catfish_challenger_enabled: bool = True
-    catfish_lineage_tracking_enabled: bool = False
-    catfish_phase07b_seed_triplets: tuple[tuple[int, int, int], ...] = ()
-
-    # -- Phase 07-D r2-guarded single-Catfish robustness surface ----------
-    catfish_phase07d_variant: str = "not-applicable"
-    catfish_r2_guard_enabled: bool = False
-    catfish_r2_admission_guard_enabled: bool = False
-    catfish_r2_intervention_guard_enabled: bool = False
-    catfish_r2_strict_no_handover_sample_guard: bool = False
-    catfish_r2_guard_max_batch_attempts: int = 16
-    catfish_handover_spike_guard_enabled: bool = False
-    catfish_handover_spike_window: int = 5
-    catfish_handover_spike_margin: float = 0.10
-    catfish_handover_spike_min_windows: int = 3
-    catfish_phase07d_seed_triplets: tuple[tuple[int, int, int], ...] = ()
-
-    # -- HOBS active-TX EE anti-collapse opt-in surface --------------------
-    anti_collapse_action_constraint_enabled: bool = False
-    anti_collapse_constraint_mode: str = "disabled"
-    anti_collapse_max_users_per_beam: int = 0
-    anti_collapse_min_active_beams_target: int = 0
-    anti_collapse_assignment_order: str = "user-index"
-    anti_collapse_overload_threshold_users_per_beam: int = 0
-    anti_collapse_qos_ratio_min: float = 0.95
-    anti_collapse_allow_nonsticky_moves: bool = False
-    anti_collapse_nonsticky_move_budget: int = 0
-
-    # -- §6.2 PopArt online standardization opt-in surface -------------------
-    popart_enabled: bool = False
-    popart_sigma_floor: float = 1e-3
-    popart_clip_value: float = 10.0
-    popart_warmup_steps: int = 200
-
-    # -- §6.2 training row capture opt-in surface ----------------------------
-    section_6_2_row_capture_enabled: bool = False
-    section_6_2_row_capture_path: str | None = None
+    # -- W-09: four opt-in surfaces removed -----------------------------------
+    #
+    # Gone: the Phase-04B/05B/v3/07B/07D surfaces (44 fields), the HOBS
+    # collapse-pilot action-constraint surface (9 fields), the online
+    # reward-standardisation surface (4 fields), and the §6.2 row-capture
+    # surface (2 fields).
+    #
+    # None of them had a consumer here.  ``algorithms/modqn.py`` never read a
+    # single field of the first group; the trainers that would have live in the
+    # source project and were not ported.  The second group fed two dormant
+    # selectors W-09 also removed — the family SDD §2.2 deletes, and the
+    # 2026-08-22 ruling forbids leaving a socket for a deleted mechanism.  The
+    # third was always disabled and its module was never ported.  The fourth
+    # reached into the OLD environment's private members.
+    #
+    # SDD §7's PREREG delta asks for a "disabled" flag.  "Not implemented in
+    # this repository" is the stronger statement, and it is what
+    # docs/PREREG-DRAFT.md now records.
 
     # -- compute device ------------------------------------------------------
     device: str = "cpu"

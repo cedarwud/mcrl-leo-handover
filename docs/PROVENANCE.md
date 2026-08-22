@@ -70,13 +70,15 @@ SDD r3 的 W-01 寫「移植 `algorithms/modqn.py`(vanilla,逐位元組),規模:
 W-01 只記了一項(`state_encoding` 的 import)。**實際有五項**,
 其中 `trainer_config_validation` 讓 `TrainerConfig()` **連建構都會失敗**:
 
-| 未解析的相依 | 出現在 | 擁有者 |
-|---|---|---|
-| `..env.step`(`StepEnvironment`;`ActionMask`/`RewardComponents`/`UserState` 的正典定義在 `step_types`) | `modqn.py`、`state_encoding.py` | W-02/W-03(env);import 重指向為 W-10 |
-| `..runtime.angle_aware_ee.per_ue_energy_efficiency` | `modqn.py` | W-06 / W-15 |
-| `..runtime.popart_online` | `modqn.py`(module 層無條件 import,**不是「未使用」**) | W-09 |
-| `..artifacts`(4 個名字) | `modqn.py` | W-12 |
-| `.trainer_config_validation.validate_trainer_config` | `trainer_spec.py` 的 `__post_init__` | W-09 / W-10 |
+| 未解析的相依 | 出現在 | 擁有者 | 現況 |
+|---|---|---|---|
+| ~~`..env.step`~~ | ~~`modqn.py`、`state_encoding.py`~~ | W-10 | ✅ **已解決**(P-09):三個容器型別重指 `step_types`,`StepEnvironment` 改為 `TYPE_CHECKING` 專用 |
+| ~~`..runtime.popart_online`~~ | ~~`modqn.py`~~ | W-09 | ✅ **已解決**(P-05):整條路徑刪除 |
+| `..runtime.angle_aware_ee.per_ue_energy_efficiency` | `modqn.py` | W-06 | ⚠ **仍缺**:W-06 已完成系統級 EE(P-7 fail-closed)與天線/鏈路預算,但**逐 UE 的 `eta` 閉包尚未移植** |
+| `..artifacts`(4 個名字) | `modqn.py` | W-12 | 仍缺 |
+| `.trainer_config_validation.validate_trainer_config` | `trainer_spec.py` 的 `__post_init__` | 待指派 | 仍缺;來源版 1,124 行多為 §8 禁用項的驗證,需另寫乾淨版 |
+
+**⇒ 五項缺口已解決兩項,測試 shim 由 5 個 stand-in 縮為 3 個。**
 
 **W-16 的處置**:不預先做別的工作項,改以**測試專用**的 stand-in
 (`tests/_port_shim.py`)在 import 前掛進 `sys.modules`。
@@ -85,7 +87,12 @@ W-01 只記了一項(`state_encoding` 的 import)。**實際有五項**,
 
 ## 尚未處理
 
-- `state_encoding.py` 的 `from ..env.step import UserState` 仍指向舊路徑(**W-10**)。
-- `trainer_spec.py` 的 `epsilon_decay_episodes` 預設為 **7000**;參數規格 §6.1 指出
-  註冊表 `REP-004` 的 7000 已過時,程式與論文皆為 **2000**。屬 PREREG 參數面,**W-13** 處理。
+- **逐 UE 的角度感知 EE 閉包**(`per_ue_energy_efficiency`)尚未移植 —— W-06 的最後一塊。
+- checkpoint I/O(`artifacts`,W-12)與乾淨版的 `TrainerConfig` 驗證器。
 - 訓練未跑;訓練屬重計算,另開 brief 並在 Ubuntu server 執行。
+
+## 已解決(先前列於此)
+
+- ~~`state_encoding.py` 的 import 指向舊路徑~~ → W-10 / P-09。
+- ~~`epsilon_decay_episodes` 預設 7000 已過時~~ → W-09 / P-06 改為 **2000**
+  (已核對:`common_trainer.py:296` 為 2000,來源 9 份 resolved config 中 8 份為 2000)。

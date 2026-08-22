@@ -11,11 +11,15 @@ Every entry is temporary and names its owning work item.  **When that work
 item lands, delete the entry.**  A shim entry that outlives its owner is a
 bug: it means live code is running against a stand-in.
 
-    mcrl.env.step                       -> W-02 / W-03 (new environment)
-    mcrl.runtime.angle_aware_ee         -> W-06 / W-15
-    mcrl.runtime.popart_online          -> W-09 (χ / PopArt stays off, §8)
+    mcrl.runtime.angle_aware_ee         -> W-06's per-UE eta closure
     mcrl.artifacts                      -> W-12 (checkpoint I/O)
-    mcrl.runtime.trainer_config_validation -> W-09 / W-10
+    mcrl.runtime.trainer_config_validation -> a clean validator, still to write
+
+RETIRED
+    mcrl.runtime.popart_online          -> W-09 removed the import entirely
+    mcrl.env.step                       -> W-10 repointed the container types
+                                           to env.step_types; StepEnvironment
+                                           is now a TYPE_CHECKING-only import
 
 Design rule: a stand-in either re-exports the canonical type from
 ``mcrl.env.step_types`` or **raises**.  It never invents behaviour, so no
@@ -52,56 +56,12 @@ def install() -> None:
     if _INSTALLED:
         return
 
-    from mcrl.env import step_types
-
-    # -- W-02 / W-03: the environment ------------------------------------
-    env_step = _module("mcrl.env.step")
-    env_step.UserState = step_types.UserState
-    env_step.ActionMask = step_types.ActionMask
-    env_step.RewardComponents = step_types.RewardComponents
-    env_step.StepResult = step_types.StepResult
-    env_step.StepConfig = step_types.StepConfig
-
-    class StepEnvironment:  # noqa: D401 - placeholder
-        """Placeholder for the W-02/W-03 environment.
-
-        Only a name for the trainer's type annotation.  Tests pass their own
-        duck-typed doubles; instantiating this raises.
-        """
-
-        def __init__(self, *_args, **_kwargs) -> None:
-            raise NotImplementedError(
-                "StepEnvironment is owned by W-02/W-03 and does not exist yet."
-            )
-
-    env_step.StepEnvironment = StepEnvironment
-    sys.modules["mcrl.env.step"] = env_step
-
     # -- W-06 / W-15: angle-aware EE (Bessel Miller routing lives here) ---
     aae = _module("mcrl.runtime.angle_aware_ee")
     aae.per_ue_energy_efficiency = _unavailable(
         "per_ue_energy_efficiency", "W-06/W-15"
     )
     sys.modules["mcrl.runtime.angle_aware_ee"] = aae
-
-    # -- W-09: PopArt (SDD §8 keeps it off) ------------------------------
-    popart = _module("mcrl.runtime.popart_online")
-
-    class PopArtConfig:
-        def __init__(self, *_args, **_kwargs) -> None:
-            raise NotImplementedError(
-                "PopArt is disabled by SDD §8 and was not ported."
-            )
-
-    class OnlinePopArt:
-        def __init__(self, *_args, **_kwargs) -> None:
-            raise NotImplementedError(
-                "PopArt is disabled by SDD §8 and was not ported."
-            )
-
-    popart.PopArtConfig = PopArtConfig
-    popart.OnlinePopArt = OnlinePopArt
-    sys.modules["mcrl.runtime.popart_online"] = popart
 
     # -- W-12: checkpoint artifacts --------------------------------------
     artifacts = _module("mcrl.artifacts")

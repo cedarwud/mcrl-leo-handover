@@ -545,9 +545,30 @@ class UserState:
     """Global, ungated demand mapped to this user's L*K candidate slots.
 
     Each value is the pre-admission count for the physical beam represented by
-    that slot.  It is shared across users and is not zeroed when ``k_cap``
-    darkens a beam.  This is the paper's global N(t) quantity rather than the
-    former per-user post-admission served-count proxy.
+    that slot.  It is shared across users and is the paper's global N(t)
+    quantity rather than a per-user post-admission served-count proxy.
+
+    PATCH P-07 (W-09): the original sentence carried a caveat about the
+    value not being zeroed when a per-satellite activation ceiling darkened
+    a beam.  No beam is ever darkened in this project — activation is
+    derived, ``z = 1{U > 0}`` (ruling 2026-08-22 §7.4) — so the caveat
+    described a mechanism that no longer exists.
+    """
+
+    contract_fields: np.ndarray | None = None
+    """PATCH P-08 (W-10): the 13-dimensional §4A.6 block.
+
+    ``is_incumbent[4] + d2_ttt_counter[4] + radial_rate[4] + dwell_phase[1]``,
+    built by ``mcrl.env.action_contract.contract_state_fields``.  It is part
+    of ``s_u`` — SDD §3.6 makes 125 the authoritative state dimension — but
+    it is environment-side accounting rather than a per-beam observation, so
+    it sits beside the four blocks instead of inside them.
+
+    ``None`` is not a legal value at the encoder; it exists only so the
+    dataclass keeps a positional signature compatible with the four-block
+    constructor.  ``encode_state`` raises on it rather than silently
+    producing a 112-vector, which would fit no network in this project and
+    would be caught only by a shape error much later, if at all.
     """
 
 

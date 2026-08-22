@@ -16,7 +16,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from mcrl.env.action_contract import NO_OP_ACTION
+from mcrl.env.action_contract import (
+    CONTRACT_STATE_DIM,
+    NO_OP_ACTION,
+)
 from mcrl.env.step_types import (
     ActionMask,
     RewardComponents,
@@ -86,6 +89,10 @@ class ScriptedEnv:
                 channel_quality=np.full(n, 0.5, dtype=np.float64),
                 beam_offsets=np.zeros(n, dtype=np.float64),
                 beam_loads=np.zeros(n, dtype=np.float64),
+                # SDD §4A.6's 13-dim block; zeros are fine for a double whose
+                # job is to script masks, but it must be PRESENT — the encoder
+                # refuses to emit a short state vector.
+                contract_fields=np.zeros(CONTRACT_STATE_DIM, dtype=np.float32),
             )
             for _ in range(self.config.num_users)
         ]

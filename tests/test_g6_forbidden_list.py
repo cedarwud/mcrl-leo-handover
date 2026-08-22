@@ -31,15 +31,17 @@ FORBIDDEN_TERMS = (
     "zscore",
 )
 
-AWAITING_W09 = {
-    # Ported byte-for-byte; the vocabulary is inert config surface.
-    "runtime/trainer_spec.py": {"catfish"},
-    # A docstring mentioning the old registry name for v_max.
-    "env/step_types.py": {"k_cap"},
-}
-"""Every exemption names the file **and** the terms it may still contain.
+AWAITING_W09: dict[str, set[str]] = {}
+"""**Empty since W-09.**  It must stay empty.
 
-W-09 ("拆掉 v_max/penalty;χ 預設關閉") empties this map.
+It used to exempt ``runtime/trainer_spec.py`` (the whole Phase-04B..07D
+config surface) and one ``env/step_types.py`` docstring.  W-09 removed
+both, so the §8 vocabulary now appears nowhere in ``src/`` at all — not
+even in prose explaining why a mechanism is absent, because a
+"comments do not count" carve-out would hollow the gate out.
+
+Re-adding an entry means something reachable acquired the vocabulary.
+Delete the code, not the assertion.
 """
 
 # NOTE (2026-08-22): the execution mask ``m^e`` was REMOVED from §8.  B10
@@ -67,6 +69,11 @@ def test_no_new_module_mentions_a_forbidden_term():
     )
 
 
+def test_the_exemption_map_is_empty():
+    """W-09 emptied it; nothing may put it back."""
+    assert AWAITING_W09 == {}
+
+
 def test_the_exemptions_are_still_needed_and_no_wider_than_needed():
     """A stale exemption is as bad as a missing one — it hides a regression."""
     for relative, terms in AWAITING_W09.items():
@@ -77,29 +84,37 @@ def test_the_exemptions_are_still_needed_and_no_wider_than_needed():
             )
 
 
-@pytest.mark.parametrize(
-    "field, expected",
-    [
-        ("catfish_enabled", False),
-        ("catfish_intervention_enabled", False),
-        ("catfish_competitive_shaping_enabled", False),
-        ("anti_collapse_action_constraint_enabled", False),
-        ("popart_enabled", False),
-        ("reward_calibration_enabled", False),
-        ("section_6_2_row_capture_enabled", False),
-    ],
+REMOVED_CONFIG_FIELDS = (
+    "catfish_enabled",
+    "catfish_ablation",
+    "catfish_intervention_enabled",
+    "catfish_competitive_shaping_enabled",
+    "catfish_objective_admission_rule",
+    "catfish_specialist_mode",
+    "anti_collapse_action_constraint_enabled",
+    "anti_collapse_constraint_mode",
+    "anti_collapse_max_users_per_beam",
+    "popart_enabled",
+    "section_6_2_row_capture_enabled",
 )
-def test_every_forbidden_surface_is_off_by_default(field, expected):
-    """Inert is only inert while the default says so."""
-    assert getattr(TrainerConfig(), field) is expected
 
 
-def test_the_disabled_modes_are_the_declared_ones():
+@pytest.mark.parametrize("field", REMOVED_CONFIG_FIELDS)
+def test_the_opt_in_surfaces_are_gone_not_merely_disabled(field):
+    """W-09: a disabled field is a socket; an absent one is not.
+
+    A field defaulting to False still invites a reader to set it to True and
+    expect something — and here nothing would have happened, because the code
+    it switched was never ported.
+    """
+    assert not hasattr(TrainerConfig(), field)
+
+
+def test_the_surviving_calibration_switch_is_off_by_default():
+    """``reward_calibration_*`` stays: W-07 will need it once Q-D closes."""
     config = TrainerConfig()
-    assert config.anti_collapse_constraint_mode == "disabled"
-    assert config.catfish_ablation == "none"
-    assert config.catfish_objective_admission_rule == "disabled"
-    assert config.catfish_specialist_mode == "disabled"
+    assert config.reward_calibration_enabled is False
+    assert config.reward_calibration_mode == "raw-unscaled"
 
 
 def test_the_new_environment_modules_are_entirely_clean():

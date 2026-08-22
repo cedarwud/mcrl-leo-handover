@@ -6,9 +6,11 @@ into a reusable helper so every update path — the live ``update()`` and any
 later batch path added by W-08 — shares one implementation.
 
 SDD §6 G-11: a non-finite loss, gradient, or parameter aborts training.
-Silently skipping the offending objective (what the dormant
-``_update_from_arrays`` twin does) is *not* compliant: it keeps training and
-leaves the §6 G-3 collapse metrics to be computed on a NaN policy.
+Silently skipping the offending objective is *not* compliant — it keeps
+training and leaves the §6 G-3 collapse metrics to be computed on a NaN
+policy.  The source project's dormant batch-update twin did exactly that;
+W-08 deleted it rather than repair it, so ``update()`` is now the only
+update path and this battery is the only finiteness policy.
 """
 
 from __future__ import annotations

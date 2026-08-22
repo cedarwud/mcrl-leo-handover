@@ -1,10 +1,19 @@
-"""State encoding helpers for the runtime seam."""
+"""State encoding helpers for the runtime seam.
+
+PATCH P-09 (W-10): ``UserState`` is now imported from ``env.step_types``,
+its canonical home.  The original ``from ..env.step import UserState``
+pointed at the OLD environment module, which this project replaces and never
+ported — it was the reason the tree could not be imported at all
+(``docs/PROVENANCE.md``).
+"""
 
 from __future__ import annotations
 
 import numpy as np
 
-from ..env.step import UserState
+from ..env.action_contract import CONTRACT_STATE_DIM
+from ..env.step_types import UserState
+from ..errors import MCRLContractError
 from .trainer_spec import TrainerConfig
 
 
@@ -15,8 +24,15 @@ def encode_state(
 ) -> np.ndarray:
     """Encode a UserState into a flat numpy vector.
 
-    ASSUME-MODQN-REP-013 state encoding contract:
-        [access_vector, encoded_snr, theta_rad, encoded_loads]
+    ASSUME-MODQN-REP-013 state encoding contract, extended by SDD §4A.6:
+        [access_vector, encoded_snr, theta_rad, encoded_loads, contract]
+
+    PATCH P-10 (W-10): the 13-dimensional contract block is appended, making
+    the authoritative state dimension ``4C + 13 = 125`` (SDD §3.6).  The four
+    blocks stay exactly as they were and keep the same ``(l, j)`` ordering as
+    the action index, so state and action remain aligned by construction
+    (§4A.1); the contract block is environment-side accounting and sits after
+    them rather than inside them.
 
     Encoding rules (all explicitly configured, no hidden transforms):
         - access_vector: raw one-hot (already 0/1)
@@ -64,6 +80,19 @@ def encode_state(
     if config.load_normalization == "divide_by_num_users" and num_users > 0:
         loads = loads / num_users
 
+    # PATCH P-10: fail loud rather than silently emitting a 112-vector.
+    if user_state.contract_fields is None:
+        raise MCRLContractError(
+            "UserState.contract_fields is required (SDD §4A.6); build it with "
+            "mcrl.env.action_contract.contract_state_fields()"
+        )
+    contract = np.asarray(user_state.contract_fields, dtype=np.float32)
+    if contract.shape != (CONTRACT_STATE_DIM,):
+        raise MCRLContractError(
+            f"contract_fields must have shape ({CONTRACT_STATE_DIM},), "
+            f"got {contract.shape}"
+        )
+
     if not (access.size == snr.size == loads.size):
         raise ValueError(
             "UserState beam-indexed arrays must have equal lengths: "
@@ -75,9 +104,13 @@ def encode_state(
             "Current theta observations must have one value per beam: "
             f"access={access.size}, theta={theta.size}"
         )
-    return np.concatenate([access, snr, theta, loads])
+    return np.concatenate([access, snr, theta, loads, contract])
 
 
 def state_dim_for(num_beams_total: int) -> int:
-    """Compute the flat state dimension for a given topology."""
-    return 4 * num_beams_total
+    """Flat state dimension: ``4C + 13``.
+
+    At the frozen ``C = 28`` this is **125**, the single authoritative value
+    of SDD §3.6.
+    """
+    return 4 * num_beams_total + CONTRACT_STATE_DIM

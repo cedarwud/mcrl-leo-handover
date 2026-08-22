@@ -13,13 +13,13 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 
 | 檔案 | 來源 sha256(前 16) | 目前 sha256(前 16) | 狀態 |
 |---|---|---|---|
-| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `6c9c27e802cbc03e` | **來源 + P-01…P-04 + 兩處潛伏標記** |
-| `src/mcrl/env/step_types.py` | `c4995ba509bbe2e6` | `c4995ba509bbe2e6` | 逐位元組相同 |
+| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `7a3cf0ae965cba9d` | **來源 + P-01…P-05、P-09、P-11**(1,333 → 1,093 行) |
+| `src/mcrl/env/step_types.py` | `c4995ba509bbe2e6` | `89b048d4f4072015` | **來源 + P-07、P-08** |
 | `src/mcrl/runtime/q_network.py` | `d11318d61ad93a77` | `d11318d61ad93a77` | 逐位元組相同 |
 | `src/mcrl/runtime/replay_buffer.py` | `374a73e1b3a5e9da` | `374a73e1b3a5e9da` | 逐位元組相同 |
-| `src/mcrl/runtime/state_encoding.py` | `723974bcc6db9d5d` | `723974bcc6db9d5d` | 逐位元組相同(W-10 待改 import) |
+| `src/mcrl/runtime/state_encoding.py` | `723974bcc6db9d5d` | `da1d649b02f246cf` | **來源 + P-09、P-10** |
 | `src/mcrl/runtime/objective_math.py` | `e8a55760ee1dc4da` | `e8a55760ee1dc4da` | 逐位元組相同 |
-| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `0392e66c3e2f4686` | 逐位元組相同 |
+| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `9bd9e54d8155a43b` | **來源 + P-05、P-06**(250 → 153 行) |
 
 新增檔(無來源,不屬補丁):`src/mcrl/errors.py`、`src/mcrl/env/action_contract.py`、
 `src/mcrl/runtime/finiteness.py`、各 `__init__.py`、`pyproject.toml`、`tests/`。
@@ -78,13 +78,89 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 
 ---
 
+## W-09 / W-10 / W-08 補丁
+
+### P-05 — 拆掉四個沒有消費者的 opt-in 介面(W-09)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `modqn.py`:`:65`(PopArt import)、`:152`、`:160-186`、`:362-571`(兩個休眠選取器與其 helper)、`:596-615`(select_actions 的分派)、`:941-964`(獎勵端 PopArt)、`:1291-1317`(§6.2 擷取);`trainer_spec.py`:`:13-33`(kind 常數)、`:105-199`(四組欄位) |
+| 補丁內容 | 移除:Phase-04B/05B/v3/07B/07D 介面(44 欄)、HOBS 崩潰試點動作約束介面(9 欄)、線上獎勵標準化介面(4 欄)、§6.2 擷取介面(2 欄),以及它們在 `modqn.py` 的全部程式路徑。`select_actions` 只剩一條路徑 |
+| 理由 | **全部沒有消費者。** `modqn.py` 一個 catfish 欄位都沒讀過(那些 trainer 在來源專案且刻意未移植);動作約束欄位餵的是兩個休眠選取器,而那是 §2.2 刪除的家族,且 **2026-08-22 裁決明令不得為已刪除的機制留插座**;PopArt 恆為 False 且模組未移植;§6.2 擷取伸手進**舊環境**的私有成員並 import 未移植的模組。**§8 的「保留程式碼供日後消融」保留的是那些程式碼本身——它們在來源專案,不在這裡。只留設定欄位等於保留了全部的陷阱、零的消融價值** |
+| 副作用 | **L-4 隨之消失**(它就住在被刪的 `_select_capacity_constrained_actions` 裡)。`raw_states` 參數保留但不再被讀取 |
+| 對應測試 | `test_g6_forbidden_list.py`(exemption map 現為空,11 項)、`test_w08_vanilla_td_target.py::test_action_selection_has_one_path` |
+| 門 | **G-6** |
+
+### P-06 — `epsilon_decay_episodes` 由 7000 改為 2000(W-09)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `runtime/trainer_spec.py:66` |
+| 補丁內容 | 預設值 `7000 → 2000` |
+| 理由 | 註冊表 `REP-004` 的 7000 已過時。已核對來源:`family_b_r3/common_trainer.py:296` 是 **2000**,來源專案 9 份 resolved config 中 **8 份是 2000**,參數規格 §6.1 亦明指 7000 過時。**留著過時預設正是我在別處設 freeze flag 要防的那種慣性凍結** |
+| 對應測試 | `docs/PREREG-DRAFT.md` 已同步;值本身由 PREREG 凍結 |
+
+### P-07 — `beam_loads` docstring 移除已不存在機制的但書(W-09)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `env/step_types.py:548` |
+| 補丁內容 | 刪除「不會在上限熄滅波束時被歸零」的但書 |
+| 理由 | 2026-08-22 裁決後**沒有任何波束會被熄滅**,啟用是導出的 `z = 1{U>0}`。該但書描述的機制已不存在 |
+| 對應測試 | `test_ruling_no_beam_count_cap.py`(16 項) |
+
+### P-08 — `UserState` 新增 `contract_fields`(W-10)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `env/step_types.py:522-552`(`UserState` 類別) |
+| 補丁內容 | 新增 `contract_fields: np.ndarray | None = None`,承載 §4A.6 的 13 維區塊 |
+| 理由 | SDD §3.6 把 `s_u = 125 = 4C + 13` 定為全文唯一權威值。13 維是**環境端帳務**而非逐波束觀測,故置於四區塊**之後**而非之內 |
+| 預設值的意義 | `None` **不是合法值**,只是為了讓四區塊建構式維持位置相容。編碼器對 `None` **拋錯**,不會靜默產生 112 維向量 |
+| 對應測試 | `test_w10_state_encoding.py`(14 項) |
+| 門 | G-9 相關(§4A.6) |
+
+### P-09 — `UserState` 等容器型別改由 `env.step_types` 匯入(W-10)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `runtime/state_encoding.py:7`;`algorithms/modqn.py:43-48` |
+| 補丁內容 | `from ..env.step import UserState` → `..env.step_types`;`modqn.py` 的 `ActionMask`/`RewardComponents`/`UserState` 同樣重指,`StepEnvironment` 改為 `TYPE_CHECKING` 專用 |
+| 理由 | **這是 W-01 移植缺口中最後一項未解的**(`docs/PROVENANCE.md`)。`env/step` 是**舊環境**模組,本專案取代它且從未移植 —— 那正是整棵樹無法 import 的原因。三個容器型別的正典定義本來就在 `step_types` |
+| 副作用 | 測試 shim 的 `mcrl.env.step` stand-in **已退役** |
+| 對應測試 | `test_w10_state_encoding.py::test_user_state_is_imported_from_its_canonical_home`、`::test_the_algorithm_no_longer_imports_the_old_environment_at_runtime` |
+
+### P-10 — 狀態編碼附加 13 維契約區塊(W-10)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `runtime/state_encoding.py:73`(`concatenate`)、`:76-78`(`state_dim_for`) |
+| 補丁內容 | `concatenate([access, snr, theta, loads])` → 加上 `contract`;`state_dim_for` 由 `4*C` 改為 `4*C + 13` |
+| 理由 | SDD §3.6 / §4A.6。四區塊本身**一字未動**,`(l,j)` 順序維持,故狀態與動作仍依構造對齊(§4A.1) |
+| fail-loud | 缺少或長度錯誤的契約區塊**拋錯**。靜默產生 112 維向量在本專案裝不進任何網路,且只會在很後面(或根本不會)以形狀錯誤現形 |
+| 對應測試 | `test_w10_state_encoding.py`(14 項) |
+
+### P-11 — 刪除休眠的批次更新孿生 `_update_from_arrays`(W-08)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `algorithms/modqn.py:654-726` |
+| 補丁內容 | 整個方法移除(77 行) |
+| 理由 | 兩點。(1) 它持有**第二份 TD target 實作**,而 B1 的重點正是目標必須**無歧義地**是 MODQN 式 (16) vanilla —— 兩份同一條式子會漂移,而且**它們已經不一樣了**(休眠版用 out-of-place `masked_fill`,live 版用就地指派)。(2) 它的有限性檢查是**靜默略過**該目標並繼續訓練,正是 §3.7 P-3 與 §6 G-11 禁止的。**一條接上就會違反驗收門的休眠路徑是陷阱,不是備品。** 本 repo 內零呼叫端(其子類別皆為 §8 禁用,未移植) |
+| 對應測試 | `test_w08_vanilla_td_target.py`(8 項),含「TD target 在原始碼中恰好出現一次」與 AST 層面的「無 `continue`/`break`」 |
+| 門 | **G-11**、B1 |
+
+---
+
 ## 標記為潛伏、**刻意不修**
 
 | # | 位置 | 狀態 |
 |---|---|---|
-| **L-4** | `_select_capacity_constrained_actions`(來源 `:344-349` 的 `ranked[0]` 回退,以及 `:328`/`:342` 的兩處索引 0 回退) | 已加註解標記潛伏。**不接上、不修**(W-16 brief)。`anti_collapse_action_constraint_enabled` 為 False 時不可達,而 SDD §8 要求本里程碑內一律為 False |
-| L-4 家族 | `_select_qos_sticky_overflow_reassignment_actions` | 已加註解。它消費 `_select_unconstrained_actions`,P-01 後可能拿到 `-1`,而其 `np.bincount` 會直接拒絕負值 ⇒ **啟用即拋錯**,是刻意的絆線 |
-| P-3 分歧 | 休眠孿生 `_update_from_arrays`(`:700-708`)的有限性檢查是**靜默略過**(`continue`),不是拋錯 | 本 repo 內無呼叫端(子類別未移植)。**未改**,不在 W-16 的 L-1…L-3 範圍。**接上前必須先改為 fail-loud**,否則違反 G-11 |
+| ~~**L-4**~~ | ~~`_select_capacity_constrained_actions`~~ | **W-09 已解決:整個方法連同它所在的介面一起刪除。** 潛伏缺陷不再存在,因為承載它的程式碼不再存在 |
+| ~~L-4 家族~~ | ~~`_select_qos_sticky_overflow_reassignment_actions`~~ | **W-09 已刪除。** |
+| ~~P-3 分歧~~ | ~~休眠孿生 `_update_from_arrays` 的靜默略過~~ | **W-08 已刪除**(P-11)。`update()` 現為唯一更新路徑,唯一有限性政策即 fail-loud |
+
+**本表現在是空的。W-16 標記的三項潛伏全部由 W-08/W-09 以刪除解決,而非修補。**
 
 ---
 

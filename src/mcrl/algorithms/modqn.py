@@ -27,7 +27,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -40,12 +40,17 @@ from ..artifacts import (
     read_checkpoint,
     write_checkpoint,
 )
-from ..env.step import (
+from ..env.step_types import (
     ActionMask,
     RewardComponents,
-    StepEnvironment,
     UserState,
 )
+
+if TYPE_CHECKING:  # PATCH P-09 (W-10)
+    # The environment class itself is built on top of this contract; importing
+    # it at runtime would make the algorithm depend on the environment rather
+    # than on the typed seam between them.
+    from ..env.step import StepEnvironment
 from ..env.action_contract import NO_OP_ACTION, is_no_op, no_op_actions
 from ..errors import MCRLContractError
 from ..runtime.finiteness import (
@@ -62,7 +67,6 @@ from ..runtime.objective_math import (
 from ..runtime.q_network import DQNNetwork
 from ..runtime.replay_buffer import ReplayBuffer
 from ..runtime.state_encoding import encode_state, state_dim_for
-from ..runtime.popart_online import OnlinePopArt, PopArtConfig
 from ..runtime.trainer_spec import (
     EpisodeLog,
     EvalSummary,
@@ -149,7 +153,6 @@ class MODQNTrainer:
         self._evaluation_seed_set: tuple[int, ...] = ()
         self._best_eval_summary: EvalSummary | None = None
         self._best_eval_payload: CheckpointPayloadV1 | None = None
-        self._anti_collapse_diagnostics = self._empty_anti_collapse_diagnostics()
         # PATCH P-03 (L-3, SDD §4A.5a(4)): the drop rates that decide whether
         # plain dropping is admissible or a semi-MDP transition is required.
         self._no_op_transitions_skipped: int = 0
@@ -157,33 +160,6 @@ class MODQNTrainer:
         self._decision_steps_seen: int = 0
         self._runtime_real_emission_collector = runtime_real_emission_collector
         self._runtime_real_emission_hook_enabled()
-        self._section_6_2_capture: Any | None = None
-        self._popart: OnlinePopArt | None = (
-            OnlinePopArt(PopArtConfig(
-                enabled=True,
-                sigma_floor=config.popart_sigma_floor,
-                clip_value=config.popart_clip_value,
-                warmup_steps=config.popart_warmup_steps,
-            ))
-            if config.popart_enabled
-            else None
-        )
-
-    def _empty_anti_collapse_diagnostics(self) -> dict[str, int]:
-        return {
-            "overflow_steps": 0,
-            "overflow_user_count": 0,
-            "sticky_override_count": 0,
-            "nonsticky_move_count": 0,
-            "qos_guard_reject_count": 0,
-            "handover_guard_reject_count": 0,
-        }
-
-    def reset_anti_collapse_diagnostics(self) -> None:
-        self._anti_collapse_diagnostics = self._empty_anti_collapse_diagnostics()
-
-    def get_anti_collapse_diagnostics(self) -> dict[str, int]:
-        return dict(self._anti_collapse_diagnostics)
 
     def get_masking_diagnostics(self) -> dict[str, int]:
         """Replay-exclusion counts owned by PATCH P-03 (SDD §4A.5a(4)).
@@ -359,217 +335,6 @@ class MODQNTrainer:
 
         return actions
 
-    def _select_capacity_constrained_actions(
-        self,
-        scalarized: np.ndarray,
-        masks: list[ActionMask],
-        eps: float,
-    ) -> np.ndarray:
-        """Centralized opt-in assignment constraint for anti-collapse pilots.
-
-        This is not part of the frozen MODQN baseline.  The candidate gate uses
-        it only when explicitly configured so that learned greedy evaluation
-        cannot place more than a declared number of users on one beam.
-
-        ⚠ LATENT DEFECT L-4 (SDD §3.8) — DORMANT PATH, DELIBERATELY UNPATCHED.
-        The ``ranked[0]`` fallback below violates the function's own capacity
-        invariant when every valid action is already full, and the two
-        ``actions[uid] = 0`` fallbacks are the same index-0 defect as L-1.
-        Per the W-16 brief this path is marked latent: **do not wire it up and
-        do not fix it**.  It is unreachable while
-        ``anti_collapse_action_constraint_enabled`` is False, which SDD §8
-        requires for the whole milestone.  Any future work that enables it
-        must first port PATCH P-01 into it.
-        """
-        U = len(masks)
-        actions = np.zeros(U, dtype=np.int32)
-        max_users_per_beam = int(self.config.anti_collapse_max_users_per_beam)
-        assigned_counts = np.zeros(self.action_dim, dtype=np.int32)
-        ranked_choices: list[list[int]] = []
-
-        for uid in range(U):
-            valid = np.flatnonzero(masks[uid].mask)
-            if valid.size == 0:
-                ranked_choices.append([])
-                continue
-            if self._train_rng.random() < eps:
-                ranked_choices.append(
-                    [int(action) for action in self._train_rng.permutation(valid)]
-                )
-            else:
-                ranked_choices.append(
-                    self._rank_masked_actions(scalarized[uid], masks[uid].mask)
-                )
-
-        for uid, ranked in enumerate(ranked_choices):
-            if not ranked:
-                actions[uid] = 0
-                continue
-            selected = ranked[0]
-            for action in ranked:
-                if assigned_counts[action] < max_users_per_beam:
-                    selected = action
-                    break
-            actions[uid] = int(selected)
-            assigned_counts[int(selected)] += 1
-
-        return actions
-
-    def _current_beam_from_state(self, state: UserState) -> int | None:
-        access = np.asarray(state.access_vector, dtype=np.float64)
-        if access.size == 0 or float(np.max(access)) <= 0.0:
-            return None
-        return int(np.argmax(access))
-
-    def _estimated_qos_throughput(
-        self,
-        *,
-        state: UserState,
-        beam: int,
-        projected_load: int | float,
-    ) -> float:
-        if beam < 0 or beam >= self.action_dim:
-            return 0.0
-        snr = max(float(state.channel_quality[beam]), 0.0)
-        load = max(float(projected_load), 1.0)
-        bandwidth_hz = float(self.env.channel_config.bandwidth_hz)
-        return (bandwidth_hz / load) * math.log2(1.0 + snr)
-
-    def _record_anti_collapse_counter(self, key: str, count: int = 1) -> None:
-        self._anti_collapse_diagnostics[key] = (
-            int(self._anti_collapse_diagnostics.get(key, 0)) + int(count)
-        )
-
-    def _select_qos_sticky_overflow_reassignment_actions(
-        self,
-        scalarized: np.ndarray,
-        masks: list[ActionMask],
-        eps: float,
-        raw_states: list[UserState] | None,
-    ) -> np.ndarray:
-        """Overflow-only sticky reassignment for the QoS-preserving gate.
-
-        ⚠ LATENT (SDD §3.8 L-4 family) — DORMANT PATH, DELIBERATELY UNPATCHED.
-        It consumes ``_select_unconstrained_actions``, which after PATCH P-01
-        can return ``NO_OP_ACTION``.  ``np.bincount`` below rejects negative
-        values, so enabling this path now raises instead of mis-assigning —
-        the intended trip-wire.  Unreachable while SDD §8 keeps
-        ``anti_collapse_action_constraint_enabled`` False.
-        """
-        base_actions = self._select_unconstrained_actions(scalarized, masks, eps)
-        if raw_states is None:
-            raise ValueError(
-                "qos-sticky-overflow-reassignment requires raw UserState values "
-                "for access_vector and channel_quality diagnostics."
-            )
-        if len(raw_states) != len(masks):
-            raise ValueError(
-                "raw_states length must match masks length for "
-                "qos-sticky-overflow-reassignment."
-            )
-
-        threshold = int(self.config.anti_collapse_overload_threshold_users_per_beam)
-        projected_loads = np.bincount(
-            base_actions.astype(np.int64),
-            minlength=self.action_dim,
-        ).astype(np.int32)
-        overloaded = np.flatnonzero(projected_loads > threshold)
-        if overloaded.size == 0:
-            return base_actions
-
-        self._record_anti_collapse_counter("overflow_steps")
-        actions = base_actions.copy()
-        working_loads = projected_loads.copy()
-        qos_ratio_min = float(self.config.anti_collapse_qos_ratio_min)
-        allow_nonsticky = bool(self.config.anti_collapse_allow_nonsticky_moves)
-        nonsticky_budget = int(self.config.anti_collapse_nonsticky_move_budget)
-
-        for source in (int(value) for value in overloaded.tolist()):
-            source_users = [
-                uid
-                for uid, action in enumerate(base_actions.tolist())
-                if int(action) == source
-            ]
-            overflow_users = source_users[threshold:]
-            self._record_anti_collapse_counter(
-                "overflow_user_count",
-                len(overflow_users),
-            )
-
-            for uid in overflow_users:
-                if int(working_loads[source]) <= threshold:
-                    break
-
-                state = raw_states[uid]
-                source_estimate = self._estimated_qos_throughput(
-                    state=state,
-                    beam=source,
-                    projected_load=int(projected_loads[source]),
-                )
-
-                current_beam = self._current_beam_from_state(state)
-                if (
-                    current_beam is not None
-                    and current_beam != source
-                    and 0 <= current_beam < self.action_dim
-                    and bool(masks[uid].mask[current_beam])
-                    and int(working_loads[current_beam]) + 1 <= threshold
-                ):
-                    target_load = int(working_loads[current_beam]) + 1
-                    target_estimate = self._estimated_qos_throughput(
-                        state=state,
-                        beam=current_beam,
-                        projected_load=target_load,
-                    )
-                    if target_estimate + 1e-12 >= qos_ratio_min * source_estimate:
-                        actions[uid] = int(current_beam)
-                        working_loads[source] -= 1
-                        working_loads[current_beam] += 1
-                        self._record_anti_collapse_counter("sticky_override_count")
-                        continue
-                    self._record_anti_collapse_counter("qos_guard_reject_count")
-
-                if not allow_nonsticky:
-                    self._record_anti_collapse_counter("handover_guard_reject_count")
-                    continue
-
-                if (
-                    int(self._anti_collapse_diagnostics["nonsticky_move_count"])
-                    >= nonsticky_budget
-                ):
-                    self._record_anti_collapse_counter("handover_guard_reject_count")
-                    continue
-
-                moved_nonsticky = False
-                for target in self._rank_masked_actions(
-                    scalarized[uid],
-                    masks[uid].mask,
-                ):
-                    if target == source or target == current_beam:
-                        continue
-                    if int(working_loads[target]) + 1 > threshold:
-                        continue
-                    target_load = int(working_loads[target]) + 1
-                    target_estimate = self._estimated_qos_throughput(
-                        state=state,
-                        beam=target,
-                        projected_load=target_load,
-                    )
-                    if target_estimate + 1e-12 < qos_ratio_min * source_estimate:
-                        self._record_anti_collapse_counter("qos_guard_reject_count")
-                        continue
-                    actions[uid] = int(target)
-                    working_loads[source] -= 1
-                    working_loads[target] += 1
-                    self._record_anti_collapse_counter("nonsticky_move_count")
-                    moved_nonsticky = True
-                    break
-
-                if not moved_nonsticky:
-                    self._record_anti_collapse_counter("handover_guard_reject_count")
-
-        return actions
-
     def select_actions(
         self,
         states_encoded: np.ndarray,
@@ -588,32 +353,19 @@ class MODQNTrainer:
         4. epsilon-greedy over the masked scalarized Q
 
         Returns actions array shape (num_users,).
+
+        PATCH P-05 (W-09): there is exactly one selection path.  The
+        capacity-aware and QoS-sticky branches, and the config switch that
+        dispatched to them, are gone — SDD §2.2 deletes that family of
+        ceilings, and the 2026-08-22 ruling forbids leaving a socket for a
+        deleted mechanism.
+        ``raw_states`` is retained only because callers pass it positionally;
+        nothing reads it.
         """
+        del raw_states
         w = objective_weights or self.config.objective_weights
         q_values = self._predict_objective_q_values(states_encoded)
         scalarized = self._scalarize_q_values(q_values, w)
-
-        if self.config.anti_collapse_action_constraint_enabled:
-            if (
-                self.config.anti_collapse_constraint_mode
-                == "capacity-aware-greedy-assignment"
-            ):
-                return self._select_capacity_constrained_actions(
-                    scalarized,
-                    masks,
-                    eps,
-                )
-            if (
-                self.config.anti_collapse_constraint_mode
-                == "qos-sticky-overflow-reassignment"
-            ):
-                return self._select_qos_sticky_overflow_reassignment_actions(
-                    scalarized,
-                    masks,
-                    eps,
-                    raw_states,
-                )
-
         return self._select_unconstrained_actions(scalarized, masks, eps)
 
     def select_actions_with_diagnostics(
@@ -724,81 +476,19 @@ class MODQNTrainer:
         return actions, diagnostics
 
     # -- network update -----------------------------------------------------
-
-    def _update_from_arrays(
-        self,
-        *,
-        states: np.ndarray,
-        actions: np.ndarray,
-        rewards: np.ndarray,
-        next_states: np.ndarray,
-        next_masks: np.ndarray,
-        dones: np.ndarray,
-        discount_factor: float,
-        q_nets: nn.ModuleList | None = None,
-        target_nets: nn.ModuleList | None = None,
-        optimizers_: list[optim.Optimizer] | None = None,
-    ) -> tuple[tuple[float, float, float], dict[str, Any]]:
-        """Update one objective-network triplet from an explicit batch."""
-        active_q_nets = self.q_nets if q_nets is None else q_nets
-        active_target_nets = self.target_nets if target_nets is None else target_nets
-        active_optimizers = self.optimizers if optimizers_ is None else optimizers_
-
-        st = torch.tensor(states, dtype=torch.float32, device=self.device)
-        act = torch.tensor(actions, dtype=torch.long, device=self.device).unsqueeze(1)
-        ns = torch.tensor(next_states, dtype=torch.float32, device=self.device)
-        nm = torch.tensor(next_masks, dtype=torch.bool, device=self.device)
-        dn = torch.tensor(dones, dtype=torch.float32, device=self.device)
-
-        losses: list[float] = []
-        q_abs_max_values: list[float] = []
-        target_abs_max_values: list[float] = []
-        nan_detected = False
-        for obj_idx in range(3):
-            r = torch.tensor(
-                rewards[:, obj_idx], dtype=torch.float32, device=self.device
-            )
-
-            # Current Q(s, a)
-            q_current = active_q_nets[obj_idx](st).gather(1, act).squeeze(1)
-
-            # Target: r + gamma * max_a' Q_target(s', a') where a' valid
-            with torch.no_grad():
-                q_next_all = active_target_nets[obj_idx](ns)
-                # Mask invalid next-actions to large negative value
-                q_next_all = q_next_all.masked_fill(~nm, -1e9)
-                q_next_max = q_next_all.max(dim=1).values
-                target = r + discount_factor * q_next_max * (1.0 - dn)
-
-            loss = self._loss_fn(q_current, target)
-            finite_update = (
-                torch.isfinite(q_current).all()
-                and torch.isfinite(target).all()
-                and torch.isfinite(loss)
-            )
-            if not finite_update:
-                nan_detected = True
-                losses.append(float("nan"))
-                continue
-
-            active_optimizers[obj_idx].zero_grad()
-            loss.backward()
-            active_optimizers[obj_idx].step()
-
-            losses.append(loss.item())
-            q_abs_max_values.append(float(torch.max(torch.abs(q_current)).item()))
-            target_abs_max_values.append(float(torch.max(torch.abs(target)).item()))
-
-        diagnostics = {
-            "q_abs_max": (
-                max(q_abs_max_values) if q_abs_max_values else float("nan")
-            ),
-            "target_abs_max": (
-                max(target_abs_max_values) if target_abs_max_values else float("nan")
-            ),
-            "nan_detected": bool(nan_detected),
-        }
-        return (losses[0], losses[1], losses[2]), diagnostics
+    #
+    # PATCH P-11 (W-08): ``_update_from_arrays`` is removed.  It was the
+    # override seam the source project's subclasses used, and this project has
+    # none — SDD §8 forbids every one of them.  It had zero callers here.
+    #
+    # Two reasons to delete rather than repair it.  First, it held a SECOND
+    # implementation of the TD target, and B1's whole point is that the target
+    # is unambiguously MODQN eq. (16) vanilla — two copies of an equation drift,
+    # and the dormant one already differed in how it masked (``masked_fill``
+    # out-of-place vs in-place assignment).  Second, its finiteness check
+    # SILENTLY SKIPPED the offending objective and kept training, which is
+    # exactly what §3.7 P-3 and §6 G-11 forbid; a dormant path that would
+    # violate a gate the moment it were wired up is a trap, not a spare part.
 
     def update(self) -> tuple[float, float, float]:
         """Sample a batch from replay and update all 3 DQNs.
@@ -938,30 +628,10 @@ class MODQNTrainer:
             r1_angle_aware_ee=r1_angle_aware_ee,
             config=self.config,
         )
-        if self.config.popart_enabled and self._popart is not None:
-            if self.config.r1_reward_mode == R1_REWARD_MODE_ANGLE_AWARE_EE:
-                # Track throughput for monitoring (not emitted; r1 is eta in this mode)
-                self._popart.update_and_standardize(
-                    "throughput",
-                    rw.r1_throughput,
-                    is_eval=is_eval,
-                )
-                r1 = self._popart.update_and_standardize(
-                    "eta",
-                    r1,
-                    is_eval=is_eval,
-                )
-            r2 = self._popart.update_and_standardize(
-                "r2",
-                rw.r2_handover,
-                is_eval=is_eval,
-            )
-            r3 = self._popart.update_and_standardize(
-                "r3",
-                rw.r3_load_balance,
-                is_eval=is_eval,
-            )
-            return np.array([r1, r2, r3], dtype=np.float64)
+        # PATCH P-05 (W-09): the PopArt standardisation branch is removed.
+        # ``popart_enabled`` was always False and ``runtime/popart_online.py``
+        # was never ported, so the branch was unreachable code holding an
+        # import the tree could not satisfy.
         return np.array(
             [r1, rw.r2_handover, rw.r3_load_balance],
             dtype=np.float64,
@@ -1287,34 +957,12 @@ class MODQNTrainer:
                 # Step environment
                 result = self.env.step(actions, self._env_rng)
 
-                # §6.2 row capture (disabled-mode: no-op, zero overhead)
-                if self.config.section_6_2_row_capture_enabled and self._section_6_2_capture is not None:
-                    from ..analysis.phase02_section_6_2_row_producer import (
-                        Section62TrainingStepObservation,
-                    )
-                    # Compute actual off-axis theta_rad per user at their assigned beam
-                    _n_u = len(result.user_states)
-                    _n_b = self.num_beams
-                    _K = self.env._beam.num_beams
-                    _sats = self.env._orbit.all_satellites(self.env._t_s)
-                    _theta_rad = np.zeros((_n_u, _n_b), dtype=np.float64)
-                    for _uid in range(_n_u):
-                        _ab = int(np.argmax(result.user_states[_uid].access_vector))
-                        _sat = _sats[_ab // _K]
-                        _ulat, _ulon = self.env._user_positions[_uid]
-                        _theta_rad[_uid, _ab] = math.radians(
-                            self.env._beam.off_axis_angle_deg(_sat, _ab % _K, _ulat, _ulon)
-                        )
-                    _s62_obs = Section62TrainingStepObservation(
-                        step_index=_step_idx,
-                        episode_id=ep,
-                        result=result,
-                        pre_action_states=list(states),
-                        pre_action_masks=list(masks),
-                        actions=actions.copy(),
-                        theta_rad_by_user_beam=_theta_rad,
-                    )
-                    self._section_6_2_capture.append_step(_s62_obs)
+                # PATCH P-05 (W-09): the §6.2 row-capture block is removed.
+                # It reached into ``env._beam``, ``env._orbit`` and
+                # ``env._user_positions`` — private members of the OLD
+                # environment, which this project replaces — and imported
+                # ``analysis.phase02_section_6_2_row_producer``, a module that
+                # was never ported.  It could not have run here.
 
                 # Encode next states
                 next_encoded = self._encode_states(result.user_states)
