@@ -423,8 +423,35 @@ def build_prereg_sections(
             "system_temperature_k": link_budget.SYSTEM_TEMPERATURE_K,
             "atmosphere_model": "TR 38.811 (6.6-8): A_zenith / sin(elevation)",
             "zenith_gaseous_loss_db": link_budget.ZENITH_GASEOUS_LOSS_DB,
-            "scintillation_loss_db": link_budget.SCINTILLATION_LOSS_DB,
-            "shadowing_loss_db": link_budget.SHADOWING_LOSS_DB,
+            # C-8 (revised): both are modelled from TR 38.811 now, so the
+            # PREREG freezes the TABLES rather than two scalars.  L_c is
+            # deterministic; L_s is a draw and therefore belongs to the
+            # frozen seed set alongside K_R.
+            "scintillation_model": (
+                "TR 38.811 Table 6.6.6.2.1-1, 20 GHz tropospheric, "
+                "linearly interpolated in elevation, held below 10 deg"
+            ),
+            "scintillation_loss_db_by_elevation": dict(
+                zip(
+                    link_budget._SCINTILLATION_ELEVATION_DEG,
+                    link_budget._SCINTILLATION_LOSS_DB,
+                )
+            ),
+            "ionospheric_scintillation": (
+                "excluded: TR 38.811 §6.6.6.1 considers it below 6 GHz only"
+            ),
+            "shadow_fading_model": (
+                "zero-mean dB Gaussian, sigma from TR 38.811 Table 6.6.2-3 "
+                "(Ka band, LOS), linearly interpolated in elevation"
+            ),
+            "shadow_fading_sigma_db_by_elevation": dict(
+                zip(
+                    link_budget._SHADOW_SIGMA_ELEVATION_DEG,
+                    link_budget._SHADOW_SIGMA_DB,
+                )
+            ),
+            "clutter_loss": "excluded: NLOS only; this terminal is a fixed LOS VSAT",
+            "stochastic_terms": ["shadow_fading_db (L_s)", "rician_fading_gain (K_R)"],
             "rician_k_factor_db": link_budget.RICIAN_K_FACTOR_DB,
             "segment_start_power_w": link_budget.SEGMENT_START_POWER_W,
             "beam_power_max_w": link_budget.BEAM_POWER_MAX_W,

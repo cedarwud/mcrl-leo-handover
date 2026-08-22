@@ -2,7 +2,7 @@
 
 MCRL(Multi-Catfish Reinforcement Learning)LEO 多波束換手 — 乾淨重建。
 
-**狀態:W-01…W-17 完成。物理鏈已全部接上 `StepEnvironment`,638 測試通過。**
+**狀態:W-01…W-18 完成。物理鏈接上 `StepEnvironment`,訓練器接上環境,**694 測試通過**。**
 
 一個 episode(100 位使用者、10 步、真實 TLE)約 **1 秒**:
 星曆 → D2 → dwell → 候選表 → 遞推功率 → 可行性 → 服務 → 干擾 (3.12a)(3.12b)
@@ -12,8 +12,21 @@ MCRL(Multi-Catfish Reinforcement Learning)LEO 多波束換手 — 乾淨重建�
 `P^N` 258.4 W、SINR p05/p50/p95 = 11.7 / 16.4 / 19.0 dB。
 `assert_ready_to_train()` **通過**。
 
-**尚未做:訓練器與新環境之間的接頭。** `MODQNTrainer` 吃 `StepResult`,
-W-17 產 `StepOutcome`。訓練屬重計算,另開 brief 上 Ubuntu server。
+**移植來的 `MODQNTrainer` 已能在真實星曆上跑真實 episode**
+(`runtime/trainer_env.py`,W-18)。
+
+⛔ **但訓練仍被擋住,而且是刻意的**:Q-D(`r3` 尺度)與 Q-E(dwell `N`)未定案,
+它們由 probe P3/P2 關閉,而 probe 要先凍 PREREG。
+`TrainerEnvironment.assert_ready_to_train()` 會擋。
+
+**兩件在等你:**
+
+1. **簽 PREREG** —— `docs/PREREG-SIGNOFF-2026-08-22.md`。
+   凍結之後任何門檻或選取規則的更動都是「看過資料才改」,正是 §7.1 要防的洩漏。
+2. **`H = 10` 是否夠** —— `docs/W18-REPLY-2026-08-22.md` §2。
+   量測結果:角度感知功率遞推要 **169 步(中位)/ 29 步(最快)** 才吃掉 3 dB 預算,
+   而 episode 只有 10 步;100% 的 segment 由 episode 邊界切斷,
+   段內最大跌幅 0.718 dB(預算的 24%)。**依指示未動 `H`。**
 
 - 規格:`~/papers/modqn-paper-reproduction/docs/MCRL-NEW-PROJECT-SDD-01-2026-08-21.md`(r8)
 - 參數:`~/papers/modqn-paper-reproduction/docs/NEW-PROJECT-PARAMETER-SPEC-2026-08-21.md`

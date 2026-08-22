@@ -4,11 +4,12 @@
 "random wandering" over a 200 x 90 km service area at (40°N, 116°E).
 Everything below that is **S** and disclosed here.
 
-⚠ Two ported defaults did **not** match §IV and are not used:
-``user_scatter_distribution="uniform-circular"`` with a 50 km radius (§IV
-gives a 200 x 90 km rectangle) and ``mobility_model="deterministic-heading"``
-(§IV says random wandering).  Both alternatives exist in ``StepConfig``; this
-module implements the §IV pair.
+⚠ Two ported defaults did **not** match §IV: a 50 km-radius circular
+scatter (§IV gives a 200 x 90 km rectangle) and a deterministic heading
+(§IV says random wandering).  Ruling §8 said to delete both rather than
+demote them — "留著就會有人選到" — so ``StepConfig``, which still accepted
+them as options, went too (PATCH P-21).  This module implements the §IV
+pair and offers no switch.
 
 **Boundary behaviour is not in any source, so it is declared.**  Users
 reflect off the service-area edge.  The two alternatives were rejected for

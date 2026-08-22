@@ -194,7 +194,9 @@ def test_probe_p1_runs_against_the_real_driver(driver):
     assert 0.0 <= result["handover_rate"] <= 1.0
     assert result["d2_eligible_per_user"]["p50"] > 4
     assert 0.0 < result["elevation_deg"]["p50"] < 90.0
-    assert "lower bound" in result["caveat"]
+    # Ruling C-11: link feasibility is an execution-time outage, not a
+    # mask term, so the mask has three terms and says so.
+    assert "execution-time outage" in result["mask_scope"]
 
 
 @requires_archive

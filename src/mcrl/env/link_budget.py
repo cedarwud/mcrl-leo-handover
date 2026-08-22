@@ -68,21 +68,105 @@ atmosphere giving 0.015 dB at zenith.  Clear-sky gaseous attenuation at
 20 GHz is of order tenths of a dB, not hundredths.
 """
 
-SCINTILLATION_LOSS_DB: float = 0.0
-"""**Not modelled** — declared, not silently omitted (ruling C-8).
+# -- (3.10b)'s remaining two terms: L_c and L_s (ruling C-8, revised) ------
+#
+# ⚠ Both were **0.0** for one day.  The first C-8 set ``L_c`` to a declared
+# zero (its model is stochastic, and the frozen-seed protocol was mid-freeze)
+# and ``L_s`` to TR 38.821's "0 dB shadowing margin for VSAT".  The
+# controller overturned that on 2026-08-22: model both from TR 38.811's NTN
+# tables rather than declare them away.
+#
+# HOBS eq. (1) names the four loss terms and supplies no values.  Taking
+# them from TR 38.811 is therefore a **substitution**, and it is disclosed
+# as one (docs/DEVIATION-REGISTER.md) rather than presented as the source's
+# own numbers.
 
-The paper names ``L_c`` in (3.10b) but gives no value or realisation, and
-TR 38.811 §6.6.6's model is stochastic, which would drag the frozen-seed
-protocol into scope mid-freeze.  Kept as a named zero so the G-2 delta
-ledger keeps its line rather than the term disappearing.
+_SCINTILLATION_ELEVATION_DEG: tuple[float, ...] = (
+    10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0,
+)
+_SCINTILLATION_LOSS_DB: tuple[float, ...] = (
+    1.08, 0.48, 0.30, 0.22, 0.17, 0.13, 0.12, 0.12, 0.12,
+)
+"""**P'** — TR 38.811 Table 6.6.6.2.1-1, 20 GHz **tropospheric** scintillation.
+
+Deterministic, not a draw: the table gives a loss per elevation, so ``L_c``
+adds no randomness to the model.
+
+**Ionospheric scintillation is excluded, with a citable reason.**  TR 38.811
+§6.6.6.1 states that it is considered only below 6 GHz.  This project runs
+at 20 GHz, so the exclusion is the specification's own scope statement and
+not a modelling choice made here.
 """
 
-SHADOWING_LOSS_DB: float = 0.0
-"""**P'** — TR 38.821 Table 6.1.3.2-1: "Shadowing margin 0 dB for VSAT".
+_SHADOW_SIGMA_ELEVATION_DEG: tuple[float, ...] = (
+    10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0,
+)
+_SHADOW_SIGMA_DB: tuple[float, ...] = (
+    1.9, 1.6, 1.9, 2.3, 2.7, 3.1, 3.0, 3.6, 0.4,
+)
+"""**P'** — TR 38.811 Table 6.6.2-3, Ka band, **LOS** shadow-fading σ.
 
-Unlike ``L_c`` this zero is sourced rather than merely declared: this
-project's terminal is the Ka VSAT whose margin that table sets to zero.
+⚠ **The 90° entry really is 0.4 dB.**  The published table steps from 3.6 dB
+at 80° straight down to 0.4 dB at 90°, and it is transcribed as printed.
+Smoothing it would be inventing data; the discontinuity is the
+specification's, and interpolating across it is the only place this model
+has a sharp edge.
+
+Clutter loss is **not** applied: TR 38.811 gives it for NLOS, and this
+project's terminal is a fixed VSAT held in line of sight.
 """
+
+
+def scintillation_loss_db(elevation_deg: np.ndarray) -> np.ndarray:
+    """``L_c(α)`` — tropospheric scintillation, dB, positive.
+
+    Linear interpolation in elevation over the 20 GHz table, clamped at both
+    ends.  Below 10° the table stops and the value is held rather than
+    extrapolated: the curve is steepening there and a linear continuation
+    would understate it, while every served link in this project sits above
+    D2's ``Thresh2`` (≈ 21°) anyway.
+    """
+    elevation = np.asarray(elevation_deg, dtype=np.float64)
+    if np.any(elevation < -90.0) or np.any(elevation > 90.0):
+        raise MCRLContractError("elevation must lie in [-90, 90] degrees")
+    return np.interp(
+        np.clip(elevation, _SCINTILLATION_ELEVATION_DEG[0], 90.0),
+        _SCINTILLATION_ELEVATION_DEG,
+        _SCINTILLATION_LOSS_DB,
+    )
+
+
+def shadow_fading_sigma_db(elevation_deg: np.ndarray) -> np.ndarray:
+    """``σ(α)`` for ``L_s`` — TR 38.811 Table 6.6.2-3, Ka LOS."""
+    elevation = np.asarray(elevation_deg, dtype=np.float64)
+    if np.any(elevation < -90.0) or np.any(elevation > 90.0):
+        raise MCRLContractError("elevation must lie in [-90, 90] degrees")
+    return np.interp(
+        np.clip(elevation, _SHADOW_SIGMA_ELEVATION_DEG[0], 90.0),
+        _SHADOW_SIGMA_ELEVATION_DEG,
+        _SHADOW_SIGMA_DB,
+    )
+
+
+def shadow_fading_db(
+    rng: np.random.Generator, elevation_deg: np.ndarray
+) -> np.ndarray:
+    """``L_s`` — a **zero-mean dB-domain** Gaussian with elevation-dependent σ.
+
+    One of exactly two random terms in this model, the other being the
+    Rician draw of :func:`rician_fading_gain`.  They share the PREREG's
+    frozen seed set; nothing else here is stochastic.
+
+    ⚠ **Zero mean in dB is not zero mean in linear power.**  A dB-Gaussian
+    is lognormal once converted, so ``E[10^(−L_s/10)] = exp((σ·ln10/10)²/2)``
+    — about +1.0 dB of mean gain at σ = 3 dB.  That is the specification's
+    convention and it is reproduced rather than normalised away, because
+    normalising would silently change what "0 dB shadowing" means relative
+    to every published NTN link budget.  It is stated here so nobody has to
+    rediscover it from an unexpectedly generous EE number.
+    """
+    sigma = shadow_fading_sigma_db(elevation_deg)
+    return rng.standard_normal(sigma.shape) * sigma
 
 _MIN_SIN_ELEVATION: float = 1e-3
 
@@ -230,19 +314,24 @@ def atmospheric_loss_db(elevation_deg: np.ndarray) -> np.ndarray:
 
 
 def total_path_loss_db(
-    slant_km: np.ndarray, elevation_deg: np.ndarray
+    slant_km: np.ndarray,
+    elevation_deg: np.ndarray,
+    *,
+    shadow_fading_db: np.ndarray | float = 0.0,
 ) -> np.ndarray:
     """Paper eq. (3.10b): ``L = L_f + L_g + L_c + L_s``, all in dB.
 
-    ``L_c`` and ``L_s`` are the declared zeros above; they are summed in
-    explicitly so the four-term structure of (3.10b) is visible in the code
-    rather than implied by two of its terms.
+    ``L_s`` is keyword-only and defaults to zero because it is a **draw**,
+    not a function of the geometry — the caller owns the generator, and a
+    default that silently produced its own would make two callers with the
+    same seed disagree.  Passing nothing gives the deterministic budget,
+    which is what the G-2 ledger and the anchor tests want.
     """
     return (
         free_space_loss_db(slant_km)
         + atmospheric_loss_db(elevation_deg)
-        + SCINTILLATION_LOSS_DB
-        + SHADOWING_LOSS_DB
+        + scintillation_loss_db(elevation_deg)
+        + np.asarray(shadow_fading_db, dtype=np.float64)
     )
 
 
@@ -554,6 +643,7 @@ def link_power_factor(
     receive_gain_linear: np.ndarray,
     *,
     fading_gain: np.ndarray | None = None,
+    shadow_fading_db: np.ndarray | float = 0.0,
 ) -> np.ndarray:
     """Paper eq. (3.10a): ``H = 10^(−L/10) · G^R``, times Rician fading.
 
@@ -562,7 +652,9 @@ def link_power_factor(
     small-scale fading (3.10) names.  ``G^T(θ)`` multiplies it separately so
     the angle enters exactly once and visibly.
     """
-    loss_db = total_path_loss_db(slant_km, elevation_deg)
+    loss_db = total_path_loss_db(
+        slant_km, elevation_deg, shadow_fading_db=shadow_fading_db
+    )
     receive = np.asarray(receive_gain_linear, dtype=np.float64)
     if np.any(receive < 0.0):
         raise MCRLContractError("receive gain must be non-negative")

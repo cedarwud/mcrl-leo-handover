@@ -185,6 +185,7 @@ def beam_field_at_users(
     user_ecef_km: np.ndarray,
     radiating: RadiatingBeams,
     fading_by_norad: dict[int, np.ndarray] | None = None,
+    shadow_db_by_norad: dict[int, np.ndarray] | None = None,
 ) -> BeamFieldAtUsers:
     """Evaluate every radiating beam at every user, except for ``G^R``.
 
@@ -221,23 +222,20 @@ def beam_field_at_users(
         radiating.satellite_ecef_km[None, :, :], users[:, None, :]
     )
     # ``link_power_factor`` folds in G^R; here it must not, so the receive
-    # gain is passed as unity and applied by the caller.
-    path = link_power_factor(slant, elevation, np.ones_like(slant))
+    # gain is passed as unity and applied by the caller.  ``L_s`` goes in
+    # here rather than beside the Rician draw because it is a **path loss**
+    # in dB (3.10b), not a power gain — putting it in the linear product
+    # would be the same term twice in two different domains.
+    shadow_db = _per_beam_column(
+        shadow_db_by_norad, radiating, num_users, "shadow-fading", fill=0.0
+    )
+    path = link_power_factor(
+        slant, elevation, np.ones_like(slant), shadow_fading_db=shadow_db
+    )
 
-    if fading_by_norad is None:
-        fading = np.ones((num_users, count), dtype=np.float64)
-    else:
-        columns = []
-        for norad in radiating.norad_ids.tolist():
-            if int(norad) not in fading_by_norad:
-                raise MCRLContractError(
-                    f"no fading draw for radiating satellite {int(norad)}"
-                )
-            column = np.asarray(fading_by_norad[int(norad)], dtype=np.float64)
-            if column.shape != (num_users,):
-                raise MCRLContractError("each fading column must be (U,)")
-            columns.append(column)
-        fading = np.stack(columns, axis=1)
+    fading = _per_beam_column(
+        fading_by_norad, radiating, num_users, "Rician-fading", fill=1.0
+    )
 
     return BeamFieldAtUsers(
         transmit_gain=transmit,
@@ -519,3 +517,35 @@ def candidate_interference_w(
     contributes = co_colour & ((same_satellite & ~same_cell) | ~same_satellite)
     contributes &= linked[:, :, None]
     return (expanded * contributes).sum(axis=2)
+
+
+def _per_beam_column(
+    by_norad: dict[int, np.ndarray] | None,
+    radiating: RadiatingBeams,
+    num_users: int,
+    what: str,
+    *,
+    fill: float,
+) -> np.ndarray:
+    """Expand a per-satellite ``(U,)`` draw across the radiating beams.
+
+    Both random terms — the Rician gain and the shadow-fading loss — are
+    keyed by satellite rather than by beam, because both are properties of
+    the propagation path and every beam of one satellite reaches a given
+    user over the same one.  ``None`` means "no draw", which is the neutral
+    element of whichever domain the term lives in: 1.0 for a linear gain,
+    0.0 for a dB loss.
+    """
+    if by_norad is None:
+        return np.full((num_users, radiating.count), fill, dtype=np.float64)
+    columns = []
+    for norad in radiating.norad_ids.tolist():
+        if int(norad) not in by_norad:
+            raise MCRLContractError(
+                f"no {what} draw for radiating satellite {int(norad)}"
+            )
+        column = np.asarray(by_norad[int(norad)], dtype=np.float64)
+        if column.shape != (num_users,):
+            raise MCRLContractError(f"each {what} column must be (U,)")
+        columns.append(column)
+    return np.stack(columns, axis=1)

@@ -13,16 +13,17 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 
 | 檔案 | 來源 sha256(前 16) | 目前 sha256(前 16) | 狀態 |
 |---|---|---|---|
-| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `6385ee8871b76ed0` | **來源 + P-01…P-05、P-09、P-11、P-14**(1,333 → 1,070 行) |
-| `src/mcrl/env/step_types.py` | `c4995ba509bbe2e6` | `7d9f65598a44c06d` | **來源 + P-07、P-08、P-15、P-16**(696 → 343 行) |
+| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `4c5df44234798eb1` | **來源 + P-01…P-05、P-09、P-11、P-14、P-20**(1,333 → 1,054 行) |
+| `src/mcrl/env/step_types.py` | `c4995ba509bbe2e6` | `b91ef574287a32fc` | **來源 + P-07、P-08、P-15、P-16、P-20、P-21**(696 → 217 行) |
 | `src/mcrl/runtime/q_network.py` | `d11318d61ad93a77` | `d11318d61ad93a77` | 逐位元組相同 |
 | `src/mcrl/runtime/replay_buffer.py` | `374a73e1b3a5e9da` | `374a73e1b3a5e9da` | 逐位元組相同 |
 | `src/mcrl/runtime/state_encoding.py` | `723974bcc6db9d5d` | `fdb4675b5cc89539` | **來源 + P-09、P-10**(P-10 已依 C-1 改為預設關的消融開關) |
-| `src/mcrl/runtime/objective_math.py` | `e8a55760ee1dc4da` | `e8a55760ee1dc4da` | 逐位元組相同 |
-| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `d48fda5b04a5d4b5` | **來源 + P-05、P-06**(250 → 158 行) |
+| `src/mcrl/runtime/objective_math.py` | `e8a55760ee1dc4da` | `8f7ffff4ad46228f` | **來源 + P-20**(91 → 55 行) |
+| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `777eefba93530b47` | **來源 + P-05、P-06、P-20**(250 → 160 行) |
 
 新增檔(無來源,不屬補丁):`src/mcrl/errors.py`、`src/mcrl/env/action_contract.py`、
 `src/mcrl/env/interference.py`、`src/mcrl/env/step.py`、
+`src/mcrl/runtime/trainer_env.py`、`src/mcrl/runtime/prereg_draft.py`、
 `src/mcrl/runtime/finiteness.py`、各 `__init__.py`、`pyproject.toml`、`tests/`。
 其餘 `env/` 與 `runtime/` 模組亦為新寫,見 `docs/PROVENANCE.md`。
 
@@ -242,6 +243,45 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 | 真正的傷害 | 多出的 `Σ(U−1)·P^p` **隨佔用人數單調上升**,且落在 `r1` 的**分母** ⇒ 第一個目標偷偷兼做第三個目標,`Ω=(0.5,0.3,0.2)` 的解讀失效。常數偏移不影響 argmax,載量相依的偏移會 |
 | 迴歸 | `link_over_beam_power_ratio`(回報的 `P^N` ÷ 獨立重算的逐波束 `P^N`)**恆為 1.0**,已釘進測試;`superseded_link_over_beam_ratio` 續報舊式的值 |
 | 對應測試 | `test_w17_step_environment.py::test_the_power_sum_is_per_beam_not_per_link`、`test_w06_energy_efficiency.py::test_it_plugs_into_the_paper_power_chain` |
+
+### P-20 — `r1` 的五選一選擇器整組移除(裁決 C-7 + (3.25))
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `objective_math.select_r1_reward_value`、`trainer_spec` 的五個 `R1_REWARD_MODE_*`、`RewardComponents` 的五個 `r1_*` 欄位、`modqn.reward_vector_from_step_result` 的分派 |
+| 補丁內容 | 選擇器與四個死模式刪除;`RewardComponents` 縮成 `r1_system_ee_contribution` / `r1_throughput` / `r2_handover` / `r3_load_balance` 四欄,且**全部必填** |
+| 缺陷 | (3.25) 只定義**一個** `r1 = Σ x·η`,沒有東西可選。而唯一的 live 模式 `"throughput"` 讀的是 `r1_throughput` —— 環境已經把 **bit/J** 放進那個名字寫著 throughput 的欄位。**一個名字與內容不符的欄位,由一個只有一個有效檔位的開關選中** |
+| 為何危險 | 兩個量在本情境都是 1e7–1e8 量級,混用**看不出錯**,只會安靜地最佳化錯的目標 |
+| 現在的語意 | `r1_system_ee_contribution` = `R_u/P^N`(bit/J,**就是 r1**);`r1_throughput` = `R_u`(bit/s,G-8 要求附在 EE 旁邊的服務量,**不是獎勵**) |
+| 一併刪除 | `r1_energy_efficiency_credit`、`r1_kappa_allocated_ee_diagnostic`(C-7 撤回 `κ` 閉包)、`r1_beam_power_efficiency_credit`、`r1_hobs_active_tx_ee`、`r1_angle_aware_ee`(Family-B 介面,未移植) |
+| 對應測試 | `test_w18_trainer_environment.py::test_r1_reaching_the_trainer_is_the_energy_efficiency_not_the_throughput` |
+
+### P-21 — 刪除 `StepConfig`、`DiagnosticsReport` 與 `StepResult` 的三個只寫不讀欄位
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `env/step_types.py` |
+| 補丁內容 | `StepConfig`(整類)、`DiagnosticsReport`(整類)、`StepResult.beam_throughputs` / `.active_beam_mask` / `.beam_transmit_power_w` |
+| `StepConfig` 的理由 | **零消費者**,且每個欄位都已另有擁有者(`MobilityConfig` / `ScenarioConfig` / `action_contract.PHI1,PHI2` / `constants.TIME_STEP_S`);`r3_gap_scope` 與 `action_mask_eligibility_mode` 已分別被 B13 與 §4A.5 取代。⚠ **更要緊的是**:裁決 §8 說要**刪掉**那兩個移植選項,P-15 只改了預設值,`__post_init__` 仍然接受 `uniform-circular` 與 `deterministic-heading` —— 刪掉第二個家把這個缺口一併補上 |
+| 三個陣列的理由 | 全部只寫不讀,且都標註 shape `(L*K,)` —— 一條固定 28 寬的**逐使用者候選**軸。波束現在是全域 `(衛星, 格)` 配對、每步數量不同,**宣告的形狀已經不描述物理** |
+| 取代者 | 逐波束量在 `StepOutcome.radiating`,長度是真的 |
+| 對應測試 | `test_w18_trainer_environment.py::test_the_adapter_config_holds_only_what_the_trainer_reads` |
+
+### 非補丁:`env/trainer_env.py`(新檔)—— 訓練器與環境的接頭
+
+移植來的 `MODQNTrainer` 對環境的契約是**隱含的**(它從不宣告),
+所以接頭把它寫出來:`config.num_users`、`config.steps_per_episode`、
+`num_beams_total`、`reset(env_rng, mobility_rng)`、`step(actions, env_rng)`。
+
+契約沒帶的三樣,各自的來源:
+
+1. **epoch** —— `reset` 只收兩個 generator、不收時間。起始時刻由
+   `EpisodeStartSampler` 抽(日期均勻於**有檔**日期 × 時刻均勻),
+   而那個分布是 PREREG 凍結的 ⇒ **不是這裡挑的,是預註冊的抽樣**。
+2. **兩個 generator** —— `mobility_rng` 放置與移動使用者,`env_rng` 抽 epoch 與 Rician 衰落。
+   分開是為了讓「關掉衰落」不會同時把人重新灑一次,否則兩個效應永遠分不開。
+   (`StepEnvironment.reset` 隨之新增 `mobility_rng` 關鍵字,預設沿用同一條流。)
+3. **閘** —— `assert_ready_to_train()` 同時跑物理常數自洽(`p⁰ ≤ p_max`)與 Q-D/Q-E 已定案兩項。
 
 ### 非補丁:向量化 Bessel(效能,數值不變)
 

@@ -99,6 +99,7 @@ from .link_budget import (
     recurrence_power_w,
     rician_fading_gain,
     segment_start_feasibility_report,
+    shadow_fading_db,
     shannon_rate_bps,
     supply_power_w,
     system_power_w,
@@ -231,13 +232,28 @@ class StepOutcome:
 
     @property
     def reward_matrix(self) -> np.ndarray:
-        """``(U, 3)`` of ``(r1, r2, r3)`` in natural units, unscaled."""
+        """``(U, 3)`` of ``(r1, r2, r3)`` in natural units, unscaled.
+
+        ``r1`` is the energy efficiency of (3.25), in bit/J — not the
+        throughput.  ``throughput_bps`` below carries ``R_u`` separately.
+        """
         return np.array(
             [
-                (reward.r1_throughput, reward.r2_handover, reward.r3_load_balance)
+                (
+                    reward.r1_system_ee_contribution,
+                    reward.r2_handover,
+                    reward.r3_load_balance,
+                )
                 for reward in self.rewards
             ],
             dtype=np.float64,
+        )
+
+    @property
+    def throughput_bps(self) -> np.ndarray:
+        """``(U,)`` of ``R_u`` — r1's numerator, which G-8 needs beside it."""
+        return np.array(
+            [reward.r1_throughput for reward in self.rewards], dtype=np.float64
         )
 
 
@@ -269,6 +285,7 @@ class StepEnvironment:
         self._previous_demand: dict[tuple[int, int], int] = {}
         self._previous_association: list[Association | None] = [None] * self.num_users
         self._candidates: StepCandidates | None = None
+        self._mobility_rng: np.random.Generator | None = None
         self._step_index = 0
         self._started = False
 
@@ -301,7 +318,11 @@ class StepEnvironment:
     # -- episode ----------------------------------------------------------
 
     def reset(
-        self, start_utc: dt.datetime, rng: np.random.Generator
+        self,
+        start_utc: dt.datetime,
+        rng: np.random.Generator,
+        *,
+        mobility_rng: np.random.Generator | None = None,
     ) -> StepObservation:
         """Begin an episode and return the step-0 observation.
 
@@ -310,6 +331,13 @@ class StepEnvironment:
         is all zero), no previous demand (``N(t−1)`` likewise), and nothing
         radiating (so ``I = 0``, which is a fact about an idle system rather
         than a missing term).
+
+        ``rng`` draws the Rician fading; ``mobility_rng`` places and moves
+        the users.  Keeping them apart is what lets a fading ablation leave
+        the population where it was — with one stream, turning fading off
+        would silently re-seed everybody's starting position and the two
+        effects could never be separated.  Defaulting to one stream keeps
+        the single-generator call site legal for tests.
         """
         for ledger in self._ledgers:
             ledger.reset()
@@ -319,9 +347,12 @@ class StepEnvironment:
         self._previous_association = [None] * self.num_users
         self._step_index = 0
         self._started = True
+        self._mobility_rng = mobility_rng if mobility_rng is not None else rng
 
         candidates = self.driver.reset(
-            start_utc, rng, incumbent_norads=self._incumbent_norads()
+            start_utc,
+            self._mobility_rng,
+            incumbent_norads=self._incumbent_norads(),
         )
         self._candidates = candidates
         return self._observe(candidates, rng)
@@ -347,7 +378,7 @@ class StepEnvironment:
             following = decision
         else:
             following = self.driver.step(
-                rng, incumbent_norads=self._incumbent_norads()
+                self._mobility_rng, incumbent_norads=self._incumbent_norads()
             )
             self._candidates = following
         observation = self._observe(following, rng, terminal=done)
@@ -501,10 +532,15 @@ class StepEnvironment:
             satellite_ecef_by_norad=satellite_ecef,
             grid=grid,
         )
-        fading = self._draw_fading(satellite_ecef, rng)
+        fading, shadow = self._draw_fading(
+            satellite_ecef, rng, _elevation_by_norad(decision)
+        )
 
         field_now = beam_field_at_users(
-            user_ecef_km=user_ecef, radiating=radiating, fading_by_norad=fading
+            user_ecef_km=user_ecef,
+            radiating=radiating,
+            fading_by_norad=fading,
+            shadow_db_by_norad=shadow,
         )
         boresight_ecef, boresight_ids = _boresight(
             resolution, satellite_ecef, user_ecef
@@ -668,10 +704,13 @@ class StepEnvironment:
             )
             rewards.append(
                 RewardComponents(
-                    r1_throughput=float(r1[uid]),
+                    # r1 IS the energy efficiency (3.25).  The throughput
+                    # beside it is its numerator, reported because G-8 will
+                    # not accept an EE quoted without the service it bought.
+                    r1_system_ee_contribution=float(r1[uid]),
+                    r1_throughput=float(rate[uid]),
                     r2_handover=-HANDOVER_COST[handover],
                     r3_load_balance=float(r3[uid]),
-                    r1_system_ee_contribution=float(r1[uid]),
                 )
             )
         return tuple(rewards), tuple(classes)
@@ -785,27 +824,36 @@ class StepEnvironment:
 
         user_ecef = self.driver.user_ecef_km()
         satellite_ecef = _satellite_positions(candidates)
-        fading = self._draw_fading(satellite_ecef, rng)
+        fading, shadow = self._draw_fading(
+            satellite_ecef, rng, _elevation_by_norad(candidates)
+        )
 
         transmit = transmit_gain_linear(theta_deg)
         slant = np.repeat(candidates.slant_range_km, NUM_BEAM_SLOTS, axis=1)
         elevation = np.repeat(candidates.elevation_deg, NUM_BEAM_SLOTS, axis=1)
         usable = (norad_ids >= 0) & (cell_ids >= 0) & np.isfinite(slant)
+
+        # Both random terms first: L_s is a dB loss and so belongs inside
+        # the path-loss sum, not multiplied onto it afterwards.
+        fade = np.ones((users, NUM_ACTIONS), dtype=np.float64)
+        shade_db = np.zeros((users, NUM_ACTIONS), dtype=np.float64)
+        for uid in range(users):
+            for action in range(NUM_ACTIONS):
+                norad = int(norad_ids[uid, action])
+                if norad >= 0:
+                    fade[uid, action] = fading[norad][uid]
+                    shade_db[uid, action] = shadow[norad][uid]
+
         path = np.where(
             usable,
             link_power_factor(
                 np.where(usable, slant, 1.0),
                 np.where(usable, elevation, 0.0),
                 np.full(slant.shape, _RX_GAIN_MAX_LINEAR),
+                shadow_fading_db=shade_db,
             ),
             0.0,
         )
-        fade = np.ones((users, NUM_ACTIONS), dtype=np.float64)
-        for uid in range(users):
-            for action in range(NUM_ACTIONS):
-                norad = int(norad_ids[uid, action])
-                if norad >= 0:
-                    fade[uid, action] = fading[norad][uid]
 
         wanted = physics.segment_start_power_w * transmit * path * fade
         wanted = np.where(usable, wanted, 0.0)
@@ -817,10 +865,14 @@ class StepEnvironment:
                 int(norad): radiating.satellite_ecef_km[index]
                 for index, norad in enumerate(radiating.norad_ids.tolist())
             }
+            previous_fading, previous_shadow = self._draw_fading(
+                previous_ecef, rng
+            )
             field_previous = beam_field_at_users(
                 user_ecef_km=user_ecef,
                 radiating=radiating,
-                fading_by_norad=self._draw_fading(previous_ecef, rng),
+                fading_by_norad=previous_fading,
+                shadow_db_by_norad=previous_shadow,
             )
             window_ecef = np.where(
                 np.isnan(candidates.window_satellite_ecef_km),
@@ -860,32 +912,57 @@ class StepEnvironment:
         )
 
     def _draw_fading(
-        self, satellite_ecef: dict[int, np.ndarray], rng: np.random.Generator
-    ) -> dict[int, np.ndarray]:
-        """One Rician draw per (user, satellite), keyed by NORAD id.
+        self,
+        satellite_ecef: dict[int, np.ndarray],
+        rng: np.random.Generator,
+        elevation_by_norad: dict[int, np.ndarray] | None = None,
+    ) -> tuple[dict[int, np.ndarray], dict[int, np.ndarray]]:
+        """The model's **only two random terms**, drawn together.
 
-        Per satellite rather than per beam: fading is a property of the
-        propagation path, and every beam of one satellite reaches a given
-        user over the same one.  Drawing per beam would let a wanted link
-        and its own co-satellite interferers fade independently, which adds
-        variance to the SINR without modelling anything.
+        ``(rician_gain, shadow_loss_db)``, both per (user, satellite) and
+        keyed by NORAD id.  Per satellite rather than per beam because both
+        are properties of the propagation path, and every beam of one
+        satellite reaches a given user over the same one: drawing per beam
+        would let a wanted link and its own co-satellite interferers fade
+        independently, which adds variance to the SINR without modelling
+        anything.
 
-        Iteration is over sorted NORAD ids so the draw order — and therefore
-        the whole episode — is reproducible from the seed alone.
+        They are drawn in one pass, from one generator, in sorted NORAD
+        order, so the PREREG can commit a single seed set for both (ruling
+        C-8) and the whole episode is reproducible from it.
+
+        ``L_s``'s σ depends on elevation (TR 38.811 Table 6.6.2-3), so the
+        caller supplies it; without it the draw falls back to the table's
+        10° row, which is its most pessimistic.
         """
+        order = sorted(satellite_ecef)
         if not self.physics.fading_enabled:
-            return {
-                int(norad): np.ones(self.num_users, dtype=np.float64)
-                for norad in satellite_ecef
+            zero = {
+                int(norad): np.zeros(self.num_users, dtype=np.float64)
+                for norad in order
             }
-        return {
-            int(norad): rician_fading_gain(
+            return (
+                {
+                    int(norad): np.ones(self.num_users, dtype=np.float64)
+                    for norad in order
+                },
+                zero,
+            )
+        rician: dict[int, np.ndarray] = {}
+        shadow: dict[int, np.ndarray] = {}
+        for norad in order:
+            rician[int(norad)] = rician_fading_gain(
                 rng,
                 (self.num_users,),
                 k_factor_db=self.physics.rician_k_factor_db,
             )
-            for norad in sorted(satellite_ecef)
-        }
+            elevation = (
+                (elevation_by_norad or {}).get(
+                    int(norad), np.full(self.num_users, 10.0)
+                )
+            )
+            shadow[int(norad)] = shadow_fading_db(rng, np.asarray(elevation))
+        return rician, shadow
 
     def _diagnostics(self, physics: dict[str, object]) -> dict[str, object]:
         resolution: ServiceResolution = physics["resolution"]  # type: ignore[assignment]
@@ -983,3 +1060,24 @@ def _boresight(
         ecef[uid] = satellite_ecef[norad]
         ids[uid] = norad
     return ecef, ids
+
+
+def _elevation_by_norad(candidates: StepCandidates) -> dict[int, np.ndarray]:
+    """``(U,)`` elevation per tracked satellite — what ``L_s``'s σ needs.
+
+    Built from the candidate windows, which is the same union the
+    interference sum draws its satellites from.  A satellite absent from
+    every window radiates nothing, so it needs no draw.
+    """
+    users = candidates.window_norad_ids.shape[0]
+    out: dict[int, np.ndarray] = {}
+    for uid in range(users):
+        for slot in range(candidates.window_norad_ids.shape[1]):
+            norad = int(candidates.window_norad_ids[uid, slot])
+            if norad < 0:
+                continue
+            column = out.setdefault(norad, np.full(users, 10.0))
+            elevation = candidates.elevation_deg[uid, slot]
+            if np.isfinite(elevation):
+                column[uid] = float(elevation)
+    return out

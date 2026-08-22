@@ -48,124 +48,22 @@ family but does not disclose the exact turn-law details."""
 # power model is ``env/step.PhysicsConfig`` plus ``env/link_budget``, and it
 # has no mode switch at all.
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class StepConfig:
-    """Top-level configuration for one environment run.
-
-    Paper-backed: num_users, slot_duration_s, episode_duration_s,
-    handover phi1/phi2 bounds.
-    Reproduction-assumption: concrete phi1/phi2 (ASSUME-MODQN-REP-003).
-    """
-
-    num_users: int = 100
-    slot_duration_s: float = 1.0
-    episode_duration_s: float = 10.0
-    user_speed_kmh: float = 30.0
-
-    # ASSUME-MODQN-REP-003: handover penalty values
-    phi1: float = 0.5   # intra-satellite beam change
-    phi2: float = 1.0   # inter-satellite handover
-
-    # User ground position — reproduction-assumption (not specified in paper).
-    # Default: equator, visible to polar-orbit sats.
-    user_lat_deg: float = 0.0
-    user_lon_deg: float = 0.0
-
-    # ASSUME-MODQN-REP-019: r3 gap semantics
-    r3_gap_scope: str = "all-reachable-beams"
-    r3_empty_beam_throughput: float = 0.0
-
-    # ASSUME-MODQN-REP-020/021: user mobility and scatter
-    action_mask_eligibility_mode: str = "satellite-visible-all-beams"
-    user_heading_stride_rad: float = USER_HEADING_STRIDE_RAD
-    user_scatter_radius_km: float = USER_SCATTER_RADIUS_KM
-    # PATCH P-15 (ruling §8): §IV gives a 200 x 90 km rectangle, so the
-    # circular default is wrong and is not kept as an option — "留著就會有
-    # 人選到".
-    user_scatter_distribution: str = "uniform-rectangle"
-    user_area_width_km: float = 0.0
-    user_area_height_km: float = 0.0
-    # PATCH P-15 (ruling §8): §IV says "random wandering".
-    mobility_model: str = "random-wandering"
-    random_wandering_max_turn_rad: float = RANDOM_WANDERING_MAX_TURN_RAD
-
-    def __post_init__(self) -> None:
-        if self.num_users < 1:
-            raise ValueError(f"num_users must be >= 1, got {self.num_users}")
-        if self.slot_duration_s <= 0:
-            raise ValueError(f"slot_duration_s must be > 0, got {self.slot_duration_s}")
-        if self.episode_duration_s <= 0:
-            raise ValueError(
-                f"episode_duration_s must be > 0, got {self.episode_duration_s}"
-            )
-        if not (0 < self.phi1 < self.phi2):
-            raise ValueError(
-                f"Paper requires 0 < phi1 < phi2, got phi1={self.phi1}, phi2={self.phi2}"
-            )
-        if self.r3_gap_scope not in {
-            "all-reachable-beams",
-            "occupied-beams-only",
-        }:
-            raise ValueError(
-                "r3_gap_scope must be one of "
-                "{'all-reachable-beams', 'occupied-beams-only'}, "
-                f"got {self.r3_gap_scope!r}"
-            )
-        if self.action_mask_eligibility_mode not in {
-            "satellite-visible-all-beams",
-            "nearest-beam-per-visible-satellite",
-        }:
-            raise ValueError(
-                "action_mask_eligibility_mode must be one of "
-                "{'satellite-visible-all-beams', "
-                "'nearest-beam-per-visible-satellite'}, "
-                f"got {self.action_mask_eligibility_mode!r}"
-            )
-        if self.user_scatter_radius_km < 0:
-            raise ValueError(
-                "user_scatter_radius_km must be >= 0, "
-                f"got {self.user_scatter_radius_km}"
-            )
-        if self.user_scatter_distribution not in {
-            "uniform-circular",
-            "uniform-rectangle",
-        }:
-            raise ValueError(
-                "user_scatter_distribution must be one of "
-                "{'uniform-circular', 'uniform-rectangle'}, "
-                f"got {self.user_scatter_distribution!r}"
-            )
-        if self.user_scatter_distribution == "uniform-rectangle":
-            if self.user_area_width_km <= 0 or self.user_area_height_km <= 0:
-                raise ValueError(
-                    "uniform-rectangle requires positive user_area_width_km "
-                    f"and user_area_height_km, got width={self.user_area_width_km}, "
-                    f"height={self.user_area_height_km}"
-                )
-        if self.mobility_model not in {
-            "deterministic-heading",
-            "random-wandering",
-        }:
-            raise ValueError(
-                "mobility_model must be one of "
-                "{'deterministic-heading', 'random-wandering'}, "
-                f"got {self.mobility_model!r}"
-            )
-        if self.random_wandering_max_turn_rad < 0:
-            raise ValueError(
-                "random_wandering_max_turn_rad must be >= 0, "
-                f"got {self.random_wandering_max_turn_rad}"
-            )
-
-    @property
-    def steps_per_episode(self) -> int:
-        return int(self.episode_duration_s / self.slot_duration_s)
-
+# PATCH P-21 (W-18): ``StepConfig`` is deleted.  Zero consumers, and every
+# field it held now has a real owner:
+#
+#   num_users, speed, area, turn bound  -> env/mobility.MobilityConfig
+#   steps_per_episode                   -> env/scenario.ScenarioConfig
+#   phi1, phi2                          -> env/action_contract.PHI1, PHI2
+#   slot_duration_s                     -> env/constants.TIME_STEP_S
+#   r3_gap_scope                        -> superseded by B13's counting r3
+#   action_mask_eligibility_mode        -> superseded by §4A.5's three terms
+#
+# Keeping it was not merely redundant.  Ruling §8 said to DELETE the two
+# ported alternatives, "不要留著當選項 —— 留著就會有人選到"; PATCH P-15
+# changed the defaults but left ``__post_init__`` still accepting
+# ``uniform-circular`` and ``deterministic-heading``.  ``MobilityConfig``
+# implements the §IV pair and offers no switch at all, so deleting the
+# second home closes that gap and the drift risk together.
 
 # ---------------------------------------------------------------------------
 # Result types
@@ -246,51 +144,49 @@ class ActionMask:
 
 @dataclass(frozen=True)
 class RewardComponents:
-    """Raw reward vector r1/r2/r3 for one user at one step.
+    """The three-objective reward vector for one user at one step.
 
-    The paper-backed MODQN r1 throughput is always preserved.  The active
-    Family-B system-EE objective is the additive contribution ``R_u/P_system``;
-    summing that field across users exactly recovers the step-level system EE.
-    The older kappa-allocated quantity is retained only as a named diagnostic
-    and compatibility surface and must not drive active training or verdicts.
+    PATCH P-20 (W-18, ruling C-7): five ``r1`` variants are gone and the
+    remaining two mean what their names say.
 
-    No normalization is applied. Values are in natural units:
-    - r1_throughput: bits/s (throughput)
-    - r1_system_ee_contribution: bits/J using the shared system consumed-power
-      denominator, ``R_u/P_system`` (active Family-B objective)
-    - r1_kappa_allocated_ee_diagnostic: bits/J using the legacy
-      ``R_u/(kappa_u P_beam_total)`` denominator (diagnostic only)
-    - r1_energy_efficiency_credit: compatibility alias value for the same
-      legacy kappa-allocated diagnostic
-    - r1_beam_power_efficiency_credit: bits/s/W using full selected-beam
-      ``P_b`` denominator (Phase 03B credit-assignment sensitivity)
-    - r2: dimensionless penalty (0, -phi1, or -phi2)
-    - r3: PATCH P-13 (B13) — the count-based ``-U_{b_u}``, in whole users.
-      The original line described the superseded form, "dimensionless ratio
-      (negative gap / num_users)", which is a different quantity in
-      different units; leaving it would have made the typed contract
-      disagree with ``service.r3_counting``.
+    ``r1`` is (3.25), ``r1_u = Σ_{s,v} x·η = (Σ x·R)/P^N`` — an **energy
+    efficiency**, not a throughput.  It used to be selected out of five
+    candidate fields by ``TrainerConfig.r1_reward_mode``, and the live one
+    was ``r1_throughput``, whose name then contradicted the value the
+    environment was putting in it.  A field named "throughput" holding
+    bits/J is exactly the silent mismatch the rest of this project keeps
+    tripping over, so the selector went and the two fields split apart.
+
+    Removed with the selector: ``r1_energy_efficiency_credit`` and
+    ``r1_kappa_allocated_ee_diagnostic`` (ruling C-7 withdrew the ``κ``
+    power-share closure), ``r1_beam_power_efficiency_credit``,
+    ``r1_hobs_active_tx_ee`` and ``r1_angle_aware_ee`` (Family-B surfaces
+    that live in the source project and were never ported here).
+
+    No normalization is applied.  Values are in natural units:
+
+    - ``r1_system_ee_contribution``: bit/J, ``R_u/P^N`` — **this is r1**.
+      Additive by construction: summing it over users recovers the system
+      EE exactly, which is what makes it a decomposition of a global
+      objective rather than a per-user proxy for one.
+    - ``r1_throughput``: bit/s, ``R_u`` — the numerator, reported beside it
+      because G-8 forbids quoting an EE without the service it bought.
+      **Not r1.**
+    - ``r2_handover``: dimensionless penalty (0, −φ1, or −φ2).
+    - ``r3_load_balance``: PATCH P-13 (B13) — the count-based ``−U_{b_u}``,
+      in whole users.  The original line described the superseded form, "a
+      dimensionless ratio (negative gap / num_users)", which is a different
+      quantity in different units.
     """
+
+    r1_system_ee_contribution: float
+    """``r1`` itself: ``R_u/P^N`` in bit/J, eq. (3.25)."""
 
     r1_throughput: float
+    """``R_u`` in bit/s — the numerator, for G-8.  Never the reward."""
+
     r2_handover: float
     r3_load_balance: float
-    r1_energy_efficiency_credit: float = 0.0
-    r1_beam_power_efficiency_credit: float = 0.0
-    r1_hobs_active_tx_ee: float = 0.0
-    """HOBS-style active-TX system EE: sum_u(R_u) / (sum_active_b(P_b) + eps).
-    Same value for all users in the step. Opt-in feasibility gate only."""
-    # Phase 01 angle-aware EE per-UE reward; emitted only when R1_REWARD_MODE_ANGLE_AWARE_EE active.
-    r1_angle_aware_ee: float | None = None
-    r1_system_ee_contribution: float | None = None
-    """Additive instantaneous system-EE contribution ``R_u/P_system``.
-
-    ``None`` means the producing environment does not implement this reward
-    surface.  Active system-EE selection must fail closed on that value; a
-    numeric zero is reserved for a real zero-throughput contribution.
-    """
-    r1_kappa_allocated_ee_diagnostic: float = 0.0
-    """Legacy kappa-allocated EE value; diagnostic/compatibility only."""
 
 
 @dataclass
@@ -305,39 +201,17 @@ class StepResult:
     action_masks: list[ActionMask]
     rewards: list[RewardComponents]
 
-    # Per-beam aggregate throughput for load balance computation.
-    beam_throughputs: np.ndarray
-    """Total throughput per beam, shape (L*K,)."""
-
-    active_beam_mask: np.ndarray
-    """Boolean active-beam mask derived from post-action beam loads, shape (L*K,)."""
-
-    beam_transmit_power_w: np.ndarray
-    """Explicit downlink per-beam transmit power ``p_{s,v}(t)`` in linear W.
-
-    PATCH P-16: the four fields that used to follow — ``selected_power_profile``,
-    ``total_active_beam_power_w``, ``power_budget_violation`` and
-    ``power_budget_excess_w`` — went with ``PowerSurfaceConfig``.  There is no
-    profile to select and no aggregate budget: ruling C-2 leaves exactly one
-    ceiling, the per-**link** feasibility test, and it produces an outage for
-    one user rather than a violation flag for the step.
-    """
+    # PATCH P-21: ``beam_throughputs``, ``active_beam_mask`` and
+    # ``beam_transmit_power_w`` are gone with them.  Nothing read any of the
+    # three, and all were documented with shape ``(L*K,)`` — a fixed 28-wide
+    # per-user candidate axis.  Beams are global ``(satellite, cell)`` pairs
+    # whose count varies per step, so the declared shape had stopped
+    # describing the physics.  The live per-beam quantities live on
+    # ``env.step.StepOutcome.radiating`` with their real length.
 
 
-@dataclass
-class DiagnosticsReport:
-    """First-step diagnostics for reward scale inspection.
-
-    Emitted once per environment reset to expose reward magnitudes
-    before any hidden normalization could mask calibration issues.
-    """
-
-    zenith_snr_db: float
-    zenith_throughput_bps: float
-    sample_r1: float
-    sample_r2_beam_change: float
-    sample_r2_sat_change: float
-    sample_r3: float
-    r1_r2_ratio: float
-    r1_r3_ratio: float
-    dominance_warnings: list[str] = field(default_factory=list)
+# PATCH P-21: ``DiagnosticsReport`` is deleted — zero consumers, and it
+# described a first-step reward-scale inspection built on the OLD
+# environment's quantities (a single "zenith SNR", an r1/r3 ratio taken
+# before r3 became a user count).  ``StepOutcome.diagnostics`` reports the
+# live figures per step instead.

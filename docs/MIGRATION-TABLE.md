@@ -53,7 +53,8 @@
 | `A_R, B_R, G_R,min, G_R,max` | `RX_ENVELOPE_A_DBI` 等 | 同上 |
 | `L_f`(自由空間) | `free_space_loss_db` | `env/link_budget.py` |
 | `L_g`(大氣) | `atmospheric_loss_db` | **C-4 已裁決**:TR 38.811 (6.6-8) 餘割律,`A_zenith = 0.25 dB` |
-| `L_c`(閃爍)、`L_s`(遮蔽) | `SCINTILLATION_LOSS_DB` / `SHADOWING_LOSS_DB`,皆 **0.0** | **C-8**:具名的零,不是消失的項。`L_s = 0` 另有出處(TR 38.821「0 dB for VSAT」) |
+| `L_c`(閃爍) | `scintillation_loss_db` | **C-8 修訂版**:TR 38.811 表 6.6.6.2.1-1,**確定值不是抽樣**;電離層項依 §6.6.6.1 排除(僅 6 GHz 以下) |
+| `L_s`(遮蔽) | `shadow_fading_db` / `shadow_fading_sigma_db` | **C-8 修訂版**:表 6.6.2-3 Ka LOS,零均值 dB 高斯;與 `K_R` 共用同一組凍結種子。⚠ 90° 的 σ=0.4 dB 是規範原文的不連續 |
 | `K_R`(Rician) | `RICIAN_K_FACTOR_DB = 20.0` / `rician_fading_gain` | **C-9 已裁決**;單位均值,逐(使用者, 衛星)抽,進 PREREG 種子集 |
 | `σ² = k_B T_sys B^w` | `noise_power_w` | `env/link_budget.py` |
 | `B^w = B_sys/3` | `BEAM_BANDWIDTH_HZ` | 同上 |

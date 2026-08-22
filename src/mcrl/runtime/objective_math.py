@@ -4,14 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .trainer_spec import (
-    R1_REWARD_MODE_ANGLE_AWARE_EE,
-    R1_REWARD_MODE_HOBS_ACTIVE_TX_EE,
-    R1_REWARD_MODE_PER_USER_BEAM_EE_CREDIT,
-    R1_REWARD_MODE_PER_USER_EE_CREDIT,
-    R1_REWARD_MODE_THROUGHPUT,
-    TrainerConfig,
-)
+from .trainer_spec import TrainerConfig
 
 
 def scalarize_objectives(
@@ -50,42 +43,13 @@ def apply_reward_calibration(
     )
 
 
-def select_r1_reward_value(
-    *,
-    throughput_bps: float,
-    per_user_ee_credit_bps_per_w: float,
-    per_user_beam_ee_credit_bps_per_w: float = 0.0,
-    hobs_active_tx_ee_bps_per_w: float = 0.0,
-    r1_angle_aware_ee: float | None = None,
-    config: TrainerConfig,
-) -> float:
-    """Return the configured first-objective value.
-
-    ``per-user-ee-credit`` is a Phase 03 credit-assignment assumption. It is
-    not a system-level EE metric; final reporting must still compute
-    ``EE_system`` from aggregate throughput and active beam power.
-
-    ``hobs-active-tx-ee`` is the HOBS-style active-TX system EE feasibility
-    gate value: sum_u(R_u) / (sum_active_b(P_b) + eps). Same value for all
-    users in the step. Opt-in via hobs-active-tx-ee-modqn-feasibility kind.
-
-    ``angle_aware_ee`` is the Phase 01 per-UE angle-aware EE value computed
-    via pure functions in runtime/angle_aware_ee.py. Must be pre-computed by
-    the caller and passed as r1_angle_aware_ee.
-    """
-    if config.r1_reward_mode == R1_REWARD_MODE_THROUGHPUT:
-        return float(throughput_bps)
-    if config.r1_reward_mode == R1_REWARD_MODE_PER_USER_EE_CREDIT:
-        return float(per_user_ee_credit_bps_per_w)
-    if config.r1_reward_mode == R1_REWARD_MODE_PER_USER_BEAM_EE_CREDIT:
-        return float(per_user_beam_ee_credit_bps_per_w)
-    if config.r1_reward_mode == R1_REWARD_MODE_HOBS_ACTIVE_TX_EE:
-        return float(hobs_active_tx_ee_bps_per_w)
-    if config.r1_reward_mode == R1_REWARD_MODE_ANGLE_AWARE_EE:
-        if r1_angle_aware_ee is None:
-            raise ValueError(
-                "r1_angle_aware_ee must be provided when "
-                "r1_reward_mode='angle_aware_ee'"
-            )
-        return float(r1_angle_aware_ee)
-    raise ValueError(f"Unsupported r1_reward_mode={config.r1_reward_mode!r}")
+# PATCH P-20 (W-18): ``select_r1_reward_value`` is removed.
+#
+# It dispatched on ``TrainerConfig.r1_reward_mode`` across five candidate
+# reward fields.  (3.25) defines ``r1`` as one quantity, four of the five
+# branches named Family-B surfaces this repository does not contain, and the
+# fifth read a field the environment had started filling with bits/J while
+# its name still said throughput.
+#
+# The trainer now reads ``RewardComponents.r1_system_ee_contribution``
+# directly.  There is nothing left to select.

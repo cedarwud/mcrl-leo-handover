@@ -30,6 +30,10 @@ from mcrl.env.link_budget import (
     BOLTZMANN_DBW_PER_K_PER_HZ,
     SYSTEM_TEMPERATURE_K,
     atmospheric_loss_db,
+    ZENITH_GASEOUS_LOSS_DB,
+    CARRIER_FREQ_HZ,
+    SPEED_OF_LIGHT_M_S,
+    SEGMENT_START_POWER_W,
     carrier_to_noise_db,
     eirp_dbw,
     free_space_loss_db,
@@ -271,3 +275,86 @@ def test_negative_inputs_are_refused():
 def test_eirp_is_undefined_for_a_dark_beam():
     with pytest.raises(MCRLContractError, match="zero transmit power"):
         eirp_dbw(0.0, G0_DBI)
+
+
+# ---------------------------------------------------------------------------
+# A third external anchor: the deck's worked example (2026-08-22)
+# ---------------------------------------------------------------------------
+#
+# The controller recomputed part3's worked example after ruling F-1 moved
+# ``p⁰`` from 2 W to 0.825 W, and verified the model first by back-computing
+# with the old value and reproducing the figures the deck already printed.
+# That makes it an independent third-party number in the same class as
+# Vallado's vectors (G-1) and TR 38.821's SC 6 row (G-2): computed outside
+# this repository, from the same equations, and reproducible here.
+#
+# The geometry was not quoted, so what is pinned is everything that does not
+# depend on it — which is most of it.
+
+DECK_OLD = {"received_dbm": -73.79, "sinr_db": 18.75, "rate_mbps": 1041}
+DECK_NEW = {"received_dbm": -77.63, "sinr_db": 14.91, "rate_mbps": 833}
+
+
+def test_the_deck_worked_example_moved_by_exactly_the_p0_ratio():
+    """F-1's whole effect on a single link is one number: 10log10(2/0.825)."""
+    shift_db = 10.0 * math.log10(2.0 / SEGMENT_START_POWER_W)
+    assert shift_db == pytest.approx(3.8458, abs=1e-3)
+    assert DECK_NEW["received_dbm"] - DECK_OLD["received_dbm"] == pytest.approx(
+        -shift_db, abs=0.01
+    )
+    assert DECK_NEW["sinr_db"] - DECK_OLD["sinr_db"] == pytest.approx(
+        -shift_db, abs=0.01
+    )
+
+
+def test_our_noise_floor_reproduces_the_decks_sinr():
+    """The strongest of the three: an independent path to their number.
+
+    Their SINR is our received power minus our noise floor, and the noise
+    floor is built here from ``T_sys = 242.294 K`` and ``B^w = 166.667 MHz``
+    without reference to the deck at all.  Agreement to three decimals means
+    both sides are using the same ``k·T·B``, which a shared SINR figure
+    alone would not have shown.
+    """
+    noise_dbm = 10.0 * math.log10(noise_power_w()) + 30.0
+    assert noise_dbm == pytest.approx(-92.537, abs=1e-3)
+    assert DECK_NEW["received_dbm"] - noise_dbm == pytest.approx(
+        DECK_NEW["sinr_db"], abs=0.01
+    )
+    assert DECK_OLD["received_dbm"] - noise_dbm == pytest.approx(
+        DECK_OLD["sinr_db"], abs=0.01
+    )
+
+
+@pytest.mark.parametrize("deck", [DECK_OLD, DECK_NEW])
+def test_shannon_reproduces_the_decks_rate_at_unit_load(deck):
+    """(3.14) at ``U_{s,v} = 1``, which is the single-user display case."""
+    gamma = 10.0 ** (deck["sinr_db"] / 10.0)
+    rate = float(
+        shannon_rate_bps(np.array(gamma), beam_load=np.array(1.0))
+    )
+    assert rate / 1e6 == pytest.approx(deck["rate_mbps"], abs=1.0)
+
+
+def test_the_implied_slant_range_is_a_plausible_leo_pass():
+    """A sanity bound on the geometry the deck did not quote.
+
+    Boresight at both ends, so the only free quantity is the path loss.  If
+    this came out at 200 km or 3000 km the two sides would be describing
+    different scenarios, whatever the dB agreed to.
+    """
+    received_dbw = DECK_NEW["received_dbm"] - 30.0
+    loss_db = (
+        10.0 * math.log10(SEGMENT_START_POWER_W)
+        + G0_DBI
+        + RX_GAIN_MAX_DBI
+        - received_dbw
+    )
+    wavelength_m = SPEED_OF_LIGHT_M_S / CARRIER_FREQ_HZ
+    slant_km = (
+        wavelength_m
+        * 10.0 ** ((loss_db - ZENITH_GASEOUS_LOSS_DB) / 20.0)
+        / (4.0 * math.pi)
+        / 1000.0
+    )
+    assert 400.0 < slant_km < 1200.0, f"implied slant {slant_km:.0f} km"

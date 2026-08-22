@@ -118,6 +118,7 @@ class ScriptedEnv:
         ]
         rewards = [
             RewardComponents(
+                r1_system_ee_contribution=1.0 if served[uid] else 0.0,
                 r1_throughput=1.0 if served[uid] else 0.0,
                 r2_handover=0.0,
                 r3_load_balance=0.0,
@@ -133,9 +134,4 @@ class ScriptedEnv:
             user_states=self._states(),
             action_masks=next_masks,
             rewards=rewards,
-            beam_throughputs=np.zeros(self.num_beams_total, dtype=np.float64),
-            active_beam_mask=beam_loads > 0.0,
-            beam_transmit_power_w=np.zeros(
-                self.num_beams_total, dtype=np.float64
-            ),
         )

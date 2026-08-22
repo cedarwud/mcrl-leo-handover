@@ -5,11 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-R1_REWARD_MODE_THROUGHPUT = "throughput"
-R1_REWARD_MODE_PER_USER_EE_CREDIT = "per-user-ee-credit"
-R1_REWARD_MODE_PER_USER_BEAM_EE_CREDIT = "per-user-beam-ee-credit"
-R1_REWARD_MODE_HOBS_ACTIVE_TX_EE = "hobs-active-tx-ee"
-R1_REWARD_MODE_ANGLE_AWARE_EE = "angle_aware_ee"
+# PATCH P-20 (W-18): the five ``R1_REWARD_MODE_*`` constants are gone.
+#
+# (3.25) defines r1 as one thing — ``Σ x·η`` — so there was nothing for a
+# mode to select between.  Four of the five named Family-B surfaces this
+# repository does not contain, and the fifth ("throughput") pointed at a
+# field the environment had started filling with bits/J.  Same reasoning as
+# P-05 and P-16: a switch with one live position is not a switch, and the
+# dead positions are sockets.
 # NOTE (W-09): the Phase-04B/05B/07B/07D and HOBS collapse-pilot
 # experiment-kind constants are removed.  SDD §8 keeps that code for later
 # ablation, but it lives in the source project and was deliberately not
@@ -86,9 +89,8 @@ class TrainerConfig:
     method_family: str = "MODQN-baseline"
     phase: str = "baseline"
     comparison_role: str = "not-applicable"
-    r1_reward_mode: str = R1_REWARD_MODE_THROUGHPUT
-    r1_reward_label: str = "throughput"
-    r1_reward_provenance: str = "paper-backed MODQN throughput objective"
+    r1_reward_label: str = "system-energy-efficiency"
+    r1_reward_provenance: str = "paper eq. (3.25): r1 = sum_{s,v} x * eta"
     reward_calibration_enabled: bool = False
     reward_calibration_mode: str = "raw-unscaled"
     reward_calibration_source: str = "raw-unscaled"

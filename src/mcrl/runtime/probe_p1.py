@@ -23,10 +23,20 @@ the four-slot window is per user (``b_u(c,t)``):
   realised associations and never from indices;
 * elevation and its rate of change.
 
-⚠ The mask this consumes does not yet carry the link-feasibility term
-(``env/candidates.py``), so the starvation rate reported here is a **lower
-bound** and the eligible counts an upper bound.  That is a property of the
-outstanding physics decisions, not of the probe.
+⚠ **The mask carries three terms and link feasibility is not one of them —
+and that is now correct rather than incomplete.**  This paragraph used to
+say the feasibility term was missing and the starvation rate was therefore
+a lower bound.  Ruling C-11 moved feasibility out of the mask entirely: the
+decision-time mask ``m`` decides what a user may *choose*, and whether the
+chosen link can actually be served is a separate, execution-time test whose
+failure is an **outage**, not an invalid action.
+
+So the two populations are genuinely different and P1 reports both:
+``starvation_rate`` is "no valid action existed" and belongs to the mask,
+while the outage rate belongs to ``ServiceResolution.outage_infeasible``
+and is what the §4A.5a(4) gate consumes.  Folding one into the other would
+put an executed action back into the decision mask, which is precisely the
+three-gate form C-11 withdrew.
 """
 
 from __future__ import annotations
@@ -115,9 +125,10 @@ class P1Accumulator:
             / steps,
             "reentry_rate": self.reentry_events / steps,
             "handover_events": dict(self.handover_events),
-            "caveat": (
-                "the mask lacks the link-feasibility term, so starvation is a "
-                "lower bound and eligible counts an upper bound"
+            "mask_scope": (
+                "three decision-time terms (slot occupied, cell exists, cell "
+                "visible); link feasibility is an execution-time outage under "
+                "ruling C-11, not a mask term, and is reported separately"
             ),
         }
 

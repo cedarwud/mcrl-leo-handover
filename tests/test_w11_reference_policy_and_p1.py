@@ -417,7 +417,7 @@ def test_a_stable_geometry_produces_no_handovers():
     assert result["phi1_rate"] == 0.0 and result["phi2_rate"] == 0.0
 
 
-def test_the_result_carries_the_prereg_digest_and_the_caveat():
+def test_the_result_carries_the_prereg_digest_and_the_mask_scope():
     record = _prereg()
     result = run_probe_p1(
         prereg=record,
@@ -426,7 +426,9 @@ def test_the_result_carries_the_prereg_digest_and_the_caveat():
         rng=np.random.default_rng(0),
     )
     assert result["prereg_digest"] == record.digest
-    assert "lower bound" in result["caveat"]
+    # Ruling C-11: link feasibility is an execution-time outage, not a
+    # mask term, so the mask has three terms and says so.
+    assert "execution-time outage" in result["mask_scope"]
 
 
 def test_the_quantile_summary_covers_the_reported_distributions():

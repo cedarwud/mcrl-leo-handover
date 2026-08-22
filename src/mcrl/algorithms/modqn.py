@@ -61,7 +61,6 @@ from ..runtime.finiteness import (
 from ..runtime.objective_math import (
     apply_reward_calibration,
     scalarize_objectives,
-    select_r1_reward_value,
 )
 from ..runtime.q_network import DQNNetwork
 from ..runtime.replay_buffer import ReplayBuffer
@@ -69,7 +68,6 @@ from ..runtime.state_encoding import encode_state, state_dim_for
 from ..runtime.trainer_spec import (
     EpisodeLog,
     EvalSummary,
-    R1_REWARD_MODE_ANGLE_AWARE_EE,
     TrainerConfig,
 )
 
@@ -575,42 +573,28 @@ class MODQNTrainer:
         *,
         is_eval: bool = False,
     ) -> np.ndarray:
-        """Return the trainer-selected three-objective reward vector.
+        """Return the three-objective reward vector for one user.
 
-        Baseline and MODQN-control configs keep ``r1`` as throughput. Phase 03
-        EE-MODQN configs may explicitly gate ``r1`` to the per-user EE
-        credit-assignment reward while preserving ``r2`` and ``r3`` unchanged.
-        Phase 02 angle-aware EE mode computes r1 via Phase 01 pure functions;
-        Stage 1 proxy uses beam-allocated power from StepResult.
+        PATCH P-14 (ruling C-7): the trainer no longer *computes* ``r1``.
+        Eq. (3.25) divides by the common system power ``P^N``, a global
+        quantity the trainer cannot see — it would have to know every other
+        user's link to form the denominator.  The environment computes it.
+
+        PATCH P-20: and it no longer *selects* ``r1`` either.  The call to
+        ``select_r1_reward_value`` dispatched over five candidate fields;
+        (3.25) names one quantity, so the field is read directly.  The old
+        default pointed at ``r1_throughput``, which the environment had
+        begun filling with bits/J — a field whose name disagreed with its
+        contents, selected by a switch with one live position.
         """
+        del is_eval  # both paths take the same reward; kept for the signature
         rw = result.rewards[uid]
-        r1_angle_aware_ee: float | None = None
-
-        # PATCH P-14 (ruling C-7, W-06 revision): the trainer no longer
-        # computes r1.  Eq. (3.25) divides by the COMMON system power P^N,
-        # a global quantity the trainer cannot see — it would have to know
-        # every other user's link to form the denominator.  The environment
-        # computes it and reports it in RewardComponents.
-        #
-        # The removed block called per_ue_energy_efficiency with a per-link
-        # kappa share, which ruling C-7 withdrew as a different quantity.
-        if self.config.r1_reward_mode == R1_REWARD_MODE_ANGLE_AWARE_EE:
-            r1_angle_aware_ee = float(rw.r1_angle_aware_ee)
-
-        r1 = select_r1_reward_value(
-            throughput_bps=rw.r1_throughput,
-            per_user_ee_credit_bps_per_w=rw.r1_energy_efficiency_credit,
-            per_user_beam_ee_credit_bps_per_w=rw.r1_beam_power_efficiency_credit,
-            hobs_active_tx_ee_bps_per_w=rw.r1_hobs_active_tx_ee,
-            r1_angle_aware_ee=r1_angle_aware_ee,
-            config=self.config,
-        )
-        # PATCH P-05 (W-09): the PopArt standardisation branch is removed.
-        # ``popart_enabled`` was always False and ``runtime/popart_online.py``
-        # was never ported, so the branch was unreachable code holding an
-        # import the tree could not satisfy.
         return np.array(
-            [r1, rw.r2_handover, rw.r3_load_balance],
+            [
+                rw.r1_system_ee_contribution,
+                rw.r2_handover,
+                rw.r3_load_balance,
+            ],
             dtype=np.float64,
         )
 
