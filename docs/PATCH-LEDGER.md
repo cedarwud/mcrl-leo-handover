@@ -171,6 +171,24 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 | 發現者 | `codex gpt-5.6-luna` 的獨立稽核(D-10),`docs/AUDIT-external-luna-2026-08-22.md` |
 | 對應測試 | `test_w07_r3_and_execution_mask.py`(既有,值本身已測) |
 
+### P-14 — 訓練端不再自行計算 `r1`(裁決 C-7)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `algorithms/modqn.py`:`per_ue_energy_efficiency` 的 import 與 `reward_vector_from_step_result` 內的角度感知 EE 區塊 |
+| 補丁內容 | 整段移除;`r1` 改由環境在 `RewardComponents.r1_angle_aware_ee` 提供 |
+| 理由 | 式 (3.25) 的分母是**共同系統功率 `P^N`** —— 一個**全域**量。訓練端要自己算就得知道其他 99 人的鏈路,結構上不可能。被移除的區塊用的是逐鏈路 `κ` 占比,裁決 C-7 已判定那是**另一個量** |
+| 對應測試 | `test_w06_link_ee.py`(8 項) |
+
+### P-15 — 兩個移植預設與 §IV 不符(裁決 §8)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `env/step_types.py` 的 `user_scatter_distribution`、`mobility_model` |
+| 補丁內容 | `"uniform-circular"` → `"uniform-rectangle"`;`"deterministic-heading"` → `"random-wandering"` |
+| 理由 | §IV 給的是 **200×90 km 矩形**與 **"random wandering"**。裁決明說**不要留著當選項** ——「留著就會有人選到」 |
+| 對應測試 | `test_pointing_and_mobility.py` 的移動段 |
+
 ---
 
 ## ★ 對來源行為的一項宣告偏離:`η` 分母不再墊 epsilon

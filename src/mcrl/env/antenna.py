@@ -43,7 +43,18 @@ THETA_3DB_DEG: float = 3.32
 """**P'** — HOBS, registered as the FULL half-power beamwidth."""
 
 G0_LINEAR: float = 2000.0
-"""**P'** — HOBS boresight gain, 33.010 dBi (parameter spec §1)."""
+"""**P'** — 2000 linear, 33.010 dBi.  **Not HOBS Table I's 40 dBi.**
+
+The paper now rejects that value: HOBS Table I's aperture, gain and
+beamwidth are mutually inconsistent, and under either dimensionally legal
+reading 40 dBi demands an aperture efficiency above 1 (2.53 on the radius
+reading, 10.13 on the diameter reading).
+
+Re-derived instead from an aperture consistent with the beamwidth,
+``D = 1.0275 λ / θ_3dB = 17.7 λ``, with the Ka-band aperture efficiency
+0.639-0.645 back-computed from TR 38.821's rows, giving ``G_0 = 2000``
+(ruling C-14).
+"""
 
 G0_DBI: float = 10.0 * math.log10(G0_LINEAR)
 

@@ -212,135 +212,51 @@ def format_ee_comparison(
 
 
 # ---------------------------------------------------------------------------
-# Per-link (per-UE) energy efficiency — the r1 objective's closure
+# Per-link EE display quantity (3.17) and r1 (3.25)
 # ---------------------------------------------------------------------------
-
-EPSILON_NUM: float = 1e-12
-"""Retained for provenance only.  **Never used as a denominator floor.**
-
-The source project floors the ``eta`` denominator at this value.  This port
-does not: see :func:`per_ue_energy_efficiency`.
-"""
-
-
-@dataclass(frozen=True)
-class PerLinkEnergyEfficiency:
-    """Beam-local power share and full-cost per-link EE."""
-
-    alpha: np.ndarray
-    """``κ`` — this link's share of its beam's radiated power. Shape ``(..., K)``."""
-
-    eta: np.ndarray
-    """``R_u / (κ·P_tot + P_0)`` for admitted links, 0 otherwise."""
-
-    zero_over_zero: np.ndarray
-    """Admitted links that carried no rate on no power — a legitimate 0/0."""
-
-    @property
-    def any_zero_over_zero(self) -> bool:
-        return bool(np.any(self.zero_over_zero))
+#
+# RULING C-7 (2026-08-22): the per-link ``kappa`` power-share closure is
+# WITHDRAWN.  Eq. (3.17) divides by the **common system power** ``P^N``, and
+# the paper says plainly that the result "不宣稱為 private-power 的 true
+# per-user EE" — it is one link's additive contribution to the system figure,
+# which is exactly what :func:`additive_system_ee` computes.  Attributing a
+# private share of the power to each link was a different quantity.
 
 
-def per_ue_energy_efficiency(
-    *,
-    rates_nmk: np.ndarray,
-    admitted_link_nmk: np.ndarray,
-    p_req_nmk: np.ndarray,
-    p_max_nm: np.ndarray,
-    p_tot_nm: np.ndarray,
-    p0_w: float = 0.0,
-) -> PerLinkEnergyEfficiency:
-    """Beam-local ``κ`` and full-cost ``η`` per link.
-
-    **The power share is piecewise, not epsilon-regularised.**  The source
-    records why (S11a M-10): the earlier ``x·q / (Σ + ε)`` shape was unsound
-    because eq. (3.27)'s double sum evaluates ``κ`` on *every* beam, so an
-    empty serving set produced 0/0 and the epsilon papered over it.  The
-    piecewise form isolates the empty beam **by definition**::
-
-        κ_u = q_u / Σ_{u' ∈ U_b} q_{u'}   if the link is admitted
-        κ_u = 0                            otherwise,  q = min(p_req, P_max)
-
-    so no epsilon enters the share and the admitted shares on a beam sum to
-    **exactly** 1 rather than ``1 − O(ε)``.
-
-    ★ **Declared deviation from the source: the η denominator is not floored.**
-
-    The source computes ``η = R / max(κ·P_tot + P_0, 1e-12)``.  That floor is
-    the very construction §3.7 P-7 forbids: an admitted link with zero
-    denominator and positive rate comes back as ``R × 1e12`` — an astronomical
-    EE produced silently, on exactly the link that consumed nothing.
-
-    Here the zero-denominator case is fail-closed, matching
-    :func:`additive_system_ee`:
-
-    * positive rate on zero power → **raise**;
-    * zero rate on zero power → ``η = 0`` with the ``zero_over_zero`` flag.
-
-    Every *reachable* case is unchanged, because a real admitted link has
-    ``κ·P_tot > 0`` and the floor never binds.  What changes is that the
-    unreachable case now announces itself instead of inventing a number.
-    """
-    if p0_w < 0.0:
-        raise ValueError("p0_w must be non-negative")
-
-    rates = np.asarray(rates_nmk, dtype=np.float64)
-    admitted = np.asarray(admitted_link_nmk, dtype=bool)
-    p_req = np.asarray(p_req_nmk, dtype=np.float64)
-    if rates.shape != admitted.shape or rates.shape != p_req.shape:
-        raise MCRLContractError(
-            "rates_nmk, admitted_link_nmk and p_req_nmk must share a shape"
-        )
-    if rates.ndim < 1:
-        raise MCRLContractError("rates_nmk must include a UE axis")
-    if not np.all(np.isfinite(rates)) or not np.all(np.isfinite(p_req)):
-        raise MCRLContractError("rates and required powers must be finite")
-    if np.any(rates < 0.0) or np.any(p_req < 0.0):
-        raise MCRLContractError("rates and required powers must be non-negative")
-
-    p_max = _broadcast_over_ue_axis(p_max_nm, rates.shape, "p_max_nm")
-    p_tot = _broadcast_over_ue_axis(p_tot_nm, rates.shape, "p_tot_nm")
-    if np.any(p_max < 0.0) or np.any(p_tot < 0.0):
-        raise MCRLContractError("p_max_nm and p_tot_nm must be non-negative")
-
-    capped_request = np.minimum(p_req, p_max)
-    weighted = np.where(admitted, capped_request, 0.0)
-    beam_total = np.sum(weighted, axis=-1, keepdims=True, dtype=np.float64)
-    # Divide only where the beam has admitted demand; the placeholder 1.0 is
-    # never observed because those entries take the κ = 0 branch.
-    safe_total = np.where(beam_total > 0.0, beam_total, 1.0)
-    alpha = np.where(admitted, weighted / safe_total, 0.0)
-
-    denominator = alpha * p_tot + p0_w
-    starved = admitted & (denominator <= 0.0)
-    if np.any(starved & (rates > 0.0)):
-        raise MCRLContractError(
-            "positive link throughput with zero attributed power is invalid; "
-            "P-7 forbids flooring the denominator to make it finite"
-        )
-    zero_over_zero = starved & (rates <= 0.0)
-    eta = np.where(
-        admitted & ~starved,
-        rates / np.where(denominator > 0.0, denominator, 1.0),
-        0.0,
-    )
-    return PerLinkEnergyEfficiency(
-        alpha=alpha, eta=eta, zero_over_zero=zero_over_zero
-    )
-
-
-def _broadcast_over_ue_axis(
-    value: np.ndarray, shape: tuple[int, ...], name: str
+def link_energy_efficiency(
+    link_rate_bps: np.ndarray, system_power_w: float
 ) -> np.ndarray:
-    """Broadcast a per-beam quantity across the trailing UE axis."""
-    array = np.asarray(value, dtype=np.float64)
-    if array.shape == shape:
-        return array
-    if array.shape == shape[:-1]:
-        return np.broadcast_to(array[..., None], shape)
-    try:
-        return np.broadcast_to(array, shape)
-    except ValueError as error:
-        raise MCRLContractError(
-            f"{name} with shape {array.shape} does not broadcast to {shape}"
-        ) from error
+    """Paper eq. (3.17): ``η_{u,s,v} = R_{u,s,v} / P^N``.
+
+    Same fail-closed policy as :func:`additive_system_ee` — positive rate on
+    zero system power raises, zero over zero is 0.  P-7 forbids the
+    epsilon floor that would otherwise turn the second case into an
+    astronomical efficiency.
+    """
+    rates = np.asarray(link_rate_bps, dtype=np.float64)
+    if np.any(rates < 0.0) or not np.all(np.isfinite(rates)):
+        raise MCRLContractError("rates must be finite and non-negative")
+    power = float(system_power_w)
+    if not math.isfinite(power) or power < 0.0:
+        raise MCRLContractError("system power must be finite and non-negative")
+    if power == 0.0:
+        if np.any(rates > 0.0):
+            raise MCRLContractError(
+                "positive throughput with zero system power is invalid"
+            )
+        return np.zeros_like(rates)
+    return rates / power
+
+
+def r1_energy_efficiency(
+    served_rate_bps: np.ndarray, system_power_w: float
+) -> np.ndarray:
+    """Paper eq. (3.25): ``r1_u = Σ_{s,v} x·η = (Σ x·R) / P^N``, bit/J.
+
+    Unselected links are excluded by ``x = 0``, so the caller passes each
+    user's already-selected rate (zero when unserved).  The result is
+    additive across users by construction — summing it recovers the system
+    EE exactly — which is the property that makes ``r1`` a decomposition of
+    a global objective rather than a per-user proxy for one.
+    """
+    return link_energy_efficiency(served_rate_bps, system_power_w)

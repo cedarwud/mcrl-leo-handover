@@ -21,18 +21,35 @@ def encode_state(
     user_state: UserState,
     num_users: int,
     config: TrainerConfig,
+    *,
+    include_contract_block: bool = False,
 ) -> np.ndarray:
     """Encode a UserState into a flat numpy vector.
 
     ASSUME-MODQN-REP-013 state encoding contract, extended by SDD §4A.6:
         [access_vector, encoded_snr, theta_rad, encoded_loads, contract]
 
-    PATCH P-10 (W-10): the 13-dimensional contract block is appended, making
-    the authoritative state dimension ``4C + 13 = 125`` (SDD §3.6).  The four
-    blocks stay exactly as they were and keep the same ``(l, j)`` ordering as
-    the action index, so state and action remain aligned by construction
-    (§4A.1); the contract block is environment-side accounting and sits after
-    them rather than inside them.
+    PATCH P-10, revised by ruling C-1 (2026-08-22): the state is **112** on
+    the live path.  The 13-dimensional §4A.6 block is an **ablation switch**,
+    off by default, exactly as ``χ_u`` was handled — kept in the code, absent
+    from the paper.
+
+    The precedent is the point: ``χ_u`` (84 dims) was deleted from the paper
+    on the same day while being explicitly retained as a code-level ablation
+    switch.  The contract block is the same kind of thing — a state extension
+    with an implementation rationale that (4.1) does not contain — so it gets
+    the same treatment rather than re-entering by another door.
+
+    Where the four fields went instead of into ``s_u``:
+
+    * ``d2_ttt_counter`` and ``dwell_phase`` are **environment accounting**;
+      D2's trigger condition belongs to the mask ``A_u(t)``, and the re-key
+      boundary to the dwell controller.  Both already live there.
+    * ``radial_rate`` is a convenience feature, not a Markov necessity: the
+      rate of change of ``θ`` is recoverable from two consecutive steps.
+    * ``is_incumbent`` is the one that carried weight, and the controller
+      agreed — but the resolution is a wording fix in (4.1) rather than an
+      extra dimension.  See :func:`assert_incumbent_is_recoverable`.
 
     Encoding rules (all explicitly configured, no hidden transforms):
         - access_vector: raw one-hot (already 0/1)
@@ -80,18 +97,22 @@ def encode_state(
     if config.load_normalization == "divide_by_num_users" and num_users > 0:
         loads = loads / num_users
 
-    # PATCH P-10: fail loud rather than silently emitting a 112-vector.
-    if user_state.contract_fields is None:
-        raise MCRLContractError(
-            "UserState.contract_fields is required (SDD §4A.6); build it with "
-            "mcrl.env.action_contract.contract_state_fields()"
-        )
-    contract = np.asarray(user_state.contract_fields, dtype=np.float32)
-    if contract.shape != (CONTRACT_STATE_DIM,):
-        raise MCRLContractError(
-            f"contract_fields must have shape ({CONTRACT_STATE_DIM},), "
-            f"got {contract.shape}"
-        )
+    # Ruling C-1: the contract block is an ablation switch, not part of s_u.
+    # Absent is the normal case and must NOT raise.
+    contract = np.zeros(0, dtype=np.float32)
+    if include_contract_block:
+        if user_state.contract_fields is None:
+            raise MCRLContractError(
+                "the contract-block ablation is enabled but the state carries "
+                "no contract_fields; build them with "
+                "mcrl.env.action_contract.contract_state_fields()"
+            )
+        contract = np.asarray(user_state.contract_fields, dtype=np.float32)
+        if contract.shape != (CONTRACT_STATE_DIM,):
+            raise MCRLContractError(
+                f"contract_fields must have shape ({CONTRACT_STATE_DIM},), "
+                f"got {contract.shape}"
+            )
 
     if not (access.size == snr.size == loads.size):
         raise ValueError(
@@ -107,10 +128,47 @@ def encode_state(
     return np.concatenate([access, snr, theta, loads, contract])
 
 
-def state_dim_for(num_beams_total: int) -> int:
-    """Flat state dimension: ``4C + 13``.
+def state_dim_for(
+    num_beams_total: int, *, include_contract_block: bool = False
+) -> int:
+    """Flat state dimension: ``4C`` — **112** at the frozen ``C = 28``.
 
-    At the frozen ``C = 28`` this is **125**, the single authoritative value
-    of SDD §3.6.
+    That is (4.1) and ch5 §5.1, and ruling C-1 makes it the live value.  The
+    ablation adds 13 and is off by default.
     """
-    return 4 * num_beams_total + CONTRACT_STATE_DIM
+    return 4 * num_beams_total + (
+        CONTRACT_STATE_DIM if include_contract_block else 0
+    )
+
+
+def assert_incumbent_is_recoverable(
+    previous_connection: np.ndarray, incumbent_action: int | None
+) -> None:
+    """The one §4A.6 field that was load-bearing, resolved without a dimension.
+
+    ``Ψ_u(t)`` must distinguish ``φ1`` from ``φ2``, which needs last step's
+    **physical** association ``(ρ_u, δ_u)``.  ``x_u(t−1)`` is laid out in the
+    *current* candidate order, and that table changes between steps, so the
+    association is recoverable only if the incumbent still occupies a
+    candidate slot and is flagged there.
+
+    Ruling C-1: this is an under-specification in (4.1)'s indexing prose, not
+    a missing dimension — the candidate table must retain the incumbent.
+    This check makes the requirement enforceable instead of assumed.
+    """
+    previous = np.asarray(previous_connection)
+    if incumbent_action is None:
+        if np.any(previous > 0.0):
+            raise MCRLContractError(
+                "x_u(t-1) marks a previous connection but no candidate slot "
+                "holds the incumbent; Psi could not be recovered from s_u"
+            )
+        return
+    if not 0 <= int(incumbent_action) < previous.size:
+        raise MCRLContractError("the incumbent action is out of range")
+    if previous[int(incumbent_action)] <= 0.0:
+        raise MCRLContractError(
+            "the incumbent occupies a candidate slot but x_u(t-1) does not "
+            "mark it; (4.1) requires the previous association to be "
+            "recoverable from the candidate ordering"
+        )

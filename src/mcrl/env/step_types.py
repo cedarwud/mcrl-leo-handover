@@ -115,10 +115,14 @@ class StepConfig:
     action_mask_eligibility_mode: str = "satellite-visible-all-beams"
     user_heading_stride_rad: float = USER_HEADING_STRIDE_RAD
     user_scatter_radius_km: float = USER_SCATTER_RADIUS_KM
-    user_scatter_distribution: str = "uniform-circular"
+    # PATCH P-15 (ruling §8): §IV gives a 200 x 90 km rectangle, so the
+    # circular default is wrong and is not kept as an option — "留著就會有
+    # 人選到".
+    user_scatter_distribution: str = "uniform-rectangle"
     user_area_width_km: float = 0.0
     user_area_height_km: float = 0.0
-    mobility_model: str = "deterministic-heading"
+    # PATCH P-15 (ruling §8): §IV says "random wandering".
+    mobility_model: str = "random-wandering"
     random_wandering_max_turn_rad: float = RANDOM_WANDERING_MAX_TURN_RAD
 
     def __post_init__(self) -> None:

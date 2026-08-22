@@ -533,11 +533,17 @@ def test_dwell_phase_is_range_checked():
         contract_state_fields(assignment, dwell_phase=1.5)
 
 
-def test_state_dimension_is_the_authoritative_125():
-    from mcrl.env.action_contract import CONTRACT_STATE_DIM, STATE_DIM
+def test_state_dimension_is_the_authoritative_112():
+    """Ruling C-1: (4.1) and ch5 §5.1 say 4C; the 13-dim block is an ablation."""
+    from mcrl.env.action_contract import (
+        CONTRACT_STATE_DIM,
+        STATE_DIM,
+        STATE_DIM_WITH_CONTRACT_ABLATION,
+    )
 
     assert CONTRACT_STATE_DIM == 13
-    assert STATE_DIM == 4 * 28 + 13 == 125
+    assert STATE_DIM == 4 * 28 == 112
+    assert STATE_DIM_WITH_CONTRACT_ABLATION == 125
 
 
 def test_ledger_reports_the_incumbent_for_the_next_assignment():

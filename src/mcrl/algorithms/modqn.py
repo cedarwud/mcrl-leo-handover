@@ -58,7 +58,6 @@ from ..runtime.finiteness import (
     assert_finite_loss,
     assert_finite_parameters,
 )
-from ..runtime.energy_efficiency import per_ue_energy_efficiency
 from ..runtime.objective_math import (
     apply_reward_calibration,
     scalarize_objectives,
@@ -587,42 +586,16 @@ class MODQNTrainer:
         rw = result.rewards[uid]
         r1_angle_aware_ee: float | None = None
 
+        # PATCH P-14 (ruling C-7, W-06 revision): the trainer no longer
+        # computes r1.  Eq. (3.25) divides by the COMMON system power P^N,
+        # a global quantity the trainer cannot see — it would have to know
+        # every other user's link to form the denominator.  The environment
+        # computes it and reports it in RewardComponents.
+        #
+        # The removed block called per_ue_energy_efficiency with a per-link
+        # kappa share, which ruling C-7 withdrew as a different quantity.
         if self.config.r1_reward_mode == R1_REWARD_MODE_ANGLE_AWARE_EE:
-            access_vec = result.user_states[uid].access_vector
-            assigned_beam = int(np.argmax(access_vec))
-            beam_power_w = float(result.beam_transmit_power_w[assigned_beam])
-            beam_load_f = float(result.user_states[uid].beam_loads[assigned_beam])
-            allocated_power_w = beam_power_w / max(beam_load_f, 1.0)
-
-            # STANDARD angle-aware EE (thesis §3.2 eq 3.22): p_tot = p_alloc, transmit
-            # power angle-INDEPENDENT (angle enters ONLY via G^T(theta) -> SINR -> rate).
-            # The erroneous "/ g_t_linear" (÷G_T => ~1e4 EE inflation = the mean served-user
-            # G_T) was removed 2026-07-04 in the authorized G1 window, mirroring the
-            # eval-side twin family_b_eta_r1 (fixed 2026-07-03, commit 211a71a). This restores
-            # the P-2 base==sibling parity gate. See docs/research/ee-definition-cleanup/.
-            p_tot_effective = allocated_power_w
-
-            ee_result = per_ue_energy_efficiency(
-                rates_nmk=np.array([rw.r1_throughput], dtype=np.float64),
-                admitted_link_nmk=np.array([True]),
-                p_req_nmk=np.array([p_tot_effective], dtype=np.float64),
-                p_max_nm=np.array([beam_power_w], dtype=np.float64),
-                p_tot_nm=np.array([p_tot_effective], dtype=np.float64),
-            )
-            # PATCH P-12 (W-06): ``eta_nmk`` -> ``eta``; the closure now lives
-            # in runtime/energy_efficiency.py beside the system-EE closure, so
-            # both share one zero-power policy (P-7) instead of one raising and
-            # the other flooring its denominator.
-            r1_angle_aware_ee = float(ee_result.eta[0])
-            result.rewards[uid] = RewardComponents(
-                r1_throughput=rw.r1_throughput,
-                r2_handover=rw.r2_handover,
-                r3_load_balance=rw.r3_load_balance,
-                r1_energy_efficiency_credit=rw.r1_energy_efficiency_credit,
-                r1_beam_power_efficiency_credit=rw.r1_beam_power_efficiency_credit,
-                r1_hobs_active_tx_ee=rw.r1_hobs_active_tx_ee,
-                r1_angle_aware_ee=r1_angle_aware_ee,
-            )
+            r1_angle_aware_ee = float(rw.r1_angle_aware_ee)
 
         r1 = select_r1_reward_value(
             throughput_bps=rw.r1_throughput,

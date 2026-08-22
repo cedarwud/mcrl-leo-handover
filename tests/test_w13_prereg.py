@@ -147,7 +147,7 @@ def test_the_required_sections_cover_what_7_1_names():
 def test_the_parameters_are_read_out_of_the_code_that_implements_them():
     """A hand-copied PREREG drifts, and the document is the one people trust."""
     sections = _sections()
-    assert sections["action_and_state"]["state_dim"] == 125
+    assert sections["action_and_state"]["state_dim"] == 112
     assert sections["action_and_state"]["actions"] == 28
     assert sections["training"]["epsilon_decay_episodes"] == 2000
     assert sections["d2"]["thresh2_km"] == 1100.0

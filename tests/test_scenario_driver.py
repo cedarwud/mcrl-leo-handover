@@ -169,6 +169,7 @@ def _prereg():
             "thresholds",
             "stopping_rules",
             "reference_policy",
+            "pointing_cells",
         )
     }
     sections["probe_grid"] = {"P1": {"visibility": True, "d2_event_rate": True}}

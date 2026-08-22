@@ -5,7 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mcrl.env.link_budget import beam_transmit_power_w, consumed_power_w
+from mcrl.env.link_budget import (
+    beam_power_w,
+    fixed_power_w,
+    pa_efficiency,
+    supply_power_w,
+    system_power_w,
+)
 from mcrl.errors import MCRLContractError
 from mcrl.runtime.energy_efficiency import (
     additive_system_ee,
@@ -133,17 +139,21 @@ def test_the_decomposition_sums_exactly_to_the_system_value():
     assert result.eff_beams == 2
 
 
-def test_it_plugs_into_the_real_power_model():
-    loads = np.array([2.0, 1.0, 0.0])
-    power = beam_transmit_power_w(loads)
-    assert power[2] == 0.0, "a dark beam draws exactly zero, not a floor"
-    result = _ee(
-        [1e7, 1e7, 5e6],
-        consumed_power_w(power),
-        [0, 0, 1],
-        loads,
-        power > 0.0,
-    )
+def test_it_plugs_into_the_paper_power_chain():
+    """(3.12a) max -> (3.15a) xi -> (3.15) P^p -> (3.16a) P^f -> (3.16) P^N."""
+    link_power = np.array([1.2, 0.8, 0.5])
+    served = np.array([True, True, True])
+    beam_index = np.array([0, 0, 1])
+    beams = beam_power_w(link_power, served, beam_index, num_beams=3)
+    assert beams.tolist() == [1.2, 0.5, 0.0], "beam power is a max, not a sum"
+
+    per_link_beam = beams[beam_index]
+    supply = supply_power_w(link_power, pa_efficiency(per_link_beam))
+    total = system_power_w(supply, served, np.array([2.0]))
+    assert total > float(supply.sum()), "P^f must be included"
+
+    result = _ee([1e7, 1e7, 5e6], total, [0, 0, 1], np.array([2.0, 1.0, 0.0]),
+                 np.array([True, True, False]))
     assert result.eff_beams == 2
     assert result.system_ee_bits_per_j > 0.0
 

@@ -20,12 +20,17 @@ satellite have both moved.  A link that has just gone invalid must not
 count toward ``U_{b_u}`` while being assigned no serving beam — ``r3`` would
 be charging the user for service nobody delivered.
 
-**On ``m^e`` (SDD §2.2, revised 2026-08-22).**  B10 originally deleted the
-execution mask; the revision keeps it as environment-side accounting and
-removes only the contribution claim.  B10 predated B13, and once ``r3``
-became a count of who is served, the thing ``m^e`` gates became load-bearing
-for reward correctness.  The connection identity keeps all three gates,
-``x = a · m^e · z`` (paper eq. 4.5a).
+**Two gates, not three (ruling C-11, 2026-08-22).**  Paper (4.5a) is
+``x = a · z``.  ``m`` is the **decision-time** mask — it decides what a user
+may choose — and does not enter the connection identity.  An earlier SDD
+§2.2 revision recorded a three-gate ``x = a · m^e · z``; the controller has
+since withdrawn it (that revision was an assistant ruling, not a user
+authorisation) and the SDD is being corrected.
+
+What survives is the *behaviour*, under its proper name: "連上之後仍須滿足
+鏈路可行性:所需功率超過每波束上限者判為不可行,該使用者於該步為 outage".
+So the gate between selecting and being served is **per-link power
+feasibility**, not a second mask.
 """
 
 from __future__ import annotations
@@ -71,12 +76,13 @@ class ServiceResolution:
     no_op_users: np.ndarray
     """``(U,)`` bool — had no valid action at decision time (§4A.5a)."""
 
-    execution_dropped: np.ndarray
-    """``(U,)`` bool — action was valid when chosen, invalid when executed.
+    outage_infeasible: np.ndarray
+    """``(U,)`` bool — selected a valid action, but the link was infeasible.
 
-    This is the population P-5 exists for.  Its rate must be reported: a
-    large one means decision and execution have drifted far enough apart
-    that the policy is being graded on a different world than it acted in.
+    The population (4.5a)'s follow-on sentence describes: the recurrence
+    power exceeded the per-beam RF ceiling, so the user is in outage for
+    this step.  Its rate must be reported — a large one means the geometry
+    is outrunning the power budget rather than the policy choosing badly.
     """
 
     @property
@@ -127,15 +133,19 @@ class ServiceResolution:
 def resolve_service(
     actions: np.ndarray,
     decision_tables: Sequence[SlotTable],
-    execution_masks: np.ndarray,
+    link_infeasible: np.ndarray,
 ) -> ServiceResolution:
-    """Apply the execution-time mask and split the two load quantities.
+    """Resolve one step: ``x = a · z``, then per-link feasibility.
 
     ``decision_tables`` are the slot tables the actions were chosen against.
-    ``execution_masks`` is ``(U, 28)`` — the mask re-evaluated *after*
-    mobility, at the moment of execution.  A user whose chosen action has
-    gone invalid is excluded from load, activation and power (P-5), while
-    their pre-admission demand still appears in ``demand_by_cell``.
+    ``link_infeasible`` is ``(U,)`` — whether each user's chosen link needs
+    more power than the per-beam ceiling allows.  Infeasible users are
+    excluded from load, activation and power, while their pre-admission
+    demand still appears in ``demand_by_cell``.
+
+    The ``z`` gate is satisfied by construction: a beam radiates iff someone
+    selects it (3.4), so anyone who selected it and is feasible connects.
+    Writing it out anyway keeps (4.5a) visible in the code.
     """
     selected = np.asarray(actions)
     if selected.dtype.kind not in "iu":
@@ -143,16 +153,15 @@ def resolve_service(
     users = selected.size
     if len(decision_tables) != users:
         raise MCRLContractError("one decision slot table per user is required")
-    masks = np.asarray(execution_masks, dtype=bool)
-    if masks.shape != (users, NUM_ACTIONS):
+    infeasible = np.asarray(link_infeasible, dtype=bool)
+    if infeasible.shape != (users,):
         raise MCRLContractError(
-            f"execution_masks must have shape ({users}, {NUM_ACTIONS}), "
-            f"got {masks.shape}"
+            f"link_infeasible must have shape ({users},), got {infeasible.shape}"
         )
 
     served = np.zeros(users, dtype=bool)
     no_op = np.zeros(users, dtype=bool)
-    dropped = np.zeros(users, dtype=bool)
+    outage = np.zeros(users, dtype=bool)
     serving_cell = np.full(users, -1, dtype=np.int64)
     serving_satellite = np.full(users, -1, dtype=np.int64)
     demand: dict[int, int] = {}
@@ -177,9 +186,10 @@ def resolve_service(
         # Pre-admission demand counts every intent, gated or not.
         demand[cell] = demand.get(cell, 0) + 1
 
-        if not bool(masks[uid, action]):
-            # P-5: the link died between decision and execution.
-            dropped[uid] = True
+        if bool(infeasible[uid]):
+            # (4.5a)'s follow-on: connected, but the link needs more power
+            # than the beam ceiling allows, so this step is an outage.
+            outage[uid] = True
             continue
 
         served[uid] = True
@@ -194,7 +204,7 @@ def resolve_service(
         demand_by_cell=demand,
         eligible_load_by_cell=eligible,
         no_op_users=no_op,
-        execution_dropped=dropped,
+        outage_infeasible=outage,
     )
 
 

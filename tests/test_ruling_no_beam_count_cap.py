@@ -40,8 +40,9 @@ from mcrl.env.action_contract import (
 )
 from mcrl.env.link_budget import (
     BEAM_POWER_MAX_W,
-    beam_transmit_power_w,
+    SEGMENT_START_POWER_W,
     classify_link_power_feasibility,
+    recurrence_power_w,
 )
 from mcrl.env.service import resolve_service
 from mcrl.errors import MCRLContractError
@@ -113,8 +114,9 @@ def _resolution(actions, users):
         )
         for _ in range(users)
     ]
-    masks = np.ones((users, NUM_ACTIONS), dtype=bool)
-    return resolve_service(np.array(actions), tables, masks), cells
+    return resolve_service(
+        np.array(actions), tables, np.zeros(users, dtype=bool)
+    ), cells
 
 
 def test_every_beam_with_a_user_is_lit_no_matter_how_many():
@@ -172,7 +174,7 @@ def test_one_satellite_may_light_far_more_than_seven_cells():
     # so every one of the seven is lit and nothing is darkened.
     assert len(resolution.active_cells) == NUM_BEAM_SLOTS
     assert resolution.served_count == len(actions)
-    assert not resolution.execution_dropped.any()
+    assert not resolution.outage_infeasible.any()
 
 
 # -- §7.5: the resource constraint is per-link power feasibility ----------
@@ -186,26 +188,28 @@ def test_the_constraint_is_per_link_and_continuous():
 
 
 def test_power_is_not_silently_clamped_to_the_ceiling():
-    """A clamp would under-serve the link and still report it served."""
-    heavy = beam_transmit_power_w(np.array([25.0]))
-    assert float(heavy[0]) > BEAM_POWER_MAX_W
-    assert bool(classify_link_power_feasibility(heavy)[0])
+    """A clamp would under-serve the link and still report it served.
+
+    Eq. (3.11) introduces no clamp at all; the ceiling is a feasibility test
+    outside the recurrence.
+    """
+    drifted = recurrence_power_w(np.array(1.0), np.array(0.2))
+    assert float(drifted) == pytest.approx(SEGMENT_START_POWER_W / 0.2)
+    assert float(drifted) > BEAM_POWER_MAX_W
+    assert bool(classify_link_power_feasibility(drifted)[()])
 
 
-def test_the_ceiling_binds_only_at_a_genuinely_heavy_load():
-    """0.25 + 0.35*sqrt(U) crosses 1.65 W at exactly U = 16."""
-    loads = np.arange(0, 30, dtype=float)
-    power = beam_transmit_power_w(loads)
-    infeasible = classify_link_power_feasibility(power)
-    assert not infeasible[:17].any()
-    assert infeasible[17:].all()
-    assert float(power[16]) == pytest.approx(BEAM_POWER_MAX_W, abs=1e-12)
+def test_the_recurrence_compensates_transmit_gain_not_load():
+    """Ruling C-2: power follows the ANGLE, never the user count."""
+    on_axis = recurrence_power_w(np.array(1.0), np.array(1.0))
+    off_axis = recurrence_power_w(np.array(1.0), np.array(0.5))
+    assert float(on_axis) == pytest.approx(SEGMENT_START_POWER_W)
+    assert float(off_axis) == pytest.approx(2.0 * SEGMENT_START_POWER_W)
 
 
-def test_a_dark_beam_draws_exactly_zero_and_is_feasible():
-    power = beam_transmit_power_w(np.array([0.0]))
-    assert float(power[0]) == 0.0
-    assert not bool(classify_link_power_feasibility(power)[0])
+def test_a_null_pointing_link_has_no_recurrence_power():
+    with pytest.raises(MCRLContractError, match=r"G\^T\(theta\(t\)\) > 0|G\^T"):
+        recurrence_power_w(np.array(1.0), np.array(0.0))
 
 
 def test_feasibility_inputs_are_validated():
@@ -220,22 +224,12 @@ def test_feasibility_inputs_are_validated():
 # -- §7.5: no unserved cliff ----------------------------------------------
 
 
-def test_power_infeasibility_degrades_smoothly_with_load():
-    """No load at which the served count falls off a cliff."""
-    served_fraction = []
-    for load in range(1, 30):
-        power = beam_transmit_power_w(np.full(load, float(load)))
-        served_fraction.append(
-            1.0 - float(classify_link_power_feasibility(power).mean())
-        )
-    # It is a step per-beam, but every user on the beam is judged by the same
-    # p_req only because they share a load; the transition is one user wide.
-    transitions = sum(
-        1
-        for before, after in zip(served_fraction, served_fraction[1:])
-        if before != after
-    )
-    assert transitions == 1, "exactly one crossing, not a repeated cliff"
+def test_power_infeasibility_is_per_link_not_per_beam():
+    """Two users on one beam are judged separately — no cliff."""
+    required = np.array([1.0, 1.2, 1.7, 2.4])
+    infeasible = classify_link_power_feasibility(required)
+    assert infeasible.tolist() == [False, False, True, True]
+    assert 0 < int(infeasible.sum()) < infeasible.size
 
 
 def test_the_service_resolver_takes_no_capacity_argument():
@@ -246,7 +240,7 @@ def test_the_service_resolver_takes_no_capacity_argument():
     assert list(signature.parameters) == [
         "actions",
         "decision_tables",
-        "execution_masks",
+        "link_infeasible",
     ]
 
 
@@ -267,8 +261,8 @@ def test_the_only_reason_a_user_goes_unserved_is_the_mask():
             for _ in range(users)
         ]
         resolution, _cells = _resolution(actions, users)
-        # Every mask was all-True, so every user must be served, no matter
+        # Nothing was infeasible, so every user must be served, no matter
         # how many piled onto one cell or one satellite.
         assert resolution.served_count == users
-        assert not resolution.execution_dropped.any()
+        assert not resolution.outage_infeasible.any()
         assert not resolution.no_op_users.any()

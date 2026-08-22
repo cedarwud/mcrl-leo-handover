@@ -38,10 +38,25 @@ def _state(num_beams=NUM_ACTIONS, contract=None):
 # -- the authoritative dimension ------------------------------------------
 
 
-def test_the_state_dimension_is_125():
-    assert state_dim_for(NUM_ACTIONS) == 125
-    assert state_dim_for(NUM_ACTIONS) == 4 * NUM_ACTIONS + CONTRACT_STATE_DIM
+def test_the_live_state_dimension_is_112():
+    """Ruling C-1: (4.1) and ch5 §5.1 both say 4C, and they win."""
+    assert state_dim_for(NUM_ACTIONS) == 112
+    assert state_dim_for(NUM_ACTIONS) == 4 * NUM_ACTIONS
     assert state_dim_for(NUM_ACTIONS) == STATE_DIM
+
+
+def test_the_contract_block_is_an_ablation_switch_off_by_default():
+    """Same treatment as chi_u: kept in code, absent from the paper."""
+    from mcrl.env.action_contract import STATE_DIM_WITH_CONTRACT_ABLATION
+
+    assert state_dim_for(NUM_ACTIONS, include_contract_block=True) == 125
+    assert STATE_DIM_WITH_CONTRACT_ABLATION == 125
+    encoded = encode_state(_state(), num_users=100, config=CONFIG)
+    assert encoded.shape == (112,)
+    with_block = encode_state(
+        _state(), num_users=100, config=CONFIG, include_contract_block=True
+    )
+    assert with_block.shape == (125,)
 
 
 def test_the_encoder_agrees_with_the_declared_dimension():
@@ -50,7 +65,7 @@ def test_the_encoder_agrees_with_the_declared_dimension():
     assert encoded.dtype == np.float32
 
 
-def test_the_two_declarations_of_125_cannot_drift_apart():
+def test_the_two_declarations_cannot_drift_apart():
     """``action_contract.STATE_DIM`` and ``state_dim_for`` are both quoted."""
     assert STATE_DIM == state_dim_for(NUM_ACTIONS)
 
@@ -61,7 +76,9 @@ def test_the_two_declarations_of_125_cannot_drift_apart():
 def test_the_four_blocks_keep_their_order_and_the_contract_comes_last():
     contract = np.arange(CONTRACT_STATE_DIM, dtype=np.float32)
     state = _state(contract=contract)
-    encoded = encode_state(state, num_users=4, config=CONFIG)
+    encoded = encode_state(
+        state, num_users=4, config=CONFIG, include_contract_block=True
+    )
 
     n = NUM_ACTIONS
     assert np.allclose(encoded[:n], state.access_vector)
@@ -81,7 +98,10 @@ def test_the_contract_block_is_the_one_the_action_contract_builds():
     )
     contract = contract_state_fields(assignment, dwell_phase=0.25)
     encoded = encode_state(
-        _state(contract=contract), num_users=10, config=CONFIG
+        _state(contract=contract),
+        num_users=10,
+        config=CONFIG,
+        include_contract_block=True,
     )
     assert np.allclose(encoded[4 * NUM_ACTIONS :], contract)
     # is_incumbent, ttt, radial rate, dwell phase — in that order.
@@ -111,8 +131,8 @@ def test_state_and_action_stay_aligned_by_construction():
 # -- fail loud rather than emit a short vector ----------------------------
 
 
-def test_a_missing_contract_block_raises():
-    """The failure this guards: a silent 112-vector that fits no network."""
+def test_a_missing_contract_block_is_the_normal_case():
+    """Ruling C-1 reversed this: absent must NOT raise on the live path."""
     state = UserState(
         access_vector=np.zeros(NUM_ACTIONS),
         channel_quality=np.zeros(NUM_ACTIONS),
@@ -120,17 +140,21 @@ def test_a_missing_contract_block_raises():
         beam_loads=np.zeros(NUM_ACTIONS),
     )
     assert state.contract_fields is None
-    with pytest.raises(MCRLContractError, match="contract_fields is required"):
-        encode_state(state, num_users=1, config=CONFIG)
+    assert encode_state(state, num_users=1, config=CONFIG).shape == (112,)
+
+    # It only raises when the ablation is explicitly switched on.
+    with pytest.raises(MCRLContractError, match="ablation is enabled"):
+        encode_state(state, num_users=1, config=CONFIG, include_contract_block=True)
 
 
 @pytest.mark.parametrize("bad_length", [0, 12, 14, 28])
-def test_a_wrong_length_contract_block_raises(bad_length):
+def test_a_wrong_length_contract_block_raises_under_the_ablation(bad_length):
     with pytest.raises(MCRLContractError, match="must have shape"):
         encode_state(
             _state(contract=np.zeros(bad_length, dtype=np.float32)),
             num_users=1,
             config=CONFIG,
+            include_contract_block=True,
         )
 
 

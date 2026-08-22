@@ -293,12 +293,17 @@ REQUIRED_SECTIONS: tuple[str, ...] = (
     "stopping_rules",
     "reference_policy",
     "selection_mappings",
+    "pointing_cells",
 )
 """§7.1's minimum set, plus the parameter blocks the probes depend on.
 
 ``selection_mappings`` is the "決定性的選取映射" half of §7.1's "門檻**或**
 決定性的選取映射" — the rules that will close Q-D and Q-E once the probes
 report, committed before the probes run.
+
+``pointing_cells`` carries the 39 ``cell_id`` values verbatim (ruling C-3):
+once they are in the record, reproducing the beam grid no longer depends on
+the ordering rule that produced them.
 """
 
 
@@ -362,6 +367,7 @@ def read_prereg(path: str | Path) -> PreregRecord:
 
 def build_prereg_sections(
     *,
+    constants_grid_altitude_km: float = 483.0,
     reference_policy: ReferencePolicy,
     probe_grid: Mapping[str, Any],
     thresholds: Mapping[str, Any],
@@ -377,6 +383,7 @@ def build_prereg_sections(
     the stopping rules, the reference policy — are supplied by the caller.
     """
     from ..env import antenna, cells, constants, link_budget
+    from ..env.cells import POINTING_CELL_COUNT, build_cell_grid, freeze_pointing_cells
     from ..env.action_contract import (
         CONTRACT_STATE_DIM,
         NUM_ACTIONS,
@@ -414,9 +421,21 @@ def build_prereg_sections(
             "bandwidth_hz": link_budget.BANDWIDTH_HZ,
             "beam_bandwidth_hz": link_budget.BEAM_BANDWIDTH_HZ,
             "system_temperature_k": link_budget.SYSTEM_TEMPERATURE_K,
-            "atmosphere_model": "slab: chi * H_atm / sin(elevation)",
-            "atmosphere_height_km": link_budget.ATMOSPHERE_HEIGHT_KM,
+            "atmosphere_model": "TR 38.811 (6.6-8): A_zenith / sin(elevation)",
+            "zenith_gaseous_loss_db": link_budget.ZENITH_GASEOUS_LOSS_DB,
+            "scintillation_loss_db": link_budget.SCINTILLATION_LOSS_DB,
+            "shadowing_loss_db": link_budget.SHADOWING_LOSS_DB,
+            "rician_k_factor_db": link_budget.RICIAN_K_FACTOR_DB,
+            "segment_start_power_w": link_budget.SEGMENT_START_POWER_W,
             "beam_power_max_w": link_budget.BEAM_POWER_MAX_W,
+            "pa_max_efficiency": link_budget.PA_MAX_EFFICIENCY,
+            "pa_output_backoff_db": link_budget.PA_OUTPUT_BACKOFF_DB,
+            "pa_saturation_power_w": link_budget.PA_SATURATION_POWER_W,
+            "circuit_power_per_beam_w": link_budget.CIRCUIT_POWER_PER_BEAM_W,
+            "baseband_power_per_satellite_w": (
+                link_budget.BASEBAND_POWER_PER_SATELLITE_W
+            ),
+            "beam_to_rf_chain_is_sourced": link_budget.BEAM_TO_RF_CHAIN_IS_SOURCED,
             "satellite_power_ceiling": None,
             "beam_count_ceiling": None,
             "bessel_series_max_abs_x": BESSEL_SERIES_MAX_ABS_X,
@@ -428,7 +447,7 @@ def build_prereg_sections(
             "service_window_basis": "pass duration at >= 10 deg elevation",
         },
         "reward": {
-            "r1": "angle-aware per-link EE",
+            "r1": "eq. (3.25): sum of selected link EE over the common P^N",
             "r2": f"identity-based handover, phi1={PHI1}, phi2={PHI2}",
             "r3": "count-based -U_{b_u}",
             "load_semantics": "eligible (post-m^e) drives r3, power and gamma_req",
@@ -438,8 +457,9 @@ def build_prereg_sections(
             "satellite_slots": NUM_SATELLITE_SLOTS,
             "beam_slots": NUM_BEAM_SLOTS,
             "actions": NUM_ACTIONS,
-            "contract_state_dim": CONTRACT_STATE_DIM,
             "state_dim": STATE_DIM,
+            "contract_block_dim_ablation_only": CONTRACT_STATE_DIM,
+            "contract_block_enabled": False,
             "hidden_layers": list(training.hidden_layers),
             "activation": training.activation,
             "beam_activation": "z = 1{U > 0}, derived",
@@ -462,6 +482,10 @@ def build_prereg_sections(
         "thresholds": dict(thresholds),
         "stopping_rules": dict(stopping_rules),
         "reference_policy": reference_policy.as_dict(),
+        "pointing_cells": freeze_pointing_cells(
+            build_cell_grid(altitude_km=constants_grid_altitude_km),
+            count=POINTING_CELL_COUNT,
+        ),
         "data_integrity": {
             "max_malformed_tle_record_fraction": MAX_MALFORMED_RECORD_FRACTION,
             "cell_grid_radius_basis": "h * tan(theta_3dB / 2)",

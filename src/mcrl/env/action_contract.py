@@ -516,10 +516,22 @@ def classify_step(
 # ---------------------------------------------------------------------------
 
 CONTRACT_STATE_DIM: int = 3 * NUM_SATELLITE_SLOTS + 1
-"""13 = is_incumbent(4) + d2_ttt_counter(4) + radial_rate(4) + dwell_phase(1)."""
+"""13 = is_incumbent(4) + d2_ttt_counter(4) + radial_rate(4) + dwell_phase(1).
 
-STATE_DIM: int = 4 * NUM_ACTIONS + CONTRACT_STATE_DIM
-"""125 — SDD §3.6 / §4A.6, the single authoritative value."""
+⚠ **Not part of ``s_u``** (ruling C-1, 2026-08-22).  This block is an
+ablation switch, off by default, on the same footing as ``χ_u``: kept in the
+code, absent from the paper.  ``d2_ttt_counter`` and ``dwell_phase`` are
+environment accounting and already live in the D2 tracker and the dwell
+controller; ``radial_rate`` is recoverable from two consecutive steps; and
+``is_incumbent``'s job is done by requiring (4.1)'s candidate ordering to
+keep the incumbent recoverable.
+"""
+
+STATE_DIM: int = 4 * NUM_ACTIONS
+"""**112** — paper (4.1) and ch5 §5.1, the live value."""
+
+STATE_DIM_WITH_CONTRACT_ABLATION: int = STATE_DIM + CONTRACT_STATE_DIM
+"""125 — only when the ablation switch is on."""
 
 
 def contract_state_fields(

@@ -271,3 +271,104 @@ def greedy_coverage_order(
         uncovered &= ~covers[:, best]
         curve.append(1.0 - float(uncovered.mean()))
     return np.array(chosen, dtype=np.int64), np.array(curve, dtype=np.float64)
+
+
+# ---------------------------------------------------------------------------
+# The pointing-cell set (ruling C-3, 2026-08-22)
+# ---------------------------------------------------------------------------
+
+POINTING_CELL_COUNT: int = 39
+"""``V`` — ch5 §5.1.  The number of beam pointing positions per satellite."""
+
+
+def cell_area_fraction_inside_service_area(
+    grid: CellGrid, *, samples_per_axis: int = 41
+) -> np.ndarray:
+    """Fraction of each cell's area that lies inside the 200 x 90 km rectangle.
+
+    The lattice's hexagons are exactly its Voronoi cells, so a point belongs
+    to cell ``c`` iff ``c`` is its nearest centre — no polygon clipping is
+    needed.  The sample grid is deterministic rather than random so the
+    ordering it feeds is reproducible without carrying a seed.
+    """
+    if samples_per_axis < 2:
+        raise ValueError("samples_per_axis must be at least 2")
+    reach = grid.pitch_km
+    offsets = np.linspace(-reach, reach, samples_per_axis)
+    grid_x, grid_y = np.meshgrid(offsets, offsets)
+    probe = np.stack([grid_x.ravel(), grid_y.ravel()], axis=1)
+
+    inside_fraction = np.zeros(grid.count, dtype=np.float64)
+    half_ew, half_ns = AREA_EW_KM / 2.0, AREA_NS_KM / 2.0
+    for cell in range(grid.count):
+        points = probe + grid.centers_km[cell]
+        nearest = np.argmin(
+            ((points[:, None, :] - grid.centers_km[None, :, :]) ** 2).sum(axis=2),
+            axis=1,
+        )
+        owned = points[nearest == cell]
+        if owned.size == 0:
+            continue
+        inside = (np.abs(owned[:, 0]) <= half_ew) & (
+            np.abs(owned[:, 1]) <= half_ns
+        )
+        inside_fraction[cell] = float(inside.mean())
+    return inside_fraction
+
+
+def select_pointing_cells(
+    grid: CellGrid, *, count: int = POINTING_CELL_COUNT
+) -> np.ndarray:
+    """Choose ``V`` pointing cells by a **total order** (ruling C-3).
+
+    Sort key, in order:
+
+    1. fraction of the cell's area inside the service rectangle, **descending**
+    2. distance from the rectangle's centroid, **ascending**
+    3. ``cell_id``, **ascending**
+
+    A total order rather than a set-cover greedy on purpose: greedy selection
+    is path-dependent and needs a tie-break rule of its own, so freezing it
+    would mean freezing an algorithm.  §4A.2 asks for ``cell_id(j)`` to be
+    reproducible, not for an algorithm to be — hence the third key, which
+    makes the order total, and hence :func:`freeze_pointing_cells`, after
+    which reproducibility no longer depends on this function at all.
+
+    The set is **fixed**, not recomputed as satellites move: cells are
+    earth-fixed and beams track them, so a set that drifted with the
+    sub-satellite point would manufacture handovers unrelated to ``r2``.
+    """
+    if count < 1 or count > grid.count:
+        raise MCRLContractError(
+            f"cannot select {count} cells from a lattice of {grid.count}"
+        )
+    inside = cell_area_fraction_inside_service_area(grid)
+    distance = np.linalg.norm(grid.centers_km, axis=1)
+    order = sorted(
+        range(grid.count),
+        key=lambda cell: (-inside[cell], distance[cell], cell),
+    )
+    return np.array(sorted(order[:count]), dtype=np.int64)
+
+
+def freeze_pointing_cells(grid: CellGrid, *, count: int = POINTING_CELL_COUNT):
+    """Return the chosen ids **and** their measured coverage, for the PREREG.
+
+    Ruling C-3 requires the 39 ``cell_id`` values to be written into the
+    PREREG verbatim; once they are, reproducibility stops depending on the
+    ordering rule.  The coverage is measured at the same time and must be
+    reported: if it falls below the 95% target, that is to be escalated
+    rather than patched by changing the rule.
+    """
+    chosen = select_pointing_cells(grid, count=count)
+    return {
+        "cell_ids": [int(cell) for cell in chosen.tolist()],
+        "count": int(chosen.size),
+        "coverage_fraction": coverage_fraction(grid, chosen),
+        "cell_radius_km": grid.cell_radius_km,
+        "lattice_cells": grid.count,
+        "selection_rule": (
+            "descending area fraction inside the 200x90 km service area, "
+            "then ascending distance from its centroid, then ascending cell_id"
+        ),
+    }

@@ -1,8 +1,10 @@
-"""W-07 / G-4 / G-12 — counting-form r3 and the execution mask (P-5, P-6).
+"""W-07 / G-4 / G-12 — counting-form r3 and per-link feasibility.
 
 B13 replaced ``r3`` with ``−U_{b_u}``, which made the reward depend on who
-is *actually* served — and that is what made ``m^e`` load-bearing again
-(SDD §2.2, revised 2026-08-22).
+is *actually* served.  Ruling C-11 (2026-08-22) settled what does the
+gating: the connection identity is two gates, ``x = a·z``, and the filter
+between selecting and being served is **per-link power feasibility**, not a
+second mask.
 """
 
 from __future__ import annotations
@@ -44,12 +46,13 @@ def _table(incumbent=None, cells=None):
 
 
 def _resolve(actions, *, drop=(), users=None):
+    """``drop`` names users whose chosen link is power-infeasible."""
     users = len(actions) if users is None else users
     tables = [_table() for _ in range(users)]
-    masks = np.ones((users, NUM_ACTIONS), dtype=bool)
-    for uid, action in drop:
-        masks[uid, action] = False
-    return resolve_service(np.array(actions), tables, masks)
+    infeasible = np.zeros(users, dtype=bool)
+    for uid, _action in drop:
+        infeasible[uid] = True
+    return resolve_service(np.array(actions), tables, infeasible)
 
 
 # -- the two load quantities ----------------------------------------------
@@ -63,10 +66,10 @@ def test_ungated_demand_and_eligible_load_are_reported_separately():
     assert resolution.demand_by_cell[CELLS[0]] == 3, "state sees all three"
     assert resolution.eligible_load_by_cell[CELLS[0]] == 2, "only two are served"
     assert resolution.served_count == 2
-    assert resolution.execution_dropped.tolist() == [False, False, True]
+    assert resolution.outage_infeasible.tolist() == [False, False, True]
 
 
-def test_a_dropped_user_is_excluded_from_load_activation_and_reward():
+def test_an_infeasible_user_is_excluded_from_load_activation_and_reward():
     a0 = action_index(0, 0)
     resolution = _resolve([a0, a0], drop=[(1, a0)])
     loads = resolution.user_beam_load()
@@ -76,7 +79,7 @@ def test_a_dropped_user_is_excluded_from_load_activation_and_reward():
     assert resolution.serving_satellite[1] == -1
 
 
-def test_a_cell_everyone_was_dropped_from_is_not_active():
+def test_a_cell_whose_users_are_all_infeasible_is_not_active():
     """Activation ⟺ positive ELIGIBLE load, not positive demand (G-12)."""
     a0 = action_index(0, 0)
     resolution = _resolve([a0], drop=[(0, a0)])
@@ -91,22 +94,22 @@ def test_no_op_users_contribute_to_neither_quantity():
     assert resolution.no_op_users.tolist() == [False, True]
     assert resolution.demand_by_cell == {CELLS[0]: 1}
     assert resolution.eligible_load_by_cell == {CELLS[0]: 1}
-    assert not resolution.execution_dropped.any(), "a no-op is not a P-5 drop"
+    assert not resolution.outage_infeasible.any(), "a no-op is not an infeasibility outage"
 
 
-def test_a_no_op_is_distinguished_from_an_execution_drop():
+def test_a_no_op_is_distinguished_from_an_infeasibility_outage():
     """Different causes, different rates, so P1 can tell them apart."""
     a0 = action_index(0, 0)
     resolution = _resolve([NO_OP_ACTION, a0], drop=[(1, a0)])
     assert resolution.no_op_users.tolist() == [True, False]
-    assert resolution.execution_dropped.tolist() == [False, True]
+    assert resolution.outage_infeasible.tolist() == [False, True]
     assert resolution.served_count == 0
 
 
 def test_an_action_invalid_at_decision_time_is_a_contract_violation():
     """P-4 should have stopped it long before execution."""
     table = _table()
-    masks = np.ones((1, NUM_ACTIONS), dtype=bool)
+    masks = np.zeros(1, dtype=bool)
     dead = np.flatnonzero(~table.mask)
     if dead.size == 0:
         pytest.skip("this slot table has no invalid action")
@@ -116,16 +119,14 @@ def test_an_action_invalid_at_decision_time_is_a_contract_violation():
 
 def test_out_of_range_actions_are_refused():
     with pytest.raises(MCRLContractError, match="out of range"):
-        resolve_service(
-            np.array([NUM_ACTIONS]), [_table()], np.ones((1, NUM_ACTIONS), bool)
-        )
+        resolve_service(np.array([NUM_ACTIONS]), [_table()], np.zeros(1, bool))
 
 
 def test_shape_mismatches_fail_loud():
-    with pytest.raises(MCRLContractError, match="execution_masks"):
-        resolve_service(np.array([0]), [_table()], np.ones((1, 5), bool))
+    with pytest.raises(MCRLContractError, match="link_infeasible"):
+        resolve_service(np.array([0]), [_table()], np.ones(5, bool))
     with pytest.raises(MCRLContractError, match="one decision slot table"):
-        resolve_service(np.array([0, 0]), [_table()], np.ones((2, NUM_ACTIONS), bool))
+        resolve_service(np.array([0, 0]), [_table()], np.zeros(2, bool))
 
 
 # -- G-4: r3 is decomposable ----------------------------------------------
@@ -220,7 +221,7 @@ def test_required_sinr_meets_the_floor_exactly():
 
 
 def test_gamma_req_computed_on_ungated_demand_would_overshoot():
-    """P-5: using demand instead of eligible load demands SINR for ghosts."""
+    """Using demand instead of eligible load demands SINR for ghosts."""
     a0 = action_index(0, 0)
     resolution = _resolve([a0, a0, a0], drop=[(2, a0)])
     eligible = required_sinr(

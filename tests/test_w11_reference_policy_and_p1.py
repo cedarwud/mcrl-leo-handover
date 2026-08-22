@@ -309,6 +309,7 @@ def _prereg(probe_grid=None):
             "thresholds",
             "stopping_rules",
             "reference_policy",
+            "pointing_cells",
         )
     }
     sections["probe_grid"] = (

@@ -37,6 +37,11 @@ class TrainerConfig:
     # -- paper-backed (SDD §3.5) ------------------------------------------
     hidden_layers: tuple[int, ...] = (100, 50, 50)
     activation: str = "tanh"
+    # Ruling C-13: a CONTROLLED VARIABLE, not a value. SDD §2.3 makes it the
+    # only X-level deviation (Table I says 0.01, this study ran 0.001), P6
+    # sweeps {0.01, 0.003, 0.001}, and the PREREG records the sweep rather
+    # than either side's default. The dataclass still needs *a* number to
+    # construct; it must be supplied explicitly by whatever sets up a run.
     learning_rate: float = 0.01
     discount_factor: float = 0.9
     batch_size: int = 128
