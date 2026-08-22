@@ -103,8 +103,14 @@ def candidate_geometry(
 ) -> CandidateGeometry:
     """Assemble the ``(U, L, J)`` candidate geometry for one step.
 
-    ``satellite_ecef_km`` is ``(L, 3)`` — the four window satellites in slot
-    order.  ``neighborhood_cell_ids`` is ``(U, J)`` from
+    ``satellite_ecef_km`` is ``(U, L, 3)`` — **each user has their own window**.
+    The paper's candidate map is written ``b_u(c,t)`` with a ``u`` subscript
+    for exactly this reason: slot assignment ranks by D2 margin (§4A.3), and
+    margin is a per-user distance, so two users 100 km apart can order the
+    same satellites differently.  A shared ``(L, 3)`` is accepted and
+    broadcast, but only as a convenience for tests.
+
+    ``neighborhood_cell_ids`` is ``(U, J)`` from
     ``CellGrid.neighborhood_cell_ids``; ``-1`` marks a beam slot with no
     lattice cell, and its angle comes back as NaN so that a caller which
     forgets to mask it fails loudly rather than pointing at cell 0.
@@ -116,8 +122,14 @@ def candidate_geometry(
 
     if users.ndim != 2 or users.shape[1] != 3:
         raise MCRLContractError("user_ecef_km must be (U, 3)")
-    if satellites.ndim != 2 or satellites.shape[1] != 3:
-        raise MCRLContractError("satellite_ecef_km must be (L, 3)")
+    if satellites.ndim == 2 and satellites.shape[1] == 3:
+        satellites = np.broadcast_to(
+            satellites[None, :, :], (users.shape[0],) + satellites.shape
+        )
+    if satellites.ndim != 3 or satellites.shape[2] != 3:
+        raise MCRLContractError("satellite_ecef_km must be (U, L, 3) or (L, 3)")
+    if satellites.shape[0] != users.shape[0]:
+        raise MCRLContractError("satellite_ecef_km and user_ecef_km disagree on U")
     if centres.ndim != 2 or centres.shape[1] != 3:
         raise MCRLContractError("cell_centres_ecef_km must be (C, 3)")
     if cells.ndim != 2 or cells.shape[0] != users.shape[0]:
@@ -125,10 +137,10 @@ def candidate_geometry(
     if np.any(cells >= centres.shape[0]):
         raise MCRLContractError("a cell id exceeds the lattice")
 
-    num_users, num_slots, num_beams = users.shape[0], satellites.shape[0], cells.shape[1]
+    num_users, num_slots, num_beams = users.shape[0], satellites.shape[1], cells.shape[1]
 
     # (U, L): slant range and elevation, independent of the beam index.
-    delta = satellites[None, :, :] - users[:, None, :]
+    delta = satellites - users[:, None, :]
     slant = np.linalg.norm(delta, axis=-1)
     up = users / np.maximum(
         np.linalg.norm(users, axis=1, keepdims=True), 1e-12
@@ -144,7 +156,7 @@ def candidate_geometry(
     off_axis = np.full((num_users, num_slots, num_beams), np.nan, dtype=np.float64)
     for slot in range(num_slots):
         angles = angle_between_deg(
-            satellites[slot][None, None, :],
+            satellites[:, slot, :][:, None, :],
             beam_centres,
             users[:, None, :],
         )
