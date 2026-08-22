@@ -2,7 +2,7 @@
 
 MCRL(Multi-Catfish Reinforcement Learning)LEO 多波束換手 — 乾淨重建。
 
-**狀態:W-01…W-10、W-12、W-13、W-15、W-16 完成。**
+**狀態:W-01…W-10、W-12、W-13、W-14、W-15、W-16 完成;W-11 的參考策略與 P1 已寫。**
 **整棵樹已可 import,測試 shim 已全部刪除。尚不可訓練:W-11(probe)、W-13(PREREG 凍結器)、W-14(遷移表)未寫。**
 
 - 規格:`~/papers/modqn-paper-reproduction/docs/MCRL-NEW-PROJECT-SDD-01-2026-08-21.md`(r8)
