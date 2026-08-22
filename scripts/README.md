@@ -10,6 +10,7 @@
 | `dt_sweep2.py` | `Δt ∈ {1,5,10,30,60}` 下三個目標各自退化與否 | `W19-REPLY-DT` §1 |
 | `qe_premise.py` | dwell `N` 在幾何上控制得了任何東西嗎?(封閉式) | `W19-REPLY-DT` §3.1 |
 | `qe_rekey.py` | 實測 re-key 率,Q-E 新準則的輸入 | `W19-REPLY-DT` §3.1 |
+| `signed_drop_dt30.py` | 段末 vs 段內峰值的有號跌幅,以及峰值鏈路功率 | `W19-REPLY-C-COST` §1 |
 
 全部從 repo 根目錄執行:`.venv/bin/python scripts/<name>.py`。
 需要 TLE 語料(`~/demo/tle_data/starlink/tle`)。
