@@ -1,0 +1,268 @@
+"""W-12 / G-3 — the four collapse indicators.
+
+G-3 fails on a MISSING indicator, not on a bad value, because the documented
+error is reporting two of the four and concluding the collapse was fixed.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from mcrl.errors import MCRLContractError
+from mcrl.runtime.collapse_metrics import (
+    REQUIRED_G3_FIELDS,
+    assert_g3_complete,
+    compute_collapse_metrics,
+)
+
+USERS, ACTIONS = 100, 28
+
+
+def _all_valid():
+    return np.ones((USERS, ACTIONS), dtype=bool)
+
+
+def _collapsed(rng, scale=1.0):
+    """One action dominates for everybody."""
+    q = rng.normal(0.0, 0.01 * scale, (USERS, ACTIONS))
+    q[:, 3] += 1.0 * scale
+    return q
+
+
+def _dispersed(rng, scale=1.0):
+    q = rng.normal(0.0, scale, (USERS, ACTIONS))
+    return q
+
+
+# -- completeness is the gate ---------------------------------------------
+
+
+def test_all_four_indicators_are_required():
+    assert REQUIRED_G3_FIELDS == (
+        "active_beam_count",
+        "argmax_agreement",
+        "q_margin",
+        "q_entropy",
+    )
+
+
+def test_a_partial_report_is_refused():
+    """Exactly the two-of-four error the ablation fell into."""
+    with pytest.raises(MCRLContractError, match="missing"):
+        assert_g3_complete(
+            {"active_beam_count": 4.39, "argmax_agreement": 0.484}
+        )
+
+
+@pytest.mark.parametrize("dropped", REQUIRED_G3_FIELDS)
+def test_dropping_any_single_indicator_fails(dropped):
+    report = {field: 1.0 for field in REQUIRED_G3_FIELDS}
+    del report[dropped]
+    with pytest.raises(MCRLContractError, match=dropped):
+        assert_g3_complete(report)
+
+
+def test_a_complete_report_passes_and_round_trips():
+    report = {field: 0.5 for field in REQUIRED_G3_FIELDS}
+    assert assert_g3_complete(report) == report
+
+
+def test_non_finite_indicators_are_refused():
+    report = {field: 1.0 for field in REQUIRED_G3_FIELDS}
+    report["q_margin"] = float("nan")
+    with pytest.raises(MCRLContractError, match="finite"):
+        assert_g3_complete(report)
+
+
+def test_the_computed_metrics_always_carry_all_four():
+    rng = np.random.default_rng(0)
+    q = _collapsed(rng)
+    metrics = compute_collapse_metrics(q, _all_valid(), q.argmax(axis=1))
+    assert_g3_complete(metrics.as_dict())
+    rendered = metrics.format_report()
+    for field in REQUIRED_G3_FIELDS:
+        assert field in rendered
+
+
+# -- the indicators actually discriminate ---------------------------------
+
+
+def test_a_collapsed_policy_shows_one_beam_and_full_agreement():
+    rng = np.random.default_rng(1)
+    q = _collapsed(rng)
+    metrics = compute_collapse_metrics(q, _all_valid(), q.argmax(axis=1))
+    assert metrics.active_beam_count == 1.0
+    assert metrics.argmax_agreement == 1.0
+
+
+def test_a_dispersed_policy_shows_many_beams_and_low_agreement():
+    rng = np.random.default_rng(2)
+    q = _dispersed(rng)
+    metrics = compute_collapse_metrics(q, _all_valid(), q.argmax(axis=1))
+    assert metrics.active_beam_count > 20
+    assert metrics.argmax_agreement < 0.15
+
+
+# -- ★ why the margin must be normalised ----------------------------------
+
+
+def test_the_raw_margin_moves_with_the_q_scale_and_the_normalised_one_does_not():
+    """The confound the normalisation removes, demonstrated.
+
+    Two policies that differ ONLY by a uniform rescaling of Q have identical
+    discrimination.  The raw margin says one is 100x better; the normalised
+    margin correctly says they are the same.
+    """
+    rng = np.random.default_rng(3)
+    base = _dispersed(np.random.default_rng(3))
+    scaled = base * 0.01
+
+    big = compute_collapse_metrics(base, _all_valid(), base.argmax(axis=1))
+    small = compute_collapse_metrics(scaled, _all_valid(), scaled.argmax(axis=1))
+
+    assert small.q_margin_raw == pytest.approx(big.q_margin_raw * 0.01, rel=1e-9)
+    assert small.q_margin == pytest.approx(big.q_margin, rel=1e-9)
+    del rng
+
+
+def test_the_normalised_margin_responds_to_shape_not_scale():
+    """It moves when the Q distribution genuinely flattens."""
+    rng = np.random.default_rng(4)
+    peaked = _collapsed(rng)
+    flat = _dispersed(np.random.default_rng(4))
+
+    peaked_metrics = compute_collapse_metrics(
+        peaked, _all_valid(), peaked.argmax(axis=1)
+    )
+    flat_metrics = compute_collapse_metrics(flat, _all_valid(), flat.argmax(axis=1))
+    assert peaked_metrics.q_margin > 5.0 * flat_metrics.q_margin
+
+
+def test_the_first_two_indicators_alone_would_call_a_flat_policy_healthy():
+    """The exact misreading G-3 exists to prevent.
+
+    A near-flat Q with dispersed argmax looks de-collapsed on beams and
+    agreement, and is only distinguishable by looking at the margin against
+    a genuinely discriminative policy of the same scale.
+    """
+    rng = np.random.default_rng(5)
+    flat = rng.normal(0.0, 1e-4, (USERS, ACTIONS))
+    metrics = compute_collapse_metrics(flat, _all_valid(), flat.argmax(axis=1))
+
+    # On the first two, it looks fine.
+    assert metrics.active_beam_count > 20
+    assert metrics.argmax_agreement < 0.15
+    # The scale it is operating at is what the raw margin exposes.
+    assert metrics.q_margin_raw < 1e-3
+    assert metrics.q_range < 1e-3
+
+
+def test_the_range_used_for_normalisation_is_reported():
+    """So the normalisation itself can be audited rather than trusted."""
+    rng = np.random.default_rng(6)
+    q = _dispersed(rng)
+    metrics = compute_collapse_metrics(q, _all_valid(), q.argmax(axis=1))
+    assert metrics.q_range > 0.0
+    assert metrics.q_margin == pytest.approx(
+        metrics.q_margin_raw / metrics.q_range
+    )
+    assert "q_range" in metrics.as_dict()
+
+
+# -- entropy ---------------------------------------------------------------
+
+
+def test_entropy_is_normalised_into_the_unit_interval():
+    rng = np.random.default_rng(7)
+    for builder in (_collapsed, _dispersed):
+        q = builder(rng)
+        metrics = compute_collapse_metrics(q, _all_valid(), q.argmax(axis=1))
+        assert 0.0 <= metrics.q_entropy <= 1.0
+
+
+def test_a_hugely_peaked_row_has_near_zero_entropy():
+    q = np.zeros((1, ACTIONS))
+    q[0, 5] = 500.0
+    metrics = compute_collapse_metrics(q, np.ones((1, ACTIONS), bool), np.array([5]))
+    assert metrics.q_entropy == pytest.approx(0.0, abs=1e-6)
+
+
+def test_a_tied_row_has_maximal_entropy():
+    q = np.zeros((1, ACTIONS))
+    metrics = compute_collapse_metrics(q, np.ones((1, ACTIONS), bool), np.array([0]))
+    assert metrics.q_entropy == pytest.approx(1.0)
+    assert metrics.q_margin == 0.0
+
+
+def test_entropy_alone_did_not_separate_the_arms_in_the_source_ablation():
+    """SDD §2.3 records ``q_entropy ≈ 1.0`` for BOTH learning rates.
+
+    Reproduced here: with Q values of order 1 over 28 actions the softmax is
+    still nearly uniform, so entropy is a weak separator.  That is precisely
+    why G-3 demands four indicators rather than picking a favourite.
+    """
+    rng = np.random.default_rng(8)
+    collapsed = compute_collapse_metrics(
+        _collapsed(rng), _all_valid(), _collapsed(np.random.default_rng(8)).argmax(1)
+    )
+    assert collapsed.q_entropy > 0.9
+
+
+# -- masks and no-ops ------------------------------------------------------
+
+
+def test_masked_actions_are_excluded_from_the_margin():
+    q = np.zeros((1, ACTIONS))
+    q[0, 0] = 10.0  # best, but masked out
+    q[0, 1] = 5.0
+    q[0, 2] = 1.0
+    mask = np.ones((1, ACTIONS), dtype=bool)
+    mask[0, 0] = False
+    metrics = compute_collapse_metrics(q, mask, np.array([1]))
+    assert metrics.q_margin_raw == pytest.approx(4.0)
+
+
+def test_unserved_users_do_not_count_toward_beams_or_agreement():
+    rng = np.random.default_rng(9)
+    q = _dispersed(rng)
+    actions = q.argmax(axis=1)
+    actions[:50] = -1  # half the population unserved
+    metrics = compute_collapse_metrics(q, _all_valid(), actions)
+    assert metrics.active_beam_count <= 50
+    assert 0.0 < metrics.argmax_agreement <= 1.0
+
+
+def test_an_all_unserved_step_reports_zeros_rather_than_dividing_by_zero():
+    q = np.zeros((4, ACTIONS))
+    metrics = compute_collapse_metrics(
+        q, _all_valid()[:4], np.full(4, -1, dtype=np.int64)
+    )
+    assert metrics.active_beam_count == 0.0
+    assert metrics.argmax_agreement == 0.0
+    assert_g3_complete(metrics.as_dict())
+
+
+def test_a_single_candidate_row_is_skipped_rather_than_claiming_certainty():
+    mask = np.zeros((2, ACTIONS), dtype=bool)
+    mask[0, :2] = True
+    mask[1, 0] = True  # only one candidate
+    q = np.zeros((2, ACTIONS))
+    q[0, 0] = 1.0
+    metrics = compute_collapse_metrics(q, mask, np.array([0, 0]))
+    assert metrics.q_margin_raw == pytest.approx(1.0)
+
+
+def test_shape_and_finiteness_violations_fail_loud():
+    with pytest.raises(MCRLContractError, match=r"\(U, A\)"):
+        compute_collapse_metrics(
+            np.zeros((2, 3)), np.ones((2, 4), bool), np.zeros(2, dtype=np.int64)
+        )
+    with pytest.raises(MCRLContractError, match="selected_actions"):
+        compute_collapse_metrics(
+            np.zeros((2, 3)), np.ones((2, 3), bool), np.zeros(3, dtype=np.int64)
+        )
+    with pytest.raises(MCRLContractError, match="finite"):
+        compute_collapse_metrics(
+            np.full((1, 2), np.nan), np.ones((1, 2), bool), np.array([0])
+        )

@@ -33,6 +33,8 @@
 | `src/mcrl/env/action_contract.py` | `NO_OP_ACTION` 與動作索引契約起點(§4A) | W-16,W-03 續寫 |
 | `src/mcrl/runtime/finiteness.py` | P-3 有限性電池(G-11) | W-16 |
 | `pyproject.toml`、各 `__init__.py` | 套件化與 pytest 設定 | W-16 |
+| `src/mcrl/runtime/collapse_metrics.py` | G-3 四項崩潰指標 | W-12 |
+| `src/mcrl/runtime/trainer_config_validation.py` | 乾淨版設定驗證器(**新寫非移植**) | W-09/W-10 |
 | `tests/` | W-16 補丁的對應測試 + 移植缺口 shim | W-16 |
 
 ## 刻意**不**移植(附理由)
@@ -47,7 +49,7 @@
 | `runtime/angle_aware_ee.py` | 1,076 | **需改**(dwell `N`);移植時機為 W-05/W-06,貝索 Miller 路由為 W-15 |
 | `runtime/popart_online.py` | 188 | `popart_enabled: False`(§8) |
 | `runtime/trainer_config_validation.py` | 1,124 | 內容多為 catfish / anti-collapse 驗證,**正是 §8 禁用的東西**;W-09/W-10 另寫乾淨版 |
-| `artifacts/` | — | checkpoint I/O,W-12 |
+| `artifacts/{compat,paths}.py`、`models.py` 的 run-metadata / log-row 型別 | — | 本專案不產生那些 artifact 格式;W-12 只移植 checkpoint 四個名字 |
 
 ## ⚠ W-01 的規模在 SDD 中被低估(移植時發現)
 
@@ -76,9 +78,17 @@ W-01 只記了一項(`state_encoding` 的 import)。**實際有五項**,
 | ~~`..runtime.popart_online`~~ | ~~`modqn.py`~~ | W-09 | ✅ **已解決**(P-05):整條路徑刪除 |
 | ~~`..runtime.angle_aware_ee.per_ue_energy_efficiency`~~ | ~~`modqn.py`~~ | W-06 | ✅ **已解決**(P-12):移植進 `runtime/energy_efficiency.py`,與系統級閉包共用 P-7 政策 |
 | ~~`.trainer_config_validation.validate_trainer_config`~~ | ~~`trainer_spec.py`~~ | — | ✅ **已解決**:新寫乾淨版(來源 1,124 行多為 §8 禁用項驗證,不可移植) |
-| `..artifacts`(4 個名字) | `modqn.py` | W-12 | ⚠ **仍缺** —— 最後一項 |
+| ~~`..artifacts`(4 個名字)~~ | ~~`modqn.py`~~ | W-12 | ✅ **已解決**:移植精簡版(來源 863 行 5 模組 → 本 repo 2 模組) |
 
-**⇒ 五項缺口已解決四項,測試 shim 由 5 個 stand-in 縮為 1 個(只剩 `artifacts`)。**
+## ✅ 五項缺口全部關閉,**測試 shim 已整個刪除**
+
+`tests/_port_shim.py` 不存在了。**這棵樹現在真的可以 import,不靠任何 stand-in。**
+
+⚠ **關閉過程中發現的一件事,值得記下**:`trainer_config_validation` 的 stand-in 是個
+**寬容的 no-op**。我寫完真的驗證器之後測試照樣全過 —— 因為 stand-in **遮蔽了它**。
+「shim 活得比它的擁有者久就是 bug」在這裡不只是過時,而是**主動掩蓋新程式碼**。
+`tests/test_no_shim_remains.py` 現在守住這件事:conftest 必須**一行可執行語句都沒有**
+(以 AST 檢查,因為文字搜尋會被 docstring 絆倒)。
 
 **W-16 的處置**:不預先做別的工作項,改以**測試專用**的 stand-in
 (`tests/_port_shim.py`)在 import 前掛進 `sys.modules`。
@@ -87,7 +97,6 @@ W-01 只記了一項(`state_encoding` 的 import)。**實際有五項**,
 
 ## 尚未處理
 
-- **checkpoint I/O**(`artifacts`,W-12)—— 樹上最後一個 shim stand-in。
 - 訓練未跑;訓練屬重計算,另開 brief 並在 Ubuntu server 執行。
 
 ## 已解決(先前列於此)
