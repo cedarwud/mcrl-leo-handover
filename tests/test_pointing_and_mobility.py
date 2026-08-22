@@ -425,3 +425,39 @@ def test_the_configuration_discloses_every_S_level_choice():
     assert payload["boundary"] == "reflection"
     assert "200 x 90" in str(payload["scatter"])
     assert "random wandering" in str(payload["mobility"])
+
+
+# -- the angle has two consumers in two units -----------------------------
+
+
+def test_theta_is_offered_in_both_units_explicitly(grid):
+    """Degrees for the gain layer, radians for the state (§4.1 / G-7).
+
+    Crossing them inflates every angle by 180/pi with nothing to catch it,
+    so the conversion is a named property rather than a caller's job.
+    """
+    users, satellites, hood = _scenario(grid, num_users=4)
+    geometry = candidate_geometry(
+        user_ecef_km=users,
+        satellite_ecef_km=satellites,
+        cell_centres_ecef_km=grid.centers_ecef_km,
+        neighborhood_cell_ids=hood,
+    )
+    assert np.allclose(
+        geometry.off_axis_rad, np.radians(geometry.off_axis_deg), equal_nan=True
+    )
+    assert float(np.nanmax(geometry.off_axis_rad)) < float(
+        np.nanmax(geometry.off_axis_deg)
+    )
+
+
+def test_the_state_contract_wants_radians_and_the_gain_layer_wants_degrees(grid):
+    from mcrl.env.antenna import mu_of
+    from mcrl.runtime.trainer_spec import TrainerConfig
+
+    # The state encoder accepts only raw radians.
+    assert TrainerConfig().theta_encoding == "raw_radians"
+
+    # And mu_of is defined on degrees: feeding radians would shrink mu ~57x.
+    degrees = np.array(3.0)
+    assert float(mu_of(degrees)) > 50.0 * float(mu_of(np.radians(degrees)))

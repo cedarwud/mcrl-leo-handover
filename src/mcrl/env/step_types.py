@@ -610,7 +610,11 @@ class RewardComponents:
     - r1_beam_power_efficiency_credit: bits/s/W using full selected-beam
       ``P_b`` denominator (Phase 03B credit-assignment sensitivity)
     - r2: dimensionless penalty (0, -phi1, or -phi2)
-    - r3: dimensionless ratio (negative gap / num_users)
+    - r3: PATCH P-13 (B13) — the count-based ``-U_{b_u}``, in whole users.
+      The original line described the superseded form, "dimensionless ratio
+      (negative gap / num_users)", which is a different quantity in
+      different units; leaving it would have made the typed contract
+      disagree with ``service.r3_counting``.
     """
 
     r1_throughput: float

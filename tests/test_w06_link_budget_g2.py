@@ -231,17 +231,38 @@ def test_beam_bandwidth_is_a_third_of_the_system_bandwidth():
 
 def test_shannon_rate_and_the_QoS_floor():
     """TS 22.261 §6.17.2 sets a 1 Mbit/s floor; find the SINR that meets it."""
-    assert float(shannon_rate_bps(np.array(0.0))) == 0.0
+    assert float(shannon_rate_bps(np.array(0.0), beam_load=np.array(1.0))) == 0.0
     required_sinr = 2.0 ** (1e6 / BEAM_BANDWIDTH_HZ) - 1.0
-    assert float(shannon_rate_bps(np.array(required_sinr))) == pytest.approx(
-        1e6, rel=1e-9
-    )
+    assert float(
+        shannon_rate_bps(np.array(required_sinr), beam_load=np.array(1.0))
+    ) == pytest.approx(1e6, rel=1e-9)
     assert required_sinr < 0.01, "1 Mbit/s over 166 MHz is a very low bar"
 
 
-def test_negative_sinr_is_refused():
-    with pytest.raises(MCRLContractError, match="non-negative"):
-        shannon_rate_bps(np.array(-0.1))
+def test_the_rate_is_divided_by_the_beam_load():
+    """Eq. (3.14): the beam is time-shared among its U users."""
+    sinr = np.array(3.0)
+    alone = float(shannon_rate_bps(sinr, beam_load=np.array(1.0)))
+    shared = float(shannon_rate_bps(sinr, beam_load=np.array(4.0)))
+    assert shared == pytest.approx(alone / 4.0)
+    assert alone == pytest.approx(BEAM_BANDWIDTH_HZ * 2.0)
+
+
+def test_the_load_cannot_be_omitted():
+    """It used to default away, returning a rate U times too high in silence."""
+    with pytest.raises(TypeError):
+        shannon_rate_bps(np.array(1.0))
+
+
+def test_a_dark_beam_carries_no_rate():
+    assert float(shannon_rate_bps(np.array(5.0), beam_load=np.array(0.0))) == 0.0
+
+
+def test_negative_inputs_are_refused():
+    with pytest.raises(MCRLContractError, match="SINR must be non-negative"):
+        shannon_rate_bps(np.array(-0.1), beam_load=np.array(1.0))
+    with pytest.raises(MCRLContractError, match="load must be non-negative"):
+        shannon_rate_bps(np.array(1.0), beam_load=np.array(-1.0))
 
 
 def test_eirp_is_undefined_for_a_dark_beam():

@@ -193,13 +193,32 @@ def consumed_power_w(beam_power_w: np.ndarray) -> float:
 
 
 def shannon_rate_bps(
-    sinr_linear: np.ndarray, bandwidth_hz: float = BEAM_BANDWIDTH_HZ
+    sinr_linear: np.ndarray,
+    *,
+    beam_load: np.ndarray,
+    bandwidth_hz: float = BEAM_BANDWIDTH_HZ,
 ) -> np.ndarray:
-    """``B·log₂(1 + SINR)``."""
+    """Paper eq. (3.14): ``R = (B^w / U_{s,v}) · log₂(1 + γ)``.
+
+    The beam is time-shared, so its bandwidth is divided by the number of
+    users it serves.  ``beam_load`` is **keyword-only and required**: an
+    earlier version defaulted the bandwidth to the whole ``B^w`` and left
+    the divisor to the caller, which returns a rate exactly ``U`` times too
+    high for anyone who forgets — silently, and in the direction that
+    flatters the result.
+
+    A zero-load beam has no rate rather than an infinite one.
+    """
     sinr = np.asarray(sinr_linear, dtype=np.float64)
+    load = np.asarray(beam_load, dtype=np.float64)
     if np.any(sinr < 0.0):
         raise MCRLContractError("SINR must be non-negative")
-    return bandwidth_hz * np.log2(1.0 + sinr)
+    if np.any(load < 0.0):
+        raise MCRLContractError("beam load must be non-negative")
+    if bandwidth_hz <= 0.0:
+        raise ValueError("bandwidth must be positive")
+    shared = np.where(load > 0.0, bandwidth_hz / np.maximum(load, 1.0), 0.0)
+    return shared * np.log2(1.0 + sinr)
 
 
 BOLTZMANN_DBW_PER_K_PER_HZ: float = 10.0 * math.log10(BOLTZMANN_J_PER_K)

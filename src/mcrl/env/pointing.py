@@ -90,6 +90,23 @@ class CandidateGeometry:
     """``(U, J)`` — which physical cell each beam slot names (§4A.2)."""
 
     @property
+    def off_axis_rad(self) -> np.ndarray:
+        """The same angle in radians — what the STATE encoder wants.
+
+        ``θ`` has two consumers in two units and they must not be crossed:
+
+        * the gain layer takes **degrees** (``mu_of``, and the S.465 receive
+          envelope whose logarithm is defined on degrees — G-7);
+        * ``UserState.beam_offsets`` is contractually **raw radians**
+          (``state_encoding`` refuses any other ``theta_encoding``).
+
+        Feeding degrees into the state would inflate every angle by 57.3x
+        with nothing to catch it, so the conversion is named rather than
+        left to the caller.
+        """
+        return np.radians(self.off_axis_deg)
+
+    @property
     def shape(self) -> tuple[int, int, int]:
         return self.off_axis_deg.shape
 

@@ -160,6 +160,17 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 | 對應測試 | `tests/test_w06_per_ue_ee.py`(17 項),含 `::test_the_two_closures_share_one_zero_power_policy` |
 | 副作用 | 測試 shim 的 `mcrl.runtime.angle_aware_ee` stand-in **已退役** |
 
+### P-13 — `RewardComponents` 的 `r3` 說明仍寫著舊式(外部稽核發現)
+
+| 欄位 | 內容 |
+|---|---|
+| 缺陷 | 型別契約與實作不一致 |
+| 來源行 | `env/step_types.py:613` |
+| 補丁內容 | 「`r3`: dimensionless ratio(negative gap / num_users)」改為 B13 的計數式 `−U_{b_u}`(單位:人) |
+| 理由 | B13 換式後 `service.r3_counting` 回傳**原始人數**,而型別契約還寫著**正規化後的差距** —— **兩個不同的量、不同的單位**。留著會讓 typed contract 與實作互相打臉,而 Q-D 的尺度討論正好會讀到這一行 |
+| 發現者 | `codex gpt-5.6-luna` 的獨立稽核(D-10),`docs/AUDIT-external-luna-2026-08-22.md` |
+| 對應測試 | `test_w07_r3_and_execution_mask.py`(既有,值本身已測) |
+
 ---
 
 ## ★ 對來源行為的一項宣告偏離:`η` 分母不再墊 epsilon
