@@ -88,19 +88,59 @@ _MIN_SIN_ELEVATION: float = 1e-3
 
 # -- power -----------------------------------------------------------------
 
-SEGMENT_START_POWER_W: float = 2.0
-"""``p⁰`` — **P**, MODQN Table I.  Every served-link segment starts here.
-
-Active parameter of eq. (3.11)/(3.12).  It sat in ch5's Legacy table by a
-filing mistake the controller corrected on 2026-08-22.
-"""
-
 BEAM_POWER_MAX_W: float = 1.65
-"""``p_max`` — **S**, the per-beam RF output ceiling after backoff.
+"""``p_max`` — **D**, the per-beam RF output ceiling after backoff.
+
+**Not a free parameter.**  It is pinned by the amplifier through
+``p_sat = p_max·10^(BO/10) = 5.218 W``, which is ch5's legacy ``P_0`` (the
+PA reference output power).  Moving it would move ``p_sat``, and ``p_sat``
+sits in the denominator of eq. (3.15a) — the whole efficiency curve would
+shift.  So when ``p⁰`` and ``p_max`` collided, this is the one that stayed.
 
 It is a **feasibility test outside the recurrence** (eq. 3.11 introduces no
 clamp): a link whose recurrence asks for more than this is infeasible and
 the user is in outage for that step.
+"""
+
+SEGMENT_START_POWER_W: float = BEAM_POWER_MAX_W / 2.0
+"""``p⁰ = p_max/2 = 0.825 W`` — **D**, ruling F-1 (2026-08-22).
+
+⚠ **Was 2 W (MODQN Table I) and that was 0.835 dB ABOVE ``p_max``.**  Since
+(3.12) starts a segment at exactly ``p⁰`` and the recurrence only ever
+*raises* power inside a segment (the gain falls, so the ratio exceeds 1),
+a segment starting above the ceiling could never re-enter the feasible
+region.  The measured consequence was an outage rate of exactly 1.0 — no
+user was ever served.  The controller's ruling: the paper is wrong, and
+``p⁰`` is what moves, because it is a scenario constant with no physics
+pinning it while ``p_max`` is pinned by the amplifier above.
+
+**The halving is derived, not chosen.**  The ratio ``p_max/p⁰`` *is* the
+gain drop a segment may absorb before it is judged infeasible, because
+``p·G^T`` is the segment invariant::
+
+    p(t) = p⁰·G^T(θ(τ))/G^T(θ(t)) ≤ p_max  ⇔  G^T(θ(t))/G^T(θ(τ)) ≥ p⁰/p_max
+
+Setting that to one half fixes the budget at **3 dB**, and 3 dB is the
+cell's own contour:
+
+* ``F(μ) = 0.5`` at ``μ = 2.07123`` — which is where the half-angle
+  convention comes from in the first place;
+* ``μ(θ) = 2.07123·sin θ/sin(θ_3dB/2) = 2.07123`` ⇔ ``θ = θ_3dB/2``;
+* and the cell radius is ``R_b = h_s·tan(θ_3dB/2)``.
+
+So ``p⁰``, ``p_max``, ``θ_3dB`` and ``R_b`` become four mutually consistent
+quantities instead of four independently chosen ones.
+
+⚠ **What the test then means is "3 dB worse than when you connected", not
+"you have left your cell".**  The ruling's table reads the budget against
+boresight — ``p_required = p⁰·G_0/G^T(θ)`` — which needs
+``G^T(θ(τ)) = G_0``, i.e. every segment starting on the beam axis.  (3.12)
+does not do that: it starts a segment at ``p⁰`` whatever the angle then is,
+and measures the drop **relative to ``τ``**.  Measured over 600 segments
+under the frozen scenario, ``θ(τ)`` has median **1.165°** and **11.2% of
+segments start outside the 3 dB contour altogether** — so the two readings
+are not the same test.  The *value* is unaffected; the sentence ch5 writes
+around it should be.
 """
 
 PA_MAX_EFFICIENCY: float = 0.35
@@ -318,7 +358,12 @@ def pa_efficiency(
     max_efficiency: float = PA_MAX_EFFICIENCY,
     saturation_power_w: float = PA_SATURATION_POWER_W,
 ) -> np.ndarray:
-    """Paper eq. (3.15a): ``ξ = min{ξ_max, ξ_max·√(p_{s,v}/p_sat)}``.
+    """Paper eq. (3.15a): ``ξ_{s,v} = min{ξ_max, ξ_max·√(p_{s,v}/p_sat)}``.
+
+    **Per beam, no ``u`` index** (ruling F-2).  The paper wrote ``ξ_{u,s,v}``
+    on the left while its only argument on the right was the beam power
+    ``p_{s,v}`` — ``u`` had nothing to correspond to.  An amplifier belongs
+    to a beam, not to a user of it.
 
     The square root is the class-B idealisation: RF output goes as ``V_o²``
     while DC input goes as ``V_o``, so ``ξ ∝ √P_RF``.  Its consequence is
@@ -336,14 +381,18 @@ def pa_efficiency(
 
 
 def supply_power_w(
-    link_power_w: np.ndarray, efficiency: np.ndarray
+    beam_power_w: np.ndarray, efficiency: np.ndarray
 ) -> np.ndarray:
-    """Paper eq. (3.15): ``P^p = p / ξ``.
+    """Paper eq. (3.15): ``P^p_{s,v} = p_{s,v} / ξ_{s,v}``.
+
+    **Per beam, no ``u`` index** (ruling F-2), matching :func:`pa_efficiency`
+    above.  One beam, one amplifier, one supply draw — "一支已啟用的波束以
+    單一功率發射,不論其上載有幾位使用者".
 
     Fail-closed on a dead amplifier: zero efficiency with positive radiated
     power is not a large number, it is a contradiction.
     """
-    power = np.asarray(link_power_w, dtype=np.float64)
+    power = np.asarray(beam_power_w, dtype=np.float64)
     xi = np.asarray(efficiency, dtype=np.float64)
     if np.any(power < 0.0) or np.any(xi < 0.0):
         raise MCRLContractError("power and efficiency must be non-negative")
@@ -385,24 +434,44 @@ def fixed_power_w(
 
 
 def system_power_w(
-    supply_power_per_link_w: np.ndarray,
-    served: np.ndarray,
+    supply_power_per_beam_w: np.ndarray,
     radiating_beams_by_satellite: np.ndarray,
 ) -> float:
-    """Paper eq. (3.16): ``P^N = P^f + Σ x·P^p``.
+    """Paper eq. (3.16): ``P^N = P^f + Σ_s Σ_v z_{s,v}·P^p_{s,v}``.
 
-    The fixed term is now included: it was omitted while unsourced, and
-    You et al. Table II supplied the source (ruling C-6).
+    **A double sum over beams, not a triple sum over links** (ruling F-2).
+    The paper wrote ``Σ_{u'} Σ_{s'} Σ_{v'} x_{u',s',v'}·P^p_{u',s',v'}``,
+    which charges one amplifier once per user sitting on it.  The over-count
+    is exactly ``Σ_{s,v} (U_{s,v} − 1)·P^p_{s,v}``, so the ratio between the
+    two forms is the load-weighted mean occupancy — measured at 2.28x for
+    100 users and 1.41x for 20, which is what identified the defect.
+
+    The damage was not the scale.  The extra term rises monotonically with
+    occupancy and sits in ``r1``'s **denominator**, so "a busier beam is
+    less efficient" — which is ``r3``'s job.  A constant offset would not
+    move an argmax; a load-dependent one makes the first and third
+    objectives inseparable and voids the reading of ``Ω = (0.5, 0.3, 0.2)``.
+
+    ``z`` rather than ``x`` is the correct filter and is satisfied by
+    construction: a beam appears in the array iff it radiates.
+
+    The fixed term is included: it was omitted while unsourced, and You et
+    al. Table II supplied the source (ruling C-6).  Eq. (3.16a) needed no
+    change — it was already per beam, and its own text warns against exactly
+    this double count ("每顆衛星只計一次,不會重複計入") for ``P_BB``.
     """
-    supply = np.asarray(supply_power_per_link_w, dtype=np.float64)
-    active = np.asarray(served, dtype=bool)
-    if supply.shape != active.shape:
-        raise MCRLContractError("supply power and served must share a shape")
+    supply = np.asarray(supply_power_per_beam_w, dtype=np.float64)
+    if supply.ndim != 1:
+        raise MCRLContractError("supply power must be one per radiating beam")
     if np.any(supply < 0.0):
         raise MCRLContractError("supply power must be non-negative")
-    return fixed_power_w(radiating_beams_by_satellite) + float(
-        supply[active].sum()
-    )
+    counts = np.asarray(radiating_beams_by_satellite, dtype=np.float64)
+    if float(counts.sum()) != float(supply.size):
+        raise MCRLContractError(
+            f"{supply.size} radiating beams but the per-satellite tally sums "
+            f"to {float(counts.sum())}; the two describe different steps"
+        )
+    return fixed_power_w(counts) + float(supply.sum())
 
 
 def shannon_rate_bps(
@@ -528,37 +597,42 @@ def sinr(
 
 
 # ---------------------------------------------------------------------------
-# ⛔ An open contradiction between two frozen constants (W-17)
+# The p0 / p_max compatibility condition (W-17, resolved by ruling F-1)
 # ---------------------------------------------------------------------------
 
 SEGMENT_START_EXCEEDS_BEAM_CEILING: bool = (
     SEGMENT_START_POWER_W > BEAM_POWER_MAX_W
 )
-"""``p⁰ > p_max`` — **True**, and it makes every link infeasible.
+"""``p⁰ > p_max`` — **False**, and it must stay false.
 
-Both numbers come from ch5 table 5-2 as the controller re-filed it on
-2026-08-22 (ruling C-12): ``p⁰ = 2 W`` is "式 (3.11) 每個新 served segment
-的起始值" and ``p_max = 1.65 W`` is "式 (3.15a) 回退後的每波束操作上限,
-**亦為鏈路可行性檢查的門檻**".
+It was **True** for one day.  ch5 table 5-2, as re-filed under ruling C-12,
+made ``p⁰ = 2 W`` and ``p_max = 1.65 W`` both active, and the two cannot
+both be right: a segment starts at exactly ``p⁰`` and the recurrence only
+ever raises power inside a segment, so a start above the ceiling can never
+come back down.  The measured outage rate was **exactly 1.0**.
 
-Put together they say: every segment starts at 2 W, and any link needing
-more than 1.65 W is an outage.  A segment starts at ``t = τ`` with
-``p(τ) = p⁰`` exactly — the recurrence has nothing to compensate yet — so
-**every link is infeasible on its first step**, no segment ever reaches a
-second step, and the system is in permanent 100% outage.
+Ruling F-1 resolved it by deriving ``p⁰ = p_max/2`` from the 3 dB cell edge
+(see :data:`SEGMENT_START_POWER_W`).  The check stays because the condition
+it enforces is now *load-bearing rather than merely satisfied*: the headroom
+``p_max/p⁰`` **is** the gain budget of a segment, so anything that moves
+either constant silently re-prices what "infeasible" means.
+"""
 
-This is not a modelling choice with an awkward consequence; the two values
-cannot both be right.  ``p_sat = p_max·10^(BO/10) = 5.218 W`` is the only
-other ceiling in the model and ``p⁰`` sits comfortably under it, which is
-the shape a resolution would probably take — but choosing between "raise the
-threshold to ``p_sat``" and "lower ``p⁰``" changes the physics, so it is the
-controller's call and not made here.
+SEGMENT_GAIN_BUDGET_DB: float = 10.0 * math.log10(
+    BEAM_POWER_MAX_W / SEGMENT_START_POWER_W
+)
+"""**3.010 dB** — how far ``G^T`` may fall **inside a segment** before outage.
 
-What is done here instead: the value is computed rather than asserted, the
-environment reports it in every step's diagnostics, and
-:func:`mcrl.env.step.StepEnvironment.assert_ready_to_train` refuses to start
-training while it stands.  Probes still run — a measured outage rate of
-exactly 1.0 is the evidence the decision needs.
+Exactly 3 dB by construction, and 3 dB is the cell's own contour: ``F(μ) =
+0.5`` at ``μ = 2.07123`` ⇔ ``θ = θ_3dB/2`` ⇔ the ``R_b = h_s·tan(θ_3dB/2)``
+radius.  That is what makes the size of the budget principled rather than
+picked.
+
+The reference point is ``θ(τ)``, not boresight — see the ⚠ on
+:data:`SEGMENT_START_POWER_W`.  Measured, the largest in-segment loss under
+the frozen scenario is **0.718 dB** against this 3.010 dB budget, so the
+feasibility gate is currently **non-binding**: outage 0 of 12,000 decision
+steps.
 """
 
 
@@ -571,18 +645,25 @@ def segment_start_feasibility_report(
     """The arithmetic behind :data:`SEGMENT_START_EXCEEDS_BEAM_CEILING`.
 
     Returned as data rather than raised as text so the PREREG, the step
-    diagnostics and the eventual controller note all quote one computation.
+    diagnostics and any controller note all quote one computation.
     """
+    infeasible = p0_w > max_power_w
     return {
         "segment_start_power_w": float(p0_w),
         "beam_power_max_w": float(max_power_w),
         "pa_saturation_power_w": float(saturation_power_w),
         "headroom_db": 10.0 * math.log10(max_power_w / p0_w),
-        "every_segment_start_is_infeasible": bool(p0_w > max_power_w),
+        "every_segment_start_is_infeasible": bool(infeasible),
         "p0_is_below_saturation": bool(p0_w <= saturation_power_w),
         "consequence": (
-            "p(tau) = p0 exactly, so a link that starts a segment is judged "
-            "infeasible before it can be served; no segment reaches a second "
-            "step and the outage rate is identically 1.0"
+            "p(tau) = p0 exactly and the recurrence only raises power, so a "
+            "link that starts a segment is judged infeasible before it can "
+            "be served; no segment reaches a second step and the outage rate "
+            "is identically 1.0"
+            if infeasible
+            else "a segment may absorb "
+            f"{10.0 * math.log10(max_power_w / p0_w):.3f} dB of transmit-gain "
+            "loss before the link is infeasible; at p0 = p_max/2 that is the "
+            "3 dB cell edge, so outage means the user left their cell"
         ),
     }

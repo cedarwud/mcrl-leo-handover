@@ -2,16 +2,18 @@
 
 MCRL(Multi-Catfish Reinforcement Learning)LEO 多波束換手 — 乾淨重建。
 
-**狀態:W-01…W-17 完成。物理鏈已全部接上 `StepEnvironment`,635 測試通過。**
+**狀態:W-01…W-17 完成。物理鏈已全部接上 `StepEnvironment`,638 測試通過。**
 
 一個 episode(100 位使用者、10 步、真實 TLE)約 **1 秒**:
 星曆 → D2 → dwell → 候選表 → 遞推功率 → 可行性 → 服務 → 干擾 (3.12a)(3.12b)
 → SINR (3.13) → rate (3.14) → 功率 (3.15)-(3.16a) → `r1`/`r2`/`r3`。
 
-⛔ **尚不可訓練**,而且理由是可機器檢查的:`p⁰ = 2 W` 高於 `p_max = 1.65 W`,
-所以每一條鏈路在段起始就被判不可行,**outage 率恆為 1.0**。
-`StepEnvironment.assert_ready_to_train()` 會擋住。
-見 `docs/CONTROLLER-FINDINGS-W17-2026-08-22.md` 的 **F-1**(等待裁決)。
+以凍結常數量測(12,000 個決策步):**outage 0.0000**、每步 41 支波束輻射、
+`P^N` 258.4 W、SINR p05/p50/p95 = 11.7 / 16.4 / 19.0 dB。
+`assert_ready_to_train()` **通過**。
+
+**尚未做:訓練器與新環境之間的接頭。** `MODQNTrainer` 吃 `StepResult`,
+W-17 產 `StepOutcome`。訓練屬重計算,另開 brief 上 Ubuntu server。
 
 - 規格:`~/papers/modqn-paper-reproduction/docs/MCRL-NEW-PROJECT-SDD-01-2026-08-21.md`(r8)
 - 參數:`~/papers/modqn-paper-reproduction/docs/NEW-PROJECT-PARAMETER-SPEC-2026-08-21.md`
@@ -24,8 +26,10 @@ MCRL(Multi-Catfish Reinforcement Learning)LEO 多波束換手 — 乾淨重建�
 - `r3` 與執行遮罩:`docs/R3-AND-EXECUTION-MASK-NOTES.md`
 - **偏離登記表**:`docs/DEVIATION-REGISTER.md`(`X` 級偏離,每條都須在論文明講)
 - **遷移表**:`docs/MIGRATION-TABLE.md`(舊名 ↔ 新名 ↔ 論文符號,W-14)
-- **⛔ 待裁決(擋住訓練)**:`docs/CONTROLLER-FINDINGS-W17-2026-08-22.md`(W-17 接線量出的兩項論文內部矛盾)
-- 已裁決:`docs/CONTROLLER-RULINGS-2026-08-22.md`(C-1…C-15),提問見 `docs/CONTROLLER-QUESTIONS-2026-08-22.md`
+- 已裁決:`docs/CONTROLLER-RULINGS-2026-08-22.md`(C-1…C-15)、
+  `docs/CONTROLLER-RULINGS-W17-2026-08-22.md`(F-1/F-2);
+  提問與量測回報見 `docs/CONTROLLER-QUESTIONS-2026-08-22.md`、
+  `docs/CONTROLLER-FINDINGS-W17-2026-08-22.md`
 - **PREREG 草案**:`docs/PREREG-DRAFT.md` ← probe 執行前必須凍結
 
 ## 開發

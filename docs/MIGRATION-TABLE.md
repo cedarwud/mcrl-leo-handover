@@ -64,11 +64,11 @@
 | `H_{u,s,v}`(3.10a) | `link_power_factor` / `BeamFieldAtUsers` | `env/link_budget.py` + `env/interference.py` ✓ |
 | `γ_{u,s,v}`(3.13) | `StepOutcome.link_sinr`(經 `link_budget.sinr`) | `env/step.py` ✓ |
 | `R_{u,s,v}`(3.14) | `shannon_rate_bps` | `env/link_budget.py` ✓ 含 `/U_{s,v}` |
-| `p_{u,s,v}`(3.11)(3.12) | `recurrence_power_w` + `env/step.Segment` | **C-2 已裁決**:角度遞推;載量式 PA 已整條刪除 |
+| `p_{u,s,v}`(3.11)(3.12) | `recurrence_power_w` + `env/step.Segment` | **C-2 已裁決**:角度遞推;載量式 PA 已整條刪除。`p⁰ = p_max/2 = 0.825 W`(**F-1**) |
 | `p_{s,v} = max_u p`(聚合) | `beam_power_w` | **C-10 已裁決** ✓ max,絕不是和或平均 |
-| `ξ`(3.15a)、`P^p`(3.15) | `pa_efficiency` / `supply_power_w` | **C-5 已裁決** ✓ |
+| `ξ_{s,v}`(3.15a)、`P^p_{s,v}`(3.15) | `pa_efficiency` / `supply_power_w` | **C-5 已裁決** ✓;**F-2 去掉 `u` 索引**,兩者皆逐波束 |
 | `P^f`(3.16a) | `fixed_power_w` | **C-6 已裁決** ✓ 基頻功率每衛星只計一次 |
-| `P^N`(3.16) | `system_power_w` | ✓ 含 `P^f`。⚠ 逐**鏈路**求和,見 F-2 |
+| `P^N`(3.16) | `system_power_w` | ✓ 含 `P^f`。**F-2 已裁決:逐波束二重和**,過濾器 `z_{s,v}`;舊逐鏈路式高 2.107–2.626× |
 | `η_{u,s,v}`(3.17) | `link_energy_efficiency` | **C-7 已裁決**:分母是 `P^N` |
 | `r_{1,u}`(3.25) | `r1_energy_efficiency` | 同上;逐使用者相加**恰好**還原系統 EE |
 | `Ψ_u`、`r_{2,u}`(3.27) | `HandoverClass` / `classify_handover` | `env/action_contract.py` ✓ |
@@ -88,6 +88,7 @@
 | `G_0 = 2000` | HOBS Table I | **否定** HOBS 的 40 dBi(該表三值互斥,兩種讀法孔徑效率皆 > 1);改由波束寬一致的孔徑重導 `D = 1.0275λ/θ_3dB`,取 TR 38.821 的 Ka 孔徑效率 0.639–0.645 |
 | `h_s` | Table I 的 780 km(**P**) | 由星曆決定(**X** 級偏離);語料中位數 483.0 km |
 | `V` | Table I 的 7(**P**) | 39(**D**,依 95% 覆蓋目標);**`X` 級偏離** |
+| `p⁰` | Table I 的 2 W(**P**) | `p_max/2 = 0.825 W`(**D**,3 dB 段增益預算);**`X` 級偏離,見 X-4** |
 | `P_cir`、`P_BB` | 無 | You 等人 Table II [25] |
 | 波束數上限 | 舊 repo 自訂 `k_cap` | **不存在** |
 

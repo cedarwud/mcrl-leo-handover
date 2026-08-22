@@ -218,6 +218,31 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 | ⚠ 連 C-11 的等價性測試也漏了 | 該測試的**參考實作自己也以格為鍵**,兩邊一起錯,所以一直相符。參考實作已一併改為波束鍵 |
 | 對應測試 | `test_c11_gate_order_equivalence.py::test_the_same_cell_reached_through_two_different_satellites`(現在斷言兩支獨立波束各載量 1)、`test_ruling_no_beam_count_cap.py::test_one_satellite_may_light_far_more_than_seven_cells`(7 → **14** 支) |
 
+### P-18 — `p⁰` 由 2 W 改為 `p_max/2 = 0.825 W`(裁決 F-1)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `env/link_budget.py` 的 `SEGMENT_START_POWER_W`(原 MODQN Table I 的 2 W) |
+| 補丁內容 | 改寫為 `BEAM_POWER_MAX_W / 2.0`,**以導出式而非字面 0.825 寫出** |
+| 缺陷 | `p⁰ = 2 W` 比 `p_max = 1.65 W` 高 0.835 dB,而 (3.12) 的段起始就是 `p(τ) = p⁰`,且遞推在段內**只會讓功率上升**(增益下降 ⇒ 比值 > 1)⇒ 起點超限即永遠回不到可行區 |
+| 量測(改前) | outage 率 **恰好 1.0**,`radiating_beams = 0`,每一步 |
+| 量測(改後) | 12,000 個決策步 outage **0.0000**;`assert_ready_to_train()` 通過 |
+| 為何動 `p⁰` 而非 `p_max` | `p_max` 被放大器綁死:`p_sat = p_max·10^(BO/10) = 5.218 W`,而 `p_sat` 在 (3.15a) 的分母裡 ⇒ 動它會移位整條效率曲線。`p⁰` 沒有任何物理量把它釘在 2 W |
+| 對應測試 | `test_w17_step_environment.py` 的 `test_p0_is_half_of_p_max_and_the_budget_is_3_dB`、`test_3_dB_is_the_cell_edge_which_is_why_the_budget_is_that_size`、`test_a_segment_that_starts_above_the_ceiling_could_never_recover` |
+| ⚠ 已回報的事實修正 | 裁決的導出表把預算**對著波束軸**量,那需要每個 segment 都從軸心起跑。(3.12) 的參考點是 `θ(τ)`,量測顯示 **11.2% 的 segment 一開始就在 3 dB 圈外**。值不變,但 ch5 的措辭要改 —— 見 `CONTROLLER-FINDINGS-W17` §2 |
+
+### P-19 — `P^N` 由逐鏈路三重和改為逐波束二重和(裁決 F-2)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `env/link_budget.py` 的 `system_power_w` / `supply_power_w` / `pa_efficiency` |
+| 補丁內容 | `ξ` 與 `P^p` 去掉 `u` 索引(皆逐波束);`system_power_w(supply_per_beam, beams_by_satellite)` —— `served` 參數移除,`z` 由「在不在陣列裡」承載 |
+| 缺陷 | (3.16) 逐字是 `Σ_{u'}Σ_{s'}Σ_{v'} x·P^p`,把一個放大器按坐在上面的人數重複計。論文自己的 (3.15a) 已經是逐波束的(`ξ` 左邊帶 `u`、右邊只有 `p_{s,v}`),兩式相隔兩行卻互相矛盾 |
+| 量測 | 舊式 / 新式 = **2.107 – 2.626**(100 使用者),恰為載量加權平均佔用人數 |
+| 真正的傷害 | 多出的 `Σ(U−1)·P^p` **隨佔用人數單調上升**,且落在 `r1` 的**分母** ⇒ 第一個目標偷偷兼做第三個目標,`Ω=(0.5,0.3,0.2)` 的解讀失效。常數偏移不影響 argmax,載量相依的偏移會 |
+| 迴歸 | `link_over_beam_power_ratio`(回報的 `P^N` ÷ 獨立重算的逐波束 `P^N`)**恆為 1.0**,已釘進測試;`superseded_link_over_beam_ratio` 續報舊式的值 |
+| 對應測試 | `test_w17_step_environment.py::test_the_power_sum_is_per_beam_not_per_link`、`test_w06_energy_efficiency.py::test_it_plugs_into_the_paper_power_chain` |
+
 ### 非補丁:向量化 Bessel(效能,數值不變)
 
 `runtime/bessel.py` 新增 `bessel_j_array`,`antenna.transmit_gain_linear` 改走它。

@@ -140,22 +140,39 @@ def test_the_decomposition_sums_exactly_to_the_system_value():
 
 
 def test_it_plugs_into_the_paper_power_chain():
-    """(3.12a) max -> (3.15a) xi -> (3.15) P^p -> (3.16a) P^f -> (3.16) P^N."""
+    """(3.12a) max -> (3.15a) xi -> (3.15) P^p -> (3.16a) P^f -> (3.16) P^N.
+
+    Every stage from ``xi`` onward is **per beam** (ruling F-2): two users on
+    one beam draw one amplifier, so the chain narrows from three links to
+    two beams at ``beam_power_w`` and never widens again.
+    """
     link_power = np.array([1.2, 0.8, 0.5])
     served = np.array([True, True, True])
     beam_index = np.array([0, 0, 1])
-    beams = beam_power_w(link_power, served, beam_index, num_beams=3)
-    assert beams.tolist() == [1.2, 0.5, 0.0], "beam power is a max, not a sum"
+    beams = beam_power_w(link_power, served, beam_index, num_beams=2)
+    assert beams.tolist() == [1.2, 0.5], "beam power is a max, not a sum"
 
-    per_link_beam = beams[beam_index]
-    supply = supply_power_w(link_power, pa_efficiency(per_link_beam))
-    total = system_power_w(supply, served, np.array([2.0]))
+    supply = supply_power_w(beams, pa_efficiency(beams))
+    total = system_power_w(supply, np.array([2.0]))
     assert total > float(supply.sum()), "P^f must be included"
 
-    result = _ee([1e7, 1e7, 5e6], total, [0, 0, 1], np.array([2.0, 1.0, 0.0]),
-                 np.array([True, True, False]))
+    # The superseded per-link form charged beam 0 twice.  Its over-count is
+    # exactly (U - 1) * P^p, which is what made r1's denominator rise with
+    # occupancy and quietly gave the first objective r3's job.
+    superseded = float(supply[beam_index].sum())
+    assert superseded == pytest.approx(supply[0] * 2 + supply[1])
+    assert superseded > float(supply.sum())
+
+    result = _ee([1e7, 1e7, 5e6], total, [0, 0, 1], np.array([2.0, 1.0]),
+                 np.array([True, True]))
     assert result.eff_beams == 2
     assert result.system_ee_bits_per_j > 0.0
+
+
+def test_the_power_sum_refuses_a_beam_tally_that_does_not_match():
+    """The two arguments must describe the same step, not two of them."""
+    with pytest.raises(MCRLContractError, match="different steps"):
+        system_power_w(np.array([1.0, 2.0]), np.array([3.0]))
 
 
 # -- G-8: an EE comparison must carry the service rate --------------------

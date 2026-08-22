@@ -1,15 +1,14 @@
 """W-17 — the whole chain wired up, run against the real ephemeris.
 
-Two kinds of test here and they are kept apart on purpose.
+Ruling F-1 resolved the ``p⁰``/``p_max`` collision by deriving
+``p⁰ = p_max/2 = 0.825 W``, so the frozen constants are now consistent and
+every test here runs on them.  ``FEASIBLE_PAIR`` is gone with the
+contradiction it existed to work around.
 
-The **contradiction** tests need no archive: ``p⁰ > p_max`` is arithmetic on
-two frozen constants, and its consequence — every segment start infeasible —
-follows without a satellite anywhere near.
-
-The **physics** tests need the archive, and they run under an explicitly
-stated consistent pair rather than the frozen one, because under the frozen
-pair nobody is ever served and there is no physics to test.  The pair used
-is named at the point of use so no reader mistakes it for a decision.
+What survives from that episode is the **compatibility condition**: the
+ratio ``p_max/p⁰`` is a segment's gain budget, so anything that moves either
+constant silently re-prices what "infeasible" means.  It is asserted here
+rather than assumed.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ from mcrl.env.constants import TLE_ROOT_DEFAULT
 from mcrl.env.interference import CANDIDATE_SINR_PROVENANCE
 from mcrl.env.link_budget import (
     BEAM_POWER_MAX_W,
-    PA_SATURATION_POWER_W,
+    SEGMENT_GAIN_BUDGET_DB,
     SEGMENT_START_EXCEEDS_BEAM_CEILING,
     SEGMENT_START_POWER_W,
     segment_start_feasibility_report,
@@ -50,14 +49,8 @@ requires_archive = pytest.mark.skipif(
 START = dt.datetime(2026, 8, 20, 6, 0, tzinfo=dt.timezone.utc)
 USERS = 20
 
-FEASIBLE_PAIR = PhysicsConfig(beam_power_max_w=PA_SATURATION_POWER_W)
-"""**Not a ruling.**  A consistent ``(p⁰, ceiling)`` so the physics can run.
-
-``p_sat`` is the only other ceiling the model defines and ``p⁰ = 2 W`` sits
-under it, so this is the shape a resolution would probably take — but which
-of the two numbers moves is the controller's call, and nothing here decides
-it.  Every test that uses this says so.
-"""
+FROZEN = PhysicsConfig()
+"""The frozen constants, which are now self-consistent (ruling F-1)."""
 
 
 def _environment(physics=None, users=USERS):
@@ -90,57 +83,91 @@ def _run(env, policy_name=STAY_IF_POSSIBLE, seed=0, steps=None):
 # =========================================================================
 
 
-def test_p0_exceeds_the_feasibility_ceiling():
-    """``p⁰ = 2 W``, ``p_max = 1.65 W``.  Both are ch5 table 5-2, active."""
-    assert SEGMENT_START_POWER_W == 2.0
+def test_p0_is_half_of_p_max_and_the_budget_is_3_dB():
+    """Ruling F-1: ``p⁰ = p_max/2``, derived, not chosen."""
     assert BEAM_POWER_MAX_W == 1.65
-    assert SEGMENT_START_EXCEEDS_BEAM_CEILING is True
+    assert SEGMENT_START_POWER_W == pytest.approx(0.825)
+    assert SEGMENT_START_POWER_W == BEAM_POWER_MAX_W / 2.0
+    assert SEGMENT_GAIN_BUDGET_DB == pytest.approx(3.0103, abs=1e-4)
+    assert SEGMENT_START_EXCEEDS_BEAM_CEILING is False
 
     report = segment_start_feasibility_report()
-    assert report["every_segment_start_is_infeasible"] is True
-    assert report["headroom_db"] < 0.0
-    # p0 is comfortably under the only other ceiling the model defines.
+    assert report["every_segment_start_is_infeasible"] is False
+    assert report["headroom_db"] == pytest.approx(3.0103, abs=1e-4)
     assert report["p0_is_below_saturation"] is True
 
 
-def test_the_default_physics_config_carries_the_contradiction():
-    assert PhysicsConfig().segment_start_is_feasible is False
-    assert FEASIBLE_PAIR.segment_start_is_feasible is True
+def test_3_dB_is_the_cell_edge_which_is_why_the_budget_is_that_size():
+    """``F(μ) = 0.5`` at ``μ = 2.07123`` ⇔ ``θ = θ_3dB/2`` ⇔ ``R_b``.
+
+    The four quantities ``p⁰``, ``p_max``, ``θ_3dB`` and ``R_b`` are
+    mutually consistent rather than independently chosen, and this is the
+    identity that ties them.
+    """
+    from mcrl.env.antenna import THETA_3DB_DEG, mu_of, transmit_gain_linear
+
+    half_angle = THETA_3DB_DEG / 2.0
+    assert float(mu_of(np.array([half_angle]))[0]) == pytest.approx(
+        2.07123, rel=1e-9
+    )
+    peak = float(transmit_gain_linear(np.array([0.0]))[0])
+    edge = float(transmit_gain_linear(np.array([half_angle]))[0])
+    assert edge / peak == pytest.approx(0.5, rel=1e-3)
+    # ...and half the gain is exactly the budget p_max/p0 allows.
+    assert BEAM_POWER_MAX_W / SEGMENT_START_POWER_W == pytest.approx(
+        peak / edge, rel=1e-3
+    )
 
 
-def test_training_is_refused_while_it_stands():
-    driver_free = StepEnvironment.__new__(StepEnvironment)
-    driver_free.physics = PhysicsConfig()
+def test_the_compatibility_condition_is_still_enforced():
+    """It held for one day and cost a 100% outage rate; it stays checked."""
+    contradictory = PhysicsConfig(segment_start_power_w=2.0)
+    assert contradictory.segment_start_is_feasible is False
+    assert PhysicsConfig().segment_start_is_feasible is True
+
+    stand_in = StepEnvironment.__new__(StepEnvironment)
+    stand_in.physics = contradictory
     with pytest.raises(MCRLContractError, match="exceeds p_max"):
-        StepEnvironment.assert_ready_to_train(driver_free)
+        StepEnvironment.assert_ready_to_train(stand_in)
 
 
-def test_training_is_also_refused_with_fading_switched_off():
+def test_training_is_refused_with_fading_switched_off():
     """The switch is a test affordance; a reported run keeps the draw."""
     stand_in = StepEnvironment.__new__(StepEnvironment)
-    stand_in.physics = PhysicsConfig(
-        beam_power_max_w=PA_SATURATION_POWER_W, fading_enabled=False
-    )
+    stand_in.physics = PhysicsConfig(fading_enabled=False)
     with pytest.raises(MCRLContractError, match="frozen seed set"):
         StepEnvironment.assert_ready_to_train(stand_in)
 
 
 @requires_archive
-def test_under_the_frozen_constants_the_outage_rate_is_exactly_one():
-    """The consequence, measured rather than argued.
+def test_the_frozen_constants_now_serve_people():
+    """The check ruling F-1 asked for: the outage rate is no longer 1.0."""
+    environment = _environment(FROZEN)
+    environment.assert_ready_to_train()
+    outcomes = _run(environment)
+    assert outcomes
+    for outcome in outcomes:
+        assert outcome.resolution.served_count > 0
+        assert outcome.radiating.count > 0
+        assert outcome.system_power_w > 0.0
+        assert outcome.energy.zero_over_zero is False
 
-    This is the evidence the open decision needs: not "the numbers look
-    inconsistent" but "the environment serves nobody, ever".
+
+@requires_archive
+def test_a_segment_that_starts_above_the_ceiling_could_never_recover():
+    """Why the collision was fatal rather than merely wasteful.
+
+    (3.11) only ever *raises* power inside a segment — the gain falls, so
+    the ratio exceeds one — which is what made a start above ``p_max`` an
+    inescapable outage rather than a transient one.
     """
-    outcomes = _run(_environment())
-    assert outcomes, "the episode produced no steps"
+    environment = _environment(PhysicsConfig(segment_start_power_w=2.0))
+    outcomes = _run(environment)
     for outcome in outcomes:
         assert outcome.resolution.served_count == 0
         assert int(np.count_nonzero(outcome.resolution.outage_infeasible)) == USERS
         assert outcome.radiating.count == 0
-        assert outcome.system_power_w == 0.0
         assert outcome.energy.zero_over_zero is True
-        assert outcome.reward_matrix[:, 0].tolist() == [0.0] * USERS
 
 
 # =========================================================================
@@ -150,7 +177,7 @@ def test_under_the_frozen_constants_the_outage_rate_is_exactly_one():
 
 @requires_archive
 def test_the_state_is_112_wide():
-    outcomes = _run(_environment(FEASIBLE_PAIR), steps=1)
+    outcomes = _run(_environment(FROZEN), steps=1)
     observation = outcomes[0].observation
     assert observation.state_matrix.shape == (USERS, state_dim_for(NUM_ACTIONS))
     assert observation.state_matrix.shape[1] == 112
@@ -160,7 +187,7 @@ def test_the_state_is_112_wide():
 
 @requires_archive
 def test_every_served_link_has_a_finite_positive_sinr_and_rate():
-    for outcome in _run(_environment(FEASIBLE_PAIR)):
+    for outcome in _run(_environment(FROZEN)):
         served = outcome.resolution.served
         assert served.any(), "the consistent pair should serve somebody"
         assert np.all(outcome.link_sinr[served] > 0.0)
@@ -179,7 +206,7 @@ def test_the_sinr_lands_in_a_physically_sensible_band():
     calibration — but it catches the failures that matter: a missing ``/U``,
     degrees fed to a radian pattern (+44 dB), or FSPL applied as a gain.
     """
-    outcome = _run(_environment(FEASIBLE_PAIR), steps=1)[0]
+    outcome = _run(_environment(FROZEN), steps=1)[0]
     served = outcome.resolution.served
     sinr_db = 10.0 * np.log10(outcome.link_sinr[served])
     assert -10.0 < float(sinr_db.min()) < 40.0
@@ -188,7 +215,7 @@ def test_the_sinr_lands_in_a_physically_sensible_band():
 
 @requires_archive
 def test_interference_is_present_and_split_into_its_two_terms():
-    outcome = _run(_environment(FEASIBLE_PAIR), steps=1)[0]
+    outcome = _run(_environment(FROZEN), steps=1)[0]
     served = outcome.resolution.served
     total = outcome.interference.total_w[served]
     assert np.all(total > 0.0), "co-channel beams are radiating; I cannot be 0"
@@ -201,9 +228,31 @@ def test_interference_is_present_and_split_into_its_two_terms():
 
 
 @requires_archive
+def test_the_power_sum_is_per_beam_not_per_link():
+    """Ruling F-2's regression, asked for by name: the ratio must be 1.0.
+
+    ``link_over_beam_power_ratio`` is the reported ``P^N`` over an
+    independently recomputed per-beam ``P^N``.  It read 2.28 while (3.16)
+    was summed over links.  The superseded figure is still reported beside
+    it, because the size of the correction is a finding — and because the
+    defect was invisible in every other number a step produces.
+    """
+    for outcome in _run(_environment(FROZEN)):
+        assert outcome.diagnostics["link_over_beam_power_ratio"] == 1.0
+        superseded = float(
+            outcome.diagnostics["superseded_link_over_beam_ratio"]
+        )
+        # It over-charges by (U - 1) * P^p per beam, so the ratio is the
+        # load-weighted mean occupancy and can never be below 1.
+        assert superseded >= 1.0
+        occupancy = outcome.resolution.served_count / outcome.radiating.count
+        assert superseded <= occupancy + 1e-9
+
+
+@requires_archive
 def test_the_load_identity_holds_through_the_environment():
     """G-4: ``Σ_u U_{b_u} = Σ_b U_b²``, on the beam-keyed loads."""
-    for outcome in _run(_environment(FEASIBLE_PAIR)):
+    for outcome in _run(_environment(FROZEN)):
         per_user, per_beam = load_balance_identity(outcome.resolution)
         assert per_user == pytest.approx(per_beam)
 
@@ -211,7 +260,7 @@ def test_the_load_identity_holds_through_the_environment():
 @requires_archive
 def test_activation_equals_the_radiating_set():
     """``z = 1{U > 0}`` — derived, and the interference sum uses exactly it."""
-    for outcome in _run(_environment(FEASIBLE_PAIR)):
+    for outcome in _run(_environment(FROZEN)):
         assert outcome.radiating.count == len(outcome.resolution.active_beams)
         radiating = {
             (int(norad), int(cell))
@@ -226,7 +275,7 @@ def test_activation_equals_the_radiating_set():
 @requires_archive
 def test_one_beam_radiates_one_power_no_matter_how_many_users():
     """``p_{s,v} = max_{u served} p_{u,s,v}`` — never a sum, never a mean."""
-    for outcome in _run(_environment(FEASIBLE_PAIR)):
+    for outcome in _run(_environment(FROZEN)):
         for index, (norad, cell) in enumerate(
             zip(
                 outcome.radiating.norad_ids.tolist(),
@@ -260,7 +309,7 @@ def test_the_product_p_times_gain_is_the_segment_invariant():
     from mcrl.env.antenna import transmit_gain_linear
     from mcrl.env.action_contract import decode_action
 
-    env = _environment(FEASIBLE_PAIR)
+    env = _environment(FROZEN)
     policy = build_reference_policy(STAY_IF_POSSIBLE, seed=7)
     rng = np.random.default_rng(3)
     observation = env.reset(START, rng)
@@ -308,17 +357,17 @@ def test_the_product_p_times_gain_is_the_segment_invariant():
 @requires_archive
 def test_a_segment_starts_at_p0_exactly():
     """(3.12): ``p(τ) = p⁰``, with nothing yet to compensate."""
-    outcome = _run(_environment(FEASIBLE_PAIR), steps=1)[0]
+    outcome = _run(_environment(FROZEN), steps=1)[0]
     served = outcome.resolution.served
     assert np.allclose(
-        outcome.link_power_w[served], FEASIBLE_PAIR.segment_start_power_w
+        outcome.link_power_w[served], FROZEN.segment_start_power_w
     )
 
 
 @requires_archive
 def test_the_recurrence_never_survives_a_handover():
     """One of C-2's five break events, checked on the realised association."""
-    env = _environment(FEASIBLE_PAIR)
+    env = _environment(FROZEN)
     # RANDOM_MASKED, not NEAREST_ELIGIBLE: the point is to *cause* handovers.
     # A stay-ish policy can go a whole episode without one and the test would
     # then skip, which proves nothing about the break rule.
@@ -342,7 +391,7 @@ def test_the_recurrence_never_survives_a_handover():
             )
             if uid in previous and previous[uid] != key:
                 assert outcome.link_power_w[uid] == pytest.approx(
-                    FEASIBLE_PAIR.segment_start_power_w
+                    FROZEN.segment_start_power_w
                 ), "a handover must restart the segment at p0"
                 checked += 1
             previous[uid] = key
@@ -357,7 +406,7 @@ def test_the_recurrence_never_survives_a_handover():
 
 @requires_archive
 def test_the_first_state_has_no_previous_connection_no_demand_and_no_interference():
-    env = _environment(FEASIBLE_PAIR)
+    env = _environment(FROZEN)
     observation = env.reset(START, np.random.default_rng(0))
     access = observation.state_matrix[:, :NUM_ACTIONS]
     loads = observation.state_matrix[:, 3 * NUM_ACTIONS :]
@@ -370,7 +419,7 @@ def test_the_first_state_has_no_previous_connection_no_demand_and_no_interferenc
 
 @requires_archive
 def test_the_previous_connection_block_marks_the_incumbent():
-    env = _environment(FEASIBLE_PAIR)
+    env = _environment(FROZEN)
     outcomes = _run(env, steps=2)
     first, second = outcomes[0], outcomes[1]
     access = second.observation.state_matrix[:, :NUM_ACTIONS]
@@ -384,7 +433,7 @@ def test_the_previous_connection_block_marks_the_incumbent():
 
 @requires_archive
 def test_the_load_block_is_the_previous_steps_demand_keyed_by_beam():
-    env = _environment(FEASIBLE_PAIR)
+    env = _environment(FROZEN)
     outcomes = _run(env, steps=2)
     table = outcomes[1].observation.candidates
     loads = outcomes[1].observation.state_matrix[:, 3 * NUM_ACTIONS :]
@@ -401,7 +450,7 @@ def test_the_load_block_is_the_previous_steps_demand_keyed_by_beam():
 @requires_archive
 def test_theta_reaches_the_state_in_radians():
     """G-7's units seam: degrees here would inflate every angle 57.3x."""
-    observation = _environment(FEASIBLE_PAIR).reset(START, np.random.default_rng(0))
+    observation = _environment(FROZEN).reset(START, np.random.default_rng(0))
     theta = observation.state_matrix[:, 2 * NUM_ACTIONS : 3 * NUM_ACTIONS]
     assert float(np.abs(theta).max()) <= np.pi
     assert float(np.abs(theta).max()) > 0.0
@@ -413,7 +462,7 @@ def test_theta_reaches_the_state_in_radians():
 @requires_archive
 def test_r1_is_energy_efficiency_and_sums_to_the_system_figure():
     """(3.25): ``r1`` decomposes the system EE exactly, by construction."""
-    for outcome in _run(_environment(FEASIBLE_PAIR)):
+    for outcome in _run(_environment(FROZEN)):
         r1 = outcome.reward_matrix[:, 0]
         assert float(r1.sum()) == pytest.approx(
             outcome.energy.system_ee_bits_per_j, rel=1e-9
@@ -422,7 +471,7 @@ def test_r1_is_energy_efficiency_and_sums_to_the_system_figure():
 
 @requires_archive
 def test_r2_is_zero_on_the_first_step_and_negative_on_a_handover():
-    outcomes = _run(_environment(FEASIBLE_PAIR))
+    outcomes = _run(_environment(FROZEN))
     assert all(
         handover is HandoverClass.NONE for handover in outcomes[0].handovers
     ), "the first step of an episode is never a handover"
@@ -433,7 +482,7 @@ def test_r2_is_zero_on_the_first_step_and_negative_on_a_handover():
 
 @requires_archive
 def test_r3_is_the_negative_beam_load():
-    for outcome in _run(_environment(FEASIBLE_PAIR)):
+    for outcome in _run(_environment(FROZEN)):
         r3 = outcome.reward_matrix[:, 2]
         assert np.all(r3 <= 0.0)
         assert np.array_equal(-r3, outcome.resolution.user_beam_load())
@@ -445,8 +494,8 @@ def test_r3_is_the_negative_beam_load():
 @requires_archive
 def test_the_same_seed_gives_the_same_episode():
     """Including the fading draw, which is keyed by sorted NORAD id."""
-    first = _run(_environment(FEASIBLE_PAIR), seed=11)
-    second = _run(_environment(FEASIBLE_PAIR), seed=11)
+    first = _run(_environment(FROZEN), seed=11)
+    second = _run(_environment(FROZEN), seed=11)
     assert len(first) == len(second)
     for left, right in zip(first, second):
         assert np.array_equal(left.reward_matrix, right.reward_matrix)
@@ -456,8 +505,8 @@ def test_the_same_seed_gives_the_same_episode():
 
 @requires_archive
 def test_a_different_seed_moves_the_fading_but_not_the_geometry():
-    first = _run(_environment(FEASIBLE_PAIR), seed=11)[0]
-    second = _run(_environment(FEASIBLE_PAIR), seed=12)[0]
+    first = _run(_environment(FROZEN), seed=11)[0]
+    second = _run(_environment(FROZEN), seed=12)[0]
     assert not np.allclose(first.link_sinr, second.link_sinr)
 
 
@@ -474,7 +523,7 @@ def test_an_action_the_mask_forbids_is_refused():
     through the same validator and is the case that can always be built,
     with the masked-off one added whenever the geometry supplies it.
     """
-    env = _environment(FEASIBLE_PAIR)
+    env = _environment(FROZEN)
     observation = env.reset(START, np.random.default_rng(0))
 
     actions = np.zeros(USERS, dtype=np.int64)
@@ -491,7 +540,7 @@ def test_an_action_the_mask_forbids_is_refused():
 
 @requires_archive
 def test_a_no_op_with_valid_actions_available_is_refused():
-    env = _environment(FEASIBLE_PAIR)
+    env = _environment(FROZEN)
     observation = env.reset(START, np.random.default_rng(0))
     if observation.masks[0].sum() == 0:
         pytest.skip("user 0 is starved, so a no-op is legal")

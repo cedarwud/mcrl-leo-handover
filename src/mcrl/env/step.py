@@ -559,18 +559,18 @@ class StepEnvironment:
             0.0,
         )
 
-        # (3.15)-(3.16a): consumed power.
-        power_of_served_beam = (
-            beam_power[np.maximum(beam_index, 0)]
-            if beam_keys
-            else np.zeros(users, dtype=np.float64)
-        )
+        # (3.15)-(3.16a): consumed power, PER BEAM (ruling F-2).
+        #
+        # One beam, one amplifier, one supply draw.  The paper's (3.16) was a
+        # triple sum over links, which charged one amplifier once per user
+        # sitting on it; the over-count rose with occupancy and sat in r1's
+        # denominator, quietly making the first objective do the third's job.
         efficiency = pa_efficiency(
-            np.where(resolution.served, power_of_served_beam, 0.0),
+            beam_power,
             max_efficiency=physics.pa_max_efficiency,
             saturation_power_w=physics.pa_saturation_power_w,
         )
-        supply = supply_power_w(link_power * resolution.served, efficiency)
+        supply = supply_power_w(beam_power, efficiency)
         beams_by_satellite = np.array(
             [
                 sum(1 for key in beam_keys if key[0] == norad)
@@ -579,21 +579,25 @@ class StepEnvironment:
             dtype=np.float64,
         )
         fixed = fixed_power_w(beams_by_satellite)
-        total_power = system_power_w(supply, resolution.served, beams_by_satellite)
+        total_power = system_power_w(supply, beams_by_satellite)
 
-        # (3.16) is a triple sum over u', s', v' of x·P^p — once per served
-        # LINK.  But "一支已啟用的波束以單一功率發射,不論其上載有幾位使用者":
-        # one beam, one amplifier, one supply draw.  Charging it once per beam
-        # instead gives the figure below, and the ratio between the two is
-        # reported every step rather than argued about.  (3.16) is implemented
-        # verbatim; this is the disclosure beside it.
-        beam_efficiency = pa_efficiency(
-            beam_power,
-            max_efficiency=physics.pa_max_efficiency,
-            saturation_power_w=physics.pa_saturation_power_w,
-        )
+        # An INDEPENDENT recomputation of the per-beam figure, so the
+        # reported P^N can be checked against it rather than against itself,
+        # plus the superseded per-link form for disclosure.
         beam_charged_power = fixed + float(
-            supply_power_w(beam_power, beam_efficiency).sum()
+            supply_power_w(
+                beam_power,
+                pa_efficiency(
+                    beam_power,
+                    max_efficiency=physics.pa_max_efficiency,
+                    saturation_power_w=physics.pa_saturation_power_w,
+                ),
+            ).sum()
+        )
+        link_charged_power = fixed + float(
+            supply[beam_index[resolution.served]].sum()
+            if beam_keys and np.any(resolution.served)
+            else 0.0
         )
 
         serving_beam = np.where(resolution.served, beam_index, -1)
@@ -628,6 +632,7 @@ class StepEnvironment:
             "null_pointing": null_pointing,
             "beam_keys": beam_keys,
             "beam_charged_power_w": beam_charged_power,
+            "link_charged_power_w": link_charged_power,
         }
 
     def _rewards(
@@ -909,13 +914,25 @@ class StepEnvironment:
             ),
             "system_power_w": float(physics["system_power_w"]),  # type: ignore[arg-type]
             "fixed_power_w": float(physics["fixed_power_w"]),  # type: ignore[arg-type]
-            # (3.16) charges P^p once per served LINK; one beam draws one
-            # amplifier's supply.  The ratio is the size of that gap.
-            "beam_charged_power_w": float(
-                physics["beam_charged_power_w"]  # type: ignore[arg-type]
-            ),
+            # Ruling F-2 asked for this ratio to keep being reported and to
+            # be identically 1.0 afterwards, as a live regression.  It is
+            # ``reported P^N / independently recomputed per-beam P^N``, so it
+            # was 2.28 while (3.16) was summed over links and is 1.0 now.
+            # Kept rather than deleted: the defect it caught was invisible in
+            # every other number the step reports.
             "link_over_beam_power_ratio": (
                 float(physics["system_power_w"])  # type: ignore[arg-type]
+                / float(physics["beam_charged_power_w"])  # type: ignore[arg-type]
+                if float(physics["beam_charged_power_w"]) > 0.0  # type: ignore[arg-type]
+                else 1.0
+            ),
+            # And what the superseded per-link form would have charged, so
+            # the size of the correction stays quotable.
+            "superseded_link_charged_power_w": float(
+                physics["link_charged_power_w"]  # type: ignore[arg-type]
+            ),
+            "superseded_link_over_beam_ratio": (
+                float(physics["link_charged_power_w"])  # type: ignore[arg-type]
                 / float(physics["beam_charged_power_w"])  # type: ignore[arg-type]
                 if float(physics["beam_charged_power_w"]) > 0.0  # type: ignore[arg-type]
                 else 1.0
