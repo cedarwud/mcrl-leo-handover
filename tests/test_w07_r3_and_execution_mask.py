@@ -1,0 +1,267 @@
+"""W-07 / G-4 / G-12 — counting-form r3 and the execution mask (P-5, P-6).
+
+B13 replaced ``r3`` with ``−U_{b_u}``, which made the reward depend on who
+is *actually* served — and that is what made ``m^e`` load-bearing again
+(SDD §2.2, revised 2026-08-22).
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from mcrl.env.action_contract import (
+    NO_OP_ACTION,
+    NUM_ACTIONS,
+    SatelliteCandidate,
+    action_index,
+    assign_satellite_slots,
+    build_slot_table,
+)
+from mcrl.env.link_budget import BEAM_BANDWIDTH_HZ
+from mcrl.env.service import (
+    R3_SCALE_IS_FROZEN,
+    load_balance_identity,
+    old_r3_is_load_blind,
+    r3_counting,
+    required_sinr,
+    resolve_service,
+    sample_r3_calibration,
+)
+from mcrl.errors import MCRLContractError
+
+CELLS = [100, 101, 102, 103, 104, 105, 106]
+SATS = (44714, 44718, 44723)
+
+
+def _table(incumbent=None, cells=None):
+    candidates = [
+        SatelliteCandidate(norad_id=norad, eligible=True, margin_km=300.0 - index)
+        for index, norad in enumerate(SATS)
+    ]
+    assignment = assign_satellite_slots(candidates, incumbent_norad=incumbent)
+    return build_slot_table(assignment, cells or CELLS)
+
+
+def _resolve(actions, *, drop=(), users=None):
+    users = len(actions) if users is None else users
+    tables = [_table() for _ in range(users)]
+    masks = np.ones((users, NUM_ACTIONS), dtype=bool)
+    for uid, action in drop:
+        masks[uid, action] = False
+    return resolve_service(np.array(actions), tables, masks)
+
+
+# -- the two load quantities ----------------------------------------------
+
+
+def test_ungated_demand_and_eligible_load_are_reported_separately():
+    """P-5/P-6: the state's load and the reward's load are different things."""
+    a0 = action_index(0, 0)
+    resolution = _resolve([a0, a0, a0], drop=[(2, a0)])
+
+    assert resolution.demand_by_cell[CELLS[0]] == 3, "state sees all three"
+    assert resolution.eligible_load_by_cell[CELLS[0]] == 2, "only two are served"
+    assert resolution.served_count == 2
+    assert resolution.execution_dropped.tolist() == [False, False, True]
+
+
+def test_a_dropped_user_is_excluded_from_load_activation_and_reward():
+    a0 = action_index(0, 0)
+    resolution = _resolve([a0, a0], drop=[(1, a0)])
+    loads = resolution.user_beam_load()
+    assert loads.tolist() == [1.0, 0.0]
+    assert r3_counting(resolution).tolist() == [-1.0, 0.0]
+    assert resolution.serving_cell[1] == -1
+    assert resolution.serving_satellite[1] == -1
+
+
+def test_a_cell_everyone_was_dropped_from_is_not_active():
+    """Activation ⟺ positive ELIGIBLE load, not positive demand (G-12)."""
+    a0 = action_index(0, 0)
+    resolution = _resolve([a0], drop=[(0, a0)])
+    assert resolution.demand_by_cell[CELLS[0]] == 1
+    assert CELLS[0] not in resolution.eligible_load_by_cell
+    assert resolution.active_cells == ()
+
+
+def test_no_op_users_contribute_to_neither_quantity():
+    a0 = action_index(0, 0)
+    resolution = _resolve([a0, NO_OP_ACTION])
+    assert resolution.no_op_users.tolist() == [False, True]
+    assert resolution.demand_by_cell == {CELLS[0]: 1}
+    assert resolution.eligible_load_by_cell == {CELLS[0]: 1}
+    assert not resolution.execution_dropped.any(), "a no-op is not a P-5 drop"
+
+
+def test_a_no_op_is_distinguished_from_an_execution_drop():
+    """Different causes, different rates, so P1 can tell them apart."""
+    a0 = action_index(0, 0)
+    resolution = _resolve([NO_OP_ACTION, a0], drop=[(1, a0)])
+    assert resolution.no_op_users.tolist() == [True, False]
+    assert resolution.execution_dropped.tolist() == [False, True]
+    assert resolution.served_count == 0
+
+
+def test_an_action_invalid_at_decision_time_is_a_contract_violation():
+    """P-4 should have stopped it long before execution."""
+    table = _table()
+    masks = np.ones((1, NUM_ACTIONS), dtype=bool)
+    dead = np.flatnonzero(~table.mask)
+    if dead.size == 0:
+        pytest.skip("this slot table has no invalid action")
+    with pytest.raises(MCRLContractError, match="invalid at decision time"):
+        resolve_service(np.array([dead[0]]), [table], masks)
+
+
+def test_out_of_range_actions_are_refused():
+    with pytest.raises(MCRLContractError, match="out of range"):
+        resolve_service(
+            np.array([NUM_ACTIONS]), [_table()], np.ones((1, NUM_ACTIONS), bool)
+        )
+
+
+def test_shape_mismatches_fail_loud():
+    with pytest.raises(MCRLContractError, match="execution_masks"):
+        resolve_service(np.array([0]), [_table()], np.ones((1, 5), bool))
+    with pytest.raises(MCRLContractError, match="one decision slot table"):
+        resolve_service(np.array([0, 0]), [_table()], np.ones((2, NUM_ACTIONS), bool))
+
+
+# -- G-4: r3 is decomposable ----------------------------------------------
+
+
+def test_G4_r3_depends_only_on_the_users_own_beam_load():
+    """No global scalar: a busier beam elsewhere must not move my reward."""
+    a0, a1 = action_index(0, 0), action_index(0, 1)
+    alone = _resolve([a0, a1])
+    crowded = _resolve([a0, a1, a1, a1, a1])
+    assert r3_counting(alone)[0] == r3_counting(crowded)[0] == -1.0
+    # The users who piled onto the other beam feel it; user 0 does not.
+    assert r3_counting(crowded)[1] == -4.0
+
+
+def test_G4_r3_is_exactly_minus_the_beam_population():
+    a0 = action_index(0, 0)
+    for population in (1, 2, 5, 17):
+        resolution = _resolve([a0] * population)
+        assert r3_counting(resolution).tolist() == [-float(population)] * population
+
+
+def test_G4_an_unserved_user_scores_zero_not_minus_one():
+    resolution = _resolve([NO_OP_ACTION])
+    assert r3_counting(resolution).tolist() == [0.0]
+
+
+# -- the algebra B13 relies on --------------------------------------------
+
+
+def test_the_sum_identity_holds():
+    """``Σ_u U_{b_u} = Σ_b U_b²``."""
+    actions = [action_index(0, j % 7) for j in range(20)]
+    resolution = _resolve(actions)
+    per_user, per_beam = load_balance_identity(resolution)
+    assert per_user == per_beam
+
+
+def test_an_even_spread_minimises_the_penalty():
+    """Which is what makes maximising Σ r3 load balancing."""
+    even = _resolve([action_index(0, j) for j in range(7)] * 2)
+    lumped = _resolve([action_index(0, 0)] * 14)
+    assert abs(r3_counting(even).sum()) < abs(r3_counting(lumped).sum())
+    assert load_balance_identity(even)[1] == 7 * 2**2
+    assert load_balance_identity(lumped)[1] == 14**2
+
+
+def test_the_degenerate_case_is_min_max_balancing():
+    """With empty beams present the gap is ``max U_{s,v}``."""
+    resolution = _resolve([action_index(0, 0)] * 3 + [action_index(0, 1)])
+    loads = resolution.user_beam_load()
+    assert loads.max() == 3.0
+    assert max(resolution.eligible_load_by_cell.values()) == 3
+
+
+def test_the_old_form_really_was_load_blind():
+    """B13's premise, demonstrated rather than asserted."""
+    assert old_r3_is_load_blind([1, 2, 5, 20])
+
+
+# -- gamma_req uses the eligible load -------------------------------------
+
+
+def test_required_sinr_rises_with_load():
+    values = required_sinr(
+        np.array([1.0, 2.0, 4.0]),
+        minimum_rate_bps=1e6,
+        beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
+    )
+    assert values[0] < values[1] < values[2]
+    assert np.all(values > 0.0)
+
+
+def test_required_sinr_of_a_dark_beam_is_zero():
+    values = required_sinr(
+        np.array([0.0]), minimum_rate_bps=1e6, beam_bandwidth_hz=BEAM_BANDWIDTH_HZ
+    )
+    assert values.tolist() == [0.0]
+
+
+def test_required_sinr_meets_the_floor_exactly():
+    load = 4.0
+    gamma = float(
+        required_sinr(
+            np.array([load]),
+            minimum_rate_bps=1e6,
+            beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
+        )[0]
+    )
+    per_user_rate = (BEAM_BANDWIDTH_HZ / load) * np.log2(1.0 + gamma)
+    assert per_user_rate == pytest.approx(1e6, rel=1e-9)
+
+
+def test_gamma_req_computed_on_ungated_demand_would_overshoot():
+    """P-5: using demand instead of eligible load demands SINR for ghosts."""
+    a0 = action_index(0, 0)
+    resolution = _resolve([a0, a0, a0], drop=[(2, a0)])
+    eligible = required_sinr(
+        np.array([resolution.eligible_load_by_cell[CELLS[0]]], dtype=float),
+        minimum_rate_bps=1e6,
+        beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
+    )
+    ungated = required_sinr(
+        np.array([resolution.demand_by_cell[CELLS[0]]], dtype=float),
+        minimum_rate_bps=1e6,
+        beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
+    )
+    assert ungated > eligible
+
+
+def test_negative_loads_are_refused():
+    with pytest.raises(MCRLContractError, match="non-negative"):
+        required_sinr(
+            np.array([-1.0]), minimum_rate_bps=1e6, beam_bandwidth_hz=1e6
+        )
+
+
+# -- Q-D stays open -------------------------------------------------------
+
+
+def test_the_r3_scale_is_not_frozen():
+    """B13 changed r3's units; the old scale is meaningless for it."""
+    assert R3_SCALE_IS_FROZEN is False
+
+
+def test_calibration_sampling_reports_statistics_not_a_scale():
+    """Choosing a scale from data the probe has seen is the §7.1 leak."""
+    resolution = _resolve([action_index(0, 0)] * 3 + [action_index(0, 1)])
+    sample = sample_r3_calibration(resolution)
+    assert sample.served == 4
+    assert sample.max_abs_r3 == 3.0
+    assert sample.spread == 2.0
+    assert not hasattr(sample, "scale")
+
+
+def test_calibration_sampling_survives_an_all_unserved_step():
+    sample = sample_r3_calibration(_resolve([NO_OP_ACTION, NO_OP_ACTION]))
+    assert sample.served == 0
+    assert sample.mean_abs_r3 == 0.0

@@ -24,7 +24,6 @@ FORBIDDEN_TERMS = (
     "v_max",
     "k_cap",
     "capacity_penalty",
-    "execution_mask",
     "auction",
     "catfish",
     "double_dqn",
@@ -40,8 +39,14 @@ AWAITING_W09 = {
 }
 """Every exemption names the file **and** the terms it may still contain.
 
-W-09 ("拆掉 v_max/penalty/m^e;χ 預設關閉") empties this map.
+W-09 ("拆掉 v_max/penalty;χ 預設關閉") empties this map.
 """
+
+# NOTE (2026-08-22): the execution mask ``m^e`` was REMOVED from §8.  B10
+# predated B13; once ``r3`` became ``-U_{b_u}`` its correctness came to
+# depend on who is actually served, which is exactly what ``m^e`` gates, and
+# §3.7 P-5 lists it as mandatory.  Dropping the contribution claim did not
+# require dropping the behaviour.  It must NOT be re-added to the list above.
 
 
 def _python_files() -> list[Path]:
