@@ -21,7 +21,8 @@ from mcrl.runtime.prereg import (
     PreregRecord,
     ReferencePolicy,
     assert_data_blind,
-    assert_nothing_is_still_open,
+    assert_ready_to_train,
+    assert_selection_mappings_cover_open_questions,
     build_prereg_sections,
     freeze_prereg,
     open_questions,
@@ -36,8 +37,20 @@ POLICY = ReferencePolicy(
 )
 
 
-def _sections():
-    return build_prereg_sections(
+SELECTION_MAPPINGS = {
+    "Q-E dwell N": (
+        "N is whichever of {2,3,4} maximises the angle-aware EE dynamic "
+        "range in P2; ties broken by the smallest N"
+    ),
+    "Q-D r3 calibration scale": (
+        "the r3 scale is the p95 of |U_{b_u}| over the P3 reference rollout, "
+        "rounded up to the next integer"
+    ),
+}
+
+
+def _sections(selection_mappings=None):
+    sections = build_prereg_sections(
         reference_policy=POLICY,
         probe_grid={
             "P1": {"visibility": True, "d2_event_rate": True},
@@ -54,6 +67,10 @@ def _sections():
             "sampling": {"train": {"part": "train"}},
         },
     )
+    sections["selection_mappings"] = (
+        SELECTION_MAPPINGS if selection_mappings is None else selection_mappings
+    )
+    return sections
 
 
 # -- open questions block the freeze --------------------------------------
@@ -65,19 +82,35 @@ def test_the_open_questions_are_read_from_the_code_that_owns_them():
     assert questions == {"Q-E dwell N": False, "Q-D r3 calibration scale": False}
 
 
-def test_freezing_is_refused_while_a_question_is_open():
-    """A PREREG naming a placeholder reads as decided."""
-    with pytest.raises(PreregFreezeError, match="Q-E dwell N"):
-        assert_nothing_is_still_open()
-    with pytest.raises(PreregFreezeError, match="reads as decided|placeholder"):
-        freeze_prereg(_sections(), holdout_seed=1)
+def test_freezing_with_open_questions_is_the_normal_case():
+    """The probes that close Q-D and Q-E must not run until this exists.
 
-
-def test_the_test_escape_hatch_is_explicit():
-    record = freeze_prereg(
-        _sections(), holdout_seed=1, allow_open_questions=True
-    )
+    Requiring their values first would be circular; §7.1 asks for a
+    deterministic selection mapping instead.
+    """
+    record = freeze_prereg(_sections(), holdout_seed=1)
     assert record.schema == PREREG_SCHEMA
+    assert record.sections["selection_mappings"]["Q-E dwell N"]
+
+
+def test_an_open_question_without_a_selection_mapping_blocks_the_freeze():
+    with pytest.raises(PreregFreezeError, match="Q-E dwell N"):
+        assert_selection_mappings_cover_open_questions({})
+    with pytest.raises(PreregFreezeError, match="no frozen selection"):
+        freeze_prereg(_sections(selection_mappings={}), holdout_seed=1)
+
+
+def test_a_partial_selection_mapping_still_blocks():
+    partial = {"Q-E dwell N": SELECTION_MAPPINGS["Q-E dwell N"]}
+    with pytest.raises(PreregFreezeError, match="Q-D r3 calibration scale"):
+        freeze_prereg(_sections(selection_mappings=partial), holdout_seed=1)
+
+
+def test_training_is_what_the_freeze_flags_actually_block():
+    """Freezing with Q-D/Q-E open is fine; training against a placeholder is not."""
+    freeze_prereg(_sections(), holdout_seed=1)
+    with pytest.raises(PreregFreezeError, match="training run"):
+        assert_ready_to_train()
 
 
 # -- completeness ----------------------------------------------------------
@@ -87,18 +120,24 @@ def test_every_required_section_must_be_present():
     sections = _sections()
     del sections["thresholds"]
     with pytest.raises(PreregFreezeError, match="thresholds"):
-        freeze_prereg(sections, holdout_seed=1, allow_open_questions=True)
+        freeze_prereg(sections, holdout_seed=1)
 
 
 def test_an_empty_section_is_not_a_frozen_section():
     sections = _sections()
     sections["probe_grid"] = {}
     with pytest.raises(PreregFreezeError, match="present but empty"):
-        freeze_prereg(sections, holdout_seed=1, allow_open_questions=True)
+        freeze_prereg(sections, holdout_seed=1)
 
 
 def test_the_required_sections_cover_what_7_1_names():
-    for name in ("probe_grid", "thresholds", "stopping_rules", "reference_policy"):
+    for name in (
+        "probe_grid",
+        "thresholds",
+        "stopping_rules",
+        "reference_policy",
+        "selection_mappings",
+    ):
         assert name in REQUIRED_SECTIONS
 
 
@@ -157,9 +196,7 @@ def test_the_same_seed_under_a_different_salt_gives_a_different_digest():
 
 
 def test_the_commitment_round_trips_through_the_record(tmp_path):
-    record = freeze_prereg(
-        _sections(), holdout_seed=777, allow_open_questions=True
-    )
+    record = freeze_prereg(_sections(), holdout_seed=777)
     restored = read_prereg(write_prereg(tmp_path / "prereg.json", record))
     restored.holdout.verify(777)
     with pytest.raises(PreregFreezeError):
@@ -170,9 +207,7 @@ def test_the_commitment_round_trips_through_the_record(tmp_path):
 
 
 def test_a_frozen_record_detects_a_later_edit(tmp_path):
-    record = freeze_prereg(
-        _sections(), holdout_seed=1, allow_open_questions=True
-    )
+    record = freeze_prereg(_sections(), holdout_seed=1)
     path = write_prereg(tmp_path / "prereg.json", record)
 
     payload = json.loads(path.read_text())
@@ -197,9 +232,7 @@ def test_an_unknown_schema_is_refused():
 
 
 def test_a_clean_round_trip_verifies(tmp_path):
-    record = freeze_prereg(
-        _sections(), holdout_seed=5, allow_open_questions=True
-    )
+    record = freeze_prereg(_sections(), holdout_seed=5)
     restored = read_prereg(write_prereg(tmp_path / "p.json", record))
     assert restored.digest == record.digest
     assert restored.sections == record.sections

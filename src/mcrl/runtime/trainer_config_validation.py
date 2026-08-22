@@ -151,6 +151,8 @@ def validate_trainer_config(config: TrainerConfig) -> None:
         # environment, and this branch is off by default.
         from ..env.service import R3_SCALE_IS_FROZEN
 
+        # This is the training-time gate the flag exists for: a PREREG may be
+        # frozen with Q-D open, but a run may not consume a stale scale.
         _require(
             R3_SCALE_IS_FROZEN,
             "reward calibration cannot be enabled while the r3 scale is "

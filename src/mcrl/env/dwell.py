@@ -44,9 +44,14 @@ DWELL_N_CANDIDATES: tuple[int, ...] = (2, 3, 4)
 DWELL_N_IS_FROZEN: bool = False
 """Whether ``N`` has been decided.  **False until probe P2 reports.**
 
-A machine-checkable flag rather than a comment: the W-13 freezer refuses to
-emit a PREREG while this is False, so a placeholder cannot be frozen by
-inertia just because it was already sitting in the default.
+A machine-checkable flag rather than a comment, so a placeholder cannot be
+frozen by inertia just because it was already sitting in the default.
+
+⚠ It gates **training**, not the PREREG.  Probe P2 is what closes Q-E, and
+P2 must not run until the PREREG is frozen (§7.1) — so requiring a decided
+``N`` before the freeze would be circular.  What the freeze requires instead
+is a deterministic selection mapping: the rule that will pick ``N`` from
+P2's output, committed before that output exists.
 """
 
 

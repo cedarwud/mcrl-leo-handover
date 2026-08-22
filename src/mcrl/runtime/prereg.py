@@ -9,9 +9,13 @@ A document alone cannot enforce that, because the failure mode is a person
 writing down a threshold after seeing the number it was supposed to bound.
 So the freezer does three mechanical things a document cannot:
 
-1. **It refuses to emit while anything is still open.**  ``N`` (Q-E) and the
-   ``r3`` scale (Q-D) both carry machine-checkable freeze flags, and a PREREG
-   naming a placeholder is worse than no PREREG — it looks decided.
+1. **It requires a deterministic selection mapping for every open question.**
+   Not the answer — the *rule that will produce* the answer.  §7.1 asks for
+   "estimand、彙總方式、門檻**或決定性的選取映射**", and the "or" is
+   load-bearing: ``N`` (Q-E) and the ``r3`` scale (Q-D) are what probes P2 and
+   P3 **decide**, so demanding their values before the probes run would be
+   circular.  What must be fixed in advance is that the mapping from probe
+   output to decision was written down before the output existed.
 
 2. **It commits to the hold-out seed without revealing it.**  §7.1 wants "一個
    不可存取的、獨立的留出產生器與已承諾的種子".  The freeze stores
@@ -68,15 +72,43 @@ def open_questions() -> dict[str, bool]:
     }
 
 
-def assert_nothing_is_still_open() -> None:
-    """Refuse to freeze while a placeholder would be written in as decided."""
+def assert_selection_mappings_cover_open_questions(
+    selection_mappings: Mapping[str, Any],
+) -> None:
+    """Every still-open question needs its deciding rule frozen in advance.
+
+    **Not its answer.**  Q-E and Q-D are outputs of probes P2 and P3, so
+    requiring their values before the probes run would be circular — the
+    freeze has to happen first (§7.1), and the probes close the questions
+    afterwards.  What §7.1 actually demands for these is "決定性的選取映射":
+    a rule such as "``N`` is whichever of {2,3,4} maximises the angle-aware EE
+    dynamic range, ties broken by the smallest ``N``", committed before the
+    numbers exist.
+    """
+    unresolved = [name for name, frozen in open_questions().items() if not frozen]
+    missing = [name for name in unresolved if not selection_mappings.get(name)]
+    if missing:
+        raise PreregFreezeError(
+            "these questions are still open and have no frozen selection "
+            f"mapping: {missing}. §7.1 accepts a threshold OR a deterministic "
+            "selection mapping — but choosing either after seeing the probe "
+            "output is the leak."
+        )
+
+
+def assert_ready_to_train() -> None:
+    """Every open question must be **decided** before a training run.
+
+    This is the gate the freeze flags exist for.  Freezing a PREREG with an
+    open Q-D/Q-E is correct and expected; *training* against a placeholder
+    dwell length or a stale ``r3`` scale is not.
+    """
     unresolved = [name for name, frozen in open_questions().items() if not frozen]
     if unresolved:
         raise PreregFreezeError(
-            "cannot freeze a PREREG while these are open: "
+            "cannot start a training run while these are open: "
             + ", ".join(unresolved)
-            + ". A PREREG naming a placeholder is worse than none — it reads "
-            "as decided."
+            + ". Run the probes and apply the frozen selection mappings first."
         )
 
 
@@ -260,8 +292,14 @@ REQUIRED_SECTIONS: tuple[str, ...] = (
     "thresholds",
     "stopping_rules",
     "reference_policy",
+    "selection_mappings",
 )
-"""§7.1's minimum set, plus the parameter blocks the probes depend on."""
+"""§7.1's minimum set, plus the parameter blocks the probes depend on.
+
+``selection_mappings`` is the "決定性的選取映射" half of §7.1's "門檻**或**
+決定性的選取映射" — the rules that will close Q-D and Q-E once the probes
+report, committed before the probes run.
+"""
 
 
 def freeze_prereg(
@@ -269,16 +307,17 @@ def freeze_prereg(
     *,
     holdout_seed: int,
     salt: str | None = None,
-    allow_open_questions: bool = False,
 ) -> PreregRecord:
     """Assemble and seal a PREREG record.
 
-    ``allow_open_questions`` exists for tests only.  A real freeze with an
-    open Q-D or Q-E writes a placeholder into a document that reads as
-    decided, which is the thing the freeze flags exist to prevent.
+    A freeze while Q-D and Q-E are open is the **normal** case: the probes
+    that close them must not run until this record exists.  What is required
+    instead is a frozen ``selection_mappings`` entry for each — the rule that
+    will turn the probe output into the decision.
     """
-    if not allow_open_questions:
-        assert_nothing_is_still_open()
+    assert_selection_mappings_cover_open_questions(
+        sections.get("selection_mappings", {})
+    )
 
     missing = [name for name in REQUIRED_SECTIONS if name not in sections]
     if missing:
