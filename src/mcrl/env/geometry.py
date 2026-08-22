@@ -196,6 +196,27 @@ def local_km_to_geodetic(
     return lat, lon
 
 
+def local_km_to_ecef(
+    east_km: np.ndarray,
+    north_km: np.ndarray,
+    *,
+    center_lat_deg: float,
+    center_lon_deg: float,
+) -> np.ndarray:
+    """Local east/north offsets at the area centre to ECEF km on the sphere.
+
+    Goes through :func:`local_km_to_geodetic` so there is one small-area
+    approximation in the project rather than two that can drift apart.
+    """
+    lat, lon = local_km_to_geodetic(
+        east_km,
+        north_km,
+        center_lat_deg=center_lat_deg,
+        center_lon_deg=center_lon_deg,
+    )
+    return geodetic_to_ecef(lat, lon)
+
+
 def look_angles(
     sat_ecef_km: np.ndarray,
     ground_ecef_km: np.ndarray,
