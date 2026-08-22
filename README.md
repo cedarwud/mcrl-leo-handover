@@ -15,6 +15,8 @@ MCRL(Multi-Catfish Reinforcement Learning)LEO 多波束換手 — 乾淨重建�
 - 鏈路預算/天線/dwell 量測:`docs/LINK-BUDGET-NOTES.md`
 - `r3` 與執行遮罩:`docs/R3-AND-EXECUTION-MASK-NOTES.md`
 - **偏離登記表**:`docs/DEVIATION-REGISTER.md`(`X` 級偏離,每條都須在論文明講)
+- **遷移表**:`docs/MIGRATION-TABLE.md`(舊名 ↔ 新名 ↔ 論文符號,W-14)
+- **待裁決**:`docs/CONTROLLER-QUESTIONS-2026-08-22.md`(論文改版後的 14 項比對)
 - **PREREG 草案**:`docs/PREREG-DRAFT.md` ← probe 執行前必須凍結
 
 ## 開發
