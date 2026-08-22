@@ -58,7 +58,7 @@ from ..runtime.finiteness import (
     assert_finite_loss,
     assert_finite_parameters,
 )
-from ..runtime.angle_aware_ee import per_ue_energy_efficiency
+from ..runtime.energy_efficiency import per_ue_energy_efficiency
 from ..runtime.objective_math import (
     apply_reward_calibration,
     scalarize_objectives,
@@ -609,7 +609,11 @@ class MODQNTrainer:
                 p_max_nm=np.array([beam_power_w], dtype=np.float64),
                 p_tot_nm=np.array([p_tot_effective], dtype=np.float64),
             )
-            r1_angle_aware_ee = float(ee_result.eta_nmk[0])
+            # PATCH P-12 (W-06): ``eta_nmk`` -> ``eta``; the closure now lives
+            # in runtime/energy_efficiency.py beside the system-EE closure, so
+            # both share one zero-power policy (P-7) instead of one raising and
+            # the other flooring its denominator.
+            r1_angle_aware_ee = float(ee_result.eta[0])
             result.rewards[uid] = RewardComponents(
                 r1_throughput=rw.r1_throughput,
                 r2_handover=rw.r2_handover,

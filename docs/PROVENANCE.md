@@ -74,11 +74,11 @@ W-01 只記了一項(`state_encoding` 的 import)。**實際有五項**,
 |---|---|---|---|
 | ~~`..env.step`~~ | ~~`modqn.py`、`state_encoding.py`~~ | W-10 | ✅ **已解決**(P-09):三個容器型別重指 `step_types`,`StepEnvironment` 改為 `TYPE_CHECKING` 專用 |
 | ~~`..runtime.popart_online`~~ | ~~`modqn.py`~~ | W-09 | ✅ **已解決**(P-05):整條路徑刪除 |
-| `..runtime.angle_aware_ee.per_ue_energy_efficiency` | `modqn.py` | W-06 | ⚠ **仍缺**:W-06 已完成系統級 EE(P-7 fail-closed)與天線/鏈路預算,但**逐 UE 的 `eta` 閉包尚未移植** |
-| `..artifacts`(4 個名字) | `modqn.py` | W-12 | 仍缺 |
-| `.trainer_config_validation.validate_trainer_config` | `trainer_spec.py` 的 `__post_init__` | 待指派 | 仍缺;來源版 1,124 行多為 §8 禁用項的驗證,需另寫乾淨版 |
+| ~~`..runtime.angle_aware_ee.per_ue_energy_efficiency`~~ | ~~`modqn.py`~~ | W-06 | ✅ **已解決**(P-12):移植進 `runtime/energy_efficiency.py`,與系統級閉包共用 P-7 政策 |
+| ~~`.trainer_config_validation.validate_trainer_config`~~ | ~~`trainer_spec.py`~~ | — | ✅ **已解決**:新寫乾淨版(來源 1,124 行多為 §8 禁用項驗證,不可移植) |
+| `..artifacts`(4 個名字) | `modqn.py` | W-12 | ⚠ **仍缺** —— 最後一項 |
 
-**⇒ 五項缺口已解決兩項,測試 shim 由 5 個 stand-in 縮為 3 個。**
+**⇒ 五項缺口已解決四項,測試 shim 由 5 個 stand-in 縮為 1 個(只剩 `artifacts`)。**
 
 **W-16 的處置**:不預先做別的工作項,改以**測試專用**的 stand-in
 (`tests/_port_shim.py`)在 import 前掛進 `sys.modules`。
@@ -87,8 +87,7 @@ W-01 只記了一項(`state_encoding` 的 import)。**實際有五項**,
 
 ## 尚未處理
 
-- **逐 UE 的角度感知 EE 閉包**(`per_ue_energy_efficiency`)尚未移植 —— W-06 的最後一塊。
-- checkpoint I/O(`artifacts`,W-12)與乾淨版的 `TrainerConfig` 驗證器。
+- **checkpoint I/O**(`artifacts`,W-12)—— 樹上最後一個 shim stand-in。
 - 訓練未跑;訓練屬重計算,另開 brief 並在 Ubuntu server 執行。
 
 ## 已解決(先前列於此)

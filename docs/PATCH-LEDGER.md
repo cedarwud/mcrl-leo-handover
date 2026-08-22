@@ -150,6 +150,63 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 | 對應測試 | `test_w08_vanilla_td_target.py`(8 項),含「TD target 在原始碼中恰好出現一次」與 AST 層面的「無 `continue`/`break`」 |
 | 門 | **G-11**、B1 |
 
+### P-12 — 逐 UE EE 閉包改由 `runtime/energy_efficiency` 提供(W-06 收尾)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `algorithms/modqn.py:56`(import)、`:855`(`ee_result.eta_nmk[0]`) |
+| 補丁內容 | import 由 `..runtime.angle_aware_ee` 改為 `..runtime.energy_efficiency`;欄位名 `eta_nmk` → `eta` |
+| 理由 | 逐 UE 閉包移植進本 repo,**與系統級 EE 閉包放在同一個模組**,兩者因此共用**同一套零功率政策**(P-7)。分開放會出現「一個拋錯、一個墊 epsilon」的兩套語意 |
+| 對應測試 | `tests/test_w06_per_ue_ee.py`(17 項),含 `::test_the_two_closures_share_one_zero_power_policy` |
+| 副作用 | 測試 shim 的 `mcrl.runtime.angle_aware_ee` stand-in **已退役** |
+
+---
+
+## ★ 對來源行為的一項宣告偏離:`η` 分母不再墊 epsilon
+
+**來源** `angle_aware_ee.py:866`:`eta = rates / max(alpha * p_tot + p0, 1e-12)`。
+
+那個 floor **正是 §3.7 P-7 禁止的構造**:一條已允入、分母為零而速率為正的鏈路
+會回傳 `R × 1e12` —— 在**消耗最少的那條鏈路上**靜默產生天文數字的 EE。
+
+**本移植改為 fail-closed,與 `additive_system_ee` 一致**:
+
+| 情形 | 行為 |
+|---|---|
+| 已允入、分母為 0、速率 > 0 | **拋錯** |
+| 已允入、分母為 0、速率 = 0 | `η = 0`,帶 `zero_over_zero` 旗標 |
+
+**所有可達的情形行為完全不變** —— 真實已允入鏈路的 `κ·P_tot > 0`,floor 從不生效。
+改變的是那個不可達但災難性的分支:從「靜默灌高 19 個數量級」變成「大聲說出來」。
+`EPSILON_NUM` 常數保留僅供 provenance,測試斷言它**不出現在函式本體內**。
+
+**功率占比 `κ` 則逐字忠實移植**(piecewise 形式,S11a M-10 的修正):
+`κ = q_u / Σ_{u'∈U_b} q_{u'}`(已允入)或 `0`,`q = min(p_req, P_max)`。
+式 (3.27) 的雙重和會在**每一道波束**上計算 `κ`,舊的 `x·q/(Σ+ε)` 形式因此在空波束上
+產生 0/0 而被 epsilon 蓋掉;piecewise 形式**依定義**隔離空波束,
+且已允入者的占比**恰好加總為 1**(而非 `1 − O(ε)`)。已測。
+
+---
+
+## 新增:乾淨版 `TrainerConfig` 驗證器(非補丁,新檔)
+
+`src/mcrl/runtime/trainer_config_validation.py`,**新寫而非移植**。
+
+來源版 1,124 行,絕大部分在驗證 W-09 已移除的那些介面 ——
+移植它等於**把 §8 的字彙以驗證規則的形式搬回來**。
+
+新版只約束本專案真的有的欄位,且每一條都對應一種**靜默**失效:
+權重不加總為 1 會**整體重新縮放獎勵**(run 只是看起來比較差);
+replay 小於 batch 會在**訓練深處**才拋錯(離肇因很遠);
+`ε` 排程上升會讓探索**隨時間打開**(讀起來像不穩定而非打字錯);
+折扣為 0 **靜默刪除未來**;校準尺度為 0 **把該目標整個除掉**。
+
+另加一條交叉檢查:`reward_calibration_enabled` 為真但 `R3_SCALE_IS_FROZEN` 為假時**拋錯** ——
+B13 把 `r3` 從正規化差距換成原始人數,繼承來的尺度對它沒有意義(Q-D)。
+
+**⇒ 測試 shim 的 `trainer_config_validation` stand-in 已退役。**
+⚠ 該 stand-in 是**寬容的 no-op**,若不移除會**遮蔽**這個真的驗證器 —— 已加測試守住。
+
 ---
 
 ## 標記為潛伏、**刻意不修**
