@@ -135,6 +135,49 @@ class TrainerConfig:
         validate_trainer_config(self)
 
 
+@dataclass(frozen=True)
+class CollapseSample:
+    """G-3's four indicators at one sampling point, greedy and executed apart.
+
+    ⚠ **The four do not share a source, and conflating them was a real
+    error** (ruling 2026-08-23 §A).  ``q_margin`` and ``q_entropy`` come
+    from the Q surface, where epsilon never enters at all.
+    ``active_beam_count`` and ``argmax_agreement`` come from *actions*, and
+    the training loop executes **epsilon-greedy** ones — so during the first
+    2,000 of 9,000 episodes, while epsilon falls from 1 to 0.01, those two
+    measure mostly a random policy rather than a learned one.
+
+    B17's first question asks whether the **policy** collapses, so the
+    greedy fields answer it.  The executed pair is kept beside them because
+    it is what actually lit beams and drove the environment — but the two
+    are never interchangeable.
+    """
+
+    # -- from the Q surface: epsilon-free, identical for both readings ----
+    q_margin: float
+    """Top-1 minus top-2, **normalised by the Q range**.  Dimensionless."""
+    q_entropy: float
+    q_margin_raw: float
+    q_range: float
+
+    # -- from the GREEDY argmax: the policy's own choice.  B17 Q1 uses these.
+    active_beam_count: float
+    argmax_agreement: float
+
+    # -- from the EXECUTED epsilon-greedy actions: what lit the beams -----
+    active_beam_count_executed: float
+    argmax_agreement_executed: float
+
+    def report(self) -> dict[str, float]:
+        """The G-3 four, from the **greedy** reading."""
+        return {
+            "active_beam_count": self.active_beam_count,
+            "argmax_agreement": self.argmax_agreement,
+            "q_margin": self.q_margin,
+            "q_entropy": self.q_entropy,
+        }
+
+
 @dataclass
 class EpisodeLog:
     """Per-episode training metrics.
@@ -145,11 +188,14 @@ class EpisodeLog:
     whole contribution line, not a diagnostic.  G-3 fails on a *missing*
     indicator, so discovering the gap after 9,000 episodes costs the run.
 
-    Their sampling cadence is a pre-registration item, not an
-    implementation detail: measured every episode at the **first decision
-    step**, before any epsilon-greedy exploration has been averaged over,
-    and reported per episode without aggregation.  Frozen in the PREREG's
-    ``training`` section.
+    **Two sampling points, not one** (ruling 2026-08-23 §B).  Collapse
+    *develops within* an episode: users in similar states converge onto one
+    beam, its load climbs, rates fall.  At step 0 that has not happened yet,
+    so a first-step-only sample can miss it systematically.  Averaging over
+    the episode would smooth the process away instead — so both ends are
+    kept, and **their difference is itself the signal**: how much more
+    concentrated this episode ended than it began is the literal reading of
+    B17's question.
     """
 
     episode: int
@@ -162,14 +208,8 @@ class EpisodeLog:
     replay_size: int
     losses: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
-    # -- G-3 collapse indicators (all four, always) -----------------------
-    active_beam_count: float = 0.0
-    argmax_agreement: float = 0.0
-    q_margin: float = 0.0
-    """Top-1 minus top-2, **normalised by the Q range** as G-3 requires."""
-    q_entropy: float = 0.0
-    q_margin_raw: float = 0.0
-    q_range: float = 0.0
+    collapse_first: CollapseSample | None = None
+    collapse_last: CollapseSample | None = None
 
     # -- rewards before AND after calibration -----------------------------
     #
@@ -181,14 +221,32 @@ class EpisodeLog:
     r2_mean_calibrated: float = 0.0
     r3_mean_calibrated: float = 0.0
 
-    def collapse_report(self) -> dict[str, float]:
-        """The four G-3 indicators, in the shape ``assert_g3_complete`` wants."""
-        return {
-            "active_beam_count": self.active_beam_count,
-            "argmax_agreement": self.argmax_agreement,
-            "q_margin": self.q_margin,
-            "q_entropy": self.q_entropy,
-        }
+    def collapse_report(self, point: str = "last") -> dict[str, float]:
+        """The G-3 four at one end of the episode.
+
+        Defaults to ``"last"``: if collapse develops within an episode, the
+        end is where it is visible.  Fails loudly on an absent sample —
+        a missing indicator is what G-3 exists to refuse, and returning
+        zeros would let a run report "no collapse" having measured nothing.
+        """
+        sample = {"first": self.collapse_first, "last": self.collapse_last}[point]
+        if sample is None:
+            raise ValueError(
+                f"episode {self.episode} has no {point}-step collapse sample; "
+                "G-3 refuses a verdict built on a missing indicator"
+            )
+        return sample.report()
+
+    def collapse_drift(self) -> dict[str, float]:
+        """``last − first`` for the four.  **This is the collapse signal.**
+
+        A single point says how concentrated the policy was; the difference
+        says whether the episode *concentrated it*, which is what B17's
+        first question actually asks.
+        """
+        first = self.collapse_report("first")
+        last = self.collapse_report("last")
+        return {key: last[key] - first[key] for key in last}
 
 
 @dataclass(frozen=True)

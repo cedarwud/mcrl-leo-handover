@@ -67,6 +67,7 @@ from ..runtime.q_network import DQNNetwork
 from ..runtime.replay_buffer import ReplayBuffer
 from ..runtime.state_encoding import encode_state, state_dim_for
 from ..runtime.trainer_spec import (
+    CollapseSample,
     EpisodeLog,
     EvalSummary,
     TrainerConfig,
@@ -906,7 +907,7 @@ class MODQNTrainer:
             ep_handovers = 0
             ep_losses = np.zeros(3, dtype=np.float64)
             update_count = 0
-            collapse = None
+            collapse_first = collapse_last = None
 
             for _step_idx in range(self.env.config.steps_per_episode):
                 # Select actions
@@ -917,29 +918,61 @@ class MODQNTrainer:
                     raw_states=states,
                 )
 
-                # PATCH P-23: G-3's four collapse indicators, sampled at the
-                # FIRST decision step of every episode.
+                # PATCH P-23 (revised): G-3's four, at BOTH ends of the
+                # episode, with the action-derived pair read GREEDILY.
                 #
-                # They are here because B17's first question -- does
-                # shared-Q + argmax still collapse in the new environment --
-                # is the go/no-go for the whole contribution line, and G-3
-                # fails on a MISSING indicator.  Discovering the gap after
-                # 9,000 episodes costs the run.
+                # Two corrections to the first version, both from the
+                # ruling of 2026-08-23:
                 #
-                # The cadence is a pre-registration item, not a convenience:
-                # the first step is before epsilon-greedy exploration has
-                # been averaged over the episode, so the number describes the
-                # policy's own decision surface rather than a mixture of it
-                # and the exploration schedule.
-                if collapse is None:
-                    collapse = compute_collapse_metrics(
-                        self._scalarize_q_values(
-                            self._predict_objective_q_values(encoded),
-                            cfg.objective_weights,
-                        ),
-                        np.stack([mask.mask for mask in masks]),
-                        actions,
+                # (A) Sampling at step 0 does NOT take epsilon out.  The
+                #     loop executes epsilon-greedy actions, and epsilon is
+                #     as live at step 0 as at step 5 -- so for the first
+                #     2,000 of 9,000 episodes, while epsilon falls from 1
+                #     to 0.01, active_beam_count and argmax_agreement
+                #     measured mostly a random policy.  B17 Q1 asks about
+                #     the POLICY, so those two are now taken from the
+                #     greedy argmax; the executed pair is kept beside them
+                #     because it is what actually lit beams.
+                #
+                # (B) Collapse DEVELOPS within an episode -- users converge
+                #     onto a beam, its load climbs -- so step 0 alone can
+                #     miss it systematically, while averaging would smooth
+                #     the process away.  Both ends are sampled and their
+                #     difference is the signal.
+                is_last = _step_idx == self.env.config.steps_per_episode - 1
+                if _step_idx == 0 or is_last:
+                    scalarized = self._scalarize_q_values(
+                        self._predict_objective_q_values(encoded),
+                        cfg.objective_weights,
                     )
+                    mask_block = np.stack([mask.mask for mask in masks])
+                    greedy = self._select_unconstrained_actions(
+                        scalarized, masks, 0.0
+                    )
+                    from_greedy = compute_collapse_metrics(
+                        scalarized, mask_block, greedy
+                    )
+                    from_executed = compute_collapse_metrics(
+                        scalarized, mask_block, actions
+                    )
+                    sample = CollapseSample(
+                        q_margin=from_greedy.q_margin,
+                        q_entropy=from_greedy.q_entropy,
+                        q_margin_raw=from_greedy.q_margin_raw,
+                        q_range=from_greedy.q_range,
+                        active_beam_count=from_greedy.active_beam_count,
+                        argmax_agreement=from_greedy.argmax_agreement,
+                        active_beam_count_executed=(
+                            from_executed.active_beam_count
+                        ),
+                        argmax_agreement_executed=(
+                            from_executed.argmax_agreement
+                        ),
+                    )
+                    if _step_idx == 0:
+                        collapse_first = sample
+                    if is_last:
+                        collapse_last = sample
 
                 # Step environment
                 result = self.env.step(actions, self._env_rng)
@@ -1023,7 +1056,14 @@ class MODQNTrainer:
             # log carrying only one of them cannot answer B17's second
             # question without recomputing from numbers it no longer has.
             calibrated = apply_reward_calibration(avg_reward, cfg)
-            assert collapse is not None, "an episode ran with no decision step"
+            if collapse_first is None or collapse_last is None:
+                raise MCRLContractError(
+                    f"episode {ep} produced no collapse sample at "
+                    f"{'the first' if collapse_first is None else 'the last'} "
+                    "decision step; G-3 refuses a verdict on a missing "
+                    "indicator, and a run that reaches the end without one "
+                    "cannot answer B17 Q1"
+                )
 
             log = EpisodeLog(
                 episode=ep,
@@ -1035,12 +1075,8 @@ class MODQNTrainer:
                 total_handovers=ep_handovers,
                 replay_size=len(self.replay),
                 losses=(float(avg_losses[0]), float(avg_losses[1]), float(avg_losses[2])),
-                active_beam_count=collapse.active_beam_count,
-                argmax_agreement=collapse.argmax_agreement,
-                q_margin=collapse.q_margin,
-                q_entropy=collapse.q_entropy,
-                q_margin_raw=collapse.q_margin_raw,
-                q_range=collapse.q_range,
+                collapse_first=collapse_first,
+                collapse_last=collapse_last,
                 r1_mean_calibrated=float(calibrated[0]),
                 r2_mean_calibrated=float(calibrated[1]),
                 r3_mean_calibrated=float(calibrated[2]),

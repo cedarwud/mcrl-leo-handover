@@ -289,15 +289,70 @@ def test_a_real_run_produces_all_four_collapse_indicators(adapter):
     assert len(logs) == 2
 
     for log in logs:
-        assert_g3_complete(log.collapse_report())
-        assert 0.0 <= log.active_beam_count <= adapter.num_beams_total
-        assert 0.0 <= log.argmax_agreement <= 1.0
-        # q_margin is NORMALISED by the Q range, so it is dimensionless.
-        assert 0.0 <= log.q_margin <= 1.0 + 1e-9
-        assert 0.0 <= log.q_entropy <= 1.0 + 1e-9
-        assert np.isfinite(log.q_margin_raw) and np.isfinite(log.q_range)
-        # A raw margin with no divisor recorded would be unauditable.
-        assert log.q_range >= log.q_margin_raw - 1e-9
+        # Both ends, because collapse develops within an episode and a
+        # first-step-only sample can miss it systematically.
+        for point in ("first", "last"):
+            assert_g3_complete(log.collapse_report(point))
+        assert log.collapse_drift().keys() == log.collapse_report().keys()
+
+        for sample in (log.collapse_first, log.collapse_last):
+            assert 0.0 <= sample.active_beam_count <= adapter.num_beams_total
+            assert 0.0 <= sample.argmax_agreement <= 1.0
+            # q_margin is NORMALISED by the Q range, so it is dimensionless.
+            assert 0.0 <= sample.q_margin <= 1.0 + 1e-9
+            assert 0.0 <= sample.q_entropy <= 1.0 + 1e-9
+            assert np.isfinite(sample.q_margin_raw)
+            assert np.isfinite(sample.q_range)
+            # A raw margin with no divisor recorded would be unauditable.
+            assert sample.q_range >= sample.q_margin_raw - 1e-9
+            # The executed pair is present and separate from the greedy one.
+            assert 0.0 <= sample.argmax_agreement_executed <= 1.0
+            assert (
+                0.0
+                <= sample.active_beam_count_executed
+                <= adapter.num_beams_total
+            )
+
+
+@requires_archive
+def test_the_greedy_and_executed_readings_differ_while_epsilon_is_high(adapter):
+    """The correction of 2026-08-23, checked where it bites.
+
+    Epsilon is live at EVERY step, first included, so the executed actions
+    are not the policy's choice — for the first 2,000 of 9,000 episodes
+    they are mostly random.  Reading B17 Q1 off them would answer a
+    different question, so the greedy pair exists; this asserts the two
+    actually diverge at epsilon = 1, or the distinction would be decorative.
+    """
+    from mcrl.algorithms.modqn import MODQNTrainer
+    from mcrl.runtime.trainer_spec import TrainerConfig
+
+    trainer = MODQNTrainer(
+        adapter,
+        TrainerConfig(episodes=2, batch_size=8, replay_capacity=256),
+        train_seed=0,
+        env_seed=1,
+        mobility_seed=2,
+    )
+    logs = trainer.train()
+    assert logs[0].epsilon == 1.0, "this test needs full exploration"
+
+    divergences = [
+        sample.active_beam_count != sample.active_beam_count_executed
+        or sample.argmax_agreement != sample.argmax_agreement_executed
+        for log in logs
+        for sample in (log.collapse_first, log.collapse_last)
+    ]
+    assert any(divergences), (
+        "greedy and executed agreed everywhere at epsilon = 1; the two "
+        "readings would then be measuring the same thing and the "
+        "distinction the ruling asked for would be decorative"
+    )
+
+    # The Q-derived pair must NOT depend on which actions were used.
+    for log in logs:
+        for sample in (log.collapse_first, log.collapse_last):
+            assert np.isfinite(sample.q_margin)
 
     # Both scalings, and they must actually differ: c_1 is 2.47e6, so a
     # calibrated r1 equal to the raw one would mean calibration never ran.

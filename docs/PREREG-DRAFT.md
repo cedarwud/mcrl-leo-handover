@@ -1,7 +1,31 @@
 # PREREG 草案(W-13)— 第一份 baseline MODQN 預先註冊
 
-**狀態:草案。尚未凍結。**
+**狀態:已凍結(2026-08-23)。本檔自此為人讀副本,不再是權威。**
+
+> ## ⛔ 權威記錄:`artifacts/PREREG-FROZEN-2026-08-23.json`
+>
+> | | |
+> |---|---|
+> | schema | `mcrl-prereg-v1` |
+> | digest | `d35ddaffda580c8c109f758372956d41aa947b9eb3915d742f3f5f9b7aaecf08` |
+> | 留出承諾 | `b9fa64909f81b70e…`(salt `mcrl-leo-handover-2026-08-22`) |
+> | 區段 | 17 個,125,740 bytes |
+> | 開放問題 | Q-D / Q-E / Q-F / Q-G **四項全數關閉並凍結** |
+>
+> 凍結由 `scripts/freeze_prereg.py` 執行,**它拒絕覆寫** ——
+> 可以再凍一次的記錄不算凍結。重開是一個要被看見、要被論證的動作,
+> 不是重跑一次腳本。
+>
+> **凍結後真正的風險不是有人改那個 JSON,是有人改它描述的程式**,
+> 而記錄會安靜地變成一份描述著已不存在之系統的文件(W-27 §5:
+> 「描述錯而行為對是兩者中較危險的那個,因為 PREREG 活得比程式久」)。
+> `tests/test_w29_prereg_frozen.py` 因此逐項比對:每個 `resolved` 值
+> 與實作它的常數必須仍然相等,取樣點與動作版本的措辭與 `CollapseSample`
+> 的結構必須仍然對得上。
+
 **⚠ 任何 probe(含 P1)在本文件凍結之前不得執行**(SDD §7.1)。
+—— 已滿足:P1…P5、P7 皆在草案凍結流程下以 `build_draft()` 的同一份區段驅動,
+P6 需訓練輸出,留待 server。
 
 > ## 凍結器已實作(W-13):`src/mcrl/runtime/prereg.py`
 >

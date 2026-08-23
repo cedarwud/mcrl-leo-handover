@@ -282,10 +282,23 @@ def test_the_episode_log_carries_all_four_collapse_indicators():
     """
     from mcrl.runtime.trainer_spec import EpisodeLog
 
-    fields = set(EpisodeLog.__dataclass_fields__)
-    assert set(REQUIRED_G3_FIELDS) <= fields, sorted(set(REQUIRED_G3_FIELDS) - fields)
+    from mcrl.runtime.trainer_spec import CollapseSample
+
+    sample_fields = set(CollapseSample.__dataclass_fields__)
+    assert set(REQUIRED_G3_FIELDS) <= sample_fields, sorted(
+        set(REQUIRED_G3_FIELDS) - sample_fields
+    )
     # The raw gap and its divisor travel too, so the scale stays auditable.
-    assert {"q_margin_raw", "q_range"} <= fields
+    assert {"q_margin_raw", "q_range"} <= sample_fields
+    # And the executed pair, kept apart from the greedy one it must not be
+    # confused with: epsilon is live at every step, first included.
+    assert {
+        "active_beam_count_executed",
+        "argmax_agreement_executed",
+    } <= sample_fields
+    # Both ends of the episode, because collapse develops within one.
+    fields = set(EpisodeLog.__dataclass_fields__)
+    assert {"collapse_first", "collapse_last"} <= fields
     # And both reward scalings, for B17 Q2's effective trade-off.
     assert {
         "r1_mean_calibrated",
@@ -298,37 +311,61 @@ def test_the_episode_log_report_satisfies_the_g3_gate():
     """The log's own report must pass ``assert_g3_complete`` unchanged."""
     from mcrl.runtime.trainer_spec import EpisodeLog
 
+    from mcrl.runtime.trainer_spec import CollapseSample
+
+    def sample(beams, agreement):
+        return CollapseSample(
+            q_margin=0.1, q_entropy=0.9, q_margin_raw=1.0, q_range=10.0,
+            active_beam_count=beams, argmax_agreement=agreement,
+            active_beam_count_executed=beams + 3.0,
+            argmax_agreement_executed=agreement / 2.0,
+        )
+
     log = EpisodeLog(
-        episode=0,
-        epsilon=1.0,
-        r1_mean=1.0,
-        r2_mean=0.0,
-        r3_mean=-1.0,
-        scalar_reward=0.0,
-        total_handovers=0,
-        replay_size=0,
-        active_beam_count=7.0,
-        argmax_agreement=0.25,
-        q_margin=0.1,
-        q_entropy=0.9,
+        episode=0, epsilon=1.0, r1_mean=1.0, r2_mean=0.0, r3_mean=-1.0,
+        scalar_reward=0.0, total_handovers=0, replay_size=0,
+        collapse_first=sample(7.0, 0.25),
+        collapse_last=sample(3.0, 0.60),
     )
-    assert assert_g3_complete(log.collapse_report()) == log.collapse_report()
+    for point in ("first", "last"):
+        report = log.collapse_report(point)
+        assert assert_g3_complete(report) == report
+
+    # The DIFFERENCE is the signal: this episode ended on fewer beams with
+    # more agreement than it started, which is what collapse looks like.
+    drift = log.collapse_drift()
+    assert drift["active_beam_count"] == -4.0
+    assert drift["argmax_agreement"] == pytest.approx(0.35)
 
 
 def test_a_log_missing_an_indicator_still_fails_the_gate():
     """The gate has to keep its teeth now that the fields exist."""
     from mcrl.runtime.trainer_spec import EpisodeLog
 
+    from mcrl.runtime.trainer_spec import CollapseSample
+
     log = EpisodeLog(
-        episode=0,
-        epsilon=1.0,
-        r1_mean=0.0,
-        r2_mean=0.0,
-        r3_mean=0.0,
-        scalar_reward=0.0,
-        total_handovers=0,
-        replay_size=0,
+        episode=0, epsilon=1.0, r1_mean=0.0, r2_mean=0.0, r3_mean=0.0,
+        scalar_reward=0.0, total_handovers=0, replay_size=0,
+        collapse_first=CollapseSample(0.1, 0.9, 1.0, 10.0, 7.0, 0.2, 7.0, 0.2),
+        collapse_last=CollapseSample(0.1, 0.9, 1.0, 10.0, 7.0, 0.2, 7.0, 0.2),
     )
-    partial = {k: v for k, v in log.collapse_report().items() if k != "q_entropy"}
+    partial = {
+        k: v for k, v in log.collapse_report().items() if k != "q_entropy"
+    }
     with pytest.raises(MCRLContractError, match="q_entropy"):
         assert_g3_complete(partial)
+
+
+def test_an_absent_sample_fails_loudly_rather_than_reporting_zeros():
+    """Zeros would let a run report "no collapse" having measured nothing."""
+    from mcrl.runtime.trainer_spec import EpisodeLog
+
+    log = EpisodeLog(
+        episode=11, epsilon=0.5, r1_mean=0.0, r2_mean=0.0, r3_mean=0.0,
+        scalar_reward=0.0, total_handovers=0, replay_size=0,
+    )
+    with pytest.raises(ValueError, match="no last-step collapse sample"):
+        log.collapse_report()
+    with pytest.raises(ValueError, match="no first-step collapse sample"):
+        log.collapse_report("first")

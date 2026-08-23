@@ -13,13 +13,13 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 
 | 檔案 | 來源 sha256(前 16) | 目前 sha256(前 16) | 狀態 |
 |---|---|---|---|
-| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `9f67a585c23f3fb7` | **來源 + P-01…P-05、P-09、P-11、P-14、P-20、P-23**(1,333 → 1,054 行) |
+| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `dc9cd98f33049e21` | **來源 + P-01…P-05、P-09、P-11、P-14、P-20、P-23**(1,333 → 1,130 行) |
 | `src/mcrl/env/step_types.py` | `c4995ba509bbe2e6` | `b91ef574287a32fc` | **來源 + P-07、P-08、P-15、P-16、P-20、P-21**(696 → 217 行) |
 | `src/mcrl/runtime/q_network.py` | `d11318d61ad93a77` | `d11318d61ad93a77` | 逐位元組相同 |
 | `src/mcrl/runtime/replay_buffer.py` | `374a73e1b3a5e9da` | `374a73e1b3a5e9da` | 逐位元組相同 |
 | `src/mcrl/runtime/state_encoding.py` | `723974bcc6db9d5d` | `fdb4675b5cc89539` | **來源 + P-09、P-10**(P-10 已依 C-1 改為預設關的消融開關) |
 | `src/mcrl/runtime/objective_math.py` | `e8a55760ee1dc4da` | `8f7ffff4ad46228f` | **來源 + P-20**(91 → 55 行) |
-| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `1005b6cfbcd1022f` | **來源 + P-05、P-06、P-20、P-23**(250 → 160 行) |
+| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `07bffee999e20926` | **來源 + P-05、P-06、P-20、P-23**(250 → 268 行) |
 
 新增檔(無來源,不屬補丁):`src/mcrl/errors.py`、`src/mcrl/env/action_contract.py`、
 `src/mcrl/env/interference.py`、`src/mcrl/env/step.py`、
@@ -274,11 +274,15 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 | 來源行 | `algorithms/modqn.py` 的 `train()` 迴圈;`runtime/trainer_spec.EpisodeLog` |
 | 缺陷 | `runtime/collapse_metrics.py` 存在但在訓練迴圈裡**零呼叫**;`EpisodeLog` 只記 `r1/r2/r3_mean` 與 `scalar_reward` |
 | 為何是凍結前的事 | B17 第一題「shared-Q + argmax 還會不會崩潰」是**整條貢獻線的 go/no-go**,而 G-3 明寫**缺任一項即不通過**。跑完 9000 回合才發現要補 ⇒ 重跑 40 小時。更嚴重的是**取樣節奏本身是預註冊項目** —— 凍結後才加,那四個數字就不是預先承諾的量 |
-| 補丁內容 | `EpisodeLog` 加 `active_beam_count` / `argmax_agreement` / `q_margin`(**正規化**)/ `q_entropy`,外加 `q_margin_raw` 與 `q_range` 讓尺度可稽核;訓練迴圈在**每回合的第一個決策步**呼叫 `compute_collapse_metrics` |
-| 為何取第一步 | 那是 epsilon-greedy 探索尚未被平均進去之前,數字描述的是**策略自己的決策面**,而不是它與探索排程的混合 |
+| 補丁內容 | 崩潰四項移進 `CollapseSample`(`q_margin` **正規化**,外加 `q_margin_raw` 與 `q_range` 讓尺度可稽核),`EpisodeLog` 帶 `collapse_first` / `collapse_last` 兩顆;訓練迴圈在**每回合的第一與最後一個決策步**各呼叫一次 `compute_collapse_metrics`,一次餵貪婪 argmax、一次餵實際執行的動作 |
+| 為何取兩點(**2026-08-23 修訂**) | 原本只取第一步,理由寫「探索尚未被平均進去」—— **那條理由不成立**,見下兩列。改取**第一步與最後一步**:崩潰是**回合內發展**出來的(狀態相近的使用者逐步集中、載量堆高),第 0 步那個過程還沒開始,只取第一步會**系統性漏掉**它;整回合平均則會把過程抹平。**兩者的差(`collapse_drift`)本身就是崩潰訊號**,比任何單點都更接近 B17 第一題的字面意思 |
+| 為何原理由不成立 | 四項分兩類:`q_margin` / `q_entropy` 來自 **Q 值**,epsilon **從來不會**進去,任何一步都一樣 ⇒ 它們不需要那條理由;`active_beam_count` / `argmax_agreement` 來自**選出的動作**,而 **epsilon 在第 0 步與第 5 步一樣生效** ⇒ 那條理由擋不住它。取樣點的選擇與探索退不退出無關 |
+| 貪婪 vs 執行(**2026-08-23 修訂**) | 兩項動作衍生指標改以**貪婪 argmax** 計算,**貪婪版回答 B17 Q1**;epsilon-greedy 的**執行版**併記為 `*_executed`(它是實際點亮了幾支波束,會影響環境),但兩者不可混為一談。量級:epsilon 由 1 線性降到 0.01 需 **2000** 回合而訓練跑 **9000** 回合 ⇒ 執行版在**前五分之一**量到的主要是隨機策略,而 B17 第一題問的是**策略**會不會崩潰,不是行為軌跡有多分散 |
 | 雙尺度獎勵 | 同時記校準前與校準後的逐目標均值。有效取捨是 `ω_j/c_j·r_j`,只記一種的 log 無法回答 B17 第二題,而重算所需的數字它已經沒有了 |
-| 凍進 PREREG | `training.collapse_metrics`(四項、正規化方式、節奏、取樣點、聚合方式、排除規則)與 `training.reward_logging` |
-| 對應測試 | `test_w12_collapse_metrics.py` 三項(欄位齊、log 自己的 report 通過 G-3、缺一項仍會擋);`test_w18_trainer_environment.py::test_a_real_run_produces_all_four_collapse_indicators` —— **實跑而非只檢查 dataclass**,因為只檢查欄位的話,訓練迴圈根本沒呼叫也會通過,而那正是 2026-08-23 之前的狀態 |
+| 凍進 PREREG | `training.collapse_metrics`(四項、正規化方式、節奏、**兩個取樣點**、**所用動作版本**、聚合方式、排除規則)與 `training.reward_logging`。取樣點與動作版本都是預註冊項目 —— 凍結後再改,那四個數字就不是預先承諾的量 |
+| 對應測試 | `test_w12_collapse_metrics.py` 四項(欄位齊含執行版與兩顆樣本、log 自己的 report 通過 G-3、缺一項仍會擋、**缺樣本時拋錯而非回報零**);`test_w18_trainer_environment.py::test_a_real_run_produces_all_four_collapse_indicators` —— **實跑而非只檢查 dataclass**,因為只檢查欄位的話,訓練迴圈根本沒呼叫也會通過,而那正是 2026-08-23 之前的狀態;`::test_the_greedy_and_executed_readings_differ_while_epsilon_is_high` —— 依 W-27 §5 通則,**主動把系統推進 epsilon = 1**,斷言兩版確實分歧,否則那個區分只是裝飾 |
+| 缺樣本的處置 | `collapse_report()` 在對應端沒有樣本時**拋錯**,不回報零 —— 零會讓一份什麼都沒量到的 run 讀起來像「沒有崩潰」,也就是**以最令人安心的形式失敗** |
+| ⚠ 兩點取樣的限制(揭露) | `steps_per_episode = 10` ⇒ 第一步與最後一步之間只隔 **9 步 ≈ 4.5 分鐘**軌道時間,**回合內能發展多少集中受此上限**。`collapse_drift` 接近零**不可**讀成「策略不崩潰」,只能讀成「在 10 步視窗內沒有進一步集中」;`collapse_first` 的**絕對水準**仍須並看 —— 若第 0 步就已高度集中,那本身就是答案 |
 
 ### 非補丁:`env/trainer_env.py`(新檔)—— 訓練器與環境的接頭
 

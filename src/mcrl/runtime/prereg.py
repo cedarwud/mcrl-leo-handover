@@ -535,12 +535,32 @@ def build_prereg_sections(
                 ),
                 "cadence": "every episode",
                 "sampled_at": (
-                    "the FIRST decision step of the episode -- before "
-                    "epsilon-greedy exploration has been averaged over it, "
-                    "so the number describes the policy's decision surface "
-                    "rather than a mixture of it and the exploration schedule"
+                    "BOTH the first and the last decision step of the "
+                    "episode.  Collapse develops WITHIN an episode -- users "
+                    "in similar states converge onto one beam and its load "
+                    "climbs -- so a first-step-only sample can miss it "
+                    "systematically, while averaging over the episode would "
+                    "smooth the process away.  Their difference "
+                    "(EpisodeLog.collapse_drift) is the signal B17 Q1 asks "
+                    "for: how much more concentrated the episode ended than "
+                    "it began"
                 ),
-                "aggregation": "none; reported per episode in EpisodeLog",
+                "actions_used": (
+                    "the two ACTION-derived indicators (active_beam_count, "
+                    "argmax_agreement) are computed from the GREEDY argmax, "
+                    "and that version answers B17 Q1.  The epsilon-greedy "
+                    "EXECUTED version is logged beside it as "
+                    "*_executed because it is what actually lit beams.  ⚠ "
+                    "They are not interchangeable: epsilon falls from 1 to "
+                    "0.01 over 2000 of 9000 episodes, so the executed pair "
+                    "measures mostly a random policy for the first fifth of "
+                    "training.  q_margin and q_entropy come from the Q "
+                    "surface and epsilon never enters them at all"
+                ),
+                "aggregation": (
+                    "none; both points reported per episode in EpisodeLog, "
+                    "plus their difference"
+                ),
                 "users_excluded": (
                     "a user with fewer than two valid actions contributes no "
                     "margin or entropy: a single candidate has no top-2 gap "
