@@ -53,13 +53,35 @@ import numpy as np
 from ..errors import MCRLContractError
 from .action_contract import NO_OP_ACTION, NUM_ACTIONS, SlotTable
 
-R3_SCALE_IS_FROZEN: bool = False
-"""Whether the ``r3`` calibration scale has been decided.  **False.**
+R3_SCALE_IS_FROZEN: bool = True
+"""Whether the ``r3`` calibration scale has been decided.  **True.**
 
-Q-D ("``r3`` 重新校準的尺度取法") is open, and B13 changed ``r3``'s units
-entirely — the old scale was fitted to a normalised gap, the new one is a
-raw user count.  A machine-checkable flag, like ``DWELL_N_IS_FROZEN``, so
-the W-13 freezer cannot emit a PREREG carrying a stale scale.
+**Closed by probe P3 on 2026-08-23** — the first question in this project
+closed by a probe rather than by a ruling, which is what the freeze flags
+were built for.  See :data:`R3_CALIBRATION_SCALE`.
+"""
+
+R3_CALIBRATION_SCALE: int = 6
+"""``r3`` enters training as ``−U_{b_u} / 6``.  **D**, from probe P3.
+
+The frozen Q-D selection mapping, committed before P3 ran, was "the p95 of
+``|r3|`` over served steps, rounded to the nearest integer".  P3 measured
+``|r3|`` over 12,000 decision steps at p05/p50/p95/max = 1 / 3 / **6** / 8,
+so the mapping returns **6**.  The number was not chosen after the fact;
+the *rule* was frozen and this is what it selected.
+
+Why p95 and not max: the max is one congested beam, and a divisor that
+tracks a single outlier is not a scale.  Why an integer: ``U_{b_u}`` is a
+head count, so its scale should stay a countable quantity rather than a
+fitted one.
+
+⚠ Applied through ``TrainerConfig.reward_calibration_*``, which is why that
+surface survived P-05 when the other opt-in surfaces went.
+
+⚠ Measured under the **reference policy** at the frozen scenario.  A trained
+policy will spread load differently; the scale is frozen at this value
+regardless, because re-deriving it from training output would make the
+reward scale a function of the run it is scoring.
 """
 
 

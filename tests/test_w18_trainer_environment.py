@@ -150,10 +150,24 @@ def test_the_two_generators_do_different_jobs(adapter):
 
 
 @requires_archive
-def test_training_is_gated_on_both_the_physics_and_the_open_questions(adapter):
-    """Q-D and Q-E are open, so this must refuse — that is the gate working."""
-    with pytest.raises(MCRLContractError, match="Q-E dwell N|Q-D r3"):
+def test_training_is_gated_on_the_open_questions(adapter, monkeypatch):
+    """An open question must refuse — that is the gate working.
+
+    Both closed on 2026-08-23, so one is reopened here.  Relying on the
+    project's own state would have turned this into a test that passes
+    because there is nothing to catch.
+    """
+    import mcrl.env.service as service
+
+    monkeypatch.setattr(service, "R3_SCALE_IS_FROZEN", False)
+    with pytest.raises(MCRLContractError, match="Q-D r3"):
         adapter.assert_ready_to_train()
+
+
+@requires_archive
+def test_with_both_questions_closed_the_adapter_lets_training_start(adapter):
+    """The other branch: physics consistent, both questions closed."""
+    adapter.assert_ready_to_train()
 
 
 @requires_archive

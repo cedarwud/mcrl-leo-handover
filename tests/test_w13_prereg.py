@@ -76,43 +76,86 @@ def _sections(selection_mappings=None):
 # -- open questions block the freeze --------------------------------------
 
 
+@pytest.fixture
+def reopened(monkeypatch):
+    """Reopen Q-D so the freeze gate can be exercised at all.
+
+    ⚠ Both questions closed on 2026-08-23 — Q-E by ruling, Q-D by probe P3.
+    Four tests below used to rely on one being open, which means that from
+    that date they would have passed **vacuously** while still claiming to
+    test the gate.  A guard is only tested by putting the system into the
+    state it guards against, so the flag is patched instead.
+
+    ``open_questions()`` imports the flags lazily inside the call, so
+    patching the module attribute is enough — and that laziness exists for
+    exactly this reason: the values are read where they are owned, never
+    restated.
+    """
+    import mcrl.env.service as service
+
+    monkeypatch.setattr(service, "R3_SCALE_IS_FROZEN", False)
+    return "Q-D r3 calibration scale"
+
+
 def test_the_open_questions_are_read_from_the_code_that_owns_them():
+    """Both are closed now, and the flags are still the only source."""
     questions = open_questions()
     assert set(questions) == {"Q-E dwell N", "Q-D r3 calibration scale"}
-    # Q-E closed on 2026-08-23 (N = 3, by the frozen re-key mapping); Q-D is
-    # still open.  Read from the modules that own the flags, never restated.
-    assert questions == {"Q-E dwell N": True, "Q-D r3 calibration scale": False}
+    # Q-E: ruling 2026-08-23, N = 3 by the frozen re-key mapping.
+    # Q-D: probe P3 the same day, scale = 6 by the frozen p95 mapping.
+    assert questions == {"Q-E dwell N": True, "Q-D r3 calibration scale": True}
 
 
-def test_freezing_with_open_questions_is_the_normal_case():
-    """The probes that close Q-D and Q-E must not run until this exists.
+def test_the_flags_are_read_from_their_owners_not_restated():
+    """Patching the owning module must move ``open_questions()``."""
+    import mcrl.env.dwell as dwell
 
-    Requiring their values first would be circular; §7.1 asks for a
+    original = dwell.DWELL_N_IS_FROZEN
+    try:
+        dwell.DWELL_N_IS_FROZEN = False
+        assert open_questions()["Q-E dwell N"] is False
+    finally:
+        dwell.DWELL_N_IS_FROZEN = original
+    assert open_questions()["Q-E dwell N"] is True
+
+
+def test_freezing_with_open_questions_is_the_normal_case(reopened):
+    """The probe that closes an open question must not run until this exists.
+
+    Requiring its value first would be circular; §7.1 asks for a
     deterministic selection mapping instead.
     """
     record = freeze_prereg(_sections(), holdout_seed=1)
     assert record.schema == PREREG_SCHEMA
-    assert record.sections["selection_mappings"]["Q-E dwell N"]
+    assert record.sections["selection_mappings"][reopened]
 
 
-def test_an_open_question_without_a_selection_mapping_blocks_the_freeze():
-    with pytest.raises(PreregFreezeError, match="Q-D r3 calibration scale"):
+def test_an_open_question_without_a_selection_mapping_blocks_the_freeze(
+    reopened,
+):
+    with pytest.raises(PreregFreezeError, match=reopened):
         assert_selection_mappings_cover_open_questions({})
     with pytest.raises(PreregFreezeError, match="no frozen selection"):
         freeze_prereg(_sections(selection_mappings={}), holdout_seed=1)
 
 
-def test_a_partial_selection_mapping_still_blocks():
+def test_a_partial_selection_mapping_still_blocks(reopened):
     partial = {"Q-E dwell N": SELECTION_MAPPINGS["Q-E dwell N"]}
-    with pytest.raises(PreregFreezeError, match="Q-D r3 calibration scale"):
+    with pytest.raises(PreregFreezeError, match=reopened):
         freeze_prereg(_sections(selection_mappings=partial), holdout_seed=1)
 
 
-def test_training_is_what_the_freeze_flags_actually_block():
-    """Freezing with Q-D/Q-E open is fine; training against a placeholder is not."""
+def test_training_is_what_the_freeze_flags_actually_block(reopened):
+    """Freezing with a question open is fine; training against one is not."""
     freeze_prereg(_sections(), holdout_seed=1)
     with pytest.raises(PreregFreezeError, match="training run"):
         assert_ready_to_train()
+
+
+def test_with_every_question_closed_training_is_no_longer_blocked():
+    """The other side of the same gate, so neither branch goes untested."""
+    assert all(open_questions().values())
+    assert_ready_to_train()
 
 
 # -- completeness ----------------------------------------------------------

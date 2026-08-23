@@ -93,10 +93,34 @@ def test_a_zero_calibration_scale_is_refused():
         TrainerConfig(reward_calibration_scales=(1.0, -2.0, 1.0))
 
 
-def test_calibration_cannot_be_enabled_while_the_r3_scale_is_unfrozen():
-    """Q-D: B13 changed r3's units, so the inherited scale means nothing."""
+def test_calibration_cannot_be_enabled_while_the_r3_scale_is_unfrozen(
+    monkeypatch,
+):
+    """Q-D: B13 changed r3's units, so the inherited scale means nothing.
+
+    The flag is patched rather than read: Q-D closed on 2026-08-23, so a
+    test that relied on it being open would now pass vacuously while
+    claiming to exercise the gate.  A guard is only tested by putting it in
+    the state it guards against.
+    """
+    import mcrl.env.service as service
+
+    monkeypatch.setattr(service, "R3_SCALE_IS_FROZEN", False)
     with pytest.raises(MCRLContractError, match="r3 scale is\\s+unfrozen"):
         TrainerConfig(reward_calibration_enabled=True)
+
+
+def test_calibration_is_allowed_now_that_the_scale_is_frozen():
+    """And the other side: with Q-D closed the gate must let it through."""
+    from mcrl.env.service import R3_CALIBRATION_SCALE, R3_SCALE_IS_FROZEN
+
+    assert R3_SCALE_IS_FROZEN is True
+    config = TrainerConfig(
+        reward_calibration_enabled=True,
+        reward_calibration_mode="divide-by-fixed-scales",
+        reward_calibration_scales=(1.0, 1.0, float(R3_CALIBRATION_SCALE)),
+    )
+    assert config.reward_calibration_scales[2] == 6.0
 
 
 def test_learning_rate_must_be_finite_and_positive():

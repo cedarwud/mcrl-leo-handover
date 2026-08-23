@@ -257,9 +257,18 @@ def test_negative_loads_are_refused():
 # -- Q-D stays open -------------------------------------------------------
 
 
-def test_the_r3_scale_is_not_frozen():
-    """B13 changed r3's units; the old scale is meaningless for it."""
-    assert R3_SCALE_IS_FROZEN is False
+def test_the_r3_scale_is_frozen_at_what_probe_p3_measured():
+    """Q-D closed 2026-08-23 — by a probe, which is what the flag was for.
+
+    B13 changed r3's units from a normalised gap to a raw head count, so the
+    inherited scale meant nothing and the flag held training back until a
+    measurement existed.  P3 supplied it: p95 of |r3| over served steps,
+    rounded, per the mapping frozen BEFORE the probe ran.
+    """
+    from mcrl.env.service import R3_CALIBRATION_SCALE
+
+    assert R3_SCALE_IS_FROZEN is True
+    assert R3_CALIBRATION_SCALE == 6
 
 
 def test_calibration_sampling_reports_statistics_not_a_scale():

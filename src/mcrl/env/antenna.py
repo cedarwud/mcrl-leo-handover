@@ -34,6 +34,7 @@ import numpy as np
 
 from ..errors import MCRLContractError
 from ..runtime.bessel import bessel_j_array
+from .link_budget import CARRIER_FREQ_HZ, SPEED_OF_LIGHT_M_S
 
 # ---------------------------------------------------------------------------
 # Transmit pattern (HOBS eq. (3))
@@ -159,6 +160,36 @@ RX_ENVELOPE_FLOOR_DEG: float = 10.0 ** (
     (RX_ENVELOPE_A_DBI - RX_GAIN_FLOOR_DBI) / RX_ENVELOPE_B
 )
 """**D** — where the envelope reaches the floor: 48.0°."""
+
+RX_TERMINAL_DIAMETER_M: float = 0.6
+"""``D`` — **P'**, the Ka VSAT reflector diameter (Mendonça et al. 2025).
+
+The same terminal ``RX_GAIN_MAX_DBI`` comes from: 35 dBi is that dish's
+39.7 dBi ideal derated.  It is named here because two different quantities
+now depend on it and they must not disagree about the antenna.
+"""
+
+RX_ENVELOPE_MIN_DEG: float = max(
+    1.0,
+    100.0 * (SPEED_OF_LIGHT_M_S / CARRIER_FREQ_HZ) / RX_TERMINAL_DIAMETER_M,
+)
+"""``θ^R_min = max(1°, 100λ/D)`` — **D**, 2.498° at 20 GHz and 0.6 m.
+
+S.465-6's envelope is only defined at or above this angle; below it the
+pattern is not the reference envelope at all and (3.10c) is held at
+``G_R,max`` by the clip.
+
+⚠ **Written as the derivation, never as the literal 2.50.**  If ``f_c`` or
+the dish moves, this follows on its own — the same discipline as
+``SEGMENT_START_POWER_W = BEAM_POWER_MAX_W / 2.0``.
+
+⚠ **SDD §4's P5 said 2.05°, and that number is void** (ruling 2026-08-23).
+2.05° implies ``D = 0.731 m``, an antenna that appears nowhere in this
+work; the terminal cannot be 0.6 m for its gain and 0.731 m for its
+angular floor.  The measured fraction of interference evaluations that
+fall below this angle is P5's output and belongs in ch5 §5.1 — ch3 states
+only how they are handled.
+"""
 
 _BORESIGHT_TOLERANCE_DEG: float = 1e-9
 

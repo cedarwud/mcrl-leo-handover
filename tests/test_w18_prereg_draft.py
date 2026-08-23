@@ -56,18 +56,25 @@ def test_the_draft_would_freeze_cleanly():
     assert record.holdout.digest
 
 
-def test_every_still_open_question_has_a_frozen_selection_mapping():
+def test_every_question_has_a_frozen_selection_mapping():
     """§7.1 accepts a rule instead of an answer — but not neither.
 
-    Q-E closed on 2026-08-23 without running P2: its frozen rule needed
-    only the re-key rate, which is scenario characterisation available
-    before any policy is evaluated.  Its mapping stays in the record —
-    a closed question still has to show the rule that closed it.
+    Both are closed now (Q-E by ruling, Q-D by probe P3), and both mappings
+    stay in the record: **a closed question still has to show the rule that
+    closed it**, or the answer becomes unattributable later.
     """
-    unresolved = {name for name, done in open_questions().items() if not done}
-    assert unresolved == {"Q-D r3 calibration scale"}
-    assert unresolved <= set(SELECTION_MAPPINGS)
+    assert not {name for name, done in open_questions().items() if not done}
+    assert set(open_questions()) <= set(SELECTION_MAPPINGS)
     assert_selection_mappings_cover_open_questions(SELECTION_MAPPINGS)
+
+
+def test_a_closed_question_still_records_its_rule_and_its_input():
+    for name in open_questions():
+        mapping = SELECTION_MAPPINGS[name]
+        assert mapping["rule"], name
+        assert "resolved" in mapping, f"{name} is closed but records no answer"
+        measured = [k for k in mapping if k.startswith("measured_")]
+        assert measured, f"{name} records an answer with no measured input"
 
 
 def test_the_closed_question_records_what_closed_it():
@@ -86,16 +93,26 @@ def test_a_selection_mapping_is_a_rule_not_an_answer():
         assert "rule" in mapping and mapping["rule"], name
         assert "rationale" in mapping and mapping["rationale"], name
         assert "probe" in mapping, name
-        # An OPEN question's mapping must not have quietly picked a value.
-        if name in {n for n, done in open_questions().items() if not done}:
-            assert "resolved" not in mapping, name
+        # A mapping must state its rule whether or not it has been applied;
+        # "resolved" is only legitimate once the owning flag says so.
+        if not open_questions().get(name, True):
+            assert "resolved" not in mapping, (
+                f"{name} is still open but its mapping already names a value"
+            )
     assert SELECTION_MAPPINGS["Q-E dwell N"]["candidates"] == list(
         DWELL_N_CANDIDATES
     )
 
 
-def test_dropping_a_selection_mapping_blocks_the_freeze():
-    """The gate has teeth: it is what stops a placeholder being frozen."""
+def test_dropping_a_selection_mapping_blocks_the_freeze(monkeypatch):
+    """The gate has teeth: it is what stops a placeholder being frozen.
+
+    Q-D is reopened for the duration — with everything closed this test
+    would pass vacuously while claiming to exercise the gate.
+    """
+    import mcrl.env.service as service
+
+    monkeypatch.setattr(service, "R3_SCALE_IS_FROZEN", False)
     with pytest.raises(PreregFreezeError, match="still open"):
         assert_selection_mappings_cover_open_questions(
             {"Q-E dwell N": SELECTION_MAPPINGS["Q-E dwell N"]}

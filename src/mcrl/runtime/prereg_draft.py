@@ -433,9 +433,20 @@ SELECTION_MAPPINGS: dict[str, Any] = {
             "fitted one."
         ),
         "unfreezes": "env.service.R3_SCALE_IS_FROZEN",
+        "resolved": 6,
+        "measured_abs_r3_over_served_steps": {
+            "p05": 1.0, "p50": 3.0, "p95": 6.0, "max": 8.0,
+            "count": 11898.0, "source": "probe P3, 12000 decision steps",
+        },
         "note": (
-            "the scale is applied through TrainerConfig.reward_calibration_*, "
-            "which is why that surface survived P-05."
+            "CLOSED by probe P3 on 2026-08-23 -- the first question here "
+            "closed by a probe rather than a ruling.  The scale is applied "
+            "through TrainerConfig.reward_calibration_*, which is why that "
+            "surface survived P-05.  Measured under the reference policy at "
+            "the frozen scenario; a trained policy spreads load differently "
+            "but the scale stays frozen, because re-deriving it from "
+            "training output would make the reward scale a function of the "
+            "run it is scoring."
         ),
     },
 }
