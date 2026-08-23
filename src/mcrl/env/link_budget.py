@@ -184,6 +184,30 @@ shift.  So when ``p⁰`` and ``p_max`` collided, this is the one that stayed.
 It is a **feasibility test outside the recurrence** (eq. 3.11 introduces no
 clamp): a link whose recurrence asks for more than this is infeasible and
 the user is in outage for that step.
+
+**Its provenance was a gap until 2026-08-23** (ruling B4).  ``1.65`` was
+inherited without a stated source, and ``19.953 / 1.65 = 12.09`` suggests it
+came from a **twelve**-beam satellite's budget — a premise that stopped
+holding at ``V = 39``.  The ruling did **not** move the number, because
+nothing showed it to be wrong; it gave it a source to be checked against::
+
+    V · p_max = 39 × 1.65 = 64.35 W  ≤  P_max = 50 dBm = 100 W
+
+``P_max`` is HOBS Table I's LEO maximum transmit power.  This is a **budget
+compatibility check, not a cap**: C-2 keeps the model free of any per-beam
+or per-satellite power limit, and adding one here would put a second gate
+outside the recurrence that took several rounds to remove.  Its value is
+that it is falsifiable — see
+``tests/test_w29_beam_power_budget.py``, which lights up if either ``V`` or
+``p_max`` moves out from under it.
+"""
+
+HOBS_LEO_MAX_TRANSMIT_POWER_W: float = 100.0
+"""``P_max = 50 dBm`` — **P′**, HOBS Table I (LEO maximum transmit power).
+
+Carried as a **reference figure to check against**, never as a clamp on the
+live path.  See ``BEAM_POWER_MAX_W`` above for why B4's cap form was
+declined and its number kept.
 """
 
 SEGMENT_START_POWER_W: float = BEAM_POWER_MAX_W / 2.0
