@@ -13,6 +13,11 @@
 | `signed_drop_dt30.py` | 段末 vs 段內峰值的有號跌幅,以及峰值鏈路功率 | `W19-REPLY-C-COST` §1、`W19-DONE` §0 |
 | `two_timescale_check.py` | 驗證兩個時鐘與 TTT 是列舉值;實測 47 子步成本 | `W19-DONE` §1 |
 | `outage_frozen.py` | 凍結情境下的 outage / 遮罩衰減 / 鏈路功率 | `W19-DONE` §0 |
+| `ceiling_and_segments.py` | **權威版**:由 `link_power_w` 算已耗用預算;segment 結束歸因與未設限段長 | `W20-REPLY` §0–1 |
+
+⚠ `signed_drop_dt30.py` 的「峰值跌幅」在暖啟動上線後**失效**(它相對 episode 內的
+起點量,而真正的 `τ` 在 episode 之前)。已在檔頭標記 superseded,
+權威量請用 `ceiling_and_segments.py`。
 
 全部從 repo 根目錄執行:`.venv/bin/python scripts/<name>.py`。
 需要 TLE 語料(`~/demo/tle_data/starlink/tle`)。

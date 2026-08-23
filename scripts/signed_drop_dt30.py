@@ -1,4 +1,14 @@
-"""Ruling §5: the SIGNED in-segment gain drop at Delta-t = 30 s.
+"""SUPERSEDED by ceiling_and_segments.py -- see the warning below.
+
+Ruling §5: the SIGNED in-segment gain drop at Delta-t = 30 s.
+
+⚠ Its "peak drop" is 10log10(g0/g_t) with g0 the gain at the step the
+segment was first SEEN inside the episode.  That was the segment start
+until segments began being warm-started; afterwards the true tau is before
+the episode and this quantity under-reports the recurrence.  It produced
+88.1% where the authoritative figure -- 10log10(p/p0) from the link power
+the environment actually computed -- is 100.0%.  Kept so the discrepancy
+can be reproduced, not for use.
 
 Distinguishes "the ceiling is satisfied by the policy" from "the ceiling is
 never approached at all" -- which read differently in the paper.
