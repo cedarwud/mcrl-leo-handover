@@ -399,7 +399,7 @@ def test_the_warm_start_is_reproducible_and_uses_the_environment_stream():
 
 def test_the_sensitivity_arm_needs_its_frozen_L():
     """``uniform-segment-length`` is the frozen second arm, not a free option."""
-    PhysicsConfig(segment_warm_start="uniform-segment-length", segment_age_steps=5)
+    PhysicsConfig(segment_warm_start="uniform-segment-length", segment_age_steps=6)
     with pytest.raises(ValueError, match="frozen segment_age_steps"):
         PhysicsConfig(segment_warm_start="uniform-segment-length")
 

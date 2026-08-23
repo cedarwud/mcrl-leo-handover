@@ -314,19 +314,36 @@ SEGMENT_WARM_START: dict[str, Any] = {
     },
     "sensitivity_arm": {
         "mode": "uniform-segment-length",
-        "segment_age_steps": 5,
-        "rule": "a ~ Uniform{0, ..., L-1} with L the frozen median segment length",
+        "segment_age_steps": 6,
+        "rule": "a ~ Uniform{0, ..., L-1} with L the UNCENSORED segment length",
+        "L_provenance": (
+            "6 steps: the median length of segments that end NATURALLY (by "
+            "handover or outage) at dt = 30.08 s, measured under the "
+            "reference policy at freeze time.  NOT the 5 of the pooled "
+            "median -- 49.0% of segments are cut by the episode boundary "
+            "and ran only 4.24 steps, so the pooled figure estimates a "
+            "truncated quantity rather than the inter-renewal time this "
+            "parameter is defined as."
+        ),
         "rationale": (
-            "the renewal-equilibrium age distribution, theoretically the "
-            "more correct one -- but L is measured UNDER THE REFERENCE "
-            "POLICY, which is how a policy re-enters the initial state "
-            "distribution.  Frozen as a second arm rather than chosen, "
-            "because the main arm's bias is NOT conservative: at dt = 30.08 "
-            "s the measured L is 5 against H = 10, so drawing over H ages "
-            "segments beyond their typical life and pushes p further from "
-            "p0 -- making the mechanism look MORE active, in the direction "
-            "the paper sets out to establish.  If the two arms disagree on "
-            "a headline, the disagreement is the finding."
+            "For a deterministic segment length L the equilibrium age of an "
+            "in-progress segment is Uniform{0, ..., L-1}, so this arm is not "
+            "an alternative -- it IS the equilibrium distribution, with mean "
+            "age 2.5 steps.  The two arms therefore carry complementary "
+            "defects rather than one being better: the main arm is "
+            "policy-independent by construction but draws ages 1.8x older "
+            "than equilibrium (4.5 vs 2.5), which pushes p away from p0 and "
+            "makes the mechanism look MORE active; this arm is the correct "
+            "distribution but its L is measured UNDER THE REFERENCE POLICY, "
+            "which is how a policy re-enters the initial state distribution. "
+            "The main arm stays the headline because it is the "
+            "pre-registered main arm -- switching after seeing a result is "
+            "the thing pre-registration exists to prevent."
+        ),
+        "caveat": (
+            "a trained policy will not hold links for the same length, so L "
+            "is frozen as a reference-policy measurement and must be "
+            "reported as one"
         ),
     },
     "user_position_in_the_back_projection": (

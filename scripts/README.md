@@ -13,6 +13,7 @@
 | `signed_drop_dt30.py` | 段末 vs 段內峰值的有號跌幅,以及峰值鏈路功率 | `W19-REPLY-C-COST` §1、`W19-DONE` §0 |
 | `two_timescale_check.py` | 驗證兩個時鐘與 TTT 是列舉值;實測 47 子步成本 | `W19-DONE` §1 |
 | `outage_frozen.py` | 凍結情境下的 outage / 遮罩衰減 / 鏈路功率 | `W19-DONE` §0 |
+| `sensitivity_arm.py` | 三臂並列:主臂 / 敏感度臂(L=6) / 無暖啟動的 outage 與峰值 | `W21-REPLY` §2 |
 | `ceiling_and_segments.py` | **權威版**:由 `link_power_w` 算已耗用預算;segment 結束歸因與未設限段長 | `W20-REPLY` §0–1 |
 
 ⚠ `signed_drop_dt30.py` 的「峰值跌幅」在暖啟動上線後**失效**(它相對 episode 內的

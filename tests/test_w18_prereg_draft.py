@@ -130,3 +130,36 @@ def test_the_stopping_rules_forbid_data_dependent_stopping():
     assert "no early stopping" in STOPPING_RULES["training"]["rule"]
     assert "no peeking" in STOPPING_RULES["probe"]["rule"]
     assert "never retried" in STOPPING_RULES["abort"]["rule"]
+
+
+def test_the_sensitivity_arm_freezes_the_uncensored_segment_length():
+    """``L = 6``, not the pooled median of 5 (ruling 2026-08-23).
+
+    49.0% of segments are cut by the episode boundary and ran only 4.24
+    steps, so the pooled median estimates a truncated quantity rather than
+    the inter-renewal time this parameter is defined as.  At ``L = 6`` the
+    arm is not an alternative to the main one — ``Uniform{0..L-1}`` **is**
+    the equilibrium age distribution for a deterministic length ``L``, mean
+    2.5 steps against the main arm's 4.5.
+    """
+    from mcrl.runtime.prereg_draft import SEGMENT_WARM_START
+
+    arm = SEGMENT_WARM_START["sensitivity_arm"]
+    assert arm["segment_age_steps"] == 6
+    assert (arm["segment_age_steps"] - 1) / 2 == 2.5
+    # It must say where L came from, and that it is policy-dependent.
+    assert "reference policy" in arm["L_provenance"]
+    assert "caveat" in arm and "trained policy" in arm["caveat"]
+
+
+def test_both_warm_start_arms_are_constructible():
+    """A frozen arm that cannot be instantiated is a frozen typo."""
+    from mcrl.env.step import PhysicsConfig
+    from mcrl.runtime.prereg_draft import SEGMENT_WARM_START
+
+    for key in ("main_arm", "sensitivity_arm"):
+        arm = SEGMENT_WARM_START[key]
+        PhysicsConfig(
+            segment_warm_start=arm["mode"],
+            segment_age_steps=arm.get("segment_age_steps", 0),
+        )
