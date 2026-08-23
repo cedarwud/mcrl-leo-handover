@@ -46,28 +46,64 @@ from .prereg import (
 # ---------------------------------------------------------------------------
 # The probe grid (SDD §4)
 # ---------------------------------------------------------------------------
+#
+# ⚠ **Every number here was cross-checked against SDD §4's own table on
+# 2026-08-23, and four of the six had drifted.**  The controller caught P5;
+# checking the rest the same way turned up three more, all the same shape —
+# a probe number carrying an obligation the PREREG had quietly dropped:
+#
+#   P5  taken over completely.  SDD's P5 is the receive-angle distribution
+#       against S.465's theta^R_min, which discharges (3.10c)'s ANGULAR
+#       applicability disclosure.  The action-set-contraction probe that had
+#       taken the slot is real and stays -- as P7.
+#   P3  narrowed.  SDD's P3 is B17 Q3, "does the new r3 discriminate?",
+#       measured as the width of U_{b_u} across one user's 28 candidates AND
+#       the per-decision argmax agreement with r1.  The PREREG had it as the
+#       Q-D scale only; the argmax-agreement measurement had no owner.
+#   P2  narrowed.  SDD asks for the P^N swing amplitude and the angle-aware
+#       EE dynamic range per N.  Both were dropped when P2 was rebased from
+#       "closes Q-E" to "sensitivity" -- but Q-E closing elsewhere does not
+#       discharge P2's measurements.
+#   P6  narrowed.  SDD's r2 revision adds a random-tie-break control arm,
+#       perturbation stability, and cross-seed ranking consistency.  None
+#       had an owner.
+#
+# The lesson is the controller's: check that a number is vacant before
+# reusing it, and check that a number you keep still carries what it did.
 
 PROBE_GRID: dict[str, Any] = {
     "P1": {
         "question": "Q-A/Q-B: visibility and D2 event rate under a fixed policy",
+        "sdd_definition": (
+            "per-step visible-satellite distribution, handover event rate, "
+            "elevation and angular-rate distributions"
+        ),
         "measures": [
             "D2-eligible satellites per user per step",
             "valid actions per user per step, and the starvation rate",
             "handover events split phi1 / phi2 / re-entry, from realised "
             "associations and never from indices",
             "elevation and its rate of change",
-            "outage_infeasible rate — the §4A.5a(4) input",
+            "outage_infeasible rate -- the §4A.5a(4) input",
         ],
         "policy": "all three reference policies, reported separately",
         "episodes": 200,
         "users": 100,
         "split_part": TRAIN,
         "closes": ["Q-A", "Q-B"],
+        "ablation_dimension": None,
+        "implemented": "runtime/probe_p1.py",
     },
     "P2": {
         "question": "sensitivity of the results to the dwell length N",
+        "sdd_definition": (
+            "P^N swing amplitude and angle-aware EE dynamic range for each "
+            "N in {2,3,4}"
+        ),
         "sweep": {"dwell_steps": list(DWELL_N_CANDIDATES)},
         "measures": [
+            "P^N swing amplitude per N  (SDD, restored)",
+            "angle-aware EE dynamic range per N  (SDD, restored)",
             "re-key rate and the fraction of re-keys that move j = 0",
             "handover rate attributable to re-keying rather than to geometry",
             "the headline metrics under each N, as a sensitivity band",
@@ -77,73 +113,179 @@ PROBE_GRID: dict[str, Any] = {
         "users": 100,
         "split_part": TRAIN,
         "closes": [],
+        "ablation_dimension": "dwell_steps",
         "note": (
-            "Q-E is already closed: the frozen mapping needs only the re-key "
-            "rate, which is scenario characterisation available before any "
-            "policy is evaluated, and it returned N = 3.  P2 therefore "
-            "reports sensitivity rather than making the choice -- running a "
-            "probe whose conclusion is already determined would dress a "
-            "settled number as an experimental result."
+            "Q-E is already closed at N = 3: the frozen mapping needs only "
+            "the re-key rate, which is scenario characterisation available "
+            "before any policy is evaluated.  P2 therefore reports "
+            "sensitivity rather than making the choice -- but Q-E closing "
+            "elsewhere does NOT discharge the two measurements SDD §4 asks "
+            "P2 for, so they are restored above."
         ),
     },
     "P3": {
-        "question": "Q-D: the r3 recalibration scale, and objective separability",
+        "question": (
+            "B17 Q3: does the counting-form r3 discriminate?  And Q-D: what "
+            "scale does it enter training at?"
+        ),
+        "sdd_definition": (
+            "width of the U_{b_u} distribution across one user's 28 "
+            "candidate actions; per-decision argmax agreement rate with r1"
+        ),
         "measures": [
-            "distribution of U_{b_u} across the population",
+            "width of U_{b_u} across a user's 28 candidates  (SDD, restored)",
+            "per-decision argmax agreement between r1 and r3  (SDD, restored)",
+            "distribution of realised U_{b_u} across the population",
+            "p95 of |r3| over served steps -- the Q-D selection mapping's input",
             "|r1|, |r2|, |r3| magnitudes on the same steps",
-            "correlation between r1 and r3 across steps — they must be "
+            "correlation between r1 and r3 across steps -- they must be "
             "separable, which is what F-2's per-link power sum destroyed",
         ],
         "policy": "all three reference policies",
         "episodes": 200,
         "users": 100,
         "split_part": TRAIN,
-        "closes": ["Q-D"],
+        "closes": ["Q-D", "B17-Q3"],
+        "ablation_dimension": None,
+        "note": (
+            "the two questions share one measurement -- the U_{b_u} "
+            "distribution -- which is why they can sit in one probe; but the "
+            "argmax-agreement half is SDD's and was missing."
+        ),
     },
     "P4": {
-        "question": "does the interference model bind? which term dominates?",
+        "question": "does the interference model bind?  which term dominates?",
         "measures": [
             "I^intra / I^inter split per served link",
             "SINR distribution with and without the co-colour sum",
-            "how often two satellites illuminate one cell — (3.12b)'s v' = v",
+            "how often two satellites illuminate one cell -- (3.12b)'s v' = v",
         ],
         "policy": "all three reference policies",
         "episodes": 100,
         "users": 100,
         "split_part": TRAIN,
         "closes": [],
+        "ablation_dimension": "co_colour_interference_enabled",
+        "note": (
+            "⚠ SDD §4 retired the OLD P4 series at r5 (dispersion-vs-EE, the "
+            "EE-optimal beam count, the source of the 3.9x) as post-baseline "
+            "ANALYSIS questions.  The number is genuinely vacant and is "
+            "reused here with the controller's approval -- but this probe is "
+            "UNRELATED to those, and saying so is the point of this note."
+        ),
     },
     "P5": {
+        "question": (
+            "receive-angle distribution against S.465-6's theta^R_min -- "
+            "does the envelope get evaluated where it is defined?"
+        ),
+        "sdd_definition": (
+            "fraction of link evaluations falling at theta^R < 2.05 deg"
+        ),
+        "measures": [
+            "distribution of the at-user inter-satellite separation angle "
+            "over every interference term evaluated",
+            "fraction of evaluations below theta^R_min",
+            "how much received interference power those evaluations carry -- "
+            "a rare-but-dominant tail reads differently from a rare-and-"
+            "negligible one",
+        ],
+        "policy": "all three reference policies",
+        "episodes": 100,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": [],
+        "ablation_dimension": None,
+        "discharges": "eq. (3.10c)'s ANGULAR applicability disclosure",
+        "note": (
+            "⚠ RESTORED 2026-08-23.  This probe had been displaced by the "
+            "action-set-contraction probe, which now holds P7.  ch3 "
+            "currently discloses only (3.10c)'s FREQUENCY range (2-31 GHz "
+            "per ITU-R S.465-6) and says nothing about its angular range, "
+            "so this obligation had no owner at all.  ⚠ And "
+            "``theta^R_min`` does not yet exist in env/antenna.py -- the "
+            "restored probe exposes a missing constant, not just a missing "
+            "measurement."
+        ),
+    },
+    "P6": {
+        "question": "the learning-rate sweep (ruling C-13)",
+        "sdd_definition": (
+            "alpha in {0.01, 0.003, 0.001} over short runs; report all four "
+            "G-3 collapse metrics with q_margin NORMALISED; plus an r2 "
+            "control arm that breaks near-ties at random, perturbation "
+            "stability, and cross-seed ranking consistency"
+        ),
+        "sweep": {"learning_rate": [0.01, 0.003, 0.001]},
+        "measures": [
+            "q_margin, NORMALISED  (SDD emphasis, restored)",
+            "collapse metrics (G-3, all four)",
+            "scalar reward",
+            "control arm: a policy that breaks near-ties at RANDOM  (SDD r2, "
+            "restored) -- if it reproduces the same EE the dispersion was "
+            "noise; if it cannot, there is a weak learned ordering",
+            "perturbation stability  (SDD r2, restored)",
+            "cross-seed ranking consistency  (SDD r2, restored)",
+        ],
+        "episodes": 9000,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": [],
+        "ablation_dimension": "learning_rate",
+        "note": (
+            "the only probe that needs training, so it is heavy compute and "
+            "belongs on the server, not in the local probe pass"
+        ),
+    },
+    "P7": {
         "question": "does anything actually constrain the action set?",
         "measures": [
             "per-term mask attrition: slot occupied / cell exists / cell "
             "visible, reported separately",
-            "power-feasibility outage rate and the in-segment gain loss "
-            "against the 3.010 dB budget",
+            "power-feasibility outage rate, both warm-start arms",
+            "in-segment gain excursion against the 3.010 dB budget, and the "
+            "required power of the steps judged infeasible",
         ],
         "policy": "random-masked, which stresses the mask hardest",
         "episodes": 100,
         "users": 100,
         "split_part": TRAIN,
         "closes": [],
+        "ablation_dimension": "segment_warm_start",
         "note": (
+            "⚠ NEW NUMBER 2026-08-23.  This was P5 and had displaced SDD's "
+            "own P5; the number is vacated and the probe keeps its content. "
             "W-17 measured all three geometric terms and the power gate as "
-            "non-binding (28/28 actions valid, outage 0/12000).  P5 is what "
-            "turns that observation into a reported number over the frozen "
-            "sampling distribution rather than one hand-picked epoch."
+            "non-binding at one hand-picked epoch, and W-19/W-22 then found "
+            "the power gate DOES fire once segments are warm-started "
+            "(0.94% main arm, 0.81% sensitivity arm).  P7 turns both into "
+            "numbers over the frozen sampling distribution."
         ),
-    },
-    "P6": {
-        "question": "the learning-rate sweep (ruling C-13)",
-        "sweep": {"learning_rate": [0.01, 0.003, 0.001]},
-        "measures": ["q_margin", "collapse metrics (G-3, all four)", "scalar reward"],
-        "episodes": 9000,
-        "users": 100,
-        "split_part": TRAIN,
-        "closes": [],
-        "note": "heavy compute; server-side, not part of the probe pass",
+        "prototypes": [
+            "scripts/outage_frozen.py",
+            "scripts/ceiling_and_segments.py",
+            "scripts/sensitivity_arm.py",
+        ],
     },
 }
+
+PROBE_RNG_POLICY: str = (
+    "Every probe with an ablation_dimension draws its sampling randomness "
+    "from streams that are INDEPENDENT of the swept quantity: env_rng "
+    "(fading), mobility_rng (users), a spawned stream for the warm-start "
+    "ages, and the policy's own generator.  Measured with one shared "
+    "generator on 2026-08-23, switching fading off also re-drew every later "
+    "episode's segment ages and moved the outage count by 11 -- so the "
+    "'fading ablation' had measured fading plus a different set of ages.  "
+    "One generator produces numbers that look reasonable and are attributed "
+    "wrongly, which is the hardest kind of error to see."
+)
+"""§7.1 methodology note (ruling W-23 §1), not a parameter.
+
+It is frozen with the grid because P2, P4, P6 and P7 are all ablation-shaped
+and would each carry the same defect if they shared a stream with the thing
+they sweep.
+"""
 
 # ---------------------------------------------------------------------------
 # Thresholds
@@ -403,7 +545,7 @@ def build_draft(
             seed=REFERENCE_POLICY_SEED,
             description="hold the previous association while it stays valid",
         ),
-        probe_grid=PROBE_GRID,
+        probe_grid=PROBE_GRID | {"rng_policy": PROBE_RNG_POLICY},
         thresholds=THRESHOLDS,
         stopping_rules=STOPPING_RULES,
         ephemeris_manifest=manifest,

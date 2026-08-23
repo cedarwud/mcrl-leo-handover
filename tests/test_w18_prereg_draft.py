@@ -163,3 +163,77 @@ def test_both_warm_start_arms_are_constructible():
             segment_warm_start=arm["mode"],
             segment_age_steps=arm.get("segment_age_steps", 0),
         )
+
+
+# ---------------------------------------------------------------------------
+# The drift guard (W-24): a probe number carries an obligation
+# ---------------------------------------------------------------------------
+#
+# On 2026-08-23 the controller found that P5 had been taken over by a
+# different probe, so SDD §4's own P5 -- the receive-angle disclosure for
+# (3.10c) -- had no owner.  Cross-checking the rest the same way turned up
+# three more numbers that had quietly narrowed.  These tests encode the two
+# rules that would have caught all four.
+
+SDD_OBLIGATIONS: dict[str, tuple[str, ...]] = {
+    "P1": ("visible", "handover", "elevation"),
+    "P2": ("P^N swing", "dynamic range"),
+    "P3": ("width of U_{b_u}", "argmax agreement"),
+    "P5": ("theta^R_min", "below theta^R_min"),
+    "P6": ("q_margin, NORMALISED", "at RANDOM", "erturbation", "cross-seed"),
+}
+"""Fragments SDD §4 names as each probe's REQUIRED output.
+
+Deliberately keyed by number, not by question: the failure mode was a
+number keeping its slot while its content changed underneath.
+"""
+
+
+@pytest.mark.parametrize("number,fragments", sorted(SDD_OBLIGATIONS.items()))
+def test_each_probe_still_carries_what_the_sdd_asks_it_for(number, fragments):
+    probe = PROBE_GRID[number]
+    text = " ".join(probe.get("measures", [])) + " " + str(
+        probe.get("sdd_definition", "")
+    )
+    for fragment in fragments:
+        assert fragment in text, (
+            f"{number} no longer reports {fragment!r}; SDD §4 lists it as a "
+            "required output.  Restore it or get the SDD changed -- do not "
+            "let the number keep the slot while the obligation disappears."
+        )
+
+
+def test_a_reused_probe_number_says_what_it_displaced():
+    """P4 and P7 both took a number; each must say so on the record."""
+    assert "vacant" in PROBE_GRID["P4"]["note"]
+    assert "UNRELATED" in PROBE_GRID["P4"]["note"]
+    assert "NEW NUMBER" in PROBE_GRID["P7"]["note"]
+    assert "P5" in PROBE_GRID["P7"]["note"], (
+        "P7 must record that it vacated P5, or the next reader will not know "
+        "why the numbering skips"
+    )
+    assert "RESTORED" in PROBE_GRID["P5"]["note"]
+
+
+def test_every_ablation_shaped_probe_is_covered_by_the_rng_policy():
+    """W-23 §1: one generator makes an ablation measure the wrong thing."""
+    from mcrl.runtime.prereg_draft import PROBE_RNG_POLICY
+
+    swept = [
+        name
+        for name, probe in PROBE_GRID.items()
+        if probe.get("ablation_dimension")
+    ]
+    assert set(swept) == {"P2", "P4", "P6", "P7"}, swept
+    assert "INDEPENDENT" in PROBE_RNG_POLICY
+    assert "attributed" in PROBE_RNG_POLICY
+
+
+def test_the_probe_grid_is_frozen_with_the_rng_policy():
+    from mcrl.runtime.prereg_draft import build_draft
+
+    draft = build_draft()
+    assert draft["probe_grid"]["P7"]["question"]
+    assert "rng_policy" in draft["probe_grid"], (
+        "the methodology note must travel with the grid, not beside it"
+    )
