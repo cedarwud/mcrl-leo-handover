@@ -2,7 +2,7 @@
 
 MCRL(Multi-Catfish Reinforcement Learning)LEO 多波束換手 — 乾淨重建。
 
-**狀態:W-01…W-18 完成。物理鏈接上 `StepEnvironment`,訓練器接上環境,**694 測試通過**。**
+**狀態:W-01…W-18 完成。物理鏈接上 `StepEnvironment`,訓練器接上環境,**698 測試通過**。**
 
 一個 episode(100 位使用者、10 步、真實 TLE)約 **1 秒**:
 星曆 → D2 → dwell → 候選表 → 遞推功率 → 可行性 → 服務 → 干擾 (3.12a)(3.12b)
@@ -23,10 +23,11 @@ MCRL(Multi-Catfish Reinforcement Learning)LEO 多波束換手 — 乾淨重建�
 
 1. **簽 PREREG** —— `docs/PREREG-SIGNOFF-2026-08-22.md`。
    凍結之後任何門檻或選取規則的更動都是「看過資料才改」,正是 §7.1 要防的洩漏。
-2. **`H = 10` 是否夠** —— `docs/W18-REPLY-2026-08-22.md` §2。
-   量測結果:角度感知功率遞推要 **169 步(中位)/ 29 步(最快)** 才吃掉 3 dB 預算,
-   而 episode 只有 10 步;100% 的 segment 由 episode 邊界切斷,
-   段內最大跌幅 0.718 dB(預算的 24%)。**依指示未動 `H`。**
+2. **`Δt = 30.08 s` 已定案**(2026-08-23 裁決),`H = 10` 與 `β = 0.9` 未動。
+   D2 走**雙時間尺度**:量測/觸發 640 ms、決策 30.08 s、TTT **1280 ms**
+   (TS 38.331 的列舉值,精確)。segment 於 episode 開始前已暖啟動。
+   ⛔ **後果:`outage` 不再是 0,而是 0.0079** —— 功率上限成為作用中的約束。
+   見 `docs/W19-DONE-2026-08-23.md` §0。
 
 - 規格:`~/papers/modqn-paper-reproduction/docs/MCRL-NEW-PROJECT-SDD-01-2026-08-21.md`(r8)
 - 參數:`~/papers/modqn-paper-reproduction/docs/NEW-PROJECT-PARAMETER-SPEC-2026-08-21.md`

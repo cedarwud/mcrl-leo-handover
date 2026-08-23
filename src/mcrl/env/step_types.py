@@ -54,7 +54,7 @@ family but does not disclose the exact turn-law details."""
 #   num_users, speed, area, turn bound  -> env/mobility.MobilityConfig
 #   steps_per_episode                   -> env/scenario.ScenarioConfig
 #   phi1, phi2                          -> env/action_contract.PHI1, PHI2
-#   slot_duration_s                     -> env/constants.TIME_STEP_S
+#   slot_duration_s                     -> env/constants.DECISION_STEP_S
 #   r3_gap_scope                        -> superseded by B13's counting r3
 #   action_mask_eligibility_mode        -> superseded by §4A.5's three terms
 #

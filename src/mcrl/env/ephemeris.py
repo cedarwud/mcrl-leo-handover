@@ -39,7 +39,7 @@ from .constants import (
     MAX_TLE_AGE_H,
     R_E_KM,
     SGP4_GRAVITY_MODEL,
-    TIME_STEP_S,
+    DECISION_STEP_S,
     TLE_ROOT_DEFAULT,
 )
 from .geometry import (
@@ -397,7 +397,7 @@ class EpisodeStartSampler:
 
     part: str
     available_dates: tuple[dt.date, ...]
-    time_step_s: float = TIME_STEP_S
+    time_step_s: float = DECISION_STEP_S
 
     def __post_init__(self) -> None:
         if self.part not in SPLIT_PARTS:
@@ -414,7 +414,7 @@ class EpisodeStartSampler:
         split: Split,
         part: str,
         *,
-        time_step_s: float = TIME_STEP_S,
+        time_step_s: float = DECISION_STEP_S,
     ) -> EpisodeStartSampler:
         return cls(part, split.available_dates(archive, part), time_step_s)
 
@@ -450,7 +450,7 @@ def step_times(
     start_utc: dt.datetime,
     num_steps: int,
     *,
-    time_step_s: float = TIME_STEP_S,
+    time_step_s: float = DECISION_STEP_S,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return ``(jd, fr)`` arrays for ``num_steps`` slots from ``start_utc``.
 
@@ -660,7 +660,7 @@ class EphemerisConfig:
     """Everything the ephemeris layer must have frozen before probe P1."""
 
     tle_root: str = TLE_ROOT_DEFAULT
-    time_step_s: float = TIME_STEP_S
+    time_step_s: float = DECISION_STEP_S
     max_tle_age_h: float = MAX_TLE_AGE_H
     epoch_search_days: int = 1
     gravity_model: str = SGP4_GRAVITY_MODEL

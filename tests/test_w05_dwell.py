@@ -230,19 +230,33 @@ def test_the_sweep_is_the_one_the_spec_names():
     assert DWELL_N_CANDIDATES == (2, 3, 4)
 
 
-def test_the_default_N_is_marked_provisional():
-    """Q-E is open; W-13 must not freeze N before probe P2 reports.
+def test_N_is_frozen_and_the_frozen_value_is_the_one_the_rule_returns():
+    """Q-E closed on 2026-08-23 — and NOT by inertia, which is the point.
 
-    The default has to sit inside the sweep, and the code has to say out
-    loud that it is a placeholder — otherwise a later reader freezes it by
-    accident just because it was already there.
+    ``N = 3`` was the sweep's midpoint and a declared placeholder for weeks,
+    so "it was already there" is exactly the failure mode this guards. What
+    changed is not the number but its provenance: the frozen mapping is
+    "largest N with a re-key rate at or under 5%", and the measured rates at
+    the frozen decision step are 2.7% / 3.8% / 5.4% for N = 2 / 3 / 4 — so
+    the rule returns 3 on its own terms.
+
+    The rule is deliberately independent of EE, throughput and every
+    reported metric: SDD 4A.2 gives dwell one job (freeze ``j -> cell_id``
+    so an index keeps naming one cell, which larger N serves better) and
+    staleness is its only cost, which the re-key rate measures directly.
     """
     from mcrl.env.dwell import DWELL_N_IS_FROZEN
+    from mcrl.runtime.prereg_draft import SELECTION_MAPPINGS
 
     assert DwellConfig().steps in DWELL_N_CANDIDATES
-    assert DWELL_N_IS_FROZEN is False, (
-        "N was frozen without probe P2; Q-E is still open"
+    assert DWELL_N_IS_FROZEN is True
+
+    mapping = SELECTION_MAPPINGS["Q-E dwell N"]
+    rates = mapping["measured_rekey_rate_at_decision_step"]
+    largest_under_bound = max(
+        n for n in DWELL_N_CANDIDATES if rates[f"N={n}"] <= 0.05
     )
+    assert largest_under_bound == DwellConfig().steps == mapping["resolved"] == 3
 
 
 def test_a_full_episode_of_ten_steps_spans_several_segments(grid):

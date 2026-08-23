@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mcrl.env.constants import R_E_KM, TLE_ROOT_DEFAULT
+from mcrl.env.constants import DECISION_STEP_S, R_E_KM, TLE_ROOT_DEFAULT
 from mcrl.env.ephemeris import (
     TEST,
     TRAIN,
@@ -236,7 +236,10 @@ def test_ecef_positions_rotate_with_the_earth(archive):
     step_km = np.linalg.norm(np.diff(ecef, axis=1), axis=-1)
     # LEO ground speed is ~7.5 km/s; Earth rotation adds/removes ~0.35 km/s.
     assert step_km.min() > 5.0
-    assert step_km.max() < 9.0
+    # A LEO satellite covers ~7.5 km per second, so the bound is a function
+    # of the step -- 9.0 was the 1 s figure and would now fail on geometry
+    # that is perfectly correct.
+    assert step_km.max() < 9.0 * DECISION_STEP_S
 
 
 @requires_archive
@@ -380,7 +383,7 @@ def test_freeze_manifest_carries_everything_section_7_1_names(archive, tmp_path)
     assert len(manifest["file_set_sha256"]) == 64
     assert manifest["split"]["train_end"] < manifest["split"]["test_start"]
     assert manifest["sgp4"]["gravity_model"] == "wgs72"
-    assert manifest["config"]["time_step_s"] == 1.0
+    assert manifest["config"]["time_step_s"] == DECISION_STEP_S
     assert manifest["element_selection"]["age_hours"]["max_h"] <= 24.0
     assert manifest["sampling"]["train"]["part"] == "train"
 

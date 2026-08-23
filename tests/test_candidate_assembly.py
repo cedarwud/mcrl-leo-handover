@@ -97,11 +97,13 @@ def scene():
         )
         return slant, rate
 
-    slant, rate = measure(0)
+    # The warm-up window is TTT-sized and TTT now lives on the 640 ms
+    # measurement clock, so it is more than one column (ruling 2026-08-23).
+    warm = [measure(column) for column in range(warmup)]
     tracker.prime(
-        slant_range_km=slant[:, :, None],
-        altitude_km=altitude[:, :1],
-        range_rate_km_s=rate[:, :, None],
+        slant_range_km=np.stack([s for s, _ in warm], axis=2),
+        altitude_km=altitude[:, :warmup],
+        range_rate_km_s=np.stack([r for _, r in warm], axis=2),
     )
     slant, rate = measure(warmup)
     snapshot = tracker.update(

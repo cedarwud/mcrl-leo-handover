@@ -56,8 +56,48 @@ KM_PER_DEG_LAT: float = math.pi * R_E_KM / 180.0
 
 # -- Time (MODQN Table I; SDD F1) -----------------------------------------
 
-TIME_STEP_S: float = 1.0
-"""**P** — Table I time slot.  SDD §3.1 requires this to be frozen."""
+D2_MEASUREMENT_STEP_S: float = 0.640
+"""The **measurement / triggering** clock, seconds.  **S** (ruling 2026-08-23).
+
+D2's entry and release conditions and its TTT are evaluated on this clock,
+not on the decision clock.  0.640 s is chosen so that TTT can take a value
+from TS 38.331's discrete set **exactly** rather than approximately: at this
+step 640, 1280, 2560 and 5120 ms are all whole numbers of sub-steps.
+
+⚠ A 1 s clock cannot represent any of them — the nearest is 1024 ms, 2.3%
+away — and 1 s was this project's clock until 2026-08-23.  "Nearest step" is
+not the same as "a standard value", and in a handover paper the difference
+is a free question to hand a reviewer.
+"""
+
+D2_SUBSTEPS_PER_DECISION: int = 47
+"""How many measurement steps fall inside one decision step.  **S**."""
+
+DECISION_STEP_S: float = D2_SUBSTEPS_PER_DECISION * D2_MEASUREMENT_STEP_S
+"""``Δt = 47 × 0.640 = 30.08 s`` — the **decision** clock.  **S**, derived.
+
+⚠ **Not 30.00 s, and the PREREG must freeze 30.08.**  The 2026-08-22 ruling
+picked 30 s as the smallest Δt at which all three objectives are
+non-degenerate; the 640 ms measurement clock then quantises it to 30.08 s.
+The 0.27% difference changes none of the measured statistics but it is the
+number the environment actually runs at.
+
+⚠ **Not Table I.**  MODQN specifies 30 km/h users, 7.4 km/s satellites,
+200x90 km, 100 users and 4 satellites — and no time slot at all.  Δt was
+this project's choice from the beginning; 1 s was as self-chosen as 30.08 s
+is, and neither is a deviation from a stated value.
+
+Written as a derivation rather than as the literal 30.08 so that moving
+either clock cannot silently desynchronise them.
+"""
+
+TIME_STEP_S: float = DECISION_STEP_S
+"""Deprecated alias for :data:`DECISION_STEP_S`.
+
+Kept only because the name appeared in ported signatures.  It is ambiguous
+now that there are two clocks, which is precisely how a sub-step loop ends
+up counting on the wrong one — prefer the explicit name.
+"""
 
 STEPS_PER_EPISODE: int = 10
 """**P** — Table I episode length.  SDD F1 keeps ``H = 10``."""

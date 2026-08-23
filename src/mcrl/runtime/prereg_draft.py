@@ -65,18 +65,26 @@ PROBE_GRID: dict[str, Any] = {
         "closes": ["Q-A", "Q-B"],
     },
     "P2": {
-        "question": "Q-E: the dwell length N",
+        "question": "sensitivity of the results to the dwell length N",
         "sweep": {"dwell_steps": list(DWELL_N_CANDIDATES)},
         "measures": [
-            "angle-aware EE dynamic range across the swept N",
             "re-key rate and the fraction of re-keys that move j = 0",
             "handover rate attributable to re-keying rather than to geometry",
+            "the headline metrics under each N, as a sensitivity band",
         ],
         "policy": "stay-if-possible",
         "episodes": 200,
         "users": 100,
         "split_part": TRAIN,
-        "closes": ["Q-E"],
+        "closes": [],
+        "note": (
+            "Q-E is already closed: the frozen mapping needs only the re-key "
+            "rate, which is scenario characterisation available before any "
+            "policy is evaluated, and it returned N = 3.  P2 therefore "
+            "reports sensitivity rather than making the choice -- running a "
+            "probe whose conclusion is already determined would dress a "
+            "settled number as an experimental result."
+        ),
     },
     "P3": {
         "question": "Q-D: the r3 recalibration scale, and objective separability",
@@ -231,21 +239,39 @@ STOPPING_RULES: dict[str, Any] = {
 
 SELECTION_MAPPINGS: dict[str, Any] = {
     "Q-E dwell N": {
-        "probe": "P2",
+        "probe": "scenario characterisation, not a probe",
         "candidates": list(DWELL_N_CANDIDATES),
         "rule": (
-            "choose the N in {2, 3, 4} maximising the angle-aware EE dynamic "
-            "range (p95 - p05 of the per-link EE over the probe); ties broken "
-            "by the SMALLEST N"
+            "take the LARGEST N in {2, 3, 4} whose measured re-key rate -- "
+            "the fraction of dwell boundaries at which j = 0 moves -- is at "
+            "or below 5%; if none qualifies, take the smallest"
         ),
         "rationale": (
-            "the dwell length exists so the earth-fixed pointing is stable "
-            "within a segment; what it must not do is flatten the angle "
-            "signal the first objective is built on.  Dynamic range is that "
-            "property directly.  The tie-break favours the smaller N because "
-            "a shorter segment tracks the geometry more closely and the "
-            "feasibility argument uses the >=10 deg service window of 6.3 "
-            "min, not the horizon-to-horizon 10.5 min."
+            "independent of EE, throughput and every reported metric.  "
+            "SDD 4A.2 gives dwell exactly one job: freeze j -> cell_id "
+            "between boundaries so an action index keeps naming the same "
+            "cell, which larger N serves better.  Its only cost is "
+            "staleness -- the frozen map being wrong when the anchor should "
+            "have moved -- and the re-key rate measures exactly that.  So "
+            "the rule is 'as stable as possible, subject to not being "
+            "stale': a correctness bound on the mechanism's own validity, "
+            "not a performance target.  Monotone in N, so it cannot tie.  "
+            "The earlier proposal (maximise the angle-aware EE dynamic "
+            "range) was withdrawn: it selected on the effect the paper sets "
+            "out to demonstrate."
+        ),
+        "resolved": 3,
+        "measured_rekey_rate_at_decision_step": {
+            "N=2": 0.02708,
+            "N=3": 0.03819,
+            "N=4": 0.05417,
+        },
+        "note": (
+            "the rate depends only on the product N*dt -- a user travels at "
+            "most 14.3% of a cell radius within a segment at any (N, dt) "
+            "swept -- so this is a live decision only at dt >= 30 s.  At the "
+            "former 1 s clock every candidate sat below 0.1% and the rule "
+            "would have returned N = 4 by default."
         ),
         "unfreezes": "env.dwell.DWELL_N_IS_FROZEN",
     },
@@ -270,6 +296,45 @@ SELECTION_MAPPINGS: dict[str, Any] = {
             "which is why that surface survived P-05."
         ),
     },
+}
+
+SEGMENT_WARM_START: dict[str, Any] = {
+    "main_arm": {
+        "mode": "uniform-episode-length",
+        "rule": "segment age a ~ Uniform{0, ..., H-1} at episode reset",
+        "rationale": (
+            "without it p(0) = p0 for 100% of users in every episode, which "
+            "is an artefact of the episode boundary rather than a property "
+            "of the geometry -- the same defect W-04 fixed for the D2 "
+            "latches by priming them before step 0.  Parameter-free: it "
+            "reuses H, so step 0 looks like a uniformly random step of an "
+            "ongoing episode.  a = 0 keeps positive probability, so a "
+            "genuinely fresh segment still occurs."
+        ),
+    },
+    "sensitivity_arm": {
+        "mode": "uniform-segment-length",
+        "segment_age_steps": 5,
+        "rule": "a ~ Uniform{0, ..., L-1} with L the frozen median segment length",
+        "rationale": (
+            "the renewal-equilibrium age distribution, theoretically the "
+            "more correct one -- but L is measured UNDER THE REFERENCE "
+            "POLICY, which is how a policy re-enters the initial state "
+            "distribution.  Frozen as a second arm rather than chosen, "
+            "because the main arm's bias is NOT conservative: at dt = 30.08 "
+            "s the measured L is 5 against H = 10, so drawing over H ages "
+            "segments beyond their typical life and pushes p further from "
+            "p0 -- making the mechanism look MORE active, in the direction "
+            "the paper sets out to establish.  If the two arms disagree on "
+            "a headline, the disagreement is the finding."
+        ),
+    },
+    "user_position_in_the_back_projection": (
+        "held at its current value; users travel 250 m per decision step, "
+        "subtending 0.0297 deg at 483 km against a median per-step |dtheta| "
+        "of 1.194 deg -- 2.5%, the same ratio that justifies leaving "
+        "mobility on the decision clock"
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -325,7 +390,10 @@ def build_draft(
         thresholds=THRESHOLDS,
         stopping_rules=STOPPING_RULES,
         ephemeris_manifest=manifest,
-    ) | {"selection_mappings": SELECTION_MAPPINGS}
+    ) | {
+        "selection_mappings": SELECTION_MAPPINGS,
+        "segment_warm_start": SEGMENT_WARM_START,
+    }
 
 
 def freeze(sections: dict[str, Any] | None = None) -> PreregRecord:

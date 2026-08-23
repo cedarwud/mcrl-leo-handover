@@ -32,7 +32,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..errors import MCRLContractError
-from .constants import AREA_EW_KM, AREA_NS_KM
+from .constants import AREA_EW_KM, AREA_NS_KM, DECISION_STEP_S
 
 USER_SPEED_KMH: float = 30.0
 """**P** — MODQN §IV."""
@@ -50,7 +50,7 @@ class MobilityConfig:
     max_turn_rad: float = MAX_TURN_RAD
     area_ew_km: float = AREA_EW_KM
     area_ns_km: float = AREA_NS_KM
-    time_step_s: float = 1.0
+    time_step_s: float = DECISION_STEP_S
 
     def __post_init__(self) -> None:
         if self.num_users < 1:

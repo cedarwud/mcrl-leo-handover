@@ -56,11 +56,28 @@ def test_the_draft_would_freeze_cleanly():
     assert record.holdout.digest
 
 
-def test_both_open_questions_have_a_frozen_selection_mapping():
-    """§7.1 accepts a rule instead of an answer — but not neither."""
-    unresolved = [name for name, done in open_questions().items() if not done]
-    assert set(unresolved) == set(SELECTION_MAPPINGS)
+def test_every_still_open_question_has_a_frozen_selection_mapping():
+    """§7.1 accepts a rule instead of an answer — but not neither.
+
+    Q-E closed on 2026-08-23 without running P2: its frozen rule needed
+    only the re-key rate, which is scenario characterisation available
+    before any policy is evaluated.  Its mapping stays in the record —
+    a closed question still has to show the rule that closed it.
+    """
+    unresolved = {name for name, done in open_questions().items() if not done}
+    assert unresolved == {"Q-D r3 calibration scale"}
+    assert unresolved <= set(SELECTION_MAPPINGS)
     assert_selection_mappings_cover_open_questions(SELECTION_MAPPINGS)
+
+
+def test_the_closed_question_records_what_closed_it():
+    mapping = SELECTION_MAPPINGS["Q-E dwell N"]
+    assert mapping["resolved"] == 3
+    rates = mapping["measured_rekey_rate_at_decision_step"]
+    assert rates["N=3"] <= 0.05 < rates["N=4"], "the rule must select 3 here"
+    assert "withdrawn" in mapping["rationale"], (
+        "the superseded EE-dynamic-range criterion must stay on the record"
+    )
 
 
 def test_a_selection_mapping_is_a_rule_not_an_answer():
@@ -69,12 +86,9 @@ def test_a_selection_mapping_is_a_rule_not_an_answer():
         assert "rule" in mapping and mapping["rule"], name
         assert "rationale" in mapping and mapping["rationale"], name
         assert "probe" in mapping, name
-        # The dwell rule must not have quietly picked one already.
-        assert not any(
-            isinstance(value, (int, float)) and not isinstance(value, bool)
-            for key, value in mapping.items()
-            if key not in {"candidates"}
-        ), name
+        # An OPEN question's mapping must not have quietly picked a value.
+        if name in {n for n, done in open_questions().items() if not done}:
+            assert "resolved" not in mapping, name
     assert SELECTION_MAPPINGS["Q-E dwell N"]["candidates"] == list(
         DWELL_N_CANDIDATES
     )
@@ -95,7 +109,11 @@ def test_every_probe_names_what_it_measures_and_what_it_closes():
         assert "closes" in probe, name
         assert "split_part" in probe, name
     closed = {q for probe in PROBE_GRID.values() for q in probe["closes"]}
-    assert {"Q-D", "Q-E"} <= closed, "the open questions need an owning probe"
+    assert "Q-D" in closed, "every OPEN question needs an owning probe"
+    # Q-E is closed already, so no probe may claim to close it -- running one
+    # whose conclusion is settled would dress a decided number as a result.
+    assert "Q-E" not in closed
+    assert PROBE_GRID["P2"]["closes"] == []
 
 
 def test_every_threshold_carries_its_class_and_its_reason():

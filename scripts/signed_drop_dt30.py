@@ -10,7 +10,6 @@ sys.path.insert(0, "src")
 from mcrl.env.action_contract import decode_action
 from mcrl.env.antenna import transmit_gain_linear
 from mcrl.env.constants import TLE_ROOT_DEFAULT
-from mcrl.env.d2 import D2Config
 from mcrl.env.ephemeris import EphemerisConfig
 from mcrl.env.link_budget import SEGMENT_GAIN_BUDGET_DB
 from mcrl.env.mobility import MobilityConfig
@@ -23,12 +22,14 @@ USERS, EPISODES = 60, 12
 ARCHIVE = TleArchive(Path(TLE_ROOT_DEFAULT).expanduser())
 BASE = dt.datetime(2026, 8, 8, 0, 0, tzinfo=dt.timezone.utc)
 
-for delta_t in (1.0, 30.0):
+from mcrl.env.constants import DECISION_STEP_S
+for label, cfg in (("frozen scenario, warm start ON", PhysicsConfig()),
+                   ("same, warm start OFF (cold p(0) = p0)",
+                    PhysicsConfig(segment_warm_start="none"))):
+    delta_t = DECISION_STEP_S
     driver = ScenarioDriver(ARCHIVE, ScenarioConfig(
-        ephemeris=EphemerisConfig(time_step_s=delta_t),
-        mobility=MobilityConfig(num_users=USERS, time_step_s=delta_t),
-        d2=D2Config(time_step_s=delta_t)))
-    env = StepEnvironment(driver, physics=PhysicsConfig())
+        mobility=MobilityConfig(num_users=USERS)))
+    env = StepEnvironment(driver, physics=cfg)
     policy = build_reference_policy(STAY_IF_POSSIBLE, seed=7)
     rng = np.random.default_rng(0)
     drop, peak, pmax = [], [], []
@@ -67,7 +68,7 @@ for delta_t in (1.0, 30.0):
                 break
     d, pk, pm = np.array(drop), np.array(peak), np.array(pmax)
     B = SEGMENT_GAIN_BUDGET_DB
-    print(f"=== Delta-t = {delta_t:.0f} s   ({d.size} segments) ===")
+    print(f"=== {label}   Delta-t = {delta_t:.2f} s   ({d.size} segments) ===")
     print(f"  signed end-of-segment drop, dB   p50 {np.percentile(d,50):+7.4f}  "
           f"p95 {np.percentile(d,95):+7.4f}  max {d.max():+7.4f}   "
           f"({100*d.max()/B:.1f}% of the {B:.3f} dB budget)")

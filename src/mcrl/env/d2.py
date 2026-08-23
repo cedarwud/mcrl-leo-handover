@@ -47,7 +47,7 @@ import numpy as np
 
 from ..errors import MCRLContractError
 from .action_contract import SatelliteCandidate
-from .constants import R_E_KM, TIME_STEP_S
+from .constants import D2_MEASUREMENT_STEP_S, R_E_KM
 
 THRESH2_SWEEP_KM: tuple[float, ...] = (900.0, 1000.0, 1100.0, 1200.0, 1300.0)
 """**S** — F4 makes ``Thresh2`` the sweep axis of the results figures."""
@@ -89,8 +89,20 @@ class D2Config:
     """
 
     hysteresis_km: float = 50.0
-    ttt_steps: int = 1
-    """3GPP's discrete TTT set has 640 ms; one 1 s slot is the nearest step."""
+    ttt_steps: int = 2
+    """TTT in **measurement** steps.  ``2 x 640 ms = 1280 ms`` — a TS 38.331
+    value **exactly**, not the nearest step to one (ruling 2026-08-23).
+
+    ⚠ It was ``1`` on a 1 s clock, described here as "the nearest step" to
+    640 ms.  That description was honest but the value was not a standard
+    one: 1000 ms is 2.3% from 1024 and 56% from 640, and the discrete set
+    contains neither 1000 nor 5000.  The 640 ms measurement clock represents
+    640, 1280, 2560 and 5120 ms as whole numbers of sub-steps.
+
+    Two sub-steps rather than one on purpose: one sub-step means "the
+    condition held at the previous measurement", which is still a degenerate
+    TTT.  1280 ms is a genuine hold **and** an enumerated value.
+    """
 
     min_altitude_km: float = 300.0
     """**S** — floor that excludes re-entering objects from candidacy.
@@ -102,7 +114,15 @@ class D2Config:
     and **zero** of the satellites visible above 10°.
     """
 
-    time_step_s: float = TIME_STEP_S
+    time_step_s: float = D2_MEASUREMENT_STEP_S
+    """The **measurement** clock, not the decision clock (ruling 2026-08-23).
+
+    D2 is a measurement-and-trigger process and runs at 640 ms; the agent
+    decides every ``DECISION_STEP_S = 30.08 s``.  Separating them is what
+    keeps TTT a standard value: with one clock at 30 s, ``ttt_steps = 1``
+    would have meant a 30-second TTT, 5.9x outside the discrete set, and
+    "held for a while" would have degenerated into "held right now".
+    """
 
     @property
     def warmup_steps(self) -> int:

@@ -79,7 +79,9 @@ def _sections(selection_mappings=None):
 def test_the_open_questions_are_read_from_the_code_that_owns_them():
     questions = open_questions()
     assert set(questions) == {"Q-E dwell N", "Q-D r3 calibration scale"}
-    assert questions == {"Q-E dwell N": False, "Q-D r3 calibration scale": False}
+    # Q-E closed on 2026-08-23 (N = 3, by the frozen re-key mapping); Q-D is
+    # still open.  Read from the modules that own the flags, never restated.
+    assert questions == {"Q-E dwell N": True, "Q-D r3 calibration scale": False}
 
 
 def test_freezing_with_open_questions_is_the_normal_case():
@@ -94,7 +96,7 @@ def test_freezing_with_open_questions_is_the_normal_case():
 
 
 def test_an_open_question_without_a_selection_mapping_blocks_the_freeze():
-    with pytest.raises(PreregFreezeError, match="Q-E dwell N"):
+    with pytest.raises(PreregFreezeError, match="Q-D r3 calibration scale"):
         assert_selection_mappings_cover_open_questions({})
     with pytest.raises(PreregFreezeError, match="no frozen selection"):
         freeze_prereg(_sections(selection_mappings={}), holdout_seed=1)

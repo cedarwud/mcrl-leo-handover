@@ -32,6 +32,8 @@ from .cells import CellGrid, build_cell_grid
 from .constants import (
     AREA_CENTER_LAT_DEG,
     AREA_CENTER_LON_DEG,
+    D2_MEASUREMENT_STEP_S,
+    D2_SUBSTEPS_PER_DECISION,
     R_E_KM,
     STEPS_PER_EPISODE,
 )
@@ -73,6 +75,28 @@ class ScenarioConfig:
     screen_min_elevation_deg: float = SCREEN_MIN_ELEVATION_DEG
     screen_coarse_step_s: float = 30.0
 
+    d2_measurement_step_s: float = D2_MEASUREMENT_STEP_S
+    """The clock D2's entry/release conditions and TTT are evaluated on."""
+
+    d2_substeps_per_decision: int = D2_SUBSTEPS_PER_DECISION
+    """How many of those fall inside one decision step."""
+
+    def __post_init__(self) -> None:
+        if self.d2_substeps_per_decision < 1:
+            raise ValueError("d2_substeps_per_decision must be >= 1")
+        if self.d2_measurement_step_s <= 0.0:
+            raise ValueError("d2_measurement_step_s must be positive")
+        implied = self.d2_substeps_per_decision * self.d2_measurement_step_s
+        if abs(implied - self.ephemeris.time_step_s) > 1e-9:
+            raise MCRLContractError(
+                "the two clocks disagree: "
+                f"{self.d2_substeps_per_decision} x "
+                f"{self.d2_measurement_step_s} s = {implied} s, but the "
+                f"decision step is {self.ephemeris.time_step_s} s.  A "
+                "sub-step loop that counts on the wrong clock is silent, so "
+                "the relation is checked rather than assumed."
+            )
+
     def as_dict(self) -> dict[str, object]:
         return {
             "ephemeris": self.ephemeris.as_dict(),
@@ -82,6 +106,9 @@ class ScenarioConfig:
             "grid_altitude_km": self.grid_altitude_km,
             "steps_per_episode": self.steps_per_episode,
             "screen_min_elevation_deg": self.screen_min_elevation_deg,
+            "d2_measurement_step_s": self.d2_measurement_step_s,
+            "d2_substeps_per_decision": self.d2_substeps_per_decision,
+            "decision_step_s": self.ephemeris.time_step_s,
         }
 
 
@@ -152,12 +179,16 @@ class ScenarioDriver:
             self._satellites.norad_ids, config.mobility.num_users, config.d2
         )
 
-        # Prime the D2 latches over the steps immediately BEFORE step 0.
+        # Prime the D2 latches over the MEASUREMENT steps immediately BEFORE
+        # step 0.  The warm-up window is a TTT-sized quantity (``warmup_steps
+        # = max(ttt_steps, 1)``), and TTT now lives on the measurement clock,
+        # so the window does too — priming on the decision clock would settle
+        # the latches over 47x more time than the TTT they exist to serve.
         origin = start_utc - dt.timedelta(
-            seconds=warmup * config.ephemeris.time_step_s
+            seconds=warmup * config.d2_measurement_step_s
         )
         jd, fr = step_times(
-            origin, warmup, time_step_s=config.ephemeris.time_step_s
+            origin, warmup, time_step_s=config.d2_measurement_step_s
         )
         position, velocity = self._satellites.propagate_ecef_state(
             jd, fr, require_all_healthy=False
@@ -234,28 +265,88 @@ class ScenarioDriver:
             center_lon_deg=AREA_CENTER_LON_DEG,
         )
 
+    def satellite_ecef_at(self, offset_steps: int) -> dict[int, np.ndarray]:
+        """Tracked satellite positions ``offset_steps`` DECISION steps away.
+
+        Negative offsets look backwards, which is what the ``τ`` warm start
+        needs: it asks what off-axis angle a link *would have had* when its
+        segment started, before the episode began.
+
+        Keyed by NORAD id because the caller works in identities — the
+        four-slot window is per user and its ordering is not this array's.
+        """
+        if self._satellites is None or self._start_utc is None:
+            raise MCRLContractError("the driver has not been reset")
+        when = self._start_utc + dt.timedelta(
+            seconds=(self._step_index + offset_steps)
+            * self.config.ephemeris.time_step_s
+        )
+        jd, fr = step_times(when, 1, time_step_s=self.config.ephemeris.time_step_s)
+        position, _ = self._satellites.propagate_ecef_state(
+            jd, fr, require_all_healthy=False
+        )
+        return {
+            int(norad): position[index, 0, :]
+            for index, norad in enumerate(self._satellites.norad_ids.tolist())
+        }
+
     def _resolve(self, incumbent_norads: np.ndarray | None) -> StepCandidates:
         assert self._tracker is not None and self._satellites is not None
         assert self._start_utc is not None
         config = self.config
 
-        when = self._start_utc + dt.timedelta(
+        # ── the two clocks meet here ──────────────────────────────────────
+        #
+        # D2 is advanced once per MEASUREMENT step, the agent decides once per
+        # DECISION step.  So one decision costs M tracker updates, evaluated
+        # at 640 ms spacing across the interval that ends at this decision
+        # point.  That is what makes TTT mean "the condition held for 1280 ms"
+        # instead of "the condition held at the last decision", which at
+        # Δt = 30 s would have been a degenerate TTT and a 5.9x excursion
+        # outside TS 38.331's discrete set.
+        #
+        # The loop itself is not new: prime() has run exactly this loop since
+        # W-04, to settle the latches before step 0.  Sub-stepping is that
+        # same loop moved inside the episode.
+        substeps = config.d2_substeps_per_decision
+        measurement_step = config.d2_measurement_step_s
+        decision_time = self._start_utc + dt.timedelta(
             seconds=self._step_index * config.ephemeris.time_step_s
         )
-        jd, fr = step_times(when, 1, time_step_s=config.ephemeris.time_step_s)
+        # The sub-steps END at the decision point: the last measurement is
+        # the decision instant itself, so the mask reflects the geometry the
+        # action is taken against.
+        first = decision_time - dt.timedelta(
+            seconds=(substeps - 1) * measurement_step
+        )
+        jd, fr = step_times(first, substeps, time_step_s=measurement_step)
         position, velocity = self._satellites.propagate_ecef_state(
             jd, fr, require_all_healthy=False
         )
         users_ecef = self._user_ecef()
-        slant, rate = _measure(users_ecef, position, velocity)
         altitude = np.linalg.norm(position, axis=-1) - R_E_KM
 
-        snapshot = self._tracker.update(
-            self._step_index,
-            slant_range_km=slant[:, :, 0],
-            altitude_km=altitude[:, 0],
-            range_rate_km_s=rate[:, :, 0],
-        )
+        # Sub-steps need the slant range only.  The range rate feeds
+        # D2Snapshot.range_rate_km_s, which is a §4A.6 contract field and
+        # therefore OFF by default since ruling C-1 — so it is computed once,
+        # at the decision instant, rather than 47 times.
+        #
+        # ⚠ That is a live dependency, not just an optimisation: if
+        # radial_rate ever returns to the state, the sub-steps must compute
+        # rate too, or the snapshot's rate and its latch will describe
+        # different instants.
+        slant = _slant_only(users_ecef, position)
+        _, rate = _measure(users_ecef, position[:, -1:, :], velocity[:, -1:, :])
+
+        base = self._step_index * substeps
+        for offset in range(substeps):
+            snapshot = self._tracker.update(
+                base + offset,
+                slant_range_km=slant[:, :, offset],
+                altitude_km=altitude[:, offset],
+                range_rate_km_s=rate[:, :, 0],
+            )
+        position = position[:, -1:, :]
         dwell_snapshot = self._dwell.step(
             self._step_index, self._users.positions_km
         )
@@ -275,6 +366,23 @@ class ScenarioDriver:
             dwell_snapshot=dwell_snapshot,
             incumbent_norads=incumbents,
         )
+
+
+def _slant_only(users_ecef: np.ndarray, position: np.ndarray) -> np.ndarray:
+    """``(U, S, T)`` slant range, without the range rate.
+
+    3.6x cheaper than :func:`_measure` at ``T = 47`` because it skips the
+    unit vector and the dot product.  D2's entry and release conditions are
+    functions of the slant range alone, so the sub-steps need nothing else.
+
+    ⚠ **Only correct while ``radial_rate`` is off the live path** (ruling
+    C-1 made the §4A.6 contract block an ablation, default off).  If it
+    returns, this function is no longer sufficient and the sub-steps must
+    compute the rate as well — otherwise the snapshot's rate would describe
+    the decision instant while its latch describes 47 of them.
+    """
+    delta = position[None, :, :, :] - users_ecef[:, None, None, :]
+    return np.sqrt(np.einsum("uskc,uskc->usk", delta, delta))
 
 
 def _measure(

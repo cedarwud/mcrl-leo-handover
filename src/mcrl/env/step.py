@@ -70,6 +70,7 @@ from .action_contract import (
     decode_action,
 )
 from .antenna import RX_GAIN_MAX_DBI, transmit_gain_linear
+from .geometry import angle_between_deg
 from .candidates import StepCandidates
 from .interference import (
     CANDIDATE_SINR_PROVENANCE,
@@ -129,6 +130,43 @@ class PhysicsConfig:
     pa_max_efficiency: float = PA_MAX_EFFICIENCY
     pa_saturation_power_w: float = PA_SATURATION_POWER_W
     rician_k_factor_db: float = RICIAN_K_FACTOR_DB
+
+    segment_warm_start: str = "uniform-episode-length"
+    """How old a link's power segment already is when the episode opens.
+
+    ⚠ **Not a nicety.**  Without it every episode has ``p(0) = p⁰`` for
+    every user — measured at 100.0% of segments before this existed — and
+    that is an artefact of the episode boundary, not a property of the
+    geometry.  It is the same defect W-04 fixed for the D2 latches by
+    priming them before step 0, and the same argument settles it.
+
+    ``uniform-episode-length`` (**the main arm**): the age is drawn
+    ``Uniform{0, …, H−1}``, so step 0 looks like a uniformly random step of
+    an ongoing episode.  Parameter-free — it reuses ``H`` — and ``a = 0``
+    keeps positive probability, so a genuinely fresh segment still occurs;
+    it just stops being certain.
+
+    ``uniform-segment-length`` (**the frozen sensitivity arm**): the age is
+    drawn ``Uniform{0, …, L−1}`` with ``L`` the frozen median segment
+    length.  This is the renewal-equilibrium age distribution and is
+    theoretically the more correct one, but ``L`` is measured **under the
+    reference policy**, which is how a policy gets back into the initial
+    state distribution — the reason (d1) was rejected.
+
+    ⚠ The main arm's bias is **not** conservative.  At ``Δt = 30.08 s`` the
+    measured ``L`` is 5 steps against ``H = 10``, so drawing over ``H``
+    ages segments *beyond* their typical life and pushes ``p`` further from
+    ``p⁰`` — i.e. it makes the mechanism look **more** active, in exactly
+    the direction we are trying to establish.  That is why the second arm
+    is frozen alongside it rather than discussed: if the two arms disagree
+    on a headline, the disagreement is the finding.
+
+    ``none`` exists only for tests that need ``p(0) = p⁰`` deterministically.
+    """
+
+    segment_age_steps: int = 0
+    """``L`` for ``uniform-segment-length``.  Ignored by the other modes."""
+
     fading_enabled: bool = True
     """Rician fading is a **random draw** and belongs to the frozen seed set.
 
@@ -138,6 +176,23 @@ class PhysicsConfig:
     """
 
     def __post_init__(self) -> None:
+        if self.segment_warm_start not in {
+            "uniform-episode-length",
+            "uniform-segment-length",
+            "none",
+        }:
+            raise ValueError(
+                "segment_warm_start must be one of {'uniform-episode-length', "
+                "'uniform-segment-length', 'none'}, got "
+                f"{self.segment_warm_start!r}"
+            )
+        if (
+            self.segment_warm_start == "uniform-segment-length"
+            and self.segment_age_steps < 1
+        ):
+            raise ValueError(
+                "uniform-segment-length needs a frozen segment_age_steps (L)"
+            )
         for name in (
             "segment_start_power_w",
             "beam_power_max_w",
@@ -286,6 +341,7 @@ class StepEnvironment:
         self._previous_association: list[Association | None] = [None] * self.num_users
         self._candidates: StepCandidates | None = None
         self._mobility_rng: np.random.Generator | None = None
+        self._pending_segment_age: np.ndarray | None = None
         self._step_index = 0
         self._started = False
 
@@ -348,6 +404,7 @@ class StepEnvironment:
         self._step_index = 0
         self._started = True
         self._mobility_rng = mobility_rng if mobility_rng is not None else rng
+        self._pending_segment_age = self._draw_segment_ages(rng)
 
         candidates = self.driver.reset(
             start_utc,
@@ -430,6 +487,22 @@ class StepEnvironment:
             chosen_slot >= 0, transmit_gain_linear(chosen_theta), 0.0
         )
 
+        # One propagation per distinct age, only at step 0 and only if the
+        # warm start is on.  Ages are small integers over a small span, so
+        # this is a handful of calls rather than one per user.
+        historical: dict[int, np.ndarray] = {}
+        if self._step_index == 0 and self._pending_segment_age is not None:
+            for age in sorted(set(int(a) for a in self._pending_segment_age)):
+                if age > 0:
+                    historical.update(
+                        {
+                            norad: position
+                            for norad, position in self.driver.satellite_ecef_at(
+                                -age
+                            ).items()
+                        }
+                    )
+
         # (3.11)/(3.12): the recurrence, and the one ceiling outside it.
         link_power = np.zeros(users, dtype=np.float64)
         null_pointing = np.zeros(users, dtype=bool)
@@ -449,11 +522,21 @@ class StepEnvironment:
                 and segment.continues(associations[uid])
                 and self._previous_association[uid] is not None
             )
-            start_gain = (
-                segment.start_transmit_gain
-                if continuing and segment is not None
-                else float(transmit_gain[uid])
-            )
+            if continuing and segment is not None:
+                start_gain = segment.start_transmit_gain
+            else:
+                # A NEW segment.  At step 0 it may nevertheless be an OLD
+                # one -- the episode boundary is not a physical event, and
+                # pinning p(0) = p0 for every user is the artefact the warm
+                # start exists to remove.
+                warm = (
+                    self._warm_start_gain(uid, associations[uid], historical)
+                    if self._step_index == 0
+                    else None
+                )
+                start_gain = (
+                    warm if warm is not None else float(transmit_gain[uid])
+                )
             link_power[uid] = float(
                 recurrence_power_w(
                     start_gain,
@@ -485,14 +568,21 @@ class StepEnvironment:
                     and segment.continues(association)
                     and self._previous_association[uid] is not None
                 )
+                if continuing and segment is not None:
+                    start_gain = segment.start_transmit_gain
+                else:
+                    warm = (
+                        self._warm_start_gain(uid, association, historical)
+                        if self._step_index == 0
+                        else None
+                    )
+                    start_gain = (
+                        warm if warm is not None else float(transmit_gain[uid])
+                    )
                 self._segments[uid] = Segment(
                     norad_id=association.norad_id,
                     cell_id=association.cell_id,
-                    start_transmit_gain=(
-                        segment.start_transmit_gain
-                        if continuing and segment is not None
-                        else float(transmit_gain[uid])
-                    ),
+                    start_transmit_gain=start_gain,
                 )
             else:
                 self._segments[uid] = None
@@ -963,6 +1053,58 @@ class StepEnvironment:
             )
             shadow[int(norad)] = shadow_fading_db(rng, np.asarray(elevation))
         return rician, shadow
+
+    def _draw_segment_ages(self, rng: np.random.Generator) -> np.ndarray | None:
+        """How many steps each user's segment has already run at step 0.
+
+        Drawn from ``env_rng`` rather than the mobility stream: it is part
+        of the environment's own randomness, alongside the fading and the
+        epoch, and it must not move when a mobility ablation does.
+        """
+        mode = self.physics.segment_warm_start
+        if mode == "none":
+            return None
+        span = (
+            self.driver.config.steps_per_episode
+            if mode == "uniform-episode-length"
+            else self.physics.segment_age_steps
+        )
+        return rng.integers(0, max(span, 1), size=self.num_users)
+
+    def _warm_start_gain(
+        self,
+        uid: int,
+        association: Association,
+        historical: dict[int, np.ndarray],
+    ) -> float | None:
+        """``G^T(θ(τ))`` for a segment that began before the episode did.
+
+        The satellite is put back where it was ``a`` decision steps ago and
+        the off-axis angle to the **same cell** is recomputed.  The user is
+        left where they are now: they move 250 m per step, which subtends
+        0.0297° at 483 km against a median per-step ``|Δθ|`` of 1.194° — a
+        2.5% contribution, the same ratio that justifies leaving mobility on
+        the decision clock.  Disclosed rather than assumed away, and it is a
+        bound: the satellite moves 2,004 km over the same nine steps.
+        """
+        ages = self._pending_segment_age
+        if ages is None:
+            return None
+        age = int(ages[uid])
+        if age <= 0:
+            return None
+        position = historical.get(association.norad_id)
+        if position is None:
+            # The satellite was not tracked that far back; a cold start is
+            # the honest fallback, not an extrapolated position.
+            return None
+        angle = angle_between_deg(
+            position,
+            self.driver.grid.centers_ecef_km[association.cell_id],
+            self.driver.user_ecef_km()[uid],
+        )
+        gain = float(transmit_gain_linear(np.asarray([angle]))[0])
+        return gain if gain > 0.0 else None
 
     def _diagnostics(self, physics: dict[str, object]) -> dict[str, object]:
         resolution: ServiceResolution = physics["resolution"]  # type: ignore[assignment]

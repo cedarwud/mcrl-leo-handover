@@ -242,11 +242,13 @@ def test_the_power_sum_is_per_beam_not_per_link():
         superseded = float(
             outcome.diagnostics["superseded_link_over_beam_ratio"]
         )
-        # It over-charges by (U - 1) * P^p per beam, so the ratio is the
-        # load-weighted mean occupancy and can never be below 1.
+        # It over-charges by (U - 1) * P^p per beam, so the ratio is a mean
+        # occupancy weighted by P^p -- which can sit slightly ABOVE the plain
+        # mean when the busier beams also draw more supply power.  The
+        # bracketing statement is therefore max occupancy, not the mean.
         assert superseded >= 1.0
-        occupancy = outcome.resolution.served_count / outcome.radiating.count
-        assert superseded <= occupancy + 1e-9
+        busiest = max(outcome.resolution.eligible_load_by_beam.values())
+        assert superseded <= busiest + 1e-9
 
 
 @requires_archive
@@ -355,13 +357,51 @@ def test_the_product_p_times_gain_is_the_segment_invariant():
 
 
 @requires_archive
-def test_a_segment_starts_at_p0_exactly():
+def test_a_cold_segment_starts_at_p0_exactly():
     """(3.12): ``p(τ) = p⁰``, with nothing yet to compensate."""
+    cold = PhysicsConfig(segment_warm_start="none")
+    outcome = _run(_environment(cold), steps=1)[0]
+    served = outcome.resolution.served
+    assert np.allclose(outcome.link_power_w[served], cold.segment_start_power_w)
+
+
+@requires_archive
+def test_the_warm_start_spreads_p0_instead_of_pinning_it():
+    """The artefact it removes: ``p(0) = p⁰`` for 100% of users, every episode.
+
+    A cold segment at every episode boundary is the same defect W-04 fixed
+    for the D2 latches — the boundary is not a physical event.  With the
+    warm start, ``p(0)`` is distributed across the 3 dB budget instead, and
+    ``a = 0`` keeps positive probability so a genuinely fresh segment still
+    happens; it just stops being certain.
+    """
     outcome = _run(_environment(FROZEN), steps=1)[0]
     served = outcome.resolution.served
-    assert np.allclose(
-        outcome.link_power_w[served], FROZEN.segment_start_power_w
-    )
+    powers = outcome.link_power_w[served]
+    p0 = FROZEN.segment_start_power_w
+
+    assert not np.allclose(powers, p0), "the warm start did nothing"
+    assert powers.min() >= p0 - 1e-9, "p can never start BELOW p0"
+    assert np.any(np.isclose(powers, p0)), "age 0 must still occur"
+    assert np.any(powers > p0 + 0.01), "some segments must already be old"
+    # Never past the ceiling: those users would be in outage instead.
+    assert powers.max() <= FROZEN.beam_power_max_w
+
+
+@requires_archive
+def test_the_warm_start_is_reproducible_and_uses_the_environment_stream():
+    first = _run(_environment(FROZEN), seed=3, steps=1)[0]
+    again = _run(_environment(FROZEN), seed=3, steps=1)[0]
+    assert np.array_equal(first.link_power_w, again.link_power_w)
+    other = _run(_environment(FROZEN), seed=4, steps=1)[0]
+    assert not np.array_equal(first.link_power_w, other.link_power_w)
+
+
+def test_the_sensitivity_arm_needs_its_frozen_L():
+    """``uniform-segment-length`` is the frozen second arm, not a free option."""
+    PhysicsConfig(segment_warm_start="uniform-segment-length", segment_age_steps=5)
+    with pytest.raises(ValueError, match="frozen segment_age_steps"):
+        PhysicsConfig(segment_warm_start="uniform-segment-length")
 
 
 @requires_archive

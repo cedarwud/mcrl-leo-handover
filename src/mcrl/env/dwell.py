@@ -41,17 +41,27 @@ from .cells import CellGrid
 DWELL_N_CANDIDATES: tuple[int, ...] = (2, 3, 4)
 """**S** — the probe P2 sweep.  The final value is Q-E, still open."""
 
-DWELL_N_IS_FROZEN: bool = False
-"""Whether ``N`` has been decided.  **False until probe P2 reports.**
+DWELL_N_IS_FROZEN: bool = True
+"""Whether ``N`` has been decided.  **True since 2026-08-23: ``N = 3``.**
 
-A machine-checkable flag rather than a comment, so a placeholder cannot be
-frozen by inertia just because it was already sitting in the default.
+⚠ **Closed without running P2, and the reason matters.**  The frozen
+selection mapping was "take the largest ``N`` whose re-key rate stays at or
+under 5%".  That rule is deliberately independent of EE, throughput and
+every reported metric — §4A.2 gives dwell exactly one job, freezing
+``j → cell_id`` so an action index keeps naming the same cell, and its only
+cost is **staleness**, which the re-key rate measures directly.
 
-⚠ It gates **training**, not the PREREG.  Probe P2 is what closes Q-E, and
-P2 must not run until the PREREG is frozen (§7.1) — so requiring a decided
-``N`` before the freeze would be circular.  What the freeze requires instead
-is a deterministic selection mapping: the rule that will pick ``N`` from
-P2's output, committed before that output exists.
+The rule needs one number, and that number is scenario characterisation
+rather than probe output: the measured re-key rate at ``Δt = 30.08 s`` is
+2.7% at ``N = 2``, **3.8% at ``N = 3``**, and 5.4% at ``N = 4``.  So the
+mapping selects 3, and it does so from geometry that exists before any
+policy is evaluated.
+
+⚠ Note the rate depends only on the product ``N·Δt`` — users travel at most
+14.3% of a cell radius within a segment at any ``(N, Δt)`` in the sweep — so
+this is a live decision **only** at ``Δt ≥ 30 s``.  At the old 1 s clock
+every candidate sat below 0.1% and the rule would have returned ``N = 4``
+by default.  If the scenario changes, re-derive rather than inherit.
 """
 
 
@@ -60,11 +70,12 @@ class DwellConfig:
     """Dwell segment length in steps."""
 
     steps: int = 3
-    """**S, PROVISIONAL** — placeholder until probe P2 closes Q-E.
+    """**S, FROZEN 2026-08-23** — selected by the Q-E mapping, not by default.
 
-    3 is the midpoint of the sweep and the value the old geometry was
-    measured at; it is **not** a frozen choice and W-13 must not freeze it
-    before P2 reports.
+    It was the sweep's midpoint and a placeholder; it is now the value the
+    frozen rule returns (largest ``N`` with re-key rate ≤ 5%; measured 3.8%
+    at ``N = 3`` versus 5.4% at ``N = 4``).  Same number, different status —
+    and the status is the part that was missing.
     """
 
     def __post_init__(self) -> None:

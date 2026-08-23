@@ -341,8 +341,18 @@ def test_the_scatter_is_the_section_IV_rectangle():
 def test_the_step_length_is_thirty_kilometres_per_hour():
     config = MobilityConfig()
     assert config.speed_kmh == USER_SPEED_KMH == 30.0
-    assert config.step_km == pytest.approx(30.0 / 3600.0)
-    assert config.step_km * 1000.0 == pytest.approx(8.333, abs=0.001)
+    # Derived from the clock, not hard-coded: Delta-t became 30.08 s on
+    # 2026-08-23 and a literal here would have asserted the old scenario
+    # while claiming to assert the speed.
+    assert config.step_km == pytest.approx(
+        config.speed_kmh / 3600.0 * config.time_step_s
+    )
+    # 8.333 m was the per-step distance at Delta-t = 1 s; at 30.08 s it is
+    # 250.7 m.  The invariant is the speed, so it is the speed that is
+    # asserted in metres per second.
+    assert config.step_km * 1000.0 / config.time_step_s == pytest.approx(
+        8.333, abs=0.001
+    )
 
 
 def test_each_step_moves_exactly_one_step_length():
