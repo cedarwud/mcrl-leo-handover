@@ -52,8 +52,12 @@ none.
 written, so ``r_1``'s distribution was visible — "the rule preceded the
 numbers" is not literally true here the way it is for ``c_3``.  What
 protects it: the rule is structural (unbounded ⇒ p95, bounded ⇒ the bound),
-it is the *same* rule already frozen for ``c_3``, and it was not selected
-from among alternatives by checking which produced a preferred balance.
+it is the *same* rule already frozen for ``c_3`` — ⚠ ``c_1`` and
+``c_3`` share the p95 rule while ``c_2`` is separate because its
+distribution shape forbids it, **not** all three alike — and it was
+not selected from among alternatives by checking which produced a
+preferred balance.  That last point is the one that matters: choosing
+among candidate rules by their output is how the leak actually happens.
 """
 
 C2_SCALE: float = PHI2

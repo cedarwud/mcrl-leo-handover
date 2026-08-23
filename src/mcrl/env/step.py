@@ -74,6 +74,7 @@ from .geometry import angle_between_deg
 from .candidates import StepCandidates
 from .interference import (
     CANDIDATE_SINR_PROVENANCE,
+    boresight_separation_deg,
     InterferenceBreakdown,
     RadiatingBeams,
     beam_field_at_users,
@@ -273,6 +274,10 @@ class StepOutcome:
     energy: SystemEnergyEfficiency
     interference: InterferenceBreakdown
     radiating: RadiatingBeams
+    interference_terms_w: np.ndarray
+    """``(U, B)`` — ``p·G^T·H`` per radiating beam, before the colour mask."""
+    separation_deg: np.ndarray
+    """``(U, B)`` — the at-user angle (3.10c) is evaluated at.  For P5."""
 
     link_power_w: np.ndarray
     """``(U,)`` — ``p_{u,s,v}`` for the chosen link, 0 when unserved."""
@@ -460,6 +465,8 @@ class StepEnvironment:
             energy=physics["energy"],
             interference=physics["interference"],
             radiating=physics["radiating"],
+            interference_terms_w=physics["interference_terms_w"],
+            separation_deg=physics["separation_deg"],
             link_power_w=physics["link_power_w"],
             link_sinr=physics["sinr"],
             link_rate_bps=physics["rate"],
@@ -653,6 +660,14 @@ class StepEnvironment:
             boresight_satellite_ecef_km=boresight_ecef,
             boresight_norad_ids=boresight_ids,
         )
+        # Kept rather than discarded: probe P5 owes (3.10c) a disclosure of
+        # how much interference is evaluated below S.465-6's theta^R_min,
+        # and that cannot be reported from a quantity thrown away here.
+        separation = boresight_separation_deg(
+            user_ecef_km=user_ecef,
+            radiating=radiating,
+            boresight_satellite_ecef_km=boresight_ecef,
+        )
         wanted_colors = np.where(
             resolution.served, grid.colors[np.maximum(serving_cell, 0)], -1
         )
@@ -770,6 +785,8 @@ class StepEnvironment:
             "beam_keys": beam_keys,
             "beam_charged_power_w": beam_charged_power,
             "link_charged_power_w": link_charged_power,
+            "interference_terms_w": terms,
+            "separation_deg": separation,
         }
 
     def _rewards(

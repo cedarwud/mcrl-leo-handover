@@ -74,6 +74,18 @@ class StepCandidates:
     """``(U, L)`` int64; ``-1`` where a slot is unoccupied."""
     contract_fields: np.ndarray
     """``(U, 13)`` — §4A.6's block, ready for the state encoder."""
+    slot_occupied: np.ndarray
+    """``(U, L)`` — §4A.5 term 1: does a D2-eligible satellite hold the slot?"""
+    cell_exists: np.ndarray
+    """``(U, J)`` — term 2: does the lattice have that neighbour?"""
+    cell_reachable: np.ndarray
+    """``(U, L, J)`` — term 3: is the cell above satellite ``l``'s horizon?
+
+    The three terms are kept apart because ``mask`` is their AND and an AND
+    cannot be attributed: probe P7 has to report which term contracts the
+    action set, and "28/28 valid" says nothing about which of the three was
+    responsible for the zero attrition.
+    """
     dwell: DwellSnapshot
     d2: D2Snapshot
 
@@ -212,6 +224,11 @@ def resolve_candidates(
         window_satellite_ecef_km=window_ecef,
         window_norad_ids=window_norads,
         contract_fields=contract.astype(np.float32),
+        slot_occupied=np.stack(
+            [assignment.occupancy for assignment in assignments]
+        ),
+        cell_exists=dwell_snapshot.neighborhood_cell_ids >= 0,
+        cell_reachable=reachable,
         dwell=dwell_snapshot,
         d2=d2_snapshot,
     )

@@ -73,6 +73,17 @@ def _candidates(
         contract_fields=np.stack(
             [contract_state_fields(a, dwell_phase=0.0) for a in assignments]
         ),
+        # The three mask terms, kept apart so P7 can attribute attrition.
+        # Built from the same inputs the tables were, rather than passed as
+        # zeros: a fixture that reports "nothing was masked" while its
+        # tables say otherwise would make P7's numbers fiction.
+        slot_occupied=np.stack([a.occupancy for a in assignments]),
+        cell_exists=np.tile(np.array(cells) >= 0, (num_users, 1)),
+        cell_reachable=(
+            np.ones((num_users, 4, NUM_BEAM_SLOTS), dtype=bool)
+            if reachable is None
+            else np.tile(np.asarray(reachable, dtype=bool), (num_users, 1, 1))
+        ),
         dwell=DwellSnapshot(
             step_index=0,
             anchor_cell_ids=np.zeros(num_users, dtype=np.int64),

@@ -245,6 +245,35 @@ def beam_field_at_users(
     )
 
 
+def boresight_separation_deg(
+    *,
+    user_ecef_km: np.ndarray,
+    radiating: RadiatingBeams,
+    boresight_satellite_ecef_km: np.ndarray,
+) -> np.ndarray:
+    """``(U, B)`` angle **at the user** between its boresight and each interferer.
+
+    This is (3.10c)'s argument, and the reason it is named rather than
+    inlined is probe P5: S.465-6's envelope is only defined at or above
+    ``θ^R_min``, so how much of the interference is evaluated below that
+    angle is a disclosure the paper owes, and it cannot be reported from a
+    quantity that only exists inside another function's body.
+
+    ⚠ Between two beams of ONE satellite this is zero by construction —
+    the terminal cannot resolve them (P-10).  It is the inter-**satellite**
+    angle, never the inter-beam one.
+    """
+    users = np.asarray(user_ecef_km, dtype=np.float64)
+    boresight = np.asarray(boresight_satellite_ecef_km, dtype=np.float64)
+    if radiating.count == 0:
+        return np.zeros((users.shape[0], 0), dtype=np.float64)
+    return angle_between_deg(
+        users[:, None, :],
+        boresight[:, None, :],
+        radiating.satellite_ecef_km[None, :, :],
+    )
+
+
 def received_power_terms(
     field: BeamFieldAtUsers,
     radiating: RadiatingBeams,
@@ -276,10 +305,10 @@ def received_power_terms(
     if boresight_ids.shape != (num_users,):
         raise MCRLContractError("boresight_norad_ids must be (U,)")
 
-    separation = angle_between_deg(
-        users[:, None, :],
-        boresight[:, None, :],
-        radiating.satellite_ecef_km[None, :, :],
+    separation = boresight_separation_deg(
+        user_ecef_km=users,
+        radiating=radiating,
+        boresight_satellite_ecef_km=boresight,
     )
     receive = receive_gain_linear(separation)
     receive = apply_same_satellite_override(

@@ -269,6 +269,25 @@ PROBE_GRID: dict[str, Any] = {
     },
 }
 
+TEST_VALIDITY_POLICY: str = (
+    "A test that only works because the system happens to be in some state "
+    "is testing the environment, not the code.  It must put the system into "
+    "that state itself, and it must assert BOTH that the controlled quantity "
+    "is unchanged AND that the manipulated quantity moved -- an ablation "
+    "test asserting only 'the two sides agree' also passes when the thing "
+    "being ablated was never wired up.  Three instances in this project: "
+    "nine gate assertions went vacuous the day Q-D and Q-E closed; the "
+    "fading-ablation test would have passed with fading disconnected; and "
+    "the PREREG stand-in mappings would have drifted out of sync with the "
+    "live question set without a key-set assertion."
+)
+"""§7.1 methodology note (ruling W-27 §5), promoted from three incidents.
+
+Frozen with the record because the probes are the place it bites: P2, P4,
+P6 and P7 are ablation-shaped, and an ablation test that cannot fail is
+worse than no test — it certifies the thing it never checked.
+"""
+
 PROBE_RNG_POLICY: str = (
     "Every probe with an ablation_dimension draws its sampling randomness "
     "from streams that are INDEPENDENT of the swept quantity: env_rng "
@@ -463,9 +482,11 @@ SELECTION_MAPPINGS: dict[str, Any] = {
             "distribution was VISIBLE -- 'the rule preceded the numbers' is "
             "not literally true here the way it is for c_3.  What protects "
             "it: the rule is structural (unbounded -> p95; bounded -> the "
-            "bound), it is the SAME rule already frozen for c_3, and it was "
-            "not selected from among alternatives by looking at which "
-            "produced a preferred balance.  Stated rather than glossed."
+            "bound); c_1 and c_3 share the p95 rule while c_2 is "
+            "separate because its distribution shape forbids it -- NOT "
+            "all three alike; and it was not selected from among "
+            "alternatives by checking which produced a preferred "
+            "balance, which is how the leak actually happens."
         ),
     },
     "Q-G c2 calibration scale": {
@@ -630,7 +651,11 @@ def build_draft(
             seed=REFERENCE_POLICY_SEED,
             description="hold the previous association while it stays valid",
         ),
-        probe_grid=PROBE_GRID | {"rng_policy": PROBE_RNG_POLICY},
+        probe_grid=PROBE_GRID
+        | {
+            "rng_policy": PROBE_RNG_POLICY,
+            "test_validity_policy": TEST_VALIDITY_POLICY,
+        },
         thresholds=THRESHOLDS,
         stopping_rules=STOPPING_RULES,
         ephemeris_manifest=manifest,
