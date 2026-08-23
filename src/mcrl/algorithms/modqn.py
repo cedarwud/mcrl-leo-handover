@@ -62,6 +62,7 @@ from ..runtime.objective_math import (
     apply_reward_calibration,
     scalarize_objectives,
 )
+from ..runtime.collapse_metrics import compute_collapse_metrics
 from ..runtime.q_network import DQNNetwork
 from ..runtime.replay_buffer import ReplayBuffer
 from ..runtime.state_encoding import encode_state, state_dim_for
@@ -905,6 +906,7 @@ class MODQNTrainer:
             ep_handovers = 0
             ep_losses = np.zeros(3, dtype=np.float64)
             update_count = 0
+            collapse = None
 
             for _step_idx in range(self.env.config.steps_per_episode):
                 # Select actions
@@ -914,6 +916,30 @@ class MODQNTrainer:
                     eps,
                     raw_states=states,
                 )
+
+                # PATCH P-23: G-3's four collapse indicators, sampled at the
+                # FIRST decision step of every episode.
+                #
+                # They are here because B17's first question -- does
+                # shared-Q + argmax still collapse in the new environment --
+                # is the go/no-go for the whole contribution line, and G-3
+                # fails on a MISSING indicator.  Discovering the gap after
+                # 9,000 episodes costs the run.
+                #
+                # The cadence is a pre-registration item, not a convenience:
+                # the first step is before epsilon-greedy exploration has
+                # been averaged over the episode, so the number describes the
+                # policy's own decision surface rather than a mixture of it
+                # and the exploration schedule.
+                if collapse is None:
+                    collapse = compute_collapse_metrics(
+                        self._scalarize_q_values(
+                            self._predict_objective_q_values(encoded),
+                            cfg.objective_weights,
+                        ),
+                        np.stack([mask.mask for mask in masks]),
+                        actions,
+                    )
 
                 # Step environment
                 result = self.env.step(actions, self._env_rng)
@@ -993,6 +1019,11 @@ class MODQNTrainer:
             avg_reward = ep_reward / max(self.num_users, 1)
             scalar = scalarize_objectives(avg_reward, cfg.objective_weights)
             avg_losses = ep_losses / max(update_count, 1)
+            # Both scalings: the effective trade-off is omega_j / c_j, so a
+            # log carrying only one of them cannot answer B17's second
+            # question without recomputing from numbers it no longer has.
+            calibrated = apply_reward_calibration(avg_reward, cfg)
+            assert collapse is not None, "an episode ran with no decision step"
 
             log = EpisodeLog(
                 episode=ep,
@@ -1004,6 +1035,15 @@ class MODQNTrainer:
                 total_handovers=ep_handovers,
                 replay_size=len(self.replay),
                 losses=(float(avg_losses[0]), float(avg_losses[1]), float(avg_losses[2])),
+                active_beam_count=collapse.active_beam_count,
+                argmax_agreement=collapse.argmax_agreement,
+                q_margin=collapse.q_margin,
+                q_entropy=collapse.q_entropy,
+                q_margin_raw=collapse.q_margin_raw,
+                q_range=collapse.q_range,
+                r1_mean_calibrated=float(calibrated[0]),
+                r2_mean_calibrated=float(calibrated[1]),
+                r3_mean_calibrated=float(calibrated[2]),
             )
             logs.append(log)
 

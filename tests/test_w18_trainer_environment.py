@@ -261,3 +261,50 @@ def test_r1_reaching_the_trainer_is_the_energy_efficiency_not_the_throughput(
             assert result.rewards[uid].r1_throughput == pytest.approx(
                 vector[0] * outcome.system_power_w
             )
+
+
+@requires_archive
+def test_a_real_run_produces_all_four_collapse_indicators(adapter):
+    """W-28 §1: the numbers B17 Q1 needs must come out of an actual run.
+
+    Asserting the dataclass has the fields is not enough — it would pass
+    with the training loop never calling ``compute_collapse_metrics``,
+    which is exactly the state the codebase was in until 2026-08-23.  So
+    this drives real episodes and checks the values are finite and in
+    range, per the rule that a test must put the system into the state it
+    guards against rather than wait for it.
+    """
+    from mcrl.algorithms.modqn import MODQNTrainer
+    from mcrl.runtime.collapse_metrics import assert_g3_complete
+    from mcrl.runtime.trainer_spec import TrainerConfig
+
+    trainer = MODQNTrainer(
+        adapter,
+        TrainerConfig(episodes=2, batch_size=8, replay_capacity=256),
+        train_seed=0,
+        env_seed=1,
+        mobility_seed=2,
+    )
+    logs = trainer.train()
+    assert len(logs) == 2
+
+    for log in logs:
+        assert_g3_complete(log.collapse_report())
+        assert 0.0 <= log.active_beam_count <= adapter.num_beams_total
+        assert 0.0 <= log.argmax_agreement <= 1.0
+        # q_margin is NORMALISED by the Q range, so it is dimensionless.
+        assert 0.0 <= log.q_margin <= 1.0 + 1e-9
+        assert 0.0 <= log.q_entropy <= 1.0 + 1e-9
+        assert np.isfinite(log.q_margin_raw) and np.isfinite(log.q_range)
+        # A raw margin with no divisor recorded would be unauditable.
+        assert log.q_range >= log.q_margin_raw - 1e-9
+
+    # Both scalings, and they must actually differ: c_1 is 2.47e6, so a
+    # calibrated r1 equal to the raw one would mean calibration never ran.
+    for log in logs:
+        for raw, calibrated in (
+            (log.r1_mean, log.r1_mean_calibrated),
+            (log.r3_mean, log.r3_mean_calibrated),
+        ):
+            if raw != 0.0:
+                assert raw != calibrated

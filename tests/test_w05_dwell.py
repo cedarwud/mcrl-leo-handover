@@ -252,11 +252,48 @@ def test_N_is_frozen_and_the_frozen_value_is_the_one_the_rule_returns():
     assert DWELL_N_IS_FROZEN is True
 
     mapping = SELECTION_MAPPINGS["Q-E dwell N"]
-    rates = mapping["measured_rekey_rate_at_decision_step"]
+    rates = mapping["measured_rekey_rate"][
+        "authoritative_probe_P2_100_users_separated_streams"
+    ]
     largest_under_bound = max(
         n for n in DWELL_N_CANDIDATES if rates[f"N={n}"] <= 0.05
     )
-    assert largest_under_bound == DwellConfig().steps == mapping["resolved"] == 3
+    assert largest_under_bound == DwellConfig().steps == mapping["resolved"] == 4
+
+
+def test_the_dwell_mapping_freezes_its_measurement_conditions():
+    """A rule without its conditions is not a rule (ruling W-28 §1).
+
+    Q-E is the proof: the same wording selected 3 from a 60-user
+    single-stream script and 4 from probe P2 at 100 users with separated
+    streams.  Both measurements stay on the record with the reason they
+    differ, so re-running P2 and getting a different N than an older note
+    says does not read as a records error.
+    """
+    from mcrl.runtime.prereg_draft import SELECTION_MAPPINGS
+
+    mapping = SELECTION_MAPPINGS["Q-E dwell N"]
+    conditions = mapping["measurement_conditions"]
+    assert "100 users" in conditions and "rng_policy" in conditions
+    measured = mapping["measured_rekey_rate"]
+    assert "authoritative_probe_P2_100_users_separated_streams" in measured
+    assert "superseded_qe_rekey_script_60_users_single_stream" in measured
+    assert "conditions, not sampling noise" in measured["why_they_differ"]
+
+
+def test_the_sensitivity_record_does_not_claim_N_is_inconsequential():
+    """It moves the P^N swing by 5.4%; only the handover rate is identical.
+
+    Writing "no measurable effect" would make a later reader comparing the
+    numbers think the record was wrong.
+    """
+    from mcrl.runtime.prereg_draft import SELECTION_MAPPINGS
+
+    sensitivity = SELECTION_MAPPINGS["Q-E dwell N"]["p2_sensitivity_at_the_chosen_N"]
+    swing = sensitivity["system_power_swing_w"]
+    assert swing["N=4"] < swing["N=2"], "the swing does differ across N"
+    assert len(set(sensitivity["handover_rate_per_decision"].values())) == 1
+    assert "NOT 'no measurable effect'" in sensitivity["note"]
 
 
 def test_a_full_episode_of_ten_steps_spans_several_segments(grid):

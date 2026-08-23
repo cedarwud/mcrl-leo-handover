@@ -518,6 +518,42 @@ def build_prereg_sections(
             "beam_activation": "z = 1{U > 0}, derived",
         },
         "training": {
+            # G-3's cadence is a pre-registration item: adding the four
+            # collapse indicators after the freeze would make them measured
+            # rather than committed, which is what §7.1 forbids.
+            "collapse_metrics": {
+                "indicators": [
+                    "active_beam_count",
+                    "argmax_agreement",
+                    "q_margin",
+                    "q_entropy",
+                ],
+                "q_margin_normalisation": (
+                    "divided by the per-user Q range (top-1 minus bottom-1) "
+                    "over the valid actions; q_margin_raw and q_range are "
+                    "logged beside it so the scale stays auditable"
+                ),
+                "cadence": "every episode",
+                "sampled_at": (
+                    "the FIRST decision step of the episode -- before "
+                    "epsilon-greedy exploration has been averaged over it, "
+                    "so the number describes the policy's decision surface "
+                    "rather than a mixture of it and the exploration schedule"
+                ),
+                "aggregation": "none; reported per episode in EpisodeLog",
+                "users_excluded": (
+                    "a user with fewer than two valid actions contributes no "
+                    "margin or entropy: a single candidate has no top-2 gap "
+                    "and a degenerate entropy of 0, and including it would "
+                    "report certainty the policy never exercised"
+                ),
+            },
+            "reward_logging": (
+                "per-objective means are logged BOTH before and after "
+                "calibration: the effective trade-off is omega_j / c_j, so a "
+                "log carrying one scaling cannot answer B17 Q2 without "
+                "recomputing from numbers it no longer holds"
+            ),
             "discount_factor": training.discount_factor,
             "batch_size": training.batch_size,
             "episodes": training.episodes,

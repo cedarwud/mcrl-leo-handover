@@ -104,7 +104,11 @@ def test_the_dwell_boundary_falls_where_the_config_says(driver):
     for index in range(1, 9):
         if driver.step(np.random.default_rng(1)).dwell.is_boundary:
             boundaries.append(index)
-    assert boundaries == [0, 3, 6]
+    # Derived from the frozen N, not hard-coded: Q-E moved from 3 to 4 on
+    # 2026-08-23 and a literal here would assert the old scenario while
+    # claiming to assert the boundary rule.
+    n = driver.config.dwell.steps
+    assert boundaries == [step for step in range(10) if step % n == 0]
 
 
 @requires_archive

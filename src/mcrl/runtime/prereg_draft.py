@@ -145,13 +145,47 @@ PROBE_GRID: dict[str, Any] = {
         "episodes": 200,
         "users": 100,
         "split_part": TRAIN,
-        "closes": ["Q-D", "B17-Q3"],
+        "closes": ["Q-D", "B17-Q3", "B17-Q4"],
         "ablation_dimension": None,
         "note": (
             "the two questions share one measurement -- the U_{b_u} "
             "distribution -- which is why they can sit in one probe; but the "
             "argmax-agreement half is SDD's and was missing."
         ),
+        "b17_q4_answer": {
+            "question": (
+                "is the configuration with high system EE the same as the "
+                "one that spreads load well?  B17 says this decides whether "
+                "the follow-on method should STRENGTHEN EXPLORATION (the "
+                "keying is already right) or CHANGE THE KEYING -- and that "
+                "getting it wrong binds the wrong thing"
+            ),
+            "answer": (
+                "YES at the candidate level: argmax(r1) lies in r3's best "
+                "set 100.00% of the time, against an 81.1% null.  Both are "
+                "dominated by the same B^w/U divisor, so the EE-best "
+                "candidate is always among the load-best ones.  => the "
+                "keying is already right; the follow-on method should "
+                "strengthen exploration, not replace the keying."
+            ),
+            "scope_limit": (
+                "⚠ This is the CANDIDATE level -- the immediate reward.  On "
+                "the realised TRAJECTORY r1 and r3 correlate only +0.25, so "
+                "'they never conflict at the point of choice' does NOT mean "
+                "'r3 is redundant': under stay-if-possible users sit on "
+                "load-3 beams while ~23 load-1 candidates are available, and "
+                "closing that gap is exactly what the third objective is "
+                "for."
+            ),
+            "source": "artifacts/probe-p3-2026-08-23.json",
+            "note": (
+                "recorded under B17 Q4 on 2026-08-23.  The number was "
+                "produced by the run submitted to close Q-D, so the answer "
+                "sat inside that report with no owner -- and B17 warns that "
+                "taking the wrong branch here binds the wrong thing in the "
+                "follow-on design."
+            ),
+        },
     },
     "P4": {
         "question": "does the interference model bind?  which term dominates?",
@@ -268,6 +302,25 @@ PROBE_GRID: dict[str, Any] = {
         ],
     },
 }
+
+SELECTION_MAPPING_POLICY: str = (
+    "A selection mapping must freeze its MEASUREMENT CONDITIONS along with "
+    "its rule.  'Take the largest N whose X is at or below a threshold' is "
+    "not a complete rule until the conditions X is measured under are "
+    "pinned: Q-E's rule selected N = 3 from a 60-user single-stream script "
+    "and N = 4 from probe P2 at 100 users with separated streams, and those "
+    "are not two measurements disagreeing -- one was taken under conditions "
+    "that are not this scenario.  ⚠ And a rule whose output looks "
+    "inconsequential is still followed: 'the rule says 4 but 3 changes no "
+    "reported result' puts the boundary of the exception at 'was this "
+    "important', which is precisely the discretion pre-registration exists "
+    "to remove."
+)
+"""§7.1 methodology note (ruling W-28 §1).
+
+Frozen with the record because it is the rule that would have prevented
+the one correction the mappings actually needed.
+"""
 
 TEST_VALIDITY_POLICY: str = (
     "A test that only works because the system happens to be in some state "
@@ -403,9 +456,18 @@ SELECTION_MAPPINGS: dict[str, Any] = {
         "probe": "scenario characterisation, not a probe",
         "candidates": list(DWELL_N_CANDIDATES),
         "rule": (
-            "take the LARGEST N in {2, 3, 4} whose measured re-key rate -- "
-            "the fraction of dwell boundaries at which j = 0 moves -- is at "
-            "or below 5%; if none qualifies, take the smallest"
+            "take the LARGEST N in {2, 3, 4} whose re-key rate -- the "
+            "fraction of dwell boundaries at which j = 0 moves -- is at or "
+            "below 5%; if none qualifies, take the smallest"
+        ),
+        "measurement_conditions": (
+            "measured in the FROZEN scenario: 100 users, dt = 30.08 s, "
+            "streams separated per rng_policy, driven through "
+            "StepEnvironment by probe P2.  ⚠ Frozen WITH the rule: 'largest "
+            "N with X <= threshold' is not a complete rule until X's "
+            "measurement conditions are pinned, and this mapping proves it "
+            "-- the same rule selected 3 from a 60-user single-stream "
+            "script and 4 from P2."
         ),
         "rationale": (
             "independent of EE, throughput and every reported metric.  "
@@ -421,11 +483,34 @@ SELECTION_MAPPINGS: dict[str, Any] = {
             "range) was withdrawn: it selected on the effect the paper sets "
             "out to demonstrate."
         ),
-        "resolved": 3,
-        "measured_rekey_rate_at_decision_step": {
-            "N=2": 0.02708,
-            "N=3": 0.03819,
-            "N=4": 0.05417,
+        "resolved": 4,
+        "measured_rekey_rate": {
+            "authoritative_probe_P2_100_users_separated_streams": {
+                "N=2": 0.02050, "N=3": 0.02875, "N=4": 0.03250,
+            },
+            "superseded_qe_rekey_script_60_users_single_stream": {
+                "N=2": 0.02708, "N=3": 0.03819, "N=4": 0.05417,
+            },
+            "why_they_differ": (
+                "conditions, not sampling noise: 60 vs 100 users, and one "
+                "shared generator versus three separated ones.  Both are "
+                "kept so that re-running P2 and finding a different N than "
+                "an older note says does not look like a records error."
+            ),
+        },
+        "p2_sensitivity_at_the_chosen_N": {
+            "system_power_swing_w": {"N=2": 83.33, "N=3": 83.33, "N=4": 78.82},
+            "angle_aware_ee_dynamic_range": {
+                "N=2": 2.599e6, "N=3": 2.599e6, "N=4": 2.607e6,
+            },
+            "handover_rate_per_decision": {"N=2": 0.1133, "N=3": 0.1133, "N=4": 0.1133},
+            "note": (
+                "⚠ NOT 'no measurable effect': N = 4 lowers the P^N swing by "
+                "5.4% and moves the EE dynamic range by 0.3%.  Only the "
+                "handover rate is identical across N.  The differences are "
+                "small but real, and calling them zero would make a later "
+                "reader think the record was wrong."
+            ),
         },
         "note": (
             "the rate depends only on the product N*dt -- a user travels at "
@@ -655,6 +740,7 @@ def build_draft(
         | {
             "rng_policy": PROBE_RNG_POLICY,
             "test_validity_policy": TEST_VALIDITY_POLICY,
+            "selection_mapping_policy": SELECTION_MAPPING_POLICY,
         },
         thresholds=THRESHOLDS,
         stopping_rules=STOPPING_RULES,

@@ -13,13 +13,13 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 
 | 檔案 | 來源 sha256(前 16) | 目前 sha256(前 16) | 狀態 |
 |---|---|---|---|
-| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `4c5df44234798eb1` | **來源 + P-01…P-05、P-09、P-11、P-14、P-20**(1,333 → 1,054 行) |
+| `src/mcrl/algorithms/modqn.py` | `10600c208cc13c68` | `9f67a585c23f3fb7` | **來源 + P-01…P-05、P-09、P-11、P-14、P-20、P-23**(1,333 → 1,054 行) |
 | `src/mcrl/env/step_types.py` | `c4995ba509bbe2e6` | `b91ef574287a32fc` | **來源 + P-07、P-08、P-15、P-16、P-20、P-21**(696 → 217 行) |
 | `src/mcrl/runtime/q_network.py` | `d11318d61ad93a77` | `d11318d61ad93a77` | 逐位元組相同 |
 | `src/mcrl/runtime/replay_buffer.py` | `374a73e1b3a5e9da` | `374a73e1b3a5e9da` | 逐位元組相同 |
 | `src/mcrl/runtime/state_encoding.py` | `723974bcc6db9d5d` | `fdb4675b5cc89539` | **來源 + P-09、P-10**(P-10 已依 C-1 改為預設關的消融開關) |
 | `src/mcrl/runtime/objective_math.py` | `e8a55760ee1dc4da` | `8f7ffff4ad46228f` | **來源 + P-20**(91 → 55 行) |
-| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `777eefba93530b47` | **來源 + P-05、P-06、P-20**(250 → 160 行) |
+| `src/mcrl/runtime/trainer_spec.py` | `0392e66c3e2f4686` | `1005b6cfbcd1022f` | **來源 + P-05、P-06、P-20、P-23**(250 → 160 行) |
 
 新增檔(無來源,不屬補丁):`src/mcrl/errors.py`、`src/mcrl/env/action_contract.py`、
 `src/mcrl/env/interference.py`、`src/mcrl/env/step.py`、
@@ -266,6 +266,19 @@ Provenance 因此由「完全相同」變成**「來源 + N 個有記錄的補�
 | 三個陣列的理由 | 全部只寫不讀,且都標註 shape `(L*K,)` —— 一條固定 28 寬的**逐使用者候選**軸。波束現在是全域 `(衛星, 格)` 配對、每步數量不同,**宣告的形狀已經不描述物理** |
 | 取代者 | 逐波束量在 `StepOutcome.radiating`,長度是真的 |
 | 對應測試 | `test_w18_trainer_environment.py::test_the_adapter_config_holds_only_what_the_trainer_reads` |
+
+### P-23 — 訓練迴圈補上 G-3 崩潰四項與雙尺度獎勵(凍結前)
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `algorithms/modqn.py` 的 `train()` 迴圈;`runtime/trainer_spec.EpisodeLog` |
+| 缺陷 | `runtime/collapse_metrics.py` 存在但在訓練迴圈裡**零呼叫**;`EpisodeLog` 只記 `r1/r2/r3_mean` 與 `scalar_reward` |
+| 為何是凍結前的事 | B17 第一題「shared-Q + argmax 還會不會崩潰」是**整條貢獻線的 go/no-go**,而 G-3 明寫**缺任一項即不通過**。跑完 9000 回合才發現要補 ⇒ 重跑 40 小時。更嚴重的是**取樣節奏本身是預註冊項目** —— 凍結後才加,那四個數字就不是預先承諾的量 |
+| 補丁內容 | `EpisodeLog` 加 `active_beam_count` / `argmax_agreement` / `q_margin`(**正規化**)/ `q_entropy`,外加 `q_margin_raw` 與 `q_range` 讓尺度可稽核;訓練迴圈在**每回合的第一個決策步**呼叫 `compute_collapse_metrics` |
+| 為何取第一步 | 那是 epsilon-greedy 探索尚未被平均進去之前,數字描述的是**策略自己的決策面**,而不是它與探索排程的混合 |
+| 雙尺度獎勵 | 同時記校準前與校準後的逐目標均值。有效取捨是 `ω_j/c_j·r_j`,只記一種的 log 無法回答 B17 第二題,而重算所需的數字它已經沒有了 |
+| 凍進 PREREG | `training.collapse_metrics`(四項、正規化方式、節奏、取樣點、聚合方式、排除規則)與 `training.reward_logging` |
+| 對應測試 | `test_w12_collapse_metrics.py` 三項(欄位齊、log 自己的 report 通過 G-3、缺一項仍會擋);`test_w18_trainer_environment.py::test_a_real_run_produces_all_four_collapse_indicators` —— **實跑而非只檢查 dataclass**,因為只檢查欄位的話,訓練迴圈根本沒呼叫也會通過,而那正是 2026-08-23 之前的狀態 |
 
 ### 非補丁:`env/trainer_env.py`(新檔)—— 訓練器與環境的接頭
 

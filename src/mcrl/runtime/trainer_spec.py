@@ -137,7 +137,20 @@ class TrainerConfig:
 
 @dataclass
 class EpisodeLog:
-    """Per-episode training metrics."""
+    """Per-episode training metrics.
+
+    ⚠ **The G-3 collapse four are here because a run that omits them cannot
+    answer B17's first question** — "does shared-Q + argmax still collapse
+    in the new environment?" — and that question is the go/no-go for the
+    whole contribution line, not a diagnostic.  G-3 fails on a *missing*
+    indicator, so discovering the gap after 9,000 episodes costs the run.
+
+    Their sampling cadence is a pre-registration item, not an
+    implementation detail: measured every episode at the **first decision
+    step**, before any epsilon-greedy exploration has been averaged over,
+    and reported per episode without aggregation.  Frozen in the PREREG's
+    ``training`` section.
+    """
 
     episode: int
     epsilon: float
@@ -148,6 +161,34 @@ class EpisodeLog:
     total_handovers: int
     replay_size: int
     losses: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+    # -- G-3 collapse indicators (all four, always) -----------------------
+    active_beam_count: float = 0.0
+    argmax_agreement: float = 0.0
+    q_margin: float = 0.0
+    """Top-1 minus top-2, **normalised by the Q range** as G-3 requires."""
+    q_entropy: float = 0.0
+    q_margin_raw: float = 0.0
+    q_range: float = 0.0
+
+    # -- rewards before AND after calibration -----------------------------
+    #
+    # B17's second question asks what the balance between the three
+    # objectives looks like, and the effective trade-off is omega_j/c_j,
+    # not omega_j.  Logging only one scaling means recomputing the other
+    # afterwards from numbers the log no longer has.
+    r1_mean_calibrated: float = 0.0
+    r2_mean_calibrated: float = 0.0
+    r3_mean_calibrated: float = 0.0
+
+    def collapse_report(self) -> dict[str, float]:
+        """The four G-3 indicators, in the shape ``assert_g3_complete`` wants."""
+        return {
+            "active_beam_count": self.active_beam_count,
+            "argmax_agreement": self.argmax_agreement,
+            "q_margin": self.q_margin,
+            "q_entropy": self.q_entropy,
+        }
 
 
 @dataclass(frozen=True)

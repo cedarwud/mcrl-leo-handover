@@ -266,3 +266,69 @@ def test_shape_and_finiteness_violations_fail_loud():
         compute_collapse_metrics(
             np.full((1, 2), np.nan), np.ones((1, 2), bool), np.array([0])
         )
+
+
+# ---------------------------------------------------------------------------
+# W-28: the four must reach EpisodeLog, or the run cannot answer B17 Q1
+# ---------------------------------------------------------------------------
+
+
+def test_the_episode_log_carries_all_four_collapse_indicators():
+    """G-3 fails on a MISSING indicator, and B17 Q1 is the go/no-go.
+
+    ``collapse_metrics.py`` existed with zero callers in the training loop
+    until 2026-08-23, so a 9,000-episode run would have finished unable to
+    say whether shared-Q + argmax collapsed — and the fix costs a re-run.
+    """
+    from mcrl.runtime.trainer_spec import EpisodeLog
+
+    fields = set(EpisodeLog.__dataclass_fields__)
+    assert set(REQUIRED_G3_FIELDS) <= fields, sorted(set(REQUIRED_G3_FIELDS) - fields)
+    # The raw gap and its divisor travel too, so the scale stays auditable.
+    assert {"q_margin_raw", "q_range"} <= fields
+    # And both reward scalings, for B17 Q2's effective trade-off.
+    assert {
+        "r1_mean_calibrated",
+        "r2_mean_calibrated",
+        "r3_mean_calibrated",
+    } <= fields
+
+
+def test_the_episode_log_report_satisfies_the_g3_gate():
+    """The log's own report must pass ``assert_g3_complete`` unchanged."""
+    from mcrl.runtime.trainer_spec import EpisodeLog
+
+    log = EpisodeLog(
+        episode=0,
+        epsilon=1.0,
+        r1_mean=1.0,
+        r2_mean=0.0,
+        r3_mean=-1.0,
+        scalar_reward=0.0,
+        total_handovers=0,
+        replay_size=0,
+        active_beam_count=7.0,
+        argmax_agreement=0.25,
+        q_margin=0.1,
+        q_entropy=0.9,
+    )
+    assert assert_g3_complete(log.collapse_report()) == log.collapse_report()
+
+
+def test_a_log_missing_an_indicator_still_fails_the_gate():
+    """The gate has to keep its teeth now that the fields exist."""
+    from mcrl.runtime.trainer_spec import EpisodeLog
+
+    log = EpisodeLog(
+        episode=0,
+        epsilon=1.0,
+        r1_mean=0.0,
+        r2_mean=0.0,
+        r3_mean=0.0,
+        scalar_reward=0.0,
+        total_handovers=0,
+        replay_size=0,
+    )
+    partial = {k: v for k, v in log.collapse_report().items() if k != "q_entropy"}
+    with pytest.raises(MCRLContractError, match="q_entropy"):
+        assert_g3_complete(partial)

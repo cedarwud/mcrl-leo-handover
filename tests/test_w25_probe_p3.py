@@ -275,3 +275,23 @@ def test_the_two_agreement_metrics_have_different_nulls():
     accumulator.strict_null = [1 / 28] * 10
     accumulator.setwise_null = [23 / 28] * 10
     assert np.mean(accumulator.strict_null) < np.mean(accumulator.setwise_null)
+
+
+def test_p3_records_the_b17_q4_answer_with_its_scope():
+    """B17 Q4 had no owner until 2026-08-23 (ruling W-28 §2).
+
+    Its answer came out of the run submitted to close Q-D, so it sat inside
+    that report unattributed — and B17 warns that taking the wrong branch
+    here binds the wrong thing in the catfish design.
+    """
+    from mcrl.runtime.prereg_draft import PROBE_GRID
+
+    probe = PROBE_GRID["P3"]
+    assert "B17-Q4" in probe["closes"]
+    answer = probe["b17_q4_answer"]
+    assert "strengthen" in answer["answer"] and "keying is already right" in answer["answer"]
+    # The scope limit is not optional: without it the answer reads as
+    # "r3 is redundant", which the +0.25 trajectory correlation contradicts.
+    assert "CANDIDATE level" in answer["scope_limit"]
+    assert "+0.25" in answer["scope_limit"]
+    assert "redundant" in answer["scope_limit"]

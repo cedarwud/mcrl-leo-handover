@@ -78,10 +78,14 @@ def test_a_closed_question_still_records_its_rule_and_its_input():
 
 
 def test_the_closed_question_records_what_closed_it():
+    from mcrl.env.dwell import DwellConfig
+
     mapping = SELECTION_MAPPINGS["Q-E dwell N"]
-    assert mapping["resolved"] == 3
-    rates = mapping["measured_rekey_rate_at_decision_step"]
-    assert rates["N=3"] <= 0.05 < rates["N=4"], "the rule must select 3 here"
+    assert mapping["resolved"] == DwellConfig().steps == 4
+    rates = mapping["measured_rekey_rate"][
+        "authoritative_probe_P2_100_users_separated_streams"
+    ]
+    assert rates["N=4"] <= 0.05, "the rule must select 4 under P2's conditions"
     assert "withdrawn" in mapping["rationale"], (
         "the superseded EE-dynamic-range criterion must stay on the record"
     )

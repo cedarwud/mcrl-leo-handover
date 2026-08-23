@@ -69,13 +69,28 @@ by default.  If the scenario changes, re-derive rather than inherit.
 class DwellConfig:
     """Dwell segment length in steps."""
 
-    steps: int = 3
+    steps: int = 4
     """**S, FROZEN 2026-08-23** — selected by the Q-E mapping, not by default.
 
-    It was the sweep's midpoint and a placeholder; it is now the value the
-    frozen rule returns (largest ``N`` with re-key rate ≤ 5%; measured 3.8%
-    at ``N = 3`` versus 5.4% at ``N = 4``).  Same number, different status —
-    and the status is the part that was missing.
+    ⚠ **It was 3 for part of one day, and the correction is instructive.**
+    The rule ("largest ``N`` whose re-key rate is ≤ 5%") was applied to a
+    measurement taken at 60 users on a single RNG stream, which gave 5.4%
+    at ``N = 4`` and therefore selected 3.  Probe P2 measures the frozen
+    scenario — 100 users, streams separated per ``PROBE_RNG_POLICY`` — and
+    gets **3.250%** at ``N = 4``, so the rule selects **4**.
+
+    The two are not a contradiction between measurements.  One was taken
+    under conditions that are not this scenario, and the rule had never
+    said what conditions it wanted.  **A selection mapping is incomplete
+    until its measurement conditions are frozen with it** — "largest ``N``
+    with ``X`` ≤ threshold" is not a rule unless ``X``'s conditions are
+    pinned too.
+
+    ⚠ And it was tempting to keep 3 on the grounds that ``N`` changes no
+    reported result.  That reasoning is a leak wherever it *does* change
+    one: it puts the boundary of the exception at "was this important",
+    which is exactly the discretion pre-registration removes.  Following
+    the rule is not a choice; staying at 3 would have been.
     """
 
     def __post_init__(self) -> None:
