@@ -18,9 +18,17 @@ beams into one: each user is charged the other's load in ``r3``, (3.14)
 divides each one's bandwidth by two when neither is sharing, and the
 activation vector reports one radiating beam where two radiate.
 
-``eligible_load`` is the count **after** the execution-time mask ``m^e``:
-how many users the beam actually serves.  It is what drives activation,
-transmit power, ``γ_req(U)``, and B13's ``r3 = −U_{b_u}``.
+``eligible_load`` is the count **after the per-link power feasibility
+check**: how many users the beam actually serves.  It drives activation,
+the beam transmit-power aggregation, and B13's ``r3 = −U_{b_u}``.
+
+⚠ This paragraph said "after the execution-time mask ``m^e``" until
+2026-08-23, and named ``γ_req(U)`` as a consumer.  **The behaviour was
+right and the description was wrong**, which is the more dangerous of the
+two: ``eligible[beam] += 1`` runs only after ``served[uid] = True``, i.e.
+only after feasibility, so it has always computed exactly
+``U_{s,v} = Σ_u x_{u,s,v}`` — eq. (3.3).  ``m^e`` was deleted by ruling
+C-11 and ``γ_req`` is not on the live path at all.
 
 Conflating them is exactly the "two incompatible load semantics" P-5 and
 P-6 exist to prevent, and it is not hypothetical: an action is chosen
@@ -278,32 +286,19 @@ def load_balance_identity(resolution: ServiceResolution) -> tuple[float, float]:
     return per_user, per_beam
 
 
-def required_sinr(
-    load: np.ndarray,
-    *,
-    minimum_rate_bps: float,
-    beam_bandwidth_hz: float,
-) -> np.ndarray:
-    """``γ_req(U)`` — the SINR that meets the QoS floor at this beam load.
-
-    The beam's bandwidth is shared by its ``U`` served users, so the
-    requirement rises with load.  ``U`` here must be the **eligible** load
-    (P-5/P-6): using the ungated demand would demand extra SINR on behalf of
-    users the beam is not serving.
-    """
-    counts = np.asarray(load, dtype=np.float64)
-    if np.any(counts < 0.0):
-        raise MCRLContractError("loads must be non-negative")
-    if minimum_rate_bps < 0.0 or beam_bandwidth_hz <= 0.0:
-        raise ValueError("rate must be non-negative and bandwidth positive")
-    with np.errstate(over="ignore"):
-        return np.where(
-            counts > 0.0,
-            np.power(2.0, minimum_rate_bps * np.maximum(counts, 1.0) / beam_bandwidth_hz)
-            - 1.0,
-            0.0,
-        )
-
+# PATCH P-22 (W-26): ``required_sinr()`` is deleted.
+#
+# It computed ``γ_req(U) = 2^(R^m·U/B^w) − 1``, the SINR needed to hold a
+# minimum rate at a given load.  Three reasons, any one of which would do:
+#
+#   * **zero live consumers** — only tests called it;
+#   * ``R^m = 1 Mbit/s`` is a **legacy-only** parameter (ruling C-12), and
+#     the active contract "明文排除最低速率反推";
+#   * ruling C-2 forbids target-SINR inversion outright, and this is its
+#     first half sitting in the tree with nothing but tests holding it up.
+#
+# The PREREG had it frozen as a live consumer of the eligible load, which
+# is how a dead surface becomes a permanent claim about the system.
 
 @dataclass(frozen=True)
 class R3CalibrationSample:

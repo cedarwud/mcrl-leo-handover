@@ -66,9 +66,17 @@ def open_questions() -> dict[str, bool]:
     from ..env.dwell import DWELL_N_IS_FROZEN
     from ..env.service import R3_SCALE_IS_FROZEN
 
+    from .reward_calibration import REWARD_SCALES_ARE_FROZEN
+
     return {
         "Q-E dwell N": bool(DWELL_N_IS_FROZEN),
         "Q-D r3 calibration scale": bool(R3_SCALE_IS_FROZEN),
+        # Q-F/Q-G were missing entirely until 2026-08-23.  Q-D closed c_3
+        # and nothing owned c_1 or c_2 -- and the effective trade-off is
+        # omega_j / c_j, so an unfrozen c_1 leaves half of the headline
+        # balance to be decided after the freeze.
+        "Q-F c1 calibration scale": bool(REWARD_SCALES_ARE_FROZEN),
+        "Q-G c2 calibration scale": bool(REWARD_SCALES_ARE_FROZEN),
     }
 
 
@@ -417,6 +425,16 @@ def build_prereg_sections(
             "g0_linear": antenna.G0_LINEAR,
             "rx_gain_max_dbi": antenna.RX_GAIN_MAX_DBI,
             "rx_envelope": "32 - 25*log10(theta_deg), clipped to [-10, 35]",
+            "rx_envelope_min_deg": antenna.RX_ENVELOPE_MIN_DEG,
+            "rx_terminal_diameter_m": antenna.RX_TERMINAL_DIAMETER_M,
+            "rx_envelope_min_provenance": (
+                "theta^R_min = max(1 deg, 100*lambda/D) per ITU-R S.465-6, "
+                "derived from the named terminal diameter and the carrier -- "
+                "2.498 deg at 0.6 m and 20 GHz.  SDD's 2.05 deg is VOID: it "
+                "implies D = 0.731 m, and the terminal cannot be 0.6 m for "
+                "its gain and 0.731 m for its angular floor.  P5 measures "
+                "the fraction of interference evaluations below it"
+            ),
             "carrier_hz": link_budget.CARRIER_FREQ_HZ,
             "bandwidth_hz": link_budget.BANDWIDTH_HZ,
             "beam_bandwidth_hz": link_budget.BEAM_BANDWIDTH_HZ,
@@ -477,7 +495,15 @@ def build_prereg_sections(
             "r1": "eq. (3.25): sum of selected link EE over the common P^N",
             "r2": f"identity-based handover, phi1={PHI1}, phi2={PHI2}",
             "r3": "count-based -U_{b_u}",
-            "load_semantics": "eligible (post-m^e) drives r3, power and gamma_req",
+            "load_semantics": (
+                "eligible load = the served count AFTER the per-link power "
+                "feasibility check = sum_u x_{u,s,v}, eq. (3.3); it drives "
+                "r3 and the beam power aggregation.  demand (ungated, "
+                "pre-admission) is the STATE quantity, n_{s,v}(t-1) in (4.1). "
+                "⚠ this line said 'eligible (post-m^e) drives r3, power and "
+                "gamma_req' until 2026-08-23: m^e was deleted by C-11 and "
+                "gamma_req is not on the live path"
+            ),
             "calibration_enabled": training.reward_calibration_enabled,
         },
         "action_and_state": {

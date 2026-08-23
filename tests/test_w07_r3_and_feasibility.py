@@ -26,7 +26,6 @@ from mcrl.env.service import (
     load_balance_identity,
     old_r3_is_load_blind,
     r3_counting,
-    required_sinr,
     resolve_service,
     sample_r3_calibration,
 )
@@ -197,61 +196,18 @@ def test_the_old_form_really_was_load_blind():
     assert old_r3_is_load_blind([1, 2, 5, 20])
 
 
-# -- gamma_req uses the eligible load -------------------------------------
+# -- gamma_req is GONE (PATCH P-22) ---------------------------------------
+#
+# ``required_sinr()`` had zero live consumers, cited a legacy-only ``R^m``
+# (ruling C-12, whose active contract "明文排除最低速率反推"), and was the
+# first half of the target-SINR inversion ruling C-2 forbids outright.  The
+# five tests that exercised it went with it -- a test suite for a deleted
+# surface is what keeps a deleted surface alive.
 
 
-def test_required_sinr_rises_with_load():
-    values = required_sinr(
-        np.array([1.0, 2.0, 4.0]),
-        minimum_rate_bps=1e6,
-        beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
-    )
-    assert values[0] < values[1] < values[2]
-    assert np.all(values > 0.0)
 
 
-def test_required_sinr_of_a_dark_beam_is_zero():
-    values = required_sinr(
-        np.array([0.0]), minimum_rate_bps=1e6, beam_bandwidth_hz=BEAM_BANDWIDTH_HZ
-    )
-    assert values.tolist() == [0.0]
 
-
-def test_required_sinr_meets_the_floor_exactly():
-    load = 4.0
-    gamma = float(
-        required_sinr(
-            np.array([load]),
-            minimum_rate_bps=1e6,
-            beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
-        )[0]
-    )
-    per_user_rate = (BEAM_BANDWIDTH_HZ / load) * np.log2(1.0 + gamma)
-    assert per_user_rate == pytest.approx(1e6, rel=1e-9)
-
-
-def test_gamma_req_computed_on_ungated_demand_would_overshoot():
-    """Using demand instead of eligible load demands SINR for ghosts."""
-    a0 = action_index(0, 0)
-    resolution = _resolve([a0, a0, a0], drop=[(2, a0)])
-    eligible = required_sinr(
-        np.array([resolution.eligible_load_by_beam[_beam()]], dtype=float),
-        minimum_rate_bps=1e6,
-        beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
-    )
-    ungated = required_sinr(
-        np.array([resolution.demand_by_beam[_beam()]], dtype=float),
-        minimum_rate_bps=1e6,
-        beam_bandwidth_hz=BEAM_BANDWIDTH_HZ,
-    )
-    assert ungated > eligible
-
-
-def test_negative_loads_are_refused():
-    with pytest.raises(MCRLContractError, match="non-negative"):
-        required_sinr(
-            np.array([-1.0]), minimum_rate_bps=1e6, beam_bandwidth_hz=1e6
-        )
 
 
 # -- Q-D stays open -------------------------------------------------------

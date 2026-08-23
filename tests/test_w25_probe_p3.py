@@ -201,8 +201,14 @@ def test_p3_answers_both_of_its_questions(record):
     # B17 Q3: r3 must actually discriminate between a user's candidates.
     assert result["candidate_load_width"]["p50"] > 0.0
     assert result["degenerate_step_fraction"] < 0.5
-    assert 0.0 <= result["r1_r3_argmax_agreement_rate"] <= 1.0
     assert result["argmax_comparisons"] > 0
+    for key in ("r1_r3_argmax_agreement", "r1_r3_setwise_agreement"):
+        agreement = result[key]
+        assert 0.0 <= agreement["rate"] <= 1.0
+        assert 0.0 < agreement["null"] <= 1.0
+        assert agreement["ratio_to_chance"] is not None
+    assert result["r3_best_set_size"]["p50"] >= 1.0
+    assert result["argmax_tie_break"]
 
     # Q-D: the scale, and it must be the mapping's output.
     assert result["qd_scale_p95_rounded"] == apply_qd_scale(result)
@@ -219,11 +225,53 @@ def test_p3_is_reproducible_from_its_three_streams(record):
     first, second = _run(record), _run(record)
     assert first["qd_scale_p95_rounded"] == second["qd_scale_p95_rounded"]
     assert (
-        first["r1_r3_argmax_agreement_rate"]
-        == second["r1_r3_argmax_agreement_rate"]
+        first["r1_r3_argmax_agreement"]["rate"]
+        == second["r1_r3_argmax_agreement"]["rate"]
     )
 
 
 def test_the_accumulator_refuses_to_summarise_nothing():
     with pytest.raises(MCRLContractError):
         P3Accumulator().summarise()
+
+
+# -- the null baseline (ruling W-26 §2) ------------------------------------
+
+
+def test_an_agreement_rate_is_never_reported_without_its_null():
+    """A bare rate answers the wrong question.
+
+    The interesting comparison is against RANDOM agreement, not against
+    100%: a rate can look far from "always agree" while being exactly what
+    chance would give, in which case it shows neither coupling nor
+    separation.
+    """
+    from mcrl.runtime.probe_p3 import _agreement
+
+    result = _agreement(hits=50, comparisons=100, null=[0.25] * 100)
+    assert result["rate"] == 0.5
+    assert result["null"] == 0.25
+    assert result["ratio_to_chance"] == pytest.approx(2.0)
+
+
+def test_an_agreement_with_no_comparisons_reports_none_not_zero():
+    """0.0 would read as "never agreed"; there was nothing to agree on."""
+    from mcrl.runtime.probe_p3 import _agreement
+
+    empty = _agreement(hits=0, comparisons=0, null=[])
+    assert empty["rate"] is None and empty["ratio_to_chance"] is None
+
+
+def test_the_two_agreement_metrics_have_different_nulls():
+    """The strict metric's null is 1/n; the setwise metric's is |best|/n.
+
+    Mixing them is what makes an above-chance result look like chance:
+    r3 ties heavily, so |best| is large and the setwise null is nowhere
+    near 1/n.
+    """
+    from mcrl.runtime.probe_p3 import P3Accumulator
+
+    accumulator = P3Accumulator()
+    accumulator.strict_null = [1 / 28] * 10
+    accumulator.setwise_null = [23 / 28] * 10
+    assert np.mean(accumulator.strict_null) < np.mean(accumulator.setwise_null)

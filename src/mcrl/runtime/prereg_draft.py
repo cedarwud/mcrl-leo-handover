@@ -417,6 +417,80 @@ SELECTION_MAPPINGS: dict[str, Any] = {
         ),
         "unfreezes": "env.dwell.DWELL_N_IS_FROZEN",
     },
+    "Q-F c1 calibration scale": {
+        "probe": "P3 (already measured; no new run)",
+        "rule": (
+            "c_1 = the p95 of r1 over served steps, from P3's r1 quantiles"
+        ),
+        "rationale": (
+            "The three scales cannot share one statistic, and the reason is "
+            "structural rather than stylistic: r2 is bounded by a frozen "
+            "parameter, r3 by the population, and r1 by nothing at all.  "
+            "The common INTENT is that each normalised objective spans "
+            "roughly unit range, so that omega_j means what Table I says it "
+            "means -- the effective trade-off is omega_j / c_j, so c_1 "
+            "directly sets how much of the headline result the first "
+            "objective accounts for.  r1 = R_u/P^N is strictly positive and "
+            "unbounded above, with a right tail driven by the best link "
+            "geometry, so it has no analytic bound to normalise against; "
+            "p95 spans the range while staying robust to that tail, which "
+            "the max would track instead.  Same reasoning, same statistic, "
+            "as the already-frozen c_3."
+        ),
+        "unfreezes": "trainer_spec.TrainerConfig.reward_calibration_scales[0]",
+        "resolved": 2471140.576,
+        "measured_r1_over_served_steps": {
+            "p05": 60948.985, "p50": 508681.149, "p95": 2471140.576,
+            "max": 6204625.88, "count": 12000.0,
+            "source": "probe P3, 12000 decision steps",
+        },
+        "not_rounded_because": (
+            "r3 is a head count and rounding keeps its scale countable; r1 "
+            "is a continuous bit/J ratio with no unit to round to"
+        ),
+        "supersedes": {
+            "legacy_c1": 117217362.202,
+            "why": (
+                "measured r1 has p50 = 5.09e5, so the legacy value is 230x "
+                "too large; dividing by it would put r1's median at 0.0043 "
+                "against |r3|'s 0.500 and crush the first objective.  "
+                "'Invalid by construction' is now a measurement, not an "
+                "inference."
+            ),
+        },
+        "disclosure": (
+            "⚠ P3 had already run when this rule was written, so r1's "
+            "distribution was VISIBLE -- 'the rule preceded the numbers' is "
+            "not literally true here the way it is for c_3.  What protects "
+            "it: the rule is structural (unbounded -> p95; bounded -> the "
+            "bound), it is the SAME rule already frozen for c_3, and it was "
+            "not selected from among alternatives by looking at which "
+            "produced a preferred balance.  Stated rather than glossed."
+        ),
+    },
+    "Q-G c2 calibration scale": {
+        "probe": "none -- closed analytically, no measurement needed",
+        "rule": "c_2 = phi2, the larger handover penalty",
+        "rationale": (
+            "r2 is the one objective **bounded by construction**: (3.27) "
+            "gives r2 in {0, -phi1, -phi2}, so |r2| <= phi2 always and "
+            "dividing by phi2 normalises it to [0, 1] exactly.  Its scale is "
+            "a frozen parameter, not a statistic, and closing it needs no "
+            "probe at all -- it was determined the moment phi1 and phi2 "
+            "were frozen.  ⚠ And the p95 rule CANNOT be transplanted here: "
+            "r2's signed p95 is 0 because most steps have no handover, so "
+            "'divide by the p95' would divide by zero.  The sign convention "
+            "puts r2's informative end at p05, and p05 is exactly -phi2 by "
+            "construction -- which is why the analytic bound is both simpler "
+            "and exact."
+        ),
+        "unfreezes": "trainer_spec.TrainerConfig.reward_calibration_scales[1]",
+        "resolved": 1.0,
+        "measured_r2_over_all_steps": {
+            "p05": -1.0, "p50": -0.0, "p95": 0.0, "mean": -0.11175,
+            "note": "reported for the record; the rule uses none of it",
+        },
+    },
     "Q-D r3 calibration scale": {
         "probe": "P3",
         "rule": (

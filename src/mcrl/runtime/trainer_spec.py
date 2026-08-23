@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 # PATCH P-20 (W-18): the five ``R1_REWARD_MODE_*`` constants are gone.
@@ -91,10 +91,19 @@ class TrainerConfig:
     comparison_role: str = "not-applicable"
     r1_reward_label: str = "system-energy-efficiency"
     r1_reward_provenance: str = "paper eq. (3.25): r1 = sum_{s,v} x * eta"
-    reward_calibration_enabled: bool = False
-    reward_calibration_mode: str = "raw-unscaled"
-    reward_calibration_source: str = "raw-unscaled"
-    reward_calibration_scales: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    # ⚠ ON by default since 2026-08-23, and it has to be.  Uncalibrated,
+    # the omega_1 r_1 term is 4.1e5 times the omega_3 r_3 term and 7.6e6
+    # times omega_2 r_2 -- the three-objective problem degenerates into
+    # single-objective r_1, and freezing it that way would freeze a
+    # degenerate training setup.  See runtime/reward_calibration.py.
+    reward_calibration_enabled: bool = True
+    reward_calibration_mode: str = "divide-by-fixed-scales"
+    reward_calibration_source: str = "probe-P3-and-analytic-bound"
+    reward_calibration_scales: tuple[float, float, float] = field(
+        default_factory=lambda: __import__(
+            "mcrl.runtime.reward_calibration", fromlist=["REWARD_SCALES"]
+        ).REWARD_SCALES
+    )
     reward_normalization_mode: str = "raw-unscaled"
     load_balance_calibration_mode: str = "baseline-paper-weight"
 

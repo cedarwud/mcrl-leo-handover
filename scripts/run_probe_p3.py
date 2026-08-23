@@ -34,19 +34,25 @@ result = run_probe_p3(
     action_rng=np.random.default_rng(2000),
 )
 for key in ("decision_steps", "degenerate_step_fraction",
-            "r1_r3_argmax_agreement_rate", "argmax_comparisons",
-            "qd_scale_p95_rounded", "r1_r3_step_correlation"):
-    print(f"{key:32s} {result[key]}")
+            "argmax_comparisons", "qd_scale_p95_rounded",
+            "r1_r3_step_correlation"):
+    print(f"{key:34s} {result[key]}")
+print()
+for key in ("r1_r3_argmax_agreement", "r1_r3_setwise_agreement"):
+    a = result[key]
+    print(f"{key:34s} rate {a['rate']:.4f}  null {a['null']:.4f}  "
+          f"ratio to chance {a['ratio_to_chance']:.2f}x")
+print(f"{'argmax_tie_break':34s} {result['argmax_tie_break']}")
 print()
 for key in ("candidate_load_width", "candidate_load_distinct_values",
-            "abs_r3_over_served_steps"):
+            "r3_best_set_size", "abs_r3_over_served_steps"):
     q = result[key]
-    print(f"{key:32s} p05 {q['p05']:.2f}  p50 {q['p50']:.2f}  "
+    print(f"{key:34s} p05 {q['p05']:.2f}  p50 {q['p50']:.2f}  "
           f"p95 {q['p95']:.2f}  max {q['max']:.2f}  mean {q['mean']:.3f}")
 print()
 for key in ("r1", "r2", "r3"):
     q = result[key]
-    print(f"{key:32s} p05 {q['p05']:.4g}  p50 {q['p50']:.4g}  "
+    print(f"{key:34s} p05 {q['p05']:.4g}  p50 {q['p50']:.4g}  "
           f"p95 {q['p95']:.4g}  mean {q['mean']:.4g}")
 Path("artifacts").mkdir(exist_ok=True)
 Path("artifacts/probe-p3-2026-08-23.json").write_text(

@@ -110,11 +110,23 @@ def test_the_opt_in_surfaces_are_gone_not_merely_disabled(field):
     assert not hasattr(TrainerConfig(), field)
 
 
-def test_the_surviving_calibration_switch_is_off_by_default():
-    """``reward_calibration_*`` stays: W-07 will need it once Q-D closes."""
+def test_the_surviving_calibration_switch_is_now_live_and_carries_real_scales():
+    """``reward_calibration_*`` survived P-05 for this; Q-D/Q-F/Q-G closed it.
+
+    ⚠ It was asserted OFF by default until 2026-08-23.  Leaving it off is
+    not the safe choice it looks like: uncalibrated, the ``ω₁r₁`` term is
+    4.1e5 times ``ω₃r₃`` and 7.6e6 times ``ω₂r₂``, so the three-objective
+    problem degenerates into single-objective ``r₁``.  "Disabled" would
+    have frozen a degenerate training setup.
+    """
+    from mcrl.runtime.reward_calibration import REWARD_SCALES
+
     config = TrainerConfig()
-    assert config.reward_calibration_enabled is False
-    assert config.reward_calibration_mode == "raw-unscaled"
+    assert config.reward_calibration_enabled is True
+    assert config.reward_calibration_mode == "divide-by-fixed-scales"
+    assert config.reward_calibration_scales == REWARD_SCALES
+    # And every scale is a real one, not a placeholder 1.0 triple.
+    assert config.reward_calibration_scales != (1.0, 1.0, 1.0)
 
 
 def test_the_new_environment_modules_are_entirely_clean():

@@ -58,7 +58,13 @@ class P3Accumulator:
     candidate_load_distinct: list[int] = field(default_factory=list)
     """How many distinct load values those 28 candidates offer."""
     argmax_agreements: int = 0
+    """Strict: ``argmax(r1) == argmax(r3)``, both first-index tie-broken."""
+    setwise_agreements: int = 0
+    """Loose: ``argmax(r1)`` lands anywhere in ``r3``'s best set."""
     argmax_comparisons: int = 0
+    r3_best_set_size: list[float] = field(default_factory=list)
+    strict_null: list[float] = field(default_factory=list)
+    setwise_null: list[float] = field(default_factory=list)
     realised_abs_r3: list[float] = field(default_factory=list)
     r1_values: list[float] = field(default_factory=list)
     r2_values: list[float] = field(default_factory=list)
@@ -113,9 +119,28 @@ class P3Accumulator:
             )
             r1_candidates = rate / power
             r3_candidates = -loads
+
+            # ⚠ Two agreement metrics with two different null rates, because
+            # r3 TIES heavily: a user's 28 candidates take only ~4 distinct
+            # load values, so r3's "best" is usually a SET, not a candidate.
+            #
+            # Comparing a strict argmax==argmax rate against a set-membership
+            # null (|best set| / n) mixes the two up and can make a result
+            # 2.7x above chance look like chance.  Both are reported with
+            # their own null.
+            best = np.flatnonzero(r3_candidates == r3_candidates.max())
+            pick = int(np.argmax(r1_candidates))
             self.argmax_comparisons += 1
-            if int(np.argmax(r1_candidates)) == int(np.argmax(r3_candidates)):
+            if pick == int(np.argmax(r3_candidates)):
                 self.argmax_agreements += 1
+            if pick in set(best.tolist()):
+                self.setwise_agreements += 1
+            self.r3_best_set_size.append(float(best.size))
+            # Null model: r1's preference independent of r3's and uniform
+            # over the valid candidates.  Stated rather than assumed --
+            # it is what makes the ratios below interpretable.
+            self.strict_null.append(1.0 / valid.size)
+            self.setwise_null.append(best.size / valid.size)
 
     def summarise(self) -> dict[str, object]:
         width = np.array(self.candidate_load_width, dtype=np.float64)
@@ -135,12 +160,21 @@ class P3Accumulator:
             "degenerate_step_fraction": (
                 float(np.mean(width == 0.0)) if width.size else 0.0
             ),
-            "r1_r3_argmax_agreement_rate": (
-                self.argmax_agreements / self.argmax_comparisons
-                if self.argmax_comparisons
-                else 0.0
-            ),
             "argmax_comparisons": self.argmax_comparisons,
+            "r1_r3_argmax_agreement": _agreement(
+                self.argmax_agreements, self.argmax_comparisons, self.strict_null
+            ),
+            "r1_r3_setwise_agreement": _agreement(
+                self.setwise_agreements, self.argmax_comparisons, self.setwise_null
+            ),
+            "r3_best_set_size": _quantiles(
+                np.array(self.r3_best_set_size, dtype=np.float64)
+            ),
+            "argmax_tie_break": (
+                "first index in slot order (satellite-major, beam-minor); "
+                "r3 ties heavily, so the strict metric compares against ONE "
+                "member of the best set and its null is 1/n, not |best|/n"
+            ),
             # -- Q-D: the scale -----------------------------------------
             "abs_r3_over_served_steps": _quantiles(abs_r3),
             "qd_scale_p95_rounded": scale,
@@ -197,6 +231,28 @@ def _qd_scale(abs_r3: np.ndarray) -> int:
             "nothing to apply and a scale must not be invented"
         )
     return int(round(float(np.percentile(abs_r3, 95))))
+
+
+def _agreement(
+    hits: int, comparisons: int, null: Sequence[float]
+) -> dict[str, float | None]:
+    """An agreement rate is uninterpretable without its null.
+
+    Reported as a ratio to chance, because the raw rate answers the wrong
+    question: the interesting comparison is against RANDOM agreement, not
+    against 100%.  A ratio near 1 means the metric shows nothing either
+    way — neither coupling nor separation.
+    """
+    if comparisons == 0:
+        return {"rate": None, "null": None, "ratio_to_chance": None}
+    rate = hits / comparisons
+    expected = float(np.mean(null)) if len(null) else 0.0
+    return {
+        "rate": rate,
+        "null": expected,
+        "ratio_to_chance": (rate / expected) if expected > 0.0 else None,
+        "comparisons": float(comparisons),
+    }
 
 
 def _quantiles(values: np.ndarray) -> dict[str, float]:

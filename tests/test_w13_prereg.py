@@ -39,14 +39,34 @@ POLICY = ReferencePolicy(
 
 SELECTION_MAPPINGS = {
     "Q-E dwell N": (
-        "N is whichever of {2,3,4} maximises the angle-aware EE dynamic "
-        "range in P2; ties broken by the smallest N"
+        "the largest N in {2,3,4} whose measured re-key rate is at or below "
+        "5%; if none qualifies, the smallest"
     ),
     "Q-D r3 calibration scale": (
-        "the r3 scale is the p95 of |U_{b_u}| over the P3 reference rollout, "
-        "rounded up to the next integer"
+        "the p95 of |r3| over served steps in P3, rounded to the nearest "
+        "integer"
+    ),
+    "Q-F c1 calibration scale": (
+        "the p95 of r1 over served steps in P3; unbounded objective, so no "
+        "analytic bound exists to normalise against"
+    ),
+    "Q-G c2 calibration scale": (
+        "phi2, the larger handover penalty: |r2| <= phi2 by construction, so "
+        "the scale is a frozen parameter and no probe closes it"
     ),
 }
+"""Stand-ins, deliberately not the live mappings.
+
+This module tests the freeze MACHINERY; ``prereg_draft.SELECTION_MAPPINGS``
+holds the real ones with their rationales.  What must track the live set is
+the **key set** — a question with no mapping here would make the tests below
+pass while the real freeze blocked.
+"""
+
+
+def test_this_modules_stand_in_mappings_cover_every_live_question():
+    """Otherwise these tests drift out of sync with the questions."""
+    assert set(SELECTION_MAPPINGS) == set(open_questions())
 
 
 def _sections(selection_mappings=None):
@@ -90,20 +110,40 @@ def reopened(monkeypatch):
     patching the module attribute is enough — and that laziness exists for
     exactly this reason: the values are read where they are owned, never
     restated.
-    """
-    import mcrl.env.service as service
 
-    monkeypatch.setattr(service, "R3_SCALE_IS_FROZEN", False)
-    return "Q-D r3 calibration scale"
+    ⚠ Q-F/Q-G are reopened rather than Q-D: since 2026-08-23 reward
+    calibration is ON by default, and the validator refuses to construct a
+    ``TrainerConfig`` while ``R3_SCALE_IS_FROZEN`` is false — so patching
+    that one would fail during section building rather than at the gate
+    under test.  The flag chosen has to be one the *gate* reads and the
+    surrounding machinery does not.
+    """
+    import mcrl.runtime.reward_calibration as calibration
+
+    monkeypatch.setattr(calibration, "REWARD_SCALES_ARE_FROZEN", False)
+    return "Q-F c1 calibration scale"
 
 
 def test_the_open_questions_are_read_from_the_code_that_owns_them():
     """Both are closed now, and the flags are still the only source."""
     questions = open_questions()
-    assert set(questions) == {"Q-E dwell N", "Q-D r3 calibration scale"}
+    assert set(questions) == {
+        "Q-E dwell N",
+        "Q-D r3 calibration scale",
+        "Q-F c1 calibration scale",
+        "Q-G c2 calibration scale",
+    }
     # Q-E: ruling 2026-08-23, N = 3 by the frozen re-key mapping.
     # Q-D: probe P3 the same day, scale = 6 by the frozen p95 mapping.
-    assert questions == {"Q-E dwell N": True, "Q-D r3 calibration scale": True}
+    assert questions == {
+        "Q-E dwell N": True,
+        "Q-D r3 calibration scale": True,
+        # Q-F/Q-G had no owner at all until 2026-08-23: Q-D closed c_3 and
+        # nothing closed c_1 or c_2, so half of every effective trade-off
+        # omega_j / c_j would have been decided after the freeze.
+        "Q-F c1 calibration scale": True,
+        "Q-G c2 calibration scale": True,
+    }
 
 
 def test_the_flags_are_read_from_their_owners_not_restated():
@@ -140,7 +180,11 @@ def test_an_open_question_without_a_selection_mapping_blocks_the_freeze(
 
 
 def test_a_partial_selection_mapping_still_blocks(reopened):
-    partial = {"Q-E dwell N": SELECTION_MAPPINGS["Q-E dwell N"]}
+    partial = {
+        name: rule
+        for name, rule in SELECTION_MAPPINGS.items()
+        if name != reopened
+    }
     with pytest.raises(PreregFreezeError, match=reopened):
         freeze_prereg(_sections(selection_mappings=partial), holdout_seed=1)
 
