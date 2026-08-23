@@ -13,6 +13,7 @@
 | `signed_drop_dt30.py` | 段末 vs 段內峰值的有號跌幅,以及峰值鏈路功率 | `W19-REPLY-C-COST` §1、`W19-DONE` §0 |
 | `two_timescale_check.py` | 驗證兩個時鐘與 TTT 是列舉值;實測 47 子步成本 | `W19-DONE` §1 |
 | `outage_frozen.py` | 凍結情境下的 outage / 遮罩衰減 / 鏈路功率 | `W19-DONE` §0 |
+| `feasibility_is_fading_free.py` | 可行性判定是否讀衰落(答案:否) | `W22-REPLY` §1 |
 | `sensitivity_arm.py` | 三臂並列:主臂 / 敏感度臂(L=6) / 無暖啟動的 outage 與峰值 | `W21-REPLY` §2 |
 | `ceiling_and_segments.py` | **權威版**:由 `link_power_w` 算已耗用預算;segment 結束歸因與未設限段長 | `W20-REPLY` §0–1 |
 
@@ -22,3 +23,10 @@
 
 全部從 repo 根目錄執行:`.venv/bin/python scripts/<name>.py`。
 需要 TLE 語料(`~/demo/tle_data/starlink/tle`)。
+
+
+⚠ **每個腳本都要用三條獨立的 generator**(`env_rng` 衰落 / `mobility_rng` 使用者 /
+策略自己那條),對應 `MODQNTrainer` 實際提供的結構。
+用**一條** generator 兼做三件事時,改動其中任何一項都會推進資料流、
+連帶重抽另外兩項 —— **那樣量出來的東西不是任何一項的消融**。
+2026-08-23 就是這樣讓段齡與衰落耦合、產生了 95 vs 106 的假差異。

@@ -596,3 +596,65 @@ def test_stepping_before_reset_is_refused():
     env._candidates = None
     with pytest.raises(MCRLContractError, match="not been reset"):
         StepEnvironment.step(env, np.zeros(1, dtype=np.int64), np.random.default_rng(0))
+
+
+@requires_archive
+def test_the_warm_start_ages_do_not_share_a_stream_with_the_fading():
+    """A fading ablation must not silently re-draw the entry ages.
+
+    They shared ``env_rng`` until 2026-08-23, so turning fading off shifted
+    every later episode's ages and the outage count moved (95 versus 106)
+    from ages that were supposed to be identical.  The ages now come from a
+    generator spawned once, so the two are independent — the same argument
+    that separated ``env_rng`` from ``mobility_rng``.
+    """
+    def ages(fading: bool) -> np.ndarray:
+        environment = _environment(PhysicsConfig(fading_enabled=fading))
+        drawn = []
+        env_rng = np.random.default_rng(5)
+        mobility_rng = np.random.default_rng(6)
+        for _ in range(3):
+            environment.reset(START, env_rng, mobility_rng=mobility_rng)
+            drawn.append(environment._pending_segment_age.copy())
+        return np.concatenate(drawn)
+
+    assert np.array_equal(ages(True), ages(False))
+
+
+@requires_archive
+def test_the_feasibility_verdict_does_not_read_the_fading():
+    """``p = p⁰·G(τ)/G(t)`` is transmit pattern only; ``L_s`` lives in ``H``.
+
+    So the outage set is a function of the geometry and the entry ages, and
+    the fading draw moves the SINR without moving who is served.  It is
+    what lets a reported outage rate be reproducible from a stated seed
+    rather than being an average over fading realisations.
+    """
+    def run(fading: bool):
+        environment = _environment(PhysicsConfig(fading_enabled=fading))
+        policy = build_reference_policy(STAY_IF_POSSIBLE, seed=7)
+        env_rng = np.random.default_rng(5)
+        mobility_rng = np.random.default_rng(6)
+        action_rng = np.random.default_rng(7)
+        observation = environment.reset(START, env_rng, mobility_rng=mobility_rng)
+        policy.reset()
+        outage, sinr = [], []
+        while True:
+            outcome = environment.step(
+                policy.act(observation.candidates, action_rng), env_rng
+            )
+            outage.append(outcome.resolution.outage_infeasible.copy())
+            sinr.append(outcome.link_sinr.copy())
+            observation = outcome.observation
+            if outcome.done:
+                break
+        return np.stack(outage), np.stack(sinr)
+
+    outage_on, sinr_on = run(True)
+    outage_off, sinr_off = run(False)
+    assert np.array_equal(outage_on, outage_off), (
+        "the fading draw changed who was served"
+    )
+    assert not np.allclose(sinr_on, sinr_off), (
+        "fading must still move the SINR, or this test proves nothing"
+    )

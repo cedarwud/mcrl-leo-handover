@@ -18,13 +18,20 @@ for label, cfg in (("warm start ON (frozen)", PhysicsConfig()),
     driver = ScenarioDriver(ARCHIVE, ScenarioConfig(mobility=MobilityConfig(num_users=USERS)))
     env = StepEnvironment(driver, physics=cfg)
     policy = build_reference_policy(STAY_IF_POSSIBLE, seed=7)
+    # Three independent streams, matching what MODQNTrainer supplies:
+    # env_rng (fading), mobility_rng (users), and the policy's own draw.
+    # With one generator a fading change shifts the users and the entry
+    # ages too, and nothing measured here is an ablation of one thing.
     rng = np.random.default_rng(0)
+    mob = np.random.default_rng(1000)
+    act = np.random.default_rng(2000)
     tot = dict(steps=0, served=0, outage=0, noop=0); sinr=[]; valid=[]; pw=[]
     for ep in range(EPISODES):
-        obs = env.reset(BASE + dt.timedelta(hours=17*ep), rng); policy.reset()
+        obs = env.reset(BASE + dt.timedelta(hours=17*ep), rng, mobility_rng=mob)
+        policy.reset()
         while True:
             valid.extend(obs.masks.sum(axis=1).tolist())
-            out = env.step(policy.act(obs.candidates, rng), rng)
+            out = env.step(policy.act(obs.candidates, act), rng)
             r = out.resolution
             tot["steps"] += USERS; tot["served"] += r.served_count
             tot["outage"] += int(np.count_nonzero(r.outage_infeasible))
