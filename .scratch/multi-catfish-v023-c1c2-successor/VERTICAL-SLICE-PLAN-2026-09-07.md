@@ -13,7 +13,7 @@ never cited as evidence. Executed by operator sub-agents / server-side codex, ne
 | V4 | stage-C four-arm physical runner, first 100 episodes + checkpoint + resume + rung receipt, fresh or V1 exports | world plan `866d28e0…`, baseline | τ per episode per arm, checkpoint/resume cadence, receipt shapes, RAM | dispatched 15:55 UTC (RAM sufficient: 15 GB free) |
 | V5 | interruption drills: kill the runner mid-epoch (stage A) and mid-episode (stage C), resume from the last checkpoint; verify exact continuation | V1/V4 roots | resume correctness, write-once collisions, marker handling | partial drill bundled with V4 |
 | V6 | verify/sealer negatives: run the formal verifiers against the rehearsal roots and confirm they REJECT non-formal output; run them against a formal-shaped fixture and confirm PASS | launch bundle | verifier↔writer agreement before the formal run | after launch bundle lands |
-| V7 | C3 contingency F1 tape generation + kill screen (science lane, cheap: one world, two steps) | F1 corrected package, frozen launch authority | D/F vs BASE on the shared tape | F1 verified (a)–(f); launch authority + single run dispatched 15:45 UTC |
+| V7 | C3 contingency F1 tape generation + kill screen (science lane, cheap: one world, two steps) | F1 corrected package, frozen launch authority | D/F vs BASE on the shared tape | authority frozen; run 15:14 UTC → `INVALID_RUN` in F0 conservation check on the real BASE profile; diagnosis in progress (repair-and-replay per ladder) |
 
 Rules: one corrected attempt per failure inside a slice without asking; consumer aligns to producer; every fix gets a
 producer-derived test; failures are logged in the handoff report §16 with the minutes they cost.

@@ -37,10 +37,6 @@ def _run(spec: Path, output: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="baseline adapter contract_fields fix pending",
-)
 def test_stage_bc_default_status_matrix(tmp_path: Path) -> None:
     output = tmp_path / "stage-bc"
     completed = _run(SPEC, output)
@@ -54,15 +50,7 @@ def test_stage_bc_default_status_matrix(tmp_path: Path) -> None:
         "receipt_cadence_resume",
     ):
         assert statuses[name] == "PASS"
-    baseline_exists = (
-        REPO / "artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt"
-    ).is_file()
-    if baseline_exists and statuses["baseline_admission"] != "PASS":
-        assert statuses["baseline_admission"] == "FAIL"
-        assert "contract_fields are not part of the native 112-D state" in (
-            report["steps"][2]["exception"]["text"]
-        )
-    assert statuses["baseline_admission"] == ("PASS" if baseline_exists else "BLOCKED")
+    assert statuses["baseline_admission"] == "PASS"
     assert statuses["optional_real_world"] == "BLOCKED"
     assert completed.returncode == 3, completed.stderr + completed.stdout
     assert completed.stdout.strip().splitlines()[-1] == "DRYRUN_successor_stage_bc_BLOCKED"
