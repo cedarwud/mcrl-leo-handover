@@ -17,6 +17,7 @@ import stagec_common as common
 
 
 PASS = "PASS_V023_C1C2_SUCCESSOR_STAGEC_PREFLIGHT"
+EARLY_PASS = "PASS_V023_C1C2_SUCCESSOR_EARLY_BASELINE_PREFLIGHT"
 
 
 def _reject_circular_digest(value: object, bindings_sha: str) -> None:
@@ -168,18 +169,73 @@ def preflight(bindings_path: Path, *, output_override: Path | None = None) -> di
     }
 
 
+def preflight_early_baseline(
+    bindings_path: Path,
+    admission_path: Path,
+    *,
+    output_override: Path,
+) -> dict[str, object]:
+    """Preflight BASELINE without consuming or claiming Stage-A/B evidence."""
+
+    bindings = common.verify_bindings(bindings_path)
+    common.verify_runtime_identity(bindings)
+    if output_override.exists() or output_override.is_symlink():
+        raise common.StageCError("early BASELINE output root must be absent")
+    runner = _import_from(common.PHYSICAL / "v023_c1c2_successor_physical_runner.py")
+    baseline = bindings.get("baseline")
+    if not isinstance(baseline, Mapping):
+        raise common.StageCError("BASELINE binding is missing")
+    policy = runner.load_baseline_policy(
+        checkpoint_path=baseline["checkpoint_path"],
+        status_path=baseline["status_path"],
+        expected_status_sha256=baseline["status_sha256"],
+    )
+    admission_sha = common.verify_named_sidecar(admission_path)
+    admission = runner.authenticate_early_baseline_admission(
+        admission_path,
+        expected_sha256=admission_sha,
+        plan_sha256=common.PLAN_SHA256,
+        policy_binding=policy.binding(),
+    )
+    if admission.get("authority_sha256") != common.file_sha256(bindings_path):
+        raise common.StageCError("early BASELINE admission authority drifted")
+    return {
+        "schema": "multi-catfish-mcrl-v023-c1c2-successor-early-baseline-preflight-v1",
+        "status": EARLY_PASS,
+        "formal": True,
+        "arm": "BASELINE",
+        "episode_range": [1, 3000],
+        "execution_mode": "arm_decoupled",
+        "bindings_sha256": common.file_sha256(bindings_path),
+        "admission_sha256": admission_sha,
+        "scheduling_addendum_sha256": admission["scheduling_addendum_sha256"],
+        "plan_sha256": common.PLAN_SHA256,
+        "baseline_invariance": _baseline_invariance(bindings),
+        "stage_a_consumed": False,
+        "stage_b_consumed": False,
+        "output_root_absent": str(output_override.resolve(strict=False)),
+    }
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bindings", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
+    parser.add_argument("--early-baseline-admission", type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        payload = preflight(args.bindings, output_override=args.output)
+        payload = (
+            preflight_early_baseline(
+                args.bindings, args.early_baseline_admission, output_override=args.output
+            )
+            if args.early_baseline_admission is not None
+            else preflight(args.bindings, output_override=args.output)
+        )
         common.write_once(args.receipt, payload)
         common.write_digest_sidecar(args.receipt)
     except Exception as error:

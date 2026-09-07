@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import math
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -350,3 +352,198 @@ def test_held_3000_authority_admits_9000_core_runner_and_forgery_is_refused(
     assert result_9000["completed_episode"] == 9000
     assert result_9000["terminal_result_emitted"] is True
     assert (output / "continuation-result.json").is_file()
+
+
+def _rngs(seed: int):
+    sequence = np.random.SeedSequence(seed)
+    children = sequence.spawn(2)
+    return np.random.default_rng(children[0]), np.random.default_rng(children[1])
+
+
+class _AgeStreamAdapter:
+    """Producer-shaped adapter exercising the real persisted age-stream rule."""
+
+    def __init__(self, arm: str, *, interrupt_after: int | None = None) -> None:
+        self.arm = arm
+        self.rng_factory = _rngs
+        self.interrupt_after = interrupt_after
+        self.calls = 0
+        self._binding = {
+            "arm": arm,
+            "routes": [] if arm == "BASELINE" else ["C1", "C2"],
+            "checkpoint_sha256": runner.canonical_sha256({"arm": arm, "fixture": "age-stream"}),
+            "fixed_policy": True,
+        }
+        self._state = None
+
+    @property
+    def policy_bindings(self):
+        return {self.arm: self._binding}
+
+    def resume_state_for(self, arm):
+        assert arm == self.arm
+        return self._state
+
+    def run_episode(self, *, arm, world, plan_sha256, resume_state=None):
+        assert arm == self.arm
+        if self.interrupt_after is not None and self.calls == self.interrupt_after:
+            raise KeyboardInterrupt("fixture interruption")
+        self.calls += 1
+        if resume_state is None:
+            age_rng = _rngs(world.world_seed)[0].spawn(1)[0]
+        else:
+            age_rng = np.random.default_rng()
+            age_rng.bit_generator.state = resume_state["environment_training_state"]["age_rng_state"]
+        ages = age_rng.integers(0, runner.STEPS, size=runner.USERS)
+        bits = float(math.fsum(float(value + 1) for value in ages))
+        energy = float(runner.USERS + world.episode_index / 10_000)
+        receipt = runner.EpisodeReceipt(
+            schema=runner.RECEIPT_SCHEMA,
+            status=runner.STATUS,
+            split=runner.SPLIT,
+            arm=arm,
+            routes=() if arm == "BASELINE" else runner.ROUTES,
+            episode_index=world.episode_index,
+            world_id=world.world_id,
+            world_seed=world.world_seed,
+            users=runner.USERS,
+            steps=runner.STEPS,
+            decision_interval_s=1.0,
+            total_bits=bits,
+            total_energy_j=energy,
+            ratio_of_sums_ee_bits_per_j=bits / energy,
+            served_user_steps=runner.USERS * runner.STEPS,
+            service_opportunities=runner.USERS * runner.STEPS,
+            service_fraction=1.0,
+            initial_world_sha256=runner.canonical_sha256({"ages": ages}),
+            field_component=runner.FIELD_COMPONENT,
+            field_root_digest=world.field_root_digest,
+            action_trace_sha256=runner.canonical_sha256({"ages": ages, "arm": arm}),
+            plan_sha256=plan_sha256,
+            policy_binding=self._binding,
+        )
+        receipt.verify()
+        self._state = {
+            "schema": f"{runner.SCHEMA}-resume-state",
+            "arm": arm,
+            "episode_index": world.episode_index,
+            "world_id": world.world_id,
+            "world_seed": world.world_seed,
+            "field_root_digest": world.field_root_digest,
+            "plan_sha256": plan_sha256,
+            "policy_binding": self._binding,
+            "environment_training_state": {
+                "format_version": 1,
+                "age_rng_state": age_rng.bit_generator.state,
+            },
+        }
+        return receipt
+
+
+def _chunk_context(adapter: _AgeStreamAdapter) -> dict[str, object]:
+    digests = {
+        name: runner.canonical_sha256({"fixture": name})
+        for name in (
+            "authority_sha256",
+            "code_manifest_sha256",
+            "configuration_sha256",
+            "tle_sha256",
+            "prereg_sha256",
+            "admission_sha256",
+        )
+    }
+    return {
+        "arm": adapter.arm,
+        "adapter": adapter,
+        "schedule_sha256": runner.canonical_sha256({"schedule": "fixture"}),
+        "execution_mode": "arm_decoupled",
+        "continuation_limit": 3000,
+        "provenance": digests,
+    }
+
+
+def _direct_sequential(plan, adapter, episodes=200):
+    rows = []
+    state = None
+    states = {}
+    for index in range(episodes):
+        row = adapter.run_episode(
+            arm=adapter.arm,
+            world=plan.worlds[index],
+            plan_sha256=plan.plan_sha256,
+            resume_state=state,
+        )
+        rows.append(row)
+        state = adapter.resume_state_for(adapter.arm)
+        if index + 1 in {100, 200}:
+            states[index + 1] = json.loads(json.dumps(runner._jsonable(state)))
+    return rows, states
+
+
+@pytest.mark.parametrize("arm", runner.ARMS)
+def test_sequential_200_equals_two_100_chunks_bitwise(
+    arm: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    plan = _plan()
+    sequential_rows, sequential_states = _direct_sequential(plan, _AgeStreamAdapter(arm))
+    adapter = _AgeStreamAdapter(arm)
+    table_a = runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 100, 200))
+    table_b = runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 100, 200))
+    assert {key: value.as_dict() for key, value in table_a.items()} == {
+        key: value.as_dict() for key, value in table_b.items()
+    }
+    assert table_a[100]["resume_state"] == sequential_states[100]
+    assert table_a[200]["resume_state"] == sequential_states[200]
+    first_root = tmp_path / f"{arm}-0-100"
+    second_root = tmp_path / f"{arm}-100-200"
+    runner.run_arm_chunk(arm, 0, 100, table_a[0], first_root)
+    runner.run_arm_chunk(arm, 100, 200, table_a[100], second_root)
+    chunk_rows = []
+    for root, start, end in ((first_root, 0, 100), (second_root, 100, 200)):
+        for episode in range(start + 1, end + 1):
+            row, _state = runner._read_episode_record(root / "episodes" / f"episode-{episode:06d}.json")
+            chunk_rows.append(row)
+    assert [row.as_dict() for row in chunk_rows] == [row.as_dict() for row in sequential_rows]
+    for boundary in (100, 200):
+        sequential_pool = runner.pool_receipts(sequential_rows[:boundary], arm=arm)
+        chunk_pool = runner.pool_receipts(chunk_rows[:boundary], arm=arm)
+        assert runner._canonical_bytes(sequential_pool) == runner._canonical_bytes(chunk_pool)
+    merged = runner.merge_arm_chunks(arm, (first_root, second_root), tmp_path / f"{arm}-merged")
+    assert merged["ordered_episode_digest"] == runner.canonical_sha256(
+        [row.as_dict() for row in sequential_rows]
+    )
+    with pytest.raises(runner.C1C2PhysicalError, match="duplicate completed chunk"):
+        runner.run_arm_chunk(arm, 0, 100, table_a[0], first_root)
+
+
+def test_chunk_interruption_preserves_prefix_and_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    plan = _plan()
+    adapter = _AgeStreamAdapter("BASELINE", interrupt_after=17)
+    table = runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 100))
+    root = tmp_path / "interrupted"
+    with pytest.raises(KeyboardInterrupt):
+        runner.run_arm_chunk("BASELINE", 0, 100, table[0], root)
+    assert len(list((root / "episodes").glob("episode-*.json"))) == 17
+    adapter.interrupt_after = None
+    receipt = runner.run_arm_chunk("BASELINE", 0, 100, table[0], root)
+    assert receipt["status"] == "COMPLETE_ARM_CHUNK"
+    assert len(list((root / "episodes").glob("episode-*.json"))) == 100
+
+
+def test_chunk_refuses_early_baseline_above_3000_and_missing_fourth_arm(
+    tmp_path: Path,
+) -> None:
+    plan = _plan()
+    adapter = _AgeStreamAdapter("BASELINE")
+    with pytest.raises(runner.C1C2PhysicalError, match="continuation authority"):
+        runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 3100))
+    with pytest.raises(runner.C1C2PhysicalError, match="every arm"):
+        runner.merge_four_arm(
+            {arm: tmp_path / arm for arm in runner.ARMS[:-1]},
+            tmp_path / "four",
+            admission_mapping={arm: {} for arm in runner.ARMS},
+        )

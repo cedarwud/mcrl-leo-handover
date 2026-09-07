@@ -24,6 +24,17 @@ scientific disposition. The controller supplies the authority file and digest,
 not a digest alone. Resume authenticates every earlier checkpoint, rung,
 episode plan/policy binding, and requires sealed repair authority after STOP.
 
+The sequential runner remains the reference implementation. The separate
+chunk surface replays the actual persisted `StepEnvironment._age_rng` draws
+(`integers(0, 10, size=100)`) from the episode-1 spawned stream and freezes
+states at every 100-episode boundary; it never uses arithmetic RNG advance.
+`run_arm_chunk` writes one arm/range exclusively with per-episode records,
+authenticated boundaries and one-thread provenance. `merge_arm_chunks` pools
+individual episode totals with the unchanged `math.fsum` reduction.
+`merge_four_arm` refuses incomplete arm coverage and is the only chunk path
+that may emit four-arm rungs or the 3,000 disposition. A sealed early-BASELINE
+admission permits only BASELINE 1--3,000 and never admits a learned arm.
+
 `v023_c1c2_successor_plumbing_diagnostic.py` is the exact one-world Stage B
 check: world index 1, id
 `train-v023-c1c2-successor-plumbing-001`, seed `936547238915053535`, 100 users,

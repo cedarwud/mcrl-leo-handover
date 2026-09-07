@@ -17,8 +17,10 @@ import json
 import math
 import os
 from pathlib import Path
+import platform
 import sys
 import tempfile
+import time
 from typing import Any, TypeAlias
 
 import numpy as np
@@ -66,6 +68,10 @@ CONTINUATION_RESULT_SCHEMA = f"{SCHEMA}-continuation-result"
 INTEGRITY_SCHEMA = f"{SCHEMA}-integrity-stop"
 CONTINUATION_AUTHORITY_SCHEMA = f"{SCHEMA}-continuation-authority-v1"
 REPAIR_AUTHORITY_SCHEMA = f"{SCHEMA}-repair-authority-v1"
+EARLY_BASELINE_ADMISSION_SCHEMA = f"{SCHEMA}-early-baseline-admission-v1"
+BOUNDARY_TABLE_SCHEMA = f"{SCHEMA}-chunk-boundary-table-v1"
+CHUNK_RECEIPT_SCHEMA = f"{SCHEMA}-arm-chunk-receipt-v1"
+ARM_MERGE_SCHEMA = f"{SCHEMA}-arm-merge-v1"
 TWO_ROUTE_CHECKPOINT_SCHEMA = (
     "multi-catfish-mcrl-v023-c1c2-successor-two-route-checkpoint-v1"
 )
@@ -90,6 +96,8 @@ BASELINE_CHECKPOINT_SHA256 = (
     "e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b"
 )
 HELD_TOKEN_SHA256 = hashlib.sha256(HELD.encode("ascii")).hexdigest()
+EXECUTION_MODES = ("sequential", "arm_decoupled")
+RNG_POLICY_VERSION = "numpy-generator-spawn-age-stream-replay-v1"
 
 
 class C1C2PhysicalError(RuntimeError):
@@ -361,6 +369,55 @@ def authenticate_runtime_admission(
     result["admission_sha256"] = digest
     result["admission_path"] = str(source.resolve())
     result["authenticated_predecessor_statuses"] = observed
+    return result
+
+
+def authenticate_early_baseline_admission(
+    path: str | Path,
+    *,
+    expected_sha256: str,
+    plan_sha256: str,
+    policy_binding: Mapping[str, object],
+) -> dict[str, Any]:
+    """Authenticate the execution-only admission for early BASELINE 1--3000."""
+
+    source = Path(path)
+    payload, observed = _read_sealed_json(
+        source,
+        expected_sha256=expected_sha256,
+        label="early BASELINE admission",
+    )
+    required_digests = (
+        "scheduling_addendum_sha256",
+        "plan_sha256",
+        "baseline_checkpoint_sha256",
+        "baseline_status_sha256",
+        "baseline_adapter_sha256",
+        "runner_code_manifest_sha256",
+        "authority_sha256",
+        "configuration_sha256",
+        "tle_sha256",
+        "prereg_sha256",
+    )
+    if (
+        payload.get("schema") != EARLY_BASELINE_ADMISSION_SCHEMA
+        or payload.get("status") != "EARLY_BASELINE_ADMITTED"
+        or payload.get("formal") is not True
+        or payload.get("split") != SPLIT
+        or payload.get("arm") != "BASELINE"
+        or payload.get("execution_mode") != "arm_decoupled"
+        or payload.get("episode_range") != [1, 3000]
+        or payload.get("plan_sha256") != plan_sha256
+        or payload.get("baseline_checkpoint_sha256") != BASELINE_CHECKPOINT_SHA256
+        or payload.get("policy_binding_sha256") != canonical_sha256(policy_binding)
+        or payload.get("continuation_to_9000_authorized") is not False
+    ):
+        raise C1C2PhysicalError("early BASELINE admission identity drifted")
+    for field in required_digests:
+        _digest(payload.get(field), field=field)
+    result = dict(payload)
+    result["admission_path"] = str(source.resolve())
+    result["admission_sha256"] = observed
     return result
 
 
@@ -1041,8 +1098,13 @@ class FixedPolicyEpisodeAdapter:
             "PASS_PLUMBING_INTEGRITY",
         ),
     ) -> None:
-        if tuple(policy.arm for policy in policies) != ARMS:
-            raise C1C2PhysicalError("policy arm order/coverage is not the fixed four-arm order")
+        policy_arms = tuple(policy.arm for policy in policies)
+        if (
+            not policy_arms
+            or len(set(policy_arms)) != len(policy_arms)
+            or tuple(arm for arm in ARMS if arm in policy_arms) != policy_arms
+        ):
+            raise C1C2PhysicalError("policy arms are not an ordered subset of the fixed four-arm plan")
         for policy in policies:
             policy.verify()
         if not callable(environment_factory) or not callable(rng_factory):
@@ -1071,17 +1133,31 @@ class FixedPolicyEpisodeAdapter:
         )
         if sealed_payload != authenticated_payload:
             raise C1C2PhysicalError("runtime admission payload changed after authentication")
-        if authenticated_statuses != list(required_predecessor_statuses):
+        self.early_baseline = sealed_payload.get("schema") == EARLY_BASELINE_ADMISSION_SCHEMA
+        if self.early_baseline:
+            if policy_arms != ("BASELINE",):
+                raise C1C2PhysicalError("early BASELINE admission cannot admit learned arms")
+            authenticate_early_baseline_admission(
+                admission_path,
+                expected_sha256=str(admission_sha),
+                plan_sha256=str(sealed_payload.get("plan_sha256")),
+                policy_binding=self.policies["BASELINE"].binding(),
+            )
+            if authenticated_statuses not in (None, []):
+                raise C1C2PhysicalError("early BASELINE admission cannot claim predecessor PASS")
+        elif authenticated_statuses != list(required_predecessor_statuses):
             raise C1C2PhysicalError("runtime admission predecessor PASS coverage is insufficient")
         provenance = self.runtime_admission.get("learned_training_provenance")
-        if not isinstance(provenance, Mapping) or set(provenance) != set(LEARNED_ARMS):
+        if not self.early_baseline and (
+            not isinstance(provenance, Mapping) or set(provenance) != set(LEARNED_ARMS)
+        ):
             raise C1C2PhysicalError("learned-arm training provenance coverage drifted")
         expected_sources = {
             "FULL2": ["informed", "informed"],
             "DROP_C1": ["neutral", "informed"],
             "DROP_C2": ["informed", "neutral"],
         }
-        for arm in LEARNED_ARMS:
+        for arm in (arm for arm in LEARNED_ARMS if arm in policy_arms):
             record = provenance[arm]
             policy = self.policies[arm]
             if (
@@ -1097,9 +1173,9 @@ class FixedPolicyEpisodeAdapter:
     @property
     def policy_bindings(self) -> dict[str, Mapping[str, object]]:
         result: dict[str, Mapping[str, object]] = {}
-        provenance = self.runtime_admission["learned_training_provenance"]
+        provenance = self.runtime_admission.get("learned_training_provenance", {})
         assert isinstance(provenance, Mapping)
-        for arm in ARMS:
+        for arm in (arm for arm in ARMS if arm in self.policies):
             binding = self.policies[arm].binding()
             if arm in LEARNED_ARMS:
                 binding["training_provenance"] = dict(provenance[arm])  # type: ignore[arg-type]
@@ -1112,9 +1188,10 @@ class FixedPolicyEpisodeAdapter:
         return self._resume_by_arm.get(arm)
 
     def restore_resume_states(self, states: Mapping[str, object]) -> None:
-        if set(states) != set(ARMS) or any(not isinstance(states[arm], Mapping) for arm in ARMS):
-            raise C1C2PhysicalError("resume checkpoint lacks one state per arm")
-        self._resume_by_arm = {arm: dict(states[arm]) for arm in ARMS}  # type: ignore[arg-type]
+        admitted = tuple(self.policies)
+        if set(states) != set(admitted) or any(not isinstance(states[arm], Mapping) for arm in admitted):
+            raise C1C2PhysicalError("resume checkpoint lacks one state per admitted arm")
+        self._resume_by_arm = {arm: dict(states[arm]) for arm in admitted}  # type: ignore[arg-type]
 
     def run_episode(
         self,
@@ -1124,13 +1201,16 @@ class FixedPolicyEpisodeAdapter:
         plan_sha256: str,
         resume_state: Mapping[str, object] | None = None,
     ) -> EpisodeReceipt:
-        if arm not in ARMS:
+        if arm not in self.policies:
             raise C1C2PhysicalError(f"unknown/fifth arm: {arm}")
         world.verify()
         policy = self.policies[arm]
         policy.verify()
         policy_binding = self.policy_bindings[arm]
-        if self.runtime_admission.get("admitted_evaluation_sha256") != plan_sha256:
+        admitted_plan = self.runtime_admission.get(
+            "admitted_evaluation_sha256", self.runtime_admission.get("plan_sha256")
+        )
+        if admitted_plan != plan_sha256:
             raise C1C2PhysicalError("runtime admission does not bind this evaluation identity")
         if resume_state is not None:
             if (
@@ -1152,15 +1232,18 @@ class FixedPolicyEpisodeAdapter:
             raise C1C2PhysicalError("environment_factory must return TrainerEnvironment")
         sampler = getattr(environment, "sampler", None)
         sampler_binding = self.runtime_admission.get("sampler")
-        if (
-            sampler is None
-            or getattr(sampler, "part", None) != "train"
-            or not callable(getattr(sampler, "as_dict", None))
-            or not isinstance(sampler_binding, Mapping)
-            or sampler_binding.get("part") != "train"
-            or sampler_binding.get("as_dict_sha256")
-            != canonical_sha256(sampler.as_dict())
-        ):
+        sampler_ok = (
+            sampler is not None
+            and getattr(sampler, "part", None) == "train"
+            and callable(getattr(sampler, "as_dict", None))
+        )
+        if not self.early_baseline:
+            sampler_ok = sampler_ok and (
+                isinstance(sampler_binding, Mapping)
+                and sampler_binding.get("part") == "train"
+                and sampler_binding.get("as_dict_sha256") == canonical_sha256(sampler.as_dict())
+            )
+        if not sampler_ok:
             raise C1C2PhysicalError("environment sampler is not the frozen TRAIN sampler")
         step_environment = getattr(environment, "environment", None)
         if step_environment is None or not hasattr(step_environment, "_fading_field"):
@@ -1269,6 +1352,654 @@ class FixedPolicyEpisodeAdapter:
             "environment_training_state": copy.deepcopy(dict(state)),
         }
         return receipt
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkBoundaryState:
+    """Authenticated state plus the runtime objects needed by a chunk worker."""
+
+    payload: Mapping[str, object]
+    plan: EvaluationPlan
+    adapter: Any
+    context: Mapping[str, object]
+    table_payloads: Mapping[int, Mapping[str, object]]
+
+    def as_dict(self) -> dict[str, object]:
+        return copy.deepcopy(dict(self.payload))
+
+    def __getitem__(self, key: str) -> object:
+        return self.payload[key]
+
+
+def _context_value(context: Mapping[str, object] | object, name: str) -> object:
+    if isinstance(context, Mapping):
+        return context.get(name)
+    return getattr(context, name, None)
+
+
+def _chunk_provenance(context: Mapping[str, object]) -> dict[str, object]:
+    raw = context.get("provenance")
+    if not isinstance(raw, Mapping):
+        raise C1C2PhysicalError("chunk context lacks provenance bindings")
+    aliases = {
+        "authority_sha256": ("authority_sha256", "bindings_sha256"),
+        "code_manifest_sha256": ("code_manifest_sha256", "runner_code_manifest_sha256"),
+        "configuration_sha256": ("configuration_sha256", "execution_configuration_sha256"),
+        "tle_sha256": ("tle_sha256", "tle_manifest_sha256"),
+        "prereg_sha256": ("prereg_sha256",),
+    }
+    result: dict[str, object] = {}
+    for output_name, candidates in aliases.items():
+        value = next((raw.get(candidate) for candidate in candidates if raw.get(candidate) is not None), None)
+        result[output_name] = _digest(value, field=f"provenance.{output_name}")
+    admission = raw.get("admission_sha256")
+    if admission is not None:
+        result["admission_sha256"] = _digest(admission, field="provenance.admission_sha256")
+    return result
+
+
+def _boundary_body(
+    *,
+    arm: str,
+    boundary: int,
+    plan: EvaluationPlan,
+    schedule_sha256: str,
+    policy_binding: Mapping[str, object],
+    environment_training_state: Mapping[str, object],
+    rng_algorithm: str,
+) -> dict[str, object]:
+    resume_state: dict[str, object] | None
+    if boundary == 0:
+        resume_state = None
+    else:
+        world = plan.worlds[boundary - 1]
+        resume_state = {
+            "schema": f"{SCHEMA}-resume-state",
+            "arm": arm,
+            "episode_index": boundary,
+            "world_id": world.world_id,
+            "world_seed": world.world_seed,
+            "field_root_digest": world.field_root_digest,
+            "plan_sha256": plan.plan_sha256,
+            "policy_binding": dict(policy_binding),
+            "environment_training_state": copy.deepcopy(dict(environment_training_state)),
+        }
+    body: dict[str, object] = {
+        "schema": BOUNDARY_TABLE_SCHEMA,
+        "arm": arm,
+        "episode_index": boundary,
+        "plan_sha256": plan.plan_sha256,
+        "schedule_sha256": schedule_sha256,
+        "policy_binding_sha256": canonical_sha256(policy_binding),
+        "rng_algorithm": rng_algorithm,
+        "rng_library": "numpy",
+        "rng_version": np.__version__,
+        "rng_policy_version": RNG_POLICY_VERSION,
+        "draw_replay": {
+            "stream": "StepEnvironment._age_rng",
+            "operation": "integers",
+            "low": 0,
+            "high": STEPS,
+            "size": USERS,
+            "draws_replayed": boundary,
+            "arithmetic_advance_used": False,
+        },
+        "environment_training_state": copy.deepcopy(dict(environment_training_state)),
+        "resume_state": resume_state,
+    }
+    body["boundary_state_sha256"] = canonical_sha256(body)
+    return body
+
+
+def _verify_boundary_payload(payload: Mapping[str, object]) -> None:
+    body = dict(payload)
+    claimed = body.pop("boundary_state_sha256", None)
+    if _digest(claimed, field="boundary_state_sha256") != canonical_sha256(body):
+        raise C1C2PhysicalError("chunk boundary-state digest drifted")
+    if (
+        body.get("schema") != BOUNDARY_TABLE_SCHEMA
+        or body.get("rng_policy_version") != RNG_POLICY_VERSION
+        or body.get("rng_library") != "numpy"
+        or body.get("rng_version") != np.__version__
+    ):
+        raise C1C2PhysicalError("chunk boundary-state identity drifted")
+    replay = body.get("draw_replay")
+    if not isinstance(replay, Mapping) or replay.get("arithmetic_advance_used") is not False:
+        raise C1C2PhysicalError("chunk boundary was not produced by draw replay")
+
+
+def build_chunk_boundary_states(
+    plan: EvaluationPlan,
+    arm_context: Mapping[str, object] | object,
+    boundaries: Sequence[int],
+) -> dict[int, ChunkBoundaryState]:
+    """Replay the persisted age stream and freeze exact chunk start states."""
+
+    plan.verify()
+    arm = _context_value(arm_context, "arm")
+    adapter = _context_value(arm_context, "adapter")
+    schedule_sha = _digest(
+        _context_value(arm_context, "schedule_sha256"), field="schedule_sha256"
+    )
+    if arm not in ARMS or adapter is None:
+        raise C1C2PhysicalError("chunk context must bind one arm and adapter")
+    policy_bindings = getattr(adapter, "policy_bindings", None)
+    if not isinstance(policy_bindings, Mapping) or arm not in policy_bindings:
+        raise C1C2PhysicalError("chunk adapter lacks the selected policy binding")
+    requested = tuple(boundaries)
+    if (
+        not requested
+        or requested[0] != 0
+        or tuple(sorted(set(requested))) != requested
+        or any(type(value) is not int or value < 0 or value % CHECKPOINT_EVERY for value in requested)
+    ):
+        raise C1C2PhysicalError("chunk boundaries must be unique ordered 100-aligned values from zero")
+    limit = int(_context_value(arm_context, "continuation_limit") or 3000)
+    if requested[-1] > limit or limit > PLAN_EPISODES:
+        raise C1C2PhysicalError("chunk boundary exceeds admitted continuation authority")
+    rng_factory = getattr(adapter, "rng_factory", None)
+    if not callable(rng_factory):
+        rng_factory = _context_value(arm_context, "rng_factory")
+    if not callable(rng_factory):
+        raise C1C2PhysicalError("chunk boundary replay requires the producer RNG factory")
+    try:
+        rngs = tuple(rng_factory(plan.worlds[0].world_seed))
+        environment_rng = rngs[0]
+        age_rng = environment_rng.spawn(1)[0]
+    except (AttributeError, IndexError, TypeError, ValueError) as error:
+        raise C1C2PhysicalError("cannot reproduce episode-1 age RNG initialization") from error
+    if not isinstance(age_rng, np.random.Generator):
+        raise C1C2PhysicalError("age stream is not a NumPy Generator")
+    context = dict(arm_context) if isinstance(arm_context, Mapping) else {
+        name: _context_value(arm_context, name)
+        for name in ("arm", "schedule_sha256", "provenance", "execution_mode", "admission_mapping")
+    }
+    context["arm"] = arm
+    context["schedule_sha256"] = schedule_sha
+    context.setdefault("execution_mode", "arm_decoupled")
+    _chunk_provenance(context)
+    payloads: dict[int, Mapping[str, object]] = {}
+    initial_state = {"format_version": 1, "age_rng_state": None}
+    payloads[0] = _boundary_body(
+        arm=str(arm), boundary=0, plan=plan, schedule_sha256=schedule_sha,
+        policy_binding=policy_bindings[arm], environment_training_state=initial_state,
+        rng_algorithm=type(age_rng.bit_generator).__name__,
+    )
+    requested_set = set(requested)
+    for episode in range(1, requested[-1] + 1):
+        # This is deliberately a real draw.  PCG ``advance`` is not equivalent
+        # to Generator.integers because rejection/packing is an implementation detail.
+        age_rng.integers(0, STEPS, size=USERS)
+        if episode in requested_set:
+            state = {
+                "format_version": 1,
+                "age_rng_state": copy.deepcopy(age_rng.bit_generator.state),
+            }
+            payloads[episode] = _boundary_body(
+                arm=str(arm), boundary=episode, plan=plan, schedule_sha256=schedule_sha,
+                policy_binding=policy_bindings[arm], environment_training_state=state,
+                rng_algorithm=type(age_rng.bit_generator).__name__,
+            )
+    return {
+        boundary: ChunkBoundaryState(payloads[boundary], plan, adapter, context, payloads)
+        for boundary in requested
+    }
+
+
+def _episode_record_payload(
+    receipt: EpisodeReceipt, resume_state: Mapping[str, object]
+) -> dict[str, object]:
+    body: dict[str, object] = {
+        "schema": f"{SCHEMA}-chunk-episode-record-v1",
+        "episode_index": receipt.episode_index,
+        "receipt": receipt.as_dict(),
+        "resume_state": copy.deepcopy(dict(resume_state)),
+    }
+    body["record_sha256"] = canonical_sha256(body)
+    return body
+
+
+def _read_episode_record(path: Path) -> tuple[EpisodeReceipt, dict[str, object]]:
+    payload = _read_json(path, label="chunk episode record")
+    body = dict(payload)
+    claimed = body.pop("record_sha256", None)
+    if _digest(claimed, field="record_sha256") != canonical_sha256(body):
+        raise C1C2PhysicalError("chunk episode-record digest drifted")
+    if body.get("schema") != f"{SCHEMA}-chunk-episode-record-v1":
+        raise C1C2PhysicalError("chunk episode-record schema drifted")
+    receipt = _receipt_from_mapping(body.get("receipt"))
+    state = body.get("resume_state")
+    if not isinstance(state, Mapping) or state.get("episode_index") != receipt.episode_index:
+        raise C1C2PhysicalError("chunk episode-record resume state drifted")
+    return receipt, dict(state)
+
+
+def run_arm_chunk(
+    arm: str,
+    start: int,
+    end: int,
+    boundary_state: ChunkBoundaryState,
+    chunk_root: str | Path,
+) -> dict[str, object]:
+    """Run or resume one exclusive contiguous arm chunk."""
+
+    if os.environ.get("OMP_NUM_THREADS") != "1":
+        raise C1C2PhysicalError("arm chunk requires OMP_NUM_THREADS=1")
+    if (
+        arm not in ARMS or start < 0 or end <= start
+        or start % CHECKPOINT_EVERY or end % CHECKPOINT_EVERY
+    ):
+        raise C1C2PhysicalError("chunk range must be positive, contiguous and 100-aligned")
+    if not isinstance(boundary_state, ChunkBoundaryState):
+        raise C1C2PhysicalError("chunk start requires a runtime-authenticated boundary state")
+    _verify_boundary_payload(boundary_state.payload)
+    if boundary_state.payload.get("arm") != arm or boundary_state.payload.get("episode_index") != start:
+        raise C1C2PhysicalError("chunk start state arm/range drifted")
+    if end > 3000 and int(boundary_state.context.get("continuation_limit", 3000)) <= 3000:
+        raise C1C2PhysicalError("episodes above 3000 require continuation authority")
+    expected_end = boundary_state.table_payloads.get(end)
+    if not isinstance(expected_end, Mapping):
+        raise C1C2PhysicalError("chunk end is absent from the authenticated boundary table")
+    _verify_boundary_payload(expected_end)
+    context = boundary_state.context
+    if context.get("execution_mode") != "arm_decoupled":
+        raise C1C2PhysicalError("chunk execution mode must be arm_decoupled")
+    provenance = _chunk_provenance(context)
+    root = Path(chunk_root)
+    if root.exists():
+        if root.is_symlink() or not root.is_dir():
+            raise C1C2PhysicalError("chunk root is not a regular directory")
+        if (root / "chunk-receipt.json").exists():
+            raise C1C2PhysicalError("duplicate completed chunk refused")
+    else:
+        root.mkdir(parents=True, exist_ok=False)
+    chunk_id = f"{arm}-{start:06d}-{end:06d}"
+    for name, payload in (
+        ("boundary-start.json", boundary_state.payload),
+        ("boundary-end.json", expected_end),
+    ):
+        path = root / name
+        if path.exists():
+            if _read_json(path, label=name) != dict(payload):
+                raise C1C2PhysicalError(f"{name} drifted on chunk resume")
+        else:
+            _write_once(path, payload)
+    records_dir = root / "episodes"
+    existing = sorted(records_dir.glob("episode-*.json")) if records_dir.is_dir() else []
+    expected_names = [f"episode-{episode:06d}.json" for episode in range(start + 1, start + 1 + len(existing))]
+    if [path.name for path in existing] != expected_names:
+        raise C1C2PhysicalError("chunk prefix is non-contiguous or contains duplicates")
+    receipts: list[EpisodeReceipt] = []
+    resume_state = boundary_state.payload.get("resume_state")
+    for path in existing:
+        row, state = _read_episode_record(path)
+        expected_episode = start + len(receipts) + 1
+        if row.arm != arm or row.episode_index != expected_episode or row.plan_sha256 != boundary_state.plan.plan_sha256:
+            raise C1C2PhysicalError("authenticated chunk prefix identity drifted")
+        receipts.append(row)
+        resume_state = state
+    if (root / "integrity-stop.json").exists() and not context.get("repair_authority_sha256"):
+        raise C1C2PhysicalError("resume after integrity STOP requires repair authority")
+    started_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    monotonic_start = time.monotonic()
+    adapter = boundary_state.adapter
+    try:
+        for episode in range(start + len(receipts) + 1, end + 1):
+            world = boundary_state.plan.worlds[episode - 1]
+            row = adapter.run_episode(
+                arm=arm,
+                world=world,
+                plan_sha256=boundary_state.plan.plan_sha256,
+                resume_state=resume_state,
+            )
+            state = adapter.resume_state_for(arm)
+            if not isinstance(state, Mapping):
+                raise C1C2PhysicalError("chunk episode did not publish a resume state")
+            _write_once(
+                records_dir / f"episode-{episode:06d}.json",
+                _episode_record_payload(row, state),
+            )
+            receipts.append(row)
+            resume_state = state
+            if episode % CHECKPOINT_EVERY == 0:
+                checkpoint_body: dict[str, object] = {
+                    "schema": f"{CHECKPOINT_SCHEMA}-arm-chunk-v1",
+                    "arm": arm,
+                    "chunk_id": chunk_id,
+                    "completed_episode": episode,
+                    "plan_sha256": boundary_state.plan.plan_sha256,
+                    "schedule_sha256": boundary_state.payload["schedule_sha256"],
+                    "start_boundary_state_sha256": boundary_state.payload["boundary_state_sha256"],
+                    "resume_state": copy.deepcopy(dict(state)),
+                    "ordered_episode_record_sha256": canonical_sha256(
+                        [row.as_dict() for row in receipts]
+                    ),
+                    "execution_mode": "arm_decoupled",
+                    "forbidden_boundary_flags": {
+                        "q3_evaluated": False,
+                        "test_split_opened": False,
+                        "episode_training": False,
+                        "learner_update": False,
+                        "outcome_selected_chunk": False,
+                    },
+                }
+                checkpoint_body["checkpoint_sha256"] = canonical_sha256(checkpoint_body)
+                _write_once(root / "checkpoints" / f"checkpoint-{episode:06d}.json", checkpoint_body)
+        expected_resume = expected_end.get("resume_state")
+        if resume_state != expected_resume:
+            raise C1C2PhysicalError("chunk end state differs from authenticated boundary table")
+        record_index = [
+            {
+                "episode_index": row.episode_index,
+                "sha256": file_sha256(records_dir / f"episode-{row.episode_index:06d}.json"),
+            }
+            for row in receipts
+        ]
+        ended_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        payload: dict[str, object] = {
+            "schema": CHUNK_RECEIPT_SCHEMA,
+            "status": "COMPLETE_ARM_CHUNK",
+            "arm": arm,
+            "range": [start + 1, end],
+            "start_boundary": start,
+            "end_boundary": end,
+            "chunk_id": chunk_id,
+            "plan_sha256": boundary_state.plan.plan_sha256,
+            "schedule_sha256": boundary_state.payload["schedule_sha256"],
+            "policy_binding": adapter.policy_bindings[arm],
+            "policy_binding_sha256": canonical_sha256(adapter.policy_bindings[arm]),
+            "provenance": provenance,
+            "rng_algorithm": boundary_state.payload["rng_algorithm"],
+            "rng_library": "numpy",
+            "rng_version": np.__version__,
+            "rng_policy_version": RNG_POLICY_VERSION,
+            "start_boundary_state_sha256": boundary_state.payload["boundary_state_sha256"],
+            "end_boundary_state_sha256": expected_end["boundary_state_sha256"],
+            "threads": {"OMP_NUM_THREADS": 1},
+            "runtime": {
+                "python": platform.python_version(),
+                "numpy": np.__version__,
+                "platform": platform.platform(),
+                "elapsed_seconds": time.monotonic() - monotonic_start,
+            },
+            "parent_checkpoint": context.get("parent_checkpoint") or {
+                "episode_index": start,
+                "boundary_state_sha256": boundary_state.payload["boundary_state_sha256"],
+            },
+            "ordered_episode_records": record_index,
+            "ordered_episode_record_digest": canonical_sha256(record_index),
+            "started_utc": started_utc,
+            "ended_utc": ended_utc,
+            "forbidden_boundary_flags": {
+                "q3_evaluated": False,
+                "test_split_opened": False,
+                "episode_training": False,
+                "learner_update": False,
+                "outcome_selected_chunk": False,
+                "per_chunk_scientific_stopping": False,
+            },
+            "execution_mode": "arm_decoupled",
+            "scientific_disposition_emitted": False,
+        }
+        _write_once(root / "chunk-receipt.json", payload)
+        return payload
+    except BaseException as error:
+        if isinstance(error, Exception) and not (root / "integrity-stop.json").exists():
+            _write_once(
+                root / "integrity-stop.json",
+                {
+                    "schema": INTEGRITY_SCHEMA,
+                    "overall_token": INTEGRITY_STOP,
+                    "chunk_id": chunk_id,
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                    "scientific_token_emitted": False,
+                },
+            )
+        raise
+
+
+def merge_arm_chunks(
+    arm: str,
+    chunk_roots: Sequence[str | Path],
+    output_dir: str | Path,
+) -> dict[str, object]:
+    """Merge one arm by episode index without reducing chunk subtotals."""
+
+    if arm not in ARMS or not chunk_roots:
+        raise C1C2PhysicalError("arm merge requires a fixed-plan arm and chunks")
+    chunks: list[tuple[dict[str, Any], Path]] = []
+    for raw_root in chunk_roots:
+        root = Path(raw_root)
+        receipt = _read_json(root / "chunk-receipt.json", label="arm chunk receipt")
+        if receipt.get("schema") != CHUNK_RECEIPT_SCHEMA or receipt.get("arm") != arm:
+            raise C1C2PhysicalError("arm chunk receipt identity drifted")
+        records = receipt.get("ordered_episode_records")
+        if not isinstance(records, list) or receipt.get("ordered_episode_record_digest") != canonical_sha256(records):
+            raise C1C2PhysicalError("arm chunk ordered-record digest drifted")
+        chunks.append((receipt, root))
+    chunks.sort(key=lambda item: int(item[0]["start_boundary"]))
+    cursor = 0
+    all_rows: list[EpisodeReceipt] = []
+    all_states: dict[int, dict[str, object]] = {}
+    boundary_pairs: list[list[str]] = []
+    for receipt, root in chunks:
+        start = int(receipt["start_boundary"])
+        end = int(receipt["end_boundary"])
+        if start != cursor or end <= start:
+            raise C1C2PhysicalError("arm chunks overlap or leave a coverage gap")
+        for episode in range(start + 1, end + 1):
+            row, state = _read_episode_record(root / "episodes" / f"episode-{episode:06d}.json")
+            if row.arm != arm or row.episode_index != episode:
+                raise C1C2PhysicalError("arm merge record order drifted")
+            all_rows.append(row)
+            all_states[episode] = state
+        boundary_pairs.append([
+            str(receipt["start_boundary_state_sha256"]),
+            str(receipt["end_boundary_state_sha256"]),
+        ])
+        cursor = end
+    output = Path(output_dir)
+    if output.exists() or output.is_symlink():
+        raise C1C2PhysicalError("arm merge output must be absent")
+    output.mkdir(parents=True, exist_ok=False)
+    for row in all_rows:
+        _write_once(output / "episodes" / f"episode-{row.episode_index:06d}.json", row.as_dict())
+        _write_once(
+            output / "resume-states" / f"state-{row.episode_index:06d}.json",
+            all_states[row.episode_index],
+        )
+    policy_binding = all_rows[0].policy_binding
+    schedule_values = {receipt["schedule_sha256"] for receipt, _ in chunks}
+    plan_values = {receipt["plan_sha256"] for receipt, _ in chunks}
+    if len(schedule_values) != 1 or len(plan_values) != 1 or any(row.policy_binding != policy_binding for row in all_rows):
+        raise C1C2PhysicalError("arm chunk provenance changed across merge")
+    for boundary in range(CHECKPOINT_EVERY, cursor + 1, CHECKPOINT_EVERY):
+        prefix = all_rows[:boundary]
+        pooled = pool_receipts(prefix, arm=arm)
+        _write_once(output / "checkpoints" / f"checkpoint-{boundary:06d}.json", {
+            "schema": f"{CHECKPOINT_SCHEMA}-arm-merge-v1",
+            "arm": arm,
+            "completed_episode": boundary,
+            "plan_sha256": next(iter(plan_values)),
+            "schedule_sha256": next(iter(schedule_values)),
+            "receipts": [row.as_dict() for row in prefix],
+            "pooled": pooled,
+            "execution_mode": "arm_decoupled",
+            "scientific_disposition_emitted": False,
+        })
+        _write_once(output / "rungs" / f"rung-{boundary:06d}.json", {
+            "schema": f"{RUNG_SCHEMA}-arm-merge-v1",
+            "arm": arm,
+            "completed_episode": boundary,
+            "plan_sha256": next(iter(plan_values)),
+            "schedule_sha256": next(iter(schedule_values)),
+            "pooled": pooled,
+            "execution_mode": "arm_decoupled",
+            "scientific_disposition_emitted": False,
+        })
+    payload = {
+        "schema": ARM_MERGE_SCHEMA,
+        "status": "COMPLETE_ARM_MERGE",
+        "arm": arm,
+        "completed_episode": cursor,
+        "plan_sha256": next(iter(plan_values)),
+        "schedule_sha256": next(iter(schedule_values)),
+        "policy_binding": policy_binding,
+        "chunk_ids": [receipt["chunk_id"] for receipt, _ in chunks],
+        "boundary_state_hash_pairs": boundary_pairs,
+        "ordered_episode_digest": canonical_sha256([row.as_dict() for row in all_rows]),
+        "pooled": pool_receipts(all_rows, arm=arm),
+        "execution_mode": "arm_decoupled",
+        "scientific_disposition_emitted": False,
+    }
+    _write_once(output / "arm-merge.json", payload)
+    return payload
+
+
+def merge_four_arm(
+    arm_roots: Mapping[str, str | Path],
+    output_dir: str | Path,
+    *,
+    admission_mapping: Mapping[str, object],
+) -> dict[str, object]:
+    """Assemble four complete arm merges in frozen arm/episode order."""
+
+    if tuple(arm_roots) != ARMS or tuple(admission_mapping) != ARMS:
+        raise C1C2PhysicalError("four-arm assembly requires every arm in frozen order")
+    merges: dict[str, dict[str, Any]] = {}
+    rows_by_arm: dict[str, list[EpisodeReceipt]] = {}
+    for arm in ARMS:
+        root = Path(arm_roots[arm])
+        merges[arm] = _read_json(root / "arm-merge.json", label=f"{arm} arm merge")
+        episode_paths = sorted((root / "episodes").glob("episode-*.json"))
+        rows_by_arm[arm] = [_receipt_from_mapping(_read_json(path, label="merged episode")) for path in episode_paths]
+        if merges[arm].get("arm") != arm or len(rows_by_arm[arm]) != merges[arm].get("completed_episode"):
+            raise C1C2PhysicalError(f"{arm} arm merge coverage drifted")
+        record = admission_mapping[arm]
+        if not isinstance(record, Mapping) or record.get("policy_binding") != merges[arm].get("policy_binding"):
+            raise C1C2PhysicalError(f"{arm} admission differs from merged policy")
+    completed_values = {int(merges[arm]["completed_episode"]) for arm in ARMS}
+    plan_values = {str(merges[arm]["plan_sha256"]) for arm in ARMS}
+    schedule_values = {str(merges[arm]["schedule_sha256"]) for arm in ARMS}
+    if len(completed_values) != 1 or len(plan_values) != 1 or len(schedule_values) != 1:
+        raise C1C2PhysicalError("four-arm merge identities disagree")
+    completed = next(iter(completed_values))
+    if completed > 3000:
+        raise C1C2PhysicalError("four-arm chunk assembly cannot exceed 3000 without continuation authority")
+    output = Path(output_dir)
+    if output.exists() or output.is_symlink():
+        raise C1C2PhysicalError("four-arm merge output must be absent")
+    output.mkdir(parents=True, exist_ok=False)
+    ordered: list[EpisodeReceipt] = []
+    for index in range(completed):
+        block = [rows_by_arm[arm][index] for arm in ARMS]
+        _verify_matched_episode(block, boundary_world(rows_by_arm, index))
+        ordered.extend(block)
+    plan_sha = next(iter(plan_values))
+    policy_bindings = {arm: merges[arm]["policy_binding"] for arm in ARMS}
+    for boundary in range(CHECKPOINT_EVERY, completed + 1, CHECKPOINT_EVERY):
+        prefix = ordered[: boundary * len(ARMS)]
+        checkpoint_body: dict[str, object] = {
+            "schema": CHECKPOINT_SCHEMA,
+            "status": STATUS,
+            "split": SPLIT,
+            "completed_episode": boundary,
+            "plan_sha256": plan_sha,
+            "arms": list(ARMS),
+            "checkpoint_every": CHECKPOINT_EVERY,
+            "policy_bindings": policy_bindings,
+            "admission_mapping": dict(admission_mapping),
+            "receipts": [row.as_dict() for row in prefix],
+            "resume_states": {
+                arm: _read_json(
+                    Path(arm_roots[arm]) / "resume-states" / f"state-{boundary:06d}.json",
+                    label=f"{arm} merged resume state",
+                )
+                for arm in ARMS
+            },
+            "q3_evaluated": False,
+            "test_split_opened": False,
+            "episode_training": False,
+            "learner_update": False,
+            "claim_ceiling": CLAIM_CEILING,
+        }
+        checkpoint_body["checkpoint_sha256"] = canonical_sha256(checkpoint_body)
+        _write_once(output / "checkpoints" / f"checkpoint-{boundary:06d}.json", checkpoint_body)
+        pooled = {
+            arm: pool_receipts([row for row in prefix if row.arm == arm], arm=arm)
+            for arm in ARMS
+        }
+        _write_once(output / "rungs" / f"rung-{boundary:06d}.json", {
+            "schema": RUNG_SCHEMA,
+            "status": STATUS,
+            "split": SPLIT,
+            "completed_episode": boundary,
+            "plan_sha256": plan_sha,
+            "arms": list(ARMS),
+            "pooled_by_arm": pooled,
+            "admission_mapping": dict(admission_mapping),
+            "scientific_disposition_emitted": False,
+            "q3_evaluated": False,
+            "test_split_opened": False,
+            "episode_training": False,
+            "learner_update": False,
+            "claim_ceiling": CLAIM_CEILING,
+        })
+    pooled_final = {
+        arm: pool_receipts(rows_by_arm[arm], arm=arm) for arm in ARMS
+    }
+    result: dict[str, object] = {
+        "completed_episode": completed,
+        "plan_sha256": plan_sha,
+        "schedule_sha256": next(iter(schedule_values)),
+        "arms": list(ARMS),
+        "pooled_by_arm": pooled_final,
+        "execution_mode": "arm_decoupled",
+        "scientific_disposition_emitted": False,
+    }
+    if completed == 3000:
+        disposition = adjudicate_physical_disposition(
+            pooled_final, completed_episodes=3000, expected_episodes=3000
+        )
+        terminal = {
+            "schema": RESULT_SCHEMA,
+            "status": STATUS,
+            "split": SPLIT,
+            "completed_episode": 3000,
+            "terminal_boundary": 3000,
+            "plan_sha256": plan_sha,
+            "arms": list(ARMS),
+            "pooled_by_arm": pooled_final,
+            "admission_mapping": dict(admission_mapping),
+            "continuation_authority_sha256": None,
+            "overall_token": disposition["overall_token"],
+            "reasons": disposition["reasons"],
+            "scientific_disposition_emitted": True,
+            "q3_evaluated": False,
+            "test_split_opened": False,
+            "episode_training": False,
+            "learner_update": False,
+            "claim_ceiling": CLAIM_CEILING,
+            "execution_mode": "arm_decoupled",
+            "schedule_sha256": next(iter(schedule_values)),
+        }
+        _write_once(output / "result.json", terminal)
+        result.update(disposition)
+        result["scientific_disposition_emitted"] = True
+    return result
+
+
+def boundary_world(rows_by_arm: Mapping[str, Sequence[EpisodeReceipt]], index: int) -> WorldBinding:
+    """Reconstruct the declared world identity from merged producer receipts."""
+
+    row = rows_by_arm[ARMS[0]][index]
+    return WorldBinding(
+        episode_index=row.episode_index,
+        world_id=row.world_id,
+        world_seed=row.world_seed,
+        field_root_digest=row.field_root_digest,
+    )
 
 
 def _verify_matched_episode(rows: Sequence[EpisodeReceipt], world: WorldBinding) -> None:
@@ -1813,11 +2544,14 @@ __all__ = [
     "ARMS",
     "BASELINE_CHECKPOINT_SHA256",
     "CHECKPOINT_EVERY",
+    "CHUNK_RECEIPT_SCHEMA",
+    "ChunkBoundaryState",
     "CLAIM_CEILING",
     "CONTINUATION_AUTHORITY_SCHEMA",
     "CONTINUATION_RESULT_SCHEMA",
     "C1C2PhysicalError",
     "EpisodeReceipt",
+    "EARLY_BASELINE_ADMISSION_SCHEMA",
     "EvaluationPlan",
     "FALSIFIED",
     "FIELD_COMPONENT",
@@ -1844,10 +2578,15 @@ __all__ = [
     "aggregate_last_outcomes",
     "adjudicate_physical_disposition",
     "authenticate_runtime_admission",
+    "authenticate_early_baseline_admission",
+    "build_chunk_boundary_states",
     "canonical_sha256",
     "file_sha256",
     "load_baseline_policy",
     "load_learned_two_route_checkpoint",
+    "merge_arm_chunks",
+    "merge_four_arm",
     "pool_receipts",
     "select_learned_q12_actions",
+    "run_arm_chunk",
 ]

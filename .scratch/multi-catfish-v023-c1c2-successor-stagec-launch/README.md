@@ -14,6 +14,15 @@ and 3,000. Only the 3,000 boundary writes `result.json` and the single
 `C1C2_DEVELOPMENT_PREDICTION_HELD`/`...FALSIFIED` token with all applicable
 non-exclusive reasons.
 
+The execution binding also pins the scheduling addendum byte digest. The binder
+publishes `early_baseline_admission.json` and its named sidecar; that admission
+binds the plan, addendum, BASELINE checkpoint/status/adapter closure, code
+manifest, execution configuration, TLE, PREREG, and prospective authority. It
+admits only `BASELINE` episodes 1--3,000 with
+`execution_mode: "arm_decoupled"`. It carries no fabricated Stage-A export or
+Stage-B PASS receipt. Learned-arm chunks continue to require the existing
+Stage-A/B runtime admission.
+
 ## Freeze order
 
 1. Seal Stage A with `PASS_SOURCE_TRAINING_INTEGRITY`, `MANIFEST.sha256`,
@@ -117,6 +126,18 @@ Stage-B, tmux, acknowledgement, and log locations:
 ./sync_launch_v023_c1c2_successor_stagec_server.sh --dry-run
 ```
 
+Before Stage A exists, the prospectively bound early-BASELINE route is:
+
+```bash
+./sync_launch_v023_c1c2_successor_stagec_server.sh \
+  --dry-run --early-baseline-only
+./sync_launch_v023_c1c2_successor_stagec_server.sh \
+  --early-baseline-only
+```
+
+This omits `--stage-a-output`, runs the early-BASELINE preflight, and starts
+only BASELINE 100-episode chunks. It does not run Stage B or a learned arm.
+
 The formal launcher first requires the seed checkout's commit/tree to match the
 local bound commit/tree, synchronizes the manifest closure into a fresh copy,
 then verifies the copied checkout's commit/tree again before binding. It never
@@ -146,6 +167,30 @@ root, or the completed authorized 9,000 continuation, is sealed with
 `FORMAL-ADMISSION.json` plus sidecar and whole-tree `MANIFEST.sha256`/`COMPLETE`
 for the renderer. A held 3,000 root remains intentionally unsealed while the
 declared continuation decision is pending.
+
+## Arm-decoupled chunk execution
+
+`launch_stage_c_chunks.sh` fans one fixed-plan arm into contiguous 100-episode
+chunks. It caps tmux workers at `cores-2`, pins OMP/OpenBLAS/MKL/NumExpr to one
+thread, skips chunks carrying a complete authenticated receipt, resumes only a
+contiguous write-once prefix, and refuses a duplicate completed chunk or live
+duplicate tmux session. Use `--early-baseline-admission` only for `BASELINE`;
+use `--runtime-admission` for a learned arm. A second invocation with `--merge`
+requires all 30 chunks and creates the per-arm ordered merge.
+
+`run_v023_c1c2_successor_stage_c_chunks.py merge-four` refuses a missing arm.
+It assembles episode records in the frozen `FULL2, DROP_C1, DROP_C2, BASELINE`
+order, recomputes every cumulative pool with `math.fsum` over individual
+episode totals, and emits four-arm checkpoints/rungs only from complete arm
+coverage. No boundary below 3,000 emits a scientific disposition; early
+BASELINE cannot continue above 3,000.
+
+The independent verifier accepts `--arm ARM` for a chunk root and recomputes
+the plan identity, persisted age stream, exact boundary states, episode
+coverage, ordered file digest, provenance, and binary64 pool values. Formal use
+remains gated on all four server equivalence receipts in
+`ACCEPTANCE-SERVER-EQUIVALENCE.md`; those runs are intentionally not launched
+by the bundle.
 
 ## Independent verification and tests
 

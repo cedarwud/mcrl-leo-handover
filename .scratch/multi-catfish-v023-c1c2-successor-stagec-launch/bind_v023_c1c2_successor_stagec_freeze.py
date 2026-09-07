@@ -157,7 +157,19 @@ def build_bindings(args: argparse.Namespace) -> dict[str, object]:
         raise common.StageCError("Stage-B output root must be absent at freeze")
     code_sha, code_entries = common.verify_code_manifest()
     declaration_sha = common.verify_named_sidecar(common.DECLARATION)
-    stage_a = bind_stage_a(args.stage_a_output)
+    schedule_sha = common.file_sha256(
+        common.SCHEDULING_ADDENDUM, field="Stage-C scheduling addendum"
+    )
+    stage_a = (
+        bind_stage_a(args.stage_a_output)
+        if args.stage_a_output is not None
+        else {
+            "status": "PENDING_PREDETERMINED_STAGE_A_AUTHENTICATION",
+            "required_for_arms": list(common.LEARNED_ARMS),
+            "scheduling_addendum_sha256": schedule_sha,
+            "exports": [],
+        }
+    )
     baseline = bind_baseline(args.baseline_checkpoint, args.baseline_status)
 
     builder = _load_module(
@@ -218,6 +230,12 @@ def build_bindings(args: argparse.Namespace) -> dict[str, object]:
             "scientific_declaration_path": str(common.DECLARATION.resolve()),
             "scientific_declaration_sha256": declaration_sha,
         },
+        "scheduling_addendum": {
+            "path": str(common.SCHEDULING_ADDENDUM.resolve()),
+            "sha256": schedule_sha,
+            "stage_a_pin_name": "stage_c_scheduling_addendum_sha256",
+            "scientific_declaration_changed": False,
+        },
         "claim_ceiling": common.FORMAL_CLAIM,
         "continuation_to_9000_authorized": False,
     }
@@ -227,7 +245,7 @@ def build_bindings(args: argparse.Namespace) -> dict[str, object]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage-a-output", type=Path, required=True)
+    parser.add_argument("--stage-a-output", type=Path)
     parser.add_argument("--plan-output", type=Path, required=True)
     parser.add_argument("--stage-b-output", type=Path, required=True)
     parser.add_argument("--stage-c-output", type=Path, required=True)
@@ -247,6 +265,23 @@ def main(argv: list[str] | None = None) -> int:
         bindings = build_bindings(args)
         common.write_once(destination, bindings)
         common.write_digest_sidecar(destination)
+        runner = _load_module(
+            "v023_stagec_physical_runner_early_admission",
+            common.PHYSICAL / "v023_c1c2_successor_physical_runner.py",
+        )
+        baseline = bindings["baseline"]
+        policy = runner.load_baseline_policy(
+            checkpoint_path=baseline["checkpoint_path"],
+            status_path=baseline["status_path"],
+            expected_status_sha256=baseline["status_sha256"],
+        )
+        common.ensure_early_baseline_admission(
+            bindings=bindings,
+            bindings_path=destination,
+            path=args.output_dir / common.EARLY_BASELINE_ADMISSION_NAME,
+            runner_schema=runner.SCHEMA,
+            policy_binding=policy.binding(),
+        )
     except Exception as error:
         print(f"STAGEC_BIND_ERROR: {error}", file=sys.stderr)
         return 2

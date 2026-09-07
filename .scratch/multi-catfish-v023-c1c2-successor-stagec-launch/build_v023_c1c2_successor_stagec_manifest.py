@@ -11,7 +11,14 @@ import sys
 from stagec_common import CODE_MANIFEST_NAME, CODE_PIN_NAME, HERE, PHYSICAL, REPO
 
 
-EXCLUDED = {CODE_MANIFEST_NAME, CODE_PIN_NAME, "V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json", "V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json.sha256"}
+EXCLUDED = {
+    CODE_MANIFEST_NAME,
+    CODE_PIN_NAME,
+    "V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json",
+    "V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json.sha256",
+    "early_baseline_admission.json",
+    "early_baseline_admission.json.sha256",
+}
 SYNC_LIST_NAME = "V023-C1C2-SUCCESSOR-STAGEC-SYNC-LIST.txt"
 EXCLUDED.add(SYNC_LIST_NAME)
 def closure(repo: Path = REPO) -> list[str]:
@@ -36,6 +43,8 @@ def closure(repo: Path = REPO) -> list[str]:
         ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md",
         ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md",
         ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md.sha256",
+        ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md",
+        ".scratch/multi-catfish-v023-controller-handoff-20260907/ADJUDICATION-STAGEC-BASELINE-DECOUPLING-AND-EPISODE-CHUNKING-CODEX-GPT6-ASTRA-2026-09-07.md",
         "artifacts/PREREG-FROZEN-2026-08-25-R2.json",
         "artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt",
         "artifacts/training-2026-08-25-rerun01/main/status.json",

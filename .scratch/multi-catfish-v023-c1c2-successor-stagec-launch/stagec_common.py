@@ -24,6 +24,7 @@ BASELINE = REPO / ".scratch/multi-catfish-v023-baseline-adapter"
 SOURCE_RUNNER = REPO / ".scratch/multi-catfish-v023-two-route-source-training-runner"
 CONTRACT = REPO / ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md"
 DECLARATION = REPO / ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md"
+SCHEDULING_ADDENDUM = REPO / ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md"
 PREREG = REPO / "artifacts/PREREG-FROZEN-2026-08-25-R2.json"
 TLE_ROOT = Path("/home/sat/mcrl-runtime/tle-frozen-20260820")
 BASELINE_CHECKPOINT = REPO / "artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt"
@@ -40,6 +41,7 @@ CODE_PIN_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST-FROZEN.sha256"
 SCHEMA_BINDINGS = "multi-catfish-mcrl-v023-c1c2-successor-stagec-execution-bindings-v1"
 FORMAL_CLAIM = "TRAIN_DEVELOPMENT_C1C2_SUCCESSOR_PHYSICAL_EVALUATION_NO_C3_NO_TEST_NO_EFFICACY"
 FORMAL_ADMISSION_NAME = "FORMAL-ADMISSION.json"
+EARLY_BASELINE_ADMISSION_NAME = "early_baseline_admission.json"
 TREE_MANIFEST_NAME = "MANIFEST.sha256"
 COMPLETE_NAME = "COMPLETE"
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -228,10 +230,10 @@ def tree_manifest(root: Path) -> tuple[list[dict[str, object]], str]:
     return rows, canonical_sha256(rows)
 
 
-def process_environment() -> dict[str, object]:
+def process_environment(*, expected_threads: int = 2) -> dict[str, object]:
     expected = {
         "PYTHONDONTWRITEBYTECODE": "1",
-        "OMP_NUM_THREADS": "2",
+        "OMP_NUM_THREADS": str(expected_threads),
         "PYTHONPATH": str(REPO / "src"),
         "TMPDIR": str(REPO / ".tmp"),
     }
@@ -274,11 +276,17 @@ def git_identity(repo: Path = REPO) -> dict[str, str]:
     return {"commit": command("HEAD"), "tree": command("HEAD^{tree}")}
 
 
-def verify_runtime_identity(bindings: Mapping[str, object]) -> None:
+def verify_runtime_identity(
+    bindings: Mapping[str, object], *, chunk_mode: bool = False
+) -> None:
     if bindings.get("git") != git_identity(REPO):
         raise StageCError("runtime checkout commit/tree differs from frozen binding")
     execution = bindings.get("execution")
-    if not isinstance(execution, Mapping) or dict(execution) != process_environment():
+    observed = process_environment(expected_threads=1) if chunk_mode else process_environment()
+    expected = dict(execution) if isinstance(execution, Mapping) else {}
+    if chunk_mode:
+        expected["OMP_NUM_THREADS"] = "1"
+    if not isinstance(execution, Mapping) or expected != observed:
         raise StageCError("runtime process/resource configuration differs from frozen binding")
 
 
@@ -487,6 +495,57 @@ def ensure_runtime_admission(
     }
 
 
+def ensure_early_baseline_admission(
+    *,
+    bindings: Mapping[str, object],
+    bindings_path: Path,
+    path: Path,
+    runner_schema: str,
+    policy_binding: Mapping[str, object],
+) -> dict[str, object]:
+    """Publish the prospective, execution-only BASELINE 1--3000 admission."""
+
+    baseline = bindings.get("baseline")
+    world_plan = bindings.get("world_plan")
+    code = bindings.get("code")
+    physical = bindings.get("physical_inputs")
+    execution = bindings.get("execution")
+    schedule = bindings.get("scheduling_addendum")
+    if not all(isinstance(value, Mapping) for value in (baseline, world_plan, code, physical, execution, schedule)):
+        raise StageCError("early BASELINE admission bindings are incomplete")
+    bindings_sha = file_sha256(bindings_path, field="execution bindings")
+    payload: dict[str, object] = {
+        "schema": f"{runner_schema}-early-baseline-admission-v1",
+        "status": "EARLY_BASELINE_ADMITTED",
+        "formal": True,
+        "split": "TRAIN",
+        "arm": "BASELINE",
+        "execution_mode": "arm_decoupled",
+        "episode_range": [1, 3000],
+        "plan_sha256": digest(world_plan.get("plan_sha256"), field="world plan digest"),
+        "scheduling_addendum_path": str(SCHEDULING_ADDENDUM.resolve()),
+        "scheduling_addendum_sha256": digest(schedule.get("sha256"), field="scheduling addendum digest"),
+        "baseline_checkpoint_sha256": digest(baseline.get("checkpoint_sha256"), field="BASELINE checkpoint digest"),
+        "baseline_status_sha256": digest(baseline.get("status_sha256"), field="BASELINE status digest"),
+        "baseline_adapter_sha256": digest(baseline.get("adapter_closure_sha256"), field="BASELINE adapter digest"),
+        "policy_binding_sha256": canonical_sha256(policy_binding),
+        "runner_code_manifest_sha256": digest(code.get("external_manifest_sha256"), field="runner code manifest digest"),
+        "authority_sha256": bindings_sha,
+        "configuration_sha256": canonical_sha256(execution),
+        "tle_sha256": digest(physical.get("tle_manifest_sha256"), field="TLE digest"),
+        "prereg_sha256": digest(physical.get("prereg_sha256"), field="PREREG digest"),
+        "continuation_to_9000_authorized": False,
+        "stage_a_exports_required_for_learned_arms": True,
+        "scientific_declaration_changed": False,
+    }
+    admission_sha = publish_sealed_json(path, payload, field="early BASELINE admission")
+    return {
+        **payload,
+        "admission_path": str(path.resolve()),
+        "admission_sha256": admission_sha,
+    }
+
+
 def write_tree_seal(root: Path) -> str:
     if root.is_symlink() or not root.is_dir():
         raise StageCError("cannot seal a missing or symlinked result root")
@@ -561,6 +620,13 @@ def verify_bindings(path: str | Path) -> dict[str, Any]:
         raise StageCError("execution bindings arm order drifted")
     if value.get("world_plan", {}).get("plan_sha256") != PLAN_SHA256:
         raise StageCError("execution bindings plan digest drifted")
+    schedule = value.get("scheduling_addendum")
+    if (
+        not isinstance(schedule, Mapping)
+        or schedule.get("path") != str(SCHEDULING_ADDENDUM.resolve())
+        or file_sha256(SCHEDULING_ADDENDUM, field="scheduling addendum") != schedule.get("sha256")
+    ):
+        raise StageCError("execution bindings scheduling addendum drifted")
     return value
 
 

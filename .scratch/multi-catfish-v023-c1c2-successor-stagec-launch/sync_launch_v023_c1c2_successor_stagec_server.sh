@@ -2,11 +2,15 @@
 set -euo pipefail
 
 dry_run=0
-case "${1:-}" in
-  --dry-run) dry_run=1 ;;
-  "") ;;
-  *) echo "usage: $0 [--dry-run]" >&2; exit 2 ;;
-esac
+early_baseline_only=0
+while (($#)); do
+  case "$1" in
+    --dry-run) dry_run=1 ;;
+    --early-baseline-only) early_baseline_only=1 ;;
+    *) echo "usage: $0 [--dry-run] [--early-baseline-only]" >&2; exit 2 ;;
+  esac
+  shift
+done
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 package_rel=".scratch/multi-catfish-v023-c1c2-successor-stagec-launch"
@@ -56,6 +60,10 @@ plan="${run_root}/V023-C1C2-SUCCESSOR-9000-WORLD-PLAN.json"
 preflight_receipt="${run_root}/stagec-preflight.json"
 startup_marker="${run_root}/stagec-startup-000100.json"
 controller_log="${run_root}/stagec-controller-000100.log"
+chunk_launcher="${checkout}/${package_rel}/launch_stage_c_chunks.sh"
+early_baseline_admission="${checkout}/${package_rel}/early_baseline_admission.json"
+early_chunks="${stage_c}-chunks/BASELINE"
+early_merge="${stage_c}-arm-merges/BASELINE"
 
 remote_env="PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=2 PYTHONPATH='${checkout}/src' TMPDIR='${checkout}/.tmp'"
 prepare="test -d '${seed_checkout}' && test ! -L '${seed_checkout}' && test \"\$(git -C '${seed_checkout}' rev-parse HEAD)\" = '${local_commit}' && test \"\$(git -C '${seed_checkout}' rev-parse 'HEAD^{tree}')\" = '${local_tree}' && test ! -e '${checkout}' && test ! -L '${checkout}' && test ! -e '${run_root}' && test ! -L '${run_root}' && test ! -e '${stage_b}' && test ! -L '${stage_b}' && test ! -e '${stage_c}' && test ! -L '${stage_c}' && ! tmux has-session -t '${session}' 2>/dev/null && mkdir '${checkout}' && cp -a '${seed_checkout}/.' '${checkout}/' && mkdir '${run_root}' && mkdir -p '${checkout}/.tmp'"
@@ -64,6 +72,9 @@ bind_cmd="cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_e
 preflight_cmd="cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_env} '${python_bin}' '${checkout}/${package_rel}/preflight_v023_c1c2_successor_stagec.py' --bindings '${bindings}' --output '${stage_c}' --receipt '${preflight_receipt}'"
 stage_b_cmd="cd '${checkout}' && V023_STAGEC_PYTHON='${python_bin}' '${checkout}/${package_rel}/run_v023_c1c2_successor_stage_b.sh' --bindings '${bindings}' --output '${stage_b}' --admission-root '${run_root}/stage-b-admission'"
 tmux_cmd="cd '${checkout}' && tmux new-session -d -s '${session}' \"cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_env} '${python_bin}' '${checkout}/${package_rel}/run_v023_c1c2_successor_stage_c.py' --bindings '${bindings}' --preflight-receipt '${preflight_receipt}' --stage-b-root '${stage_b}' --output '${stage_c}' --pause-at 100 --runtime-admission-root '${run_root}/stage-c-admission' --controller-session-id '${session}' --startup-marker '${startup_marker}' > '${controller_log}' 2>&1\""
+early_bind_cmd="cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_env} '${python_bin}' '${checkout}/${package_rel}/bind_v023_c1c2_successor_stagec_freeze.py' --plan-output '${plan}' --stage-b-output '${stage_b}' --stage-c-output '${stage_c}' --tle-root '${tle_root}'"
+early_preflight_cmd="cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_env} '${python_bin}' '${checkout}/${package_rel}/preflight_v023_c1c2_successor_stagec.py' --bindings '${bindings}' --output '${stage_c}-chunks' --receipt '${preflight_receipt}' --early-baseline-admission '${early_baseline_admission}'"
+early_launch_cmd="cd '${checkout}' && V023_STAGEC_PYTHON='${python_bin}' '${chunk_launcher}' --bindings '${bindings}' --arm BASELINE --chunks-root '${early_chunks}' --arm-merge-root '${early_merge}' --early-baseline-admission '${early_baseline_admission}'"
 
 if [[ "$dry_run" == 1 ]]; then
   echo "DRY_RUN TMPDIR=${TMPDIR}"
@@ -71,6 +82,13 @@ if [[ "$dry_run" == 1 ]]; then
   echo "ssh ${host} ${prepare}"
   echo "rsync -aR --files-from='${sync_list}' '${repo_root}/' '${host}:${checkout}/'"
   echo "ssh ${host} ${verify_checkout}"
+  if [[ "$early_baseline_only" == 1 ]]; then
+    echo "ssh ${host} ${early_bind_cmd}"
+    echo "ssh ${host} ${early_preflight_cmd}"
+    echo "ssh ${host} ${early_launch_cmd}"
+    echo "EARLY_BASELINE_CHUNKS=${host}:${early_chunks}"
+    exit 0
+  fi
   echo "ssh ${host} ${bind_cmd}"
   echo "ssh ${host} ${preflight_cmd}"
   echo "ssh ${host} ${stage_b_cmd}"
@@ -79,12 +97,23 @@ if [[ "$dry_run" == 1 ]]; then
   echo "LOG_PATH=${host}:${controller_log}"
   echo "STAGE_B_ROOT=${host}:${stage_b}"
   echo "STAGE_C_ROOT=${host}:${stage_c}"
+  echo "CHUNK_LAUNCHER=${host}:${chunk_launcher}"
+  echo "EARLY_BASELINE_ADMISSION=${host}:${early_baseline_admission}"
   exit 0
 fi
 
 ssh "$host" "$prepare"
 rsync -aR --files-from="$sync_list" "${repo_root}/" "${host}:${checkout}/"
 ssh "$host" "$verify_checkout"
+if [[ "$early_baseline_only" == 1 ]]; then
+  ssh "$host" "$early_bind_cmd"
+  ssh "$host" "$early_preflight_cmd"
+  ssh "$host" "$early_launch_cmd"
+  echo "EARLY_BASELINE_CHUNKS=${host}:${early_chunks}"
+  echo "CHUNK_LAUNCHER=${host}:${chunk_launcher}"
+  echo "EARLY_BASELINE_ADMISSION=${host}:${early_baseline_admission}"
+  exit 0
+fi
 ssh "$host" "$bind_cmd"
 ssh "$host" "$preflight_cmd"
 ssh "$host" "$stage_b_cmd"
@@ -103,3 +132,5 @@ echo "STAGEC_STARTUP_ACKNOWLEDGED marker=${host}:${startup_marker} session=${ses
 echo "LOG_PATH=${host}:${controller_log}"
 echo "STAGE_B_ROOT=${host}:${stage_b}"
 echo "STAGE_C_ROOT=${host}:${stage_c}"
+echo "CHUNK_LAUNCHER=${host}:${chunk_launcher}"
+echo "EARLY_BASELINE_ADMISSION=${host}:${early_baseline_admission}"
