@@ -106,6 +106,7 @@ def _validate_ledger(root: Path) -> dict[str, Any]:
     if (
         ledger.get("schema") != LEDGER_SCHEMA
         or ledger.get("claim_ceiling") != CLAIM_CEILING
+        or ledger.get("formal") is not True
         or ledger.get("arm_order") != list(ARM_ORDER)
         or ledger.get("route_order") != list(ROUTE_ORDER)
         or ledger.get("completed_epochs") != 100
@@ -128,7 +129,13 @@ def _validate_ledger(root: Path) -> dict[str, Any]:
             metrics = update.get("metrics")
             if not isinstance(metrics, Mapping) or "loss" not in metrics:
                 raise VerificationError(f"update ledger loss is missing at {cursor}")
-            _finite_tree(metrics, field=f"update {cursor} metrics")
+            if any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in metrics.values()
+            ):
+                raise VerificationError(f"update ledger metric is not numeric and finite at {cursor}")
     _assert_no_closed_path(ledger, field="update ledger")
     return ledger
 
@@ -183,9 +190,13 @@ def verify_output(
     model_config_path: Path, preflight_receipt_path: Path,
     reconstruct: bool = True,
 ) -> dict[str, Any]:
+    if reconstruct is not True:
+        raise VerificationError("independent reconstruction is required for PASS")
     root = output_root
     if root.is_symlink() or not root.is_dir():
         raise VerificationError("finished output root is missing or symlinked")
+    if "REHEARSAL-NONFORMAL" in str(root).upper():
+        raise VerificationError("non-formal rehearsal roots cannot pass formal verification")
     _verify_existing_seal(root)
     status = _runner_json(root / "canonical-status.json", field="canonical status")
     receipt = _runner_json(root / "canonical-receipt.json", field="canonical receipt")
@@ -209,6 +220,25 @@ def verify_output(
         raise VerificationError("runner train seed drifted")
     _assert_no_closed_path((status, receipt), field="runner receipts")
     ledger = _validate_ledger(root)
+    provenance = _runner_json(
+        root / "formal-provenance.json", field="formal provenance"
+    )
+    if provenance.get("formal") is not True:
+        raise VerificationError("formal:false provenance cannot pass or seal")
+
+    # Reject a topology mutation before reading any external reconstruction
+    # inputs; a fourth trained arm is an intrinsic defect in the output root.
+    early_final_manifest = _runner_json(
+        root / "exports/epoch-0100.json", field="epoch-100 export manifest"
+    )
+    if (
+        early_final_manifest.get("arm_order") != list(ARM_ORDER)
+        or early_final_manifest.get("route_order") != list(ROUTE_ORDER)
+        or not isinstance(early_final_manifest.get("exports"), list)
+        or [item.get("arm") for item in early_final_manifest["exports"]]
+        != list(ARM_ORDER)
+    ):
+        raise VerificationError("epoch-100 export has a forbidden or fourth arm/route")
 
     verify_sidecar(preflight_receipt_path)
     preflight = read_canonical_json(preflight_receipt_path, field="preflight receipt")
@@ -223,6 +253,44 @@ def verify_output(
     if receipt.get("provider_identity") != identity or not isinstance(identity_payload, Mapping) or identity_payload.get("routes") != list(ROUTE_ORDER):
         raise VerificationError("provider identity or exact route list drifted")
     _assert_no_closed_path(identity_payload, field="provider identity")
+    provider_config_sha = verify_sidecar(provider_config_path)
+    provider_config = read_canonical_json(
+        provider_config_path, field="verified provider config"
+    )
+    model_config_sha = verify_sidecar(model_config_path)
+    input_binding = preflight["input_binding"]
+    learner_sha = file_sha256(repo / BUNDLE_REL / LEARNER_MANIFEST_NAME)
+    expected_authorities = {
+        "authority_sha256": provider_config.get("contract_sha256"),
+        "code_sha256": learner_sha,
+        "input_sha256": provider_config.get("target_manifest_sha256"),
+    }
+    if (
+        input_binding.get("provider_config_sha256") != provider_config_sha
+        or input_binding.get("model_config_sha256") != model_config_sha
+        or input_binding.get("learner_manifest_sha256") != learner_sha
+        or input_binding.get("target_manifest_sha256")
+        != provider_config.get("target_manifest_sha256")
+        or any(preflight.get(key) != value for key, value in expected_authorities.items())
+    ):
+        raise VerificationError("preflight model/provider/learner/r8 digest binding drifted")
+    if config.get("authority_digests") != expected_authorities:
+        raise VerificationError("runner authority digest semantics drifted")
+    if config.get("provider_config_sha256") != provider_config_sha:
+        raise VerificationError("runner provider config digest drifted")
+    expected_provenance = {
+        "schema": "multi-catfish-mcrl-v023-c1c2-successor-formal-provenance-v1",
+        "formal": True,
+        "preflight_receipt_sha256": file_sha256(preflight_receipt_path),
+        "authority_sha256": expected_authorities["authority_sha256"],
+        "learner_manifest_sha256": expected_authorities["code_sha256"],
+        "r8_manifest_sha256": expected_authorities["input_sha256"],
+        "provider_config_sha256": provider_config_sha,
+        "model_config_sha256": model_config_sha,
+        "provider_identity": identity,
+    }
+    if provenance != expected_provenance:
+        raise VerificationError("formal provenance is not fully bound to the launch")
 
     checkpoints = sorted(path.name for path in (root / "checkpoints").glob("*.runner.pt"))
     if checkpoints != ["epoch-0000.runner.pt", "epoch-0100.runner.pt"]:
@@ -268,17 +336,51 @@ def verify_output(
     file_order = state.get("file_order")
     if not isinstance(file_order, list) or len(file_order) != 200 or any(item.get("route") != ROUTE_ORDER[index % 2] for index, item in enumerate(file_order)):
         raise VerificationError("checkpoint consumed-file order drifted")
+    sampler = state.get("provider_sampler_state")
+    consumed = sampler.get("consumed_file_order") if isinstance(sampler, Mapping) else None
+    if not isinstance(consumed, list) or len(consumed) != 400:
+        raise VerificationError("provider sampler history is incomplete")
+    for cursor, (ledger_row, runner_row) in enumerate(zip(ledger["updates"], file_order, strict=True)):
+        runner_source_files = runner_row.get("source_files")
+        if not isinstance(runner_source_files, (list, tuple)) or ledger_row.get(
+            "source_files"
+        ) != [list(item) for item in runner_source_files]:
+            raise VerificationError(f"ledger/runner source files drifted at {cursor}")
+        sampler_rows = consumed[cursor * 2 : cursor * 2 + 2]
+        sampler_pairs = [[item.get("source"), item.get("file_id")] for item in sampler_rows]
+        if sampler_pairs != ledger_row.get("source_files") or any(
+            item.get("update_cursor") != cursor or item.get("route") != ledger_row.get("route")
+            for item in sampler_rows
+        ):
+            raise VerificationError(f"ledger/sampler correspondence drifted at {cursor}")
+        source_files = dict(ledger_row["source_files"])
+        if any(
+            update.get("file_id") != source_files.get(update.get("source"))
+            for update in ledger_row["arm_updates"]
+        ):
+            raise VerificationError(f"ledger arm/source file correspondence drifted at {cursor}")
     arms = state.get("arms")
     if not isinstance(arms, Mapping) or tuple(arms) != ARM_ORDER:
         raise VerificationError("checkpoint arm state order drifted")
     initializations = [arms[arm].get("initialization") for arm in ARM_ORDER]
     if initializations[1:] != initializations[:-1]:
         raise VerificationError("arms do not share identical serialized initialization")
+    initialization = state.get("initialization")
+    if (
+        not isinstance(initialization, Mapping)
+        or not isinstance(initialization.get("bytes"), bytes)
+        or hashlib.sha256(initialization["bytes"]).hexdigest()
+        != initialization.get("sha256")
+        or initialization.get("sha256") != checkpoint.get("initialization_sha256")
+        or initialization.get("sha256")
+        != input_binding.get("initialization_bytes_sha256")
+    ):
+        raise VerificationError("initialization bytes digest binding drifted")
     _finite_tree(checkpoint, field="epoch-100 checkpoint")
 
     exact_resume = False
     if reconstruct:
-        provider_sha = verify_sidecar(provider_config_path)
+        provider_sha = provider_config_sha
         learner_path = repo / BUNDLE_REL / LEARNER_MANIFEST_NAME
         old = {
             factory.CONFIG_PATH_ENV: os.environ.get(factory.CONFIG_PATH_ENV),
@@ -289,20 +391,29 @@ def verify_output(
         os.environ[factory.CONFIG_SHA256_ENV] = provider_sha
         os.environ[factory.LEARNER_MANIFEST_PATH_ENV] = str(learner_path.resolve())
         try:
-            provider = factory.make_provider()
             frozen = runner_module.FrozenSourceTrainingConfig(
                 epoch_budget=100,
                 orchestrator_config=runner_module.V023TwoRouteOrchestratorConfig.formal(
                     model_config=runner_module._load_model_config(model_config_path),
                     train_seed=TRAIN_SEED,
+                    model_config_sha256=model_config_sha,
                 ),
                 provider_factory_spec="v023_c1c2_provider_factory_v3:make_provider",
                 authority_digests=runner_module.RunAuthorityDigests(
                     preflight["authority_sha256"], preflight["code_sha256"], preflight["input_sha256"]
                 ),
+                provider_config_sha256=provider_config_sha,
             )
-            rebuilt = runner_module.V023TwoRouteSourceTrainingRunner(frozen, provider)
-            rebuilt.resume_from_checkpoint(checkpoint_path)
+            rebuilt = None
+            for epoch in (0, 100):
+                provider = factory.make_provider()
+                candidate = runner_module.V023TwoRouteSourceTrainingRunner(frozen, provider)
+                candidate.resume_from_checkpoint(
+                    root / f"checkpoints/epoch-{epoch:04d}.runner.pt"
+                )
+                if epoch == 100:
+                    rebuilt = candidate
+            assert rebuilt is not None
             exact_resume = runner_module._tree_equal(
                 deepcopy(state), rebuilt.orchestrator.checkpoint_state()
             )
@@ -323,7 +434,9 @@ def verify_output(
         "finite_update_receipts": len(ledger["updates"]),
         "initialization_sha256": checkpoint["initialization_sha256"],
         "provider_identity": identity, "provider_routes": list(ROUTE_ORDER),
-        "exact_epoch_100_resume": exact_resume if reconstruct else "NOT_RECONSTRUCTED",
+        "exact_epoch_100_resume": exact_resume,
+        "provider_config_sha256": provider_config_sha,
+        "model_config_sha256": model_config_sha,
         "closed_split_opened": False, "simulator_episode_opened": False,
     }
 

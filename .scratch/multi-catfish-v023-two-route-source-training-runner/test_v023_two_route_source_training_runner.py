@@ -82,6 +82,70 @@ def _provider(authenticated_boundary):
     return FACTORY.make_provider()
 
 
+def test_real_factory_identity_is_accepted_with_its_declared_field_set(
+    authenticated_boundary,
+):
+    provider = _provider(authenticated_boundary)
+    payload = provider.provider_identity_payload
+    assert set(payload) == set(FACTORY.PROVIDER_IDENTITY_FIELDS)
+    assert len(payload) == 22
+    assert any(
+        "c3" in record[field].lower()
+        for record in payload["learner_runtime"]
+        for field in ("path", "module", "loaded_from")
+    )
+    accepted = ORCH.authenticate_factory_v3_provider_identity(
+        provider,
+        expected_train_seed=FACTORY.TRAIN_SEED,
+        expected_model_config_sha256=FACTORY.MODEL_CONFIG_SHA256,
+    )
+    assert accepted == payload
+
+    missing = deepcopy(payload)
+    missing.pop("predecessor_manifest_sha256")
+
+    class MissingIdentityField:
+        provider_identity_payload = missing
+        provider_identity = (
+            f"{FACTORY.FACTORY_SCHEMA}:{ORCH._canonical_sha256(missing)}"
+        )
+
+    with pytest.raises(ORCH.V023TwoRouteOrchestratorError, match="authenticated"):
+        ORCH.authenticate_factory_v3_provider_identity(
+            MissingIdentityField(),
+            expected_train_seed=FACTORY.TRAIN_SEED,
+            expected_model_config_sha256=FACTORY.MODEL_CONFIG_SHA256,
+        )
+
+
+@pytest.mark.parametrize("semantic_field", ["routes", "arm"])
+def test_factory_identity_still_rejects_semantic_c3(
+    authenticated_boundary, semantic_field,
+):
+    provider = _provider(authenticated_boundary)
+    payload = deepcopy(provider.provider_identity_payload)
+    if semantic_field == "routes":
+        payload["routes"] = ["C1", "C3"]
+    else:
+        payload["arm_independent_target_identity"]["arm"] = "C3"
+        payload["arm_independent_target_identity_sha256"] = ORCH._canonical_sha256(
+            payload["arm_independent_target_identity"]
+        )
+
+    class MutatedIdentity:
+        provider_identity_payload = payload
+        provider_identity = (
+            f"{FACTORY.FACTORY_SCHEMA}:{ORCH._canonical_sha256(payload)}"
+        )
+
+    with pytest.raises(ORCH.V023TwoRouteOrchestratorError, match="C3|boundary"):
+        ORCH.authenticate_factory_v3_provider_identity(
+            MutatedIdentity(),
+            expected_train_seed=FACTORY.TRAIN_SEED,
+            expected_model_config_sha256=FACTORY.MODEL_CONFIG_SHA256,
+        )
+
+
 def _runner_config(provider: object, *, budget: int = 100):
     payload = provider.provider_identity_payload
     target = payload["arm_independent_target_identity"]

@@ -11,7 +11,8 @@ import sys
 
 from successor_launch_common import (
     ARM_ORDER, CLAIM_CEILING, ROUTE_ORDER, RUNNER_REL, SOURCE_MAP,
-    SuccessorLaunchError, canonical_bytes, read_canonical_json, write_once,
+    SuccessorLaunchError, canonical_bytes, file_sha256, read_canonical_json,
+    verify_sidecar, write_once,
 )
 
 
@@ -49,6 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     preflight = read_canonical_json(arguments.preflight_receipt, field="preflight receipt")
     if preflight.get("status") != "PASS_FROZEN_C1C2_SUCCESSOR_PREFLIGHT":
         parser.error("preflight receipt does not bind the requested formal run")
+    preflight_sha256 = verify_sidecar(arguments.preflight_receipt)
     authority_sha256 = arguments.authority_sha256 or preflight.get("authority_sha256")
     code_sha256 = arguments.code_sha256 or preflight.get("code_sha256")
     input_sha256 = arguments.input_sha256 or preflight.get("input_sha256")
@@ -110,13 +112,32 @@ def main(argv: list[str] | None = None) -> int:
             raise SuccessorLaunchError("runner did not close at the epoch-100 boundary")
         ledger = {
             "schema": SCHEMA, "claim_ceiling": CLAIM_CEILING,
+            "formal": True,
             "arm_order": list(ARM_ORDER), "route_order": list(ROUTE_ORDER),
             "completed_epochs": 100, "completed_updates": 200,
             "updates": rows,
         }
         write_once(arguments.output_root / "update-ledger.json", canonical_bytes(ledger))
+        input_binding = preflight.get("input_binding")
+        if not isinstance(input_binding, dict):
+            raise SuccessorLaunchError("preflight input binding is missing")
+        provenance = {
+            "schema": "multi-catfish-mcrl-v023-c1c2-successor-formal-provenance-v1",
+            "formal": True,
+            "preflight_receipt_sha256": preflight_sha256,
+            "authority_sha256": authority_sha256,
+            "learner_manifest_sha256": code_sha256,
+            "r8_manifest_sha256": input_sha256,
+            "provider_config_sha256": input_binding.get("provider_config_sha256"),
+            "model_config_sha256": file_sha256(Path(arguments.model_config_json)),
+            "provider_identity": input_binding.get("provider_identity"),
+        }
+        write_once(
+            arguments.output_root / "formal-provenance.json",
+            canonical_bytes(provenance),
+        )
         runner._write_checkpoint(100)
-        runner._write_final_receipt()
+        runner.run_to_epoch(100)
     except (OSError, SuccessorLaunchError, runner_module.V023TwoRouteSourceTrainingRunnerError) as error:
         print(f"SUCCESSOR_FORMAL_RUN_FAIL: {error}", file=sys.stderr)
         return 3

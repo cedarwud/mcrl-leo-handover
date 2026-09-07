@@ -124,7 +124,7 @@ if ((dry_run)); then
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
     "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$remote_diagnostic_root' && test ! -L '$remote_diagnostic_root'; '$server_python' '$remote_diagnostic' --repo '$checkout' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --output-root '$remote_diagnostic_root'"
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
-    "set -Eeuo pipefail; $dry_remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt'"
+    "set -Eeuo pipefail; $dry_remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt' --diagnostic-preflight-receipt '$remote_preflight_receipt'"
   dry_controller="set -Eeuo pipefail; $dry_remote_env; $dry_factory_env; umask 077; '$server_python' -c \"import json,os; p='$remote_startup_marker'; fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,(json.dumps({'status':'CONTROLLER_STARTED','output_root':'$output_root'},sort_keys=True,separators=(',',':'))+'\\n').encode('ascii')); os.close(fd)\"; '$server_python' '$remote_formal_runner' --output-root '$output_root' --epochs 100 --provider-factory v023_c1c2_provider_factory_v3:make_provider --model-config-json '$remote_model_config' --train-seed 2927175120652069826 --preflight-receipt '$remote_preflight_receipt' --execute; '$server_python' '$remote_verifier' --repo '$checkout' --output-root '$output_root' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --preflight-receipt '$remote_preflight_receipt' --write"
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
     "set -Eeuo pipefail; test ! -e '$output_root' && test ! -L '$output_root'; test ! -e '$remote_startup_marker' && test ! -L '$remote_startup_marker'; test ! -e '$remote_log' && test ! -L '$remote_log'; tmux new-session -d -s '$tmux_session' \"$dry_controller >>'$remote_log' 2>&1\""
@@ -170,7 +170,7 @@ ssh -- "$server_host" "$preflight_command" || die 'factory-v3 preflight failed'
 
 diagnostic_command="set -Eeuo pipefail; cd '$checkout'; $remote_env; $factory_env; test ! -e '$remote_diagnostic_root' && test ! -L '$remote_diagnostic_root'; '$server_python' '$remote_diagnostic' --repo '$checkout' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --output-root '$remote_diagnostic_root'"
 ssh -- "$server_host" "$diagnostic_command" || die 'one-epoch diagnostic execution failed'
-ssh -- "$server_host" "set -Eeuo pipefail; $remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt'" \
+ssh -- "$server_host" "set -Eeuo pipefail; $remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt' --diagnostic-preflight-receipt '$remote_preflight_receipt'" \
   || die 'one-epoch diagnostic did not produce an authenticated PASS receipt'
 
 ssh -- "$server_host" "$remote_absence" || die "output root appeared before launch: $output_root"

@@ -28,6 +28,13 @@ TRAINER_REL = Path(
     ".scratch/multi-catfish-v023-heterogeneous-trainer/"
     "v023_heterogeneous_trainer.py"
 )
+PHYSICAL_EVALUATION_REL = Path(
+    ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation"
+)
+CLOSURE_LIST_REL = Path(
+    ".scratch/multi-catfish-v023-controller-handoff-20260907/"
+    "SHADOW-CLOSURE-LIST-2026-09-07.txt"
+)
 CONTRACT_NAME = "V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md"
 DECLARATION_NAME = "V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md"
 MODEL_CONFIG_NAME = "V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"
@@ -71,7 +78,8 @@ EXPECTED_MODEL_CONFIG_SHA256 = (
 )
 
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
-STAGE_A_PLACEHOLDER_RE = re.compile(r"<<BIND_AT_FREEZE:([a-z0-9_]+)>>")
+CONTRACT_PLACEHOLDER_RE = re.compile(r"<<BIND_AT_FREEZE:([a-z0-9_]+)>>")
+STAGE_A_PLACEHOLDER_RE = CONTRACT_PLACEHOLDER_RE
 STAGE_A_PLACEHOLDERS = frozenset(
     {
         "r8_manifest_sha256",
@@ -221,6 +229,35 @@ def directory_files(root: Path, relative_root: Path) -> list[Path]:
     )
 
 
+def required_sync_closure(root: Path) -> list[Path]:
+    source = root / CLOSURE_LIST_REL
+    if source.is_symlink() or not source.is_file():
+        raise SuccessorLaunchError("authoritative sync closure list is unavailable")
+    try:
+        rows = source.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise SuccessorLaunchError("authoritative sync closure list is unreadable") from error
+    paths = [Path(safe_relative(row, field="sync closure path")) for row in rows if row]
+    if len(paths) != 246 or len(set(paths)) != len(paths) or rows != sorted(rows):
+        raise SuccessorLaunchError("authoritative sync closure is not the exact sorted 246-path set")
+    missing = [path for path in paths if not (root / path).is_file() or (root / path).is_symlink()]
+    if missing:
+        raise SuccessorLaunchError(
+            "authoritative sync closure has missing/symlinked paths: "
+            + ", ".join(path.as_posix() for path in missing)
+        )
+    return paths
+
+
+def assert_sync_coverage(required: Sequence[Path], observed: Sequence[Path]) -> None:
+    absent = set(required) - set(observed)
+    if absent:
+        raise SuccessorLaunchError(
+            "launch sync coverage is incomplete: "
+            + ", ".join(path.as_posix() for path in sorted(absent))
+        )
+
+
 def discover_mcrl_runtime(root: Path) -> list[Path]:
     """Return the actual project modules loaded by the factory and runner seam."""
 
@@ -270,13 +307,64 @@ def assert_stage_a_placeholders(contract_text: str, resolutions: Mapping[str, ob
         )
 
 
+def assert_contract_placeholders(
+    contract_text: str, bindings: Mapping[str, object]
+) -> None:
+    found = set(CONTRACT_PLACEHOLDER_RE.findall(contract_text))
+    missing = found - set(bindings)
+    malformed: set[str] = set()
+    for key in found & set(bindings):
+        record = bindings[key]
+        if not isinstance(record, Mapping):
+            malformed.add(key)
+            continue
+        status = record.get("status")
+        if status == "RESOLVED":
+            if not isinstance(record.get("value"), str) or not record["value"]:
+                malformed.add(key)
+        elif status == "DEFERRED":
+            if not isinstance(record.get("reason"), str) or not record["reason"].strip():
+                malformed.add(key)
+        else:
+            malformed.add(key)
+    if missing or malformed:
+        raise SuccessorLaunchError(
+            "contract freeze placeholders are neither resolved nor explicitly deferred: "
+            + ", ".join(sorted(missing | malformed))
+        )
+
+
 def reject_forbidden_config(value: object) -> None:
-    raw = canonical_bytes(value).decode("ascii")
-    forbidden = ("r" + "7", "C" + "3", "q" + "3", "TE" + "ST", "ALL_NEUTRAL_CONTROL", "DROP_C" + "3")
-    lowered = raw.lower()
-    present = [token for token in forbidden if token.lower() in lowered]
-    if present:
-        raise SuccessorLaunchError("provider config contains forbidden token(s)")
+    token_re = re.compile(
+        r"(?<![A-Za-z0-9])(?:r7|c3|q3|test|all_neutral_control|drop_c3)(?![A-Za-z0-9])",
+        re.IGNORECASE,
+    )
+
+    def visit(item: object, *, field: str) -> None:
+        field_lower = field.lower()
+        if isinstance(item, Mapping):
+            for key, child in item.items():
+                visit(child, field=str(key))
+            return
+        if isinstance(item, (list, tuple)):
+            for child in item:
+                visit(child, field=field)
+            return
+        if field_lower.endswith("sha256") or "digest" in field_lower:
+            digest(item, field=field)
+            return
+        if not isinstance(item, str):
+            return
+        semantic = any(
+            marker in field_lower
+            for marker in ("path", "root", "route", "split", "arm", "module", "source")
+        )
+        if semantic and token_re.search(item):
+            raise SuccessorLaunchError("provider config contains forbidden token(s)")
+        if "arm" in field_lower and item.upper() == "FULL":
+            raise SuccessorLaunchError("provider config names FULL as a trained arm")
+
+    visit(value, field="config")
 
 
 def validate_no_circular_digest(payload: Mapping[str, object]) -> None:

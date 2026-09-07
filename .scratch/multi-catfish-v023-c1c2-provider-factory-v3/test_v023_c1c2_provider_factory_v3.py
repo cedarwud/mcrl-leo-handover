@@ -103,6 +103,37 @@ def _producer_modules():
     return generator, controller, sealer
 
 
+@lru_cache(maxsize=1)
+def _producer_authority() -> dict[str, object]:
+    """Read fixture constants from the frozen producer authority, independently."""
+
+    manifest_path = (
+        REPO / ".scratch/multi-catfish-v023-r6-fit-binding-fix/PREFLIGHT-MANIFEST.json"
+    )
+    manifest_sha = _sha_file(manifest_path)
+    assert manifest_path.with_suffix(".sha256").read_text(encoding="ascii") == (
+        f"{manifest_sha}  {manifest_path.name}\n"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="ascii"))
+    prereg_binding = [
+        row for row in manifest["bindings"] if row["role"] == "preregistration"
+    ]
+    assert len(prereg_binding) == 1
+    prereg_path = REPO / prereg_binding[0]["path"]
+    assert _sha_file(prereg_path) == prereg_binding[0]["sha256"]
+    prereg = json.loads(prereg_path.read_text(encoding="utf-8"))
+    ephemeris = prereg["sections"]["ephemeris"]
+    configuration = manifest["configuration"]
+    return {
+        "worlds": tuple(configuration["worlds"]),
+        "lambda_hex": configuration["lambda_hex"],
+        "kappa_hex": configuration["kappa_hex"],
+        "interval_hex": float(ephemeris["config"]["time_step_s"]).hex(),
+        "prereg_sha256": prereg_binding[0]["sha256"],
+        "tle_file_set_sha256": ephemeris["file_set_sha256"],
+    }
+
+
 def _c1_dataset(*, mode: str, world: int) -> EEAxisOpeningDataset:
     source_manifest = _digest("successor-target-source-manifest")
     checkpoint = _digest("successor-target-checkpoint")
@@ -135,8 +166,8 @@ def _c1_dataset(*, mode: str, world: int) -> EEAxisOpeningDataset:
         candidate_rates_bps=np.asarray([110.0, 50.0], dtype=np.float64),
         reference_system_power_w=10.0,
         candidate_system_power_w=11.0,
-        lambda_bits_per_j=float.fromhex(FACTORY.EXPECTED_LAMBDA_HEX),
-        interval_s=float.fromhex(FACTORY.EXPECTED_INTERVAL_HEX),
+        lambda_bits_per_j=float.fromhex(str(_producer_authority()["lambda_hex"])),
+        interval_s=float.fromhex(str(_producer_authority()["interval_hex"])),
         comparison_sha256="0" * 64,
     )
     raw = replace(
@@ -250,8 +281,8 @@ def _c2_dataset_and_binding(
         "schema": excerpt["schema"],
         "source_manifest_sha256": _digest("successor-target-source-manifest"),
         "checkpoint_sha256": _digest("successor-target-checkpoint"),
-        "lambda_bits_per_j": FACTORY.EXPECTED_LAMBDA_HEX,
-        "kappa_bits": FACTORY.EXPECTED_KAPPA_HEX,
+        "lambda_bits_per_j": _producer_authority()["lambda_hex"],
+        "kappa_bits": _producer_authority()["kappa_hex"],
         "target_unit": excerpt["target_unit"],
         "rows": [row],
     }
@@ -294,12 +325,12 @@ def _write_artifact(root: Path) -> Path:
             )
         ),
         source_family="producer-derived-successor-fixture",
-        lambda_bits_per_j=float.fromhex(FACTORY.EXPECTED_LAMBDA_HEX),
-        kappa_bits=float.fromhex(FACTORY.EXPECTED_KAPPA_HEX),
-        interval_s=float.fromhex(FACTORY.EXPECTED_INTERVAL_HEX),
+        lambda_bits_per_j=float.fromhex(str(_producer_authority()["lambda_hex"])),
+        kappa_bits=float.fromhex(str(_producer_authority()["kappa_hex"])),
+        interval_s=float.fromhex(str(_producer_authority()["interval_hex"])),
     )
     for mode in ("informed", "neutral"):
-        for world in FACTORY.EXPECTED_WORLDS:
+        for world in _producer_authority()["worlds"]:
             c1_dataset = _c1_dataset(mode=mode, world=world)
             c1_binding = _c1_binding(c1_dataset, mode=mode, world=world)
             c2_dataset, c2_binding = _c2_dataset_and_binding(
@@ -358,7 +389,7 @@ def _write_learner_manifest(path: Path) -> Path:
             "sha256": _sha_file(REPO / relative),
         }
         for relative, module in sorted(
-            FACTORY.REQUIRED_LEARNER_RUNTIME_MODULES.items()
+            FACTORY.derive_learner_runtime_modules().items()
         )
     ]
     path.write_bytes(
@@ -385,7 +416,7 @@ def sealed_inputs(tmp_path_factory):
 def _config_payload(target: Path, learner_manifest: Path) -> dict[str, object]:
     return {
         "schema": FACTORY.CONFIG_SCHEMA,
-        "contract_sha256": _digest("successor-contract"),
+        "contract_sha256": _sha_file(FACTORY.CONTRACT_PATH),
         "target_root": str(target),
         "target_manifest_sha256": _sha_file(target / "MANIFEST.sha256"),
         "target_receipt_sha256": _sha_file(target / "receipt.json"),
@@ -411,7 +442,12 @@ def test_frozen_model_seed_and_complete_successor_closure_are_required():
     assert FACTORY.MODEL_CONFIG_SHA256 == (
         "9eafcd184bd0ec015498832be61b5c95a71373e98f63ab804c9654775a8b1d5d"
     )
-    required = FACTORY.REQUIRED_LEARNER_RUNTIME_MODULES
+    producer = _producer_authority()
+    assert FACTORY.EXPECTED_WORLDS == producer["worlds"]
+    assert FACTORY.EXPECTED_LAMBDA_HEX == producer["lambda_hex"]
+    assert FACTORY.EXPECTED_KAPPA_HEX == producer["kappa_hex"]
+    assert FACTORY.EXPECTED_INTERVAL_HEX == producer["interval_hex"]
+    required = FACTORY.derive_learner_runtime_modules()
     assert required[
         ".scratch/multi-catfish-v023-two-route-source-training-runner/"
         "ee_axis_two_route_model.py"
@@ -430,6 +466,12 @@ def test_frozen_model_seed_and_complete_successor_closure_are_required():
     ] == "v023_heterogeneous_trainer"
     assert required["src/mcrl/algorithms/ee_axis_lcsrs_three_route.py"] == (
         "mcrl.algorithms.ee_axis_lcsrs_three_route"
+    )
+    assert required["src/mcrl/algorithms/ee_axis_lcsrs_c3_head.py"] == (
+        "mcrl.algorithms.ee_axis_lcsrs_c3_head"
+    )
+    assert required["src/mcrl/runtime/ee_axis_lcsrs_c3_state.py"] == (
+        "mcrl.runtime.ee_axis_lcsrs_c3_state"
     )
 
 
@@ -451,12 +493,17 @@ def test_positive_load_identity_and_exact_resume(sealed_inputs, monkeypatch):
     assert first.provider_identity == second.provider_identity
     assert first.planned_epoch_budget == 100
     identity = first.provider_identity_payload
+    assert set(identity) == set(FACTORY.PROVIDER_IDENTITY_FIELDS)
+    assert len(identity) == 22
     assert identity["routes"] == ["C1", "C2"]
     assert identity["train_seed"] == FACTORY.TRAIN_SEED
     assert len(identity["learner_runtime"]) == len(
-        FACTORY.REQUIRED_LEARNER_RUNTIME_MODULES
+        FACTORY.derive_learner_runtime_modules()
     )
-    assert all(record["loaded_from"].startswith(str(REPO)) for record in identity["learner_runtime"])
+    assert all(
+        record["loaded_from"].startswith(str(REPO))
+        for record in identity["learner_runtime"]
+    )
 
     _call(first, 0, "C1")
     partial = first.next_batch(route="C2", source="neutral", update_cursor=1)
@@ -495,6 +542,18 @@ def test_closed_config_rejects_r7_and_extra_fields(sealed_inputs, field):
         FACTORY.C1C2ProviderConfig.from_payload(payload)
 
 
+def test_fabricated_contract_digest_cannot_authenticate_provider(
+    sealed_inputs, monkeypatch
+):
+    target, learner_manifest = sealed_inputs
+    monkeypatch.setenv(FACTORY.LEARNER_MANIFEST_PATH_ENV, str(learner_manifest))
+    payload = _config_payload(target, learner_manifest)
+    payload["contract_sha256"] = _digest("fabricated-successor-contract")
+    config = FACTORY.C1C2ProviderConfig.from_payload(payload)
+    with pytest.raises(FACTORY.V023C1C2ProviderFactoryError, match="contract on disk"):
+        FACTORY.build_provider(config)
+
+
 def test_missing_neutral_mode_fails_closed(sealed_inputs, monkeypatch, tmp_path):
     source, learner_manifest = sealed_inputs
     target = tmp_path / "targets"
@@ -524,7 +583,7 @@ def test_one_flipped_shard_byte_fails_closed(sealed_inputs, monkeypatch, tmp_pat
     source, learner_manifest = sealed_inputs
     target = tmp_path / "targets"
     shutil.copytree(source, target)
-    shard = target / f"c1-informed-world-{FACTORY.EXPECTED_WORLDS[0]}.json"
+    shard = target / f"c1-informed-world-{_producer_authority()['worlds'][0]}.json"
     raw = bytearray(shard.read_bytes())
     raw[len(raw) // 2] ^= 1
     shard.write_bytes(bytes(raw))

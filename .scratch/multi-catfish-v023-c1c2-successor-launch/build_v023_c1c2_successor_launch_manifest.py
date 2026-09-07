@@ -4,16 +4,18 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 from pathlib import Path
 import sys
 
 from successor_launch_common import (
-    BASELINE_ADAPTER_REL, BINDINGS_NAME, BUNDLE_REL, CONTRACT_NAME,
+    BASELINE_ADAPTER_REL, BINDINGS_NAME, BUNDLE_REL, CLOSURE_LIST_REL, CONTRACT_NAME,
     DECLARATION_NAME, FACTORY_REL, LAUNCH_MANIFEST_NAME,
     LAUNCH_MANIFEST_SCHEMA, LAUNCH_MANIFEST_SIDECAR, LEARNER_MANIFEST_NAME,
     MODEL_CONFIG_NAME, PROTOCOL_REL, PROVIDER_CONFIG_NAME, REVIEW_REL,
     RUNNER_REL, SUCCESSOR_REL, TARGET_ADAPTER_REL, TRAINER_REL,
-    SuccessorLaunchError, canonical_bytes, directory_files, discover_mcrl_runtime, file_manifest,
+    SuccessorLaunchError, assert_sync_coverage, canonical_bytes, directory_files,
+    file_manifest, required_sync_closure,
     sidecar_path, validate_no_circular_digest, verify_launch_manifest,
     write_reproducible,
 )
@@ -28,13 +30,19 @@ def closure_groups(repo: Path) -> list[dict[str, object]]:
         LAUNCH_MANIFEST_NAME, LAUNCH_MANIFEST_SIDECAR,
         "PREFLIGHT-RECEIPT.json", "PREFLIGHT-RECEIPT.json.sha256",
     }
-    groups: list[tuple[str, list[Path]]] = [
+    for entry in (repo / "src", repo / FACTORY_REL):
+        if str(entry) not in sys.path:
+            sys.path.insert(0, str(entry))
+    factory = importlib.import_module("v023_c1c2_provider_factory_v3")
+    learner_paths = [Path(path) for path in factory.derive_learner_runtime_modules()]
+    authoritative_closure = required_sync_closure(repo)
+    candidates: list[tuple[str, list[Path]]] = [
         ("launch_bundle", [p for p in directory_files(repo, BUNDLE_REL) if p.name not in bundle_excluded]),
+        ("learner_runtime", learner_paths),
         ("factory_v3", directory_files(repo, FACTORY_REL)),
         ("runner_package", directory_files(repo, RUNNER_REL)),
         ("adapters", [TARGET_ADAPTER_REL, BASELINE_ADAPTER_REL]),
         ("support_runtime", [PROTOCOL_REL, TRAINER_REL]),
-        ("learner_runtime", []),
         ("successor_authority", [
             SUCCESSOR_REL / CONTRACT_NAME,
             SUCCESSOR_REL / DECLARATION_NAME,
@@ -43,23 +51,19 @@ def closure_groups(repo: Path) -> list[dict[str, object]]:
             SUCCESSOR_REL / (MODEL_CONFIG_NAME + ".sha256"),
             REVIEW_REL,
         ]),
+        ("sync_closure_authority", [CLOSURE_LIST_REL]),
+        ("complete_shadow_closure", authoritative_closure),
     ]
-    import json
-    learner_path = repo / BUNDLE_REL / LEARNER_MANIFEST_NAME
-    learner = json.loads(learner_path.read_text(encoding="ascii"))
-    learner_paths = [Path(item["path"]) for item in learner["bindings"]]
-    groups[5] = ("learner_runtime", learner_paths)
-    runtime_extra = [path for path in discover_mcrl_runtime(repo) if path not in set(learner_paths)]
-    groups.insert(6, ("transitive_mcrl_runtime", runtime_extra))
     result = []
     seen: set[Path] = set()
-    for name, paths in groups:
-        overlap = seen & set(paths)
-        if overlap:
-            raise SuccessorLaunchError(f"launch groups overlap: {sorted(str(p) for p in overlap)}")
-        seen.update(paths)
-        record = {"name": name, **file_manifest(repo, paths)}
+    for name, paths in candidates:
+        unique = sorted(set(paths) - seen)
+        if not unique:
+            continue
+        seen.update(unique)
+        record = {"name": name, **file_manifest(repo, unique)}
         result.append(record)
+    assert_sync_coverage(authoritative_closure, sorted(seen))
     return result
 
 
@@ -89,6 +93,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if arguments.paths:
             result = verify_launch_manifest(repo, path)
+            assert_sync_coverage(
+                required_sync_closure(repo), [Path(item) for item in result["paths"]]
+            )
             print("\n".join(result["paths"]))
             return 0
         raw = render(repo)

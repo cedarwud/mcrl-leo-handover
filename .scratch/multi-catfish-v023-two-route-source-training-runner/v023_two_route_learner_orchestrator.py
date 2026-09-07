@@ -39,6 +39,13 @@ HETEROGENEOUS_TRAINER_PATH = (
     / "multi-catfish-v023-heterogeneous-trainer"
     / "v023_heterogeneous_trainer.py"
 )
+FACTORY_V3_DIR = HERE.parent / "multi-catfish-v023-c1c2-provider-factory-v3"
+if str(FACTORY_V3_DIR) not in sys.path:
+    sys.path.insert(0, str(FACTORY_V3_DIR))
+from v023_c1c2_provider_factory_v3 import (
+    PROVIDER_IDENTITY_FIELDS as FACTORY_V3_IDENTITY_FIELDS,
+)
+
 ORCHESTRATOR_SCHEMA = (
     "multi-catfish-mcrl-v023-c1c2-successor-two-route-learner-orchestrator-v1"
 )
@@ -256,14 +263,11 @@ FACTORY_V3_IDENTITY_SCHEMA = (
     "multi-catfish-mcrl-v023-c1c2-successor-provider-identity-v3"
 )
 FACTORY_V3_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-provider-factory-v3"
-_FACTORY_V3_IDENTITY_FIELDS = {
-    "schema", "routes", "sources", "train_seed", "epoch_budget",
-    "contract_sha256", "model_config_sha256", "provider_config_sha256",
-    "factory_code_sha256", "target_adapter_code_sha256",
-    "provider_protocol_code_sha256", "learner_manifest_path",
-    "learner_manifest_sha256", "learner_runtime", "learner_runtime_sha256",
-    "arm_independent_target_identity", "arm_independent_target_identity_sha256",
-    "consumed_file_order_plan_sha256",
+NONFORMAL_REHEARSAL_IDENTITY_FIELDS = FACTORY_V3_IDENTITY_FIELDS - {
+    "predecessor_manifest_sha256",
+    "prereg_sha256",
+    "scientific_declaration_sha256",
+    "tle_file_set_sha256",
 }
 
 
@@ -280,20 +284,69 @@ def _canonical_sha256(value: object) -> str:
     return sha256(encoded).hexdigest()
 
 
-def _reject_forbidden_identity_fields(value: object) -> None:
+def _identity_tokens(value: str) -> list[str]:
+    denial_safe = re.sub(
+        r"(?<![A-Z0-9])NO(?:[_ -]+)(?:R7|Q3|C3|TEST)(?![A-Z0-9])",
+        "",
+        value.upper(),
+    )
+    return re.split(r"[^A-Z0-9]+", denial_safe)
+
+
+def _semantic_identity_field(field: str) -> bool:
+    tokens = set(re.split(r"[^a-z0-9]+", field.lower()))
+    return bool(
+        tokens
+        & {
+            "route", "routes", "arm", "arms", "source", "sources",
+            "schema", "claim", "claims", "config", "split",
+        }
+    )
+
+
+def _identity_path_or_digest_field(field: str) -> bool:
+    normalized = field.lower()
+    return (
+        normalized.endswith("sha256")
+        or "digest" in normalized
+        or any(
+            token in set(re.split(r"[^a-z0-9]+", normalized))
+            for token in {"path", "paths", "file", "files", "module", "loaded"}
+        )
+    )
+
+
+def _reject_forbidden_identity_fields(
+    value: object, *, field: str = "", closure_context: bool = False
+) -> None:
     if isinstance(value, Mapping):
         for key, item in value.items():
             normalized = str(key).lower()
-            if re.search(r"(^|_)(r7|q3|c3)($|_)", normalized):
+            child_closure = closure_context or normalized in {
+                "learner_runtime", "bindings", "manifest_files", "consumed_files",
+            }
+            if not child_closure and any(
+                token in {"R7", "Q3", "C3"}
+                for token in _identity_tokens(str(key))
+            ):
                 raise V023TwoRouteOrchestratorError(
                     "provider identity contains a forbidden R7/Q3/C3 field"
                 )
-            _reject_forbidden_identity_fields(item)
+            _reject_forbidden_identity_fields(
+                item, field=str(key), closure_context=child_closure
+            )
     elif isinstance(value, (list, tuple, set)):
         for item in value:
-            _reject_forbidden_identity_fields(item)
-    elif isinstance(value, str):
-        tokens = re.split(r"[^A-Z0-9]+", value.upper())
+            _reject_forbidden_identity_fields(
+                item, field=field, closure_context=closure_context
+            )
+    elif (
+        isinstance(value, str)
+        and not closure_context
+        and not _identity_path_or_digest_field(field)
+        and _semantic_identity_field(field)
+    ):
+        tokens = _identity_tokens(value)
         if any(token in {"R7", "Q3", "C3"} for token in tokens):
             raise V023TwoRouteOrchestratorError(
                 "provider identity contains a forbidden R7/Q3/C3 value"
@@ -304,16 +357,17 @@ def _reject_forbidden_identity_fields(value: object) -> None:
             )
 
 
-def authenticate_factory_v3_provider_identity(
+def _authenticate_provider_identity(
     provider: object,
     *,
     expected_train_seed: int,
     expected_model_config_sha256: str,
+    required_fields: frozenset[str],
 ) -> Mapping[str, Any]:
     payload = _identity_payload(provider)
     identity = getattr(provider, "provider_identity", None)
     identity = identity() if callable(identity) else identity
-    if not isinstance(payload, Mapping) or set(payload) != _FACTORY_V3_IDENTITY_FIELDS:
+    if not isinstance(payload, Mapping) or set(payload) != required_fields:
         raise V023TwoRouteOrchestratorError(
             "provider is not an authenticated factory-v3 identity"
         )
@@ -335,6 +389,20 @@ def authenticate_factory_v3_provider_identity(
             "factory-v3 provider identity digest is unauthenticated"
         )
     return deepcopy(dict(payload))
+
+
+def authenticate_factory_v3_provider_identity(
+    provider: object,
+    *,
+    expected_train_seed: int,
+    expected_model_config_sha256: str,
+) -> Mapping[str, Any]:
+    return _authenticate_provider_identity(
+        provider,
+        expected_train_seed=expected_train_seed,
+        expected_model_config_sha256=expected_model_config_sha256,
+        required_fields=FACTORY_V3_IDENTITY_FIELDS,
+    )
 
 
 def _listed_routes(value: object, *, route_context: bool = False) -> list[str]:
@@ -391,11 +459,23 @@ class V023TwoRouteLearnerOrchestrator:
         if not isinstance(provider, DeterministicRouteBatchProvider):
             raise TypeError("provider does not satisfy DeterministicRouteBatchProvider")
         validate_two_route_provider_identity(provider)
-        authenticate_factory_v3_provider_identity(
-            provider,
-            expected_train_seed=config.train_seed,
-            expected_model_config_sha256=config.model_config_sha256,
+        candidate_identity = _identity_payload(provider)
+        identity_fields = (
+            set(candidate_identity) if isinstance(candidate_identity, Mapping) else set()
         )
+        if config.formal_use or identity_fields == FACTORY_V3_IDENTITY_FIELDS:
+            authenticate_factory_v3_provider_identity(
+                provider,
+                expected_train_seed=config.train_seed,
+                expected_model_config_sha256=config.model_config_sha256,
+            )
+        else:
+            _authenticate_provider_identity(
+                provider,
+                expected_train_seed=config.train_seed,
+                expected_model_config_sha256=config.model_config_sha256,
+                required_fields=NONFORMAL_REHEARSAL_IDENTITY_FIELDS,
+            )
         authenticated_sampler = provider.sampler_state()
         if (
             not isinstance(authenticated_sampler, Mapping)

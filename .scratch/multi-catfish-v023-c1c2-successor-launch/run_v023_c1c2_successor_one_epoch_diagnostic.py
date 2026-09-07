@@ -19,7 +19,7 @@ from typing import Any
 from successor_launch_common import (
     BUNDLE_REL, FACTORY_REL, LEARNER_MANIFEST_NAME, ROUTE_ORDER, RUNNER_REL,
     TRAIN_SEED, SuccessorLaunchError, canonical_bytes, file_sha256,
-    sidecar_path, write_once,
+    sidecar_path, verify_sidecar, write_once,
 )
 
 
@@ -141,8 +141,10 @@ def run_diagnostic(
     try:
         point = time.perf_counter()
         factory, runner, orchestrator = _load(repo)
-        provider_sha = file_sha256(provider_config)
+        provider_sha = verify_sidecar(provider_config)
         learner_manifest = repo / BUNDLE_REL / LEARNER_MANIFEST_NAME
+        learner_manifest_sha = file_sha256(learner_manifest)
+        model_config_sha = file_sha256(model_config)
         os.environ[factory.CONFIG_PATH_ENV] = str(provider_config.resolve())
         os.environ[factory.CONFIG_SHA256_ENV] = provider_sha
         os.environ[factory.LEARNER_MANIFEST_PATH_ENV] = str(learner_manifest.resolve())
@@ -154,6 +156,17 @@ def run_diagnostic(
         phase["factory_v3_real_target_load"] = round(time.perf_counter() - point, 6)
         payload["provider_identity"] = identity
         payload["provider_identity_payload"] = dict(identity_payload)
+        payload["provider_config_sha256"] = provider_sha
+        payload["model_config_sha256"] = model_config_sha
+        payload["learner_manifest_sha256"] = learner_manifest_sha
+        payload["factory_code_sha256"] = identity_payload.get("factory_code_sha256")
+        payload["diagnostic_code_sha256"] = file_sha256(Path(__file__).resolve())
+        if (
+            identity_payload.get("provider_config_sha256") != provider_sha
+            or identity_payload.get("model_config_sha256") != model_config_sha
+            or identity_payload.get("learner_manifest_sha256") != learner_manifest_sha
+        ):
+            raise SuccessorLaunchError("diagnostic identity/config digests drifted")
         checks["factory_v3_real_target_loaded"] = True
 
         point = time.perf_counter()
