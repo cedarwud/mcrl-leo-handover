@@ -102,7 +102,7 @@ artifact `https://claude.ai/code/artifact/0b130c2a-2c59-4b73-8467-adea41db3fe9` 
 ## Ordered next steps after the STOP
 1. Collect the astra adjudication; append to report §13; if it disagrees with the STOP derivation, do not act on it — report the disagreement to the user with both readings.
 2. When r8 reaches `COMPLETE`: run the read-only post-seal check (`/home/sat/mcrl-v023-postseal-target-check-20260907/postseal_target_load_check.py <src> <adapter> <root>`, sync adapter `3b8a2268…` first); record the sealed target-root digests in the report ledger. If the controller writes `FAILED` after the shards completed, use `dryrun_v023_c1c2_controller_postshard.py` against the staging to fix the consumer and re-run merge/seal on the existing shards (one corrected attempt).
-3. Republish the artifact `https://claude.ai/code/artifact/983dfec8-bc7f-493d-a726-5fff26fdbd3e` from the refreshed HTML (Artifact tool with `url`; the older 0b130c2a… link is dead); update the memory files.
+3. Republish the artifact `https://claude.ai/code/artifact/527354c1-54aa-4175-8b99-3b03f7beb74c` from the refreshed HTML (Artifact tool with `url`; the older 0b130c2a… link is dead); update the memory files.
 4. Report to the user in Traditional Chinese: the STOP, its derivation, what it does and does not mean, and the decision they own (successor declaration with a fresh formula + falsifier, or C3/three-Catfish redesign). No computation on a successor before its contract is declared and frozen.
 
 ## Pitfalls already paid for
