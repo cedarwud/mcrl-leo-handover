@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo 1000 > /proc/self/oom_score_adj
 
 dry_run=0
 case "${1:-}" in
@@ -38,9 +37,19 @@ done
 [[ "$host" =~ ^[A-Za-z0-9_.-]+$ ]] || die "unsafe server host"
 [[ -x "$check_python" ]] || die "python is not executable: $check_python"
 
-export PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=2 PYTHONPATH="${repo_root}/src" TMPDIR="${repo_root}/.tmp"
+export PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=2 PYTHONPATH="${repo_root}/src"
+if [[ "$dry_run" == 1 ]]; then
+  export TMPDIR="${TMPDIR:-${repo_root}/.tmp}"
+else
+  echo 1000 > /proc/self/oom_score_adj
+  export TMPDIR="${repo_root}/.tmp"
+fi
 mkdir -p "$TMPDIR"
 "$check_python" "$package/build_v023_c1c2_successor_stagec_manifest.py" --check >/dev/null
+
+local_commit="$(git -C "$repo_root" rev-parse HEAD)"
+local_tree="$(git -C "$repo_root" rev-parse 'HEAD^{tree}')"
+[[ "$local_commit" =~ ^[0-9a-f]{40}$ && "$local_tree" =~ ^[0-9a-f]{40}$ ]] || die "cannot resolve local git commit/tree"
 
 bindings="${checkout}/${package_rel}/V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json"
 plan="${run_root}/V023-C1C2-SUCCESSOR-9000-WORLD-PLAN.json"
@@ -49,16 +58,19 @@ startup_marker="${run_root}/stagec-startup-000100.json"
 controller_log="${run_root}/stagec-controller-000100.log"
 
 remote_env="PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=2 PYTHONPATH='${checkout}/src' TMPDIR='${checkout}/.tmp'"
-prepare="test -d '${seed_checkout}' && test ! -L '${seed_checkout}' && test ! -e '${checkout}' && test ! -L '${checkout}' && test ! -e '${run_root}' && test ! -L '${run_root}' && test ! -e '${stage_b}' && test ! -L '${stage_b}' && test ! -e '${stage_c}' && test ! -L '${stage_c}' && ! tmux has-session -t '${session}' 2>/dev/null && mkdir '${checkout}' && cp -a '${seed_checkout}/.' '${checkout}/' && mkdir '${run_root}' && mkdir -p '${checkout}/.tmp'"
+prepare="test -d '${seed_checkout}' && test ! -L '${seed_checkout}' && test \"\$(git -C '${seed_checkout}' rev-parse HEAD)\" = '${local_commit}' && test \"\$(git -C '${seed_checkout}' rev-parse 'HEAD^{tree}')\" = '${local_tree}' && test ! -e '${checkout}' && test ! -L '${checkout}' && test ! -e '${run_root}' && test ! -L '${run_root}' && test ! -e '${stage_b}' && test ! -L '${stage_b}' && test ! -e '${stage_c}' && test ! -L '${stage_c}' && ! tmux has-session -t '${session}' 2>/dev/null && mkdir '${checkout}' && cp -a '${seed_checkout}/.' '${checkout}/' && mkdir '${run_root}' && mkdir -p '${checkout}/.tmp'"
+verify_checkout="test \"\$(git -C '${checkout}' rev-parse HEAD)\" = '${local_commit}' && test \"\$(git -C '${checkout}' rev-parse 'HEAD^{tree}')\" = '${local_tree}'"
 bind_cmd="cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_env} '${python_bin}' '${checkout}/${package_rel}/bind_v023_c1c2_successor_stagec_freeze.py' --stage-a-output '${stage_a}' --plan-output '${plan}' --stage-b-output '${stage_b}' --stage-c-output '${stage_c}' --tle-root '${tle_root}'"
 preflight_cmd="cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_env} '${python_bin}' '${checkout}/${package_rel}/preflight_v023_c1c2_successor_stagec.py' --bindings '${bindings}' --output '${stage_c}' --receipt '${preflight_receipt}'"
-stage_b_cmd="cd '${checkout}' && V023_STAGEC_PYTHON='${python_bin}' '${checkout}/${package_rel}/run_v023_c1c2_successor_stage_b.sh' --bindings '${bindings}' --output '${stage_b}'"
-tmux_cmd="cd '${checkout}' && tmux new-session -d -s '${session}' \"cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_env} '${python_bin}' '${checkout}/${package_rel}/run_v023_c1c2_successor_stage_c.py' --bindings '${bindings}' --preflight-receipt '${preflight_receipt}' --stage-b-root '${stage_b}' --output '${stage_c}' --pause-at 100 --startup-marker '${startup_marker}' > '${controller_log}' 2>&1\""
+stage_b_cmd="cd '${checkout}' && V023_STAGEC_PYTHON='${python_bin}' '${checkout}/${package_rel}/run_v023_c1c2_successor_stage_b.sh' --bindings '${bindings}' --output '${stage_b}' --admission-root '${run_root}/stage-b-admission'"
+tmux_cmd="cd '${checkout}' && tmux new-session -d -s '${session}' \"cd '${checkout}' && echo 1000 > /proc/self/oom_score_adj && ${remote_env} '${python_bin}' '${checkout}/${package_rel}/run_v023_c1c2_successor_stage_c.py' --bindings '${bindings}' --preflight-receipt '${preflight_receipt}' --stage-b-root '${stage_b}' --output '${stage_c}' --pause-at 100 --runtime-admission-root '${run_root}/stage-c-admission' --controller-session-id '${session}' --startup-marker '${startup_marker}' > '${controller_log}' 2>&1\""
 
 if [[ "$dry_run" == 1 ]]; then
+  echo "DRY_RUN TMPDIR=${TMPDIR}"
   echo "DRY_RUN sync-list=code-manifest-closure+${package_rel}"
   echo "ssh ${host} ${prepare}"
   echo "rsync -aR --files-from='${sync_list}' '${repo_root}/' '${host}:${checkout}/'"
+  echo "ssh ${host} ${verify_checkout}"
   echo "ssh ${host} ${bind_cmd}"
   echo "ssh ${host} ${preflight_cmd}"
   echo "ssh ${host} ${stage_b_cmd}"
@@ -72,6 +84,7 @@ fi
 
 ssh "$host" "$prepare"
 rsync -aR --files-from="$sync_list" "${repo_root}/" "${host}:${checkout}/"
+ssh "$host" "$verify_checkout"
 ssh "$host" "$bind_cmd"
 ssh "$host" "$preflight_cmd"
 ssh "$host" "$stage_b_cmd"

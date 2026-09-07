@@ -179,6 +179,7 @@ def _read_formal_admission(root: Path) -> dict[str, Any] | None:
         "stage_a_pass_receipt_sha256",
         "stage_b_pass_receipt_sha256",
         "policy_bindings_sha256",
+        "admission_mapping_sha256",
     )
     if (
         payload.get("schema") != FORMAL_ADMISSION_SCHEMA
@@ -191,6 +192,64 @@ def _read_formal_admission(root: Path) -> dict[str, Any] | None:
         or any(_sha256_token(payload.get(field), field) != payload.get(field) for field in required_digests)
     ):
         raise FigurePipelineError("formal admission identity/bindings drifted")
+    inputs = payload.get("authenticated_inputs")
+    digest_fields = {
+        "prereg": "prereg_sha256",
+        "tle_manifest": "tle_manifest_sha256",
+        "execution_configuration": "execution_configuration_sha256",
+        "stage_a_pass_receipt": "stage_a_pass_receipt_sha256",
+        "stage_b_pass_receipt": "stage_b_pass_receipt_sha256",
+        "runtime_admission": None,
+    }
+    if not isinstance(inputs, Mapping):
+        raise FigurePipelineError("formal admission lacks file-backed inputs")
+    for name, digest_field in digest_fields.items():
+        record = inputs.get(name)
+        if not isinstance(record, Mapping):
+            raise FigurePipelineError(f"formal admission input missing: {name}")
+        raw_path = record.get("path")
+        if not isinstance(raw_path, str) or not raw_path:
+            raise FigurePipelineError(f"formal admission input path missing: {name}")
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = root / path
+        expected = _sha256_token(record.get("sha256"), f"{name}.sha256")
+        if file_sha256(path) != expected:
+            raise FigurePipelineError(f"formal admission input bytes drifted: {name}")
+        if digest_field is not None and payload.get(digest_field) != expected:
+            raise FigurePipelineError(f"formal admission digest differs from file: {name}")
+        if name in {"tle_manifest", "execution_configuration", "stage_b_pass_receipt", "runtime_admission"}:
+            if not _authenticate_sidecars(path, expected):
+                raise FigurePipelineError(f"formal admission input lacks sidecar: {name}")
+    mapping = payload.get("admission_mapping")
+    if not isinstance(mapping, Mapping) or set(mapping) != set(ARM_ORDER):
+        raise FigurePipelineError("formal admission mapping arm order/coverage drifted")
+    if canonical_sha256(mapping) != payload.get("admission_mapping_sha256"):
+        raise FigurePipelineError("formal admission mapping digest drifted")
+    for arm in PRODUCER.LEARNED_ARMS:
+        record = mapping.get(arm)
+        export = record.get("stage_a_export") if isinstance(record, Mapping) else None
+        policy = record.get("policy_binding") if isinstance(record, Mapping) else None
+        if not isinstance(export, Mapping) or not isinstance(policy, Mapping):
+            raise FigurePipelineError(f"formal admission mapping is incomplete: {arm}")
+        export_path = Path(str(export.get("path")))
+        export_sha = _sha256_token(export.get("sha256"), f"{arm} export digest")
+        if file_sha256(export_path) != export_sha or policy.get("checkpoint_sha256") != export_sha:
+            raise FigurePipelineError(f"formal admission export bytes drifted: {arm}")
+    baseline = mapping.get("BASELINE")
+    adapter = baseline.get("adapter_binding") if isinstance(baseline, Mapping) else None
+    policy = baseline.get("policy_binding") if isinstance(baseline, Mapping) else None
+    if not isinstance(adapter, Mapping) or not isinstance(policy, Mapping):
+        raise FigurePipelineError("formal BASELINE adapter binding is missing")
+    for path_field, sha_field in (
+        ("checkpoint_path", "checkpoint_sha256"),
+        ("authentication_path", "authentication_sha256"),
+    ):
+        expected = _sha256_token(adapter.get(sha_field), f"BASELINE {sha_field}")
+        if file_sha256(Path(str(adapter.get(path_field)))) != expected:
+            raise FigurePipelineError(f"formal BASELINE {path_field} bytes drifted")
+    if adapter.get("routes") != [] or policy.get("routes") != []:
+        raise FigurePipelineError("formal BASELINE mapping acquired successor routes")
     return payload
 
 
@@ -344,7 +403,8 @@ def _compare_pooled(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> N
 
 
 def _validate_terminal_result(
-    result: Mapping[str, Any], *, rung: "Rung", plan_sha256: str, continuation: bool
+    result: Mapping[str, Any], *, rung: "Rung", plan_sha256: str,
+    continuation: bool, admission_mapping: Mapping[str, object] | None,
 ) -> None:
     boundary = 9000 if continuation else 3000
     pooled = result.get("pooled_by_arm")
@@ -361,6 +421,7 @@ def _validate_terminal_result(
         or result.get("plan_sha256") != plan_sha256
         or result.get("arms") != list(PRODUCER.ARMS)
         or result.get("claim_ceiling") != PRODUCER.CLAIM_CEILING
+        or (admission_mapping is not None and result.get("admission_mapping") != admission_mapping)
         or any(result.get(field) is not False for field in (
             "q3_evaluated", "test_split_opened", "episode_training", "learner_update"
         ))
@@ -519,6 +580,8 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
             raise FigurePipelineError("checkpoint policy binding coverage drifted")
         if admission is not None and canonical_sha256(policy_bindings) != admission["policy_bindings_sha256"]:
             raise FigurePipelineError("checkpoint policy bindings disagree with formal admission")
+        if admission is not None and checkpoint.get("admission_mapping") != admission.get("admission_mapping"):
+            raise FigurePipelineError("checkpoint admission mapping disagrees with formal admission")
         rows = _validate_receipts(
             checkpoint.get("receipts"),
             completed=completed,
@@ -551,6 +614,7 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
             or rung.get("plan_sha256") != plan_sha256
             or rung.get("completed_episode") != completed
             or tuple(rung.get("arms", ())) != arms
+            or (admission is not None and rung.get("admission_mapping") != admission.get("admission_mapping"))
         ):
             raise FigurePipelineError("rung identity or arm order disagrees with checkpoint")
         if rung.get("claim_ceiling") != claim_ceiling or rung.get("scientific_disposition_emitted") is not False:
@@ -587,6 +651,7 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
             rung=terminal_rung,
             plan_sha256=str(plan_sha256),
             continuation=continuation,
+            admission_mapping=None if admission is None else admission.get("admission_mapping"),
         )
     if all_rungs[-1].completed > 3000 and not (source / "result.json").is_file():
         raise FigurePipelineError("post-3000 history lacks the preserved 3000 result")

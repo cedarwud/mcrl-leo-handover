@@ -25,7 +25,9 @@ def _module(path: Path) -> Any:
     return result
 
 
-def _args_from_bindings(bindings: Mapping[str, object], output: Path) -> argparse.Namespace:
+def _args_from_bindings(
+    bindings: Mapping[str, object], output: Path, runtime_admission: Mapping[str, object]
+) -> argparse.Namespace:
     stage_a = bindings["stage_a"]
     baseline = bindings["baseline"]
     physical = bindings["physical_inputs"]
@@ -42,11 +44,16 @@ def _args_from_bindings(bindings: Mapping[str, object], output: Path) -> argpars
         baseline_checkpoint=Path(str(baseline["checkpoint_path"])),
         baseline_status=Path(str(baseline["status_path"])),
         baseline_status_sha256=str(baseline["status_sha256"]),
+        runtime_admission=Path(str(runtime_admission["admission_path"])),
+        runtime_admission_sha256=str(runtime_admission["admission_sha256"]),
     )
 
 
-def run(bindings_path: Path, output: Path) -> dict[str, object]:
+def run(
+    bindings_path: Path, output: Path, *, admission_root: Path | None = None
+) -> dict[str, object]:
     bindings = common.verify_bindings(bindings_path)
+    common.verify_runtime_identity(bindings)
     code_sha, _entries = common.verify_code_manifest()
     if bindings.get("code", {}).get("external_manifest_sha256") != code_sha:
         raise common.StageCError("Stage-B code closure drifted")
@@ -61,7 +68,35 @@ def run(bindings_path: Path, output: Path) -> dict[str, object]:
     if output.exists() or output.is_symlink():
         raise common.StageCError("Stage-B output root must be absent")
     diagnostic = _module(common.PHYSICAL / "v023_c1c2_successor_plumbing_diagnostic.py")
-    result = diagnostic.run_diagnostic(_args_from_bindings(bindings, output))
+    from mcrl.env.tle import TleArchive
+
+    archive = TleArchive(Path(str(physical["tle_root"])))
+    environment = diagnostic._make_environment(archive, 100)
+    sampler_sha = common.canonical_sha256(environment.sampler.as_dict())
+    if admission_root is None:
+        admission_root = output.with_name(f"{output.name}-admission")
+    stage_a = bindings.get("stage_a")
+    if not isinstance(stage_a, Mapping):
+        raise common.StageCError("Stage-A binding is missing")
+    pass_receipt = stage_a.get("pass_receipt")
+    if not isinstance(pass_receipt, Mapping):
+        raise common.StageCError("Stage-A PASS receipt binding is missing")
+    stage_a_receipt = Path(str(stage_a["root"])) / str(pass_receipt["path"])
+    admission = common.ensure_runtime_admission(
+        bindings=bindings,
+        path=admission_root / "stage-b-runtime-admission.json",
+        runner_schema=diagnostic.runner.SCHEMA,
+        admitted_evaluation_sha256=diagnostic.plumbing_evaluation_sha256(),
+        predecessor_pass_receipts=(
+            {
+                "path": str(stage_a_receipt.resolve()),
+                "sha256": pass_receipt["sha256"],
+                "status": "PASS_SOURCE_TRAINING_INTEGRITY",
+            },
+        ),
+        sampler_sha256=sampler_sha,
+    )
+    result = diagnostic.run_diagnostic(_args_from_bindings(bindings, output, admission))
     if result.get("status") != PASS or result.get("arms") != list(common.ARMS):
         raise common.StageCError("Stage-B diagnostic did not pass exact four-arm coverage")
     receipt = output / "plumbing-receipt.json"
@@ -74,6 +109,9 @@ def run(bindings_path: Path, output: Path) -> dict[str, object]:
         "arms": list(common.ARMS),
         "world_id": "train-v023-c1c2-successor-plumbing-001",
         "completed_steps_per_arm": 10,
+        "runtime_admission": result["runtime_admission"],
+        "admitted_stage_a": result["admitted_stage_a"],
+        "admitted_exports": result["admitted_exports"],
     }
     common.write_once(output / "stage-b-gate.json", gate)
     common.write_digest_sidecar(output / "stage-b-gate.json")
@@ -84,9 +122,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bindings", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--admission-root", type=Path)
     args = parser.parse_args(argv)
     try:
-        run(args.bindings, args.output)
+        run(args.bindings, args.output, admission_root=args.admission_root)
     except Exception as error:
         print(f"STOP_PLUMBING_INTEGRITY: {error}", file=sys.stderr)
         return 2

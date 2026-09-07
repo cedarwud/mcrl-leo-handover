@@ -6,9 +6,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
-import os
 from pathlib import Path
-import subprocess
 import sys
 from typing import Any, Mapping
 
@@ -152,19 +150,6 @@ def _package_manifest(paths: list[Path]) -> dict[str, object]:
     return {"entries": entries, "manifest_sha256": common.canonical_sha256(entries)}
 
 
-def _git_identity(repo: Path) -> dict[str, str]:
-    def command(*args: str) -> str:
-        result = subprocess.run(
-            ["git", "-C", str(repo), *args], check=True, text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        return result.stdout.strip()
-    try:
-        return {"commit": command("rev-parse", "HEAD"), "tree": command("rev-parse", "HEAD^{tree}")}
-    except (OSError, subprocess.CalledProcessError) as error:
-        raise common.StageCError("cannot bind git commit/tree") from error
-
-
 def build_bindings(args: argparse.Namespace) -> dict[str, object]:
     if args.stage_c_output.exists() or args.stage_c_output.is_symlink():
         raise common.StageCError("Stage-C output root must be absent at freeze")
@@ -226,7 +211,7 @@ def build_bindings(args: argparse.Namespace) -> dict[str, object]:
             "physical_evaluation": _package_manifest(physical_paths),
             "transitive_closure": {"entries": transitive, "manifest_sha256": common.canonical_sha256(transitive)},
         },
-        "git": _git_identity(common.REPO),
+        "git": common.git_identity(common.REPO),
         "contract": {
             "path": str(common.CONTRACT.resolve()),
             "sha256": common.file_sha256(common.CONTRACT, field="development contract"),

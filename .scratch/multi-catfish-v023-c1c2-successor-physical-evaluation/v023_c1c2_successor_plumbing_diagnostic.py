@@ -62,6 +62,24 @@ def build_plumbing_world() -> PlumbingWorld:
     )
 
 
+def plumbing_evaluation_sha256() -> str:
+    world = build_plumbing_world()
+    return runner.canonical_sha256(
+        {
+            "schema": SCHEMA,
+            "world_index": WORLD_INDEX,
+            "world_id": WORLD_ID,
+            "world_seed": WORLD_SEED,
+            "field_component": runner.FIELD_COMPONENT,
+            "field_root_digest": world.field_root_digest,
+            "arms": list(runner.ARMS),
+            "users": runner.USERS,
+            "steps": runner.STEPS,
+            "split": runner.SPLIT,
+        }
+    )
+
+
 def _make_environment(archive: Any, users: int) -> Any:
     from mcrl.env.ephemeris import TRAIN, BlockAlternatingSplit, EpisodeStartSampler
     from mcrl.env.mobility import MobilityConfig
@@ -141,20 +159,7 @@ def run_diagnostic(args: argparse.Namespace) -> dict[str, object]:
         phase = time.monotonic()
         world = build_plumbing_world()
         world.verify()
-        diagnostic_identity = runner.canonical_sha256(
-            {
-                "schema": SCHEMA,
-                "world_index": WORLD_INDEX,
-                "world_id": WORLD_ID,
-                "world_seed": WORLD_SEED,
-                "field_component": runner.FIELD_COMPONENT,
-                "field_root_digest": world.field_root_digest,
-                "arms": list(runner.ARMS),
-                "users": runner.USERS,
-                "steps": runner.STEPS,
-                "split": runner.SPLIT,
-            }
-        )
+        diagnostic_identity = plumbing_evaluation_sha256()
         if (
             admission.get("admitted_evaluation_sha256") != diagnostic_identity
             or admission.get("tle_root") != str(TLE_ROOT)
@@ -230,6 +235,24 @@ def run_diagnostic(args: argparse.Namespace) -> dict[str, object]:
             "episode_training": False,
             "learner_update": False,
             "claim_ceiling": runner.CLAIM_CEILING,
+            "runtime_admission": {
+                "path": str(Path(args.runtime_admission).resolve()),
+                "sha256": args.runtime_admission_sha256,
+            },
+            "admitted_stage_a": admission["predecessor_pass_receipts"][0],
+            "admitted_exports": [
+                {
+                    "arm": arm,
+                    "path": str(Path(path).resolve()),
+                    "sha256": digest,
+                }
+                for arm, path, digest in zip(
+                    runner.LEARNED_ARMS,
+                    args.learned_checkpoint,
+                    args.learned_sha256,
+                    strict=True,
+                )
+            ],
         }
         _write_once(output / "plumbing-receipt.json", result)
         return result
@@ -312,5 +335,6 @@ __all__ = [
     "WORLD_INDEX",
     "WORLD_SEED",
     "build_plumbing_world",
+    "plumbing_evaluation_sha256",
     "run_diagnostic",
 ]

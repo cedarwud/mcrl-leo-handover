@@ -41,7 +41,8 @@ non-exclusive reasons.
    bindings and forbidden topology/split tokens, and writes a preflight receipt
    plus sidecar.
 6. Run `run_v023_c1c2_successor_stage_b.sh`; retain its formal gate and plumbing
-   receipt.
+   receipt. Both record the sealed runtime-admission path/digest, the exact
+   Stage-A PASS receipt, and the three admitted Stage-A export paths/digests.
 7. Launch the 100 rung in tmux through
    `sync_launch_v023_c1c2_successor_stagec_server.sh`. Resume explicitly from
    checkpoint 100 to 500, 500 to 1,500, and 1,500 to 3,000. Earlier rungs never
@@ -58,31 +59,53 @@ non-exclusive reasons.
    {
      "formal": true,
      "status": "OWNER_NOTIFIED_FOR_9000_CONTINUATION",
-     "owner_acknowledgement": "<owner's literal acknowledgement reply>",
+     "owner_reply_verbatim": "<owner's literal reply, at least 20 characters>",
+     "notification_sent_utc": "<ISO-8601 UTC timestamp>",
+     "owner_reply_received_utc": "<ISO-8601 UTC timestamp>",
+     "notification_channel": "<channel used>",
+     "recorded_by": "<controller session id>",
      "result_3000_sha256": "<digest of the preserved 3000 result.json>",
      "bindings_sha256": "<digest of the execution bindings file>",
      "plan_sha256": "866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb"
    }
    ```
 
-   The authority is written after the marker and embeds the marker's SHA-256,
-   the SHA-256 of the literal acknowledgement string, the bindings digest, and
-   the plan digest. Its external named `.sha256` sidecar authenticates the
-   authority. This content chain, rather than file mtimes, proves the required
-   order: `result.json` -> owner marker -> authority -> authority sidecar.
+   The marker itself has a named `.sha256` sidecar. The authority is written
+   after the marker and embeds the marker's path/SHA-256, the SHA-256 of the
+   literal reply, the controller session id, the preserved result/checkpoint
+   digests, the policy-map digest, the bindings digest, and the plan digest.
+   Its external named `.sha256` sidecar authenticates the authority.
 
    ```json
    {
-     "formal": true,
-     "owner_notification_sha256": "<digest of the owner marker>",
-     "owner_acknowledgement_sha256": "<SHA-256 of the exact UTF-8 reply>",
+     "schema": "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-continuation-authority-v1",
+     "status": "AUTHORIZED_CONTINUATION_TO_9000",
+     "continuation_from_episode": 3000,
+     "continuation_to_episode": 9000,
+     "owner_notification": {"status": "OWNER_NOTIFIED", "path": "<absolute marker path>", "sha256": "<marker digest>"},
+     "owner_reply_sha256": "<SHA-256 of the exact UTF-8 reply>",
+     "recorded_by": "<controller session id>",
      "bindings_sha256": "<digest of the execution bindings file>",
-     "plan_sha256": "866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb"
+     "plan_sha256": "866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb",
+     "policy_bindings_sha256": "<digest of exact four-arm policy bindings>",
+     "held_terminal_token_sha256": "<digest of C1C2_DEVELOPMENT_PREDICTION_HELD>",
+     "result_3000_sha256": "<digest of preserved result.json>",
+     "checkpoint_3000_sha256": "<digest of checkpoint-003000.json>"
    }
    ```
 
-   The continuation preserves the original 3,000 `result.json` and emits
-   `continuation-009000.json` with `new_scientific_token_emitted=false`.
+   This is deliberately a **procedural control**, not cryptographic owner
+   verification: an auditor with write access can fabricate the quoted string.
+   The handoff report must separately log the notification exchange (channel,
+   sent time, reply time, verbatim reply, and recording controller session).
+   No receipt may claim cryptographic verification of the owner's identity.
+
+   The launcher refuses any missing field and prints a banner quoting the
+   verbatim reply before starting 9,000. The core runner then authenticates the
+   authority file, its sidecar and embedded digests, revalidates the complete
+   3,000 history (including any sealed repair authority), preserves the original
+   `result.json`, and emits `continuation-result.json` without a second
+   scientific disposition.
 
 ## Server launch and resume
 
@@ -94,8 +117,11 @@ Stage-B, tmux, acknowledgement, and log locations:
 ./sync_launch_v023_c1c2_successor_stagec_server.sh --dry-run
 ```
 
-The formal launcher synchronizes the manifest closure plus this bundle into a
-fresh checkout, runs the bind/preflight/Stage-B gates, starts the 100 rung in a
+The formal launcher first requires the seed checkout's commit/tree to match the
+local bound commit/tree, synchronizes the manifest closure into a fresh copy,
+then verifies the copied checkout's commit/tree again before binding. It never
+overlays a seed checkout from a different tree. It runs the
+bind/preflight/Stage-B gates, starts the 100 rung in a
 named tmux session, and waits at most 120 seconds for both a write-once startup
 marker and a live tmux session.
 
@@ -107,15 +133,31 @@ root, output root, and plan. For example, the 500 call adds:
 ```
 
 The corresponding predecessor checkpoints are `000500` for 1,500 and
-`001500` for 3,000. The 9,000 call must use checkpoint `003000` and add both
-`--continuation-authority` and `--owner-notification-marker`.
+`001500` for 3,000. The 9,000 call must use checkpoint `003000` and add
+`--continuation-authority`, `--owner-notification-marker`, and
+`--controller-session-id`. A resume following an integrity STOP additionally
+requires `--repair-authority`; that sealed authority is passed to the core
+runner rather than bypassing its history/repair checks.
+
+Every checkpoint, rung and terminal receipt carries the admission mapping:
+learned arm to authenticated Stage-A export and exact frozen policy binding,
+and `BASELINE` to its checkpoint/status/adapter binding. A terminal falsified
+root, or the completed authorized 9,000 continuation, is sealed with
+`FORMAL-ADMISSION.json` plus sidecar and whole-tree `MANIFEST.sha256`/`COMPLETE`
+for the renderer. A held 3,000 root remains intentionally unsealed while the
+declared continuation decision is pending.
 
 ## Independent verification and tests
 
-The verifier recomputes episode and pooled endpoints from additive bits,
+The verifier reconstructs the frozen policies from their authenticated files,
+recomputes episode and pooled endpoints from additive bits,
 positive energy, served counts, and pooled opportunities; checks matched world,
 plan, field, policy, arm-order, cadence, rung, and result identities; and
-rejects any path or receipt marked `REHEARSAL-NONFORMAL` or `formal:false`.
+rejects any path or receipt marked `REHEARSAL-NONFORMAL` or `formal:false`, any
+STOP token, rewritten cumulative prefix, or invalid policy/admission digest.
+Preflight, Stage B, every Stage-C launch/resume and final verification also
+require the live checkout commit/tree and deterministic process/resource
+configuration to equal the frozen execution binding.
 
 Unit-only test command from the repository root:
 

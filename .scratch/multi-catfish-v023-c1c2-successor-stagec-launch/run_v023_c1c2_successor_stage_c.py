@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
+from datetime import datetime, timezone
 import importlib
 import json
 import os
@@ -64,25 +64,51 @@ def _authenticate_stage_b(root: Path, bindings_sha: str) -> None:
     gate = common.read_json(gate_path, field="Stage-B gate")
     common.verify_named_sidecar(gate_path)
     receipt = root / "plumbing-receipt.json"
+    plumbing = common.read_json(receipt, field="Stage-B plumbing receipt")
+    admission = gate.get("runtime_admission")
+    stage_a = gate.get("admitted_stage_a")
+    exports = gate.get("admitted_exports")
     if (
         gate.get("status") != "PASS_PLUMBING_INTEGRITY"
         or gate.get("formal") is not True
         or gate.get("bindings_sha256") != bindings_sha
         or gate.get("plumbing_receipt_sha256") != common.file_sha256(receipt)
         or gate.get("arms") != list(common.ARMS)
+        or not isinstance(admission, Mapping)
+        or not isinstance(stage_a, Mapping)
+        or not isinstance(exports, list)
+        or plumbing.get("runtime_admission") != admission
+        or plumbing.get("admitted_stage_a") != stage_a
+        or plumbing.get("admitted_exports") != exports
     ):
         raise common.StageCError("mandatory Stage-B plumbing gate drifted")
+    admission_path = Path(str(admission.get("path")))
+    if (
+        common.file_sha256(admission_path, field="Stage-B runtime admission")
+        != admission.get("sha256")
+        or common.verify_named_sidecar(admission_path) != admission.get("sha256")
+    ):
+        raise common.StageCError("Stage-B runtime admission bytes drifted")
+    if common.file_sha256(str(stage_a.get("path")), field="Stage-A admitted receipt") != stage_a.get("sha256"):
+        raise common.StageCError("Stage-B admitted Stage-A receipt drifted")
+    if [entry.get("arm") for entry in exports if isinstance(entry, Mapping)] != list(common.LEARNED_ARMS):
+        raise common.StageCError("Stage-B admitted export order drifted")
+    for entry in exports:
+        if common.file_sha256(str(entry.get("path")), field="Stage-B admitted export") != entry.get("sha256"):
+            raise common.StageCError("Stage-B admitted export bytes drifted")
 
 
 def _policies(bindings: Mapping[str, object], runner: Any) -> tuple[Any, ...]:
     stage_a = bindings["stage_a"]
     baseline = bindings["baseline"]
     exports = stage_a["exports"]
+    provenance = common.learned_training_provenance(bindings)
     learned = tuple(
         runner.load_learned_two_route_checkpoint(
             Path(str(stage_a["root"])) / str(entry["path"]),
             arm=arm,
             expected_sha256=str(entry["sha256"]),
+            training_provenance=provenance[arm],
         )
         for arm, entry in zip(common.LEARNED_ARMS, exports, strict=True)
     )
@@ -94,22 +120,33 @@ def _policies(bindings: Mapping[str, object], runner: Any) -> tuple[Any, ...]:
     return (*learned, base)
 
 
-def _adapter_and_plan(bindings: Mapping[str, object], runner: Any) -> tuple[Any, Any]:
+def _adapter_and_plan(
+    bindings: Mapping[str, object],
+    runner: Any,
+    *,
+    policies: tuple[Any, ...],
+    runtime_admission: Mapping[str, object],
+) -> tuple[Any, Any]:
     from mcrl.env.tle import TleArchive
     physical = bindings["physical_inputs"]
     archive = TleArchive(Path(str(physical["tle_root"])))
-    policies = _policies(bindings, runner)
     adapter = runner.FixedPolicyEpisodeAdapter(
         policies=policies,
         archive=archive,
         environment_factory=_make_environment,
         rng_factory=_rngs,
+        runtime_admission=runtime_admission,
     )
     plan = runner.EvaluationPlan.from_file(bindings["world_plan"]["path"])
     return adapter, plan
 
 
-def _formal_marker(output: Path, bindings_sha: str, plan_sha: str) -> None:
+def _formal_marker(
+    output: Path,
+    bindings_sha: str,
+    plan_sha: str,
+    admission_mapping: Mapping[str, object],
+) -> None:
     marker = output / "FORMAL-RUN.json"
     payload = {
         "schema": "multi-catfish-mcrl-v023-c1c2-successor-stagec-formal-root-v1",
@@ -117,6 +154,7 @@ def _formal_marker(output: Path, bindings_sha: str, plan_sha: str) -> None:
         "bindings_sha256": bindings_sha,
         "plan_sha256": plan_sha,
         "arms": list(common.ARMS),
+        "admission_mapping_sha256": common.canonical_sha256(admission_mapping),
     }
     if marker.exists():
         if common.read_json(marker, field="formal root marker") != payload:
@@ -125,112 +163,155 @@ def _formal_marker(output: Path, bindings_sha: str, plan_sha: str) -> None:
         common.write_once(marker, payload)
 
 
-def _authenticate_continuation_authority(
-    *, result_path: Path, authority: Path, owner_marker: Path, bindings_sha: str,
-) -> tuple[str, str, str, str]:
-    result_sha = common.file_sha256(result_path, field="3000 scientific result")
-    owner = common.read_json(owner_marker, field="owner-notification marker")
-    acknowledgement = owner.get("owner_acknowledgement")
-    if (
-        owner.get("formal") is not True
-        or owner.get("status") != "OWNER_NOTIFIED_FOR_9000_CONTINUATION"
-        or owner.get("bindings_sha256") != bindings_sha
-        or owner.get("plan_sha256") != common.PLAN_SHA256
-        or owner.get("result_3000_sha256") != result_sha
-        or not isinstance(acknowledgement, str)
-        or not acknowledgement
-    ):
-        raise common.StageCError("owner-notification marker is absent or disagrees")
-    owner_sha = common.file_sha256(owner_marker, field="owner-notification marker")
-    acknowledgement_sha = hashlib.sha256(acknowledgement.encode("utf-8")).hexdigest()
-    authority_payload = common.read_json(authority, field="continuation authority")
-    common.verify_named_sidecar(authority)
-    if (
-        authority_payload.get("formal") is not True
-        or authority_payload.get("owner_notification_sha256") != owner_sha
-        or authority_payload.get("owner_acknowledgement_sha256") != acknowledgement_sha
-        or authority_payload.get("bindings_sha256") != bindings_sha
-        or authority_payload.get("plan_sha256") != common.PLAN_SHA256
-    ):
-        raise common.StageCError("continuation authority does not authenticate the owner acknowledgement marker")
-    authority_sha = common.file_sha256(authority, field="continuation authority")
-    return authority_sha, owner_sha, acknowledgement_sha, result_sha
+def _stage_a_receipt(bindings: Mapping[str, object]) -> dict[str, object]:
+    stage_a = bindings.get("stage_a")
+    if not isinstance(stage_a, Mapping):
+        raise common.StageCError("Stage-A binding is missing")
+    receipt = stage_a.get("pass_receipt")
+    if not isinstance(receipt, Mapping):
+        raise common.StageCError("Stage-A PASS receipt binding is missing")
+    return {
+        "path": str((Path(str(stage_a["root"])) / str(receipt["path"])).resolve()),
+        "sha256": receipt["sha256"],
+        "status": "PASS_SOURCE_TRAINING_INTEGRITY",
+    }
 
 
-def _continuation(
-    *, runner: Any, evaluation: Any, output: Path, checkpoint: Path,
-    authority: Path, owner_marker: Path, bindings_sha: str,
+def _stage_c_runtime_admission(
+    *,
+    bindings: Mapping[str, object],
+    runner: Any,
+    stage_b_root: Path,
+    admission_root: Path,
 ) -> dict[str, object]:
-    result = common.read_json(output / "result.json", field="3000 scientific result")
-    if result.get("overall_token") != runner.HELD or result.get("completed_episode") != 3000:
-        raise common.StageCError("9000 continuation requires the held 3000 result")
-    authority_sha, owner_sha, acknowledgement_sha, result_sha = _authenticate_continuation_authority(
-        result_path=output / "result.json", authority=authority,
-        owner_marker=owner_marker, bindings_sha=bindings_sha,
+    physical = bindings.get("physical_inputs")
+    if not isinstance(physical, Mapping):
+        raise common.StageCError("Stage-C physical inputs are malformed")
+    from mcrl.env.tle import TleArchive
+
+    archive = TleArchive(Path(str(physical["tle_root"])))
+    environment = _make_environment(archive, 100)
+    stage_b_gate = stage_b_root / "stage-b-gate.json"
+    return common.ensure_runtime_admission(
+        bindings=bindings,
+        path=admission_root / "stage-c-runtime-admission.json",
+        runner_schema=runner.SCHEMA,
+        admitted_evaluation_sha256=common.PLAN_SHA256,
+        predecessor_pass_receipts=(
+            _stage_a_receipt(bindings),
+            {
+                "path": str(stage_b_gate.resolve()),
+                "sha256": common.file_sha256(stage_b_gate, field="Stage-B PASS gate"),
+                "status": "PASS_PLUMBING_INTEGRITY",
+            },
+        ),
+        sampler_sha256=common.canonical_sha256(environment.sampler.as_dict()),
     )
-    authority_marker = output / "CONTINUATION-AUTHORITY.json"
-    authority_binding = {
-        "schema": "multi-catfish-mcrl-v023-c1c2-successor-stagec-continuation-authority-binding-v2",
-        "formal": True,
-        "continuation_authority_sha256": authority_sha,
-        "owner_notification_sha256": owner_sha,
-        "owner_acknowledgement_sha256": acknowledgement_sha,
-        "result_3000_sha256": result_sha,
-        "bindings_sha256": bindings_sha,
-        "plan_sha256": common.PLAN_SHA256,
+
+
+def _formal_admission_payload(
+    *,
+    bindings: Mapping[str, object],
+    bindings_sha: str,
+    runtime_admission: Mapping[str, object],
+    admission_mapping: Mapping[str, object],
+    policy_bindings: Mapping[str, object],
+) -> dict[str, object]:
+    inputs = {
+        "prereg": runtime_admission["prereg"],
+        "tle_manifest": runtime_admission["tle_manifest"],
+        "execution_configuration": runtime_admission["execution_configuration"],
+        "stage_a_pass_receipt": runtime_admission["predecessor_pass_receipts"][0],
+        "stage_b_pass_receipt": runtime_admission["predecessor_pass_receipts"][1],
+        "runtime_admission": {
+            "path": runtime_admission["admission_path"],
+            "sha256": runtime_admission["admission_sha256"],
+        },
     }
-    if authority_marker.exists():
-        if common.read_json(authority_marker, field="continuation authority binding") != authority_binding:
-            raise common.StageCError("continuation authority binding drifted on resume")
-    else:
-        common.write_once(authority_marker, authority_binding)
-    start, receipts = evaluation._validate_resume(runner._read_checkpoint(checkpoint))
-    if start < 3000 or start >= 9000 or start % 100:
-        raise common.StageCError("9000 continuation must resume a 100-cadence checkpoint from 3000 onward")
-    if (output / "continuation-009000.json").exists():
-        raise common.StageCError("9000 continuation is already complete")
-    existing = sorted((output / "checkpoints").glob("checkpoint-*.json"))
-    expected = [f"checkpoint-{index:06d}.json" for index in range(100, start + 1, 100)]
-    if [path.name for path in existing] != expected:
-        raise common.StageCError("pre-continuation checkpoint history drifted")
-    for index in range(start, 9000):
-        world = evaluation.plan.worlds[index]
-        rows = []
-        for arm in common.ARMS:
-            row = evaluation.adapter.run_episode(
-                arm=arm, world=world, plan_sha256=evaluation.plan.plan_sha256,
-                resume_state=evaluation.adapter.resume_state_for(arm),
-            )
-            rows.append(row)
-            receipts.append(row)
-        runner._verify_matched_episode(rows, world)
-        completed = index + 1
-        if completed % 100 == 0:
-            runner._write_once(output / "checkpoints" / f"checkpoint-{completed:06d}.json", evaluation._checkpoint_payload(completed, receipts))
-            runner._write_once(output / "rungs" / f"rung-{completed:06d}.json", evaluation._rung_payload(completed, receipts))
-    pooled = {arm: runner.pool_receipts([row for row in receipts if row.arm == arm], arm=arm) for arm in common.ARMS}
-    continuation = {
-        "schema": "multi-catfish-mcrl-v023-c1c2-successor-stagec-continuation-v1",
-        "status": "COMPLETED_AUTHORIZED_9000_CONTINUATION",
+    return {
+        "schema": "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-formal-admission-v1",
+        "status": "FORMAL_STAGE_C_ADMITTED",
         "formal": True,
-        "completed_episode": 9000,
-        "plan_sha256": common.PLAN_SHA256,
+        "integrity_status": "VERIFIED",
+        "split": "TRAIN",
         "arms": list(common.ARMS),
-        "pooled_by_arm": pooled,
-        "continuation_authority_sha256": authority_sha,
-        "owner_notification_sha256": owner_sha,
-        "owner_acknowledgement_sha256": acknowledgement_sha,
-        "result_3000_sha256": result_sha,
-        "continuation_authority_binding_sha256": common.file_sha256(authority_marker),
-        "scientific_result_remains": result["overall_token"],
-        "new_scientific_token_emitted": False,
+        "plan_sha256": common.PLAN_SHA256,
+        "bindings_sha256": bindings_sha,
+        "policy_bindings_sha256": common.canonical_sha256(policy_bindings),
+        "admission_mapping": admission_mapping,
+        "admission_mapping_sha256": common.canonical_sha256(admission_mapping),
+        "prereg_sha256": inputs["prereg"]["sha256"],
+        "tle_manifest_sha256": inputs["tle_manifest"]["sha256"],
+        "execution_configuration_sha256": inputs["execution_configuration"]["sha256"],
+        "stage_a_pass_receipt_sha256": inputs["stage_a_pass_receipt"]["sha256"],
+        "stage_b_pass_receipt_sha256": inputs["stage_b_pass_receipt"]["sha256"],
+        "authenticated_inputs": inputs,
+        "git": bindings["git"],
     }
-    common.write_once(output / "continuation-009000.json", continuation)
-    return continuation
+
+
+def _publish_formal_admission(output: Path, payload: Mapping[str, object]) -> None:
+    common.publish_sealed_json(
+        output / common.FORMAL_ADMISSION_NAME, payload, field="formal Stage-C admission"
+    )
+
+
+def _continuation_banner(args: argparse.Namespace) -> str:
+    if args.owner_notification_marker is None or args.continuation_authority is None:
+        raise common.StageCError("9000 requires continuation authority and owner-notification marker")
+    if not isinstance(args.controller_session_id, str) or not args.controller_session_id.strip():
+        raise common.StageCError("9000 requires the controller session id")
+    marker = common.read_json(args.owner_notification_marker, field="owner-notification marker")
+    marker_sha = common.verify_named_sidecar(args.owner_notification_marker)
+    reply = marker.get("owner_reply_verbatim")
+    required = (
+        "notification_sent_utc",
+        "owner_reply_received_utc",
+        "notification_channel",
+        "recorded_by",
+    )
+    if (
+        marker.get("formal") is not True
+        or marker.get("status") != "OWNER_NOTIFIED_FOR_9000_CONTINUATION"
+        or marker.get("recorded_by") != args.controller_session_id
+        or marker.get("bindings_sha256") != common.file_sha256(args.bindings)
+        or marker.get("plan_sha256") != common.PLAN_SHA256
+        or marker.get("result_3000_sha256") != common.file_sha256(args.output / "result.json")
+        or not isinstance(reply, str)
+        or len(reply.strip()) < 20
+        or any(not isinstance(marker.get(field), str) or not str(marker[field]).strip() for field in required)
+    ):
+        raise common.StageCError("owner notification marker is incomplete or disagrees")
+    try:
+        sent = datetime.fromisoformat(str(marker["notification_sent_utc"])[:-1] + "+00:00")
+        received = datetime.fromisoformat(str(marker["owner_reply_received_utc"])[:-1] + "+00:00")
+    except ValueError as error:
+        raise common.StageCError("owner notification timestamps are not valid UTC") from error
+    if (
+        not str(marker["notification_sent_utc"]).endswith("Z")
+        or not str(marker["owner_reply_received_utc"]).endswith("Z")
+        or sent.tzinfo != timezone.utc
+        or received.tzinfo != timezone.utc
+        or received < sent
+    ):
+        raise common.StageCError("owner notification timestamps are not ordered UTC")
+    authority = common.read_json(args.continuation_authority, field="continuation authority")
+    common.verify_named_sidecar(args.continuation_authority)
+    notification = authority.get("owner_notification")
+    if (
+        authority.get("bindings_sha256") != common.file_sha256(args.bindings)
+        or authority.get("recorded_by") != args.controller_session_id
+        or not isinstance(notification, Mapping)
+        or notification.get("path") != str(args.owner_notification_marker.resolve())
+        or notification.get("sha256") != marker_sha
+    ):
+        raise common.StageCError("continuation authority does not embed the owner marker")
+    return reply
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:
     bindings = common.verify_bindings(args.bindings)
+    common.verify_runtime_identity(bindings)
     bindings_sha = common.file_sha256(args.bindings)
     code_sha, _entries = common.verify_code_manifest()
     if bindings.get("code", {}).get("external_manifest_sha256") != code_sha:
@@ -246,7 +327,23 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     _authenticate_preflight(args.preflight_receipt, bindings_sha)
     _authenticate_stage_b(args.stage_b_root, bindings_sha)
     runner = _module(common.PHYSICAL / "v023_c1c2_successor_physical_runner.py")
-    adapter, plan = _adapter_and_plan(bindings, runner)
+    admission_root = args.runtime_admission_root
+    if admission_root is None:
+        admission_root = args.output.with_name(f"{args.output.name}-admission")
+    runtime_admission = _stage_c_runtime_admission(
+        bindings=bindings,
+        runner=runner,
+        stage_b_root=args.stage_b_root,
+        admission_root=admission_root,
+    )
+    policies = _policies(bindings, runner)
+    adapter, plan = _adapter_and_plan(
+        bindings, runner, policies=policies, runtime_admission=runtime_admission
+    )
+    admission_mapping = common.stage_c_admission_mapping(bindings, adapter.policy_bindings)
+    common.verify_stage_c_admission_mapping(admission_mapping)
+    if (args.output / common.COMPLETE_NAME).exists() or (args.output / common.TREE_MANIFEST_NAME).exists():
+        raise common.StageCError("sealed Stage-C result root cannot be resumed")
     if args.pause_at == 9000:
         if args.continuation_authority is None or args.owner_notification_marker is None:
             raise common.StageCError("9000 requires continuation authority and owner-notification marker")
@@ -254,24 +351,50 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             raise common.StageCError("9000 continuation requires checkpoint 3000")
         evaluation = runner.FixedPolicyEvaluationRunner(
             adapter=adapter, plan=plan, terminal_boundary=9000,
+            continuation_authority_path=args.continuation_authority,
             continuation_authority_sha256=common.file_sha256(args.continuation_authority),
+            repair_authority_path=args.repair_authority,
+            repair_authority_sha256=(
+                None if args.repair_authority is None else common.file_sha256(args.repair_authority)
+            ),
+            admission_mapping=admission_mapping,
         )
-        return _continuation(
-            runner=runner, evaluation=evaluation, output=args.output,
-            checkpoint=args.resume_checkpoint, authority=args.continuation_authority,
-            owner_marker=args.owner_notification_marker, bindings_sha=bindings_sha,
-        )
-    previous = {100: None, 500: 100, 1500: 500, 3000: 1500}[args.pause_at]
-    if previous is None:
-        if args.resume_checkpoint is not None or args.output.exists() or args.output.is_symlink():
-            raise common.StageCError("the 100 rung requires a fresh absent output root")
     else:
-        expected = args.output / "checkpoints" / f"checkpoint-{previous:06d}.json"
-        if args.resume_checkpoint is None or args.resume_checkpoint.resolve() != expected.resolve():
-            raise common.StageCError(f"rung {args.pause_at} must resume the cumulative {previous} checkpoint")
-    evaluation = runner.FixedPolicyEvaluationRunner(adapter=adapter, plan=plan, terminal_boundary=3000)
+        previous = {100: None, 500: 100, 1500: 500, 3000: 1500}[args.pause_at]
+        if previous is None:
+            if args.resume_checkpoint is not None or args.output.exists() or args.output.is_symlink():
+                raise common.StageCError("the 100 rung requires a fresh absent output root")
+        else:
+            expected = args.output / "checkpoints" / f"checkpoint-{previous:06d}.json"
+            if args.resume_checkpoint is None or args.resume_checkpoint.resolve() != expected.resolve():
+                raise common.StageCError(f"rung {args.pause_at} must resume the cumulative {previous} checkpoint")
+        evaluation = runner.FixedPolicyEvaluationRunner(
+            adapter=adapter,
+            plan=plan,
+            terminal_boundary=3000,
+            repair_authority_path=args.repair_authority,
+            repair_authority_sha256=(
+                None if args.repair_authority is None else common.file_sha256(args.repair_authority)
+            ),
+            admission_mapping=admission_mapping,
+        )
     summary = evaluation.run(output_dir=args.output, pause_at=args.pause_at, resume_checkpoint=args.resume_checkpoint)
-    _formal_marker(args.output, bindings_sha, plan.plan_sha256)
+    _formal_marker(args.output, bindings_sha, plan.plan_sha256, admission_mapping)
+    _publish_formal_admission(
+        args.output,
+        _formal_admission_payload(
+            bindings=bindings,
+            bindings_sha=bindings_sha,
+            runtime_admission=runtime_admission,
+            admission_mapping=admission_mapping,
+            policy_bindings=adapter.policy_bindings,
+        ),
+    )
+    if (
+        args.pause_at == 9000
+        or (args.pause_at == 3000 and summary.get("overall_token") == runner.FALSIFIED)
+    ):
+        common.write_tree_seal(args.output)
     return summary
 
 
@@ -285,6 +408,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--resume-checkpoint", type=Path)
     parser.add_argument("--continuation-authority", type=Path)
     parser.add_argument("--owner-notification-marker", type=Path)
+    parser.add_argument("--controller-session-id")
+    parser.add_argument("--repair-authority", type=Path)
+    parser.add_argument("--runtime-admission-root", type=Path)
     parser.add_argument("--startup-marker", type=Path)
     return parser
 
@@ -293,6 +419,12 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     started = time.monotonic()
     try:
+        if args.pause_at == 9000:
+            reply = _continuation_banner(args)
+            print("=" * 72)
+            print("OWNER REPLY QUOTED BEFORE 9000 CONTINUATION:")
+            print(reply)
+            print("=" * 72)
         if args.startup_marker is not None:
             common.write_once(
                 args.startup_marker,

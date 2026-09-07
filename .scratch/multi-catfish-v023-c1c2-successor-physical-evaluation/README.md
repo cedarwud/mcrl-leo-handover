@@ -20,7 +20,8 @@ continuation-authority JSON file and its externally bound digest.  That file
 binds the preserved 3000 checkpoint and `HELD` result, the unchanged plan and
 policy map, and a hash-verified owner-notification record.  Continuation writes
 `continuation-result.json`; it never replaces `result.json` or emits a second
-scientific disposition.  Resume authenticates every earlier checkpoint, rung,
+scientific disposition. The controller supplies the authority file and digest,
+not a digest alone. Resume authenticates every earlier checkpoint, rung,
 episode plan/policy binding, and requires sealed repair authority after STOP.
 
 `v023_c1c2_successor_plumbing_diagnostic.py` is the exact one-world Stage B
@@ -47,7 +48,11 @@ From the repository root, the exact unit-only command is:
 The tests derive episode endpoints through the runner's own ten-step
 `last_outcome` aggregation with unequal energies and use a checkpoint fixture
 written by the concurrent two-route producer's own `checkpoint_state` method.
-They do not construct a TLE archive or run the simulator.
+Most focused unit fixtures do not construct a TLE archive or run the simulator;
+the bundle integration test separately constructs the actual formal adapter
+object and carries its policy/admission mapping through terminal production,
+independent verification, and renderer loading using a synthetic episode
+transport. It is integration coverage, not a real simulator result.
 
 ## BIND_AT_FREEZE inputs still open
 

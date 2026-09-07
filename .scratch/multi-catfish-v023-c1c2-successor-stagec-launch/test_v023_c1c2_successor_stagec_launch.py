@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import copy
 import hashlib
 import importlib
@@ -132,7 +133,14 @@ def runner_written_rung(tmp_path: Path):
         plan_sha256=payload["plan_sha256"],
     )
     root = tmp_path / "formal-root"
-    runner.FixedPolicyEvaluationRunner(adapter=_ProducerFixtureAdapter(), plan=plan).run(output_dir=root, pause_at=100)
+    adapter = _ProducerFixtureAdapter()
+    admission_mapping = {
+        arm: {"policy_binding": adapter.policy_bindings[arm]}
+        for arm in common.ARMS
+    }
+    runner.FixedPolicyEvaluationRunner(
+        adapter=adapter, plan=plan, admission_mapping=admission_mapping
+    ).run(output_dir=root, pause_at=100)
     return root, payload
 
 
@@ -141,6 +149,83 @@ def test_independent_verifier_accepts_runner_written_synthetic_rung(runner_writt
     checkpoint = verifier._read_checkpoint(root / "checkpoints/checkpoint-000100.json")
     pooled = verifier.verify_episode_rows(checkpoint["receipts"], plan, 100)
     assert pooled["FULL2"]["ratio_of_sums_ee_bits_per_j"] > pooled["BASELINE"]["ratio_of_sums_ee_bits_per_j"]
+
+
+def test_verifier_rejects_policy_digest_not_equal_to_frozen_binding(runner_written_rung) -> None:
+    root, plan = runner_written_rung
+    checkpoint = verifier._read_checkpoint(root / "checkpoints/checkpoint-000100.json")
+    expected = copy.deepcopy(checkpoint["policy_bindings"])
+    expected["FULL2"]["checkpoint_sha256"] = "f" * 64
+    with pytest.raises(common.StageCError, match="frozen policy"):
+        verifier.verify_episode_rows(
+            checkpoint["receipts"],
+            plan,
+            100,
+            expected_policy_bindings=expected,
+        )
+
+
+def test_verifier_rejects_rewritten_cumulative_prefix(runner_written_rung) -> None:
+    root, _plan = runner_written_rung
+    checkpoint = verifier._read_checkpoint(root / "checkpoints/checkpoint-000100.json")
+    previous = checkpoint["receipts"]
+    pooled = {arm: verifier._pool(previous, arm) for arm in common.ARMS}
+    rewritten = copy.deepcopy(previous)
+    rewritten[0]["total_bits"] += 1.0
+    with pytest.raises(common.StageCError, match="prefix was rewritten"):
+        verifier._verify_cumulative_prefix(
+            previous, pooled, rewritten, pooled, boundary=200
+        )
+
+
+def test_verifier_rejects_any_stop_token_in_scientific_root(tmp_path: Path) -> None:
+    root = tmp_path / "stopped"
+    root.mkdir()
+    _write_json(root / "receipt.json", {"nested": {"token": "STOP_PHYSICAL_EVALUATION_INTEGRITY"}})
+    with pytest.raises(common.StageCError, match="STOP token"):
+        verifier._reject_nonformal(root)
+
+
+def test_stage_b_gate_authenticates_admitted_stage_a_exports_and_receipt(tmp_path: Path) -> None:
+    root = tmp_path / "stage-b"
+    root.mkdir()
+    admission = tmp_path / "stage-b-runtime-admission.json"
+    _write_json(admission, {"schema": "runtime-admission"})
+    common.write_digest_sidecar(admission)
+    stage_a_receipt = tmp_path / "stage-a-receipt.json"
+    _write_json(stage_a_receipt, {"status": "PASS_SOURCE_TRAINING_INTEGRITY"})
+    exports = []
+    for arm in common.LEARNED_ARMS:
+        path = tmp_path / f"{arm}.pt"
+        path.write_bytes(arm.encode("ascii"))
+        exports.append({"arm": arm, "path": str(path.resolve()), "sha256": common.file_sha256(path)})
+    admission_record = {"path": str(admission.resolve()), "sha256": common.file_sha256(admission)}
+    stage_a_record = {
+        "path": str(stage_a_receipt.resolve()),
+        "sha256": common.file_sha256(stage_a_receipt),
+        "status": "PASS_SOURCE_TRAINING_INTEGRITY",
+    }
+    plumbing = {
+        "runtime_admission": admission_record,
+        "admitted_stage_a": stage_a_record,
+        "admitted_exports": exports,
+    }
+    _write_json(root / "plumbing-receipt.json", plumbing)
+    bindings_sha = "a" * 64
+    gate = {
+        "status": "PASS_PLUMBING_INTEGRITY",
+        "formal": True,
+        "bindings_sha256": bindings_sha,
+        "plumbing_receipt_sha256": common.file_sha256(root / "plumbing-receipt.json"),
+        "arms": list(common.ARMS),
+        **plumbing,
+    }
+    _write_json(root / "stage-b-gate.json", gate)
+    common.write_digest_sidecar(root / "stage-b-gate.json")
+    controller._authenticate_stage_b(root, bindings_sha)
+    (tmp_path / "FULL2.pt").write_bytes(b"forged")
+    with pytest.raises(common.StageCError, match="export bytes drifted"):
+        controller._authenticate_stage_b(root, bindings_sha)
 
 
 def test_fifth_arm_mutation_is_rejected(runner_written_rung) -> None:
@@ -180,53 +265,139 @@ def test_9000_refuses_missing_owner_notification_marker(tmp_path: Path) -> None:
     _write_json(output / "result.json", {"overall_token": runner.HELD, "completed_episode": 3000})
     authority = tmp_path / "authority.json"
     _write_json(authority, {"authority": "continue"})
-    with pytest.raises(common.StageCError, match="owner-notification"):
-        controller._continuation(
-            runner=runner, evaluation=object(), output=output,
-            checkpoint=tmp_path / "checkpoint.json", authority=authority,
-            owner_marker=tmp_path / "missing-owner.json", bindings_sha="a" * 64,
-        )
+    args = argparse.Namespace(
+        output=output,
+        bindings=tmp_path / "bindings.json",
+        continuation_authority=authority,
+        owner_notification_marker=tmp_path / "missing-owner.json",
+        controller_session_id="controller-test",
+    )
+    with pytest.raises(common.StageCError, match="owner-notification|missing"):
+        controller._continuation_banner(args)
 
 
-def test_9000_authority_authenticates_literal_owner_reply_and_result(tmp_path: Path) -> None:
-    result = tmp_path / "result.json"
+def test_9000_banner_authenticates_procedural_owner_reply_and_result(tmp_path: Path) -> None:
+    output = tmp_path / "run"
+    output.mkdir()
+    result = output / "result.json"
     _write_json(result, {"overall_token": runner.HELD, "completed_episode": 3000})
-    bindings_sha = "a" * 64
-    acknowledgement = "I acknowledge and authorize the 9000-world continuation."
+    acknowledgement = "I acknowledge and authorize the unchanged 9000-world continuation."
+    bindings = tmp_path / "bindings.json"
+    _write_json(bindings, {"binding": "test"})
     marker = tmp_path / "owner-notification.json"
     _write_json(
         marker,
         {
             "formal": True,
             "status": "OWNER_NOTIFIED_FOR_9000_CONTINUATION",
-            "owner_acknowledgement": acknowledgement,
+            "owner_reply_verbatim": acknowledgement,
+            "notification_sent_utc": "2026-09-08T01:00:00Z",
+            "owner_reply_received_utc": "2026-09-08T01:01:00Z",
+            "notification_channel": "controller-chat",
+            "recorded_by": "controller-test",
             "result_3000_sha256": common.file_sha256(result),
-            "bindings_sha256": bindings_sha,
+            "bindings_sha256": common.file_sha256(bindings),
             "plan_sha256": common.PLAN_SHA256,
         },
     )
+    common.write_digest_sidecar(marker)
     authority = tmp_path / "authority.json"
     _write_json(
         authority,
         {
-            "formal": True,
-            "owner_notification_sha256": common.file_sha256(marker),
-            "owner_acknowledgement_sha256": hashlib.sha256(acknowledgement.encode("utf-8")).hexdigest(),
-            "bindings_sha256": bindings_sha,
+            "schema": runner.CONTINUATION_AUTHORITY_SCHEMA,
+            "status": "AUTHORIZED_CONTINUATION_TO_9000",
+            "continuation_from_episode": 3000,
+            "continuation_to_episode": 9000,
+            "owner_notification": {
+                "status": "OWNER_NOTIFIED",
+                "path": str(marker.resolve()),
+                "sha256": common.file_sha256(marker),
+            },
+            "owner_reply_sha256": hashlib.sha256(acknowledgement.encode("utf-8")).hexdigest(),
+            "recorded_by": "controller-test",
+            "bindings_sha256": common.file_sha256(bindings),
             "plan_sha256": common.PLAN_SHA256,
+            "policy_bindings_sha256": "b" * 64,
+            "held_terminal_token_sha256": runner.HELD_TOKEN_SHA256,
+            "result_3000_sha256": common.file_sha256(result),
+            "checkpoint_3000_sha256": "c" * 64,
         },
     )
     common.write_digest_sidecar(authority)
-    authenticated = controller._authenticate_continuation_authority(
-        result_path=result, authority=authority, owner_marker=marker, bindings_sha=bindings_sha,
+    args = argparse.Namespace(
+        output=output,
+        bindings=bindings,
+        continuation_authority=authority,
+        owner_notification_marker=marker,
+        controller_session_id="controller-test",
     )
-    assert authenticated[1] == common.file_sha256(marker)
-    assert authenticated[2] == hashlib.sha256(acknowledgement.encode("utf-8")).hexdigest()
+    assert controller._continuation_banner(args) == acknowledgement
     _write_json(marker.with_name("wrong-marker.json"), {"formal": True})
-    with pytest.raises(common.StageCError, match="owner-notification"):
-        controller._authenticate_continuation_authority(
-            result_path=result, authority=authority,
-            owner_marker=marker.with_name("wrong-marker.json"), bindings_sha=bindings_sha,
+    common.write_digest_sidecar(marker.with_name("wrong-marker.json"))
+    args.owner_notification_marker = marker.with_name("wrong-marker.json")
+    with pytest.raises(common.StageCError, match="owner.notification"):
+        controller._continuation_banner(args)
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "owner_reply_verbatim",
+        "notification_sent_utc",
+        "owner_reply_received_utc",
+        "notification_channel",
+        "recorded_by",
+        "result_3000_sha256",
+    ],
+)
+def test_9000_banner_refuses_each_required_owner_marker_field(
+    tmp_path: Path, missing: str
+) -> None:
+    output = tmp_path / "run"
+    output.mkdir()
+    _write_json(output / "result.json", {"overall_token": runner.HELD, "completed_episode": 3000})
+    bindings = tmp_path / "bindings.json"
+    _write_json(bindings, {"binding": "test"})
+    marker_payload = {
+        "formal": True,
+        "status": "OWNER_NOTIFIED_FOR_9000_CONTINUATION",
+        "owner_reply_verbatim": "Owner authorizes the unchanged 9000-world continuation.",
+        "notification_sent_utc": "2026-09-08T01:00:00Z",
+        "owner_reply_received_utc": "2026-09-08T01:01:00Z",
+        "notification_channel": "controller-chat",
+        "recorded_by": "controller-test",
+        "result_3000_sha256": common.file_sha256(output / "result.json"),
+        "bindings_sha256": common.file_sha256(bindings),
+        "plan_sha256": common.PLAN_SHA256,
+    }
+    marker_payload.pop(missing)
+    marker = tmp_path / "owner-marker.json"
+    _write_json(marker, marker_payload)
+    common.write_digest_sidecar(marker)
+    authority = tmp_path / "authority.json"
+    _write_json(
+        authority,
+        {
+            "owner_notification": {
+                "status": "OWNER_NOTIFIED",
+                "path": str(marker.resolve()),
+                "sha256": common.file_sha256(marker),
+            },
+            "recorded_by": "controller-test",
+            "bindings_sha256": common.file_sha256(bindings),
+        },
+    )
+    common.write_digest_sidecar(authority)
+    with pytest.raises(common.StageCError, match="owner notification marker"):
+        controller._continuation_banner(
+            argparse.Namespace(
+                output=output,
+                bindings=bindings,
+                continuation_authority=authority,
+                owner_notification_marker=marker,
+                controller_session_id="controller-test",
+            )
         )
 
 
@@ -250,6 +421,20 @@ def test_circular_execution_binding_digest_is_rejected() -> None:
         preflight._reject_circular_digest({"nested": ["b" * 64]}, "b" * 64)
 
 
+def test_runtime_identity_rejects_git_or_execution_drift(monkeypatch: pytest.MonkeyPatch) -> None:
+    frozen_git = {"commit": "a" * 40, "tree": "b" * 40}
+    frozen_execution = {"OMP_NUM_THREADS": "2"}
+    monkeypatch.setattr(common, "git_identity", lambda _repo=common.REPO: dict(frozen_git))
+    monkeypatch.setattr(common, "process_environment", lambda: dict(frozen_execution))
+    common.verify_runtime_identity({"git": frozen_git, "execution": frozen_execution})
+    with pytest.raises(common.StageCError, match="commit/tree"):
+        common.verify_runtime_identity(
+            {"git": {"commit": "c" * 40, "tree": "b" * 40}, "execution": frozen_execution}
+        )
+    with pytest.raises(common.StageCError, match="process/resource"):
+        common.verify_runtime_identity({"git": frozen_git, "execution": {"OMP_NUM_THREADS": "8"}})
+
+
 def test_baseline_dependency_fails_closed_until_postfix_assertion_exists() -> None:
     module = importlib.import_module("baseline_adapter")
     if getattr(module, "CONTRACT_FIELDS_EXCLUDED", None) is True:
@@ -258,19 +443,25 @@ def test_baseline_dependency_fails_closed_until_postfix_assertion_exists() -> No
         binder.bind_baseline(common.BASELINE_CHECKPOINT, common.BASELINE_STATUS)
 
 
-def test_dry_run_prints_commands_without_remote_execution() -> None:
+def test_dry_run_prints_commands_without_remote_execution(tmp_path: Path) -> None:
     launcher = HERE / "sync_launch_v023_c1c2_successor_stagec_server.sh"
     syntax = subprocess.run(["bash", "-n", str(launcher)], capture_output=True, text=True, check=False)
     assert syntax.returncode == 0, syntax.stderr
     environment = dict(os.environ)
     environment.pop("V023_STAGEC_PYTHON", None)
+    caller_tmpdir = tmp_path / "caller-tmp"
+    environment["TMPDIR"] = str(caller_tmpdir)
     completed = subprocess.run(
         [str(launcher), "--dry-run"], cwd=REPO, env=environment,
         capture_output=True, text=True, check=False,
     )
     assert completed.returncode == 0, completed.stderr
     assert "ssh sat test -d" in completed.stdout
+    assert f"DRY_RUN TMPDIR={caller_tmpdir}" in completed.stdout
+    assert "/proc/self/oom_score_adj" not in completed.stderr
     assert "rsync -aR --files-from=" in completed.stdout
+    assert "rev-parse HEAD" in completed.stdout
+    assert "rev-parse 'HEAD^{tree}'" in completed.stdout
     assert "tmux new-session" in completed.stdout
     assert "wait-up-to-120s" in completed.stdout
     assert "LOG_PATH=" in completed.stdout

@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import resource
 import stat
+import subprocess
 import tempfile
 from typing import Any
 
@@ -38,6 +39,9 @@ CODE_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST.sha256"
 CODE_PIN_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST-FROZEN.sha256"
 SCHEMA_BINDINGS = "multi-catfish-mcrl-v023-c1c2-successor-stagec-execution-bindings-v1"
 FORMAL_CLAIM = "TRAIN_DEVELOPMENT_C1C2_SUCCESSOR_PHYSICAL_EVALUATION_NO_C3_NO_TEST_NO_EFFICACY"
+FORMAL_ADMISSION_NAME = "FORMAL-ADMISSION.json"
+TREE_MANIFEST_NAME = "MANIFEST.sha256"
+COMPLETE_NAME = "COMPLETE"
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -251,6 +255,295 @@ def process_environment() -> dict[str, object]:
         "resource_limits": limits,
         "rng_policy": "numpy.SeedSequence(world_seed).spawn(2); fresh environment per arm; fixed-policy inference",
     }
+
+
+def git_identity(repo: Path = REPO) -> dict[str, str]:
+    def command(revision: str) -> str:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(repo), "rev-parse", revision],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise StageCError("cannot authenticate runtime git commit/tree") from error
+        return result.stdout.strip()
+
+    return {"commit": command("HEAD"), "tree": command("HEAD^{tree}")}
+
+
+def verify_runtime_identity(bindings: Mapping[str, object]) -> None:
+    if bindings.get("git") != git_identity(REPO):
+        raise StageCError("runtime checkout commit/tree differs from frozen binding")
+    execution = bindings.get("execution")
+    if not isinstance(execution, Mapping) or dict(execution) != process_environment():
+        raise StageCError("runtime process/resource configuration differs from frozen binding")
+
+
+def learned_training_provenance(bindings: Mapping[str, object]) -> dict[str, dict[str, object]]:
+    stage_a = bindings.get("stage_a")
+    if not isinstance(stage_a, Mapping):
+        raise StageCError("Stage-A binding is missing")
+    exports = stage_a.get("exports")
+    manifest_sha = digest(stage_a.get("manifest_sha256"), field="Stage-A manifest digest")
+    if not isinstance(exports, list) or len(exports) != len(LEARNED_ARMS):
+        raise StageCError("Stage-A export coverage drifted")
+    sources = {
+        "FULL2": ["informed", "informed"],
+        "DROP_C1": ["neutral", "informed"],
+        "DROP_C2": ["informed", "neutral"],
+    }
+    result: dict[str, dict[str, object]] = {}
+    for arm, entry in zip(LEARNED_ARMS, exports, strict=True):
+        if not isinstance(entry, Mapping) or entry.get("arm") != arm:
+            raise StageCError(f"Stage-A export order drifted: {arm}")
+        result[arm] = {
+            "arm": arm,
+            "checkpoint_sha256": digest(entry.get("sha256"), field=f"{arm} export digest"),
+            "source_mapping": sources[arm],
+            "stage_a_status": "PASS_SOURCE_TRAINING_INTEGRITY",
+            "manifest_sha256": manifest_sha,
+        }
+    return result
+
+
+def stage_c_admission_mapping(
+    bindings: Mapping[str, object], policy_bindings: Mapping[str, object]
+) -> dict[str, dict[str, object]]:
+    stage_a = bindings.get("stage_a")
+    baseline = bindings.get("baseline")
+    if not isinstance(stage_a, Mapping) or not isinstance(baseline, Mapping):
+        raise StageCError("policy admission inputs are malformed")
+    exports = stage_a.get("exports")
+    if not isinstance(exports, list) or len(exports) != len(LEARNED_ARMS):
+        raise StageCError("policy admission export coverage drifted")
+    mapping: dict[str, dict[str, object]] = {}
+    for arm, export in zip(LEARNED_ARMS, exports, strict=True):
+        if not isinstance(export, Mapping) or export.get("arm") != arm:
+            raise StageCError(f"policy admission export order drifted: {arm}")
+        mapping[arm] = {
+            "stage_a_export": {
+                "path": str((Path(str(stage_a["root"])) / str(export["path"])).resolve()),
+                "sha256": digest(export.get("sha256"), field=f"{arm} export digest"),
+            },
+            "policy_binding": policy_bindings[arm],
+        }
+    mapping["BASELINE"] = {
+        "adapter_binding": {
+            "checkpoint_path": str(Path(str(baseline["checkpoint_path"])).resolve()),
+            "checkpoint_sha256": digest(
+                baseline.get("checkpoint_sha256"), field="BASELINE checkpoint digest"
+            ),
+            "authentication_path": str(Path(str(baseline["status_path"])).resolve()),
+            "authentication_sha256": digest(
+                baseline.get("status_sha256"), field="BASELINE authentication digest"
+            ),
+            "adapter_closure_sha256": digest(
+                baseline.get("adapter_closure_sha256"), field="BASELINE adapter closure digest"
+            ),
+            "routes": [],
+        },
+        "policy_binding": policy_bindings["BASELINE"],
+    }
+    return mapping
+
+
+def verify_stage_c_admission_mapping(mapping: object) -> dict[str, dict[str, object]]:
+    if not isinstance(mapping, Mapping) or set(mapping) != set(ARMS):
+        raise StageCError("Stage-C admission mapping arm order/coverage drifted")
+    result = {arm: dict(mapping[arm]) for arm in ARMS if isinstance(mapping[arm], Mapping)}
+    if tuple(result) != ARMS:
+        raise StageCError("Stage-C admission mapping record is malformed")
+    for arm in LEARNED_ARMS:
+        export = result[arm].get("stage_a_export")
+        if not isinstance(export, Mapping):
+            raise StageCError(f"{arm} Stage-A export admission is missing")
+        path = regular_file(str(export.get("path")), field=f"{arm} admitted export")
+        expected = digest(export.get("sha256"), field=f"{arm} admitted export digest")
+        if file_sha256(path) != expected:
+            raise StageCError(f"{arm} admitted export bytes drifted")
+        binding = result[arm].get("policy_binding")
+        if not isinstance(binding, Mapping) or binding.get("checkpoint_sha256") != expected:
+            raise StageCError(f"{arm} policy binding differs from admitted export")
+    baseline = result["BASELINE"].get("adapter_binding")
+    policy = result["BASELINE"].get("policy_binding")
+    if not isinstance(baseline, Mapping) or not isinstance(policy, Mapping):
+        raise StageCError("BASELINE adapter admission is missing")
+    for path_field, sha_field in (
+        ("checkpoint_path", "checkpoint_sha256"),
+        ("authentication_path", "authentication_sha256"),
+    ):
+        expected = digest(baseline.get(sha_field), field=f"BASELINE {sha_field}")
+        if file_sha256(str(baseline.get(path_field)), field=f"BASELINE {path_field}") != expected:
+            raise StageCError(f"BASELINE admitted {path_field} bytes drifted")
+    if baseline.get("routes") != [] or policy.get("routes") != []:
+        raise StageCError("BASELINE admission acquired successor routes")
+    if (
+        policy.get("checkpoint_sha256") != baseline.get("checkpoint_sha256")
+        or policy.get("authentication_sha256") != baseline.get("authentication_sha256")
+    ):
+        raise StageCError("BASELINE policy differs from adapter admission")
+    return result
+
+
+def publish_sealed_json(path: Path, payload: Mapping[str, object], *, field: str) -> str:
+    if path.exists() or path.is_symlink():
+        if read_json(path, field=field) != dict(payload):
+            raise StageCError(f"{field} drifted on resume")
+        return verify_named_sidecar(path)
+    write_once(path, payload)
+    write_digest_sidecar(path)
+    return file_sha256(path, field=field)
+
+
+def ensure_runtime_admission(
+    *,
+    bindings: Mapping[str, object],
+    path: Path,
+    runner_schema: str,
+    admitted_evaluation_sha256: str,
+    predecessor_pass_receipts: Sequence[Mapping[str, object]],
+    sampler_sha256: str,
+) -> dict[str, object]:
+    physical = bindings.get("physical_inputs")
+    execution = bindings.get("execution")
+    if not isinstance(physical, Mapping) or not isinstance(execution, Mapping):
+        raise StageCError("runtime admission inputs are malformed")
+    prereg_path = regular_file(str(physical.get("prereg_path")), field="PREREG")
+    prereg_sha = digest(physical.get("prereg_sha256"), field="PREREG digest")
+    if file_sha256(prereg_path) != prereg_sha:
+        raise StageCError("PREREG bytes drifted before runtime admission")
+    prereg = read_json(prereg_path, field="PREREG")
+    sections = prereg.get("sections")
+    ephemeris = sections.get("ephemeris") if isinstance(sections, Mapping) else None
+    if not isinstance(ephemeris, Mapping):
+        raise StageCError("PREREG lacks frozen ephemeris declaration")
+    admission_dir = path.parent
+    admission_dir.mkdir(parents=True, exist_ok=True)
+    if admission_dir.is_symlink():
+        raise StageCError("runtime admission directory is symlinked")
+    stem = path.stem
+    tle_snapshot = admission_dir / f"{stem}-tle-manifest.json"
+    execution_snapshot = admission_dir / f"{stem}-execution-configuration.json"
+    tle_snapshot_sha = publish_sealed_json(
+        tle_snapshot, dict(ephemeris), field="frozen TLE manifest snapshot"
+    )
+    execution_snapshot_sha = publish_sealed_json(
+        execution_snapshot, dict(execution), field="execution configuration snapshot"
+    )
+    predecessors: list[dict[str, object]] = []
+    for index, record in enumerate(predecessor_pass_receipts):
+        if not isinstance(record, Mapping):
+            raise StageCError(f"predecessor PASS binding {index} is malformed")
+        receipt_path = regular_file(str(record.get("path")), field=f"predecessor PASS {index}")
+        receipt_sha = digest(record.get("sha256"), field=f"predecessor PASS {index} digest")
+        if file_sha256(receipt_path) != receipt_sha:
+            raise StageCError(f"predecessor PASS {index} bytes drifted")
+        predecessors.append(
+            {"path": str(receipt_path.resolve()), "sha256": receipt_sha, "status": record.get("status")}
+        )
+    payload: dict[str, object] = {
+        "schema": f"{runner_schema}-runtime-admission-v1",
+        "status": "FORMAL_RUNTIME_ADMITTED",
+        "split": "TRAIN",
+        "admitted_evaluation_sha256": digest(
+            admitted_evaluation_sha256, field="admitted evaluation digest"
+        ),
+        "tle_root": str(Path(str(physical.get("tle_root"))).resolve()),
+        "physical_configuration": {
+            "users": 100,
+            "steps": 10,
+            "split": "TRAIN",
+            "field_component": FIELD_COMPONENT,
+            "tle_root": str(Path(str(physical.get("tle_root"))).resolve()),
+        },
+        "prereg": {"path": str(prereg_path.resolve()), "sha256": prereg_sha},
+        "tle_manifest": {
+            "path": str(tle_snapshot.resolve()),
+            "sha256": tle_snapshot_sha,
+            "file_set_sha256": digest(
+                ephemeris.get("file_set_sha256"), field="frozen TLE file-set digest"
+            ),
+        },
+        "execution_configuration": {
+            "path": str(execution_snapshot.resolve()),
+            "sha256": execution_snapshot_sha,
+        },
+        "predecessor_pass_receipts": predecessors,
+        "sampler": {
+            "part": "train",
+            "as_dict_sha256": digest(sampler_sha256, field="TRAIN sampler digest"),
+        },
+        "learned_training_provenance": learned_training_provenance(bindings),
+    }
+    admission_sha = publish_sealed_json(path, payload, field="runtime admission")
+    return {
+        **payload,
+        "admission_path": str(path.resolve()),
+        "admission_sha256": admission_sha,
+        "authenticated_predecessor_statuses": [str(record["status"]) for record in predecessors],
+    }
+
+
+def write_tree_seal(root: Path) -> str:
+    if root.is_symlink() or not root.is_dir():
+        raise StageCError("cannot seal a missing or symlinked result root")
+    if (root / TREE_MANIFEST_NAME).exists() or (root / COMPLETE_NAME).exists():
+        raise StageCError("result root is already sealed")
+    files: dict[str, str] = {}
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise StageCError(f"result root contains a symlink: {path}")
+        if path.is_file():
+            files[path.relative_to(root).as_posix()] = file_sha256(path)
+    manifest = "".join(f"{sha}  {name}\n" for name, sha in sorted(files.items()))
+    manifest_path = root / TREE_MANIFEST_NAME
+    descriptor = -1
+    try:
+        descriptor = os.open(manifest_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(manifest.encode("ascii"))
+            stream.flush()
+            os.fsync(stream.fileno())
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+    manifest_sha = file_sha256(manifest_path)
+    complete_path = root / COMPLETE_NAME
+    descriptor = -1
+    try:
+        descriptor = os.open(complete_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(f"{manifest_sha}  {TREE_MANIFEST_NAME}\n".encode("ascii"))
+            stream.flush()
+            os.fsync(stream.fileno())
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+    return manifest_sha
+
+
+def verify_tree_seal(root: Path) -> str:
+    manifest = regular_file(root / TREE_MANIFEST_NAME, field="result tree manifest")
+    complete = regular_file(root / COMPLETE_NAME, field="result tree COMPLETE")
+    manifest_sha = file_sha256(manifest)
+    if complete.read_text(encoding="ascii") != f"{manifest_sha}  {TREE_MANIFEST_NAME}\n":
+        raise StageCError("result COMPLETE does not authenticate tree manifest")
+    entries = parse_sha256_manifest(manifest, root=root)
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file()
+        and not path.is_symlink()
+        and path.relative_to(root).as_posix() not in {TREE_MANIFEST_NAME, COMPLETE_NAME}
+    }
+    if set(entries) != actual:
+        raise StageCError("result tree manifest closure drifted")
+    return manifest_sha
 
 
 def require_formal(value: Mapping[str, object], *, field: str) -> None:

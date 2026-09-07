@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 import copy
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 import hashlib
 from io import BytesIO
 import json
@@ -110,6 +111,18 @@ def _positive_int(value: object, *, field: str) -> int:
     if type(value) is not int or value < 1:
         raise C1C2PhysicalError(f"{field} must be a positive exact integer")
     return value
+
+
+def _utc_timestamp(value: object, *, field: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise C1C2PhysicalError(f"{field} must be an ISO-8601 UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise C1C2PhysicalError(f"{field} must be an ISO-8601 UTC timestamp") from error
+    if parsed.tzinfo != timezone.utc:
+        raise C1C2PhysicalError(f"{field} must be UTC")
+    return parsed
 
 
 def _contains_c3(value: object) -> bool:
@@ -1312,10 +1325,48 @@ def _authenticate_continuation_authority(
     notification = payload.get("owner_notification")
     if not isinstance(notification, Mapping) or notification.get("status") != "OWNER_NOTIFIED":
         raise C1C2PhysicalError("continuation authority lacks explicit owner notification")
-    _bound_file(notification, base=source.parent, label="owner_notification")
+    notification_path, notification_sha = _bound_file(
+        notification, base=source.parent, label="owner_notification"
+    )
+    marker, _ = _read_sealed_json(
+        notification_path,
+        expected_sha256=notification_sha,
+        label="owner notification marker",
+    )
+    reply = marker.get("owner_reply_verbatim")
+    required_marker_strings = (
+        "notification_sent_utc",
+        "owner_reply_received_utc",
+        "notification_channel",
+        "recorded_by",
+    )
+    if (
+        marker.get("formal") is not True
+        or marker.get("status") != "OWNER_NOTIFIED_FOR_9000_CONTINUATION"
+        or marker.get("plan_sha256") != plan_sha256
+        or marker.get("result_3000_sha256") != payload.get("result_3000_sha256")
+        or not isinstance(reply, str)
+        or len(reply.strip()) < 20
+        or any(
+            not isinstance(marker.get(field), str) or not str(marker[field]).strip()
+            for field in required_marker_strings
+        )
+        or payload.get("owner_reply_sha256")
+        != hashlib.sha256(reply.encode("utf-8")).hexdigest()
+        or payload.get("recorded_by") != marker.get("recorded_by")
+    ):
+        raise C1C2PhysicalError("continuation authority owner marker drifted")
+    sent = _utc_timestamp(marker["notification_sent_utc"], field="notification_sent_utc")
+    received = _utc_timestamp(
+        marker["owner_reply_received_utc"], field="owner_reply_received_utc"
+    )
+    if received < sent:
+        raise C1C2PhysicalError("owner reply predates the recorded notification")
     result = dict(payload)
     result["authority_sha256"] = digest
     result["authority_path"] = str(source.resolve())
+    result["owner_notification_path"] = str(notification_path.resolve())
+    result["owner_notification_sha256"] = notification_sha
     return result
 
 
@@ -1360,6 +1411,7 @@ class FixedPolicyEvaluationRunner:
         continuation_authority_sha256: str | None = None,
         repair_authority_path: str | Path | None = None,
         repair_authority_sha256: str | None = None,
+        admission_mapping: Mapping[str, object] | None = None,
     ) -> None:
         plan.verify()
         if terminal_boundary not in TERMINAL_BOUNDARIES:
@@ -1392,6 +1444,19 @@ class FixedPolicyEvaluationRunner:
         self.continuation_authority = continuation_authority
         self.repair_authority_path = repair_authority_path
         self.repair_authority_sha256 = repair_authority_sha256
+        if admission_mapping is None and not isinstance(adapter, FixedPolicyEpisodeAdapter):
+            # Compatibility for isolated persistence-test doubles only. Formal
+            # runtime adapters must receive the file-backed mapping explicitly.
+            admission_mapping = {
+                arm: {"policy_binding": adapter.policy_bindings[arm]} for arm in ARMS
+            }
+        if not isinstance(admission_mapping, Mapping) or tuple(admission_mapping) != ARMS:
+            raise C1C2PhysicalError("Stage-C admission mapping order/coverage drifted")
+        for arm in ARMS:
+            record = admission_mapping[arm]
+            if not isinstance(record, Mapping) or record.get("policy_binding") != adapter.policy_bindings[arm]:
+                raise C1C2PhysicalError(f"Stage-C admission mapping drifted: {arm}")
+        self.admission_mapping = dict(admission_mapping)
 
     def _checkpoint_payload(
         self, completed: int, receipts: Sequence[EpisodeReceipt]
@@ -1405,6 +1470,7 @@ class FixedPolicyEvaluationRunner:
             "arms": list(ARMS),
             "checkpoint_every": CHECKPOINT_EVERY,
             "policy_bindings": self.adapter.policy_bindings,
+            "admission_mapping": self.admission_mapping,
             "receipts": [row.as_dict() for row in receipts],
             "resume_states": {
                 arm: self.adapter.resume_state_for(arm) for arm in ARMS
@@ -1429,6 +1495,7 @@ class FixedPolicyEvaluationRunner:
             or payload.get("arms") != list(ARMS)
             or payload.get("checkpoint_every") != CHECKPOINT_EVERY
             or payload.get("policy_bindings") != self.adapter.policy_bindings
+            or payload.get("admission_mapping") != self.admission_mapping
             or payload.get("claim_ceiling") != CLAIM_CEILING
         ):
             raise C1C2PhysicalError("resume checkpoint plan/policy identity drifted")
@@ -1485,6 +1552,7 @@ class FixedPolicyEvaluationRunner:
                 checkpoint.get("completed_episode") != boundary
                 or checkpoint.get("plan_sha256") != self.plan.plan_sha256
                 or checkpoint.get("policy_bindings") != self.adapter.policy_bindings
+                or checkpoint.get("admission_mapping") != self.admission_mapping
                 or history != [row.as_dict() for row in prefix]
             ):
                 raise C1C2PhysicalError("authenticated checkpoint history drifted")
@@ -1531,6 +1599,7 @@ class FixedPolicyEvaluationRunner:
             "plan_sha256": self.plan.plan_sha256,
             "arms": list(ARMS),
             "pooled_by_arm": pooled,
+            "admission_mapping": self.admission_mapping,
             "scientific_disposition_emitted": False,
             "q3_evaluated": False,
             "test_split_opened": False,
@@ -1693,6 +1762,7 @@ class FixedPolicyEvaluationRunner:
                     "plan_sha256": self.plan.plan_sha256,
                     "arms": list(ARMS),
                     "pooled_by_arm": pooled,
+                    "admission_mapping": self.admission_mapping,
                     "continuation_authority_sha256": (
                         None
                         if self.continuation_authority is None
@@ -1704,6 +1774,21 @@ class FixedPolicyEvaluationRunner:
                     "learner_update": False,
                     "claim_ceiling": CLAIM_CEILING,
                 })
+                if self.continuation_authority is not None:
+                    result.update(
+                        {
+                            "continuation_authority": {
+                                "path": self.continuation_authority["authority_path"],
+                                "sha256": self.continuation_authority["authority_sha256"],
+                            },
+                            "owner_notification": {
+                                "path": self.continuation_authority["owner_notification_path"],
+                                "sha256": self.continuation_authority["owner_notification_sha256"],
+                            },
+                            "result_3000_sha256": self.continuation_authority["result_3000_sha256"],
+                            "checkpoint_3000_sha256": self.continuation_authority["checkpoint_3000_sha256"],
+                        }
+                    )
                 result_name = (
                     "continuation-result.json"
                     if self.terminal_boundary == 9000

@@ -87,6 +87,7 @@ def _baseline_invariance(bindings: Mapping[str, object]) -> dict[str, object]:
 
 def preflight(bindings_path: Path, *, output_override: Path | None = None) -> dict[str, object]:
     bindings = common.verify_bindings(bindings_path)
+    common.verify_runtime_identity(bindings)
     bindings_sha = common.file_sha256(bindings_path, field="execution bindings")
     _reject_circular_digest(bindings, bindings_sha)
     if bindings.get("trained_arms") != list(common.LEARNED_ARMS) or bindings.get("arms") != list(common.ARMS):
