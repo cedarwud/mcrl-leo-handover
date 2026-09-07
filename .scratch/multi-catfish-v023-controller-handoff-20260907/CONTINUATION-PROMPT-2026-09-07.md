@@ -155,3 +155,19 @@ Owner's standing instructions: (1) delegate all execution to sub-agents / server
 - **Stage-B/C:** astra audit `FIX_FIRST` (3/5/2; B2 constructor digest-only, M2 admission path/mapping, M1 continuation bypass, M4 seal, owner-marker = procedural control, N1 verifier gaps, N2 git enforcement) → codex stage-C fix pass 2 in flight → operator verify + commit + manifest rebuild → astra re-check; stage C is not on the critical path until stage A passes.
 - **C3:** F1 r2 replay running (tmux `mcrl-v023-c3-f1-20260907-r2`); on completion → astra **ultra** adjudication of the token/tape before any F2 authority. F2 ready (`/home/sat/f2-prep/`, preflight `625ad7f2…`). F3: implementation in flight from design R1; design **R2** (`DESIGN-F3-…-R2-…md`) applies agy's four fixes → correction pass on the implementation before any F3 authority.
 - **Rules:** one writer per path; server workspaces pulled back once; local → shadow sync only; agy via harness-tracked background; no silent sync fallbacks; controller delegates all execution.
+
+## IF YOU ARE RUNNING ON THE SERVER (`sat`) — read this first (added 18:30 UTC)
+You are the controller session on `sat`, inside tmux `mcrl-controller`, working tree `/home/sat/mcrl-leo-handover-wip`
+(git worktree of `wip/multi-catfish-v023-20260907`; commit here; push to `origin` when the owner has pushed/allowed it).
+Differences from the local session: python for repo code = `/home/sat/mcrl-leo-handover/.venv/bin/python` with
+`PYTHONPATH=/home/sat/mcrl-leo-handover-wip/src` (there is no `.venv` in the worktree; never modify
+`/home/sat/mcrl-leo-handover` itself — its venv is shared by every server script); codex is installed and logged in
+(`codex exec … --sandbox workspace-write` runs directly in the worktree — no rsync/pull-back needed; still one writer per
+path); agy is not installed (skip agy reviews or run them locally later); no ssh needed — server paths are local; heavy
+runs go into tmux windows of this same server. The engineering-lane shadow `/home/sat/mcrl-v023-successor-shadow-20260907`
+is synced FROM the worktree (`rsync -a --exclude __pycache__ <worktree>/.scratch/<pkg>/ <shadow>/.scratch/<pkg>/`).
+Re-arm watchers from here: r8 (`ls /home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8-mode-shards/shard-status/*.terminal.json | wc -l`,
+`COMPLETE`/`FAILED` in `/home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8`), F1 r2 (`tmux has-session -t mcrl-v023-c3-f1-20260907-r2`,
+`/home/sat/mcrl-v023-c3-contingency-f1-20260907-r2/receipt.json`), shadow verifier log `/home/sat/mcrl-v023-r8-shadow-verify.log`.
+The local session's monitors are gone; the report/ledger/plan files in `.scratch/multi-catfish-v023-controller-handoff-20260907/`
+are the state. Delegate execution to codex (server) and Claude sub-agents; the controller only reads, decides, dispatches.
