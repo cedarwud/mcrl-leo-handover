@@ -135,8 +135,13 @@ path with synthetic episode records. It never emits `result.json`.
 The optional one-real-world plumbing step is controlled by
 `flags.run_real_world`, which is `false` by default. The step reports `BLOCKED`
 while disabled, or when its fixed TLE root or baseline artifacts are absent.
-Thus the normal local final line is `DRYRUN_successor_stage_bc_BLOCKED`; this
-is an available-path result, not a scientific result.
+The baseline-admission step also encodes a native state with populated
+`contract_fields`. Until the baseline adapter accepts that live-producer state
+while retaining its native 112-D encoding, the gate truthfully reports
+`DRYRUN_successor_stage_bc_FAIL` (exit 2). After that external fix lands, the
+normal final line becomes `DRYRUN_successor_stage_bc_BLOCKED` (exit 3) solely
+because the optional real-world step is disabled. Neither outcome is a
+scientific result.
 
 ```bash
 ./.venv/bin/python \

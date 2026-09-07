@@ -53,6 +53,7 @@ def build_fresh_two_route_exports(
     output_dir: Path,
     *,
     seed: int,
+    model_config_sha256: str,
     arms: Sequence[str],
     model_class: Any,
     model_config_class: Any,
@@ -63,7 +64,11 @@ def build_fresh_two_route_exports(
 
     if tuple(arms) != ("FULL2", "DROP_C1", "DROP_C2"):
         raise ValueError("fresh export arms must be FULL2, DROP_C1, DROP_C2")
-    raw = json.loads(Path(model_config_path).read_text(encoding="utf-8"))
+    config_path = Path(model_config_path)
+    actual_config_sha256 = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    if actual_config_sha256 != model_config_sha256:
+        raise ValueError("model configuration digest drifted")
+    raw = json.loads(config_path.read_text(encoding="utf-8"))
     q1_raw, q2_raw = dict(raw["q1"]), dict(raw["q2"])
     q1_raw["hidden_layers"] = tuple(q1_raw["hidden_layers"])
     q1_raw["loss_weights"] = tuple(q1_raw["loss_weights"])
@@ -85,15 +90,15 @@ def build_fresh_two_route_exports(
             raise ValueError(f"{arm} initialization digest binding drifted")
         path = root / f"{arm}.pt"
         with BytesIO() as stream:
-            # The producer freezes one formal initialization seed. Distinct
-            # pickle protocols give the three arm artifacts distinct byte
-            # identities without changing their producer-owned payloads.
+            # All arms share the producer's formal initialization bytes.  The
+            # export name and per-arm serialization digest carry arm identity.
             torch.save(payload, stream, pickle_protocol=2 + offset)
             path.write_bytes(stream.getvalue())
         exports.append(
             {
                 "arm": arm,
                 "seed": seed,
+                "model_config_sha256": actual_config_sha256,
                 "serialization_protocol": 2 + offset,
                 **_file_identity(path),
                 "initialization": dict(model.initialization_digests),
@@ -101,6 +106,7 @@ def build_fresh_two_route_exports(
         )
     return {
         "exports": exports,
+        "model_config_sha256": actual_config_sha256,
         "identities": {str(item["arm"]): _file_identity(Path(str(item["path"]))) for item in exports},
     }
 
@@ -139,6 +145,7 @@ def admit_baseline(
     *,
     expected_sha256: str,
     adapter_class: Any,
+    user_state_class: Any,
 ) -> dict[str, object]:
     if _file_identity(Path(checkpoint_path))["sha256"] != expected_sha256:
         raise ValueError("baseline checkpoint digest differs from the declared identity")
@@ -148,8 +155,24 @@ def admit_baseline(
     )
     if adapter.checkpoint_sha256 != expected_sha256:
         raise ValueError("baseline adapter admitted a different checkpoint")
+    action_dim = int(adapter.action_dim)
+    access = np.zeros(action_dim, dtype=np.float32)
+    access[0] = 1.0
+    native_state = user_state_class(
+        access_vector=access,
+        channel_quality=np.linspace(0.0, 2.0, action_dim, dtype=np.float32),
+        beam_offsets=np.linspace(-0.2, 0.2, action_dim, dtype=np.float32),
+        beam_loads=np.full(action_dim, 1.0, dtype=np.float32),
+        contract_fields=np.arange(13, dtype=np.float32),
+    )
+    encoded = adapter.encode_user_state(native_state, num_users=1)
+    if np.asarray(encoded).shape != (int(adapter.state_dim),):
+        raise ValueError("baseline adapter emitted an unexpected encoded shape")
     return {
         "checkpoint_sha256": adapter.checkpoint_sha256,
+        "contract_fields_encoding_sha256": hashlib.sha256(
+            np.asarray(encoded, dtype=np.float32).tobytes()
+        ).hexdigest(),
         "identities": {
             "checkpoint": _file_identity(Path(checkpoint_path)),
             "status": _file_identity(Path(status_path)),
