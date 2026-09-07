@@ -1,6 +1,6 @@
 # Engineering-lane shadow closure report — 2026-09-07
 
-**Note:** the shadow checkout was being modified concurrently by another process while this audit ran (the R6 directory below appeared, fully correct, mid-investigation). All findings here reflect the verified end state, hash-checked just before writing this report, not a stale snapshot.
+**Note:** the local repo and shadow checkout were both being edited concurrently by another process while this audit ran — `c1c2-provider-factory-v3` and `two-route-source-training-runner` changed on disk (2 tests added, git-tracked as `M`) after the first sync/test pass. Re-synced both directories and re-ran Task 2 as the last action before writing this report; all numbers below are that final pass, re-verified (246/246 files byte-identical local↔shadow) after the edits landed, not a stale snapshot.
 
 ## Task 1 — closure
 
@@ -18,12 +18,12 @@ Verified all 246 paths hash-identical between the repo and `/home/sat/mcrl-v023-
 
 ## Task 2 — server test results
 
-`cd .../shadow-20260907 && PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 PYTHONPATH=.../shadow-20260907/src /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest -q -p no:cacheprovider <6 dirs>` → **83 passed, 3 failed** (86 total, 5.7s). No round 2/3 needed — no missing-file failures.
+`cd .../shadow-20260907 && PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 PYTHONPATH=.../shadow-20260907/src /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest -q -p no:cacheprovider <6 dirs>` → **85 passed, 3 failed** (88 total, 7.5s), final pass after the concurrent edits above. No round 2/3 needed — every failure traced to a genuine code defect, none to a missing file.
 
 | Suite | Passed | Failed |
 |---|---|---|
-| c1c2-provider-factory-v3 | 10 | 0 |
-| two-route-source-training-runner | 6 | 0 |
+| c1c2-provider-factory-v3 | 11 | 0 |
+| two-route-source-training-runner | 7 | 0 |
 | c1c2-successor-physical-evaluation | 24 | 0 |
 | c3-contingency-f1 | 22 | 0 |
 | heterogeneous-trainer | 3 | 3 |
