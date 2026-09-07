@@ -1,6 +1,6 @@
 # V0.23 C1/C2 successor — stage-C execution-only scheduling addendum (DRAFT, 2026-09-07 17:50 UTC)
 
-Status: `DRAFT_PRE_FREEZE_R3` (§2 completed 2026-09-07 20:40 UTC from the implementation owner's controller patch; §1 withdrawn and non-operative; sealing follows the acceptance-script fix pass and the addendum-digest re-derivation). Execution-only. It changes no scientific declaration: arms, plan, estimand, prediction,
+Status: `SEALED_EXECUTION_ONLY` (sealed 2026-09-07 22:05 UTC by the controller under the owner's delegation; §2 operative, §1 withdrawn and non-operative; acceptance-procedure digest re-derived after chunking fix pass 3). Execution-only. It changes no scientific declaration: arms, plan, estimand, prediction,
 falsifier, dispositions, thresholds and claim ceilings remain exactly those of the sealed
 `V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md` (sha `f27d0500…`) and contract §6. Basis: astra ruling
 `ADJUDICATION-STAGEC-BASELINE-DECOUPLING-AND-EPISODE-CHUNKING-CODEX-GPT6-ASTRA-2026-09-07.md`
@@ -58,7 +58,7 @@ falsifier, dispositions, thresholds and claim ceilings remain exactly those of t
 - Acceptance procedure:
   `.scratch/multi-catfish-v023-c1c2-successor-stagec-launch/ACCEPTANCE-SERVER-EQUIVALENCE.md`,
   SHA-256
-  `6d3785efc206073dd2b8b1e299113614997dd558e33a32a4b9cf1dce822e0f68`.
+  `b6d6ab8baa07011d3d72ea6b54efa9f25d6f666ca47c837af75cc359c10b17ff`.
 - Forbidden: episode reordering, outcome-selected chunks, per-chunk scientific
   stopping, altered policies, TEST, computation without authenticated
   acceptance, and continuation beyond 3000 without the existing separately
