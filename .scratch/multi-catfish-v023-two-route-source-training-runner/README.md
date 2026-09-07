@@ -38,6 +38,16 @@ receipt records that integrity decision. The CLI is:
 --input-sha256 --execute
 ```
 
+`--resume OUTPUT_ROOT` replaces `--output-root` for a validated restart and
+selects the newest authenticated checkpoint allowed by the run mode. Formal
+cadence remains exactly `(0, 100)`: interruption before epoch 100 therefore
+restarts from epoch 0. Explicit `--nonformal` requires a basename containing
+`REHEARSAL-NONFORMAL`, stamps `formal:false` through all runner artifacts, and
+adds rehearsal-only checkpoints every 10 epochs (`0,10,...,100`). These
+intermediate checkpoints retain the finite per-update ledger rows as well as
+model, optimizer, provider sampler, and consumed-file state, so a resumed
+rehearsal is bitwise identical to uninterrupted continuation.
+
 This is TRAIN-development source learning only. It has no C3, no all-neutral
 control, no `FULL` or `BASELINE` training arm, no simulator, no physical or TEST
 evaluation, and no efficacy claim. The claim ceiling is

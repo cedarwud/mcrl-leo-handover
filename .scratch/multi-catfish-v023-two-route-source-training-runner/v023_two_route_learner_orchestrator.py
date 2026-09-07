@@ -512,12 +512,23 @@ class V023TwoRouteLearnerOrchestrator:
                 raise V023TwoRouteOrchestratorError(
                     "non-formal provider epoch-budget declaration drifted"
                 )
-            authenticate_nonformal_rehearsal_provider_identity(
-                provider,
-                expected_train_seed=config.train_seed,
-                expected_epoch_budget=budget,
-                expected_model_config_sha256=config.model_config_sha256,
-            )
+            if isinstance(identity_payload, Mapping) and set(identity_payload) == set(
+                FACTORY_V3_IDENTITY_FIELDS
+            ):
+                # A rehearsal may consume the fully authenticated factory-v3
+                # provider while keeping every learner/checkpoint non-formal.
+                authenticate_factory_v3_provider_identity(
+                    provider,
+                    expected_train_seed=config.train_seed,
+                    expected_model_config_sha256=config.model_config_sha256,
+                )
+            else:
+                authenticate_nonformal_rehearsal_provider_identity(
+                    provider,
+                    expected_train_seed=config.train_seed,
+                    expected_epoch_budget=budget,
+                    expected_model_config_sha256=config.model_config_sha256,
+                )
         authenticated_sampler = provider.sampler_state()
         if (
             not isinstance(authenticated_sampler, Mapping)

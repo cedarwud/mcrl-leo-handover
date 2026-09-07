@@ -36,6 +36,16 @@ For this stage-A bundle, the executable portion is therefore:
    independent verifier. Only the verifier may publish
    `PASS_SOURCE_TRAINING_INTEGRITY`, the output manifest, and `COMPLETE`.
 
+For an end-to-end engineering drill, the same wrapper accepts `--nonformal`
+only with a `formal:false` preflight receipt and an output basename containing
+`REHEARSAL-NONFORMAL`. The rehearsal is marked `formal:false` throughout,
+checkpoints every 10 epochs, and can restart with `--resume OUTPUT_ROOT`.
+Formal runs keep the declared `(0, 100)` checkpoint cadence, so a formal
+interruption before epoch 100 resumes from epoch 0. Non-formal verification
+uses `verify_v023_c1c2_successor.py --nonformal` and can emit only
+`NONFORMAL_RECONSTRUCTION_PASS`; it never writes `COMPLETE` or the formal
+integrity token.
+
 The synchronized payload is intentionally a documented superset of the
 authoritative 246-path shadow closure. Its exact set is the closure union the
 closed `LAUNCH_MANIFEST_ADDITIONS` list in `successor_launch_common.py` (the ten

@@ -491,6 +491,191 @@ def test_formal_output_passes_independent_epoch_zero_and_100_reconstruction(
     assert result["exact_epoch_100_resume"] is True
 
 
+@pytest.fixture(scope="module")
+def nonformal_output(
+    producer_output: tuple[Path, Path, Path],
+) -> tuple[Path, Path, Path]:
+    """Traverse the same producer-derived chain with explicit non-formal mode."""
+
+    _formal_output, formal_preflight, provider_config = producer_output
+    root = provider_config.parent
+    output = root / "chain-REHEARSAL-NONFORMAL"
+    preflight = root / "nonformal-preflight.json"
+    payload = json.loads(formal_preflight.read_text(encoding="ascii"))
+    payload["formal"] = False
+    payload["output_root"] = str(output.resolve(strict=False))
+    payload["requested_output_root"] = str(output.resolve(strict=False))
+    preflight.write_bytes(COMMON.canonical_bytes(payload))
+    preflight_sha = COMMON.file_sha256(preflight)
+    COMMON.sidecar_path(preflight).write_text(
+        f"{preflight_sha}  {preflight.name}\n", encoding="ascii"
+    )
+    learner_manifest = provider_config.parent / "learner-manifest.json"
+    provider_payload = json.loads(provider_config.read_text(encoding="ascii"))
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(root), str(REPO / "src"), str(RUNNER_DIR), str(FACTORY_DIR), str(HERE)]
+    )
+    env.update(
+        {
+            "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1",
+            "MKL_NUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1",
+            FACTORY.CONFIG_PATH_ENV: str(provider_config),
+            FACTORY.CONFIG_SHA256_ENV: COMMON.file_sha256(provider_config),
+            FACTORY.LEARNER_MANIFEST_PATH_ENV: str(learner_manifest),
+        }
+    )
+    command_tail = [
+            "--epochs", "100", "--nonformal",
+            "--provider-factory", "v023_c1c2_provider_factory_v3:make_provider",
+            "--model-config-json", str(REPO / COMMON.SUCCESSOR_REL / COMMON.MODEL_CONFIG_NAME),
+            "--train-seed", str(COMMON.TRAIN_SEED),
+            "--authority-sha256", provider_payload["contract_sha256"],
+            "--code-sha256", provider_payload["learner_manifest_sha256"],
+            "--input-sha256", provider_payload["target_manifest_sha256"],
+            "--preflight-receipt", str(preflight), "--execute",
+    ]
+    result = subprocess.run(
+        [
+            str(REPO / ".venv/bin/python"),
+            str(HERE / "run_v023_c1c2_successor_formal.py"),
+            "--output-root", str(output), *command_tail,
+        ],
+        cwd=REPO, env=env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False, timeout=180,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "SUCCESSOR_NONFORMAL_RUN_COMPLETE" in result.stdout
+    resumed = subprocess.run(
+        [
+            str(REPO / ".venv/bin/python"),
+            str(HERE / "run_v023_c1c2_successor_formal.py"),
+            "--resume", str(output), *command_tail,
+        ],
+        cwd=REPO, env=env, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False, timeout=180,
+    )
+    assert resumed.returncode == 0, resumed.stderr
+    return output, preflight, provider_config
+
+
+def test_wrapper_mode_admission_and_nonformal_receipt_stamping(
+    producer_output: tuple[Path, Path, Path],
+    nonformal_output: tuple[Path, Path, Path],
+):
+    formal_output, formal_preflight, _formal_provider = producer_output
+    output, preflight, _provider_config = nonformal_output
+    common = [
+        "--epochs", "100", "--provider-factory", "unused:factory",
+        "--model-config-json", "unused.json", "--train-seed", str(COMMON.TRAIN_SEED),
+        "--execute",
+    ]
+    missing_flag = subprocess.run(
+        [
+            str(REPO / ".venv/bin/python"), str(HERE / FORMAL.__file__),
+            "--resume", str(output), "--preflight-receipt", str(preflight), *common,
+        ],
+        cwd=REPO, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert missing_flag.returncode == 3
+    assert "preflight receipt does not bind the requested formal run" in missing_flag.stderr
+
+    laundering = subprocess.run(
+        [
+            str(REPO / ".venv/bin/python"), str(HERE / FORMAL.__file__),
+            "--resume", str(formal_output), "--preflight-receipt", str(formal_preflight),
+            "--nonformal", *common,
+        ],
+        cwd=REPO, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert laundering.returncode == 3
+    assert "cannot be laundered" in laundering.stderr
+
+    json_receipts = [
+        output / "canonical-status.json",
+        output / "canonical-receipt.json",
+        output / "update-ledger.json",
+        output / "nonformal-provenance.json",
+        *sorted((output / "checkpoint-receipts").glob("*.json")),
+        *sorted((output / "exports").glob("epoch-*.json")),
+    ]
+    assert len(json_receipts) == 26
+    assert all(json.loads(path.read_text(encoding="ascii"))["formal"] is False for path in json_receipts)
+    assert not (output / "COMPLETE").exists()
+    assert not (output / "MANIFEST.sha256").exists()
+
+
+def test_nonformal_verifier_reconstructs_without_formal_pass_token(
+    nonformal_output: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch,
+):
+    output, preflight, provider_config = nonformal_output
+    learner_manifest = provider_config.parent / "learner-manifest.json"
+    monkeypatch.setattr(VERIFY, "BUNDLE_REL", learner_manifest.parent)
+    monkeypatch.setattr(VERIFY, "LEARNER_MANIFEST_NAME", learner_manifest.name)
+    result = VERIFY.decision_for_output(
+        repo=REPO, output_root=output, provider_config_path=provider_config,
+        model_config_path=REPO / COMMON.SUCCESSOR_REL / COMMON.MODEL_CONFIG_NAME,
+        preflight_receipt_path=preflight, reconstruct=True, nonformal=True,
+    )
+    assert result["status"] == VERIFY.NONFORMAL_PASS, result
+    assert result["formal"] is False
+    assert VERIFY.PASS not in result["status"]
+
+    formal_attempt = VERIFY.decision_for_output(
+        repo=REPO, output_root=output, provider_config_path=provider_config,
+        model_config_path=REPO / COMMON.SUCCESSOR_REL / COMMON.MODEL_CONFIG_NAME,
+        preflight_receipt_path=preflight, reconstruct=True,
+    )
+    assert formal_attempt["status"] == VERIFY.STOP
+    assert "non-formal rehearsal roots" in formal_attempt["error"]
+
+
+def test_formal_fixture_cannot_pass_nonformal_verifier(
+    producer_output: tuple[Path, Path, Path],
+):
+    output, preflight, provider_config = producer_output
+    result = VERIFY.decision_for_output(
+        repo=REPO, output_root=output, provider_config_path=provider_config,
+        model_config_path=REPO / COMMON.SUCCESSOR_REL / COMMON.MODEL_CONFIG_NAME,
+        preflight_receipt_path=preflight, reconstruct=True, nonformal=True,
+    )
+    assert result["status"] == VERIFY.NONFORMAL_FAIL
+    assert VERIFY.PASS not in result["status"]
+
+
+def test_nonformal_verifier_cli_uses_distinct_pass_token(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+):
+    root = tmp_path / "root-REHEARSAL-NONFORMAL"
+    root.mkdir()
+    monkeypatch.setattr(
+        VERIFY,
+        "verify_output",
+        lambda **_kwargs: {
+            "status": VERIFY.NONFORMAL_PASS,
+            "exact_epoch_100_resume": True,
+        },
+    )
+    assert VERIFY.main(
+        [
+            "--repo", str(REPO),
+            "--output-root", str(root),
+            "--provider-config", str(tmp_path / "provider.json"),
+            "--model-config", str(tmp_path / "model.json"),
+            "--preflight-receipt", str(tmp_path / "preflight.json"),
+            "--nonformal", "--write",
+        ]
+    ) == 0
+    output = capsys.readouterr().out
+    assert output.startswith("NONFORMAL_RECONSTRUCTION_PASS ")
+    assert "PASS_SOURCE_TRAINING_INTEGRITY" not in output
+    assert (root / "nonformal-verification.json").is_file()
+    assert not (root / "COMPLETE").exists()
+    assert not (root / "MANIFEST.sha256").exists()
+
+
 def test_fourth_arm_mutation_produces_integrity_stop(
     producer_output: tuple[Path, Path, Path],
 ):

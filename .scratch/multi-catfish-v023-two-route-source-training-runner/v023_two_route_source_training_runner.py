@@ -11,6 +11,7 @@ from io import BytesIO
 import argparse
 import importlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -61,8 +62,10 @@ CLAIM_CEILING = (
 SOURCE_SPLIT = "SOURCE_TRAIN"
 SUPPORTED_EPOCH_BUDGETS = (100,)
 FORMAL_CHECKPOINT_EPOCHS = (0, 100)
+NONFORMAL_CHECKPOINT_EPOCHS = tuple(range(0, 101, 10))
 UPDATES_PER_EPOCH = 2
 FORMAL_CHECKPOINT_UPDATES = 200
+NONFORMAL_CHECKPOINT_UPDATES = 20
 FORBIDDEN_ARMS = {"ALL_NEUTRAL_CONTROL", "FULL", "DROP_C3", "BASELINE"}
 SOURCE_MAP: Mapping[str, tuple[str, str]] = {
     "FULL2": ("informed", "informed"),
@@ -276,8 +279,22 @@ class FrozenSourceTrainingConfig:
             )
         if not isinstance(self.orchestrator_config, V023TwoRouteOrchestratorConfig):
             raise TypeError("orchestrator_config must be V023TwoRouteOrchestratorConfig")
-        if not self.orchestrator_config.formal_use or self.orchestrator_config.checkpoint_cadence_updates != 200:
-            raise V023TwoRouteSourceTrainingRunnerError("formal cycle must be 100 epochs / 200 updates")
+        expected_cadence = (
+            FORMAL_CHECKPOINT_UPDATES
+            if self.orchestrator_config.formal_use
+            else NONFORMAL_CHECKPOINT_UPDATES
+        )
+        if self.orchestrator_config.checkpoint_cadence_updates != expected_cadence:
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "formal cadence must be 200 updates and non-formal cadence 20 updates"
+            )
+        if (
+            not self.orchestrator_config.formal_use
+            and "REHEARSAL-NONFORMAL" not in self.orchestrator_config.lineage.upper()
+        ):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "non-formal runner lineage must be REHEARSAL-NONFORMAL"
+            )
         if self.orchestrator_config.train_seed != FORMAL_TRAIN_SEED:
             raise V023TwoRouteSourceTrainingRunnerError("formal train seed drifted")
         if self.orchestrator_config.model_config_sha256 != FROZEN_MODEL_CONFIG_SHA256:
@@ -373,6 +390,19 @@ class V023TwoRouteSourceTrainingRunner:
         self.provider_identity_payload = deepcopy(dict(payload))
         self.orchestrator = V023TwoRouteLearnerOrchestrator(config.orchestrator_config, provider)
         self.output_root: Path | None = None
+        self.update_ledger_rows: list[dict[str, Any]] = []
+
+    @property
+    def formal(self) -> bool:
+        return self.config.orchestrator_config.formal_use
+
+    @property
+    def checkpoint_epochs(self) -> tuple[int, ...]:
+        return FORMAL_CHECKPOINT_EPOCHS if self.formal else NONFORMAL_CHECKPOINT_EPOCHS
+
+    @property
+    def checkpoint_cadence_updates(self) -> int:
+        return FORMAL_CHECKPOINT_UPDATES if self.formal else NONFORMAL_CHECKPOINT_UPDATES
 
     @property
     def completed_epochs(self) -> int:
@@ -381,6 +411,7 @@ class V023TwoRouteSourceTrainingRunner:
     def _status_payload(self) -> dict[str, Any]:
         return {
             "schema": STATUS_SCHEMA,
+            "formal": self.formal,
             "claim_ceiling": CLAIM_CEILING,
             "source_split": SOURCE_SPLIT,
             "config": self.config.to_payload(),
@@ -390,6 +421,8 @@ class V023TwoRouteSourceTrainingRunner:
             "source_ablation_map": _source_map_payload(),
             "initialization_sha256": self.orchestrator.initialization_sha256,
             "formal_export_epochs": list(FORMAL_CHECKPOINT_EPOCHS),
+            "checkpoint_epochs": list(self.checkpoint_epochs),
+            "checkpoint_cadence_updates": self.checkpoint_cadence_updates,
             "updates_per_epoch": 2,
         }
 
@@ -432,6 +465,10 @@ class V023TwoRouteSourceTrainingRunner:
                 )
         root = Path(output_root)
         _reject_test(root, field="output path")
+        if (not self.formal) != ("REHEARSAL-NONFORMAL" in root.name.upper()):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "non-formal output basename must contain REHEARSAL-NONFORMAL"
+            )
         if root.exists() or root.is_symlink():
             raise V023TwoRouteSourceTrainingRunnerError("output root must be absent")
         if root.parent.is_symlink() or not root.parent.is_dir():
@@ -451,13 +488,14 @@ class V023TwoRouteSourceTrainingRunner:
 
     def _checkpoint_payload(self, epoch: int) -> dict[str, Any]:
         state = self.orchestrator.checkpoint_state()
-        if epoch not in FORMAL_CHECKPOINT_EPOCHS or epoch != self.completed_epochs:
+        if epoch not in self.checkpoint_epochs or epoch != self.completed_epochs:
             raise V023TwoRouteSourceTrainingRunnerError("checkpoint epoch is not authorized")
         updates = epoch * 2
         if self.orchestrator.update_cursor != updates or self.orchestrator.next_route != "C1":
             raise V023TwoRouteSourceTrainingRunnerError("checkpoint contains a partial epoch")
         return {
             "schema": CHECKPOINT_SCHEMA,
+            "formal": self.formal,
             "claim_ceiling": CLAIM_CEILING,
             "source_split": SOURCE_SPLIT,
             "epoch": epoch,
@@ -472,6 +510,8 @@ class V023TwoRouteSourceTrainingRunner:
             "runner_schema": RUNNER_SCHEMA,
             "updates_per_source_training_epoch": UPDATES_PER_EPOCH,
             "formal_checkpoint_cadence_updates": FORMAL_CHECKPOINT_UPDATES,
+            "checkpoint_cadence_updates": self.checkpoint_cadence_updates,
+            "update_ledger_rows": deepcopy(self.update_ledger_rows),
             "models_and_optimizers": deepcopy(state["arms"]),
             "provider_sampler_state": deepcopy(state["provider_sampler_state"]),
             "consumed_file_order": deepcopy(state["file_order"]),
@@ -507,6 +547,7 @@ class V023TwoRouteSourceTrainingRunner:
             )
         manifest = {
             "schema": EXPORT_MANIFEST_SCHEMA,
+            "formal": self.formal,
             "claim_ceiling": CLAIM_CEILING,
             "epoch": epoch,
             "update_count": self.orchestrator.update_cursor,
@@ -526,6 +567,7 @@ class V023TwoRouteSourceTrainingRunner:
         exports, manifest_digest = self._write_exports(root, epoch)
         receipt = {
             "schema": CHECKPOINT_RECEIPT_SCHEMA,
+            "formal": self.formal,
             "claim_ceiling": CLAIM_CEILING,
             "epoch": epoch,
             "update_count": epoch * 2,
@@ -538,6 +580,38 @@ class V023TwoRouteSourceTrainingRunner:
         }
         _atomic_json_once(_checkpoint_receipt_path(root, epoch), receipt)
         return receipt
+
+    @staticmethod
+    def _ledger_row(receipt: object) -> dict[str, Any]:
+        cursor = getattr(receipt, "update_cursor")
+        updates = []
+        for update in getattr(receipt, "arm_updates"):
+            metrics = {
+                key: value
+                for key, value in update.update.items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            }
+            if "loss" not in metrics or any(
+                not math.isfinite(float(value)) for value in metrics.values()
+            ):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    f"update {cursor} has a missing or non-finite loss/metric"
+                )
+            updates.append(
+                {
+                    "arm": update.arm,
+                    "route": update.route,
+                    "source": update.source,
+                    "file_id": update.file_id,
+                    "metrics": metrics,
+                }
+            )
+        return {
+            "update_cursor": cursor,
+            "route": getattr(receipt, "route"),
+            "source_files": [list(item) for item in receipt.source_files],
+            "arm_updates": updates,
+        }
 
     def run_to_epoch(self, stop_epoch: int | None = None) -> dict[str, Any] | None:
         self._require_root()
@@ -552,8 +626,9 @@ class V023TwoRouteSourceTrainingRunner:
                 raise V023TwoRouteSourceTrainingRunnerError("route order drifted")
             if self.orchestrator.update_cursor != before + 2 or self.orchestrator.next_route != "C1":
                 raise V023TwoRouteSourceTrainingRunnerError("epoch did not close")
-            if self.completed_epochs == 100:
-                receipt = self._write_checkpoint(100)
+            self.update_ledger_rows.extend(self._ledger_row(item) for item in rounds)
+            if self.completed_epochs in self.checkpoint_epochs:
+                receipt = self._write_checkpoint(self.completed_epochs)
         if self.completed_epochs == 100:
             integrity = self._verify_epoch_100_integrity()
             self._write_final_receipt(integrity)
@@ -562,34 +637,37 @@ class V023TwoRouteSourceTrainingRunner:
     def _write_final_receipt(self, integrity: Mapping[str, Any]) -> None:
         root = self._require_root()
         destination = root / "canonical-receipt.json"
-        if destination.exists() or destination.is_symlink():
-            raise V023TwoRouteSourceTrainingRunnerError("canonical receipt already exists")
         checkpoints = []
-        for epoch in FORMAL_CHECKPOINT_EPOCHS:
+        for epoch in self.checkpoint_epochs:
             path = _checkpoint_path(root, epoch)
             checkpoints.append(
                 {"epoch": epoch, "path": str(path.relative_to(root)), "sha256": _verify_sidecar(path)}
             )
-        _atomic_json_once(
-            destination,
-            {
-                "schema": RECEIPT_SCHEMA,
-                "claim_ceiling": CLAIM_CEILING,
-                "source_split": SOURCE_SPLIT,
-                "epoch_budget": 100,
-                "completed_epochs": 100,
-                "completed_updates": 200,
-                "provider_identity": self.provider_identity,
-                "initialization_sha256": self.orchestrator.initialization_sha256,
-                "arm_order": list(ARMS),
-                "route_order": list(ROUTES),
-                "source_ablation_map": _source_map_payload(),
-                "config": self.config.to_payload(),
-                "authority_digests": asdict(self.config.authority_digests),
-                "checkpoints": checkpoints,
-                "epoch_100_integrity": deepcopy(dict(integrity)),
-            },
-        )
+        payload = {
+            "schema": RECEIPT_SCHEMA,
+            "formal": self.formal,
+            "claim_ceiling": CLAIM_CEILING,
+            "source_split": SOURCE_SPLIT,
+            "epoch_budget": 100,
+            "completed_epochs": 100,
+            "completed_updates": 200,
+            "provider_identity": self.provider_identity,
+            "initialization_sha256": self.orchestrator.initialization_sha256,
+            "arm_order": list(ARMS),
+            "route_order": list(ROUTES),
+            "source_ablation_map": _source_map_payload(),
+            "config": self.config.to_payload(),
+            "authority_digests": asdict(self.config.authority_digests),
+            "checkpoints": checkpoints,
+            "epoch_100_integrity": deepcopy(dict(integrity)),
+        }
+        if destination.exists() or destination.is_symlink():
+            if destination.is_symlink() or self._read_json(destination) != payload:
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "canonical receipt already exists with different content"
+                )
+            return
+        _atomic_json_once(destination, payload)
 
     def run(self) -> dict[str, Any] | None:
         return self.run_to_epoch()
@@ -610,10 +688,11 @@ class V023TwoRouteSourceTrainingRunner:
 
     def _validate_checkpoint(self, checkpoint: Mapping[str, Any]) -> None:
         expected = {
-            "schema", "claim_ceiling", "source_split", "epoch", "update_count", "config",
+            "schema", "formal", "claim_ceiling", "source_split", "epoch", "update_count", "config",
             "authority_digests", "provider_identity", "arm_order", "route_order",
             "source_ablation_map", "initialization_sha256", "runner_schema",
             "updates_per_source_training_epoch", "formal_checkpoint_cadence_updates",
+            "checkpoint_cadence_updates", "update_ledger_rows",
             "models_and_optimizers", "provider_sampler_state", "consumed_file_order",
             "orchestrator_state",
         }
@@ -625,6 +704,8 @@ class V023TwoRouteSourceTrainingRunner:
             or checkpoint["runner_schema"] != RUNNER_SCHEMA
             or checkpoint["updates_per_source_training_epoch"] != UPDATES_PER_EPOCH
             or checkpoint["formal_checkpoint_cadence_updates"] != FORMAL_CHECKPOINT_UPDATES
+            or checkpoint["formal"] is not self.formal
+            or checkpoint["checkpoint_cadence_updates"] != self.checkpoint_cadence_updates
         ):
             raise V023TwoRouteSourceTrainingRunnerError("TEST or claim boundary rejected")
         if checkpoint["config"] != self.config.to_payload() or checkpoint["authority_digests"] != asdict(self.config.authority_digests):
@@ -638,7 +719,7 @@ class V023TwoRouteSourceTrainingRunner:
         if checkpoint["source_ablation_map"] != _source_map_payload():
             raise V023TwoRouteSourceTrainingRunnerError("source map drifted")
         epoch = checkpoint["epoch"]
-        if epoch not in FORMAL_CHECKPOINT_EPOCHS or checkpoint["update_count"] != epoch * 2:
+        if epoch not in self.checkpoint_epochs or checkpoint["update_count"] != epoch * 2:
             raise V023TwoRouteSourceTrainingRunnerError("checkpoint cadence is invalid")
         state = checkpoint["orchestrator_state"]
         if (
@@ -668,6 +749,7 @@ class V023TwoRouteSourceTrainingRunner:
                 not isinstance(arm_state, Mapping)
                 or arm_state.get("update_count") != epoch * UPDATES_PER_EPOCH
                 or arm_state.get("route_update_counts") != expected_counts
+                or arm_state.get("formal") is not self.formal
                 or arm_state.get("train_seed") != FORMAL_TRAIN_SEED
                 or arm_state.get("config") != asdict(self.config.orchestrator_config.model_config)
             ):
@@ -678,6 +760,58 @@ class V023TwoRouteSourceTrainingRunner:
             checkpoint["consumed_file_order"], checkpoint["provider_sampler_state"],
             updates=epoch * UPDATES_PER_EPOCH,
         )
+        self._validate_ledger_rows(
+            checkpoint["update_ledger_rows"], updates=epoch * UPDATES_PER_EPOCH
+        )
+
+    def _validate_ledger_rows(self, rows: object, *, updates: int) -> None:
+        if not isinstance(rows, list) or len(rows) != updates:
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "checkpoint update ledger is incomplete"
+            )
+        for cursor, row in enumerate(rows):
+            if (
+                not isinstance(row, Mapping)
+                or row.get("update_cursor") != cursor
+                or row.get("route") != ROUTES[cursor % 2]
+            ):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "checkpoint update ledger order drifted"
+                )
+            arm_updates = row.get("arm_updates")
+            if (
+                not isinstance(arm_updates, list)
+                or [item.get("arm") for item in arm_updates] != list(ARMS)
+            ):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "checkpoint update ledger arm order drifted"
+                )
+            source_files = row.get("source_files")
+            if not isinstance(source_files, list):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "checkpoint update ledger sources drifted"
+                )
+            source_by_name = dict(source_files)
+            for item in arm_updates:
+                arm = item.get("arm")
+                metrics = item.get("metrics")
+                if (
+                    item.get("route") != row["route"]
+                    or arm not in SOURCE_MAP
+                    or item.get("source") != SOURCE_MAP[arm][cursor % 2]
+                    or item.get("file_id") != source_by_name.get(item.get("source"))
+                    or not isinstance(metrics, Mapping)
+                    or "loss" not in metrics
+                    or any(
+                        isinstance(value, bool)
+                        or not isinstance(value, (int, float))
+                        or not math.isfinite(float(value))
+                        for value in metrics.values()
+                    )
+                ):
+                    raise V023TwoRouteSourceTrainingRunnerError(
+                        "checkpoint update ledger binding drifted"
+                    )
 
     @staticmethod
     def _validate_consumed_history(
@@ -731,13 +865,14 @@ class V023TwoRouteSourceTrainingRunner:
         manifest_path = _export_manifest_path(root, epoch)
         manifest = self._read_json(manifest_path)
         expected_receipt_fields = {
-            "schema", "claim_ceiling", "epoch", "update_count", "checkpoint_path",
+            "schema", "formal", "claim_ceiling", "epoch", "update_count", "checkpoint_path",
             "checkpoint_sha256", "export_manifest_path", "export_manifest_sha256",
             "arm_order", "exports",
         }
         if (
             set(receipt) != expected_receipt_fields
             or receipt.get("schema") != CHECKPOINT_RECEIPT_SCHEMA
+            or receipt.get("formal") is not self.formal
             or receipt.get("claim_ceiling") != CLAIM_CEILING
             or receipt.get("epoch") != epoch
             or receipt.get("update_count") != checkpoint["update_count"]
@@ -756,6 +891,7 @@ class V023TwoRouteSourceTrainingRunner:
             raise V023TwoRouteSourceTrainingRunnerError("export manifest digest drifted")
         if (
             manifest.get("schema") != EXPORT_MANIFEST_SCHEMA
+            or manifest.get("formal") is not self.formal
             or manifest.get("claim_ceiling") != CLAIM_CEILING
             or manifest.get("arm_order") != list(ARMS)
             or manifest.get("route_order") != list(ROUTES)
@@ -784,6 +920,7 @@ class V023TwoRouteSourceTrainingRunner:
                 or state.get("algorithm") != TWO_ROUTE_ALGORITHM
                 or state.get("update_count") != checkpoint["update_count"]
                 or state.get("route_update_counts") != {"C1": epoch, "C2": epoch}
+                or state.get("formal") is not self.formal
                 or state.get("train_seed") != FORMAL_TRAIN_SEED
                 or state.get("config") != asdict(self.config.orchestrator_config.model_config)
                 or not _tree_equal(state, checkpoint_arm)
@@ -792,6 +929,7 @@ class V023TwoRouteSourceTrainingRunner:
             independent = EEAxisTwoRouteModel(
                 self.config.orchestrator_config.model_config,
                 train_seed=FORMAL_TRAIN_SEED,
+                formal=self.formal,
             )
             try:
                 loaded_count = independent.load_checkpoint_state(deepcopy(state))
@@ -880,7 +1018,44 @@ class V023TwoRouteSourceTrainingRunner:
             raise V023TwoRouteSourceTrainingRunnerError(
                 "installed orchestrator state is not exact"
             )
+        self.update_ledger_rows = deepcopy(checkpoint["update_ledger_rows"])
         self.output_root = root
+
+    def resume_from_root(self, output_root: str | Path) -> Path:
+        root = Path(output_root)
+        _reject_test(root, field="resume output path")
+        if (not self.formal) != ("REHEARSAL-NONFORMAL" in root.name.upper()):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "resume root formal mode/name mismatch"
+            )
+        if root.is_symlink() or not root.is_dir():
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "resume output root must be an existing non-symlink directory"
+            )
+        allowed_names = {
+            _checkpoint_path(root, epoch).name for epoch in self.checkpoint_epochs
+        }
+        observed = list((root / "checkpoints").glob("*.runner.pt"))
+        if any(
+            path.name not in allowed_names or path.is_symlink() or not path.is_file()
+            for path in observed
+        ):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "resume output root contains an unauthorized checkpoint"
+            )
+        existing = [
+            epoch
+            for epoch in self.checkpoint_epochs
+            if _checkpoint_path(root, epoch).is_file()
+            and not _checkpoint_path(root, epoch).is_symlink()
+        ]
+        if not existing:
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "resume output root has no authorized checkpoint"
+            )
+        path = _checkpoint_path(root, max(existing))
+        self.resume_from_checkpoint(path)
+        return path
 
 
 def _parse_factory_spec(specification: str) -> Callable[[], object]:
@@ -936,7 +1111,9 @@ def _load_model_config(path: str | Path) -> EEAxisTwoRouteConfig:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-root", required=True)
+    destination = parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument("--output-root")
+    destination.add_argument("--resume", metavar="OUTPUT_ROOT")
     parser.add_argument("--epochs", required=True, type=int)
     parser.add_argument("--provider-factory", required=True, metavar="MODULE:CALLABLE")
     parser.add_argument("--model-config-json", required=True)
@@ -944,6 +1121,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--authority-sha256", required=True)
     parser.add_argument("--code-sha256", required=True)
     parser.add_argument("--input-sha256", required=True)
+    parser.add_argument("--nonformal", action="store_true")
     parser.add_argument("--execute", action="store_true", required=True)
     return parser
 
@@ -951,10 +1129,26 @@ def build_parser() -> argparse.ArgumentParser:
 def preflight_from_args(arguments: argparse.Namespace) -> V023TwoRouteSourceTrainingRunner:
     if not arguments.execute:
         raise V023TwoRouteSourceTrainingRunnerError("--execute is required")
-    output_root = Path(arguments.output_root)
+    resume_root = getattr(arguments, "resume", None)
+    output_value = resume_root or getattr(arguments, "output_root", None)
+    if output_value is None:
+        raise V023TwoRouteSourceTrainingRunnerError(
+            "exactly one of --output-root or --resume is required"
+        )
+    output_root = Path(output_value)
     _reject_test(output_root, field="output path")
-    if output_root.exists() or output_root.is_symlink():
-        raise V023TwoRouteSourceTrainingRunnerError("output root must be absent")
+    nonformal = bool(getattr(arguments, "nonformal", False))
+    if nonformal != ("REHEARSAL-NONFORMAL" in output_root.name.upper()):
+        raise V023TwoRouteSourceTrainingRunnerError(
+            "--nonformal requires an output-root basename containing REHEARSAL-NONFORMAL"
+        )
+    if resume_root is None:
+        if output_root.exists() or output_root.is_symlink():
+            raise V023TwoRouteSourceTrainingRunnerError("output root must be absent")
+    elif output_root.is_symlink() or not output_root.is_dir():
+        raise V023TwoRouteSourceTrainingRunnerError(
+            "resume output root must be an existing non-symlink directory"
+        )
     model_config = _load_model_config(arguments.model_config_json)
     if arguments.train_seed != FORMAL_TRAIN_SEED:
         raise V023TwoRouteSourceTrainingRunnerError(
@@ -973,10 +1167,21 @@ def preflight_from_args(arguments: argparse.Namespace) -> V023TwoRouteSourceTrai
         ) from error
     config = FrozenSourceTrainingConfig(
         epoch_budget=arguments.epochs,
-        orchestrator_config=V023TwoRouteOrchestratorConfig.formal(
-            model_config=model_config,
-            train_seed=arguments.train_seed,
-            model_config_sha256=FROZEN_MODEL_CONFIG_SHA256,
+        orchestrator_config=(
+            V023TwoRouteOrchestratorConfig(
+                model_config=model_config,
+                train_seed=arguments.train_seed,
+                model_config_sha256=FROZEN_MODEL_CONFIG_SHA256,
+                lineage="v023-c1c2-successor-REHEARSAL-NONFORMAL",
+                checkpoint_cadence_updates=NONFORMAL_CHECKPOINT_UPDATES,
+                formal_use=False,
+            )
+            if nonformal
+            else V023TwoRouteOrchestratorConfig.formal(
+                model_config=model_config,
+                train_seed=arguments.train_seed,
+                model_config_sha256=FROZEN_MODEL_CONFIG_SHA256,
+            )
         ),
         provider_factory_spec=arguments.provider_factory,
         authority_digests=RunAuthorityDigests(
@@ -992,7 +1197,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         arguments = parser.parse_args(argv)
         runner = preflight_from_args(arguments)
-        runner.begin_new(arguments.output_root)
+        if arguments.resume:
+            runner.resume_from_root(arguments.resume)
+        else:
+            runner.begin_new(arguments.output_root)
         runner.run()
     except V023TwoRouteSourceTrainingRunnerError as error:
         parser.error(str(error))
@@ -1005,7 +1213,8 @@ if __name__ == "__main__":
 
 __all__ = [
     "ARMS", "CHECKPOINT_SCHEMA", "CLAIM_CEILING", "FORMAL_CHECKPOINT_EPOCHS",
-    "FORMAL_CHECKPOINT_UPDATES", "FrozenSourceTrainingConfig", "ROUTES", "RUNNER_SCHEMA",
+    "FORMAL_CHECKPOINT_UPDATES", "NONFORMAL_CHECKPOINT_EPOCHS",
+    "NONFORMAL_CHECKPOINT_UPDATES", "FrozenSourceTrainingConfig", "ROUTES", "RUNNER_SCHEMA",
     "RunAuthorityDigests", "SOURCE_MAP", "SOURCE_SPLIT", "SUPPORTED_EPOCH_BUDGETS",
     "UPDATES_PER_EPOCH", "V023TwoRouteSourceTrainingRunner",
     "EPOCH_100_INTEGRITY_DECISION", "FORMAL_TRAIN_SEED",

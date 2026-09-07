@@ -6,7 +6,10 @@ from argparse import Namespace
 from copy import deepcopy
 import importlib
 import json
+import multiprocessing
+import os
 from pathlib import Path
+import signal
 import sys
 from typing import Any
 
@@ -146,16 +149,27 @@ def test_factory_identity_still_rejects_semantic_c3(
         )
 
 
-def _runner_config(provider: object, *, budget: int = 100):
+def _runner_config(provider: object, *, budget: int = 100, formal: bool = True):
     payload = provider.provider_identity_payload
     target = payload["arm_independent_target_identity"]
     model_config = RUNNER._load_model_config(MODEL_CONFIG_PATH)
     return RUNNER.FrozenSourceTrainingConfig(
         epoch_budget=budget,
-        orchestrator_config=ORCH.V023TwoRouteOrchestratorConfig.formal(
-            model_config=model_config,
-            train_seed=RUNNER.FORMAL_TRAIN_SEED,
-            model_config_sha256=RUNNER.FROZEN_MODEL_CONFIG_SHA256,
+        orchestrator_config=(
+            ORCH.V023TwoRouteOrchestratorConfig.formal(
+                model_config=model_config,
+                train_seed=RUNNER.FORMAL_TRAIN_SEED,
+                model_config_sha256=RUNNER.FROZEN_MODEL_CONFIG_SHA256,
+            )
+            if formal
+            else ORCH.V023TwoRouteOrchestratorConfig(
+                model_config=model_config,
+                train_seed=RUNNER.FORMAL_TRAIN_SEED,
+                model_config_sha256=RUNNER.FROZEN_MODEL_CONFIG_SHA256,
+                lineage="runner-REHEARSAL-NONFORMAL",
+                checkpoint_cadence_updates=RUNNER.NONFORMAL_CHECKPOINT_UPDATES,
+                formal_use=False,
+            )
         ),
         provider_factory_spec="v023_c1c2_provider_factory_v3:make_provider",
         authority_digests=RUNNER.RunAuthorityDigests(
@@ -169,6 +183,16 @@ def _runner_config(provider: object, *, budget: int = 100):
 
 def _assert_tree_identical(left: Any, right: Any) -> None:
     assert RUNNER._tree_equal(left, right)
+
+
+def _run_nonformal_then_sigkill(root: str, stop_epoch: int) -> None:
+    provider = FACTORY.make_provider()
+    runner = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider, formal=False), provider
+    )
+    runner.begin_new(root)
+    runner.run_to_epoch(stop_epoch)
+    os.kill(os.getpid(), signal.SIGKILL)
 
 
 def test_authenticated_real_a_to_b_boundary_and_cycle(authenticated_boundary):
@@ -366,6 +390,107 @@ def test_epoch_100_independent_restore_exports_and_terminal_integrity(
     _assert_tree_identical(
         resumed.orchestrator.checkpoint_state(), checkpoint["orchestrator_state"]
     )
+
+
+def test_nonformal_resume_is_bitwise_exact_at_boundary_and_nonboundary(
+    authenticated_boundary, tmp_path
+):
+    reference_provider = _provider(authenticated_boundary)
+    reference = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(reference_provider, formal=False), reference_provider
+    )
+    reference.begin_new(tmp_path / "reference-REHEARSAL-NONFORMAL")
+    reference.run()
+    expected = reference.orchestrator.checkpoint_state()
+
+    for stopped_epoch in (40, 43):
+        root = tmp_path / f"interrupted-{stopped_epoch}-REHEARSAL-NONFORMAL"
+        process = multiprocessing.get_context("fork").Process(
+            target=_run_nonformal_then_sigkill,
+            args=(str(root), stopped_epoch),
+        )
+        process.start()
+        process.join(timeout=120)
+        assert process.exitcode == -signal.SIGKILL
+
+        resumed_provider = _provider(authenticated_boundary)
+        resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+            _runner_config(resumed_provider, formal=False), resumed_provider
+        )
+        selected = resumed.resume_from_root(root)
+        assert selected.name == "epoch-0040.runner.pt"
+        assert resumed.completed_epochs == 40
+        resumed.run()
+        _assert_tree_identical(expected, resumed.orchestrator.checkpoint_state())
+
+        checkpoint = RUNNER._read_torch(root / "checkpoints/epoch-0100.runner.pt")
+        assert checkpoint["formal"] is False
+        assert len(checkpoint["update_ledger_rows"]) == 200
+        assert all(
+            state["formal"] is False
+            for state in checkpoint["models_and_optimizers"].values()
+        )
+
+
+def test_formal_resume_before_epoch_100_selects_only_epoch_zero(
+    authenticated_boundary, tmp_path
+):
+    provider = _provider(authenticated_boundary)
+    interrupted = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider), provider
+    )
+    root = tmp_path / "formal-interrupted"
+    interrupted.begin_new(root)
+    interrupted.run_to_epoch(43)
+    assert sorted(path.name for path in (root / "checkpoints").glob("*.runner.pt")) == [
+        "epoch-0000.runner.pt"
+    ]
+
+    resumed_provider = _provider(authenticated_boundary)
+    resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(resumed_provider), resumed_provider
+    )
+    selected = resumed.resume_from_root(root)
+    assert selected.name == "epoch-0000.runner.pt"
+    assert resumed.completed_epochs == 0
+
+
+def test_runner_cli_resume_entry_delegates_to_validated_root_resume(
+    monkeypatch, tmp_path
+):
+    root = tmp_path / "cli-REHEARSAL-NONFORMAL"
+    root.mkdir()
+    observed: dict[str, object] = {}
+
+    class StubRunner:
+        def resume_from_root(self, value):
+            observed["resume"] = value
+
+        def run(self):
+            observed["run"] = True
+
+    def fake_preflight(arguments):
+        observed["nonformal"] = arguments.nonformal
+        return StubRunner()
+
+    monkeypatch.setattr(RUNNER, "preflight_from_args", fake_preflight)
+    assert RUNNER.main(
+        [
+            "--resume", str(root), "--epochs", "100",
+            "--provider-factory", "provider:factory",
+            "--model-config-json", "model.json",
+            "--train-seed", str(RUNNER.FORMAL_TRAIN_SEED),
+            "--authority-sha256", "0" * 64,
+            "--code-sha256", "1" * 64,
+            "--input-sha256", "2" * 64,
+            "--nonformal", "--execute",
+        ]
+    ) == 0
+    assert observed == {
+        "nonformal": True,
+        "resume": str(root),
+        "run": True,
+    }
 
 
 def test_mutations_reject_fallback_identity_digests_and_budget(

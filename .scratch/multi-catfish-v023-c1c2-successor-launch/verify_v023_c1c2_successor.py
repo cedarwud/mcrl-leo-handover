@@ -27,6 +27,8 @@ from successor_launch_common import (
 SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-source-training-verification-v1"
 PASS = "PASS_SOURCE_TRAINING_INTEGRITY"
 STOP = "STOP_SOURCE_TRAINING_INTEGRITY"
+NONFORMAL_PASS = "NONFORMAL_RECONSTRUCTION_PASS"
+NONFORMAL_FAIL = "NONFORMAL_RECONSTRUCTION_FAIL"
 LEDGER_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-update-ledger-v1"
 
 
@@ -102,12 +104,12 @@ def _load_modules(repo: Path) -> tuple[Any, Any]:
     )
 
 
-def _validate_ledger(root: Path) -> dict[str, Any]:
+def _validate_ledger(root: Path, *, expected_formal: bool) -> dict[str, Any]:
     ledger = _runner_json(root / "update-ledger.json", field="update ledger")
     if (
         ledger.get("schema") != LEDGER_SCHEMA
         or ledger.get("claim_ceiling") != CLAIM_CEILING
-        or ledger.get("formal") is not True
+        or ledger.get("formal") is not expected_formal
         or ledger.get("arm_order") != list(ARM_ORDER)
         or ledger.get("route_order") != list(ROUTE_ORDER)
         or ledger.get("completed_epochs") != 100
@@ -189,18 +191,28 @@ def _storage_isolation(rebuilt: Any) -> None:
 def verify_output(
     *, repo: Path, output_root: Path, provider_config_path: Path,
     model_config_path: Path, preflight_receipt_path: Path,
-    reconstruct: bool = True,
+    reconstruct: bool = True, nonformal: bool = False,
 ) -> dict[str, Any]:
     if reconstruct is not True:
         raise VerificationError("independent reconstruction is required for PASS")
     root = output_root
     if root.is_symlink() or not root.is_dir():
         raise VerificationError("finished output root is missing or symlinked")
-    if "REHEARSAL-NONFORMAL" in str(root).upper():
+    expected_formal = not nonformal
+    rehearsal_named = "REHEARSAL-NONFORMAL" in root.name.upper()
+    if nonformal and not rehearsal_named:
+        raise VerificationError(
+            "non-formal verification requires a REHEARSAL-NONFORMAL root"
+        )
+    if not nonformal and rehearsal_named:
         raise VerificationError("non-formal rehearsal roots cannot pass formal verification")
     _verify_existing_seal(root)
+    if nonformal and any((root / name).exists() for name in ("MANIFEST.sha256", "COMPLETE")):
+        raise VerificationError("non-formal rehearsal roots cannot carry a formal completion seal")
     status = _runner_json(root / "canonical-status.json", field="canonical status")
     receipt = _runner_json(root / "canonical-receipt.json", field="canonical receipt")
+    if status.get("formal") is not expected_formal or receipt.get("formal") is not expected_formal:
+        raise VerificationError("runner status/receipt formal mode drifted")
     expected_header = {
         "claim_ceiling": CLAIM_CEILING, "source_split": "SOURCE_TRAIN",
         "arm_order": list(ARM_ORDER), "route_order": list(ROUTE_ORDER),
@@ -217,15 +229,24 @@ def verify_output(
     if not isinstance(config, Mapping) or config.get("epoch_budget") != EPOCH_BUDGET:
         raise VerificationError("runner formal config drifted")
     orchestrator_config = config.get("orchestrator_config")
-    if not isinstance(orchestrator_config, Mapping) or orchestrator_config.get("train_seed") != TRAIN_SEED:
+    expected_cadence = 200 if expected_formal else 20
+    if (
+        not isinstance(orchestrator_config, Mapping)
+        or orchestrator_config.get("train_seed") != TRAIN_SEED
+        or orchestrator_config.get("formal_use") is not expected_formal
+        or orchestrator_config.get("checkpoint_cadence_updates") != expected_cadence
+        or status.get("checkpoint_cadence_updates") != expected_cadence
+    ):
         raise VerificationError("runner train seed drifted")
     _assert_no_closed_path((status, receipt), field="runner receipts")
-    ledger = _validate_ledger(root)
+    ledger = _validate_ledger(root, expected_formal=expected_formal)
     provenance = _runner_json(
-        root / "formal-provenance.json", field="formal provenance"
+        root
+        / ("formal-provenance.json" if expected_formal else "nonformal-provenance.json"),
+        field="run provenance",
     )
-    if provenance.get("formal") is not True:
-        raise VerificationError("formal:false provenance cannot pass or seal")
+    if provenance.get("formal") is not expected_formal:
+        raise VerificationError("run provenance formal mode drifted")
 
     # Reject a topology mutation before reading any external reconstruction
     # inputs; a fourth trained arm is an intrinsic defect in the output root.
@@ -246,7 +267,7 @@ def verify_output(
     if (
         preflight.get("schema") != "multi-catfish-mcrl-v023-c1c2-successor-preflight-v1"
         or preflight.get("status") != "PASS_FROZEN_C1C2_SUCCESSOR_PREFLIGHT"
-        or preflight.get("formal") is not True
+        or preflight.get("formal") is not expected_formal
     ):
         raise VerificationError("preflight receipt is not PASS")
     try:
@@ -286,8 +307,12 @@ def verify_output(
     if config.get("provider_config_sha256") != provider_config_sha:
         raise VerificationError("runner provider config digest drifted")
     expected_provenance = {
-        "schema": "multi-catfish-mcrl-v023-c1c2-successor-formal-provenance-v1",
-        "formal": True,
+        "schema": (
+            "multi-catfish-mcrl-v023-c1c2-successor-formal-provenance-v1"
+            if expected_formal
+            else "multi-catfish-mcrl-v023-c1c2-successor-nonformal-provenance-v1"
+        ),
+        "formal": expected_formal,
         "preflight_receipt_sha256": file_sha256(preflight_receipt_path),
         "authority_sha256": expected_authorities["authority_sha256"],
         "learner_manifest_sha256": expected_authorities["code_sha256"],
@@ -304,14 +329,17 @@ def verify_output(
         "requested_output_root": freeze_authorities["requested_output_root"],
     }
     if provenance != expected_provenance:
-        raise VerificationError("formal provenance is not fully bound to the launch")
+        raise VerificationError("run provenance is not fully bound to the launch")
 
     checkpoints = sorted(path.name for path in (root / "checkpoints").glob("*.runner.pt"))
-    if checkpoints != ["epoch-0000.runner.pt", "epoch-0100.runner.pt"]:
-        raise VerificationError("exact epoch-0 and epoch-100 checkpoints are required")
+    checkpoint_epochs = (0, 100) if expected_formal else tuple(range(0, 101, 10))
+    expected_checkpoint_names = [f"epoch-{epoch:04d}.runner.pt" for epoch in checkpoint_epochs]
+    if checkpoints != expected_checkpoint_names:
+        raise VerificationError("checkpoint cadence/root contents drifted")
     export_manifests = sorted(path.name for path in (root / "exports").glob("epoch-*.json"))
-    if export_manifests != ["epoch-0000.json", "epoch-0100.json"]:
-        raise VerificationError("exact epoch-0 and epoch-100 export manifests are required")
+    expected_export_names = [f"epoch-{epoch:04d}.json" for epoch in checkpoint_epochs]
+    if export_manifests != expected_export_names:
+        raise VerificationError("export checkpoint cadence/root contents drifted")
     final_manifest = _runner_json(root / "exports/epoch-0100.json", field="epoch-100 export manifest")
     if final_manifest.get("arm_order") != list(ARM_ORDER) or final_manifest.get("route_order") != list(ROUTE_ORDER):
         raise VerificationError("epoch-100 export has a forbidden or fourth arm/route")
@@ -386,8 +414,11 @@ def verify_output(
         or hashlib.sha256(initialization["bytes"]).hexdigest()
         != initialization.get("sha256")
         or initialization.get("sha256") != checkpoint.get("initialization_sha256")
-        or initialization.get("sha256")
-        != input_binding.get("initialization_bytes_sha256")
+        or (
+            expected_formal
+            and initialization.get("sha256")
+            != input_binding.get("initialization_bytes_sha256")
+        )
     ):
         raise VerificationError("initialization bytes digest binding drifted")
     _finite_tree(checkpoint, field="epoch-100 checkpoint")
@@ -405,13 +436,25 @@ def verify_output(
         os.environ[factory.CONFIG_SHA256_ENV] = provider_sha
         os.environ[factory.LEARNER_MANIFEST_PATH_ENV] = str(learner_path.resolve())
         try:
-            frozen = runner_module.FrozenSourceTrainingConfig(
-                epoch_budget=100,
-                orchestrator_config=runner_module.V023TwoRouteOrchestratorConfig.formal(
+            orchestrator_config = (
+                runner_module.V023TwoRouteOrchestratorConfig.formal(
                     model_config=runner_module._load_model_config(model_config_path),
                     train_seed=TRAIN_SEED,
                     model_config_sha256=model_config_sha,
-                ),
+                )
+                if expected_formal
+                else runner_module.V023TwoRouteOrchestratorConfig(
+                    model_config=runner_module._load_model_config(model_config_path),
+                    train_seed=TRAIN_SEED,
+                    model_config_sha256=model_config_sha,
+                    lineage="v023-c1c2-successor-REHEARSAL-NONFORMAL",
+                    checkpoint_cadence_updates=runner_module.NONFORMAL_CHECKPOINT_UPDATES,
+                    formal_use=False,
+                )
+            )
+            frozen = runner_module.FrozenSourceTrainingConfig(
+                epoch_budget=100,
+                orchestrator_config=orchestrator_config,
                 provider_factory_spec="v023_c1c2_provider_factory_v3:make_provider",
                 authority_digests=runner_module.RunAuthorityDigests(
                     preflight["authority_sha256"], preflight["code_sha256"], preflight["input_sha256"]
@@ -419,7 +462,7 @@ def verify_output(
                 provider_config_sha256=provider_config_sha,
             )
             rebuilt = None
-            for epoch in (0, 100):
+            for epoch in checkpoint_epochs:
                 provider = factory.make_provider()
                 candidate = runner_module.V023TwoRouteSourceTrainingRunner(frozen, provider)
                 candidate.resume_from_checkpoint(
@@ -442,8 +485,10 @@ def verify_output(
                     os.environ[key] = value
 
     return {
-        "schema": SCHEMA, "status": PASS, "claim_ceiling": CLAIM_CEILING,
-        "formal": True, "arm_order": list(ARM_ORDER), "route_order": list(ROUTE_ORDER),
+        "schema": SCHEMA,
+        "status": PASS if expected_formal else NONFORMAL_PASS,
+        "claim_ceiling": CLAIM_CEILING,
+        "formal": expected_formal,
         "completed_epochs": 100, "completed_updates": 200,
         "finite_update_receipts": len(ledger["updates"]),
         "initialization_sha256": checkpoint["initialization_sha256"],
@@ -474,7 +519,8 @@ def decision_for_output(**kwargs: Any) -> dict[str, Any]:
     try:
         return verify_output(**kwargs)
     except Exception as error:
-        return {"schema": SCHEMA, "status": STOP, "error": f"{type(error).__name__}: {error}"}
+        status = NONFORMAL_FAIL if kwargs.get("nonformal") else STOP
+        return {"schema": SCHEMA, "status": status, "error": f"{type(error).__name__}: {error}"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -485,6 +531,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-config", type=Path, required=True)
     parser.add_argument("--preflight-receipt", type=Path, required=True)
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--nonformal", action="store_true")
     parser.add_argument("--no-reconstruct", action="store_true", help=argparse.SUPPRESS)
     arguments = parser.parse_args(argv)
     try:
@@ -494,13 +541,22 @@ def main(argv: list[str] | None = None) -> int:
             model_config_path=arguments.model_config,
             preflight_receipt_path=arguments.preflight_receipt,
             reconstruct=not arguments.no_reconstruct,
+            nonformal=arguments.nonformal,
         )
         if arguments.write:
-            _seal(arguments.output_root, result)
-        print(f"{PASS} updates=200 arms=3 exact_resume={result['exact_epoch_100_resume']}")
+            if arguments.nonformal:
+                write_once(
+                    arguments.output_root / "nonformal-verification.json",
+                    canonical_bytes(result),
+                )
+            else:
+                _seal(arguments.output_root, result)
+        success = NONFORMAL_PASS if arguments.nonformal else PASS
+        print(f"{success} updates=200 arms=3 exact_resume={result['exact_epoch_100_resume']}")
         return 0
     except Exception as error:
-        print(f"{STOP}: {type(error).__name__}: {error}", file=sys.stderr)
+        failure = NONFORMAL_FAIL if arguments.nonformal else STOP
+        print(f"{failure}: {type(error).__name__}: {error}", file=sys.stderr)
         return 3
 
 
