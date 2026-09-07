@@ -34,5 +34,6 @@
 | 09-07 19:15 | stage-A runner checkpoint bytes | not byte-reproducible after `--resume` (pickle string identity) → receipt digests differ | V2 rerun #4 drill | fix pass 6 |
 | 09-07 19:50 | stage-A runner stale temps | export-manifest atomic temp matches the 'invalid unless dir' glob → kill inside the manifest write leaves an unresumable root (T); killed checkpoint temp survives and the verifier passes the root (S) | V2 rerun #5 drill | fix pass 7 |
 | 09-07 20:33 | stage-C acceptance gate | acceptance script compares stripped vs unstripped sides (never passes); 2×50 rehearsal reads merged artifacts the merge never emits — zero test coverage of the launch gate | operator verification (local reproduction) | fix pass 3; would have blocked stage C at launch |
+| 09-07 22:12 | stage-C admission/verifier | stage-A PASS lives under `epoch_100_integrity.decision`, stage-C reads a top-level field (E2); barrier accepts empty receipts (E3); verifier ignores the supplement (E4); arm order by dict insertion vs sorted canonical JSON (E5) | astra final read-only audit with targeted probes | fix pass 4 dispatched; would have blocked stage B/C admission |
 
 Pattern: defects found by launching cost 40 min–22 h each; the same classes found by offline probes, import smokes and read-only audits cost 30 s–8 min. Every new defect is appended here with the same five columns.
