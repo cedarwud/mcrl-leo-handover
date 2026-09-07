@@ -22,9 +22,15 @@ states. The loader rejects predecessor three-route checkpoints and Q3/C3 state.
 
 The runner writes canonical status, epoch-0 and epoch-100 runner checkpoints,
 three exports in fixed arm order at both epochs, checkpoint receipts, digest
-sidecars, and a final receipt exactly once. Resume authenticates the status,
-checkpoint, provider identity and sampler state, arm/route/source mapping, and
-exports before restoring. The CLI is:
+sidecars, and a final receipt exactly once. Formal construction authenticates
+the frozen model JSON and seed, admits only a digest-verifiable factory-v3
+identity, and cross-binds the authority, learner-code manifest, r8 manifest,
+provider-config and model-config digests before constructing any learner.
+Resume validates complete arm/export state, route counts, consumed-file
+history, exact Adam defaults and finite optimizer state before installation.
+Before the terminal receipt, epoch 100 is restored into independent provider,
+sampler, model and optimizer objects and all exports are reloaded exactly; the
+receipt records that integrity decision. The CLI is:
 
 ```text
 --output-root --epochs --provider-factory MODULE:CALLABLE

@@ -62,6 +62,7 @@ ROUTES = ("C1", "C2")
 SOURCES = ("neutral", "informed")
 EXPECTED_WORLDS = tuple(range(2026121705, 2026121713))
 TRAIN_SEED = 2927175120652069826
+MODEL_CONFIG_SHA256 = "9eafcd184bd0ec015498832be61b5c95a71373e98f63ab804c9654775a8b1d5d"
 EPOCH_BUDGET = 100
 EXPECTED_LAMBDA_HEX = "0x1.c3c0a7b6b86d3p+26"
 EXPECTED_KAPPA_HEX = "0x1.2cea89d260f2ap+33"
@@ -90,6 +91,16 @@ _FORBIDDEN_TOKEN_RE = re.compile(r"(?<![a-z0-9])(r7|c3|q3)(?![a-z0-9])", re.I)
 # manifest may add executing Python modules, but it may not omit any item here.
 REQUIRED_LEARNER_RUNTIME_MODULES = MappingProxyType(
     {
+        ".scratch/multi-catfish-v023-two-route-source-training-runner/"
+        "ee_axis_two_route_model.py": "ee_axis_two_route_model",
+        ".scratch/multi-catfish-v023-two-route-source-training-runner/"
+        "v023_two_route_learner_orchestrator.py":
+            "v023_two_route_learner_orchestrator",
+        ".scratch/multi-catfish-v023-two-route-source-training-runner/"
+        "v023_two_route_source_training_runner.py":
+            "v023_two_route_source_training_runner",
+        ".scratch/multi-catfish-v023-heterogeneous-trainer/"
+        "v023_heterogeneous_trainer.py": "v023_heterogeneous_trainer",
         "src/mcrl/errors.py": "mcrl.errors",
         "src/mcrl/env/action_contract.py": "mcrl.env.action_contract",
         "src/mcrl/runtime/finiteness.py": "mcrl.runtime.finiteness",
@@ -98,6 +109,8 @@ REQUIRED_LEARNER_RUNTIME_MODULES = MappingProxyType(
             "mcrl.algorithms.ee_axis_pairwise",
         "src/mcrl/algorithms/ee_axis_action_shared.py":
             "mcrl.algorithms.ee_axis_action_shared",
+        "src/mcrl/algorithms/ee_axis_lcsrs_three_route.py":
+            "mcrl.algorithms.ee_axis_lcsrs_three_route",
         "src/mcrl/runtime/ee_axis_ops3.py": "mcrl.runtime.ee_axis_ops3",
         "src/mcrl/runtime/ee_axis_v014_q2_state.py":
             "mcrl.runtime.ee_axis_v014_q2_state",
@@ -268,6 +281,8 @@ class C1C2ProviderConfig:
         _forbidden_text(str(self.target_root), field="config target_root")
         if type(self.train_seed) is not int or self.train_seed != TRAIN_SEED:
             _fail(f"config train_seed must be exactly {TRAIN_SEED}")
+        if self.model_config_sha256 != MODEL_CONFIG_SHA256:
+            _fail("config model_config_sha256 must bind the frozen successor JSON")
         if type(self.epoch_budget) is not int or self.epoch_budget != EPOCH_BUDGET:
             _fail(f"config epoch_budget must be exactly {EPOCH_BUDGET}")
 
@@ -321,7 +336,7 @@ class C1C2ProviderConfig:
         }
 
 
-def _config_from_environment() -> C1C2ProviderConfig:
+def _config_from_environment() -> tuple[C1C2ProviderConfig, str]:
     path_text = os.environ.get(CONFIG_PATH_ENV)
     expected_text = os.environ.get(CONFIG_SHA256_ENV)
     if not path_text or not expected_text:
@@ -330,8 +345,11 @@ def _config_from_environment() -> C1C2ProviderConfig:
     expected = _digest(expected_text, field=CONFIG_SHA256_ENV)
     if _file_sha256(config_path, field="successor provider config") != expected:
         _fail("successor provider config SHA-256 disagrees")
-    return C1C2ProviderConfig.from_payload(
-        _read_canonical_json(config_path, field="successor provider config")
+    return (
+        C1C2ProviderConfig.from_payload(
+            _read_canonical_json(config_path, field="successor provider config")
+        ),
+        expected,
     )
 
 
@@ -599,16 +617,12 @@ def _authenticate_learner_manifest(
         expected_path = (REPO / relative).resolve(strict=False)
         if not expected_path.is_relative_to(REPO):
             _fail("successor learner runtime escaped the checkout")
-        if expected_module is not None:
-            try:
-                module = importlib.import_module(module_name)
-            except Exception as cause:
-                _fail(f"cannot import learner runtime module {module_name}", cause=cause)
-        else:
-            candidate = sys.modules.get(module_name)
-            if not isinstance(candidate, ModuleType):
-                _fail(f"additional learner runtime module is not loaded: {module_name}")
-            module = candidate
+        try:
+            module = _import_exact_module(module_name, expected_path)
+        except (OSError, V023C1C2ProviderFactoryError):
+            raise
+        except Exception as cause:
+            _fail(f"cannot import learner runtime module {module_name}", cause=cause)
         if module_name in seen_modules:
             _fail("successor learner manifest repeats a module name")
         seen_modules.add(module_name)
@@ -948,7 +962,11 @@ class V023C1C2Provider:
         self._consumed_file_order = deepcopy(consumed)
 
 
-def build_provider(config: C1C2ProviderConfig) -> V023C1C2Provider:
+def build_provider(
+    config: C1C2ProviderConfig,
+    *,
+    authenticated_config_sha256: str | None = None,
+) -> V023C1C2Provider:
     if type(config) is not C1C2ProviderConfig:
         _fail("build_provider requires C1C2ProviderConfig")
     root = config.target_root
@@ -992,6 +1010,13 @@ def build_provider(config: C1C2ProviderConfig) -> V023C1C2Provider:
         for route in ROUTES
         for source in SOURCES
     ]
+    provider_config_sha256 = (
+        hashlib.sha256(_canonical_bytes(config.payload())).hexdigest()
+        if authenticated_config_sha256 is None
+        else _digest(
+            authenticated_config_sha256, field="authenticated provider config"
+        )
+    )
     identity_payload = {
         "schema": IDENTITY_SCHEMA,
         "routes": list(ROUTES),
@@ -1000,7 +1025,7 @@ def build_provider(config: C1C2ProviderConfig) -> V023C1C2Provider:
         "epoch_budget": config.epoch_budget,
         "contract_sha256": config.contract_sha256,
         "model_config_sha256": config.model_config_sha256,
-        "provider_config_sha256": _canonical_sha256(config.payload()),
+        "provider_config_sha256": provider_config_sha256,
         "factory_code_sha256": _file_sha256(
             Path(__file__).resolve(), field="provider factory code"
         ),
@@ -1039,7 +1064,10 @@ def build_provider(config: C1C2ProviderConfig) -> V023C1C2Provider:
 def make_provider() -> V023C1C2Provider:
     """Zero-argument runner entry point for ``MODULE:CALLABLE`` loading."""
 
-    return build_provider(_config_from_environment())
+    config, config_sha256 = _config_from_environment()
+    return build_provider(
+        config, authenticated_config_sha256=config_sha256
+    )
 
 
 __all__ = [
@@ -1057,6 +1085,7 @@ __all__ = [
     "LEARNER_MANIFEST_PATH_ENV",
     "LEARNER_MANIFEST_SCHEMA",
     "LEARNER_MANIFEST_STATUS",
+    "MODEL_CONFIG_SHA256",
     "ProvidedRouteBatch",
     "REQUIRED_LEARNER_RUNTIME_MODULES",
     "ROUTES",

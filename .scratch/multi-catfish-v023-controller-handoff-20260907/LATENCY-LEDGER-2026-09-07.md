@@ -18,5 +18,6 @@
 | 09-07 14:44 | V3 stage-B rehearsal | frozen baseline adapter rejects `UserState.contract_fields` that the live env now always populates → BASELINE cannot be evaluated (class (b)); learned-arm plumbing clean | first stage-B rehearsal with fresh models | ~20 min to find; fix on server codex with encoding-invariance test |
 | 09-07 14:44 | V3 stage-B rehearsal | baseline artifacts `artifacts/training-2026-08-25-rerun01/main/` absent on server (closure gap) | same run | 2 min (synced) |
 | 09-07 14:52 | controller ops | r8 shard completion files are `.terminal.json`, shadow verifier watched `.complete.json`; pkill self-match killed the ssh shell twice | monitor review | ~15 min of controller time; no run impact |
+| 09-07 15:0x | heterogeneous-trainer tests | 3 stale tests build a plain `EEAxisPairBatch` for C2 while `update_c2` correctly requires `EEAxisV014NormalizedPairBatch` (pre-448 test debt) | server + local pytest via the closure agent | fix (tests only) dispatched; module untouched |
 
 Pattern: defects found by launching cost 40 min–22 h each; the same classes found by offline probes, import smokes and read-only audits cost 30 s–8 min. Every new defect is appended here with the same five columns.

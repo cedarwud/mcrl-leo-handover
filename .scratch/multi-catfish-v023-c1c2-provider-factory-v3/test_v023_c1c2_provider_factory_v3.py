@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import replace
 from functools import lru_cache
 import hashlib
-import importlib.util
+import importlib
 import json
 from pathlib import Path
 import shutil
@@ -78,28 +78,26 @@ def _canonical(payload: object) -> bytes:
     )
 
 
-def _load_path_module(name: str, path: Path):
-    existing = sys.modules.get(name)
-    if existing is not None:
-        return existing
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
+def _load_path_module(path: Path):
+    natural_name = path.stem
+    directory = str(path.parent)
+    sys.path.insert(0, directory)
+    try:
+        module = importlib.import_module(natural_name)
+    finally:
+        sys.path.remove(directory)
+    assert Path(module.__file__).resolve() == path.resolve()
     return module
 
 
 @lru_cache(maxsize=1)
 def _producer_modules():
     controller = _load_path_module(
-        "v023_c1c2_v3_fixture_controller",
         LAUNCH_DIR / "run_v023_c1c2_targets_server.py",
     )
     generator = controller._load_generator()
     assert Path(generator.__file__).resolve() == GENERATOR_PATH.resolve()
     sealer = _load_path_module(
-        "v023_c1c2_v3_fixture_sealer",
         LAUNCH_DIR / "seal_v023_c1c2_target_output.py",
     )
     return generator, controller, sealer
@@ -392,7 +390,7 @@ def _config_payload(target: Path, learner_manifest: Path) -> dict[str, object]:
         "target_manifest_sha256": _sha_file(target / "MANIFEST.sha256"),
         "target_receipt_sha256": _sha_file(target / "receipt.json"),
         "learner_manifest_sha256": _sha_file(learner_manifest),
-        "model_config_sha256": _digest("successor-model-config"),
+        "model_config_sha256": FACTORY.MODEL_CONFIG_SHA256,
         "train_seed": FACTORY.TRAIN_SEED,
         "epoch_budget": FACTORY.EPOCH_BUDGET,
     }
@@ -406,6 +404,33 @@ def _provider(monkeypatch, target: Path, learner_manifest: Path):
         _config_payload(target, learner_manifest)
     )
     return FACTORY.build_provider(config)
+
+
+def test_frozen_model_seed_and_complete_successor_closure_are_required():
+    assert FACTORY.TRAIN_SEED == 2927175120652069826
+    assert FACTORY.MODEL_CONFIG_SHA256 == (
+        "9eafcd184bd0ec015498832be61b5c95a71373e98f63ab804c9654775a8b1d5d"
+    )
+    required = FACTORY.REQUIRED_LEARNER_RUNTIME_MODULES
+    assert required[
+        ".scratch/multi-catfish-v023-two-route-source-training-runner/"
+        "ee_axis_two_route_model.py"
+    ] == "ee_axis_two_route_model"
+    assert required[
+        ".scratch/multi-catfish-v023-two-route-source-training-runner/"
+        "v023_two_route_learner_orchestrator.py"
+    ] == "v023_two_route_learner_orchestrator"
+    assert required[
+        ".scratch/multi-catfish-v023-two-route-source-training-runner/"
+        "v023_two_route_source_training_runner.py"
+    ] == "v023_two_route_source_training_runner"
+    assert required[
+        ".scratch/multi-catfish-v023-heterogeneous-trainer/"
+        "v023_heterogeneous_trainer.py"
+    ] == "v023_heterogeneous_trainer"
+    assert required["src/mcrl/algorithms/ee_axis_lcsrs_three_route.py"] == (
+        "mcrl.algorithms.ee_axis_lcsrs_three_route"
+    )
 
 
 def _call(provider, cursor: int, route: str):
@@ -553,4 +578,6 @@ def test_make_provider_uses_digest_bound_environment_config(
     )
     provider = FACTORY.make_provider()
     assert provider.planned_epoch_budget == FACTORY.EPOCH_BUDGET
-
+    assert provider.provider_identity_payload["provider_config_sha256"] == (
+        _sha_file(config_path)
+    )

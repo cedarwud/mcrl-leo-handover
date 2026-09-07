@@ -1,8 +1,8 @@
-"""Focused positive, continuation, parity, and mutation tests."""
+"""Producer-bound admission, lifecycle, resume, and mutation tests."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from argparse import Namespace
 from copy import deepcopy
 import importlib
 import json
@@ -16,13 +16,24 @@ import torch
 
 
 HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+REPO = HERE.parents[1]
+PROVIDER_DIR = HERE.parent / "multi-catfish-v023-c1c2-provider-factory-v3"
+for directory in (HERE, PROVIDER_DIR):
+    if str(directory) not in sys.path:
+        sys.path.insert(0, str(directory))
 
 import ee_axis_two_route_model as MODEL
+import test_v023_c1c2_provider_factory_v3 as PRODUCER_FIXTURE
+import v023_c1c2_provider_factory_v3 as FACTORY
 import v023_two_route_learner_orchestrator as ORCH
 import v023_two_route_source_training_runner as RUNNER
-from v023_two_route_test_helpers import c1_batch, c2_batch, model_config, stub_provider
+
+
+MODEL_CONFIG_PATH = (
+    REPO
+    / ".scratch/multi-catfish-v023-c1c2-successor/"
+    "V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -33,178 +44,242 @@ def _single_torch_thread():
     torch.set_num_threads(previous)
 
 
-def _runner_config(*, budget: int = 100) -> RUNNER.FrozenSourceTrainingConfig:
+@pytest.fixture(scope="module")
+def monkeypatch_module():
+    patch = pytest.MonkeyPatch()
+    yield patch
+    patch.undo()
+
+
+@pytest.fixture(scope="module")
+def authenticated_boundary(tmp_path_factory, monkeypatch_module):
+    base = tmp_path_factory.mktemp("two-route-producer-boundary")
+    target = PRODUCER_FIXTURE._write_artifact(base / "targets")
+    learner_manifest = PRODUCER_FIXTURE._write_learner_manifest(
+        base / "learner-manifest.json"
+    )
+    provider_config = base / "provider-config.json"
+    provider_config.write_bytes(
+        PRODUCER_FIXTURE._canonical(
+            PRODUCER_FIXTURE._config_payload(target, learner_manifest)
+        )
+    )
+    monkeypatch_module.setenv(FACTORY.CONFIG_PATH_ENV, str(provider_config))
+    monkeypatch_module.setenv(
+        FACTORY.CONFIG_SHA256_ENV, PRODUCER_FIXTURE._sha_file(provider_config)
+    )
+    monkeypatch_module.setenv(
+        FACTORY.LEARNER_MANIFEST_PATH_ENV, str(learner_manifest)
+    )
+    return {
+        "target": target,
+        "learner_manifest": learner_manifest,
+        "provider_config": provider_config,
+    }
+
+
+def _provider(authenticated_boundary):
+    return FACTORY.make_provider()
+
+
+def _runner_config(provider: object, *, budget: int = 100):
+    payload = provider.provider_identity_payload
+    target = payload["arm_independent_target_identity"]
+    model_config = RUNNER._load_model_config(MODEL_CONFIG_PATH)
     return RUNNER.FrozenSourceTrainingConfig(
         epoch_budget=budget,
         orchestrator_config=ORCH.V023TwoRouteOrchestratorConfig.formal(
-            model_config=model_config(), train_seed=17
+            model_config=model_config,
+            train_seed=RUNNER.FORMAL_TRAIN_SEED,
+            model_config_sha256=RUNNER.FROZEN_MODEL_CONFIG_SHA256,
         ),
-        provider_factory_spec="fixtures:make_provider",
-        authority_digests=RUNNER.RunAuthorityDigests("a" * 64, "b" * 64, "c" * 64),
+        provider_factory_spec="v023_c1c2_provider_factory_v3:make_provider",
+        authority_digests=RUNNER.RunAuthorityDigests(
+            payload["contract_sha256"],
+            payload["learner_manifest_sha256"],
+            target["manifest_sha256"],
+        ),
+        provider_config_sha256=payload["provider_config_sha256"],
     )
 
 
 def _assert_tree_identical(left: Any, right: Any) -> None:
-    assert type(left) is type(right)
-    if isinstance(left, torch.Tensor):
-        assert torch.equal(left, right)
-    elif isinstance(left, Mapping):
-        assert tuple(left) == tuple(right)
-        for key in left:
-            _assert_tree_identical(left[key], right[key])
-    elif isinstance(left, (list, tuple)):
-        assert len(left) == len(right)
-        for first, second in zip(left, right, strict=True):
-            _assert_tree_identical(first, second)
-    else:
-        assert left == right
+    assert RUNNER._tree_equal(left, right)
 
 
-def test_cycle_order_update_counts_and_closed_source_map():
-    provider = stub_provider()
+def test_authenticated_real_a_to_b_boundary_and_cycle(authenticated_boundary):
+    provider = _provider(authenticated_boundary)
     orchestrator = ORCH.V023TwoRouteLearnerOrchestrator(
-        ORCH.V023TwoRouteOrchestratorConfig.formal(
-            model_config=model_config(), train_seed=17
-        ),
-        provider,
+        _runner_config(provider).orchestrator_config, provider
     )
-    receipts = orchestrator.advance_many(200)
-    assert tuple(receipt.route for receipt in receipts[:4]) == ("C1", "C2", "C1", "C2")
-    assert orchestrator.completed_source_training_epochs == 100
-    assert orchestrator.update_cursor == 200
-    assert orchestrator.route_update_counts == {"C1": 100, "C2": 100}
-    assert len(provider.calls) == 400
-    assert ORCH.ARMS == ("FULL2", "DROP_C1", "DROP_C2")
-    assert ORCH.ROUTE_ORDER == ("C1", "C2")
-    assert RUNNER.SOURCE_MAP == {
-        "FULL2": ("informed", "informed"),
-        "DROP_C1": ("neutral", "informed"),
-        "DROP_C2": ("informed", "neutral"),
-    }
-    assert {arm: dict(routes) for arm, routes in ORCH.SOURCE_ABLATION_MAP.items()} == {
-        "FULL2": {"C1": "informed", "C2": "informed"},
-        "DROP_C1": {"C1": "neutral", "C2": "informed"},
-        "DROP_C2": {"C1": "informed", "C2": "neutral"},
-    }
-    for receipt in receipts[:2]:
+    receipts = orchestrator.advance_many(2)
+    assert tuple(receipt.route for receipt in receipts) == ("C1", "C2")
+    assert orchestrator.route_update_counts == {"C1": 1, "C2": 1}
+    assert tuple(orchestrator.models) == ORCH.ARMS
+    for receipt in receipts:
         assert [(item.arm, item.source) for item in receipt.arm_updates] == [
-            (arm, ORCH.SOURCE_ABLATION_MAP[arm][receipt.route]) for arm in ORCH.ARMS
+            (arm, ORCH.SOURCE_ABLATION_MAP[arm][receipt.route])
+            for arm in ORCH.ARMS
         ]
+    sampler = provider.sampler_state()
+    assert len(sampler["consumed_file_order"]) == 4
+    assert all(record["members"] for record in sampler["consumed_file_order"])
 
 
-def test_model_checkpoint_digests_reject_q3_and_three_route_checkpoint():
-    model = MODEL.EEAxisTwoRouteModel(model_config(), train_seed=17)
-    assert len(model.q_networks) == len(model.optimizers) == 2
-    assert not hasattr(model, "q3")
+def test_model_config_digest_records_seed_and_q3_are_closed(tmp_path):
+    config = RUNNER._load_model_config(MODEL_CONFIG_PATH)
+    model = MODEL.EEAxisTwoRouteModel(config, train_seed=RUNNER.FORMAL_TRAIN_SEED)
     state = model.checkpoint_state(
         update_count=0, route_update_counts={"C1": 0, "C2": 0}
     )
-    assert state["schema"] == MODEL.TWO_ROUTE_CHECKPOINT_SCHEMA
     assert state["routes"] == ["C1", "C2"]
-    assert set(state["initialization"]) == {
-        "bytes_sha256", "head_state_sha256", "optimizer_state_sha256"
-    }
-    assert set(state["heads"]) == set(state["optimizers"]) == {"C1", "C2"}
-
+    assert state["train_seed"] == RUNNER.FORMAL_TRAIN_SEED
     q3_mutation = deepcopy(state)
     q3_mutation["heads"]["Q3"] = deepcopy(q3_mutation["heads"]["C2"])
     with pytest.raises(MODEL.EEAxisTwoRouteError, match="Q3"):
         model.load_checkpoint_state(q3_mutation)
+    adam_defaults = deepcopy(state)
+    adam_defaults["optimizers"]["C1"]["state"]["param_groups"][0]["eps"] *= 2
+    adam_defaults["optimizers"]["C1"]["sha256"] = MODEL._state_digest(
+        adam_defaults["optimizers"]["C1"]["state"]
+    )
+    with pytest.raises(MODEL.EEAxisTwoRouteError, match="Adam defaults"):
+        model.load_checkpoint_state(adam_defaults)
 
-    from mcrl.algorithms.ee_axis_lcsrs_three_route import (
-        EEAxisLCSRSThreeRoute,
-        LCSRSThreeRouteConfig,
+    nonfinite = deepcopy(state)
+    optimizer_state = nonfinite["optimizers"]["C1"]["state"]
+    parameter_id = optimizer_state["param_groups"][0]["params"][0]
+    first_parameter = next(iter(nonfinite["heads"]["C1"]["state"].values()))
+    optimizer_state["state"][parameter_id] = {
+        "step": torch.tensor(1.0),
+        "exp_avg": torch.full_like(first_parameter, float("nan")),
+        "exp_avg_sq": torch.zeros_like(first_parameter),
+    }
+    nonfinite["optimizers"]["C1"]["sha256"] = MODEL._state_digest(
+        optimizer_state
+    )
+    with pytest.raises(MODEL.EEAxisTwoRouteError, match="non-finite"):
+        model.load_checkpoint_state(nonfinite)
+    with pytest.raises(ValueError, match="train_seed"):
+        MODEL.EEAxisTwoRouteModel(
+            config, train_seed=RUNNER.FORMAL_TRAIN_SEED + 1
+        )
+
+    changed = tmp_path / "changed-model-config.json"
+    raw = json.loads(MODEL_CONFIG_PATH.read_text(encoding="ascii"))
+    raw["q1"]["beta"] = 0.2
+    changed.write_text(json.dumps(raw), encoding="ascii")
+    with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="SHA-256"):
+        RUNNER._load_model_config(changed)
+
+
+def test_unstarted_runner_consumes_nothing_and_changes_nothing(authenticated_boundary):
+    provider = _provider(authenticated_boundary)
+    runner = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider), provider
+    )
+    before_sampler = provider.sampler_state()
+    before_models = runner.orchestrator.checkpoint_state()["arms"]
+    with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="begin_new"):
+        runner.run_to_epoch(1)
+    _assert_tree_identical(before_sampler, provider.sampler_state())
+    _assert_tree_identical(
+        before_models, runner.orchestrator.checkpoint_state()["arms"]
     )
 
-    three = EEAxisLCSRSThreeRoute(
-        LCSRSThreeRouteConfig(q1=model_config().q1, q2=model_config().q2),
-        train_seed=17,
-    ).checkpoint_state(update_count=0)
-    with pytest.raises(MODEL.EEAxisTwoRouteError, match="Q3|three-route"):
-        model.load_checkpoint_state(three)
 
-
-def test_epoch_zero_export_reload_has_bitwise_exact_continuation(tmp_path: Path):
-    provider = stub_provider()
-    runner = RUNNER.V023TwoRouteSourceTrainingRunner(_runner_config(), provider)
+def test_epoch_zero_export_reload_and_runner_resume_are_exact(
+    authenticated_boundary, tmp_path
+):
+    provider = _provider(authenticated_boundary)
+    runner = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider), provider
+    )
     root = tmp_path / "source-run"
     runner.begin_new(root)
-
-    manifest = json.loads((root / "exports/epoch-0000.json").read_text(encoding="utf-8"))
-    assert [entry["arm"] for entry in manifest["exports"]] == list(RUNNER.ARMS)
-    exported = RUNNER._read_torch(root / manifest["exports"][0]["path"])
-    resumed_model = MODEL.EEAxisTwoRouteModel(model_config(), train_seed=17)
-    assert resumed_model.load_checkpoint_state(exported) == 0
-    resumed_trainer = ORCH.V023TwoRouteTrainer(resumed_model)
-    resumed_trainer.update_route("C1", c1_batch(2.0))
-    resumed_trainer.update_route("C2", c2_batch(2.0))
-
     runner.run_to_epoch(1)
-    expected = runner.orchestrator.models["FULL2"].checkpoint_state(
-        update_count=2, route_update_counts={"C1": 1, "C2": 1}
-    )
-    actual = resumed_model.checkpoint_state(
-        update_count=2, route_update_counts={"C1": 1, "C2": 1}
-    )
-    _assert_tree_identical(expected, actual)
 
-    resumed_runner = RUNNER.V023TwoRouteSourceTrainingRunner(_runner_config(), stub_provider())
-    resumed_runner.resume_from_checkpoint(root / "checkpoints/epoch-0000.runner.pt")
-    resumed_runner.run_to_epoch(1)
+    resumed_provider = _provider(authenticated_boundary)
+    resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(resumed_provider), resumed_provider
+    )
+    resumed.resume_from_checkpoint(root / "checkpoints/epoch-0000.runner.pt")
+    resumed.run_to_epoch(1)
     _assert_tree_identical(
-        runner.orchestrator.checkpoint_state(), resumed_runner.orchestrator.checkpoint_state()
+        runner.orchestrator.checkpoint_state(), resumed.orchestrator.checkpoint_state()
     )
 
 
-def test_runner_writes_fixed_epoch_zero_and_hundred_exports_and_receipt(tmp_path: Path):
-    provider = stub_provider()
-    runner = RUNNER.V023TwoRouteSourceTrainingRunner(_runner_config(), provider)
+def test_epoch_100_independent_restore_exports_and_terminal_integrity(
+    authenticated_boundary, tmp_path
+):
+    provider = _provider(authenticated_boundary)
+    runner = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider), provider
+    )
     root = tmp_path / "formal-source-run"
     runner.begin_new(root)
     runner.run()
-    assert runner.completed_epochs == 100
-    assert sorted(path.name for path in (root / "checkpoints").glob("*.runner.pt")) == [
-        "epoch-0000.runner.pt", "epoch-0100.runner.pt"
-    ]
-    assert sorted(path.name for path in (root / "exports").glob("epoch-*.json")) == [
-        "epoch-0000.json", "epoch-0100.json"
-    ]
-    final = json.loads((root / "canonical-receipt.json").read_text(encoding="utf-8"))
-    assert final["claim_ceiling"] == RUNNER.CLAIM_CEILING
+    final = json.loads((root / "canonical-receipt.json").read_text(encoding="ascii"))
     assert final["completed_updates"] == 200
-    assert [entry["epoch"] for entry in final["checkpoints"]] == [0, 100]
-    assert [path.name.split("-", 1)[1].split(".current", 1)[0]
-            for path in sorted((root / "exports/epoch-0100").glob("*.pt"))] == list(RUNNER.ARMS)
+    assert final["epoch_100_integrity"]["decision"] == (
+        RUNNER.EPOCH_100_INTEGRITY_DECISION
+    )
+    assert final["epoch_100_integrity"]["restored_route_update_counts"] == {
+        "C1": 100,
+        "C2": 100,
+    }
+    checkpoint = RUNNER._read_torch(root / "checkpoints/epoch-0100.runner.pt")
+    resumed_provider = _provider(authenticated_boundary)
+    resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(resumed_provider), resumed_provider
+    )
+    resumed.resume_from_checkpoint(root / "checkpoints/epoch-0100.runner.pt")
+    _assert_tree_identical(
+        resumed.orchestrator.checkpoint_state(), checkpoint["orchestrator_state"]
+    )
 
 
-def test_mutation_negatives_third_route_fourth_arm_and_budget_500(tmp_path: Path):
-    with pytest.raises(ORCH.V023TwoRouteOrchestratorError, match="third route"):
-        ORCH.V023TwoRouteLearnerOrchestrator(
-            ORCH.V023TwoRouteOrchestratorConfig.formal(
-                model_config=model_config(), train_seed=17
-            ),
-            stub_provider(routes=("C1", "C2", "C3")),
-        )
+def test_mutations_reject_fallback_identity_digests_and_budget(
+    authenticated_boundary, tmp_path
+):
+    provider = _provider(authenticated_boundary)
     with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="budget 500"):
-        _runner_config(budget=500)
+        _runner_config(provider, budget=500)
 
-    runner = RUNNER.V023TwoRouteSourceTrainingRunner(_runner_config(), stub_provider())
-    root = tmp_path / "mutations"
-    runner.begin_new(root)
-    checkpoint = deepcopy(RUNNER._read_torch(root / "checkpoints/epoch-0000.runner.pt"))
-    checkpoint["arm_order"].append("FOURTH_ARM")
-    with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="fourth arm"):
-        runner._validate_checkpoint(checkpoint)
+    class Fallback:
+        provider_identity = provider.provider_identity
+        provider_identity_payload = provider.provider_identity_payload
+        planned_epoch_budget = 100
+        next_batch = provider.next_batch
+        sampler_state = provider.sampler_state
+        load_sampler_state = provider.load_sampler_state
 
-    for forbidden in ("ALL_NEUTRAL_CONTROL", "FULL", "DROP_C3", "BASELINE"):
-        changed = deepcopy(RUNNER._read_torch(root / "checkpoints/epoch-0000.runner.pt"))
-        changed["arm_order"] = [forbidden, "DROP_C1", "DROP_C2"]
-        with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="forbidden"):
-            runner._validate_checkpoint(changed)
-    with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="TEST"):
-        RUNNER.V023TwoRouteSourceTrainingRunner(
-            _runner_config(), stub_provider()
-        ).begin_new(tmp_path / "TEST" / "rejected")
+    with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="fallback"):
+        RUNNER.V023TwoRouteSourceTrainingRunner(_runner_config(provider), Fallback())
+
+    bad = deepcopy(_runner_config(provider))
+    object.__setattr__(
+        bad,
+        "authority_digests",
+        RUNNER.RunAuthorityDigests("0" * 64, "1" * 64, "2" * 64),
+    )
+    with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="cross-bound"):
+        RUNNER.V023TwoRouteSourceTrainingRunner(bad, _provider(authenticated_boundary))
+
+    arguments = Namespace(
+        execute=True,
+        output_root=str(tmp_path / "cli-output"),
+        epochs=100,
+        provider_factory="v023_c1c2_provider_factory_v3:make_provider",
+        model_config_json=str(MODEL_CONFIG_PATH),
+        train_seed=RUNNER.FORMAL_TRAIN_SEED,
+        authority_sha256="0" * 64,
+        code_sha256="1" * 64,
+        input_sha256="2" * 64,
+    )
+    with pytest.raises(RUNNER.V023TwoRouteSourceTrainingRunnerError, match="cross-bound"):
+        RUNNER.preflight_from_args(arguments)
 
 
 def test_deploy_function_matches_existing_physical_carrier_on_random_inputs():
@@ -225,8 +300,3 @@ def test_deploy_function_matches_existing_physical_carrier_on_random_inputs():
         )
         actual = MODEL.deploy_q12_action(q1, q2, masks)
         assert np.array_equal(actual, expected)
-    q1 = np.zeros((1, 28), dtype=np.float32)
-    q2 = np.zeros((1, 28), dtype=np.float32)
-    masks = np.zeros((1, 28), dtype=np.bool_)
-    masks[0, (3, 9)] = True
-    assert MODEL.deploy_q12_action(q1, q2, masks).tolist() == [3]

@@ -7,7 +7,8 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from io import BytesIO
-import importlib.util
+import importlib
+import json
 from pathlib import Path
 import re
 import sys
@@ -23,6 +24,8 @@ if str(HERE) not in sys.path:
 from ee_axis_two_route_model import (
     EEAxisTwoRouteConfig,
     EEAxisTwoRouteModel,
+    FORMAL_TRAIN_SEED,
+    FROZEN_MODEL_CONFIG_SHA256,
     ROUTES,
     TWO_ROUTE_ALGORITHM,
 )
@@ -66,14 +69,23 @@ def _load_existing_trainer_type() -> type[Any]:
 
     if HETEROGENEOUS_TRAINER_PATH.is_symlink() or not HETEROGENEOUS_TRAINER_PATH.is_file():
         raise V023TwoRouteOrchestratorError("existing heterogeneous trainer is unavailable")
-    spec = importlib.util.spec_from_file_location(
-        "v023_heterogeneous_trainer_two_route_base",
-        HETEROGENEOUS_TRAINER_PATH,
-    )
-    if spec is None or spec.loader is None:
-        raise V023TwoRouteOrchestratorError("cannot import existing heterogeneous trainer")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    directory = str(HETEROGENEOUS_TRAINER_PATH.parent)
+    sys.path.insert(0, directory)
+    try:
+        module = importlib.import_module("v023_heterogeneous_trainer")
+    except Exception as error:
+        raise V023TwoRouteOrchestratorError(
+            "cannot import existing heterogeneous trainer"
+        ) from error
+    finally:
+        if sys.path and sys.path[0] == directory:
+            sys.path.pop(0)
+        else:
+            sys.path.remove(directory)
+    if Path(module.__file__).resolve(strict=True) != HETEROGENEOUS_TRAINER_PATH.resolve(strict=True):
+        raise V023TwoRouteOrchestratorError(
+            "existing heterogeneous trainer has an unexpected natural origin"
+        )
     trainer = getattr(module, "V023HeterogeneousTrainer", None)
     if not isinstance(trainer, type):
         raise V023TwoRouteOrchestratorError("existing trainer type is missing")
@@ -168,6 +180,7 @@ class DeterministicRouteBatchProvider(Protocol):
 class V023TwoRouteOrchestratorConfig:
     model_config: EEAxisTwoRouteConfig
     train_seed: int
+    model_config_sha256: str
     lineage: str = "v023-c1c2-successor-two-route"
     checkpoint_cadence_updates: int = FORMAL_CHECKPOINT_CADENCE_UPDATES
     formal_use: bool = False
@@ -175,20 +188,34 @@ class V023TwoRouteOrchestratorConfig:
     def __post_init__(self) -> None:
         if not isinstance(self.model_config, EEAxisTwoRouteConfig):
             raise TypeError("model_config must be EEAxisTwoRouteConfig")
-        if isinstance(self.train_seed, bool) or not isinstance(self.train_seed, int):
+        if type(self.train_seed) is not int:
             raise TypeError("train_seed must be an integer")
         if not isinstance(self.lineage, str) or not self.lineage or self.lineage != self.lineage.strip():
             raise ValueError("lineage must be a nonempty trimmed string")
         if isinstance(self.checkpoint_cadence_updates, bool) or not isinstance(self.checkpoint_cadence_updates, int) or self.checkpoint_cadence_updates < 1:
             raise ValueError("checkpoint cadence must be a positive integer")
-        if self.formal_use and self.checkpoint_cadence_updates != 200:
-            raise ValueError("formal use requires exactly 100 C1/C2 epochs = 200 updates")
+        if self.formal_use:
+            if self.checkpoint_cadence_updates != 200:
+                raise ValueError("formal use requires exactly 100 C1/C2 epochs = 200 updates")
+            if self.train_seed != FORMAL_TRAIN_SEED:
+                raise ValueError(f"formal train seed must be exactly {FORMAL_TRAIN_SEED}")
+            if self.model_config_sha256 != FROZEN_MODEL_CONFIG_SHA256:
+                raise ValueError("formal model configuration digest drifted")
 
     @classmethod
     def formal(
-        cls, *, model_config: EEAxisTwoRouteConfig, train_seed: int
+        cls,
+        *,
+        model_config: EEAxisTwoRouteConfig,
+        train_seed: int,
+        model_config_sha256: str,
     ) -> "V023TwoRouteOrchestratorConfig":
-        return cls(model_config=model_config, train_seed=train_seed, formal_use=True)
+        return cls(
+            model_config=model_config,
+            train_seed=train_seed,
+            model_config_sha256=model_config_sha256,
+            formal_use=True,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +250,91 @@ def _torch_bytes(value: object) -> bytes:
 def _identity_payload(provider: object) -> object:
     candidate = getattr(provider, "provider_identity_payload", None)
     return candidate() if callable(candidate) else candidate
+
+
+FACTORY_V3_IDENTITY_SCHEMA = (
+    "multi-catfish-mcrl-v023-c1c2-successor-provider-identity-v3"
+)
+FACTORY_V3_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-provider-factory-v3"
+_FACTORY_V3_IDENTITY_FIELDS = {
+    "schema", "routes", "sources", "train_seed", "epoch_budget",
+    "contract_sha256", "model_config_sha256", "provider_config_sha256",
+    "factory_code_sha256", "target_adapter_code_sha256",
+    "provider_protocol_code_sha256", "learner_manifest_path",
+    "learner_manifest_sha256", "learner_runtime", "learner_runtime_sha256",
+    "arm_independent_target_identity", "arm_independent_target_identity_sha256",
+    "consumed_file_order_plan_sha256",
+}
+
+
+def _canonical_sha256(value: object) -> str:
+    try:
+        encoded = json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+    except (TypeError, ValueError, UnicodeError) as error:
+        raise V023TwoRouteOrchestratorError(
+            "provider identity is not canonical finite JSON"
+        ) from error
+    return sha256(encoded).hexdigest()
+
+
+def _reject_forbidden_identity_fields(value: object) -> None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normalized = str(key).lower()
+            if re.search(r"(^|_)(r7|q3|c3)($|_)", normalized):
+                raise V023TwoRouteOrchestratorError(
+                    "provider identity contains a forbidden R7/Q3/C3 field"
+                )
+            _reject_forbidden_identity_fields(item)
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            _reject_forbidden_identity_fields(item)
+    elif isinstance(value, str):
+        tokens = re.split(r"[^A-Z0-9]+", value.upper())
+        if any(token in {"R7", "Q3", "C3"} for token in tokens):
+            raise V023TwoRouteOrchestratorError(
+                "provider identity contains a forbidden R7/Q3/C3 value"
+            )
+        if "TEST" in tokens:
+            raise V023TwoRouteOrchestratorError(
+                "provider identity contains the closed TEST split"
+            )
+
+
+def authenticate_factory_v3_provider_identity(
+    provider: object,
+    *,
+    expected_train_seed: int,
+    expected_model_config_sha256: str,
+) -> Mapping[str, Any]:
+    payload = _identity_payload(provider)
+    identity = getattr(provider, "provider_identity", None)
+    identity = identity() if callable(identity) else identity
+    if not isinstance(payload, Mapping) or set(payload) != _FACTORY_V3_IDENTITY_FIELDS:
+        raise V023TwoRouteOrchestratorError(
+            "provider is not an authenticated factory-v3 identity"
+        )
+    _reject_forbidden_identity_fields(payload)
+    if (
+        payload.get("schema") != FACTORY_V3_IDENTITY_SCHEMA
+        or payload.get("routes") != ["C1", "C2"]
+        or payload.get("sources") != ["neutral", "informed"]
+        or payload.get("epoch_budget") != 100
+        or payload.get("train_seed") != expected_train_seed
+        or payload.get("model_config_sha256") != expected_model_config_sha256
+    ):
+        raise V023TwoRouteOrchestratorError(
+            "factory-v3 provider identity boundary drifted"
+        )
+    expected_identity = f"{FACTORY_V3_SCHEMA}:{_canonical_sha256(payload)}"
+    if identity != expected_identity:
+        raise V023TwoRouteOrchestratorError(
+            "factory-v3 provider identity digest is unauthenticated"
+        )
+    return deepcopy(dict(payload))
 
 
 def _listed_routes(value: object, *, route_context: bool = False) -> list[str]:
@@ -279,6 +391,25 @@ class V023TwoRouteLearnerOrchestrator:
         if not isinstance(provider, DeterministicRouteBatchProvider):
             raise TypeError("provider does not satisfy DeterministicRouteBatchProvider")
         validate_two_route_provider_identity(provider)
+        authenticate_factory_v3_provider_identity(
+            provider,
+            expected_train_seed=config.train_seed,
+            expected_model_config_sha256=config.model_config_sha256,
+        )
+        authenticated_sampler = provider.sampler_state()
+        if (
+            not isinstance(authenticated_sampler, Mapping)
+            or authenticated_sampler.get("next_update_cursor") != 0
+            or authenticated_sampler.get("next_source_index") != 0
+            or authenticated_sampler.get("consumed_file_order") != []
+            or any(
+                value != 0
+                for value in authenticated_sampler.get("cursors", {}).values()
+            )
+        ):
+            raise V023TwoRouteOrchestratorError(
+                "learner construction requires authenticated fresh provider state"
+            )
         self.config = config
         self.provider = provider
         template = EEAxisTwoRouteModel(config.model_config, train_seed=config.train_seed)
@@ -475,17 +606,48 @@ class V023TwoRouteLearnerOrchestrator:
                 or not isinstance(entry.get("source_files"), list)
             ):
                 raise V023TwoRouteOrchestratorError("file order drifted")
+        sampler = state["provider_sampler_state"]
+        if not isinstance(sampler, Mapping):
+            raise V023TwoRouteOrchestratorError("provider sampler state is invalid")
+        consumed = sampler.get("consumed_file_order")
+        if not isinstance(consumed, list) or len(consumed) != cursor * len(SOURCE_ORDER):
+            raise V023TwoRouteOrchestratorError(
+                "provider consumed-file history length drifted"
+            )
+        for index, entry in enumerate(file_order):
+            route = ROUTE_ORDER[index % len(ROUTE_ORDER)]
+            paired = consumed[index * len(SOURCE_ORDER):(index + 1) * len(SOURCE_ORDER)]
+            expected_files = [list(item) for item in entry["source_files"]]
+            observed_files = []
+            for source, record in zip(SOURCE_ORDER, paired, strict=True):
+                if (
+                    not isinstance(record, Mapping)
+                    or record.get("update_cursor") != index
+                    or record.get("route") != route
+                    or record.get("source") != source
+                    or not isinstance(record.get("file_id"), str)
+                ):
+                    raise V023TwoRouteOrchestratorError(
+                        "provider consumed-file history drifted"
+                    )
+                observed_files.append([source, record["file_id"]])
+            if observed_files != expected_files:
+                raise V023TwoRouteOrchestratorError(
+                    "orchestrator and provider file histories disagree"
+                )
         arms = state["arms"]
         if not isinstance(arms, Mapping) or tuple(arms) != ARMS:
             raise V023TwoRouteOrchestratorError("arm states drifted")
         for arm in ARMS:
-            if arms[arm].get("algorithm") != TWO_ROUTE_ALGORITHM:
+            if (
+                arms[arm].get("algorithm") != TWO_ROUTE_ALGORITHM
+                or arms[arm].get("route_update_counts") != counts
+                or arms[arm].get("train_seed") != self.config.train_seed
+                or arms[arm].get("config") != asdict(self.config.model_config)
+            ):
                 raise V023TwoRouteOrchestratorError("non-two-route arm checkpoint rejected")
             if self._trainers[arm].load_checkpoint_state(arms[arm]) != cursor:
                 raise V023TwoRouteOrchestratorError("arm update cursor drifted")
-        sampler = state["provider_sampler_state"]
-        if not isinstance(sampler, Mapping):
-            raise V023TwoRouteOrchestratorError("provider sampler state is invalid")
         self.provider.load_sampler_state(deepcopy(dict(sampler)))
         self.update_cursor = cursor
         self._next_route_index = cursor % 2
@@ -499,5 +661,5 @@ __all__ = [
     "ORCHESTRATOR_SCHEMA", "ProvidedRouteBatch", "ROUTE_ORDER", "SOURCE_ABLATION_MAP",
     "SOURCE_ORDER", "UPDATES_PER_SOURCE_TRAINING_EPOCH", "V023TwoRouteLearnerOrchestrator",
     "V023TwoRouteOrchestratorConfig", "V023TwoRouteOrchestratorError",
-    "validate_two_route_provider_identity",
+    "authenticate_factory_v3_provider_identity", "validate_two_route_provider_identity",
 ]

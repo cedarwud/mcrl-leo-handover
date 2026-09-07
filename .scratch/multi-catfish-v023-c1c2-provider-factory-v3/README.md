@@ -17,10 +17,16 @@ The factory authenticates:
   target adapter;
 - the separately digest-bound successor learner manifest selected by
   `MCRL_V023_C1C2_LEARNER_MANIFEST_PATH` (or the fixed sibling default), every
-  listed runtime file, its SHA-256, and its live module origin; and
+  listed runtime file, its SHA-256, and its live natural module origin. The
+  mandatory closure includes the successor model, orchestrator and runner,
+  the reused heterogeneous trainer, and the imported three-route snapshot
+  helper module; and
 - the factory, target-adapter, provider-protocol, contract, model-config,
   target, learner-manifest, train-seed, epoch-budget, and planned consumed-file
   identities in `provider_identity`.
+
+The configuration must bind train seed `2927175120652069826` and model-config
+SHA-256 `9eafcd184bd0ec015498832be61b5c95a71373e98f63ab804c9654775a8b1d5d`.
 
 The learner manifest is canonical JSON with the exact fields `schema`,
 `status`, `claim_ceiling`, and `bindings`. Each path-sorted binding has exactly

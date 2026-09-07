@@ -7,6 +7,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from io import BytesIO
+import json
 from pathlib import Path
 import sys
 from typing import Any
@@ -45,6 +46,39 @@ TWO_ROUTE_CHECKPOINT_SCHEMA = (
 )
 TWO_ROUTE_ALGORITHM = "multi-catfish-mcrl-v023-c1c2-successor-two-route"
 ROUTES = ("C1", "C2")
+FORMAL_TRAIN_SEED = 2927175120652069826
+FROZEN_MODEL_CONFIG_SHA256 = (
+    "9eafcd184bd0ec015498832be61b5c95a71373e98f63ab804c9654775a8b1d5d"
+)
+FROZEN_MODEL_CONFIG_PATH = (
+    REPO
+    / ".scratch/multi-catfish-v023-c1c2-successor/"
+    "V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"
+)
+
+
+def _authenticated_frozen_records() -> tuple[dict[str, Any], dict[str, Any]]:
+    try:
+        payload_bytes = FROZEN_MODEL_CONFIG_PATH.read_bytes()
+        if sha256(payload_bytes).hexdigest() != FROZEN_MODEL_CONFIG_SHA256:
+            raise RuntimeError("frozen successor model-config digest drifted")
+        payload = json.loads(payload_bytes.decode("ascii"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("frozen successor model-config is unavailable") from error
+    if not isinstance(payload, Mapping) or set(payload) != {"q1", "q2"}:
+        raise RuntimeError("frozen successor model-config must contain only Q1/Q2")
+    records: list[dict[str, Any]] = []
+    for route, tuple_fields in (("q1", ("hidden_layers", "loss_weights")),
+                                ("q2", ("hidden_layers",))):
+        record = dict(payload[route])
+        for field in tuple_fields:
+            if isinstance(record.get(field), list):
+                record[field] = tuple(record[field])
+        records.append(record)
+    return records[0], records[1]
+
+
+FROZEN_Q1_CONFIG, FROZEN_Q2_CONFIG = _authenticated_frozen_records()
 
 
 class EEAxisTwoRouteError(MCRLContractError):
@@ -81,20 +115,22 @@ class EEAxisTwoRouteConfig:
             raise TypeError("q1 must be EEAxisActionSharedConfig")
         if not isinstance(self.q2, EEAxisV014HeadConfig):
             raise TypeError("q2 must be EEAxisV014HeadConfig")
-        if self.q1.state_dim != 228 or self.q1.action_dim != 28:
-            raise ValueError("Q1 must be the 228-D, 28-action action-shared head")
-        if self.q2.action_dim != 28 or self.q2.state_dim != 448:
-            raise ValueError("Q2 must be the 448-D, 28-action V0.14 OPS-3 head")
-        if (
-            self.q2.local_feature_dim != 16
-            or self.q2.global_feature_dim != 0
-            or self.q2.hidden_layers != (100, 50, 50)
-            or self.q2.activation != "tanh"
-            or self.q2.learning_rate != 1.0e-3
-            or self.q2.kappa_bits != self.q1.kappa_bits
-            or self.q2.beta != 0.1
-        ):
-            raise ValueError("Q2 must use the frozen V0.14 OPS-3 configuration")
+        if asdict(self.q1) != FROZEN_Q1_CONFIG:
+            raise ValueError("Q1 must equal the frozen authenticated Q1 record")
+        if asdict(self.q2) != FROZEN_Q2_CONFIG or self.q2.state_dim != 448:
+            raise ValueError("Q2 must equal the frozen authenticated Q2 record")
+
+
+def _finite_optimizer_tree(value: object) -> bool:
+    if isinstance(value, torch.Tensor):
+        return bool(torch.all(torch.isfinite(value)).item())
+    if isinstance(value, Mapping):
+        return all(_finite_optimizer_tree(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return all(_finite_optimizer_tree(item) for item in value)
+    if isinstance(value, (float, np.floating)):
+        return bool(np.isfinite(value))
+    return True
 
 
 def deploy_q12_action(
@@ -134,8 +170,8 @@ class EEAxisTwoRouteModel(nn.Module):
         super().__init__()
         if not isinstance(config, EEAxisTwoRouteConfig):
             raise TypeError("config must be EEAxisTwoRouteConfig")
-        if isinstance(train_seed, bool) or not isinstance(train_seed, int):
-            raise TypeError("train_seed must be an integer")
+        if type(train_seed) is not int or train_seed != FORMAL_TRAIN_SEED:
+            raise ValueError(f"train_seed must be exactly {FORMAL_TRAIN_SEED}")
         self.config = config
         self.train_seed = train_seed
         self.device = torch.device(device)
@@ -205,6 +241,30 @@ class EEAxisTwoRouteModel(nn.Module):
             }
             if actual != expected:
                 raise EEAxisTwoRouteError(f"optimizer {index} is not head-local")
+            if type(optimizer) is not optim.Adam:
+                raise EEAxisTwoRouteError(f"optimizer {index} must be exact Adam")
+
+    def _validate_optimizer_state(self, route: str, value: object, index: int) -> None:
+        if not isinstance(value, Mapping) or set(value) != {"state", "param_groups"}:
+            raise EEAxisTwoRouteError(f"{route} Adam state is malformed")
+        groups = value["param_groups"]
+        state_values = value["state"]
+        expected = self.optimizers[index].state_dict()
+        if not isinstance(groups, list) or len(groups) != 1 or not isinstance(state_values, Mapping):
+            raise EEAxisTwoRouteError(f"{route} Adam state is malformed")
+        observed_group = groups[0]
+        expected_group = expected["param_groups"][0]
+        if not isinstance(observed_group, Mapping) or set(observed_group) != set(expected_group):
+            raise EEAxisTwoRouteError(f"{route} Adam defaults drifted")
+        if observed_group.get("params") != expected_group["params"]:
+            raise EEAxisTwoRouteError(f"{route} Adam parameter topology drifted")
+        for key, expected_value in expected_group.items():
+            if key != "params" and observed_group.get(key) != expected_value:
+                raise EEAxisTwoRouteError(f"{route} Adam defaults drifted")
+        if set(state_values) - set(observed_group["params"]):
+            raise EEAxisTwoRouteError(f"{route} Adam state names unknown parameters")
+        if not _finite_optimizer_tree(value):
+            raise EEAxisTwoRouteError(f"{route} Adam state is non-finite")
 
     def capture_q12(
         self,
@@ -361,6 +421,9 @@ class EEAxisTwoRouteModel(nn.Module):
                 raise EEAxisTwoRouteError(f"{route} head-state digest mismatch")
             if _state_digest(optimizer["state"]) != optimizer["sha256"]:
                 raise EEAxisTwoRouteError(f"{route} optimizer-state digest mismatch")
+            self._validate_optimizer_state(
+                route, optimizer["state"], ROUTES.index(route)
+            )
         try:
             for route, network in zip(ROUTES, self.q_networks, strict=True):
                 network.load_state_dict(heads[route]["state"])
@@ -378,6 +441,11 @@ __all__ = [
     "EEAxisTwoRouteConfig",
     "EEAxisTwoRouteError",
     "EEAxisTwoRouteModel",
+    "FORMAL_TRAIN_SEED",
+    "FROZEN_MODEL_CONFIG_SHA256",
+    "FROZEN_MODEL_CONFIG_PATH",
+    "FROZEN_Q1_CONFIG",
+    "FROZEN_Q2_CONFIG",
     "ROUTES",
     "TWO_ROUTE_ALGORITHM",
     "TWO_ROUTE_CHECKPOINT_SCHEMA",
