@@ -167,3 +167,83 @@ consumer (`RehearsalRealShardProvider`'s hard `COMPLETE` requirement) — not
 fully ruled out without going beyond this lane's read-only, no-code-change
 scope. Not (c) — no environment fault. Not (d) — the provider's requirement
 matches the codebase's own documented sealer, so it is not self-contradictory.
+
+## Attempt 3 (2026-09-07, r8 root — both runs PASS)
+
+The blocker recorded in the previous version of this section is resolved:
+the controller created the read-only root itself rather than this session
+doing so. Before running anything, this session independently verified (read
+only) that `/home/sat/mcrl-v023-real-shards-rehearsal-r8/` contains exactly
+three entries and nothing else — `informed/world-2026121711`,
+`neutral/world-2026121707`, `neutral/world-2026121708` — each a plain
+symlink (`lrwxrwxrwx`) resolving to the matching directory under
+`/home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8-mode-shards/`. No file was
+written into the r8 tree. This session's own write footprint stayed exactly
+where it always was: the shadow checkout and new `REHEARSAL-NONFORMAL`
+output roots.
+
+Package changes since Attempt 2, observed in the synced code and confirmed
+by the run: `rehearsal_real_shard_provider.py` now authenticates a shard via
+manifest + canonical receipt + the sibling `shard-status/*.terminal.json`
+(no per-shard `COMPLETE`), and
+`rehearsal_two_route_training_real_shards.py` now hard-checks the loaded
+model config's sha256 against an imported `FROZEN_MODEL_CONFIG_SHA256` and
+the `--train-seed` against an imported `FORMAL_TRAIN_SEED` before running
+(`DEFAULT_TRAIN_SEED = FORMAL_TRAIN_SEED`); both checks passed silently
+(no mismatch raised) using the same model-config path and seed as
+Attempts 1-2.
+
+### Run 1 — 3 epochs
+
+Command:
+```
+.scratch/multi-catfish-v023-two-route-rehearsal/sync_run_rehearsal_server.sh \
+  sat 3 /home/sat/mcrl-v023-real-shards-rehearsal-r8 2927175120652069826
+```
+Output root: `/home/sat/mcrl-v023-two-route-REHEARSAL-NONFORMAL-20260907T154338Z`. Exit code 0.
+```
+REHEARSAL_TWO_ROUTE_PASS {"claim_ceiling":"ENGINEERING_LANE_READ_ONLY_NO_SCIENTIFIC_OUTPUT","formal":false,"phase_timings_seconds":{"export_seconds":0.0152,"initial_training_seconds":3.9709,"reload_seconds":36.5530,"resumed_epoch_seconds":1.2567,"shard_load_seconds":36.0523},"status":"PASS"}
+```
+
+### Run 2 — 10 epochs (rerun, second root, per PASS)
+
+Command: identical, `3` replaced with `10`. Output root:
+`/home/sat/mcrl-v023-two-route-REHEARSAL-NONFORMAL-20260907T154523Z`. Exit code 0.
+```
+REHEARSAL_TWO_ROUTE_PASS {"claim_ceiling":"ENGINEERING_LANE_READ_ONLY_NO_SCIENTIFIC_OUTPUT","formal":false,"phase_timings_seconds":{"export_seconds":0.0152,"initial_training_seconds":12.5316,"reload_seconds":36.6580,"resumed_epoch_seconds":1.2303,"shard_load_seconds":35.2202},"status":"PASS"}
+```
+
+### Combined findings (both runs identical except epoch count)
+
+- **Phase timings (seconds):** shard_load ~35.2-36.1 and reload ~36.6 are
+  flat regardless of epoch count (one-time cost: typed-adapter authentication
+  of 3 shards, then a second provider construction for reload); export is
+  ~0.015 both times; resumed_epoch is ~1.23-1.26 both times.
+  initial_training scales with epoch count: 3.97 s / 3 epochs (~1.32 s/epoch)
+  vs. 12.53 s / 10 epochs (~1.25 s/epoch) — steady.
+- **Per-epoch (`timings.per_epoch`):** 1.22-1.38 s each, both runs, no drift
+  across 10 epochs.
+- **Per-update (`timings.per_update`):** steady in both runs — route C1
+  ~0.84 s/update, route C2 ~0.38-0.52 s/update.
+- **Worlds used per mode (`worlds_used_by_mode`):** `informed: [2026121711]`
+  (1), `neutral: [2026121707, 2026121708]` (2) — identical both runs.
+- **Shard digest count:** 3 (`shard_catalogue`/`shard_digests_used`), all
+  `is_symlink: true`, `status_state: "PASS"`; `skipped_incomplete_shard_dirs`
+  and `skipped_shards` both empty in both runs.
+- **Receipt fields (both runs):** `formal: false`, `claim_ceiling:
+  "ENGINEERING_LANE_READ_ONLY_NO_SCIENTIFIC_OUTPUT"`, `scientific_claim:
+  false`, `episode_training: false`, `complete_marker_written: false`,
+  `status: "REHEARSAL_PASS"`, `exact_continuation_verified: true`
+  (`BITWISE_TREE_EQUAL_AFTER_ONE_EPOCH`). `model_config_sha256` identical
+  across both runs (`9eafcd18...b1d5d`); `train_seed`
+  `2927175120652069826` in both. Note: `planned_epoch_budget` now reads
+  `100` in both receipts (new orchestrator-side value, unlike Attempts 1-2
+  where it was `epochs + 1`) — recorded as observed, not interpreted.
+- **`finite_loss_checks`:** `all_finite: true` in both (30 checks at 3
+  epochs, 72 at 10 epochs) — a structural finiteness check only; loss values
+  themselves are not reported or compared here per the non-decisional rule.
+- **No `COMPLETE` marker:** confirmed by full `find` listing of both output
+  roots — each contains only `REHEARSAL-RECEIPT.json`,
+  `REHEARSAL-NONFORMAL-CHECKPOINT.pt`, `REHEARSAL-NONFORMAL-RESUMED-ONE-EPOCH.pt`,
+  and a `REHEARSAL-EXPORT-EPOCH-NNNN/` directory with the three arms'
+  `.pt` exports. No sealed/formal marker of any kind.
