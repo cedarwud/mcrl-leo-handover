@@ -30,31 +30,164 @@ DEFAULT_MODEL_CONFIG = (
     "V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"
 )
 DEFAULT_SHARD_ROOT = Path("/home/sat/mcrl-v023-real-shards-rehearsal")
-DEFAULT_TRAIN_SEED = 2927175120652069826
 REQUIRED_OUTPUT_TOKEN = "REHEARSAL-NONFORMAL"
 CLAIM_CEILING = "ENGINEERING_LANE_READ_ONLY_NO_SCIENTIFIC_OUTPUT"
 RECEIPT_SCHEMA = "multi-catfish-mcrl-v023-two-route-rehearsal-receipt-v1"
+PRODUCER_EPOCH_BUDGET = 100
 
 if str(TWO_ROUTE_DIR) not in sys.path:
     sys.path.insert(0, str(TWO_ROUTE_DIR))
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from ee_axis_two_route_model import EEAxisTwoRouteConfig
+from ee_axis_two_route_model import (
+    EEAxisTwoRouteConfig,
+    FORMAL_TRAIN_SEED,
+    FROZEN_MODEL_CONFIG_SHA256,
+)
 from mcrl.algorithms.ee_axis_action_shared import EEAxisActionSharedConfig
 from mcrl.algorithms.ee_axis_v014_head import EEAxisV014HeadConfig
 from rehearsal_real_shard_provider import RehearsalRealShardProvider
 from v023_two_route_learner_orchestrator import (
     ARMS,
+    FACTORY_V3_IDENTITY_SCHEMA,
+    FACTORY_V3_SCHEMA,
     ROUTE_ORDER,
     SOURCE_ABLATION_MAP,
     V023TwoRouteLearnerOrchestrator,
     V023TwoRouteOrchestratorConfig,
 )
 
+DEFAULT_TRAIN_SEED = FORMAL_TRAIN_SEED
+
 
 class RehearsalTrainingError(RuntimeError):
     """The non-formal rehearsal could not complete safely."""
+
+
+class _FactoryV3BoundRehearsalProvider:
+    """Bind rehearsal shard evidence to the producer's closed identity shape."""
+
+    def __init__(
+        self,
+        provider: RehearsalRealShardProvider,
+        *,
+        train_seed: int,
+        model_config_sha256: str,
+    ) -> None:
+        self._provider = provider
+        self._rehearsal_identity_sha256 = _canonical_sha256(
+            provider.provider_identity_payload
+        )
+        self._runtime_paths = (
+            HERE / "rehearsal_real_shard_provider.py",
+            TWO_ROUTE_DIR / "v023_two_route_learner_orchestrator.py",
+        )
+        runtime = [
+            {
+                "path": path.name,
+                "module": path.stem,
+                "loaded_from": str(path.resolve()),
+                "sha256": _file_sha256(path),
+            }
+            for path in self._runtime_paths
+        ]
+        source_members = provider.sampler_state()["source_members"]
+        source_order_plan = [
+            {
+                "route": route,
+                "source": source,
+                "members": source_members[f"{route}:{source}"],
+            }
+            for _epoch in range(PRODUCER_EPOCH_BUDGET)
+            for route in ROUTE_ORDER
+            for source in ("neutral", "informed")
+        ]
+        target_identity = {
+            "schema": "multi-catfish-mcrl-v023-rehearsal-target-identity-v1",
+            "rehearsal_provider_identity_sha256": self._rehearsal_identity_sha256,
+            "source_members_sha256": _canonical_sha256(source_members),
+        }
+        provider_config = {
+            "formal": False,
+            "train_seed": train_seed,
+            "model_config_sha256": model_config_sha256,
+            "rehearsal_provider_identity_sha256": self._rehearsal_identity_sha256,
+        }
+        identity_payload = {
+            "schema": FACTORY_V3_IDENTITY_SCHEMA,
+            "routes": list(ROUTE_ORDER),
+            "sources": ["neutral", "informed"],
+            "train_seed": train_seed,
+            "epoch_budget": PRODUCER_EPOCH_BUDGET,
+            "contract_sha256": self._rehearsal_identity_sha256,
+            "model_config_sha256": model_config_sha256,
+            "provider_config_sha256": _canonical_sha256(provider_config),
+            "factory_code_sha256": _file_sha256(
+                HERE / "rehearsal_real_shard_provider.py"
+            ),
+            "target_adapter_code_sha256": provider.provider_identity_payload[
+                "target_adapter_sha256"
+            ],
+            "provider_protocol_code_sha256": _file_sha256(
+                TWO_ROUTE_DIR / "v023_two_route_learner_orchestrator.py"
+            ),
+            "learner_manifest_path": "rehearsal-runtime-bindings-inline",
+            "learner_manifest_sha256": _canonical_sha256(runtime),
+            "learner_runtime": runtime,
+            "learner_runtime_sha256": _canonical_sha256(runtime),
+            "arm_independent_target_identity": target_identity,
+            "arm_independent_target_identity_sha256": _canonical_sha256(
+                target_identity
+            ),
+            "consumed_file_order_plan_sha256": _canonical_sha256(source_order_plan),
+        }
+        self._identity_payload = identity_payload
+        self._identity = (
+            f"{FACTORY_V3_SCHEMA}:{_canonical_sha256(identity_payload)}"
+        )
+
+    @property
+    def provider_identity(self) -> str:
+        self._assert_integrity()
+        return self._identity
+
+    @property
+    def provider_identity_payload(self) -> Mapping[str, Any]:
+        self._assert_integrity()
+        return dict(self._identity_payload)
+
+    def _assert_integrity(self) -> None:
+        if (
+            _canonical_sha256(self._provider.provider_identity_payload)
+            != self._rehearsal_identity_sha256
+        ):
+            raise RehearsalTrainingError(
+                "rehearsal provider identity drifted after binding"
+            )
+        for path, record in zip(
+            self._runtime_paths,
+            self._identity_payload["learner_runtime"],
+            strict=True,
+        ):
+            if _file_sha256(path) != record["sha256"]:
+                raise RehearsalTrainingError(
+                    f"rehearsal learner runtime drifted: {path.name}"
+                )
+
+    def next_batch(self, *, route: str, source: str, update_cursor: int) -> object:
+        self._assert_integrity()
+        return self._provider.next_batch(
+            route=route, source=source, update_cursor=update_cursor
+        )
+
+    def sampler_state(self) -> Mapping[str, Any]:
+        self._assert_integrity()
+        return self._provider.sampler_state()
+
+    def load_sampler_state(self, state: Mapping[str, Any]) -> None:
+        self._assert_integrity()
+        self._provider.load_sampler_state(state)
 
 
 def _file_sha256(path: Path) -> str:
@@ -63,6 +196,17 @@ def _file_sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _canonical_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _validate_output_root(value: str | Path) -> Path:
@@ -81,15 +225,25 @@ def _validate_output_root(value: str | Path) -> Path:
     return root
 
 
-def _load_model_config(path: str | Path) -> EEAxisTwoRouteConfig:
+def _load_model_config(path: str | Path) -> tuple[EEAxisTwoRouteConfig, str]:
     source = Path(path)
     if source.is_symlink() or not source.is_file():
         raise RehearsalTrainingError("model config must be a regular file")
     if any(part.upper() == "TEST" for part in source.parts):
         raise RehearsalTrainingError("TEST model-config paths are forbidden")
     try:
-        raw = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as cause:
+        payload = source.read_bytes()
+    except OSError as cause:
+        raise RehearsalTrainingError("model config is unavailable") from cause
+    model_config_sha256 = hashlib.sha256(payload).hexdigest()
+    if model_config_sha256 != FROZEN_MODEL_CONFIG_SHA256:
+        raise RehearsalTrainingError(
+            "model config sha256 must be exactly "
+            f"{FROZEN_MODEL_CONFIG_SHA256}; got {model_config_sha256}"
+        )
+    try:
+        raw = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as cause:
         raise RehearsalTrainingError("model config JSON is invalid") from cause
     if not isinstance(raw, Mapping) or set(raw) != {"q1", "q2"}:
         raise RehearsalTrainingError("model config must contain exactly q1 and q2")
@@ -103,9 +257,12 @@ def _load_model_config(path: str | Path) -> EEAxisTwoRouteConfig:
             for field in fields:
                 if isinstance(values.get(field), list):
                     values[field] = tuple(values[field])
-        return EEAxisTwoRouteConfig(
-            q1=EEAxisActionSharedConfig(**q1),
-            q2=EEAxisV014HeadConfig(**q2),
+        return (
+            EEAxisTwoRouteConfig(
+                q1=EEAxisActionSharedConfig(**q1),
+                q2=EEAxisV014HeadConfig(**q2),
+            ),
+            model_config_sha256,
         )
     except (TypeError, ValueError) as cause:
         raise RehearsalTrainingError("model config is incompatible") from cause
@@ -254,13 +411,20 @@ def run_rehearsal(
 ) -> dict[str, Any]:
     if isinstance(epochs, bool) or not isinstance(epochs, int) or epochs < 1:
         raise RehearsalTrainingError("epochs must be a positive integer")
-    if isinstance(train_seed, bool) or not isinstance(train_seed, int):
-        raise RehearsalTrainingError("train seed must be an integer")
+    if (
+        isinstance(train_seed, bool)
+        or not isinstance(train_seed, int)
+        or train_seed != FORMAL_TRAIN_SEED
+    ):
+        raise RehearsalTrainingError(
+            f"rehearsal train seed must be exactly {FORMAL_TRAIN_SEED}"
+        )
     root = _validate_output_root(output_root)
     shards = Path(shard_root)
     if any(part.upper() == "TEST" for part in shards.parts):
         raise RehearsalTrainingError("TEST shard roots are forbidden")
     model_path = Path(model_config_path)
+    model_config, model_config_sha256 = _load_model_config(model_path)
     receipt = _base_receipt(
         output_root=root,
         shard_root=shards,
@@ -274,22 +438,27 @@ def run_rehearsal(
     phase_timings: dict[str, float] = {}
 
     try:
-        model_config = _load_model_config(model_path)
         load_started = time.perf_counter()
         provider = RehearsalRealShardProvider(
-            shards, planned_epoch_budget=epochs + 1
+            shards, planned_epoch_budget=PRODUCER_EPOCH_BUDGET
+        )
+        learner_provider = _FactoryV3BoundRehearsalProvider(
+            provider,
+            train_seed=train_seed,
+            model_config_sha256=model_config_sha256,
         )
         phase_timings["shard_load_seconds"] = time.perf_counter() - load_started
 
         orchestrator_config = V023TwoRouteOrchestratorConfig(
             model_config=model_config,
             train_seed=train_seed,
+            model_config_sha256=model_config_sha256,
             lineage="v023-c1c2-REHEARSAL-NONFORMAL",
             checkpoint_cadence_updates=2,
             formal_use=False,
         )
         orchestrator = V023TwoRouteLearnerOrchestrator(
-            orchestrator_config, provider
+            orchestrator_config, learner_provider
         )
 
         training_started = time.perf_counter()
@@ -344,10 +513,15 @@ def run_rehearsal(
             checkpoint_path, map_location="cpu", weights_only=False
         )
         reloaded_provider = RehearsalRealShardProvider(
-            shards, planned_epoch_budget=epochs + 1
+            shards, planned_epoch_budget=PRODUCER_EPOCH_BUDGET
+        )
+        reloaded_learner_provider = _FactoryV3BoundRehearsalProvider(
+            reloaded_provider,
+            train_seed=train_seed,
+            model_config_sha256=model_config_sha256,
         )
         reloaded = V023TwoRouteLearnerOrchestrator(
-            orchestrator_config, reloaded_provider
+            orchestrator_config, reloaded_learner_provider
         )
         reloaded.load_checkpoint_state(loaded_checkpoint)
         phase_timings["reload_seconds"] = time.perf_counter() - reload_started
@@ -384,7 +558,7 @@ def run_rehearsal(
                 ],
                 "planned_epoch_budget": provider.planned_epoch_budget,
                 "model_config_path": str(model_path.resolve()),
-                "model_config_sha256": _file_sha256(model_path),
+                "model_config_sha256": model_config_sha256,
                 "completed_initial_epochs": epochs,
                 "completed_initial_updates": epochs * len(ROUTE_ORDER),
                 "exact_continuation_verified": True,

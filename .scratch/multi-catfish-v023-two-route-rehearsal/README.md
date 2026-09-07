@@ -85,7 +85,10 @@ PYTHONPATH="$PWD/src" OMP_NUM_THREADS=2 ./.venv/bin/python \
   --train-seed 2927175120652069826
 ```
 
-The declared seed is explicitly labelled `REHEARSAL_NONFORMAL` in the receipt.
+The rehearsal accepts only the formal run seed `2927175120652069826`, while
+explicitly labelling it `REHEARSAL_NONFORMAL` in the receipt. The model-config
+file must have the frozen formal-run SHA-256
+`9eafcd184bd0ec015498832be61b5c95a71373e98f63ab804c9654775a8b1d5d`.
 Loss values are retained only as finite, non-decisional engineering telemetry.
 The final stdout line is `REHEARSAL_TWO_ROUTE_PASS` or
 `REHEARSAL_TWO_ROUTE_FAIL`, followed by JSON phase timings.

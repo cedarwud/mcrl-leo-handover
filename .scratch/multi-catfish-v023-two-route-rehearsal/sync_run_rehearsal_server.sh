@@ -24,8 +24,8 @@ if [[ ! "$epochs" =~ ^[1-9][0-9]*$ ]]; then
   echo "epochs must be a positive integer" >&2
   exit 64
 fi
-if [[ ! "$train_seed" =~ ^[0-9]+$ ]]; then
-  echo "train seed must be a nonnegative integer" >&2
+if [[ "$train_seed" != 2927175120652069826 ]]; then
+  echo "rehearsal train seed must be exactly 2927175120652069826" >&2
   exit 64
 fi
 case "$shard_root" in
@@ -87,6 +87,10 @@ shard_root=$3
 train_seed=$4
 python=/home/sat/mcrl-leo-handover/.venv/bin/python
 
+if [[ "$train_seed" != 2927175120652069826 ]]; then
+  echo "rehearsal train seed must be exactly 2927175120652069826" >&2
+  exit 64
+fi
 case "$shard_root" in
   /home/sat/mcrl-v023-c1c2-targets-*|*sealed*|*SEALED*)
     echo "refusing a formal/sealed shard root: $shard_root" >&2

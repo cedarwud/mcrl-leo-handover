@@ -425,6 +425,15 @@ def test_rehearsal_writes_no_complete_and_prints_nonformal_pass(
     assert receipt["scientific_claim"] is False
     assert receipt["episode_training"] is False
     assert receipt["claim_ceiling"] == REHEARSAL.CLAIM_CEILING
+    assert receipt["train_seed"] == 2927175120652069826
+    assert receipt["train_seed_context"] == "REHEARSAL_NONFORMAL"
+    assert receipt["model_config_sha256"] == (
+        "9eafcd184bd0ec015498832be61b5c95a71373e98f63ab804c9654775a8b1d5d"
+    )
+    assert receipt["orchestrator_config"]["formal_use"] is False
+    assert receipt["orchestrator_config"]["model_config_sha256"] == (
+        receipt["model_config_sha256"]
+    )
     assert receipt["exact_continuation_verified"] is True
     assert receipt["finite_loss_checks"]["all_finite"] is True
     assert receipt["complete_marker_written"] is False
@@ -438,3 +447,25 @@ def test_output_root_naming_and_absence_rules_are_enforced(tmp_path: Path) -> No
     existing.mkdir()
     with pytest.raises(REHEARSAL.RehearsalTrainingError, match="must not exist"):
         REHEARSAL._validate_output_root(existing)
+
+    with pytest.raises(
+        REHEARSAL.RehearsalTrainingError,
+        match="rehearsal train seed must be exactly 2927175120652069826",
+    ):
+        REHEARSAL.run_rehearsal(
+            shard_root=tmp_path / "shards",
+            output_root=tmp_path / "bad-seed-REHEARSAL-NONFORMAL-run",
+            train_seed=2927175120652069827,
+        )
+
+    drifted_config = tmp_path / "drifted-model-config.json"
+    drifted_config.write_bytes(REHEARSAL.DEFAULT_MODEL_CONFIG.read_bytes() + b" ")
+    with pytest.raises(
+        REHEARSAL.RehearsalTrainingError,
+        match="model config sha256 must be exactly 9eafcd18",
+    ):
+        REHEARSAL.run_rehearsal(
+            shard_root=tmp_path / "shards",
+            output_root=tmp_path / "bad-config-REHEARSAL-NONFORMAL-run",
+            model_config_path=drifted_config,
+        )
