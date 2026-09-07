@@ -8,12 +8,12 @@ interruption drill exposed two new package defects (**Q**, **R**). Ceiling
 
 ### (a) Claimed status, re-checked against the live tree — all three confirmed
 - **N FIXED.** `run_v023_c1c2_successor_formal.py:43` `--nonformal`; `:57-63` mode-matched receipt admission;
-  `:64-69` biconditional `REHEARSAL-NONFORMAL` basename rule; `:113`/`:128` stamp `formal`; `:146` writes
-  `nonformal-provenance.json`; `:152` prints `SUCCESSOR_NONFORMAL_RUN_COMPLETE`.
-- **O FIXED.** `…runner.py:64` formal cadence still `(0, 100)`; `:65` `NONFORMAL_CHECKPOINT_EPOCHS = 0,10,…,100`;
-  `:401` selects by mode. CLI `--resume` at `:1116`/`:1200`, wrapper `:34`/`:102` → `resume_from_root:1024` →
-  `resume_from_checkpoint:991` (sidecar `:1005`, `_validate_checkpoint:1007`, status equality `:1008`,
-  `_validate_exports:1010`, exact-state assert `:1015`).
+  `:64-69` biconditional `REHEARSAL-NONFORMAL` basename rule; `:113`/`:128` stamp `formal`; `:146`
+  `nonformal-provenance.json`; `:152` `SUCCESSOR_NONFORMAL_RUN_COMPLETE`. Runner receipts carry `formal` at
+  `…runner.py:414`/`498`/`550`/`570`/`648`; no `COMPLETE`/`MANIFEST.sha256` writer outside the verifier's `_seal`.
+- **O FIXED.** `…runner.py:64` formal cadence still `(0, 100)`; `:65` non-formal `0,10,…,100`; `:401` selects by mode.
+  CLI `--resume` `:1116`/`:1200`, wrapper `:34`/`:102` → `resume_from_root:1024` → `resume_from_checkpoint:991`
+  (sidecar `:1005`, `_validate_checkpoint:1007`, status equality `:1008`, `_validate_exports:1010`, exact `:1015`).
 - **P FIXED.** `verify_v023_c1c2_successor.py:194` `nonformal=`; `:196` still requires reconstruction (shared loop
   `:465-478`); `:489`/`:554`/`:558` emit only `NONFORMAL_RECONSTRUCTION_PASS|FAIL`; `:207-208` still rejects a
   non-formal root without the flag; `:210` rejects a formal seal; `_seal` only on the formal branch (`:553`).
@@ -40,25 +40,24 @@ Target `…-target-root-r2`, `input_sha256=3775c257…`. Peak RSS 911 MB (limit 
 | S1 | binder `--write`/`--check` ×2 | **PASS**, 4× `48a2c4e5…` | 1.70–1.71 s | 783 MB |
 | S2 | manifest `--check` pre-rebuild | drifts by design (binder just wrote) | 0.03 s | 20 MB |
 | S3 | manifest `--write`/`--check` | **PASS** `4863397b…`, 265 paths | 0.03/0.04 s | 20 MB |
-| S4 | preflight non-formal, synth `--target-root`, absent root | **PASS**, `formal:false` | 1.08 s | 639 MB |
+| S4 | preflight non-formal, synth `--target-root`, absent root | **PASS** `formal:false` | 1.08 s | 639 MB |
 | S5 | one-epoch diagnostic + receipt gate | **PASS** / `DIAGNOSTIC_RECEIPT_PASS` | 2.01 / 0.02 s | 903 MB |
-| S6 | **wrapper `--nonformal`, 100 epochs** | **PASS** `SUCCESSOR_NONFORMAL_RUN_COMPLETE`; every receipt `formal:false`, no `COMPLETE`/`MANIFEST.sha256`, 200 rows | 4.29 s | 911 MB |
+| S6 | **wrapper `--nonformal`, 100 epochs** | **PASS** `SUCCESSOR_NONFORMAL_RUN_COMPLETE`; every receipt `formal:false`, no `COMPLETE`/`MANIFEST.sha256` | 4.29 s | 911 MB |
 | S6c | control: 2nd uninterrupted run | **byte-identical** to S6 everywhere | 4.54 s | 911 MB |
-| S7a | SIGKILL non-boundary (100 ms past epoch-40, ≈epoch 44), `--resume` | run **completes**; bitwise **partial** — see **R** | 2.62 / 3.65 s | 911 MB |
-| S7b | SIGKILL inside the checkpoint critical section, `--resume` | **FAIL — defect Q** | 2.52 / 1.77 s | 784 MB |
-| S7c | SIGKILL at a clean boundary (after epoch-40 receipt), `--resume` | run **completes**; same partial equality | 4.02 s | 910 MB |
-| S8 | verifier `--nonformal` (base, S7a, S7c roots) | **PASS** `NONFORMAL_RECONSTRUCTION_PASS updates=200 arms=3 exact_resume=True` | 4.17–4.23 s | 797 MB |
+| S7a | SIGKILL non-boundary (≈epoch 44), `--resume` | completes; bitwise **partial** — see **R** | 2.62 / 3.65 s | 911 MB |
+| S7b | SIGKILL inside the checkpoint write, `--resume` | **FAIL — defect Q** | 2.52 / 1.77 s | 784 MB |
+| S7c | SIGKILL at a sealed boundary (epoch 40), `--resume` | completes; same partial equality | 4.02 s | 910 MB |
+| S8 | verifier `--nonformal` (base, S7a, S7c roots) | **PASS** `NONFORMAL_RECONSTRUCTION_PASS updates=200 arms=3 exact_resume=True` | 4.2 s | 797 MB |
 | S9 | verifier without the flag, same root | **REJECTS** `STOP_SOURCE_TRAINING_INTEGRITY: … non-formal rehearsal roots cannot pass formal verification` | 0.03 s | 21 MB |
-| S10 | negatives | **PASS** — no flag on a `formal:false` receipt → `preflight receipt does not bind the requested formal run`; `--nonformal` on a formal-shaped receipt (flipped + resealed sidecar) → `formal preflight receipt cannot be laundered into a non-formal rehearsal`; no root created either time | — | — |
+| S10 | negatives (both refuse, exit 3, no root created) | **PASS** — no flag on a `formal:false` receipt → `preflight receipt does not bind the requested formal run`; `--nonformal` on a formal-shaped receipt (flipped + resealed sidecar) → `formal preflight receipt cannot be laundered into a non-formal rehearsal` | — | — |
 
 ### Defect Q — a kill inside the checkpoint critical section makes the root unresumable (class d)
-`_write_checkpoint:565-566` publishes `epoch-0040.runner.pt` **and its sidecar** before `_write_exports:567` and the
-receipt `:581`. Killing there left ckpt+sidecar with no `exports/epoch-0040.json` and no `checkpoint-receipts/
-epoch-0040.json`. First failing boundary: `resume_from_root:1056` takes `max(existing)`=40 (no fallback) →
-`resume_from_checkpoint:1057` → `_validate_exports:864` → `_read_json:678` `JSON artifact is not a regular file`,
-exit 3. Falling back to epoch 30 is also impossible: `_write_exports:523` refuses the existing `exports/epoch-0040`
-dir and `_atomic_write_once:149` refuses the existing checkpoint. **The root is unrecoverable.** Fix: write exports +
-receipt first, publish the checkpoint sidecar last, and have `resume_from_root` select the newest *fully sealed* epoch.
+`…runner.py:565-566` publishes `epoch-0040.runner.pt` **and its sidecar** before `_write_exports:567` and the receipt
+`:581`. Killing there left ckpt+sidecar with no `exports/epoch-0040.json` and no `checkpoint-receipts/epoch-0040.json`.
+First failing boundary: `resume_from_root:1056` takes `max(existing)`=40 (no fallback) → `resume_from_checkpoint:1057`
+→ `_validate_exports:864` → `_read_json:678` `JSON artifact is not a regular file`, exit 3. Epoch 30 is no escape:
+`_write_exports:523` refuses the existing `exports/epoch-0040` dir. **The root is unrecoverable.** Fix: exports +
+receipt first, checkpoint sidecar last, and `resume_from_root` selects the newest *fully sealed* epoch.
 
 ### Defect R — checkpoints are not byte-reproducible across `--resume` (class d)
 Two uninterrupted runs are byte-identical (S6c), so the format is reproducible; after a resume every checkpoint past
@@ -70,12 +69,12 @@ is byte-equal. Cause: unpickling destroys string-object identity, so re-pickling
 Write site `…runner.py:565`. Consequence: `canonical-receipt.json` (`checkpoints[]`, `epoch_100_integrity`) and
 `checkpoint-receipts/epoch-*.json` differ from an uninterrupted run of the same seed. `update-ledger.json`,
 `exports/epoch-0100.json` and the three exported arm `.pt` files **are** bitwise equal, and the verifier still passes
-(it compares trees, not bytes). So the drill's "bitwise equality at epoch 100" holds for the ledger and the exported
-models, not for the runner container or its digests.
+(trees, not bytes). "Bitwise equality at epoch 100" therefore holds for the ledger and the exported models, not for
+the runner container or its digests.
 
 ### Drill-coverage limitation (fixture, not code)
-On synthetic target r2 the informed and neutral panels yield bit-identical metrics, so all three arms' epoch-100
-exports share one digest `3f63c3ad…`. Routing is still separated at file identity (`DROP_C1` consumes
-`c1-neutral-panel-…`), but this rehearsal cannot detect a numeric arm-crossing defect.
+On synthetic target r2 informed and neutral panels yield bit-identical metrics, so all three arms' epoch-100 exports
+share one digest `3f63c3ad…`. Routing is still separated at file identity (`DROP_C1` consumes `c1-neutral-panel-…`),
+but this rehearsal cannot detect a numeric arm-crossing defect.
 
 Not updated (concurrent writer): `LATENCY-LEDGER-2026-09-07.md` — Q and R need entries.

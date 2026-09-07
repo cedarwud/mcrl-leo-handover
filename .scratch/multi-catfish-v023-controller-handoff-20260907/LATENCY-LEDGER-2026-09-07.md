@@ -30,5 +30,7 @@
 | 09-07 18:08 | stage-A wrapper | refuses `formal:false` preflight receipts → no end-to-end rehearsal except on the literal r8 root | V2 rerun #3 (10 min) | fix pass 5 |
 | 09-07 18:08 | stage-A runner/wrapper | no resume entry point; no checkpoint between epochs 0 and 100 → interruption drill impossible | V2 rerun #3 | fix pass 5 (non-formal intermediate checkpoints only) |
 | 09-07 18:08 | stage-A verifier | positive path unreachable for rehearsals (root binding + formal:true) — correct but untestable | V2 rerun #3 | fix pass 5 adds `--nonformal` reconstruction mode |
+| 09-07 19:15 | stage-A runner checkpoint write | checkpoint + sidecar published before exports/receipt → a kill in the critical section leaves an unrecoverable root | V2 rerun #4 interruption drill | fix pass 6; would have destroyed a formal run on the next reboot |
+| 09-07 19:15 | stage-A runner checkpoint bytes | not byte-reproducible after `--resume` (pickle string identity) → receipt digests differ | V2 rerun #4 drill | fix pass 6 |
 
 Pattern: defects found by launching cost 40 min–22 h each; the same classes found by offline probes, import smokes and read-only audits cost 30 s–8 min. Every new defect is appended here with the same five columns.
