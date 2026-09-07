@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -50,7 +51,57 @@ def _write_producer_root(root: Path, plan, *, formal: bool = True) -> Path:
             )
     if not formal:
         runner._write_once(root / "ROOT-METADATA.json", {"formal": False})
+    else:
+        _seal_formal_root(root, plan.plan_sha256, adapter.policy_bindings)
     return root
+
+
+def _seal_formal_root(root: Path, plan_sha256: str, policy_bindings) -> None:
+    admission = {
+        "schema": figures.FORMAL_ADMISSION_SCHEMA,
+        "status": "FORMAL_STAGE_C_ADMITTED",
+        "formal": True,
+        "integrity_status": "VERIFIED",
+        "split": runner.SPLIT,
+        "arms": list(runner.ARMS),
+        "plan_sha256": plan_sha256,
+        "policy_bindings_sha256": figures.canonical_sha256(policy_bindings),
+        "prereg_sha256": runner.canonical_sha256("prereg"),
+        "tle_manifest_sha256": runner.canonical_sha256("tle"),
+        "execution_configuration_sha256": runner.canonical_sha256("config"),
+        "stage_a_pass_receipt_sha256": runner.canonical_sha256("stage-a"),
+        "stage_b_pass_receipt_sha256": runner.canonical_sha256("stage-b"),
+    }
+    admission_path = root / figures.FORMAL_ADMISSION_NAME
+    runner._write_once(admission_path, admission)
+    admission_digest = runner.file_sha256(admission_path)
+    (root / f"{figures.FORMAL_ADMISSION_NAME}.sha256").write_text(
+        f"{admission_digest}  {figures.FORMAL_ADMISSION_NAME}\n", encoding="ascii"
+    )
+    _write_tree_seal(root)
+
+
+def _write_tree_seal(root: Path) -> None:
+    files = {
+        path.relative_to(root).as_posix(): runner.file_sha256(path)
+        for path in root.rglob("*")
+        if path.is_file()
+        and path.relative_to(root).as_posix()
+        not in {figures.TREE_MANIFEST_NAME, figures.COMPLETE_NAME}
+    }
+    manifest = "".join(f"{digest}  {path}\n" for path, digest in sorted(files.items()))
+    manifest_path = root / figures.TREE_MANIFEST_NAME
+    manifest_path.write_text(manifest, encoding="ascii")
+    manifest_digest = hashlib.sha256(manifest.encode("ascii")).hexdigest()
+    (root / figures.COMPLETE_NAME).write_text(
+        f"{manifest_digest}  {figures.TREE_MANIFEST_NAME}\n", encoding="ascii"
+    )
+
+
+def _rewrite_tree_seal(root: Path) -> None:
+    (root / figures.TREE_MANIFEST_NAME).unlink()
+    (root / figures.COMPLETE_NAME).unlink()
+    _write_tree_seal(root)
 
 
 def _write_five_arm_variant(source: Path, target: Path) -> Path:
@@ -91,6 +142,7 @@ def _write_five_arm_variant(source: Path, target: Path) -> Path:
         rung["arms"] = list(five_arms)
         rung["pooled_by_arm"] = pooled
         runner._write_once(target / "rungs" / rung_path.name, rung)
+    _seal_formal_root(target, checkpoint["plan_sha256"], checkpoint["policy_bindings"])
     return target
 
 
@@ -117,19 +169,11 @@ def test_four_arm_300_episode_render_and_determinism(tmp_path: Path, plan) -> No
             assert (first / record["path"]).read_bytes() == (second / record["path"]).read_bytes()
 
 
-def test_five_arm_variant_reads_arm_order_from_receipts(tmp_path: Path, plan) -> None:
+def test_current_schema_rejects_extra_fifth_arm(tmp_path: Path, plan) -> None:
     four = _write_producer_root(tmp_path / "four", plan)
     five = _write_five_arm_variant(four, tmp_path / "five")
-    manifest = figures.render([five], tmp_path / "out")
-    assert manifest["input_roots"][0]["arms"] == [
-        "FULL2",
-        "DROP_C1",
-        "DROP_C2",
-        "BASELINE",
-        "DROP_C3",
-    ]
-    assert manifest["input_roots"][0]["rung_count"] == 3
-    assert manifest["input_roots"][0]["receipt_count"] == 5 * 300
+    with pytest.raises(figures.FigurePipelineError, match="schema-specific arm"):
+        figures.render([five], tmp_path / "out")
 
 
 def test_nonformal_requires_flag_and_watermarks_every_figure(tmp_path: Path, plan) -> None:
@@ -156,7 +200,7 @@ def test_tampered_episode_receipt_is_refused(tmp_path: Path, plan) -> None:
     payload = json.loads(checkpoint.read_text(encoding="ascii"))
     payload["receipts"][-1]["total_bits"] += 1.0
     checkpoint.write_text(json.dumps(payload), encoding="ascii")
-    with pytest.raises(figures.FigurePipelineError, match="checkpoint digest"):
+    with pytest.raises(figures.FigurePipelineError, match="manifest closure|checkpoint digest"):
         figures.load_root(root)
 
 
@@ -181,3 +225,92 @@ def test_output_directory_is_write_once(tmp_path: Path, plan) -> None:
     output.mkdir()
     with pytest.raises(figures.FigurePipelineError, match="must be absent"):
         figures.render([root], output)
+
+
+def test_renderer_pool_is_bit_for_bit_runner_terminal_reduction(tmp_path: Path, plan) -> None:
+    root = _write_producer_root(tmp_path / "producer-aggregated", plan)
+    data = figures.load_root(root)
+    rows = data.rungs[-1].receipts
+    for arm in runner.ARMS:
+        expected = runner.pool_receipts(
+            [row for row in rows if row["arm"] == arm], arm=arm
+        )
+        assert figures.canonical_sha256(figures._pool(rows, arm)) == runner.canonical_sha256(expected)
+
+
+def test_service_limits_include_every_arm_and_margin(tmp_path: Path, plan) -> None:
+    root = _write_producer_root(tmp_path / "service-limits", plan)
+    data = figures.load_root(root)
+    mutated_rungs = []
+    for rung in data.rungs:
+        pooled = copy.deepcopy(rung.pooled)
+        pooled["BASELINE"]["service_fraction"] = 1.0
+        pooled["FULL2"]["service_fraction"] = 0.5
+        mutated_rungs.append(figures.Rung(rung.completed, pooled, rung.receipts))
+    display = figures.RootData(
+        data.root,
+        data.root_sha256,
+        data.arms,
+        data.claim_ceiling,
+        data.formal,
+        tuple(mutated_rungs),
+        data.authenticated_files,
+    )
+    fig = figures.build_service_figure(display)
+    low, high = fig.axes[0].get_ylim()
+    assert low < 0.5 < high
+    assert low < 0.999 <= high
+    figures.plt.close(fig)
+
+
+def test_formal_root_requires_external_manifest(tmp_path: Path, plan) -> None:
+    root = _write_producer_root(tmp_path / "missing-seal", plan)
+    (root / figures.COMPLETE_NAME).unlink()
+    with pytest.raises(figures.FigurePipelineError, match="external manifest/COMPLETE"):
+        figures.load_root(root)
+
+
+@pytest.mark.parametrize("mutation", ["repeated-world", "wrong-denominator"])
+def test_frozen_world_and_opportunity_denominator_are_enforced(
+    tmp_path: Path, plan, mutation: str
+) -> None:
+    root = _write_producer_root(tmp_path / mutation, plan)
+    checkpoint_path = root / "checkpoints" / "checkpoint-000300.json"
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="ascii"))
+    checkpoint.pop("checkpoint_sha256")
+    if mutation == "repeated-world":
+        previous = checkpoint["receipts"][-2 * len(runner.ARMS) : -len(runner.ARMS)]
+        current = checkpoint["receipts"][-len(runner.ARMS) :]
+        for source, target in zip(previous, current, strict=True):
+            for field in ("world_id", "world_seed", "field_root_digest", "initial_world_sha256"):
+                target[field] = source[field]
+    else:
+        row = checkpoint["receipts"][-1]
+        row["service_opportunities"] = 1
+        row["served_user_steps"] = 1
+        row["service_fraction"] = 1.0
+        rung_path = root / "rungs" / "rung-000300.json"
+        rung = json.loads(rung_path.read_text(encoding="ascii"))
+        rung["pooled_by_arm"] = {
+            arm: figures._pool(checkpoint["receipts"], arm) for arm in runner.ARMS
+        }
+        rung_path.write_text(
+            json.dumps(rung, sort_keys=True, separators=(",", ":")), encoding="ascii"
+        )
+    checkpoint["checkpoint_sha256"] = runner.canonical_sha256(checkpoint)
+    checkpoint_path.write_text(
+        json.dumps(checkpoint, sort_keys=True, separators=(",", ":")), encoding="ascii"
+    )
+    _rewrite_tree_seal(root)
+    with pytest.raises(figures.FigurePipelineError, match="frozen world plan|service counts"):
+        figures.load_root(root)
+
+
+def test_integrity_stop_root_is_never_rendered(tmp_path: Path, plan) -> None:
+    root = _write_producer_root(tmp_path / "stopped", plan)
+    runner._write_once(
+        root / "integrity-stop.json",
+        {"overall_token": runner.INTEGRITY_STOP},
+    )
+    with pytest.raises(figures.FigurePipelineError, match="integrity STOP"):
+        figures.load_root(root)

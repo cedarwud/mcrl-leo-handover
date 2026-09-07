@@ -21,6 +21,14 @@ semantics.  A root explicitly marked nonformal (or named rehearsal/nonformal)
 is refused unless `--allow-nonformal` is supplied; all of its figures then show
 `REHEARSAL — NOT A RESULT`.
 
+A formal root is never inferred from a missing flag.  It must contain an
+authenticated `FORMAL-ADMISSION.json` plus sidecar and a whole-tree
+`MANIFEST.sha256`/`COMPLETE` seal.  The admission binds the frozen plan, exact
+four-arm policy map, PREREG, TLE manifest, execution configuration, and Stage-A
+and Stage-B PASS receipts.  Integrity-STOP roots are refused.  Receipt checks
+enforce the declared world id/seed/keyed field and exactly 1000 service
+opportunities per episode; terminal files are checked against runner semantics.
+
 ## Commands
 
 The project virtual environment does not currently vendor Matplotlib.  On the
@@ -58,3 +66,6 @@ PYTHONPATH=/usr/lib/python3/dist-packages ./.venv/bin/python -m pytest -q \
 The output directory must not exist.  A successful run writes PNG and PDF
 files plus `FIGURE-MANIFEST.json`, which binds input-root digests, authenticated
 input files, receipt/rung coverage, renderer SHA-256, and every figure SHA-256.
+The exact claim-ceiling token remains in that metadata.  Figure footers use a
+readable development-only disclosure and every displayed text object is
+screened.

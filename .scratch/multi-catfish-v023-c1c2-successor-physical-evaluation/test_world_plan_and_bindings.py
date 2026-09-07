@@ -160,3 +160,120 @@ def test_learned_deployment_is_unweighted_masked_and_lowest_index_on_ties() -> N
     q1[1, 1] = 1.0
     q2[1, 4] = 2.0
     assert runner.select_learned_q12_actions(q1, q2, masks).tolist() == [3, 4]
+
+
+def _sealed_runtime_admission(tmp_path: Path, checkpoint_sha: str) -> dict[str, object]:
+    for name, payload in (
+        ("prereg.json", {"frozen": True}),
+        ("tle.json", {"frozen_files": [{"file": "x"}], "file_set_sha256": "a" * 64}),
+        ("configuration.json", {"threads": 1}),
+        ("stage-a.json", {"status": "PASS_SOURCE_TRAINING_INTEGRITY"}),
+    ):
+        runner._write_once(tmp_path / name, payload)
+    provenance = {
+        arm: {
+            "checkpoint_sha256": checkpoint_sha,
+            "source_mapping": {
+                "FULL2": ["informed", "informed"],
+                "DROP_C1": ["neutral", "informed"],
+                "DROP_C2": ["informed", "neutral"],
+            }[arm],
+            "stage_a_status": "PASS_SOURCE_TRAINING_INTEGRITY",
+            "manifest_sha256": runner.canonical_sha256({"arm": arm}),
+        }
+        for arm in runner.LEARNED_ARMS
+    }
+    payload = {
+        "schema": f"{runner.SCHEMA}-runtime-admission-v1",
+        "status": "FORMAL_RUNTIME_ADMITTED",
+        "split": runner.SPLIT,
+        "admitted_evaluation_sha256": "b" * 64,
+        "tle_root": "/home/sat/mcrl-runtime/tle-frozen-20260820",
+        "physical_configuration": {
+            "users": runner.USERS,
+            "steps": runner.STEPS,
+            "split": runner.SPLIT,
+            "field_component": runner.FIELD_COMPONENT,
+            "tle_root": "/home/sat/mcrl-runtime/tle-frozen-20260820",
+        },
+        "prereg": {"path": "prereg.json", "sha256": runner.file_sha256(tmp_path / "prereg.json")},
+        "tle_manifest": {
+            "path": "tle.json",
+            "sha256": runner.file_sha256(tmp_path / "tle.json"),
+            "file_set_sha256": "a" * 64,
+        },
+        "execution_configuration": {
+            "path": "configuration.json",
+            "sha256": runner.file_sha256(tmp_path / "configuration.json"),
+        },
+        "predecessor_pass_receipts": [
+            {
+                "path": "stage-a.json",
+                "sha256": runner.file_sha256(tmp_path / "stage-a.json"),
+                "status": "PASS_SOURCE_TRAINING_INTEGRITY",
+            }
+        ],
+        "sampler": {"part": "train", "as_dict_sha256": "c" * 64},
+        "learned_training_provenance": provenance,
+    }
+    path = tmp_path / "runtime-admission.json"
+    runner._write_once(path, payload)
+    digest = runner.file_sha256(path)
+    path.with_name(path.name + ".sha256").write_text(
+        f"{digest}  {path.name}\n", encoding="ascii"
+    )
+    return runner.authenticate_runtime_admission(
+        path,
+        expected_sha256=digest,
+        expected_statuses=("PASS_SOURCE_TRAINING_INTEGRITY",),
+    )
+
+
+class _Policy:
+    def __init__(self, arm: str, checkpoint_sha256: str) -> None:
+        self.arm = arm
+        self.checkpoint_sha256 = checkpoint_sha256
+        self.routes = () if arm == "BASELINE" else runner.ROUTES
+
+    def verify(self) -> None:
+        return None
+
+    def binding(self) -> dict[str, object]:
+        return {
+            "arm": self.arm,
+            "checkpoint_sha256": self.checkpoint_sha256,
+            "routes": list(self.routes),
+            "fixed_policy": True,
+        }
+
+
+def test_training_provenance_allows_legitimate_identical_policy_bytes(tmp_path: Path) -> None:
+    common_sha = "d" * 64
+    admission = _sealed_runtime_admission(tmp_path, common_sha)
+    policies = tuple(_Policy(arm, common_sha) for arm in runner.ARMS)
+    adapter = runner.FixedPolicyEpisodeAdapter(
+        policies=policies,
+        archive=object(),
+        environment_factory=lambda _archive, _users: object(),
+        rng_factory=lambda _seed: (),
+        runtime_admission=admission,
+        required_predecessor_statuses=("PASS_SOURCE_TRAINING_INTEGRITY",),
+    )
+    assert tuple(adapter.policy_bindings) == runner.ARMS
+    assert all(
+        "training_provenance" in adapter.policy_bindings[arm]
+        for arm in runner.LEARNED_ARMS
+    )
+
+
+def test_runtime_admission_rejects_tampered_predecessor_pass(tmp_path: Path) -> None:
+    admission = _sealed_runtime_admission(tmp_path, "d" * 64)
+    Path(admission["admission_path"]).parent.joinpath("stage-a.json").write_text(
+        '{"status":"STOP_SOURCE_TRAINING_INTEGRITY"}', encoding="ascii"
+    )
+    with pytest.raises(runner.C1C2PhysicalError, match="bytes disagree"):
+        runner.authenticate_runtime_admission(
+            admission["admission_path"],
+            expected_sha256=admission["admission_sha256"],
+            expected_statuses=("PASS_SOURCE_TRAINING_INTEGRITY",),
+        )

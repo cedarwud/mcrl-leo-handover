@@ -15,15 +15,22 @@ energy from `TrainerEnvironment.last_outcome`, divides once after pooling, and
 uses pooled served count over pooled opportunity.  It writes a checkpoint and
 non-terminal rung receipt every 100 episodes, supports cumulative pauses at
 100/500/1500/3000, rejects plan/policy drift, and writes `result.json` only at
-the declared terminal boundary.  A 9000 terminal requires a separate
-continuation-authority digest.
+the 3000 scientific boundary.  A continuation to 9000 requires a sealed
+continuation-authority JSON file and its externally bound digest.  That file
+binds the preserved 3000 checkpoint and `HELD` result, the unchanged plan and
+policy map, and a hash-verified owner-notification record.  Continuation writes
+`continuation-result.json`; it never replaces `result.json` or emits a second
+scientific disposition.  Resume authenticates every earlier checkpoint, rung,
+episode plan/policy binding, and requires sealed repair authority after STOP.
 
 `v023_c1c2_successor_plumbing_diagnostic.py` is the exact one-world Stage B
 check: world index 1, id
 `train-v023-c1c2-successor-plumbing-001`, seed `936547238915053535`, 100 users,
 ten steps, and TLE root `/home/sat/mcrl-runtime/tle-frozen-20260820`.  Its
 physical directions are stored only under `descriptive_physical_endpoints`;
-there is no scientific decision field.
+there is no scientific decision field.  Runtime admission authenticates the
+PREREG, frozen-TLE manifest and current TLE bytes, execution configuration,
+predecessor PASS receipt, learned-arm provenance, and actual TRAIN sampler.
 
 This is not a server launcher, simulator replacement, learner, source trainer,
 TEST evaluator, C3/Q3 carrier, efficacy result, or authority to execute any
@@ -37,7 +44,8 @@ From the repository root, the exact unit-only command is:
 ./.venv/bin/python -m pytest -q .scratch/multi-catfish-v023-c1c2-successor-physical-evaluation
 ```
 
-The tests use deterministic synthetic episode records and a checkpoint fixture
+The tests derive episode endpoints through the runner's own ten-step
+`last_outcome` aggregation with unequal energies and use a checkpoint fixture
 written by the concurrent two-route producer's own `checkpoint_state` method.
 They do not construct a TLE archive or run the simulator.
 

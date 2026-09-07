@@ -102,6 +102,11 @@ def run_diagnostic(args: argparse.Namespace) -> dict[str, object]:
     output.mkdir(parents=True, exist_ok=False)
     try:
         phase = time.monotonic()
+        admission = runner.authenticate_runtime_admission(
+            args.runtime_admission,
+            expected_sha256=args.runtime_admission_sha256,
+            expected_statuses=("PASS_SOURCE_TRAINING_INTEGRITY",),
+        )
         tle_input = Path(args.tle_root)
         if tle_input.is_symlink() or tle_input.resolve(strict=False) != TLE_ROOT:
             raise PlumbingError("diagnostic TLE root differs from the declared frozen root")
@@ -130,6 +135,7 @@ def run_diagnostic(args: argparse.Namespace) -> dict[str, object]:
         policies = (*learned, baseline)
         bindings_before = [policy.binding() for policy in policies]
         archive = TleArchive(tle_input)
+        runner.authenticate_tle_archive(archive, admission)
         timings["input_authentication_s"] = time.monotonic() - phase
 
         phase = time.monotonic()
@@ -149,11 +155,18 @@ def run_diagnostic(args: argparse.Namespace) -> dict[str, object]:
                 "split": runner.SPLIT,
             }
         )
+        if (
+            admission.get("admitted_evaluation_sha256") != diagnostic_identity
+            or admission.get("tle_root") != str(TLE_ROOT)
+        ):
+            raise PlumbingError("runtime admission does not bind plumbing identity/TLE root")
         adapter = runner.FixedPolicyEpisodeAdapter(
             policies=policies,
             archive=archive,
             environment_factory=_make_environment,
             rng_factory=_evaluation_rngs,
+            runtime_admission=admission,
+            required_predecessor_statuses=("PASS_SOURCE_TRAINING_INTEGRITY",),
         )
         receipts = []
         arm_times: dict[str, float] = {}
@@ -264,6 +277,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline-checkpoint", type=Path, required=True)
     parser.add_argument("--baseline-status", type=Path, required=True)
     parser.add_argument("--baseline-status-sha256", required=True)
+    parser.add_argument("--runtime-admission", type=Path, required=True)
+    parser.add_argument("--runtime-admission-sha256", required=True)
     return parser
 
 

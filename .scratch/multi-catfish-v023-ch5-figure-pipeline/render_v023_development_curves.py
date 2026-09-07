@@ -36,9 +36,11 @@ PRODUCER_PATH = (
     / "v023_c1c2_successor_physical_runner.py"
 )
 WATERMARK = "REHEARSAL — NOT A RESULT"
-ARM_ORDER = ("FULL2", "DROP_C1", "DROP_C2", "BASELINE", "FULL", "DROP_C3")
 FORBIDDEN_LABEL_WORDS = ("significant", "proves", "efficacy", "TEST")
 BOOTSTRAP_REPLICATES = 500
+FORMAL_ADMISSION_NAME = "FORMAL-ADMISSION.json"
+TREE_MANIFEST_NAME = "MANIFEST.sha256"
+COMPLETE_NAME = "COMPLETE"
 
 
 class FigurePipelineError(RuntimeError):
@@ -58,6 +60,10 @@ def _load_producer() -> Any:
 
 
 PRODUCER = _load_producer()
+ARM_ORDER = tuple(PRODUCER.ARMS)
+FORMAL_ADMISSION_SCHEMA = f"{PRODUCER.SCHEMA}-formal-admission-v1"
+PLAN_BUILDER = importlib.import_module("build_v023_c1c2_successor_world_plan")
+FROZEN_PLAN_SHA256 = PLAN_BUILDER.build_world_plan()["plan_sha256"]
 RECEIPT_FIELDS = frozenset(field.name for field in fields(PRODUCER.EpisodeReceipt))
 
 
@@ -114,10 +120,78 @@ def _authenticate_sidecars(path: Path, actual: str) -> list[tuple[str, str]]:
         if sidecar.is_symlink() or not sidecar.is_file():
             raise FigurePipelineError(f"digest sidecar is not a regular file: {sidecar}")
         words = sidecar.read_text(encoding="ascii").strip().split()
-        if not words or len(words[0]) != 64 or words[0].lower() != actual:
+        if not words or len(words[0]) != 64 or words[0] != actual:
             raise FigurePipelineError(f"digest sidecar disagrees with input: {sidecar}")
         authenticated.append((sidecar.name, file_sha256(sidecar)))
     return authenticated
+
+
+def _verify_external_manifest(root: Path) -> tuple[tuple[str, str], ...]:
+    manifest = root / TREE_MANIFEST_NAME
+    complete = root / COMPLETE_NAME
+    if manifest.is_symlink() or not manifest.is_file() or complete.is_symlink() or not complete.is_file():
+        raise FigurePipelineError("formal root lacks external manifest/COMPLETE seal")
+    manifest_sha = file_sha256(manifest)
+    if any(path.is_symlink() for path in root.rglob("*")):
+        raise FigurePipelineError("formal root contains a symlink")
+    if complete.read_bytes() != f"{manifest_sha}  {TREE_MANIFEST_NAME}\n".encode("ascii"):
+        raise FigurePipelineError("formal root COMPLETE does not authenticate manifest")
+    expected: dict[str, str] = {}
+    try:
+        lines = manifest.read_text(encoding="ascii").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise FigurePipelineError("formal root manifest is unreadable") from error
+    for line in lines:
+        parts = line.split("  ", 1)
+        if (
+            len(parts) != 2
+            or parts[1] in expected
+            or _sha256_token(parts[0], "manifest entry") != parts[0]
+            or Path(parts[1]).is_absolute()
+            or ".." in Path(parts[1]).parts
+        ):
+            raise FigurePipelineError("formal root manifest is malformed")
+        expected[parts[1]] = parts[0]
+    actual = {
+        path.relative_to(root).as_posix(): file_sha256(path)
+        for path in root.rglob("*")
+        if path.is_file()
+        and not path.is_symlink()
+        and path.relative_to(root).as_posix() not in {TREE_MANIFEST_NAME, COMPLETE_NAME}
+    }
+    if expected != dict(sorted(actual.items())):
+        raise FigurePipelineError("formal root whole-tree manifest closure drifted")
+    return tuple(sorted((path, digest) for path, digest in actual.items()))
+
+
+def _read_formal_admission(root: Path) -> dict[str, Any] | None:
+    path = root / FORMAL_ADMISSION_NAME
+    if not path.exists():
+        return None
+    payload = _read_json(path)
+    digest = file_sha256(path)
+    if not _authenticate_sidecars(path, digest):
+        raise FigurePipelineError("formal admission lacks its digest sidecar")
+    required_digests = (
+        "prereg_sha256",
+        "tle_manifest_sha256",
+        "execution_configuration_sha256",
+        "stage_a_pass_receipt_sha256",
+        "stage_b_pass_receipt_sha256",
+        "policy_bindings_sha256",
+    )
+    if (
+        payload.get("schema") != FORMAL_ADMISSION_SCHEMA
+        or payload.get("status") != "FORMAL_STAGE_C_ADMITTED"
+        or payload.get("formal") is not True
+        or payload.get("integrity_status") != "VERIFIED"
+        or payload.get("split") != PRODUCER.SPLIT
+        or payload.get("arms") != list(PRODUCER.ARMS)
+        or payload.get("plan_sha256") != FROZEN_PLAN_SHA256
+        or any(_sha256_token(payload.get(field), field) != payload.get(field) for field in required_digests)
+    ):
+        raise FigurePipelineError("formal admission identity/bindings drifted")
+    return payload
 
 
 def _finite_number(value: object, label: str) -> float:
@@ -150,6 +224,7 @@ def _validate_receipts(
     arms: tuple[str, ...],
     receipt_schema: str,
     expected_plan_sha256: str,
+    expected_policy_bindings: Mapping[str, object],
 ) -> list[dict[str, Any]]:
     if not isinstance(rows, list) or len(rows) != completed * len(arms):
         raise FigurePipelineError("checkpoint receipt coverage is incomplete")
@@ -172,6 +247,16 @@ def _validate_receipts(
             raise FigurePipelineError("episode receipt identity drifted")
         if row["users"] != PRODUCER.USERS or row["steps"] != PRODUCER.STEPS:
             raise FigurePipelineError("episode receipt dimensions drifted")
+        expected_world = PRODUCER.WorldBinding(
+            episode_index=episode,
+            world_id=row["world_id"],
+            world_seed=row["world_seed"],
+            field_root_digest=row["field_root_digest"],
+        )
+        try:
+            expected_world.verify()
+        except PRODUCER.C1C2PhysicalError as error:
+            raise FigurePipelineError("episode receipt differs from frozen world plan") from error
         bits = _finite_number(row["total_bits"], "total_bits")
         energy = _finite_number(row["total_energy_j"], "total_energy_j")
         ee = _finite_number(row["ratio_of_sums_ee_bits_per_j"], "ratio_of_sums_ee_bits_per_j")
@@ -179,7 +264,7 @@ def _validate_receipts(
         opportunities = row["service_opportunities"]
         if bits < 0 or energy <= 0 or type(served) is not int or type(opportunities) is not int:
             raise FigurePipelineError("episode additive endpoint is malformed")
-        if opportunities <= 0 or served < 0 or served > opportunities:
+        if opportunities != PRODUCER.USERS * PRODUCER.STEPS or served < 0 or served > opportunities:
             raise FigurePipelineError("episode service counts are malformed")
         if not math.isclose(ee, bits / energy, rel_tol=0.0, abs_tol=1e-12):
             raise FigurePipelineError("episode EE disagrees with additive sums")
@@ -198,8 +283,12 @@ def _validate_receipts(
             not isinstance(binding, dict)
             or binding.get("arm") != arm
             or binding.get("routes") != row["routes"]
+            or binding != expected_policy_bindings.get(arm)
         ):
             raise FigurePipelineError("episode policy binding disagrees with receipt")
+        expected_routes = [] if arm == "BASELINE" else list(PRODUCER.ROUTES)
+        if row["routes"] != expected_routes:
+            raise FigurePipelineError("episode routes disagree with schema-specific arm")
         for digest_field in (
             "initial_world_sha256",
             "field_root_digest",
@@ -209,6 +298,8 @@ def _validate_receipts(
             _sha256_token(row[digest_field], digest_field)
         if row["plan_sha256"] != expected_plan_sha256:
             raise FigurePipelineError("episode receipt plan disagrees with checkpoint")
+        if row["claim_ceiling"] != PRODUCER.CLAIM_CEILING:
+            raise FigurePipelineError("episode claim ceiling differs from producer schema")
         if plan_sha is None:
             plan_sha = str(row["plan_sha256"])
             claim = str(row["claim_ceiling"])
@@ -252,6 +343,55 @@ def _compare_pooled(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> N
             raise FigurePipelineError(f"rung receipt disagrees with checkpoint receipts for {arm}")
 
 
+def _validate_terminal_result(
+    result: Mapping[str, Any], *, rung: "Rung", plan_sha256: str, continuation: bool
+) -> None:
+    boundary = 9000 if continuation else 3000
+    pooled = result.get("pooled_by_arm")
+    if not isinstance(pooled, dict):
+        raise FigurePipelineError("terminal result lacks pooled endpoints")
+    _compare_pooled(rung.pooled, pooled)
+    if (
+        result.get("schema")
+        != (PRODUCER.CONTINUATION_RESULT_SCHEMA if continuation else PRODUCER.RESULT_SCHEMA)
+        or result.get("status") != PRODUCER.STATUS
+        or result.get("split") != PRODUCER.SPLIT
+        or result.get("completed_episode") != boundary
+        or result.get("terminal_boundary") != boundary
+        or result.get("plan_sha256") != plan_sha256
+        or result.get("arms") != list(PRODUCER.ARMS)
+        or result.get("claim_ceiling") != PRODUCER.CLAIM_CEILING
+        or any(result.get(field) is not False for field in (
+            "q3_evaluated", "test_split_opened", "episode_training", "learner_update"
+        ))
+    ):
+        raise FigurePipelineError("terminal result identity/disposition semantics drifted")
+    authority = result.get("continuation_authority_sha256")
+    if continuation:
+        _sha256_token(authority, "continuation_authority_sha256")
+        if (
+            result.get("authorized_from_3000_token") != PRODUCER.HELD
+            or result.get("scientific_disposition_emitted") is not False
+            or "overall_token" in result
+            or "reasons" in result
+        ):
+            raise FigurePipelineError("continuation result emitted a second scientific disposition")
+    elif authority is not None:
+        raise FigurePipelineError("3000 result unexpectedly carries continuation authority")
+    else:
+        disposition = PRODUCER.adjudicate_physical_disposition(
+            rung.pooled,
+            completed_episodes=3000,
+            expected_episodes=3000,
+        )
+        if (
+            result.get("overall_token") != disposition["overall_token"]
+            or result.get("reasons") != disposition["reasons"]
+            or result.get("scientific_disposition_emitted") is not True
+        ):
+            raise FigurePipelineError("3000 result disposition semantics drifted")
+
+
 @dataclass(frozen=True)
 class Rung:
     completed: int
@@ -274,7 +414,11 @@ class RootData:
         return len(self.rungs[-1].receipts)
 
 
-def _root_formality(root: Path, tracked: list[tuple[str, str]]) -> bool:
+def _root_formality(
+    root: Path,
+    tracked: list[tuple[str, str]],
+    admission: Mapping[str, object] | None,
+) -> bool:
     flags: list[bool] = []
     for path in sorted(root.glob("*.json")):
         payload = _read_json(path)
@@ -288,7 +432,9 @@ def _root_formality(root: Path, tracked: list[tuple[str, str]]) -> bool:
     if len(set(flags)) > 1:
         raise FigurePipelineError("root contains inconsistent formal flags")
     named_nonformal = any(token in root.name.upper() for token in ("REHEARSAL", "NONFORMAL"))
-    return (flags[0] if flags else True) and not named_nonformal
+    if flags and flags[0] is True and admission is None:
+        raise FigurePipelineError("formal flag cannot replace authenticated formal admission")
+    return admission is not None and (flags[0] if flags else True) and not named_nonformal
 
 
 def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
@@ -296,9 +442,20 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
     if source.is_symlink() or not source.is_dir():
         raise FigurePipelineError(f"input root is not a regular directory: {source}")
     tracked: list[tuple[str, str]] = []
-    formal = _root_formality(source, tracked)
+    if any(source.glob("*integrity-stop.json")):
+        raise FigurePipelineError("integrity STOP root cannot be rendered")
+    admission = _read_formal_admission(source)
+    formal = _root_formality(source, tracked, admission)
     if not formal and not allow_nonformal:
         raise FigurePipelineError("nonformal/rehearsal root requires --allow-nonformal")
+    if formal:
+        tracked.extend(_verify_external_manifest(source))
+        tracked.extend(
+            (
+                (TREE_MANIFEST_NAME, file_sha256(source / TREE_MANIFEST_NAME)),
+                (COMPLETE_NAME, file_sha256(source / COMPLETE_NAME)),
+            )
+        )
     checkpoint_paths = sorted((source / "checkpoints").glob("checkpoint-*.json"))
     rung_paths = sorted((source / "rungs").glob("rung-*.json"))
     if not checkpoint_paths or len(checkpoint_paths) != len(rung_paths):
@@ -339,32 +496,36 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
             if checkpoint.get(boundary) is not False:
                 raise FigurePipelineError("checkpoint crossed a prohibited boundary")
         current_plan_sha256 = _sha256_token(checkpoint.get("plan_sha256"), "plan_sha256")
+        if current_plan_sha256 != FROZEN_PLAN_SHA256:
+            raise FigurePipelineError("checkpoint does not use the frozen world plan")
         if plan_sha256 is None:
             plan_sha256 = current_plan_sha256
         elif current_plan_sha256 != plan_sha256:
             raise FigurePipelineError("plan identity changes across checkpoints")
         raw_arms = checkpoint.get("arms")
-        if not isinstance(raw_arms, list) or not raw_arms or any(not isinstance(arm, str) for arm in raw_arms):
+        if not isinstance(raw_arms, list) or any(not isinstance(arm, str) for arm in raw_arms):
             raise FigurePipelineError("checkpoint arm list is malformed")
         current_arms = tuple(raw_arms)
-        if len(set(current_arms)) != len(current_arms) or "BASELINE" not in current_arms:
-            raise FigurePipelineError("checkpoint arm coverage is malformed")
-        if any(arm not in ARM_ORDER for arm in current_arms):
-            raise FigurePipelineError("checkpoint contains an undeclared arm name")
-        if current_arms != tuple(arm for arm in ARM_ORDER if arm in current_arms):
-            raise FigurePipelineError("checkpoint arm order differs from the figure contract")
+        if current_schema_prefix != PRODUCER.SCHEMA or current_arms != ARM_ORDER:
+            raise FigurePipelineError("checkpoint schema-specific arm coverage/order drifted")
         if arms is None:
             arms = current_arms
         elif current_arms != arms:
             raise FigurePipelineError("arm list changes across checkpoints")
         if checkpoint.get("completed_episode") != completed or checkpoint.get("checkpoint_every") != PRODUCER.CHECKPOINT_EVERY:
             raise FigurePipelineError("checkpoint cadence fields drifted")
+        policy_bindings = checkpoint.get("policy_bindings")
+        if not isinstance(policy_bindings, dict) or set(policy_bindings) != set(arms):
+            raise FigurePipelineError("checkpoint policy binding coverage drifted")
+        if admission is not None and canonical_sha256(policy_bindings) != admission["policy_bindings_sha256"]:
+            raise FigurePipelineError("checkpoint policy bindings disagree with formal admission")
         rows = _validate_receipts(
             checkpoint.get("receipts"),
             completed=completed,
             arms=arms,
             receipt_schema=f"{schema_prefix}-episode-receipt",
             expected_plan_sha256=plan_sha256,
+            expected_policy_bindings=policy_bindings,
         )
         if previous_rows and rows[: len(previous_rows)] != previous_rows:
             raise FigurePipelineError("checkpoint receipt history was rewritten")
@@ -403,8 +564,13 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
             raise FigurePipelineError("rung pooled endpoints are missing")
         _compare_pooled(expected_pooled, pooled)
         all_rungs.append(Rung(completed, expected_pooled, tuple(rows)))
-    result_path = source / "result.json"
-    if result_path.exists():
+    for result_name, boundary, continuation in (
+        ("result.json", 3000, False),
+        ("continuation-result.json", 9000, True),
+    ):
+        result_path = source / result_name
+        if not result_path.exists():
+            continue
         result = _read_json(result_path)
         result_digest = file_sha256(result_path)
         if (result_path.name, result_digest) not in tracked:
@@ -413,12 +579,17 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
                 (f"{result_path.name}/{name}", value)
                 for name, value in _authenticate_sidecars(result_path, result_digest)
             )
-        if result.get("completed_episode") != all_rungs[-1].completed:
-            raise FigurePipelineError("terminal result does not match the last rung")
-        pooled = result.get("pooled_by_arm")
-        if not isinstance(pooled, dict):
-            raise FigurePipelineError("terminal result lacks pooled endpoints")
-        _compare_pooled(all_rungs[-1].pooled, pooled)
+        terminal_rung = next((rung for rung in all_rungs if rung.completed == boundary), None)
+        if terminal_rung is None:
+            raise FigurePipelineError("terminal result lacks its authenticated rung")
+        _validate_terminal_result(
+            result,
+            rung=terminal_rung,
+            plan_sha256=str(plan_sha256),
+            continuation=continuation,
+        )
+    if all_rungs[-1].completed > 3000 and not (source / "result.json").is_file():
+        raise FigurePipelineError("post-3000 history lacks the preserved 3000 result")
     tracked_sorted = tuple(sorted(set(tracked)))
     root_digest = canonical_sha256(
         {"files": [{"path": path, "sha256": digest} for path, digest in tracked_sorted]}
@@ -456,7 +627,10 @@ def _style() -> None:
 
 def _decorate(fig: Any, data: RootData, *, title: str) -> None:
     fig.suptitle(f"TRAIN development — {title}", y=0.985)
-    footer = f"Claim ceiling: {data.claim_ceiling}   |   root sha256: {data.root_sha256}"
+    footer = (
+        "Development-only disclosure; no held-out use or scientific claim"
+        f"   |   authenticated root: {data.root_sha256}"
+    )
     fig.text(0.5, 0.012, footer, ha="center", va="bottom", fontsize=5.6, color="#555555")
     if not data.formal:
         fig.text(
@@ -480,6 +654,7 @@ def _axis_labels(fig: Any) -> list[str]:
     for axis in fig.axes:
         labels.extend((axis.get_xlabel(), axis.get_ylabel(), axis.get_title()))
         labels.extend(text.get_text() for text in axis.get_legend().get_texts()) if axis.get_legend() else None
+    labels.extend(text.get_text() for text in fig.texts)
     return labels
 
 
@@ -518,7 +693,18 @@ def build_service_figure(data: RootData) -> Any:
     _plot_lines(axis, data, "service_fraction")
     axis.set_xlabel("Cumulative episodes")
     axis.set_ylabel("Served fraction")
-    axis.set_ylim(max(0.0, float(np.min(baseline)) - 0.01), min(1.0, float(np.max(baseline)) + 0.01))
+    all_values = np.asarray(
+        [
+            float(rung.pooled[arm]["service_fraction"])
+            for rung in data.rungs
+            for arm in data.arms
+        ],
+        dtype=np.float64,
+    )
+    lower = min(float(np.min(all_values)), float(np.min(baseline - PRODUCER.SERVICE_MARGIN)))
+    upper = max(float(np.max(all_values)), float(np.max(baseline + PRODUCER.SERVICE_MARGIN)))
+    padding = max(0.01, (upper - lower) * 0.05)
+    axis.set_ylim(max(0.0, lower - padding), min(1.0, upper + padding))
     axis.legend(ncol=min(3, len(data.arms) + 1), frameon=False)
     _decorate(fig, data, title="served fraction and BASELINE margin band")
     fig.subplots_adjust(left=0.12, right=0.98, top=0.88, bottom=0.17)
