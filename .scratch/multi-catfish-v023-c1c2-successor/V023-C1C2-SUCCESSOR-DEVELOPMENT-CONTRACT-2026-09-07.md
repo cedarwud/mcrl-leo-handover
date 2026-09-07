@@ -188,7 +188,10 @@ outcomes and every scientific declaration.
 - Learner: initialisation bytes digest; sampler and consumed-file order policy; C1/C2 formulas, objectives and
   optimiser defaults (digest of the model configuration record without Q3); factory v3, runner, launcher, diagnostic,
   policy adapters and the independent verifier code manifests; predecessor authority digests that the loaders check.
-- Physical: PREREG and frozen-TLE manifests, the `9000`-world plan digest, keyed-field namespace
+- Physical: PREREG and frozen-TLE manifests, the `9000`-world plan digest (deterministic from the §6 rule; built by
+  `.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/build_v023_c1c2_successor_world_plan.py`, first derivation
+  2026-09-07 14:20 UTC = `866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb`, to be re-derived and compared at
+  freeze), keyed-field namespace
   `MCRL_V020_REPRICED_C3_GATE_V1`, RNG policy, deterministic process environment (BLAS/OpenMP threads) and resource
   limits, absent diagnostic/evaluation output roots.
 - Aggregation: physical endpoint pooled from `TrainerEnvironment.last_outcome` (additive bits, additive positive energy,

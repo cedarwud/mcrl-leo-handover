@@ -1,0 +1,31 @@
+{
+  "schema": "multi-catfish-v023-engineering-contract-spec-v1",
+  "pairs": [
+    {
+      "name": "mutation-negative-all-categories",
+      "producer": {
+        "path": ".scratch/multi-catfish-v023-engineering-lane/fixtures/contract_producer.py",
+        "functions": ["write_artifact"],
+        "constants": ["SCHEMA", "STATUS", "CLAIM_CEILING", "MODES", "ROUTES", "TARGET_UNIT", "ARRAY_LAYOUT", "OPS3_SAMPLES_PER_STEP", "HORIZON"]
+      },
+      "consumer": {
+        "path": ".scratch/multi-catfish-v023-engineering-lane/fixtures/contract_consumer.py",
+        "functions": ["read_artifact"],
+        "constants": ["SCHEMA", "STATUS", "CLAIM_CEILING", "MODES", "ROUTES", "TARGET_UNIT", "ARRAY_LAYOUT", "OPS3_SAMPLES_PER_STEP", "HORIZON"]
+      },
+      "layout_constants": ["ARRAY_LAYOUT"],
+      "numeric_constants": ["OPS3_SAMPLES_PER_STEP", "HORIZON"],
+      "bindings": [
+        {"category": "token.schema", "name": "schema", "producer": "SCHEMA", "consumer": "SCHEMA"},
+        {"category": "token.status", "name": "status", "producer": "STATUS", "consumer": "STATUS"},
+        {"category": "token.claim_ceiling", "name": "claim ceiling", "producer": "CLAIM_CEILING", "consumer": "CLAIM_CEILING"},
+        {"category": "token.mode", "name": "modes", "producer": "MODES", "consumer": "MODES"},
+        {"category": "token.route", "name": "routes", "producer": "ROUTES", "consumer": "ROUTES"},
+        {"category": "token.unit", "name": "target unit", "producer": "TARGET_UNIT", "consumer": "TARGET_UNIT"},
+        {"category": "layout_constant", "name": "array layout", "producer": "ARRAY_LAYOUT", "consumer": "ARRAY_LAYOUT"},
+        {"category": "numeric_constant", "name": "samples per step", "producer": "OPS3_SAMPLES_PER_STEP", "consumer": "OPS3_SAMPLES_PER_STEP"},
+        {"category": "numeric_constant", "name": "horizon", "producer": "HORIZON", "consumer": "HORIZON"}
+      ]
+    }
+  ]
+}

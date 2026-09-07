@@ -68,11 +68,11 @@ FIELD_COMPONENT = "MCRL_V023_LCSRS_C3_OBSERVABILITY_V1"
 SERVICE_MARGIN = 0.001
 LAMBDA_BITS_PER_J = float.fromhex("0x1.c3c0a7b6b86d3p+26")
 
-# The ladder does not state a separate composition operator.  This constant
-# names its plain reading and is deliberately the only deployment choice:
-# masked argmax(Q1 + Q2 + z), with z in the same normalized score units and
-# no scale, clip, sign filter, compatibility gate, or tie override.
-F1_DEPLOYMENT_RULE = "MASKED_ARGMAX_Q1_PLUS_Q2_PLUS_Z_NO_SCALING"
+# The pre-outcome composition-units ruling fixes the only deployment choice:
+# masked argmax(Q1 + Q2 + z/kappa), with raw-bit z converted to the Q1/Q2
+# normalized score unit and no discretionary weighting, clipping, sign
+# filter, compatibility gate, or tie override.
+F1_DEPLOYMENT_RULE = "MASKED_ARGMAX_Q1_PLUS_Q2_PLUS_Z_OVER_KAPPA"
 REFERENCE_DEPLOYMENT_RULE = "MASKED_ARGMAX_Q1_PLUS_Q2"
 CANDIDATE_ENUMERATION_RULE = (
     "ALL_MASK_LEGAL_NON_NOOP_UNILATERAL_PHYSICAL_CHANGES_BY_USER_THEN_ACTION"
@@ -116,6 +116,29 @@ LADDER_PATH = (
     / "V023-C3-RAPID-CONTINGENCY-LADDER-PREOUTCOME-2026-09-06.md"
 )
 LADDER_SHA256 = "e75222c27cf10c8197f022344d726d0614109d534acaf73f20fa75175531161b"
+COMPOSITION_RULING_PATH = (
+    REPO
+    / ".scratch"
+    / "multi-catfish-v023-controller-handoff-20260907"
+    / "ADJUDICATION-F1-COMPOSITION-UNITS-CODEX-GPT6-ASTRA-2026-09-07.md"
+)
+COMPOSITION_RULING_SHA256 = "76e9b52e747bd922061b9a80467cb297f0a65b7883bb1b1015fc2ff768fa2879"
+MODEL_CONFIG_PATH = (
+    REPO
+    / ".scratch"
+    / "multi-catfish-v023-100e-screen-preoutcome-v2"
+    / "V023-100E-MODEL-CONFIG.json"
+)
+MODEL_CONFIG_SHA256 = "81e30b716ce996fb69e57ec9c1c3a4806f93598e6c009216287dd6a7dbde5df7"
+COALITION_RUNTIME_PATH = REPO / "src/mcrl/runtime/ee_axis_coalition_residual_c3.py"
+COALITION_RUNTIME_SHA256 = "daec8a2f82e644d1bede2a5f0787247e3abc01f8c667ac10ed9d4fef32d1ddde"
+V022_COALITION_RUNNER_PATH = (
+    REPO
+    / ".scratch"
+    / "multi-catfish-v022-c3-coalition-residual"
+    / "run_v022_coalition_residual_probe.py"
+)
+V022_COALITION_RUNNER_SHA256 = "fae4a541442fe2c6410415eb6fb89c9d3900f45accdd62e1223e56628ca4bdc8"
 F0_PATH = F0_DIR / "c3_contingency_f0.py"
 F0_SHA256 = "658e4072fb2457aee81800d97eda89b4890cdfe85ac7b0154f7d207ff7fbe673"
 R7_RESULT_PATH = (
@@ -139,6 +162,10 @@ DEFAULT_RECEIPT_NAME = "receipt.json"
 CODE_BINDING_PATHS = (
     ("f1_runner", HERE / "run_v023_c3_contingency_f1.py"),
     ("f1_preflight_builder", HERE / "build_f1_preflight_manifest.py"),
+    ("composition_units_ruling", COMPOSITION_RULING_PATH),
+    ("q12_model_config", MODEL_CONFIG_PATH),
+    ("coalition_residual_unit_conversion", COALITION_RUNTIME_PATH),
+    ("v022_coalition_composition", V022_COALITION_RUNNER_PATH),
     ("f0_formula", F0_PATH),
     ("action_evaluation", REPO / "src/mcrl/env/step.py"),
     ("action_contract", REPO / "src/mcrl/env/action_contract.py"),
@@ -206,6 +233,29 @@ def _load_json(path: Path, *, field: str) -> dict[str, Any]:
     return value
 
 
+def _load_bound_kappa_bits() -> float:
+    """Import the shared Q1/Q2 normalization from its frozen model config."""
+
+    config = _load_json(MODEL_CONFIG_PATH, field="Q1/Q2 model config")
+    try:
+        q1_kappa = float(config["q1"]["kappa_bits"])
+        q2_kappa = float(config["q2"]["kappa_bits"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise F1Error("Q1/Q2 model config lacks numeric kappa_bits") from error
+    expected = float.fromhex("0x1.2cea89d260f2ap+33")
+    if (
+        not math.isfinite(q1_kappa)
+        or q1_kappa <= 0.0
+        or q1_kappa != q2_kappa
+        or q1_kappa != expected
+    ):
+        raise F1Error("Q1/Q2 model config kappa_bits disagrees with V0.22")
+    return q1_kappa
+
+
+KAPPA_BITS = _load_bound_kappa_bits()
+
+
 def _digest(value: object, *, field: str) -> str:
     if (
         not isinstance(value, str)
@@ -257,6 +307,7 @@ class F1Bindings:
             "users": self.users,
             "reference_deployment_rule": REFERENCE_DEPLOYMENT_RULE,
             "candidate_deployment_rule": F1_DEPLOYMENT_RULE,
+            "kappa_bits_hex": KAPPA_BITS.hex(),
             "candidate_enumeration_rule": CANDIDATE_ENUMERATION_RULE,
             "service_margin": SERVICE_MARGIN,
             "ee_rule": "POOLED_RATIO_OF_SUMS_STRICTLY_ABOVE_BASE",
@@ -293,6 +344,17 @@ def authority_bindings() -> dict[str, object]:
             "path": _repo_relative(LADDER_PATH),
             "sha256": LADDER_SHA256,
         },
+        "composition_units": {
+            "ruling_path": _repo_relative(COMPOSITION_RULING_PATH),
+            "ruling_sha256": COMPOSITION_RULING_SHA256,
+            "model_config_path": _repo_relative(MODEL_CONFIG_PATH),
+            "model_config_sha256": MODEL_CONFIG_SHA256,
+            "coalition_runtime_path": _repo_relative(COALITION_RUNTIME_PATH),
+            "coalition_runtime_sha256": COALITION_RUNTIME_SHA256,
+            "v022_composition_path": _repo_relative(V022_COALITION_RUNNER_PATH),
+            "v022_composition_sha256": V022_COALITION_RUNNER_SHA256,
+            "kappa_bits_hex": KAPPA_BITS.hex(),
+        },
         "f0_formula": {
             "path": _repo_relative(F0_PATH),
             "sha256": F0_SHA256,
@@ -314,7 +376,7 @@ def authority_bindings() -> dict[str, object]:
 def formula_digests() -> dict[str, str]:
     source = inspect.getsource(compute_c3_targets).encode("utf-8")
     deployment = (
-        "selected=argmax(where(legal,Q1+Q2+z,-inf));scale=1;"
+        f"selected=argmax(where(legal,Q1+Q2+z/{KAPPA_BITS.hex()},-inf));"
         "numpy-first-index-tie"
     ).encode("ascii")
     kill = canonical_bytes(
@@ -344,6 +406,10 @@ def validate_static_bindings() -> dict[str, object]:
         (REPRICING_CONTRACT_PATH, REPRICING_CONTRACT_SHA256, "repricing contract"),
         (PREREG_PATH, PREREG_SHA256, "TRAIN PREREG"),
         (LADDER_PATH, LADDER_SHA256, "contingency ladder"),
+        (COMPOSITION_RULING_PATH, COMPOSITION_RULING_SHA256, "composition-units ruling"),
+        (MODEL_CONFIG_PATH, MODEL_CONFIG_SHA256, "Q1/Q2 model config"),
+        (COALITION_RUNTIME_PATH, COALITION_RUNTIME_SHA256, "coalition-residual runtime"),
+        (V022_COALITION_RUNNER_PATH, V022_COALITION_RUNNER_SHA256, "V0.22 composition runner"),
         (F0_PATH, F0_SHA256, "F0 formula"),
         (R7_RESULT_PATH, R7_RESULT_SHA256, "R7 result"),
         (R7_MANIFEST_PATH, R7_MANIFEST_SHA256, "R7 manifest"),
@@ -352,6 +418,14 @@ def validate_static_bindings() -> dict[str, object]:
     for path, expected, label in expected_files:
         if file_sha256(path) != expected:
             raise F1Error(f"{label} bytes changed")
+    if _load_bound_kappa_bits() != KAPPA_BITS:
+        raise F1Error("Q1/Q2 kappa_bits changed after module import")
+    coalition_source = COALITION_RUNTIME_PATH.read_text(encoding="utf-8")
+    if "value = float(z3_bits[index]) / kappa_bits" not in coalition_source:
+        raise F1Error("coalition-residual z3/kappa conversion convention drifted")
+    v022_source = V022_COALITION_RUNNER_PATH.read_text(encoding="utf-8")
+    if f'KAPPA_BITS = float.fromhex("{KAPPA_BITS.hex()}")' not in v022_source:
+        raise F1Error("V0.22 composition kappa differs from the Q1/Q2 model config")
     matching_checkpoints = tuple(
         CHECKPOINT_PATH.parent.glob("lineage-2026092101-*-rung-003000.pt")
     )
@@ -616,6 +690,10 @@ def enumerate_unilateral_candidates(observation: Any, reference_actions: object)
         if mask.dtype != np.bool_ or mask.shape != (NUM_ACTIONS,):
             raise F1Error("unilateral legality mask is not Boolean width 28")
         reference_action = int(reference[focal_user])
+        if not np.any(mask):
+            if reference_action != NO_OP_ACTION:
+                raise F1Error("empty-mask user requires the NOOP reference action")
+            continue
         if not 0 <= reference_action < NUM_ACTIONS or not bool(mask[reference_action]):
             raise F1Error("reference action is not legal under the current mask")
         reference_key = _physical_key(table, reference_action)
@@ -670,9 +748,18 @@ def masked_argmax_q12_plus_z(q12: object, z: object, action_masks: object) -> np
         raise F1Error("Q1+Q2 and z surfaces must share shape (U,28)")
     if masks.dtype != np.bool_ or masks.shape != values.shape:
         raise F1Error("deployment mask must be a Boolean Q-surface mask")
-    if not np.all(np.isfinite(values)) or not np.all(np.isfinite(target)) or not np.all(np.any(masks, axis=1)):
-        raise F1Error("deployment surface is non-finite or unselectable")
-    return np.argmax(np.where(masks, values + target, -np.inf), axis=1).astype(np.int64)
+    if not np.all(np.isfinite(values)) or not np.all(np.isfinite(target)):
+        raise F1Error("deployment surface is non-finite")
+    with np.errstate(over="ignore", invalid="ignore"):
+        composed = values + target / KAPPA_BITS
+    if not np.all(np.isfinite(composed)):
+        raise F1Error("deployment composition is non-finite")
+    selected = np.full(values.shape[0], NO_OP_ACTION, dtype=np.int64)
+    eligible = np.any(masks, axis=1)
+    selected[eligible] = np.argmax(
+        np.where(masks[eligible], composed[eligible], -np.inf), axis=1
+    )
+    return selected
 
 
 def _hex_matrix(value: object, *, field: str) -> list[list[str]]:
@@ -705,6 +792,14 @@ def target_surfaces_from_step(step: Mapping[str, object]) -> tuple[np.ndarray, n
         raise F1Error("step action masks are malformed")
     if actions.dtype.kind not in "iu" or actions.shape != (reference.users,):
         raise F1Error("step reference actions are malformed")
+    eligible = np.any(masks, axis=1)
+    for user, reference_action in enumerate(actions.tolist()):
+        action = int(reference_action)
+        if bool(eligible[user]):
+            if not 0 <= action < NUM_ACTIONS or not bool(masks[user, action]):
+                raise F1Error("step reference action is illegal")
+        elif action != NO_OP_ACTION:
+            raise F1Error("empty-mask user requires the NOOP reference action")
     d = np.zeros(masks.shape, dtype=np.float64)
     f = np.zeros(masks.shape, dtype=np.float64)
     covered = {(user, int(actions[user])) for user in range(reference.users)}
@@ -751,7 +846,9 @@ def target_surfaces_from_step(step: Mapping[str, object]) -> tuple[np.ndarray, n
         covered.add(key)
     expected = {(user, int(actions[user])) for user in range(reference.users)}
     for user in range(reference.users):
-        reference_key = physical_keys[user][int(actions[user])]
+        reference_key = (
+            physical_keys[user][int(actions[user])] if bool(eligible[user]) else None
+        )
         seen_keys: set[tuple[int, int]] = set()
         for action in np.flatnonzero(masks[user]).tolist():
             raw_key = physical_keys[user][int(action)]
@@ -794,6 +891,8 @@ def build_step_payload(
         raise F1Error("step reference actions are malformed")
     if q.shape != masks.shape or not np.all(np.isfinite(q)):
         raise F1Error("step Q1+Q2 surface is malformed")
+    if reference_profile.users != USERS:
+        raise F1Error(f"BASE profile must contain exactly {USERS} users")
     _digest(state_sha256, field="state_sha256")
     rows = []
     for candidate in candidates:
@@ -809,6 +908,10 @@ def build_step_payload(
         if name not in deployment_actions or name not in deployment_profiles:
             raise F1Error("both D and F deployment profiles are required")
         profile, link_power = deployment_profiles[name]
+        if not isinstance(profile, PhysicalProfile):
+            raise F1Error(f"{name} deployment profile is not a PhysicalProfile")
+        if profile.users != reference_profile.users or profile.interval_s != reference_profile.interval_s:
+            raise F1Error(f"{name} deployment profile must match BASE users and interval")
         deployments[name] = {
             "actions": [int(value) for value in np.asarray(deployment_actions[name]).tolist()],
             "profile": profile_to_payload(profile, link_power_w=link_power),
@@ -879,6 +982,8 @@ def verify_tape_payload(tape: Mapping[str, object]) -> dict[str, tuple[np.ndarra
         masks = np.asarray(step.get("action_masks"))
         reference = np.asarray(step.get("reference_actions"))
         profile = profile_from_payload(step.get("reference_profile"))
+        if profile.users != USERS:
+            raise F1Error(f"BASE profile must contain exactly {USERS} users")
         if q12.shape != (profile.users, NUM_ACTIONS) or masks.dtype != np.bool_ or masks.shape != q12.shape:
             raise F1Error("step Q/mask/profile dimensions disagree")
         if reference.dtype.kind not in "iu" or reference.shape != (profile.users,):
@@ -899,7 +1004,13 @@ def verify_tape_payload(tape: Mapping[str, object]) -> dict[str, tuple[np.ndarra
             observed = np.asarray(row.get("actions"))
             if observed.dtype.kind not in "iu" or not np.array_equal(observed, expected):
                 raise F1Error(f"{name} deployment is not masked Q1+Q2+z argmax")
-            profile_from_payload(row.get("profile"))
+            deployment_profile = profile_from_payload(row.get("profile"))
+            if (
+                deployment_profile.users != USERS
+                or deployment_profile.users != profile.users
+                or deployment_profile.interval_s != profile.interval_s
+            ):
+                raise F1Error(f"{name} deployment profile must match BASE users and interval")
             selected[name].append(expected)
             targets_by_name[name].append(z)
     return {
@@ -1026,10 +1137,13 @@ def evaluate_kill_rules(
 def adjudicate_outcome(rules: Mapping[str, Mapping[str, object]], *, integrity_ok: bool = True) -> str:
     """Apply the frozen D-before-F outcome order without score comparison."""
 
-    if integrity_ok is not True:
-        return "INVALID_RUN"
     if set(rules) != {"D", "F"}:
         raise F1Error("adjudication requires exactly D and F rule bundles")
+    if integrity_ok is not True or any(
+        not isinstance(rules[name], Mapping) or rules[name].get("integrity") is not True
+        for name in ("D", "F")
+    ):
+        return "INVALID_RUN"
     if rules["D"].get("survives") is True:
         return "F1_SURVIVES_D"
     if rules["F"].get("survives") is True:
@@ -1067,7 +1181,7 @@ def screen_tape(tape: Mapping[str, object], *, tape_sha256: str) -> dict[str, ob
     outcome = adjudicate_outcome(rules)
     return {
         "schema": RECEIPT_SCHEMA,
-        "status": "COMPLETE",
+        "status": "INVALID_RUN" if outcome == "INVALID_RUN" else "COMPLETE",
         "outcome": outcome,
         "claim_ceiling": CLAIM_CEILING,
         "bindings": F1Bindings().as_dict(),
@@ -1150,6 +1264,32 @@ def _runtime_modules() -> tuple[Any, Any]:
     return physical, server
 
 
+def _network_surface_allow_empty(
+    physical: Any,
+    network: Any,
+    states: object,
+    masks: object,
+    *,
+    field: str,
+) -> np.ndarray:
+    """Evaluate only selectable rows; empty-mask users have no Q decision."""
+
+    values = np.asarray(states)
+    legal = np.asarray(masks)
+    if values.ndim != 2 or legal.dtype != np.bool_ or legal.shape != (values.shape[0], NUM_ACTIONS):
+        raise F1Error(f"{field} state/mask input is malformed")
+    eligible = np.any(legal, axis=1)
+    surface = np.zeros(legal.shape, dtype=np.float64)
+    if np.any(eligible):
+        surface[eligible] = physical._surface(
+            network,
+            values[eligible],
+            legal[eligible],
+            field=field,
+        )
+    return surface
+
+
 def _q12_surface(physical: Any, frozen: Any, step_env: Any, observation: Any) -> tuple[Any, np.ndarray, np.ndarray]:
     from mcrl.runtime.ee_axis_ops3_live import (
         build_ops3_live_surfaces,
@@ -1162,19 +1302,28 @@ def _q12_surface(physical: Any, frozen: Any, step_env: Any, observation: Any) ->
     native = encode_ee_axis_state(step_env, observation)
     native.verify()
     masks = np.asarray(native.action_masks, dtype=np.bool_)
-    q1 = physical._surface(frozen.q1, native.state_matrix, masks, field="Q1")
-    q1_reference = physical._masked_argmax(q1, masks)
+    eligible = np.any(masks, axis=1)
+    q1 = _network_surface_allow_empty(
+        physical, frozen.q1, native.state_matrix, masks, field="Q1"
+    )
+    q1_reference = masked_argmax_q12_plus_z(q1, np.zeros_like(q1), masks)
     anchor = snapshot_ops3_anchor(step_env, observation)
     projection = project_ops3_anchor(anchor)
     surfaces = build_ops3_live_surfaces(anchor, projection, q1_reference)
-    q2_state = encode_ee_axis_v014_q2_states(surfaces)
-    q2_state.verify()
-    if not np.array_equal(q2_state.action_masks, masks):
-        raise F1Error("Q2 carrier mask differs from native mask")
-    q2 = physical._surface(frozen.q2, q2_state.state_matrix, masks, field="Q2")
+    q2 = np.zeros(masks.shape, dtype=np.float64)
+    if np.any(eligible):
+        q2_state = encode_ee_axis_v014_q2_states(
+            tuple(surface for index, surface in enumerate(surfaces) if bool(eligible[index]))
+        )
+        q2_state.verify()
+        if not np.array_equal(q2_state.action_masks, masks[eligible]):
+            raise F1Error("Q2 carrier mask differs from native mask")
+        q2[eligible] = physical._surface(
+            frozen.q2, q2_state.state_matrix, q2_state.action_masks, field="Q2"
+        )
     # Match the R7 DetachedQ12Snapshot precision exactly.
     q12 = np.asarray(np.asarray(q1, dtype=np.float32) + np.asarray(q2, dtype=np.float32), dtype=np.float32)
-    reference = physical._masked_argmax(q12, masks)
+    reference = masked_argmax_q12_plus_z(q12, np.zeros_like(q12), masks)
     return native, q12, reference
 
 

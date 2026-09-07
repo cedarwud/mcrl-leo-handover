@@ -1,0 +1,26 @@
+{
+  "schema": "multi-catfish-v023-offline-realartifact-chain-spec-v1",
+  "name": "SELFTEST_CHAIN",
+  "artifacts": [
+    {"name": "real_root", "path": ".scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact"}
+  ],
+  "modules": {
+    "fixture": {
+      "path": ".scratch/multi-catfish-v023-engineering-lane/fixtures/dryrun_chain.py",
+      "name": "dryrun_chain"
+    }
+  },
+  "steps": [
+    {"name": "authenticate", "callable": {"module": "fixture", "name": "authenticate"}, "args": [{"artifact": "real_root"}], "inputs": ["real_root"]},
+    {"name": "load", "callable": {"module": "fixture", "name": "load"}, "args": [{"result": "authenticate"}], "inputs": ["real_root"]},
+    {"name": "merge", "callable": {"module": "fixture", "name": "merge"}, "args": [{"result": "load"}, {"scratch": "merged.txt"}], "inputs": ["real_root"]},
+    {"name": "seal_verify", "callable": {"module": "fixture", "name": "seal_verify"}, "args": [{"result": "merge"}]},
+    {"name": "provider", "callable": {"module": "fixture", "name": "make_provider"}, "args": [{"result": "load"}], "inputs": ["real_root"]},
+    {"name": "next_batch", "callable": {"method_of": "provider", "name": "next_batch"}, "kwargs": {"route": "C1", "source": "informed", "update_cursor": 0}, "inputs": ["real_root"]},
+    {"name": "runner", "callable": {"module": "fixture", "name": "make_runner"}, "args": [{"result": "provider"}]},
+    {"name": "one_epoch", "callable": {"method_of": "runner", "name": "one_epoch"}, "args": [{"result": "next_batch"}]},
+    {"name": "export", "callable": {"method_of": "runner", "name": "export"}, "args": [{"scratch": "checkpoint.txt"}]},
+    {"name": "reload", "callable": {"module": "fixture", "name": "reload_runner"}, "args": [{"result": "export"}, {"result": "provider"}]},
+    {"name": "resume", "callable": {"method_of": "reload", "name": "resume"}}
+  ]
+}

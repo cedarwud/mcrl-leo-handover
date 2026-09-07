@@ -134,7 +134,12 @@ def file_sha256(path: str | Path) -> str:
 
 def _jsonable(value: object) -> object:
     if isinstance(value, np.ndarray):
-        return value.tolist()
+        return {
+            "__ndarray__": True,
+            "dtype": value.dtype.str,
+            "shape": list(value.shape),
+            "values": [_jsonable(child) for child in value.tolist()],
+        }
     if isinstance(value, np.generic):
         return value.item()
     if torch is not None and isinstance(value, torch.Tensor):
@@ -150,6 +155,22 @@ def _jsonable(value: object) -> object:
             raise C1C2PhysicalError("canonical JSON cannot contain non-finite values")
         return value
     raise C1C2PhysicalError(f"unsupported canonical value: {type(value).__name__}")
+
+
+def _restore_jsonable(value: object) -> object:
+    if isinstance(value, list):
+        return [_restore_jsonable(child) for child in value]
+    if isinstance(value, Mapping):
+        if value.get("__ndarray__") is True:
+            try:
+                return np.asarray(
+                    _restore_jsonable(value["values"]),
+                    dtype=np.dtype(str(value["dtype"])),
+                ).reshape(tuple(int(item) for item in value["shape"]))
+            except (KeyError, TypeError, ValueError) as error:
+                raise C1C2PhysicalError("encoded ndarray resume state is malformed") from error
+        return {key: _restore_jsonable(child) for key, child in value.items()}
+    return value
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -600,6 +621,8 @@ class EpisodeReceipt:
             raise C1C2PhysicalError("receipt crossed Q3, TEST, or learning boundary")
         if not isinstance(self.policy_binding, Mapping):
             raise C1C2PhysicalError("receipt lacks policy binding")
+        if _contains_c3(self.policy_binding):
+            raise C1C2PhysicalError("receipt policy binding contains Q3/C3 state")
         if self.policy_binding.get("arm") != self.arm:
             raise C1C2PhysicalError("receipt policy arm drifted")
         if tuple(self.policy_binding.get("routes", ())) != self.routes:
@@ -673,8 +696,8 @@ def adjudicate_physical_disposition(
     if completed_episodes != expected_episodes or expected_episodes not in TERMINAL_BOUNDARIES:
         return {"overall_token": INTEGRITY_STOP, "reasons": []}
     try:
-        if tuple(pooled_by_arm) != ARMS:
-            raise C1C2PhysicalError("pooled arm order/coverage drifted")
+        if set(pooled_by_arm) != set(ARMS) or len(pooled_by_arm) != len(ARMS):
+            raise C1C2PhysicalError("pooled arm coverage drifted")
         ee = {
             arm: float(pooled_by_arm[arm]["ratio_of_sums_ee_bits_per_j"])
             for arm in ARMS
@@ -722,6 +745,26 @@ def _observation_digest(native: Any) -> str:
     )
 
 
+def select_learned_q12_actions(
+    q1_values: object,
+    q2_values: object,
+    masks: object,
+) -> np.ndarray:
+    """Masked, unweighted float64 Q1+Q2 with lowest-legal-index ties."""
+
+    q1 = np.asarray(q1_values, dtype=np.float64)
+    q2 = np.asarray(q2_values, dtype=np.float64)
+    legal = np.asarray(masks)
+    if q1.ndim != 2 or q1.shape[1] != 28 or q2.shape != q1.shape:
+        raise C1C2PhysicalError("Q1/Q2 surfaces must have shape (U,28)")
+    if legal.dtype != np.bool_ or legal.shape != q1.shape:
+        raise C1C2PhysicalError("Q1/Q2 mask must be an aligned Boolean surface")
+    scores = q1 + q2
+    if not np.all(np.isfinite(scores)) or not np.all(np.any(legal, axis=1)):
+        raise C1C2PhysicalError("Q1+Q2 surface is non-finite or has an empty legal row")
+    return np.argmax(np.where(legal, scores, -np.inf), axis=1).astype(np.int64)
+
+
 def _learned_actions(policy: FrozenLearnedPolicy, step_environment: Any, observation: Any) -> np.ndarray:
     if torch is None:
         raise C1C2PhysicalError("learned inference requires torch")
@@ -731,6 +774,12 @@ def _learned_actions(policy: FrozenLearnedPolicy, step_environment: Any, observa
         states = np.asarray(native.state_matrix, dtype=np.float32)
         with torch.no_grad():
             q1 = policy.q1(torch.tensor(states, dtype=torch.float32)).cpu().numpy()
+        if (
+            q1.shape != (USERS, 28)
+            or not np.all(np.isfinite(q1))
+            or not np.all(np.any(masks, axis=1))
+        ):
+            raise C1C2PhysicalError("learned Q1 surface/mask is malformed")
         q1_reference = np.argmax(np.where(masks, q1, -np.inf), axis=1).astype(np.int64)
         anchor = snapshot_ops3_anchor(step_environment, observation)
         projection = project_ops3_anchor(anchor)
@@ -749,12 +798,7 @@ def _learned_actions(policy: FrozenLearnedPolicy, step_environment: Any, observa
         raise
     except (AttributeError, RuntimeError, TypeError, ValueError) as error:
         raise C1C2PhysicalError("learned Q1/Q2 inference failed") from error
-    scores = np.asarray(q1, dtype=np.float64) + np.asarray(q2, dtype=np.float64)
-    if scores.shape != (USERS, 28) or not np.all(np.isfinite(scores)):
-        raise C1C2PhysicalError("learned Q1+Q2 surface is malformed")
-    if not np.all(np.any(masks, axis=1)):
-        raise C1C2PhysicalError("learned action mask contains an empty row")
-    return np.argmax(np.where(masks, scores, -np.inf), axis=1).astype(np.int64)
+    return select_learned_q12_actions(q1, q2, masks)
 
 
 def _native_masks(masks: Sequence[Any]) -> np.ndarray:
@@ -818,8 +862,8 @@ class FixedPolicyEpisodeAdapter:
         return self._resume_by_arm.get(arm)
 
     def restore_resume_states(self, states: Mapping[str, object]) -> None:
-        if tuple(states) != ARMS or any(not isinstance(states[arm], Mapping) for arm in ARMS):
-            raise C1C2PhysicalError("resume checkpoint lacks one ordered state per arm")
+        if set(states) != set(ARMS) or any(not isinstance(states[arm], Mapping) for arm in ARMS):
+            raise C1C2PhysicalError("resume checkpoint lacks one state per arm")
         self._resume_by_arm = {arm: dict(states[arm]) for arm in ARMS}  # type: ignore[arg-type]
 
     def run_episode(
@@ -872,7 +916,11 @@ class FixedPolicyEpisodeAdapter:
             ):
                 raise C1C2PhysicalError("environment resume state is unavailable")
             try:
-                loader(copy.deepcopy(resume_state["environment_training_state"]))
+                loader(
+                    _restore_jsonable(
+                        copy.deepcopy(resume_state["environment_training_state"])
+                    )
+                )
             except (KeyError, TypeError, ValueError, RuntimeError) as error:
                 raise C1C2PhysicalError("environment resume state is invalid") from error
         try:
@@ -1055,6 +1103,8 @@ class FixedPolicyEvaluationRunner:
     def _validate_resume(
         self, payload: Mapping[str, object]
     ) -> tuple[int, list[EpisodeReceipt]]:
+        if _contains_c3(payload):
+            raise C1C2PhysicalError("resume checkpoint contains Q3/C3 state")
         if (
             payload.get("split") != SPLIT
             or payload.get("plan_sha256") != self.plan.plan_sha256
@@ -1281,4 +1331,5 @@ __all__ = [
     "load_baseline_policy",
     "load_learned_two_route_checkpoint",
     "pool_receipts",
+    "select_learned_q12_actions",
 ]

@@ -1,0 +1,178 @@
+{
+  "schema": "multi-catfish-v023-offline-realartifact-chain-spec-v1",
+  "name": "SUCCESSOR_STAGE_A",
+  "python_paths": [
+    "src",
+    ".scratch/multi-catfish-v023-target-batch-adapter",
+    ".scratch/multi-catfish-v023-five-arm-learner-orchestrator",
+    ".scratch/multi-catfish-v023-c1c2-provider-factory-v3",
+    ".scratch/multi-catfish-v023-two-route-source-training-runner"
+  ],
+  "artifacts": [
+    {"name": "target_root", "path": null},
+    {"name": "successor_contract", "path": ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md"},
+    {"name": "model_config", "path": ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"},
+    {"name": "learner_manifest", "path": ".scratch/multi-catfish-v023-two-route-source-training-runner/LEARNER-MANIFEST.json"},
+    {"name": "factory_code", "path": ".scratch/multi-catfish-v023-c1c2-provider-factory-v3/v023_c1c2_provider_factory_v3.py"}
+  ],
+  "modules": {
+    "adapter": {
+      "path": ".scratch/multi-catfish-v023-target-batch-adapter/target_batch_adapter.py",
+      "name": "target_batch_adapter"
+    },
+    "factory": {
+      "path": ".scratch/multi-catfish-v023-c1c2-provider-factory-v3/v023_c1c2_provider_factory_v3.py",
+      "name": "v023_c1c2_provider_factory_v3"
+    },
+    "orchestrator": {
+      "path": ".scratch/multi-catfish-v023-two-route-source-training-runner/v023_two_route_learner_orchestrator.py",
+      "name": "v023_two_route_learner_orchestrator"
+    },
+    "runner_module": {
+      "path": ".scratch/multi-catfish-v023-two-route-source-training-runner/v023_two_route_source_training_runner.py",
+      "name": "v023_two_route_source_training_runner"
+    },
+    "dryrun_support": {
+      "path": ".scratch/multi-catfish-v023-engineering-lane/dryrun_support.py",
+      "name": "dryrun_support"
+    }
+  },
+  "steps": [
+    {
+      "name": "authenticate",
+      "callable": {"module": "adapter", "name": "_authenticate_root"},
+      "args": [{"artifact": "target_root"}],
+      "inputs": ["target_root"]
+    },
+    {
+      "name": "load",
+      "callable": {"module": "adapter", "name": "load_completed_target_artifact"},
+      "args": [{"artifact": "target_root"}],
+      "inputs": ["target_root"]
+    },
+    {
+      "name": "factory_config",
+      "callable": {"module": "factory", "name": "C1C2ProviderConfig"},
+      "kwargs": {
+        "contract_sha256": {"sha256": {"artifact": "successor_contract"}},
+        "target_root": {"artifact": "target_root"},
+        "target_manifest_sha256": {"sha256": {"path_join": [{"artifact": "target_root"}, "MANIFEST.sha256"]}},
+        "target_receipt_sha256": {"sha256": {"path_join": [{"artifact": "target_root"}, "receipt.json"]}},
+        "learner_manifest_sha256": {"sha256": {"artifact": "learner_manifest"}},
+        "model_config_sha256": {"sha256": {"artifact": "model_config"}},
+        "train_seed": 2927175120652069826,
+        "epoch_budget": 100
+      },
+      "inputs": ["target_root", "successor_contract", "learner_manifest", "model_config"]
+    },
+    {
+      "name": "provider_probe",
+      "callable": {"module": "factory", "name": "build_provider"},
+      "args": [{"result": "factory_config"}],
+      "env": {"MCRL_V023_C1C2_LEARNER_MANIFEST_PATH": {"artifact": "learner_manifest"}},
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "provider_next_batch",
+      "callable": {"method_of": "provider_probe", "name": "next_batch"},
+      "kwargs": {"route": "C1", "source": "neutral", "update_cursor": 0},
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "provider_for_runner",
+      "callable": {"module": "factory", "name": "build_provider"},
+      "args": [{"result": "factory_config"}],
+      "env": {"MCRL_V023_C1C2_LEARNER_MANIFEST_PATH": {"artifact": "learner_manifest"}},
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "model_config",
+      "callable": {"module": "runner_module", "name": "_load_model_config"},
+      "args": [{"artifact": "model_config"}],
+      "inputs": ["model_config"]
+    },
+    {
+      "name": "orchestrator_config",
+      "callable": {"module": "orchestrator", "name": "V023TwoRouteOrchestratorConfig.formal"},
+      "kwargs": {"model_config": {"result": "model_config"}, "train_seed": 2927175120652069826}
+    },
+    {
+      "name": "authority_digests",
+      "callable": {"module": "runner_module", "name": "RunAuthorityDigests"},
+      "kwargs": {
+        "authority_sha256": {"sha256": {"artifact": "successor_contract"}},
+        "code_sha256": {"sha256": {"artifact": "factory_code"}},
+        "input_sha256": {"sha256": {"artifact": "target_root"}}
+      },
+      "inputs": ["successor_contract", "factory_code", "target_root"]
+    },
+    {
+      "name": "runner_config",
+      "callable": {"module": "runner_module", "name": "FrozenSourceTrainingConfig"},
+      "kwargs": {
+        "epoch_budget": 100,
+        "orchestrator_config": {"result": "orchestrator_config"},
+        "provider_factory_spec": "v023_c1c2_provider_factory_v3:make_provider",
+        "authority_digests": {"result": "authority_digests"}
+      }
+    },
+    {
+      "name": "runner",
+      "callable": {"module": "runner_module", "name": "V023TwoRouteSourceTrainingRunner"},
+      "args": [{"result": "runner_config"}, {"result": "provider_for_runner"}],
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "begin_new",
+      "callable": {"method_of": "runner", "name": "begin_new"},
+      "args": [{"scratch": "one-epoch-run"}],
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "one_epoch",
+      "callable": {"method_of": "runner", "name": "run_to_epoch"},
+      "args": [1],
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "one_epoch_state",
+      "callable": {"method_of": "runner", "name": "orchestrator.checkpoint_state"},
+      "depends_on": ["one_epoch"]
+    },
+    {
+      "name": "export_one_epoch_state",
+      "callable": {"module": "dryrun_support", "name": "export_torch_mapping"},
+      "args": [{"result": "one_epoch_state"}, {"scratch": "one-epoch-state.pt"}]
+    },
+    {
+      "name": "reload_one_epoch_state",
+      "callable": {"module": "dryrun_support", "name": "reload_torch_mapping"},
+      "args": [{"result": "export_one_epoch_state"}]
+    },
+    {
+      "name": "provider_for_resume",
+      "callable": {"module": "factory", "name": "build_provider"},
+      "args": [{"result": "factory_config"}],
+      "env": {"MCRL_V023_C1C2_LEARNER_MANIFEST_PATH": {"artifact": "learner_manifest"}},
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "resumed_runner",
+      "callable": {"module": "runner_module", "name": "V023TwoRouteSourceTrainingRunner"},
+      "args": [{"result": "runner_config"}, {"result": "provider_for_resume"}],
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "resume",
+      "callable": {"method_of": "resumed_runner", "name": "orchestrator.load_checkpoint_state"},
+      "args": [{"result": "reload_one_epoch_state"}],
+      "inputs": ["target_root", "learner_manifest"]
+    },
+    {
+      "name": "resume_one_epoch",
+      "callable": {"method_of": "resumed_runner", "name": "run_to_epoch"},
+      "args": [2],
+      "inputs": ["target_root", "learner_manifest"]
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "schema": "multi-catfish-v023-engineering-contract-spec-v1",
+  "pairs": [
+    {
+      "name": "a-generator-to-target-batch-adapter",
+      "producer": {
+        "path": ".scratch/multi-catfish-v023-c1c2-target-generation/generate_v023_c1c2_targets.py",
+        "functions": ["_ops3_selected_pair_record", "_write_outputs"],
+        "constants": ["SCHEMA", "SCHEDULE_SCHEMA", "OPS3_SELECTED_PAIR_SCHEMA", "OPS3_TARGET_UNIT", "CLAIM_CEILING"]
+      },
+      "consumer": {
+        "path": ".scratch/multi-catfish-v023-target-batch-adapter/target_batch_adapter.py",
+        "functions": ["_validate_receipt_header", "_ops3_route_batch", "_validate_bindings", "load_completed_target_artifact"],
+        "constants": ["TARGET_GENERATION_SCHEMA", "TARGET_CLAIM_CEILING", "TARGET_STATUS", "TARGET_MODES", "OPS3_SELECTED_PAIR_SCHEMA", "OPS3_TARGET_UNIT", "_RECEIPT_FIELDS", "_SHARD_RECEIPT_FIELDS", "_MERGED_RECEIPT_FIELDS", "_SOURCE_FIELDS", "_FORMULA_FIELDS", "_C1_BINDING_FIELDS", "_C2_BINDING_FIELDS", "_SHARD_FIELDS"]
+      },
+      "bindings": [
+        {"category": "token.schema", "name": "target generation schema", "producer": "SCHEMA", "consumer": "TARGET_GENERATION_SCHEMA"},
+        {"category": "token.schema", "name": "OPS-3 selected-pair schema", "producer": "OPS3_SELECTED_PAIR_SCHEMA", "consumer": "OPS3_SELECTED_PAIR_SCHEMA"},
+        {"category": "token.claim_ceiling", "name": "target claim ceiling", "producer": "CLAIM_CEILING", "consumer": "TARGET_CLAIM_CEILING"},
+        {"category": "token.unit", "name": "normalized C2 target unit", "producer": "OPS3_TARGET_UNIT", "consumer": "OPS3_TARGET_UNIT"}
+      ]
+    },
+    {
+      "name": "b1-generator-to-controller",
+      "producer": {
+        "path": ".scratch/multi-catfish-v023-c1c2-target-generation/generate_v023_c1c2_targets.py",
+        "functions": ["_ops3_selected_pair_record", "_write_outputs"],
+        "constants": ["SCHEMA", "SCHEDULE_SCHEMA", "OPS3_SELECTED_PAIR_SCHEMA", "OPS3_TARGET_UNIT", "CLAIM_CEILING"]
+      },
+      "consumer": {
+        "path": ".scratch/multi-catfish-v023-c1c2-target-generation-launch/run_v023_c1c2_targets_server.py",
+        "functions": ["_read_receipt", "_ops3_row", "_validate_shard", "_merge"],
+        "constants": ["SCHEMA", "SCHEDULE_SCHEMA", "SHARD_MODES", "SHARD_FAMILIES", "OPS3_SELECTED_PAIR_SCHEMA", "OPS3_TARGET_UNIT", "OPS3_HORIZON", "OPS3_FEATURE_DIM", "OPS3_SAMPLES_PER_STEP"]
+      },
+      "layout_constants": ["OPS3_FEATURE_DIM", "OPS3_SAMPLES_PER_STEP"],
+      "numeric_constants": ["OPS3_HORIZON", "OPS3_FEATURE_DIM", "OPS3_SAMPLES_PER_STEP"],
+      "bindings": [
+        {"category": "token.schema", "name": "target generation schema", "producer": "SCHEMA", "consumer": "SCHEMA"},
+        {"category": "token.schema", "name": "schedule schema", "producer": "SCHEDULE_SCHEMA", "consumer": "SCHEDULE_SCHEMA"},
+        {"category": "token.schema", "name": "OPS-3 selected-pair schema", "producer": "OPS3_SELECTED_PAIR_SCHEMA", "consumer": "OPS3_SELECTED_PAIR_SCHEMA"},
+        {"category": "token.unit", "name": "normalized C2 target unit", "producer": "OPS3_TARGET_UNIT", "consumer": "OPS3_TARGET_UNIT"}
+      ]
+    },
+    {
+      "name": "b2-generator-to-sealer",
+      "producer": {
+        "path": ".scratch/multi-catfish-v023-c1c2-target-generation/generate_v023_c1c2_targets.py",
+        "functions": ["_write_outputs"],
+        "constants": ["SCHEMA", "CLAIM_CEILING"]
+      },
+      "consumer": {
+        "path": ".scratch/multi-catfish-v023-c1c2-target-generation-launch/seal_v023_c1c2_target_output.py",
+        "functions": ["seal"],
+        "constants": ["SCHEMA", "CLAIM_CEILING"]
+      },
+      "bindings": [
+        {"category": "token.schema", "name": "target generation schema", "producer": "SCHEMA", "consumer": "SCHEMA"}
+      ]
+    },
+    {
+      "name": "c-adapter-to-provider-factory-v3",
+      "producer": {
+        "path": ".scratch/multi-catfish-v023-target-batch-adapter/target_batch_adapter.py",
+        "functions": ["load_completed_target_artifact", "V023TargetArtifact.for_mode", "V023TargetArtifact.pair_batch"],
+        "writer_calls": ["V023TargetArtifact"],
+        "constants": ["TARGET_GENERATION_SCHEMA", "TARGET_CLAIM_CEILING", "TARGET_STATUS", "TARGET_MODES", "OPS3_SELECTED_PAIR_SCHEMA", "OPS3_TARGET_UNIT"]
+      },
+      "consumer": {
+        "path": ".scratch/multi-catfish-v023-c1c2-provider-factory-v3/v023_c1c2_provider_factory_v3.py",
+        "functions": ["_validate_target_artifact", "build_provider", "V023C1C2Provider.next_batch", "V023C1C2Provider.sampler_state"],
+        "reader_attributes": ["root", "receipt", "modes", "for_mode", "c1_datasets", "c2_datasets", "c1_pair_batch", "c2_pair_batch"],
+        "constants": ["CONFIG_SCHEMA", "FACTORY_SCHEMA", "IDENTITY_SCHEMA", "SAMPLER_SCHEMA", "CLAIM_CEILING", "ROUTES", "SOURCES", "EXPECTED_C1_STATE_DIM", "EXPECTED_C2_STATE_DIM", "EXPECTED_ACTION_DIM"]
+      },
+      "layout_constants": ["EXPECTED_C1_STATE_DIM", "EXPECTED_C2_STATE_DIM", "EXPECTED_ACTION_DIM"],
+      "numeric_constants": ["EXPECTED_C1_STATE_DIM", "EXPECTED_C2_STATE_DIM", "EXPECTED_ACTION_DIM"]
+    },
+    {
+      "name": "d-provider-factory-v3-to-two-route-runner",
+      "producer": {
+        "path": ".scratch/multi-catfish-v023-c1c2-provider-factory-v3/v023_c1c2_provider_factory_v3.py",
+        "functions": ["build_provider", "V023C1C2Provider.next_batch", "V023C1C2Provider.sampler_state"],
+        "writer_calls": ["ProvidedRouteBatch", "V023C1C2Provider"],
+        "constants": ["IDENTITY_SCHEMA", "SAMPLER_SCHEMA", "CLAIM_CEILING", "ROUTES", "SOURCES", "EPOCH_BUDGET"]
+      },
+      "consumer": {
+        "path": ".scratch/multi-catfish-v023-two-route-source-training-runner/v023_two_route_learner_orchestrator.py",
+        "functions": ["_identity_payload", "validate_two_route_provider_identity", "V023TwoRouteLearnerOrchestrator._checked_batch", "V023TwoRouteLearnerOrchestrator.advance", "V023TwoRouteLearnerOrchestrator.load_checkpoint_state"],
+        "reader_attributes": ["provider_identity", "provider_identity_payload", "planned_epoch_budget", "next_batch", "sampler_state", "load_sampler_state", "route", "source", "file_id", "batch"],
+        "constants": ["ORCHESTRATOR_SCHEMA", "IMPLEMENTATION_ONLY_CLAIM", "ROUTE_ORDER", "SOURCE_ORDER", "FORMAL_SOURCE_TRAINING_EPOCHS", "FORMAL_CHECKPOINT_CADENCE_UPDATES"]
+      },
+      "numeric_constants": ["EPOCH_BUDGET", "FORMAL_SOURCE_TRAINING_EPOCHS", "FORMAL_CHECKPOINT_CADENCE_UPDATES"]
+    }
+  ]
+}

@@ -17,25 +17,24 @@ on the Ubuntu server under a separately frozen launch-authority JSON.
   between them, matching the source-stage background trajectory.
 - One common keyed field:
   `KeyedFadingField.from_components("MCRL_V023_LCSRS_C3_OBSERVABILITY_V1", 2026121721)`.
+- Composition-units ruling:
+  `.scratch/multi-catfish-v023-controller-handoff-20260907/ADJUDICATION-F1-COMPOSITION-UNITS-CODEX-GPT6-ASTRA-2026-09-07.md`.
+- Shared Q1/Q2 normalization: `kappa = 10097071012.757404` bits, imported
+  from the digest-bound `V023-100E-MODEL-CONFIG.json` Q1/Q2 entries.
 - Claim ceiling:
   `TRAIN_DEVELOPMENT_C3_CONTINGENCY_F1_KILL_SCREEN_NO_EFFICACY_NO_TEST`.
 
-The ladder names one common keyed field but does not spell out its component
-string. The single open interpretation question is therefore the namespace.
-This implementation uses the plainest reading of the brief's R7-source-stage
-reference: carry forward R7's
-`MCRL_V023_LCSRS_C3_OBSERVABILITY_V1` component and substitute only the
+The binding pre-outcome ruling keeps the R7-source-stage
+`MCRL_V023_LCSRS_C3_OBSERVABILITY_V1` component and substitutes only the
 ladder-frozen F1 world. This choice is a fixed binding, not a CLI option.
 
-The ladder also does not introduce a separate composition operator for `z`.
-The only implemented rule is named by `F1_DEPLOYMENT_RULE`:
-masked `argmax(Q1 + Q2 + z)` over the native legal mask, with NumPy's existing
-first-index tie handling and no scaling, clipping, compatibility gate, sign
-filter, or tuning knob. Here `z` is the literal raw-bit value returned by F0.
-The frozen Q1/Q2 heads carry their existing normalized score convention, so
-the dimensional interpretation of this literal unscaled sum remains an
-authority-level open question; the implementation follows the task's explicit
-"no scaling" instruction and does not introduce a conversion parameter.
+The only implemented composition rule is
+`MASKED_ARGMAX_Q1_PLUS_Q2_PLUS_Z_OVER_KAPPA`: masked
+`argmax(Q1 + Q2 + z/kappa)` over the native legal mask, with NumPy's existing
+first-index tie handling and no discretionary weighting, clipping,
+compatibility gate, sign filter, or tuning knob. Here `z` is the literal
+raw-bit value returned by F0; division by the fixed system kappa is the binding
+unit conversion into the Q1/Q2 normalized-score convention.
 
 ## Tape and screen
 
@@ -47,6 +46,13 @@ contains link rates, per-user link power, realised service and serving
 satellite/cell, active beams and their radiated link power, fixed/system
 power, and interval. D and F are recomputed only through the existing F0
 `compute_c3_targets` function.
+
+An all-false native mask emits `NO_OP_ACTION` and contributes no unilateral
+candidate for that user. Tape validation requires BASE to contain exactly 100
+users and requires both deployment profiles to match BASE's user count and
+interval exactly. Any failed D or F integrity bundle makes the global outcome
+`INVALID_RUN`; it cannot fall through to a sibling survivor or
+`FAST_SCREEN_NO_SUPPORT`.
 
 The selected D/F joint actions are evaluated once at the same anchor and
 field and included in the shared tape. The tape and manifest are created with
