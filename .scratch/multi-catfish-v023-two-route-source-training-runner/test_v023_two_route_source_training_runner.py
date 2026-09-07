@@ -196,31 +196,75 @@ def _run_nonformal_then_sigkill(root: str, stop_epoch: int) -> None:
     os.kill(os.getpid(), signal.SIGKILL)
 
 
-def _artifact_bytes(root: Path) -> dict[str, bytes]:
+def _artifact_bytes(
+    root: Path, *, exclude_resume_receipts: bool = False
+) -> dict[str, bytes]:
     return {
         str(path.relative_to(root)): path.read_bytes()
         for path in sorted(root.rglob("*"))
         if path.is_file()
+        and not (
+            exclude_resume_receipts
+            and path.relative_to(root).parts[:1] == ("resume-receipts",)
+        )
     }
 
 
 def _remove_epoch_artifacts_after_simulated_kill(
     root: Path, epoch: int, *, write_point: str
-) -> None:
-    """Reduce a sealed epoch to the prefix visible before one atomic publish."""
+) -> str:
+    """Reduce a sealed epoch/root to the prefix visible at a killed publish."""
 
     checkpoint = root / f"checkpoints/epoch-{epoch:04d}.runner.pt"
     receipt = root / f"checkpoint-receipts/epoch-{epoch:04d}.json"
     manifest = root / f"exports/epoch-{epoch:04d}.json"
     export_dir = root / f"exports/epoch-{epoch:04d}"
-    checkpoint.with_suffix(checkpoint.suffix + ".sha256").unlink()
-    if write_point in {"checkpoint", "receipt", "exports"}:
+    sidecar = checkpoint.with_suffix(checkpoint.suffix + ".sha256")
+    nonce = "a" * 32
+    if write_point == "ledger":
+        temporary = root / f".update-ledger.json.{nonce}.tmp"
+        temporary.write_bytes(b"truncated-ledger")
+        return temporary.relative_to(root).as_posix()
+    if write_point == "canonical-receipt":
+        (root / "canonical-receipt.json").unlink()
+        temporary = root / f".canonical-receipt.json.{nonce}.tmp"
+        temporary.write_bytes(b"truncated-receipt")
+        return temporary.relative_to(root).as_posix()
+
+    sidecar.unlink()
+    if write_point in {
+        "checkpoint", "checkpoint-receipt", "manifest", "export-directory"
+    }:
         checkpoint.unlink()
-    if write_point in {"receipt", "exports"}:
+    if write_point in {"checkpoint-receipt", "manifest", "export-directory"}:
         receipt.unlink()
-    if write_point == "exports":
+    if write_point in {"manifest", "export-directory"}:
         manifest.unlink()
+    if write_point == "export-directory":
         shutil.rmtree(export_dir)
+        temporary = root / f"exports/.epoch-{epoch:04d}.{nonce}.tmp"
+        temporary.mkdir()
+        (temporary / "00-FULL2.current-ee-axis-two-route.pt").write_bytes(
+            b"partial-export-directory"
+        )
+        return temporary.relative_to(root).as_posix()
+    temporary_by_point = {
+        "manifest": root / f"exports/.epoch-{epoch:04d}.json.{nonce}.tmp",
+        "checkpoint-receipt": (
+            root / f"checkpoint-receipts/.epoch-{epoch:04d}.json.{nonce}.tmp"
+        ),
+        "checkpoint": (
+            root / f"checkpoints/.epoch-{epoch:04d}.runner.pt.{nonce}.tmp"
+        ),
+        "sidecar": (
+            root
+            / f"checkpoints/.epoch-{epoch:04d}.runner.pt.sha256.{nonce}.tmp"
+        ),
+    }
+    temporary = temporary_by_point[write_point]
+    temporary.write_bytes(f"truncated-{write_point}".encode("ascii"))
+    assert export_dir.is_dir()
+    return temporary.relative_to(root).as_posix()
 
 
 def test_authenticated_real_a_to_b_boundary_and_cycle(authenticated_boundary):
@@ -482,7 +526,18 @@ def test_nonformal_resume_is_bitwise_exact_at_boundary_and_nonboundary(
         )
 
 
-@pytest.mark.parametrize("write_point", ["exports", "receipt", "checkpoint", "sidecar"])
+@pytest.mark.parametrize(
+    "write_point",
+    [
+        "manifest",
+        "export-directory",
+        "checkpoint-receipt",
+        "checkpoint",
+        "sidecar",
+        "canonical-receipt",
+        "ledger",
+    ],
+)
 def test_resume_ignores_each_unsealed_atomic_write_prefix_and_reproduces_final_bytes(
     authenticated_boundary, tmp_path, write_point,
 ):
@@ -500,8 +555,8 @@ def test_resume_ignores_each_unsealed_atomic_write_prefix_and_reproduces_final_b
     )
     root = tmp_path / f"kill-{write_point}-REHEARSAL-NONFORMAL"
     interrupted.begin_new(root)
-    interrupted.run_to_epoch(20)
-    _remove_epoch_artifacts_after_simulated_kill(
+    interrupted.run_to_epoch(100 if write_point == "canonical-receipt" else 20)
+    stale_path = _remove_epoch_artifacts_after_simulated_kill(
         root, 20, write_point=write_point
     )
 
@@ -510,9 +565,79 @@ def test_resume_ignores_each_unsealed_atomic_write_prefix_and_reproduces_final_b
         _runner_config(resumed_provider, formal=False), resumed_provider
     )
     selected = resumed.resume_from_root(root)
-    assert selected.name == "epoch-0010.runner.pt"
+    expected_selected = {
+        "canonical-receipt": "epoch-0100.runner.pt",
+        "ledger": "epoch-0020.runner.pt",
+    }.get(write_point, "epoch-0010.runner.pt")
+    assert selected.name == expected_selected
+    resume_receipt = json.loads(
+        (root / "resume-receipts/resume-0001.json").read_text(encoding="ascii")
+    )
+    assert resume_receipt["schema"] == RUNNER.RESUME_RECEIPT_SCHEMA
+    assert resume_receipt["removed_stale_temps"] == [stale_path]
+    assert not (root / stale_path).exists()
     resumed.run()
-    assert _artifact_bytes(root) == _artifact_bytes(reference_root)
+    assert _artifact_bytes(
+        root, exclude_resume_receipts=True
+    ) == _artifact_bytes(reference_root, exclude_resume_receipts=True)
+
+
+def test_check_root_reports_without_removing_stale_temps(
+    authenticated_boundary, tmp_path, capsys,
+):
+    provider = _provider(authenticated_boundary)
+    runner = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider, formal=False), provider
+    )
+    root = tmp_path / "check-root-REHEARSAL-NONFORMAL"
+    runner.begin_new(root)
+    runner.run_to_epoch(20)
+    stale_path = _remove_epoch_artifacts_after_simulated_kill(
+        root, 20, write_point="manifest"
+    )
+
+    before = _artifact_bytes(root)
+    assert RUNNER.main(["--check-root", str(root)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["schema"] == RUNNER.ROOT_CHECK_SCHEMA
+    assert report["sealed_epochs"] == [0, 10]
+    assert report["unsealed_prefixes"][0]["epoch"] == 20
+    assert report["stale_temps"] == [
+        {
+            "artifact": "export-manifest",
+            "epoch": 20,
+            "kind": "file",
+            "path": stale_path,
+            "refusal_reason": None,
+            "safe_to_remove": True,
+        }
+    ]
+    assert _artifact_bytes(root) == before
+
+
+def test_resume_refuses_to_touch_temp_belonging_to_sealed_epoch(
+    authenticated_boundary, tmp_path,
+):
+    provider = _provider(authenticated_boundary)
+    runner = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider, formal=False), provider
+    )
+    root = tmp_path / "sealed-temp-REHEARSAL-NONFORMAL"
+    runner.begin_new(root)
+    runner.run_to_epoch(10)
+    stale = root / f"exports/.epoch-0010.json.{'b' * 32}.tmp"
+    stale.write_bytes(b"must-not-delete")
+
+    resumed_provider = _provider(authenticated_boundary)
+    resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(resumed_provider, formal=False), resumed_provider
+    )
+    with pytest.raises(
+        RUNNER.V023TwoRouteSourceTrainingRunnerError, match="sealed epoch"
+    ):
+        resumed.resume_from_root(root)
+    assert stale.read_bytes() == b"must-not-delete"
+    assert not (root / "resume-receipts").exists()
 
 
 def test_sealed_epoch_export_directory_is_never_replaced(

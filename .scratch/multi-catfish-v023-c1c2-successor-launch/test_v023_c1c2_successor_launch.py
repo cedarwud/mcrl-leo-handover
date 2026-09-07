@@ -546,6 +546,11 @@ def nonformal_output(
     )
     assert result.returncode == 0, result.stderr
     assert "SUCCESSOR_NONFORMAL_RUN_COMPLETE" in result.stdout
+    # Simulate SIGKILL after the wrapper opened its atomic ledger temp but
+    # before publication. The runner owns the root-wide resume sweep.
+    (output / "update-ledger.json").unlink()
+    ledger_temp = output / f".update-ledger.json.{'c' * 32}.tmp"
+    ledger_temp.write_bytes(b"truncated-ledger")
     resumed = subprocess.run(
         [
             str(REPO / ".venv/bin/python"),
@@ -556,6 +561,11 @@ def nonformal_output(
         stderr=subprocess.PIPE, check=False, timeout=180,
     )
     assert resumed.returncode == 0, resumed.stderr
+    assert not ledger_temp.exists()
+    resume_receipt = json.loads(
+        (output / "resume-receipts/resume-0001.json").read_text(encoding="ascii")
+    )
+    assert resume_receipt["removed_stale_temps"] == [ledger_temp.name]
     return output, preflight, provider_config
 
 
@@ -622,6 +632,7 @@ def test_nonformal_verifier_reconstructs_without_formal_pass_token(
     assert result["status"] == VERIFY.NONFORMAL_PASS, result
     assert result["formal"] is False
     assert VERIFY.PASS not in result["status"]
+    assert (output / "resume-receipts/resume-0001.json").is_file()
 
     formal_attempt = VERIFY.decision_for_output(
         repo=REPO, output_root=output, provider_config_path=provider_config,
@@ -630,6 +641,41 @@ def test_nonformal_verifier_reconstructs_without_formal_pass_token(
     )
     assert formal_attempt["status"] == VERIFY.STOP
     assert "non-formal rehearsal roots" in formal_attempt["error"]
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "nonformal"),
+    [("producer_output", False), ("nonformal_output", True)],
+)
+@pytest.mark.parametrize(
+    "relative",
+    [f"checkpoints/.stray.{'d' * 32}.tmp", "unexpected.bin"],
+)
+def test_verifier_rejects_every_unaccounted_root_artifact_in_both_modes(
+    request: pytest.FixtureRequest,
+    fixture_name: str,
+    nonformal: bool,
+    relative: str,
+):
+    output, preflight, provider_config = request.getfixturevalue(fixture_name)
+    stray = output / relative
+    stray.write_bytes(b"unaccounted")
+    try:
+        result = VERIFY.decision_for_output(
+            repo=REPO,
+            output_root=output,
+            provider_config_path=provider_config,
+            model_config_path=REPO / COMMON.SUCCESSOR_REL / COMMON.MODEL_CONFIG_NAME,
+            preflight_receipt_path=preflight,
+            reconstruct=True,
+            nonformal=nonformal,
+        )
+    finally:
+        stray.unlink()
+    assert result["status"] == (
+        VERIFY.NONFORMAL_FAIL if nonformal else VERIFY.STOP
+    )
+    assert "unaccounted artifact" in result["error"]
 
 
 def test_formal_fixture_cannot_pass_nonformal_verifier(

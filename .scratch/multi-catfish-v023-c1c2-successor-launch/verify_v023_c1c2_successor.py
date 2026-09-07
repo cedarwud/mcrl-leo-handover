@@ -12,6 +12,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -30,6 +31,12 @@ STOP = "STOP_SOURCE_TRAINING_INTEGRITY"
 NONFORMAL_PASS = "NONFORMAL_RECONSTRUCTION_PASS"
 NONFORMAL_FAIL = "NONFORMAL_RECONSTRUCTION_FAIL"
 LEDGER_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-update-ledger-v1"
+RESUME_RECEIPT_SCHEMA = (
+    "multi-catfish-mcrl-v023-c1c2-successor-two-route-source-training-"
+    "runner-v1-resume-receipt-v1"
+)
+_RESUME_RECEIPT_RE = re.compile(r"^resume-(?P<sequence>[0-9]{4})\.json$")
+_STALE_TEMP_RE = re.compile(r"^\..+\.[0-9a-f]{32}\.tmp$")
 
 
 class VerificationError(SuccessorLaunchError):
@@ -170,6 +177,128 @@ def _verify_existing_seal(root: Path) -> None:
         raise VerificationError("output whole-tree manifest closure drifted")
 
 
+def _validate_resume_receipts(
+    root: Path, *, expected_formal: bool, checkpoint_epochs: tuple[int, ...]
+) -> set[str]:
+    directory = root / "resume-receipts"
+    if not directory.exists() and not directory.is_symlink():
+        return set()
+    if directory.is_symlink() or not directory.is_dir():
+        raise VerificationError("resume receipt directory is not a regular directory")
+    paths = sorted(directory.iterdir(), key=lambda path: path.name)
+    expected_names = [f"resume-{index:04d}.json" for index in range(1, len(paths) + 1)]
+    if [path.name for path in paths] != expected_names:
+        raise VerificationError("resume receipt sequence/root contents drifted")
+    accounted = {"resume-receipts"}
+    for sequence, path in enumerate(paths, start=1):
+        if _RESUME_RECEIPT_RE.fullmatch(path.name) is None:
+            raise VerificationError("resume receipt name is malformed")
+        receipt = _runner_json(path, field=f"resume receipt {sequence}")
+        expected_fields = {
+            "schema", "formal", "resume_sequence", "resumed_from_checkpoint",
+            "sealed_epochs_before_resume", "unsealed_epochs_before_resume",
+            "removed_stale_temps",
+        }
+        if set(receipt) != expected_fields:
+            raise VerificationError("resume receipt field set drifted")
+        sealed = receipt.get("sealed_epochs_before_resume")
+        unsealed = receipt.get("unsealed_epochs_before_resume")
+        removed = receipt.get("removed_stale_temps")
+        if (
+            receipt.get("schema") != RESUME_RECEIPT_SCHEMA
+            or receipt.get("formal") is not expected_formal
+            or receipt.get("resume_sequence") != sequence
+            or not isinstance(sealed, list)
+            or sealed != sorted(set(sealed))
+            or any(type(epoch) is not int or epoch not in checkpoint_epochs for epoch in sealed)
+            or not isinstance(unsealed, list)
+            or unsealed != sorted(set(unsealed))
+            or any(type(epoch) is not int or epoch not in checkpoint_epochs for epoch in unsealed)
+            or set(sealed) & set(unsealed)
+            or not isinstance(removed, list)
+            or not removed
+            or removed != sorted(set(removed))
+        ):
+            raise VerificationError("resume receipt content drifted")
+        resumed_from = receipt.get("resumed_from_checkpoint")
+        allowed_checkpoints = {
+            f"checkpoints/epoch-{epoch:04d}.runner.pt" for epoch in sealed
+        }
+        if resumed_from not in allowed_checkpoints:
+            raise VerificationError("resume receipt selected checkpoint drifted")
+        for relative in removed:
+            if not isinstance(relative, str):
+                raise VerificationError("resume receipt removed path is not a string")
+            candidate = Path(relative)
+            if (
+                candidate.is_absolute()
+                or "\\" in relative
+                or any(part in {"", ".", ".."} for part in candidate.parts)
+                or not _STALE_TEMP_RE.fullmatch(candidate.name)
+                or (root / candidate).exists()
+                or (root / candidate).is_symlink()
+            ):
+                raise VerificationError("resume receipt removed path is invalid")
+        accounted.add(path.relative_to(root).as_posix())
+    return accounted
+
+
+def _validate_root_schema(
+    root: Path, *, expected_formal: bool, checkpoint_epochs: tuple[int, ...]
+) -> None:
+    expected = {
+        "checkpoints",
+        "checkpoint-receipts",
+        "exports",
+        "canonical-status.json",
+        "canonical-receipt.json",
+        "update-ledger.json",
+        "formal-provenance.json" if expected_formal else "nonformal-provenance.json",
+    }
+    for epoch in checkpoint_epochs:
+        checkpoint_name = f"epoch-{epoch:04d}.runner.pt"
+        expected.update(
+            {
+                f"checkpoints/{checkpoint_name}",
+                f"checkpoints/{checkpoint_name}.sha256",
+                f"checkpoint-receipts/epoch-{epoch:04d}.json",
+                f"exports/epoch-{epoch:04d}.json",
+                f"exports/epoch-{epoch:04d}",
+            }
+        )
+        for index, arm in enumerate(ARM_ORDER):
+            export_name = f"{index:02d}-{arm}.current-ee-axis-two-route.pt"
+            expected.add(f"exports/epoch-{epoch:04d}/{export_name}")
+            expected.add(f"exports/epoch-{epoch:04d}/{export_name}.sha256")
+    expected.update(
+        _validate_resume_receipts(
+            root,
+            expected_formal=expected_formal,
+            checkpoint_epochs=checkpoint_epochs,
+        )
+    )
+    optional = (
+        {"verification.json", "MANIFEST.sha256", "COMPLETE"}
+        if expected_formal
+        else {"nonformal-verification.json"}
+    )
+    observed = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+    }
+    unknown = sorted(observed - expected - optional)
+    if unknown:
+        raise VerificationError(
+            "output root contains an unaccounted artifact: " + ", ".join(unknown)
+        )
+    for relative in sorted(observed):
+        path = root / relative
+        if path.is_symlink():
+            raise VerificationError(
+                f"output root contains a symlinked artifact: {relative}"
+            )
+
+
 def _storage_isolation(rebuilt: Any) -> None:
     owners: dict[int, str] = {}
     for arm, model in rebuilt.orchestrator.models.items():
@@ -199,6 +328,7 @@ def verify_output(
     if root.is_symlink() or not root.is_dir():
         raise VerificationError("finished output root is missing or symlinked")
     expected_formal = not nonformal
+    checkpoint_epochs = (0, 100) if expected_formal else tuple(range(0, 101, 10))
     rehearsal_named = "REHEARSAL-NONFORMAL" in root.name.upper()
     if nonformal and not rehearsal_named:
         raise VerificationError(
@@ -206,6 +336,11 @@ def verify_output(
         )
     if not nonformal and rehearsal_named:
         raise VerificationError("non-formal rehearsal roots cannot pass formal verification")
+    _validate_root_schema(
+        root,
+        expected_formal=expected_formal,
+        checkpoint_epochs=checkpoint_epochs,
+    )
     _verify_existing_seal(root)
     if nonformal and any((root / name).exists() for name in ("MANIFEST.sha256", "COMPLETE")):
         raise VerificationError("non-formal rehearsal roots cannot carry a formal completion seal")
@@ -332,7 +467,6 @@ def verify_output(
         raise VerificationError("run provenance is not fully bound to the launch")
 
     checkpoints = sorted(path.name for path in (root / "checkpoints").glob("*.runner.pt"))
-    checkpoint_epochs = (0, 100) if expected_formal else tuple(range(0, 101, 10))
     expected_checkpoint_names = [f"epoch-{epoch:04d}.runner.pt" for epoch in checkpoint_epochs]
     if checkpoints != expected_checkpoint_names:
         raise VerificationError("checkpoint cadence/root contents drifted")

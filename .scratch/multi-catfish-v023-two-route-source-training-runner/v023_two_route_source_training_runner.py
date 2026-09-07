@@ -79,6 +79,22 @@ PROVIDER_FACTORY_PATH = (
     / "v023_c1c2_provider_factory_v3.py"
 )
 EPOCH_100_INTEGRITY_DECISION = "PASS_EXACT_EPOCH_100_RESTORE"
+ROOT_CHECK_SCHEMA = f"{RUNNER_SCHEMA}-root-check-v1"
+RESUME_RECEIPT_SCHEMA = f"{RUNNER_SCHEMA}-resume-receipt-v1"
+_ATOMIC_TEMP_RE = re.compile(
+    r"^\.(?P<target>.+)\.(?P<nonce>[0-9a-f]{32})\.tmp$"
+)
+_EPOCH_TARGET_RE = re.compile(r"^epoch-(?P<epoch>[0-9]{4})(?P<suffix>.*)$")
+_RESUME_RECEIPT_RE = re.compile(r"^resume-(?P<sequence>[0-9]{4})\.json$")
+_RUN_SCOPED_TEMP_TARGETS = frozenset(
+    {
+        "canonical-status.json",
+        "canonical-receipt.json",
+        "update-ledger.json",
+        "formal-provenance.json",
+        "nonformal-provenance.json",
+    }
+)
 
 
 def _validate_closed_topology() -> None:
@@ -98,6 +114,17 @@ def _validate_closed_topology() -> None:
 
 class V023TwoRouteSourceTrainingRunnerError(RuntimeError):
     """The frozen two-route runner contract was violated."""
+
+
+@dataclass(frozen=True, slots=True)
+class _StaleTemp:
+    path: Path
+    relative_path: str
+    artifact: str
+    epoch: int | None
+    kind: str
+    safe_to_remove: bool
+    refusal_reason: str | None
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -675,6 +702,265 @@ class V023TwoRouteSourceTrainingRunner:
             checkpoint.with_suffix(checkpoint.suffix + ".sha256"),
         )
 
+    @staticmethod
+    def _temp_kind(path: Path) -> str:
+        if path.is_symlink():
+            return "symlink"
+        if path.is_file():
+            return "file"
+        if path.is_dir():
+            return "directory"
+        return "other"
+
+    @classmethod
+    def _classify_stale_temp(
+        cls,
+        root: Path,
+        path: Path,
+        *,
+        authorized_epochs: tuple[int, ...],
+        sealed_epochs: frozenset[int],
+        root_sealed: bool,
+    ) -> _StaleTemp:
+        relative = path.relative_to(root)
+        relative_path = relative.as_posix()
+        kind = cls._temp_kind(path)
+        artifact = "unknown"
+        epoch: int | None = None
+
+        # A killed export-directory publication can contain further atomic
+        # temps. Tie every such descendant to the outer epoch prefix.
+        if len(relative.parts) >= 3 and relative.parts[0] == "exports":
+            outer_match = _ATOMIC_TEMP_RE.fullmatch(relative.parts[1])
+            if outer_match is not None:
+                epoch_match = _EPOCH_TARGET_RE.fullmatch(
+                    outer_match.group("target")
+                )
+                if epoch_match is not None and not epoch_match.group("suffix"):
+                    epoch = int(epoch_match.group("epoch"))
+                    artifact = "export-directory-member"
+
+        match = _ATOMIC_TEMP_RE.fullmatch(path.name)
+        if match is not None and artifact == "unknown":
+            target = match.group("target")
+            epoch_match = _EPOCH_TARGET_RE.fullmatch(target)
+            parent = relative.parent.as_posix()
+            if parent == "exports" and epoch_match is not None:
+                suffix = epoch_match.group("suffix")
+                if suffix == "":
+                    artifact = "export-directory"
+                elif suffix == ".json":
+                    artifact = "export-manifest"
+                epoch = int(epoch_match.group("epoch"))
+            elif parent == "checkpoints" and epoch_match is not None:
+                suffix = epoch_match.group("suffix")
+                if suffix == ".runner.pt":
+                    artifact = "checkpoint"
+                elif suffix == ".runner.pt.sha256":
+                    artifact = "checkpoint-sidecar"
+                epoch = int(epoch_match.group("epoch"))
+            elif parent == "checkpoint-receipts" and epoch_match is not None:
+                if epoch_match.group("suffix") == ".json":
+                    artifact = "checkpoint-receipt"
+                epoch = int(epoch_match.group("epoch"))
+            elif parent == "resume-receipts" and _RESUME_RECEIPT_RE.fullmatch(
+                target
+            ):
+                artifact = "resume-receipt"
+            elif parent == "." and target in _RUN_SCOPED_TEMP_TARGETS:
+                artifact = target.removesuffix(".json")
+
+        refusal_reason = None
+        if kind not in {"file", "directory"}:
+            refusal_reason = f"stale temp is a {kind}"
+        elif artifact == "unknown":
+            refusal_reason = "stale temp does not belong to a known artifact"
+        elif epoch is not None and epoch not in authorized_epochs:
+            refusal_reason = "stale temp belongs to an unauthorized epoch"
+        elif epoch is not None and epoch in sealed_epochs:
+            refusal_reason = "stale temp belongs to a sealed epoch"
+        elif epoch is None and root_sealed:
+            refusal_reason = "stale temp belongs to a sealed output root"
+
+        return _StaleTemp(
+            path=path,
+            relative_path=relative_path,
+            artifact=artifact,
+            epoch=epoch,
+            kind=kind,
+            safe_to_remove=refusal_reason is None,
+            refusal_reason=refusal_reason,
+        )
+
+    @classmethod
+    def inspect_output_root(cls, output_root: str | Path) -> dict[str, Any]:
+        """Return publication-prefix and stale-temp state without mutation."""
+
+        root = Path(output_root)
+        if root.is_symlink() or not root.is_dir():
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "check root must be an existing non-symlink directory"
+            )
+        status = cls._read_json(root / "canonical-status.json")
+        formal = status.get("formal")
+        if formal is True:
+            authorized_epochs = FORMAL_CHECKPOINT_EPOCHS
+        elif formal is False:
+            authorized_epochs = NONFORMAL_CHECKPOINT_EPOCHS
+        else:
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "canonical status does not declare a boolean formal mode"
+            )
+        sealed_epochs = frozenset(
+            epoch
+            for epoch in authorized_epochs
+            if cls._has_complete_sealed_prefix(root, epoch)
+        )
+        root_sealed = any(
+            (root / name).exists() or (root / name).is_symlink()
+            for name in ("MANIFEST.sha256", "COMPLETE")
+        )
+        stale_paths = sorted(
+            (
+                path
+                for path in root.rglob("*")
+                if path.name.startswith(".") and path.name.endswith(".tmp")
+            ),
+            key=lambda path: path.relative_to(root).as_posix(),
+        )
+        stale = [
+            cls._classify_stale_temp(
+                root,
+                path,
+                authorized_epochs=authorized_epochs,
+                sealed_epochs=sealed_epochs,
+                root_sealed=root_sealed,
+            )
+            for path in stale_paths
+        ]
+        unsealed_prefixes = []
+        for epoch in authorized_epochs:
+            if epoch in sealed_epochs:
+                continue
+            present = [
+                path.relative_to(root).as_posix()
+                for path in cls._checkpoint_prefix_paths(root, epoch)
+                if path.exists() or path.is_symlink()
+            ]
+            present.extend(
+                item.relative_path for item in stale if item.epoch == epoch
+            )
+            if present:
+                unsealed_prefixes.append(
+                    {"epoch": epoch, "paths": sorted(set(present))}
+                )
+        return {
+            "schema": ROOT_CHECK_SCHEMA,
+            "formal": formal,
+            "output_root": str(root.resolve(strict=False)),
+            "root_sealed": root_sealed,
+            "sealed_epochs": sorted(sealed_epochs),
+            "unsealed_prefixes": unsealed_prefixes,
+            "stale_temps": [
+                {
+                    "path": item.relative_path,
+                    "artifact": item.artifact,
+                    "epoch": item.epoch,
+                    "kind": item.kind,
+                    "safe_to_remove": item.safe_to_remove,
+                    "refusal_reason": item.refusal_reason,
+                }
+                for item in stale
+            ],
+        }
+
+    @classmethod
+    def _write_resume_receipt(
+        cls,
+        root: Path,
+        *,
+        report: Mapping[str, Any],
+        resumed_from: Path,
+        removed: list[str],
+    ) -> None:
+        receipts = root / "resume-receipts"
+        if receipts.is_symlink() or (receipts.exists() and not receipts.is_dir()):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "resume receipt directory is invalid"
+            )
+        receipts.mkdir(mode=0o700, exist_ok=True)
+        observed = sorted(receipts.iterdir(), key=lambda path: path.name)
+        sequences = []
+        for path in observed:
+            match = _RESUME_RECEIPT_RE.fullmatch(path.name)
+            if match is None or path.is_symlink() or not path.is_file():
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "resume receipt directory contains an unknown artifact"
+                )
+            sequences.append(int(match.group("sequence")))
+        if sequences != list(range(1, len(sequences) + 1)):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "resume receipt sequence is not contiguous"
+            )
+        sequence = len(sequences) + 1
+        payload = {
+            "schema": RESUME_RECEIPT_SCHEMA,
+            "formal": report["formal"],
+            "resume_sequence": sequence,
+            "resumed_from_checkpoint": resumed_from.relative_to(root).as_posix(),
+            "sealed_epochs_before_resume": report["sealed_epochs"],
+            "unsealed_epochs_before_resume": [
+                item["epoch"] for item in report["unsealed_prefixes"]
+            ],
+            "removed_stale_temps": removed,
+        }
+        _atomic_json_once(receipts / f"resume-{sequence:04d}.json", payload)
+
+    @classmethod
+    def _sweep_stale_temps(
+        cls,
+        root: Path,
+        *,
+        report: Mapping[str, Any],
+        resumed_from: Path,
+    ) -> list[str]:
+        stale = report["stale_temps"]
+        refused = [item for item in stale if not item["safe_to_remove"]]
+        if refused:
+            detail = "; ".join(
+                f"{item['path']}: {item['refusal_reason']}" for item in refused
+            )
+            raise V023TwoRouteSourceTrainingRunnerError(
+                f"refusing stale-temp cleanup: {detail}"
+            )
+        removed = [item["path"] for item in stale]
+        for item in sorted(
+            stale,
+            key=lambda value: len(Path(value["path"]).parts),
+            reverse=True,
+        ):
+            path = root / item["path"]
+            if path.is_symlink():
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "stale temp changed into a symlink during cleanup"
+                )
+            if path.is_dir():
+                shutil.rmtree(path)
+            elif path.is_file():
+                path.unlink()
+            elif path.exists():
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "stale temp changed type during cleanup"
+                )
+        if removed:
+            cls._write_resume_receipt(
+                root,
+                report=report,
+                resumed_from=resumed_from,
+                removed=removed,
+            )
+        return removed
+
     @classmethod
     def _has_complete_sealed_prefix(cls, root: Path, epoch: int) -> bool:
         export_dir, manifest, receipt, checkpoint, sidecar = cls._checkpoint_prefix_paths(
@@ -738,12 +1024,6 @@ class V023TwoRouteSourceTrainingRunner:
             manifest_path.unlink()
         except FileNotFoundError:
             pass
-        for stale in directory.parent.glob(f".{directory.name}.*.tmp"):
-            if stale.is_symlink() or not stale.is_dir():
-                raise V023TwoRouteSourceTrainingRunnerError(
-                    "unsealed temporary export path is invalid"
-                )
-            shutil.rmtree(stale)
         temporary_directory = (
             directory.parent / f".{directory.name}.{secrets.token_hex(16)}.tmp"
         )
@@ -1272,6 +1552,11 @@ class V023TwoRouteSourceTrainingRunner:
             raise V023TwoRouteSourceTrainingRunnerError(
                 "resume output root must be an existing non-symlink directory"
             )
+        report = self.inspect_output_root(root)
+        if report["formal"] is not self.formal:
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "resume output root formal mode drifted"
+            )
         allowed_names = {
             _checkpoint_path(root, epoch).name for epoch in self.checkpoint_epochs
         }
@@ -1283,16 +1568,13 @@ class V023TwoRouteSourceTrainingRunner:
             raise V023TwoRouteSourceTrainingRunnerError(
                 "resume output root contains an unauthorized checkpoint"
             )
-        sealed = [
-            epoch
-            for epoch in self.checkpoint_epochs
-            if self._has_complete_sealed_prefix(root, epoch)
-        ]
+        sealed = report["sealed_epochs"]
         if not sealed:
             raise V023TwoRouteSourceTrainingRunnerError(
                 "resume output root has no fully sealed authorized checkpoint"
             )
         path = _checkpoint_path(root, max(sealed))
+        self._sweep_stale_temps(root, report=report, resumed_from=path)
         self.resume_from_checkpoint(path)
         return path
 
@@ -1353,21 +1635,36 @@ def build_parser() -> argparse.ArgumentParser:
     destination = parser.add_mutually_exclusive_group(required=True)
     destination.add_argument("--output-root")
     destination.add_argument("--resume", metavar="OUTPUT_ROOT")
-    parser.add_argument("--epochs", required=True, type=int)
-    parser.add_argument("--provider-factory", required=True, metavar="MODULE:CALLABLE")
-    parser.add_argument("--model-config-json", required=True)
-    parser.add_argument("--train-seed", required=True, type=int)
-    parser.add_argument("--authority-sha256", required=True)
-    parser.add_argument("--code-sha256", required=True)
-    parser.add_argument("--input-sha256", required=True)
+    destination.add_argument("--check-root", metavar="OUTPUT_ROOT")
+    parser.add_argument("--epochs", type=int)
+    parser.add_argument("--provider-factory", metavar="MODULE:CALLABLE")
+    parser.add_argument("--model-config-json")
+    parser.add_argument("--train-seed", type=int)
+    parser.add_argument("--authority-sha256")
+    parser.add_argument("--code-sha256")
+    parser.add_argument("--input-sha256")
     parser.add_argument("--nonformal", action="store_true")
-    parser.add_argument("--execute", action="store_true", required=True)
+    parser.add_argument("--execute", action="store_true")
     return parser
 
 
 def preflight_from_args(arguments: argparse.Namespace) -> V023TwoRouteSourceTrainingRunner:
     if not arguments.execute:
         raise V023TwoRouteSourceTrainingRunnerError("--execute is required")
+    required = {
+        "epochs": arguments.epochs,
+        "provider-factory": arguments.provider_factory,
+        "model-config-json": arguments.model_config_json,
+        "train-seed": arguments.train_seed,
+        "authority-sha256": arguments.authority_sha256,
+        "code-sha256": arguments.code_sha256,
+        "input-sha256": arguments.input_sha256,
+    }
+    missing = [name for name, value in required.items() if value is None]
+    if missing:
+        raise V023TwoRouteSourceTrainingRunnerError(
+            "execution arguments are missing: " + ", ".join(missing)
+        )
     resume_root = getattr(arguments, "resume", None)
     output_value = resume_root or getattr(arguments, "output_root", None)
     if output_value is None:
@@ -1435,6 +1732,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
         arguments = parser.parse_args(argv)
+        if arguments.check_root is not None:
+            if arguments.execute or arguments.nonformal or any(
+                getattr(arguments, name) is not None
+                for name in (
+                    "epochs", "provider_factory", "model_config_json", "train_seed",
+                    "authority_sha256", "code_sha256", "input_sha256",
+                )
+            ):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "--check-root is read-only and does not accept execution arguments"
+                )
+            print(
+                _canonical_json_bytes(
+                    V023TwoRouteSourceTrainingRunner.inspect_output_root(
+                        arguments.check_root
+                    )
+                ).decode("ascii")
+            )
+            return 0
         runner = preflight_from_args(arguments)
         if arguments.resume:
             runner.resume_from_root(arguments.resume)
@@ -1458,6 +1774,7 @@ __all__ = [
     "UPDATES_PER_EPOCH", "V023TwoRouteSourceTrainingRunner",
     "EPOCH_100_INTEGRITY_DECISION", "FORMAL_TRAIN_SEED",
     "FROZEN_MODEL_CONFIG_SHA256",
-    "V023TwoRouteSourceTrainingRunnerError", "build_parser", "main", "preflight_from_args",
+    "V023TwoRouteSourceTrainingRunnerError", "ROOT_CHECK_SCHEMA",
+    "RESUME_RECEIPT_SCHEMA", "build_parser", "main", "preflight_from_args",
     "decode_checkpoint_ledger", "decode_checkpoint_orchestrator_state",
 ]

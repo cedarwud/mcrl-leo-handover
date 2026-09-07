@@ -54,11 +54,19 @@ intermediate checkpoints retain the finite per-update ledger rows as well as
 model, optimizer, provider sampler, and consumed-file state, so a resumed
 rehearsal is bitwise identical to uninterrupted continuation.
 
+`--check-root OUTPUT_ROOT` is a standalone read-only pre-resume inspection. It
+reports sealed epochs, incomplete publication prefixes, and every `.*.tmp`
+artifact without constructing a provider or changing the root.
+
 Each checkpoint epoch is published atomically in dependency order: exports,
 checkpoint receipt, checkpoint, then checkpoint SHA-256 sidecar last. The
-sidecar seals the complete epoch. Resume ignores incomplete publication
-prefixes, and a retry may replace only an unsealed partial export directory;
-sealed epoch exports remain write-once.
+sidecar seals the complete epoch. Before selecting a checkpoint, resume applies
+one root-wide stale-temp policy to exports, checkpoints, checkpoint receipts,
+the final receipt, and the launch ledger. Recognized file and directory temps
+belonging to unsealed prefixes are removed and recorded under
+`resume-receipts/`; unknown temps and temps belonging to sealed epochs are
+refused without deletion. A retry may replace only an unsealed publication
+prefix; sealed epoch artifacts remain write-once.
 
 This is TRAIN-development source learning only. It has no C3, no all-neutral
 control, no `FULL` or `BASELINE` training arm, no simulator, no physical or TEST
