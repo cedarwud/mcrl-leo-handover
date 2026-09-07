@@ -140,3 +140,11 @@ Owner's standing instructions: (1) delegate all execution to sub-agents / server
 - Stage-B/C: bundle committed (`534277b` + fixes), physical-evaluation/figure fix pass landed (verification operator running: tests, manifest rebuild, commit, shadow sync); then astra audit of the stage-C bundle + packages. Stage B runs immediately after stage A passes; stage C after its freeze.
 - C3: F1 r2 replay in flight (operator; local→shadow sync only). On a survivor: F2 authority from the F2 preflight (`625ad7f2…`), `/home/sat/f2-prep/launch_f2_units.sh`; then F3 per `DESIGN-F3-LEARNER-SCREEN-PREOUTCOME-…md`. On no survivor: C3 = not admissible under the pre-declared mechanisms; Ch5 proceeds with two Catfish + the C3 negative result.
 - Process rules added today: charter 6–12 (N=1 gate on every change, budget ladder, design-doc stop rule, latency ledger, no silent sync fallbacks, one writer per path, server workspaces pulled back once). agy works only as a harness-tracked background job.
+
+## Freeze order (astra third audit, 16:46 UTC) — follow exactly when r8 seals and fix pass 4 is green
+1. Stabilise checkout/HEAD (commit everything; no concurrent editors); authenticate the stage-C code manifest/pin (`62180dbd…` or its successor), the scientific authority and the attached review.
+2. Bind: rederive learner manifest, provider config + sidecar, execution bindings + sidecar — including current git identity, r8 receipts and the stage-C code bindings (no deferrals of the three stage-C items).
+3. Manifest: regenerate the launch manifest + sidecar after those files exist; run both `--check` modes.
+4. Preflight: sync authenticated inputs; create a fresh server `PREFLIGHT-RECEIPT.json` + sidecar (must carry launch-manifest hash, bindings hash, requested output root).
+5. Diagnostic: regenerate the scratch checkpoint and diagnostic receipt + sidecars; behavioural and identity gates must pass.
+6. Launch: formal wrapper (tmux `mcrl-v023-c1c2-successor-100e-r1`), then the independent verifier/sealer. Any intervening code/authority change invalidates downstream derivations.

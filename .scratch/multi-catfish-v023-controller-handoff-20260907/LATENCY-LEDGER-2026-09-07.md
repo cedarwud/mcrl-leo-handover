@@ -26,5 +26,6 @@
 | 09-07 18:05 | stage-C launch bundle | manifest builder fell back to a 42-file list when the closure list was absent on the server workspace → 189/246 sync paths missing; `--dry-run` executes the remote python; unsigned owner marker | operator pull-back conformance check | ~15 min; fix dispatched |
 | 09-07 16:05 | stage-A formal chain (V2-synthetic) | orchestrator identity field set hard-coded (18 vs factory's 22) → abort at update 0 with green preflight; `C3` token scan hits legitimate donor filenames; binder non-idempotent git-dirty; closure-list ordering | one end-to-end synthetic run (~20 min) | fix pass 3 dispatched; would have cost a formal launch |
 | 09-07 16:35 | controller process | F1 test fix overwritten by a concurrent server→local rsync from another agent (two writers, one path) | operator re-verification before replay | ~15 min; fix re-applied; charter rule 12 |
+| 09-07 16:47 | stage-A preflight | `target_root` hard-pinned to the r8 constant while the binder parameterises it → no rehearsal possible on any other root | V2-synthetic rerun (6 min) | fix dispatched; would have blocked the launch rehearsal |
 
 Pattern: defects found by launching cost 40 min–22 h each; the same classes found by offline probes, import smokes and read-only audits cost 30 s–8 min. Every new defect is appended here with the same five columns.

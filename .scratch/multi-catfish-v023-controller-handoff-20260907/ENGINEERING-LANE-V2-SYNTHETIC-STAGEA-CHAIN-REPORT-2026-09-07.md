@@ -72,3 +72,59 @@ Known-item status: **L1, L2 (bundle), L3, L4, L7 not reproduced; L5 refuted; L6 
 B: re-sorted the closure list `Path`-wise. C: retargeted `.tmp` `TARGET_ROOT` to the synth root. D: added the 4 fields
 to `_FACTORY_V3_IDENTITY_FIELDS` (consumer aligns to producer). E: excluded `learner_runtime` code paths from the token
 scan. All in `.tmp` copies only; each forced a re-freeze (bind → manifest → preflight → diagnostic) before the runner.
+
+## Rerun after fix passes 2+3 (commit `1e6310e`, 2026-09-07 16:41–16:47 UTC)
+
+Same rules, **no edits and no bypasses**. Local → shadow sync of the three packages verified byte-identical
+(`successor_launch_common.py 87e2257d…`, factory `87a1e980…`, orchestrator `c14728e3…`). Fresh mini-repo
+`…/.tmp/stageA-synth-bundle-v2` (shadow copy + `git init`, committed clean: `dirty=False` — the exact condition that
+broke defect A). Target root reused: `…-target-root-r2`, `MANIFEST 3775c257…`.
+Log `/home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T164144Z.log`.
+
+| # | step | result | wall |
+|---|---|---|---|
+| R1 | binder `--write` #1 | **PASS** `bindings 37f3bd4a…` | 2.03 s |
+| R2 | binder `--check` #1 | **PASS** identical | 2.04 s |
+| R3 | binder `--write` #2 | **PASS** identical | 2.03 s |
+| R4 | binder `--check` #2 | **PASS** identical | 2.04 s |
+| R5 | manifest `--write` | **PASS** `e1fceb97…` | 1.18 s |
+| R6 | manifest `--check` | **PASS** identical | 1.20 s |
+| R7 | preflight (absent output root) | **FAIL — remaining defect C** | 0.04 s |
+| R8 | one-epoch diagnostic | **PASS** (903 MB peak RSS) | 2.40 s |
+| R9 | formal runner via bundle wrapper | **BLOCKED** by R7 (no receipt) | 1.12 s |
+| R10 | verifier positive path | **NOT REACHED** — no output root exists | — |
+
+**A FIXED** — write→check→write→check on a *clean* git tree is now byte-identical four times over;
+`_git_identity` excludes `GENERATED_BUNDLE_NAMES` from the dirty probe (`bind_…freeze.py:84-98`).
+**B FIXED** — `required_sync_closure` now compares `rows != sorted(rows)` (string order,
+`successor_launch_common.py:241`), matching the unmodified byte-sorted 246-path list; 246/246 present.
+**D and E FIXED** — the diagnostic constructed a real factory-v3 provider and passed all seven behavioural checks, so
+the closed identity field set and the token scan (`_reject_forbidden_identity_fields` now field-aware with a
+`closure_context` exemption, orchestrator:319-357) both admit the current 22-field payload and the mandatory
+`ee_axis_lcsrs_c3_*` closure. **L5 unchanged** (reconstruction still required).
+
+### Remaining defect C — preflight pins the target root while the binder parameterises it (BLOCKER, class b)
+`SUCCESSOR_PREFLIGHT_FAIL: factory-v3 config drifted: target_root` (exit 3, 0.04 s).
+First failing boundary: `preflight_v023_c1c2_successor.py:221` asserts
+`provider_config["target_root"] == str(TARGET_ROOT)`, the module constant
+`successor_launch_common.py:66 = /home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8`, against the provider config the
+binder legitimately wrote from its own `--target-root` flag (`bind_…freeze.py:421`). The two sides are the binder's
+parameterised freeze and the preflight's hard-coded expectation. Consequence: **no stage-A rehearsal is possible on any
+root other than the literal r8 path** — and that path does not exist yet (0/16 shard `COMPLETE` markers at 16:45 UTC),
+so today the pinned root is absent. Suggested fix: give preflight the same `--target-root` argument (defaulting to
+`TARGET_ROOT`) and/or compare against the freeze-time value, keeping the r8 constant as the check that a *formal*
+launch is on the declared root.
+
+### Minor — wrapper error contract not honoured for preflight-receipt faults
+R9 exited **1** with an uncaught traceback ending
+`SuccessorLaunchError: preflight receipt is not canonical ASCII JSON`, instead of the wrapper's documented
+`SUCCESSOR_FORMAL_RUN_FAIL: …` / exit 3. Two issues at `run_v023_c1c2_successor_formal.py:47`: the
+`read_canonical_json` call sits outside the `try`, and `successor_launch_common.py:145` maps an *absent* file to empty
+bytes, so "missing receipt" is reported as "malformed receipt". Gate behaviour is correct (the run was refused); only
+the diagnosis and exit code are wrong.
+
+### Verifier positive path
+Not exercised. It needs a finished output root, which R7 prevented; reusing the 15:46 UTC root would mix code states
+(that root was produced under the now-removed D/E patches, so its learner-manifest digests cannot match the current
+freeze) and would test code drift rather than the positive path. `…/.tmp/v2-verify-copy/` was therefore never created.
+Once defect C is fixed this rerun reaches the runner and the copy-and-verify probe becomes meaningful in one pass.
