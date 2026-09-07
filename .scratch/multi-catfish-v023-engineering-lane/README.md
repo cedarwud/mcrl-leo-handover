@@ -121,6 +121,36 @@ BLOCKED. A pre-seal staging spec can use the same mechanism to add controller
 merge and sealer verification callables; the included self-test demonstrates
 the full authenticate → load → merge → seal-verify sequence.
 
+### Stage B/C N=1 engineering gate
+
+`specs/successor_stage_bc_chain.json` extends the ordered, lazy dry-run gate to
+the Stage B/C physical-evaluation path. It writes three fresh untrained
+two-route exports through `EEAxisTwoRouteModel.checkpoint_state`, admits them
+through both the isolated physical-runner loader and the loader bound by the
+plumbing diagnostic, authenticates the fixed BASELINE checkpoint, writes and
+checks the declared 9000-world plan, checks the no-simulator deployment rule,
+and exercises the physical runner's 100-episode checkpoint/rung and resume
+path with synthetic episode records. It never emits `result.json`.
+
+The optional one-real-world plumbing step is controlled by
+`flags.run_real_world`, which is `false` by default. The step reports `BLOCKED`
+while disabled, or when its fixed TLE root or baseline artifacts are absent.
+Thus the normal local final line is `DRYRUN_successor_stage_bc_BLOCKED`; this
+is an available-path result, not a scientific result.
+
+```bash
+./.venv/bin/python \
+  .scratch/multi-catfish-v023-engineering-lane/offline_realartifact_dryrun.py \
+  --repo . \
+  --spec .scratch/multi-catfish-v023-engineering-lane/specs/successor_stage_bc_chain.json \
+  --output /tmp/v023-stage-bc-dryrun
+```
+
+Make-style command list for both gates (use absent scratch output roots):
+`stage-a: ...successor_stage_a_chain.json --artifact target_root=$TARGET_ROOT --output $STAGE_A_OUT`;
+`stage-bc: ...successor_stage_bc_chain.json --output $STAGE_BC_OUT`;
+`run-both-gates: stage-a && stage-bc`.
+
 List configured real-artifact candidates without running a chain:
 
 ```bash

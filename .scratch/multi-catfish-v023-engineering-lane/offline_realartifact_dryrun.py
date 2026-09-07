@@ -280,6 +280,8 @@ class ChainRuntime:
             if not isinstance(reference, dict):
                 raise DryRunError("module_constant must be an object")
             return self._attribute(self.module(str(reference["module"])), str(reference["name"]))
+        if set(value) == {"module_object"}:
+            return self.module(str(value["module_object"]))
         if set(value) == {"literal"}:
             return value["literal"]
         if "attr" in value and "name" in value and len(value) == 2:
@@ -345,7 +347,17 @@ def _result_summary(value: Any) -> dict[str, Any]:
     summary = {"type": f"{type(value).__module__}.{type(value).__qualname__}"}
     if isinstance(value, Path):
         summary["path"] = str(value)
+    if isinstance(value, Mapping) and isinstance(value.get("identities"), Mapping):
+        summary["identities"] = value["identities"]
     return summary
+
+
+def _result_input_identity(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping) and isinstance(value.get("identities"), Mapping):
+        return {"status": "PRESENT", "identities": value["identities"]}
+    if isinstance(value, Path):
+        return _artifact_identity(value)
+    return {"status": "PRESENT", "type": f"{type(value).__module__}.{type(value).__qualname__}"}
 
 
 def _run_step(runtime: ChainRuntime, step: Mapping[str, Any]) -> dict[str, Any]:
@@ -358,8 +370,33 @@ def _run_step(runtime: ChainRuntime, step: Mapping[str, Any]) -> dict[str, Any]:
     inputs.update(_referenced_artifacts(step.get("args", [])))
     inputs.update(_referenced_artifacts(step.get("kwargs", {})))
     identities = {key: runtime.identities[key] for key in sorted(inputs) if key in runtime.identities}
+    input_results = step.get("input_results", [])
+    if not isinstance(input_results, list) or not all(isinstance(item, str) for item in input_results):
+        raise DryRunError(f"step {name} input_results must be a string list")
+    for result_name in input_results:
+        if result_name in runtime.results:
+            identities[f"result:{result_name}"] = _result_input_identity(
+                runtime.results[result_name]
+            )
+        else:
+            identities[f"result:{result_name}"] = {"status": "UNAVAILABLE"}
     record: dict[str, Any] = {"name": name, "status": "FAIL", "input_identities": identities}
     try:
+        condition = step.get("when")
+        if condition is not None:
+            if not isinstance(condition, dict) or set(condition) != {"spec_flag", "equals"}:
+                raise DryRunError(f"step {name} when must contain spec_flag and equals")
+            flags = runtime.spec.get("flags", {})
+            if not isinstance(flags, dict):
+                raise DryRunError("spec flags must be an object")
+            flag_name = condition["spec_flag"]
+            if not isinstance(flag_name, str) or not flag_name:
+                raise DryRunError(f"step {name} spec_flag must be a nonempty string")
+            actual = flags.get(flag_name)
+            if actual != condition["equals"]:
+                raise StepBlocked(
+                    f"spec flag {flag_name} is {actual!r}; requires {condition['equals']!r}"
+                )
         dependencies = step.get("depends_on", [])
         if not isinstance(dependencies, list) or not all(isinstance(item, str) for item in dependencies):
             raise DryRunError(f"step {name} depends_on must be a string list")

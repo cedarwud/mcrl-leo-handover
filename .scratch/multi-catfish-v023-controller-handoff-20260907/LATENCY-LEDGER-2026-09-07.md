@@ -15,5 +15,8 @@
 | 09-07 14:18 | factory v3 + two-route runner | 8 formal-admission/integrity blockers | one consolidated read-only audit | found before any launch; fix in progress |
 | 09-07 14:37 | V1 rehearsal (attempt 2) | provider requires per-shard `COMPLETE`; producer seals only the merged root (per-shard evidence = receipt + manifest + controller status file) | second rehearsal run | ~10 min to find; fix running on server codex, validated against the real shard root |
 | 09-07 14:49 | server codex workspace (blocker fix) | producer code closure hashes `r6-fit-binding-fix/v023_lcsrs_source_adapter.py`, absent from the partial workspace → 15 test setup errors | server pytest | ~0 min lost (fix itself complete); tests rerun locally |
+| 09-07 14:44 | V3 stage-B rehearsal | frozen baseline adapter rejects `UserState.contract_fields` that the live env now always populates → BASELINE cannot be evaluated (class (b)); learned-arm plumbing clean | first stage-B rehearsal with fresh models | ~20 min to find; fix on server codex with encoding-invariance test |
+| 09-07 14:44 | V3 stage-B rehearsal | baseline artifacts `artifacts/training-2026-08-25-rerun01/main/` absent on server (closure gap) | same run | 2 min (synced) |
+| 09-07 14:52 | controller ops | r8 shard completion files are `.terminal.json`, shadow verifier watched `.complete.json`; pkill self-match killed the ssh shell twice | monitor review | ~15 min of controller time; no run impact |
 
 Pattern: defects found by launching cost 40 min–22 h each; the same classes found by offline probes, import smokes and read-only audits cost 30 s–8 min. Every new defect is appended here with the same five columns.

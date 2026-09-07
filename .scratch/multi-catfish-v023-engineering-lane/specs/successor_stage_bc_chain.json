@@ -1,0 +1,174 @@
+{
+  "schema": "multi-catfish-v023-offline-realartifact-chain-spec-v1",
+  "name": "successor_stage_bc",
+  "flags": {
+    "run_real_world": false
+  },
+  "python_paths": [
+    "src",
+    ".scratch/multi-catfish-v023-two-route-source-training-runner",
+    ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation",
+    ".scratch/multi-catfish-v023-baseline-adapter",
+    ".scratch/multi-catfish-v023-engineering-lane"
+  ],
+  "artifacts": [
+    {
+      "name": "model_config",
+      "path": ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"
+    },
+    {
+      "name": "baseline_checkpoint",
+      "path": "artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt"
+    },
+    {
+      "name": "baseline_status",
+      "path": "artifacts/training-2026-08-25-rerun01/main/status.json"
+    },
+    {
+      "name": "tle_root",
+      "path": "/home/sat/mcrl-runtime/tle-frozen-20260820"
+    },
+    {
+      "name": "support_code",
+      "path": ".scratch/multi-catfish-v023-engineering-lane/dryrun_support.py"
+    },
+    {
+      "name": "model_code",
+      "path": ".scratch/multi-catfish-v023-two-route-source-training-runner/ee_axis_two_route_model.py"
+    },
+    {
+      "name": "runner_code",
+      "path": ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py"
+    },
+    {
+      "name": "diagnostic_code",
+      "path": ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_plumbing_diagnostic.py"
+    },
+    {
+      "name": "plan_builder_code",
+      "path": ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/build_v023_c1c2_successor_world_plan.py"
+    },
+    {
+      "name": "baseline_adapter_code",
+      "path": ".scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py"
+    }
+  ],
+  "modules": {
+    "support": {
+      "path": ".scratch/multi-catfish-v023-engineering-lane/dryrun_support.py",
+      "name": "dryrun_support"
+    },
+    "model": {
+      "path": ".scratch/multi-catfish-v023-two-route-source-training-runner/ee_axis_two_route_model.py",
+      "name": "ee_axis_two_route_model"
+    },
+    "runner": {
+      "path": ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py",
+      "name": "v023_c1c2_successor_physical_runner"
+    },
+    "diagnostic": {
+      "path": ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_plumbing_diagnostic.py",
+      "name": "v023_c1c2_successor_plumbing_diagnostic"
+    },
+    "plan_builder": {
+      "path": ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/build_v023_c1c2_successor_world_plan.py",
+      "name": "build_v023_c1c2_successor_world_plan"
+    },
+    "baseline": {
+      "path": ".scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py",
+      "name": "baseline_adapter"
+    }
+  },
+  "steps": [
+    {
+      "name": "fresh_exports",
+      "callable": {"module": "support", "name": "build_fresh_two_route_exports"},
+      "args": [
+        {"artifact": "model_config"},
+        {"scratch": "fresh-two-route-exports"}
+      ],
+      "kwargs": {
+        "seed": 2927175120652069826,
+        "arms": ["FULL2", "DROP_C1", "DROP_C2"],
+        "model_class": {"module_constant": {"module": "model", "name": "EEAxisTwoRouteModel"}},
+        "model_config_class": {"module_constant": {"module": "model", "name": "EEAxisTwoRouteConfig"}},
+        "q1_config_class": {"module_constant": {"module": "model", "name": "EEAxisActionSharedConfig"}},
+        "q2_config_class": {"module_constant": {"module": "model", "name": "EEAxisV014HeadConfig"}}
+      },
+      "inputs": ["model_config", "model_code", "support_code"]
+    },
+    {
+      "name": "load_exports_both_paths",
+      "callable": {"module": "support", "name": "load_exports_through_both_paths"},
+      "args": [{"result": "fresh_exports"}],
+      "kwargs": {
+        "physical_loader": {"module_constant": {"module": "runner", "name": "load_learned_two_route_checkpoint"}},
+        "diagnostic_loader": {"module_constant": {"module": "diagnostic", "name": "runner.load_learned_two_route_checkpoint"}}
+      },
+      "depends_on": ["fresh_exports"],
+      "inputs": ["runner_code", "diagnostic_code", "support_code"],
+      "input_results": ["fresh_exports"]
+    },
+    {
+      "name": "baseline_admission",
+      "callable": {"module": "support", "name": "admit_baseline"},
+      "args": [
+        {"artifact": "baseline_checkpoint"},
+        {"artifact": "baseline_status"}
+      ],
+      "kwargs": {
+        "expected_sha256": "e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b",
+        "adapter_class": {"module_constant": {"module": "baseline", "name": "BaselineAdapter"}}
+      },
+      "inputs": ["baseline_checkpoint", "baseline_status", "baseline_adapter_code", "support_code"]
+    },
+    {
+      "name": "world_plan_build_check",
+      "callable": {"module": "support", "name": "build_and_check_world_plan"},
+      "args": [{"scratch": "world-plan/world-plan.json"}],
+      "kwargs": {
+        "expected_digest": "866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb",
+        "build": {"module_constant": {"module": "plan_builder", "name": "build_world_plan"}},
+        "write_once": {"module_constant": {"module": "plan_builder", "name": "_write_once"}},
+        "read": {"module_constant": {"module": "plan_builder", "name": "read_world_plan"}},
+        "check_main": {"module_constant": {"module": "plan_builder", "name": "main"}}
+      },
+      "inputs": ["plan_builder_code", "support_code"]
+    },
+    {
+      "name": "simulate_off_deployment",
+      "callable": {"module": "support", "name": "check_simulate_off_deployment"},
+      "args": [{"module_constant": {"module": "runner", "name": "select_learned_q12_actions"}}],
+      "kwargs": {"arms": ["FULL2", "DROP_C1", "DROP_C2"]},
+      "inputs": ["runner_code", "support_code"]
+    },
+    {
+      "name": "receipt_cadence_resume",
+      "callable": {"module": "support", "name": "exercise_receipt_cadence_resume"},
+      "args": [
+        {"item": {"result": "world_plan_build_check"}, "key": "path"},
+        {"scratch": "physical-cadence"}
+      ],
+      "kwargs": {"runner_module": {"module_object": "runner"}},
+      "depends_on": ["world_plan_build_check"],
+      "inputs": ["runner_code", "support_code"],
+      "input_results": ["world_plan_build_check"]
+    },
+    {
+      "name": "optional_real_world",
+      "when": {"spec_flag": "run_real_world", "equals": true},
+      "callable": {"module": "support", "name": "run_optional_real_diagnostic"},
+      "args": [{"result": "fresh_exports"}],
+      "kwargs": {
+        "tle_root": {"artifact": "tle_root"},
+        "output": {"scratch": "real-world-diagnostic"},
+        "baseline_checkpoint": {"artifact": "baseline_checkpoint"},
+        "baseline_status": {"artifact": "baseline_status"},
+        "diagnostic": {"module_constant": {"module": "diagnostic", "name": "run_diagnostic"}}
+      },
+      "depends_on": ["fresh_exports", "baseline_admission"],
+      "inputs": ["tle_root", "baseline_checkpoint", "baseline_status", "diagnostic_code", "runner_code", "support_code"],
+      "input_results": ["fresh_exports", "baseline_admission"]
+    }
+  ]
+}
