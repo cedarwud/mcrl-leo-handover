@@ -53,3 +53,52 @@ c3_contingency_f0.C3F0Error: total share energy does not equal beam plus satelli
 - tmux session `mcrl-v023-c3-f1-20260907-r1`: still present, idle at shell prompt (left as-is, not killed)
 
 Per protocol: stopping here, no retry, no attempt to repair `c3_contingency_f0.py`.
+
+---
+
+## r2 follow-up (2026-09-07, ~16:15 UTC) — repair verified, **replay withheld** pending a defect decision
+
+**Diagnosis accepted, class (i) roundoff, corroborated independently:** the repair reuses the module's own pre-existing `_roundoff_tolerance()` helper (already used by `_assert_close`) for the one `total_share_energy_j` check that previously used bitwise `np.array_equal`; the neighbouring `total_share_power_w` check is untouched (power has no multiply-by-`interval_s` step, so it doesn't exhibit the same non-associativity). The new test asserts the exact discrepancy `2.842170943040401e-14` against a tolerance the same helper computes as far larger, matching the coordinator's `2.8e-14 vs 5.1e-11` figures.
+
+**Files pulled read-only from `/home/sat/mcrl-v023-codex-ws-f1diag-20260907`** (never written to) into the local repo at identical relative paths, via per-file `rsync` (no chmod needed — rsync's temp-file+rename replaced the 0444 originals cleanly): `c3_contingency_f0.py`, `run_v023_c3_contingency_f1.py`, `test_run_v023_c3_contingency_f1.py`, `F1-PREFLIGHT-MANIFEST.json`/`.sha256`. New preflight digest confirmed both locally and server-side: `3711b9307b8cd12002df5bd9d4caacf9f96b5b5633dbf1fe4a4a062f421ff887`. New `c3_contingency_f0.py` digest: `9a8a97c02d2f0833cda6878a5327d5bd94662c95b662ee8b6c9aa138e0a806d2`.
+
+**Test suite: 40/41 pass, `F1_DRY_RUN_PASS` locally and server-side.** The one failure, `test_real_base_anchor0_energy_roundoff_is_accepted`, is unrelated to the fix's correctness — it is a fixture-path defect:
+
+```python
+fixture_path = Path(__file__).resolve().parents[2] / ".tmp" / "base-profile-anchor0.npz"
+```
+
+This resolves to `<repo_root>/.tmp/base-profile-anchor0.npz` — **outside** the F1 package directory and outside every rsync scope this whole procedure uses (package-dir syncs never touch repo-root `.tmp/`). Per instruction, I copied the fixture to the requested canonical location on both sides, `.scratch/multi-catfish-v023-c3-contingency-f1/fixtures-real-anchor/base-profile-anchor0.npz` (sha256 `4aa5e00abd26a262a1651df2cba89d74b22f2e8d144bfc086236001ceda71631`, verified equal to the workspace source), but the test's hardcoded `.tmp` literal does not read from that location, so the copy does not make it pass. **I did not create a repo-root `.tmp/` directory** (outside my authorized write scope, and doing so would have silently defeated the intended stop-gate). Result: `FileNotFoundError` locally; 40 other tests, including all other F0/F1 regressions, pass.
+
+**F2 rebuilt (independent of the defect above), fully green:** relocated the stale `F2-PREFLIGHT-MANIFEST.{json,sha256}` to `*.pre-f0-roundoff-repair.*` (non-destructive rename, since the builder exclusive-creates), reran `build_f2_preflight_manifest.py` → new digest `625ad7f2c8f384bcb62242e7786b566d39172e4d6ba2f09f771d3d2dcfc98789` (F2 imports F1 live, so it picked up both new digests automatically, including `reused_f1_formula_digests.f0_file_sha256=9a8a97c0…`). F2: 17/17 tests pass, `F2_DRY_RUN_PASS` locally and server-side.
+
+**r2 launch authority**, same 8-key strict shape as r1, bindings/claim_ceiling unchanged (only `preflight_manifest.sha256` differs): `.scratch/multi-catfish-v023-c3-contingency-f1/F1-LAUNCH-AUTHORITY-2026-09-07-r2.json` (+ `.sha256`, chmod 0444), `sha256 = c3f9c2b254480b26df03e57352aed958a1232f4cccf383bd813ac82b8fa4f1a1`. Validated by direct `_validate_launch_authority` call, locally and server-side (both `True`). Provenance for this r2 (recorded here, not embedded — same reason as r1): `frozen_at_utc=2026-09-07T16:15:55Z`, `frozen_by="controller (Claude Fable 5.1) under owner delegation 2026-09-07"`, repair class `(i) IEEE-754 roundoff, permitted repair-and-replay`.
+
+**Shadow sync done, all digests verified server-side:** F0, F1 (incl. r2 authority and the fixture copy), and F2 package directories rsynced to `/home/sat/mcrl-v023-successor-shadow-20260907`; every sha256 above matches byte-for-byte between local and server.
+
+**STOPPING BEFORE THE REPLAY.** Per explicit instruction ("if the test hard-codes `.tmp`, report it as a defect and do not run the replay until the controller decides"), tmux session `mcrl-v023-c3-f1-20260907-r2` was **not** created and `/home/sat/mcrl-v023-c3-contingency-f1-20260907-r2` was **not** launched. Everything needed to launch is staged and verified; awaiting the controller's decision on the test-fixture defect (e.g., fix the test's path convention, or explicitly waive it and proceed) before replaying F1 once.
+
+---
+
+## r2 replay attempt (2026-09-07, ~16:33 UTC) — **premise not verified; replay still withheld**
+
+The coordinator reported the fixture-path defect fixed ("test now loads `fixtures-real-anchor/base-profile-anchor0.npz`, asserts sha256 `4aa5e00a…`, 41/41 pass locally"). **I could not confirm this and did not proceed to replay.**
+
+**What I checked:** re-pulled `test_run_v023_c3_contingency_f1.py` from `/home/sat/mcrl-v023-codex-ws-f1diag-20260907` (the only source I have for this fix). Its sha256 is `8196631f1dac1bdd30198bd6118da5b6e179a576f7fb7d3043925714b9a14191` — byte-identical to what I pulled originally (`git diff` against that workspace's own HEAD is unchanged: same blob `572874d`, same 58-line insertion, same test body, still `fixture_path = Path(__file__).resolve().parents[2] / ".tmp" / "base-profile-anchor0.npz"`). Neither the string `4aa5e00a` nor `fixtures-real-anchor` appears anywhere under that workspace's `.scratch/`, nor anywhere in my local F1 package. There is only one `mcrl-v023-codex-ws-f1diag-*` directory on the server.
+
+**Empirical result, both sides, identical:** ran `pytest -q -p no:cacheprovider .scratch/multi-catfish-v023-c3-contingency .scratch/multi-catfish-v023-c3-contingency-f1` after re-syncing this file to the shadow checkout — **1 failed, 40 passed** on both local and shadow, same test, same error:
+```
+FileNotFoundError: [Errno 2] No such file or directory: '.../.tmp/base-profile-anchor0.npz'
+```
+`--dry-run` still passes both sides (unaffected, as expected, since the preflight indeed does not cover the test file — that part of the coordinator's claim checks out).
+
+**Likely context:** this repo checkout is shared with an active, separate process — `git log` shows a running series of `WIP <timestamp> UTC` commits (e.g. `d371908 WIP ... F1 roundoff diagnosis; F2 prep`, `a8de0f6 WIP ... F1 launch authority r1 + INVALID_RUN report`) on branch `wip/multi-catfish-v023-20260907` (not `main` — the branch changed under me since this session started). The real fixture-path fix may exist in that process's own state and not yet be written back to the diagnostic workspace or this checkout.
+
+**(1) Shadow sync:** done — F1 package (incl. the as-is test file and `fixtures-real-anchor/`) rsynced to `/home/sat/mcrl-v023-successor-shadow-20260907`; tests and `--dry-run` run there (results above).
+
+**(2) Commit:** done. `git add -A -- .scratch/multi-catfish-v023-c3-contingency .scratch/multi-catfish-v023-c3-contingency-f1 .scratch/multi-catfish-v023-c3-contingency-f2` then committed with the exact requested message and trailer.
+- SHA: `eaf044f298fcbdadfd4384f12b2c5b2b4e5bc966`
+- Branch: `wip/multi-catfish-v023-20260907`
+- 12 files changed (7 modified, 5 added — the r2 authority pair, the fixture copy, and the renamed pre-repair F2 preflight pair), no unrelated files swept in (pathspec-scoped).
+
+**(3) Replay:** **not run.** Launching a 90-minute shared-server job on a test suite I cannot verify at 41/41 — when the file I can directly inspect still fails the same way it did before — would repeat the same "don't proceed on an unverified premise" mistake this whole ladder is designed to prevent. Requesting: either point me to the actual fixed `test_run_v023_c3_contingency_f1.py` (or push it to `mcrl-v023-codex-ws-f1diag-20260907` or directly to this checkout) so I can re-verify 41/41 myself, or confirm the fixture-test failure should be explicitly waived (it does not gate the run itself — `run_v023_c3_contingency_f1.py --dry-run` and the launch authority are unaffected). No tmux session or output root was created for r2.

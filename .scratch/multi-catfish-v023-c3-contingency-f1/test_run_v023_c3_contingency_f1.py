@@ -183,7 +183,14 @@ def test_targets_are_recomputed_through_f0_with_known_conservation() -> None:
 
 
 def test_real_base_anchor0_energy_roundoff_is_accepted() -> None:
-    fixture_path = Path(__file__).resolve().parents[2] / ".tmp" / "base-profile-anchor0.npz"
+    fixture_path = (
+        Path(__file__).resolve().parent
+        / "fixtures-real-anchor"
+        / "base-profile-anchor0.npz"
+    )
+    assert f1.file_sha256(fixture_path) == (
+        "4aa5e00abd26a262a1651df2cba89d74b22f2e8d144bfc086236001ceda71631"
+    )
     with np.load(fixture_path, allow_pickle=False) as fixture:
         profile = f1.PhysicalProfile(
             link_rate_bps=fixture["link_rate_bps"],
