@@ -6,7 +6,10 @@ falsifier, dispositions, thresholds and claim ceilings remain exactly those of t
 `ADJUDICATION-STAGEC-BASELINE-DECOUPLING-AND-EPISODE-CHUNKING-CODEX-GPT6-ASTRA-2026-09-07.md`
 (`ASTRA_BASELINE_DECOUPLING=ALLOWED_WITH_CONDITIONS`, `ASTRA_EPISODE_CHUNKING=EQUIVALENT_WITH_CONDITIONS`).
 
-## 1. Early BASELINE materialisation (episodes 1–3000 only)
+## 1. Early BASELINE materialisation — WITHDRAWN 19:10 UTC
+(Controller decision after the implementation audit: BASELINE runs with the learned arms after stage A/B; the all-four-arm acceptance requirement stands and no ruling amendment is sought. The text below is retained for the record and is NOT part of the sealed addendum.)
+
+### 1 (withdrawn). Early BASELINE materialisation (episodes 1–3000 only)
 - BASELINE (frozen pre-Catfish MODQN, checkpoint `e6b063ef…`, adapter with `contract_fields_excluded`, `routes=[]`) has no
   dependency on stage A. Its episodes 1–3000 may be executed BEFORE the learned arms' exports exist, under the same plan
   identity (`866d28e0…`), the same per-episode keyed-field derivation and the same runner code as the four-arm run.
