@@ -17,6 +17,7 @@ from mcrl.algorithms.ee_axis_lcsrs_three_route import (
     LCSRSThreeRouteConfig,
 )
 from mcrl.algorithms.ee_axis_pairwise import EEAxisPairBatch
+from mcrl.algorithms.ee_axis_v014_head import EEAxisV014NormalizedPairBatch
 from mcrl.runtime.ee_axis_lcsrs_c3_dataset import (
     LCSRS_DRAW_COUNT,
     LCSRS_ROW_REFERENCE,
@@ -69,6 +70,25 @@ def _pair_batch(*, bad_state_width: int | None = None) -> EEAxisPairBatch:
         reference_actions=np.asarray([0, 0, 1, 2], dtype=np.int64),
         candidate_actions=np.asarray([1, 2, 2, 3], dtype=np.int64),
         target_surplus_bits=np.asarray([5.0, -3.0, 1.0, 2.0], dtype=np.float64),
+        action_masks=np.ones((rows, 28), dtype=np.bool_),
+    )
+
+
+def _normalized_pair_batch(
+    *, bad_state_width: int | None = None
+) -> EEAxisV014NormalizedPairBatch:
+    rows = 4
+    width = 448 if bad_state_width is None else bad_state_width
+    states = np.zeros((rows, width), dtype=np.float32)
+    states[:, 0] = np.asarray([0.1, -0.2, 0.3, -0.4], dtype=np.float32)
+    states[:, 1] = np.asarray([0.5, 0.2, -0.1, 0.4], dtype=np.float32)
+    return EEAxisV014NormalizedPairBatch(
+        states=states,
+        reference_actions=np.asarray([0, 0, 1, 2], dtype=np.int64),
+        candidate_actions=np.asarray([1, 2, 2, 3], dtype=np.int64),
+        normalized_target_deltas=np.asarray(
+            [0.5, -0.3, 0.1, 0.2], dtype=np.float64
+        ),
         action_masks=np.ones((rows, 28), dtype=np.bool_),
     )
 
@@ -149,7 +169,8 @@ def test_c1_c2_pair_updates_are_finite_and_diagonal(route: str, route_index: int
     model = _model()
     trainer = API.V023HeterogeneousTrainer(model)
     before = _snapshot(model)
-    result = trainer.update_route(route, _pair_batch())
+    batch = _pair_batch() if route == "C1" else _normalized_pair_batch()
+    result = trainer.update_route(route, batch)
 
     assert result["route"] == route
     assert np.isfinite(float(result["loss"]))
@@ -178,7 +199,7 @@ def test_malformed_action_shared_and_structured_batches_are_rejected() -> None:
     with pytest.raises(TypeError, match="EEAxisPairBatch"):
         trainer.update_c1(_c3_batch())  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="states must have shape"):
-        trainer.update_c2(_pair_batch(bad_state_width=227))
+        trainer.update_c2(_normalized_pair_batch(bad_state_width=447))
     with pytest.raises(TypeError, match="LCSRSC3SampledBatch"):
         trainer.update_c3(_pair_batch(), [_surface()])  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="LCSRSAnchorSurface"):
@@ -205,7 +226,7 @@ def test_c3_requires_explicit_surfaces_and_pair_routes_reject_them() -> None:
 def _resume_sequence(trainer: API.V023HeterogeneousTrainer, surface: LCSRSAnchorSurface) -> tuple[dict[str, object], ...]:
     return (
         trainer.update_c1(_pair_batch()),
-        trainer.update_c2(_pair_batch()),
+        trainer.update_c2(_normalized_pair_batch()),
         trainer.update_c3(_c3_batch(), [surface]),
     )
 
