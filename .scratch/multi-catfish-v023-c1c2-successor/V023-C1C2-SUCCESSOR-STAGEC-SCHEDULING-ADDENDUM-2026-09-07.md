@@ -1,6 +1,6 @@
 # V0.23 C1/C2 successor — stage-C execution-only scheduling addendum (DRAFT, 2026-09-07 17:50 UTC)
 
-Status: `DRAFT_PRE_FREEZE`. Execution-only. It changes no scientific declaration: arms, plan, estimand, prediction,
+Status: `DRAFT_PRE_FREEZE_R3` (§2 completed 2026-09-07 20:40 UTC from the implementation owner's controller patch; §1 withdrawn and non-operative; sealing follows the acceptance-script fix pass and the addendum-digest re-derivation). Execution-only. It changes no scientific declaration: arms, plan, estimand, prediction,
 falsifier, dispositions, thresholds and claim ceilings remain exactly those of the sealed
 `V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md` (sha `f27d0500…`) and contract §6. Basis: astra ruling
 `ADJUDICATION-STAGEC-BASELINE-DECOUPLING-AND-EPISODE-CHUNKING-CODEX-GPT6-ASTRA-2026-09-07.md`
@@ -24,19 +24,45 @@ falsifier, dispositions, thresholds and claim ceilings remain exactly those of t
   3000 and the owner notification of contract §6.
 
 ## 2. Result-equivalent episode chunking
-- Episode outcomes are NOT seed-only independent: the environment's warm-start age RNG stream (`_age_rng`) persists
-  across episodes. Fresh-start chunks are therefore not equivalent. Chunks must start from the exact boundary state
-  produced by replaying the original RNG draws (cheap; no physics), authenticated against a boundary table.
-- Chunks are contiguous, 100-aligned ranges with exclusive write-once roots, cadence checkpoints and authenticated
-  boundary states; merge by episode index in frozen arm order, re-applying the unchanged per-episode aggregation and
-  `math.fsum` over individual episode totals at each cumulative boundary (100/500/1500/3000); only the complete 3000
-  boundary adjudicates. Receipts bind arm/range/chunk id, plan/schedule digests, provenance, boundary-state hashes,
-  threads/runtime, parent checkpoint, ordered episode-record digest.
-- Mandatory acceptance BEFORE formal use: on the server, sequential 200 episodes versus 2×100 chunks for every arm →
-  identical episode/pool/rung values (bitwise), identical boundary states and receipts modulo enumerated provenance fields;
-  interruption/resume and duplicate-chunk refusal tested.
-- Forbidden: episode reordering, per-chunk scientific stopping, outcome-selected chunks, altered policies, TEST; workers
-  ≤ cores−2, one numerical thread each; cumulative barriers enforced.
+
+- Persisted cross-episode stream list: `StepEnvironment._age_rng` only.
+  Environment RNG and `_mobility_rng` are recreated or replaced per episode;
+  keyed fading is world-derived. Boundary construction is valid only while
+  `segment_warm_start == "uniform-episode-length"` and replays the actual
+  `integers(0, 10, size=100)` draws from the episode-1-spawned age stream.
+- Formal chunks are contiguous 100-aligned ranges with exclusive root locks,
+  write-once episode records, authenticated resume states, complete checkpoints
+  published before chunk-complete receipts, and append-only execution attempts.
+  Merge verifies every indexed file hash, checkpoint, boundary transition,
+  provenance binding, and execution date. It orders by episode and frozen arm
+  order and applies the unchanged per-episode aggregation and `math.fsum` over
+  individual episode totals. Only complete four-arm coverage at 3000 may emit a
+  scientific disposition.
+- Cumulative release barriers are exactly 100, 500, 1500, and 3000. Only chunks
+  in the current interval may launch. Shared capacity is
+  `(logical cores - 2) - occupied Stage-C workers` across arms and sessions;
+  OMP, OpenBLAS, MKL, and NumExpr threads are each one.
+- Stage-A and Stage-B PASS receipts enter through a separately sealed,
+  append-only supplement that references the prospective execution bindings.
+  All four arms, including BASELINE, authenticate that supplement and the same
+  runtime admission. There is no early-BASELINE admission mode.
+- Mandatory server acceptance compares direct sequential execution with
+  chunked execution for all four arms, including actual merged episode, rung,
+  checkpoint, receipt, and resume-state artifacts by bitwise binary64 value.
+  The explicit provenance exclusion list is: `schema`, `status`, `chunk_id`,
+  `range`, `start_boundary`, `end_boundary`,
+  `start_boundary_state_sha256`, `end_boundary_state_sha256`, `threads`,
+  `runtime`, `parent_checkpoint`, `ordered_episode_records`,
+  `ordered_episode_record_digest`, `started_utc`, `ended_utc`, and
+  `execution_mode`. No other field is excluded.
+- Acceptance procedure:
+  `.scratch/multi-catfish-v023-c1c2-successor-stagec-launch/ACCEPTANCE-SERVER-EQUIVALENCE.md`,
+  SHA-256
+  `6d3785efc206073dd2b8b1e299113614997dd558e33a32a4b9cf1dce822e0f68`.
+- Forbidden: episode reordering, outcome-selected chunks, per-chunk scientific
+  stopping, altered policies, TEST, computation without authenticated
+  acceptance, and continuation beyond 3000 without the existing separately
+  sealed continuation authority.
 
 ## 3. Cost basis (measured 2026-09-07)
 Per episode: learned arms ≈ 13.6 s, BASELINE 1.66 s (V4). 3 learned arms × 3000 ≈ 34 CPU-h → ≈ 2.2–3.3 h wall on 16
