@@ -582,6 +582,12 @@ def test_nonformal_50_alignment_is_narrow_and_cannot_merge_formally(
         formal_required=False,
     )
     assert merged["formal"] is False
+    assert [path.name for path in sorted((tmp_path / "acceptance-merge/checkpoints").glob("*.json"))] == [
+        "checkpoint-000050.json", "checkpoint-000100.json"
+    ]
+    assert [path.name for path in sorted((tmp_path / "acceptance-merge/rungs").glob("*.json"))] == [
+        "rung-000050.json", "rung-000100.json"
+    ]
     context.pop("acceptance_mode")
     with pytest.raises(runner.C1C2PhysicalError, match="explicit non-formal"):
         runner.build_chunk_boundary_states(plan, context, (0, 50, 100))

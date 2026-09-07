@@ -4,11 +4,12 @@ Run only on the Ubuntu server from a real git checkout whose commit contains
 the complete Stage-C closure. A shadow directory without `.git` is invalid.
 The checkout must pass the manifest `--check` before any acceptance episode.
 
-The acceptance is explicitly non-formal and emits no scientific result. The
-default comparison is sequential 200 versus 2×100. For the three learned arms,
-`--episodes 100 --chunks 2 --non-formal` admits exactly 2×50 for this acceptance
-only; formal Stage-C chunks remain 100-aligned. At the measured rate, each
-learned-arm rehearsal costs about 25 minutes instead of 45+ minutes.
+The launch acceptance is formal engineering evidence and emits no scientific
+result. Its comparison is sequential 200 versus 2×100 for every arm. A separate
+`--episodes 100 --chunks 2 --non-formal` mode admits exactly 2×50 as a rehearsal
+only; its receipt records `formal:false` and `rehearsal_chunk:50`, and neither it
+nor a bundle made from rehearsal receipts is admissible launch evidence. Formal
+Stage-C chunks remain 100-aligned.
 
 ```bash
 ssh sat
@@ -38,25 +39,26 @@ test -f "$RUNTIME" -a -f "$RUNTIME.sha256"
 test ! -e "$ACCEPT_ROOT"
 ```
 
-Run BASELINE with the default 200/2×100 comparison:
+Run every arm with the default formal 200/2×100 comparison:
+
+```bash
+for arm in FULL2 DROP_C1 DROP_C2 BASELINE; do
+  "$PY" "$BUNDLE/accept_stage_c_chunk_equivalence.py" \
+    --bindings "$BINDINGS" --admission-supplement "$SUPPLEMENT" \
+    --runtime-admission "$RUNTIME" --arm "$arm" \
+    --output "$ACCEPT_ROOT/$arm"
+done
+```
+
+Optional: run a bounded non-formal 100/2×50 rehearsal under a separate root.
+This output is diagnostic only and the launch verifier refuses it:
 
 ```bash
 "$PY" "$BUNDLE/accept_stage_c_chunk_equivalence.py" \
   --bindings "$BINDINGS" --admission-supplement "$SUPPLEMENT" \
-  --runtime-admission "$RUNTIME" --arm BASELINE \
-  --output "$ACCEPT_ROOT/BASELINE"
-```
-
-Run each learned arm with the bounded non-formal 100/2×50 rehearsal:
-
-```bash
-for arm in FULL2 DROP_C1 DROP_C2; do
-  "$PY" "$BUNDLE/accept_stage_c_chunk_equivalence.py" \
-    --bindings "$BINDINGS" --admission-supplement "$SUPPLEMENT" \
-    --runtime-admission "$RUNTIME" --arm "$arm" \
-    --episodes 100 --chunks 2 --non-formal \
-    --output "$ACCEPT_ROOT/$arm"
-done
+  --runtime-admission "$RUNTIME" --arm FULL2 \
+  --episodes 100 --chunks 2 --non-formal \
+  --output "$ACCEPT_ROOT-REHEARSAL/FULL2"
 ```
 
 The comparison is bitwise binary64 through canonical JSON. It compares episode
@@ -69,7 +71,8 @@ rungs, receipts, and resume states. The only excluded provenance keys are:
 `execution_mode`. The script applies this list; merely reporting it is not an
 acceptance.
 
-After all four receipts pass, seal the aggregate engineering-evidence bundle:
+After all four formal receipts pass, seal the aggregate engineering-evidence
+bundle:
 
 ```bash
 "$PY" "$BUNDLE/build_stage_c_chunk_acceptance_bundle.py" \
@@ -81,5 +84,6 @@ After all four receipts pass, seal the aggregate engineering-evidence bundle:
   --output "$BUNDLE/STAGEC-CHUNK-ACCEPTANCE-BUNDLE.json"
 ```
 
-Formal launch authenticates that bundle and each named receipt. Missing,
-reordered, non-PASS, code-drifted, or procedure-drifted evidence fails closed.
+Formal launch authenticates that bundle and each named formal receipt. Missing,
+reordered, non-PASS, rehearsal/non-formal, code-drifted, or procedure-drifted
+evidence fails closed.

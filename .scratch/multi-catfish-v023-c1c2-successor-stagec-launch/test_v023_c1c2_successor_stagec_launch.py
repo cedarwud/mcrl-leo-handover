@@ -5,11 +5,14 @@ import copy
 import hashlib
 import importlib
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import torch
 
@@ -26,6 +29,8 @@ for path in (
         sys.path.insert(0, str(path))
 
 import bind_v023_c1c2_successor_stagec_freeze as binder
+import accept_stage_c_chunk_equivalence as chunk_acceptance
+import build_stage_c_chunk_acceptance_bundle as acceptance_bundle_builder
 import build_v023_c1c2_successor_stagec_manifest as manifest_builder
 import build_v023_c1c2_successor_world_plan as plan_builder
 import preflight_v023_c1c2_successor_stagec as preflight
@@ -34,11 +39,105 @@ import run_v023_c1c2_successor_stage_c_chunks as chunk_controller
 import stagec_common as common
 import verify_v023_c1c2_successor_stagec as verifier
 import v023_c1c2_successor_physical_runner as runner
+from mcrl.runtime.trainer_env import TrainerEnvironment
 
 
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(common.canonical_bytes(value))
+
+
+def _fixture_rngs(seed: int):
+    sequence = np.random.SeedSequence(seed)
+    children = sequence.spawn(2)
+    return np.random.default_rng(children[0]), np.random.default_rng(children[1])
+
+
+class _AcceptanceProducerAdapter:
+    """Synthetic producer using the real receipt and chunk persistence writers."""
+
+    def __init__(self, arm: str) -> None:
+        self.arm = arm
+        self.rng_factory = _fixture_rngs
+        self.archive = object()
+        self.environment_factory = self._environment_factory
+        self._state = None
+        self._binding = {
+            "arm": arm,
+            "routes": [] if arm == "BASELINE" else ["C1", "C2"],
+            "checkpoint_sha256": runner.canonical_sha256(
+                {"arm": arm, "fixture": "acceptance-producer"}
+            ),
+            "fixed_policy": True,
+        }
+
+    @staticmethod
+    def _environment_factory(_archive, _users):
+        environment = object.__new__(TrainerEnvironment)
+        environment.environment = SimpleNamespace(
+            physics=SimpleNamespace(segment_warm_start="uniform-episode-length")
+        )
+        return environment
+
+    @property
+    def policy_bindings(self):
+        return {self.arm: self._binding}
+
+    def resume_state_for(self, arm):
+        assert arm == self.arm
+        return self._state
+
+    def run_episode(self, *, arm, world, plan_sha256, resume_state=None):
+        assert arm == self.arm
+        if resume_state is None:
+            age_rng = _fixture_rngs(world.world_seed)[0].spawn(1)[0]
+        else:
+            age_rng = np.random.default_rng()
+            age_rng.bit_generator.state = resume_state["environment_training_state"]["age_rng_state"]
+        ages = age_rng.integers(0, runner.STEPS, size=runner.USERS)
+        bits = float(math.fsum(float(value + 1) for value in ages))
+        energy = float(runner.USERS + world.episode_index / 10_000)
+        receipt = runner.EpisodeReceipt(
+            schema=runner.RECEIPT_SCHEMA,
+            status=runner.STATUS,
+            split=runner.SPLIT,
+            arm=arm,
+            routes=() if arm == "BASELINE" else runner.ROUTES,
+            episode_index=world.episode_index,
+            world_id=world.world_id,
+            world_seed=world.world_seed,
+            users=runner.USERS,
+            steps=runner.STEPS,
+            decision_interval_s=1.0,
+            total_bits=bits,
+            total_energy_j=energy,
+            ratio_of_sums_ee_bits_per_j=bits / energy,
+            served_user_steps=runner.USERS * runner.STEPS,
+            service_opportunities=runner.USERS * runner.STEPS,
+            service_fraction=1.0,
+            initial_world_sha256=runner.canonical_sha256({"ages": ages}),
+            field_component=runner.FIELD_COMPONENT,
+            field_root_digest=world.field_root_digest,
+            action_trace_sha256=runner.canonical_sha256({"ages": ages, "arm": arm}),
+            plan_sha256=plan_sha256,
+            policy_binding=self._binding,
+        )
+        receipt.verify()
+        self._state = {
+            "schema": f"{runner.SCHEMA}-resume-state",
+            "arm": arm,
+            "episode_index": world.episode_index,
+            "world_id": world.world_id,
+            "world_seed": world.world_seed,
+            "field_root_digest": world.field_root_digest,
+            "plan_sha256": plan_sha256,
+            "policy_binding": self._binding,
+            "environment_training_state": {
+                "format_version": 1,
+                "age_rng_state": age_rng.bit_generator.state,
+            },
+        }
+        return receipt
 
 
 @pytest.fixture(scope="module")
@@ -87,6 +186,143 @@ def test_stage_a_binding_uses_model_written_exports(producer_exports) -> None:
     bound = binder.bind_stage_a(root)
     assert [entry["arm"] for entry in bound["exports"]] == list(common.LEARNED_ARMS)
     assert [entry["sha256"] for entry in bound["exports"]] == [entry["sha256"] for entry in entries]
+
+
+def test_acceptance_end_to_end_formal_mutation_rehearsal_and_launch_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in common.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
+    plan_path = tmp_path / "world-plan.json"
+    _write_json(plan_path, plan_builder.build_world_plan())
+    bindings_path = tmp_path / "bindings.json"
+    _write_json(bindings_path, {"fixture": "producer-written-acceptance"})
+    runtime_path = tmp_path / "runtime-admission.json"
+    _write_json(runtime_path, {"fixture": "runtime-admission"})
+    common.write_digest_sidecar(runtime_path)
+    supplement_path = tmp_path / "stage-ab-supplement.json"
+    acceptance_sha = common.file_sha256(common.ACCEPTANCE_PROCEDURE)
+    sampler = {"part": "train", "fixture": "acceptance-producer"}
+    bindings = {
+        "physical_inputs": {
+            "tle_root": str(tmp_path / "tle"),
+            "tle_manifest_sha256": "a" * 64,
+            "prereg_sha256": "b" * 64,
+        },
+        "world_plan": {"path": str(plan_path)},
+        "scheduling_addendum": {"sha256": "c" * 64},
+        "code": {"external_manifest_sha256": "d" * 64},
+        "execution": {name: "1" for name in common.NUMERICAL_THREAD_ENV},
+        "acceptance_procedure": {"sha256": acceptance_sha},
+    }
+    supplement = {"supplement_sha256": "e" * 64}
+    admission = {
+        "admission_sha256": "f" * 64,
+        "sampler": {"as_dict_sha256": common.canonical_sha256(sampler)},
+    }
+    monkeypatch.setattr(common, "verify_bindings", lambda _path: dict(bindings))
+    monkeypatch.setattr(
+        common, "verify_stage_ab_supplement",
+        lambda _supplement, _bindings_path, _bindings=None: dict(supplement),
+    )
+    monkeypatch.setattr(common, "materialize_stage_ab", lambda value, _supplement: value)
+    monkeypatch.setattr(common, "verify_runtime_identity", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(chunk_controller, "_runner", lambda: runner)
+    monkeypatch.setattr(
+        chunk_controller, "_policy", lambda _bindings, _runner, arm: SimpleNamespace(arm=arm)
+    )
+    monkeypatch.setattr(
+        runner, "authenticate_runtime_admission", lambda *_args, **_kwargs: dict(admission)
+    )
+    monkeypatch.setattr(runner, "authenticate_tle_archive", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        runner,
+        "FixedPolicyEpisodeAdapter",
+        lambda *, policies, **_kwargs: _AcceptanceProducerAdapter(policies[0].arm),
+    )
+    monkeypatch.setattr(
+        controller, "_make_environment",
+        lambda _archive, _users: SimpleNamespace(sampler=SimpleNamespace(as_dict=lambda: sampler)),
+    )
+    import mcrl.env.tle as tle_module
+    monkeypatch.setattr(tle_module, "TleArchive", lambda _path: object())
+
+    def acceptance_args(arm: str, output: Path, *, non_formal: bool) -> argparse.Namespace:
+        return argparse.Namespace(
+            bindings=bindings_path,
+            arm=arm,
+            output=output,
+            runtime_admission=runtime_path,
+            admission_supplement=supplement_path,
+            episodes=100 if non_formal else 200,
+            chunks=2,
+            non_formal=non_formal,
+        )
+
+    formal_receipts = []
+    for arm in common.ARMS:
+        output = tmp_path / "formal" / arm
+        result = chunk_acceptance.accept(acceptance_args(arm, output, non_formal=False))
+        assert result["formal"] is True
+        assert result["rehearsal_chunk"] is None
+        formal_receipts.append(output / "ACCEPTANCE.json")
+
+    original_merge = runner.merge_arm_chunks
+
+    def merge_then_mutate(*args, **kwargs):
+        result = original_merge(*args, **kwargs)
+        merged_root = Path(args[2])
+        rung_path = merged_root / "rungs/rung-000100.json"
+        rung = common.read_json(rung_path, field="mutation fixture rung")
+        rung["pooled"]["total_bits"] += 1.0
+        _write_json(rung_path, rung)
+        return result
+
+    monkeypatch.setattr(runner, "merge_arm_chunks", merge_then_mutate)
+    with pytest.raises(
+        common.StageCError, match=r"rungs\[100\]\.pooled\.total_bits"
+    ):
+        chunk_acceptance.accept(
+            acceptance_args("FULL2", tmp_path / "mutated", non_formal=False)
+        )
+    monkeypatch.setattr(runner, "merge_arm_chunks", original_merge)
+
+    rehearsal_receipts = []
+    for arm in common.ARMS:
+        output = tmp_path / "rehearsal" / arm
+        result = chunk_acceptance.accept(acceptance_args(arm, output, non_formal=True))
+        assert result["formal"] is False
+        assert result["rehearsal_chunk"] == 50
+        rehearsal_receipts.append(output / "ACCEPTANCE.json")
+
+    formal_bundle = tmp_path / "formal-bundle.json"
+    assert acceptance_bundle_builder.main([
+        "--bindings", str(bindings_path), "--receipts",
+        *(str(path) for path in formal_receipts), "--output", str(formal_bundle),
+    ]) == 0
+    gate_bindings = {
+        **bindings,
+        "bindings_sha256": common.file_sha256(bindings_path),
+    }
+    assert common.verify_acceptance_bundle(formal_bundle, gate_bindings)["formal"] is True
+    launch_args = argparse.Namespace(
+        bindings=bindings_path,
+        admission_supplement=supplement_path,
+        acceptance_bundle=formal_bundle,
+        runtime_admission=runtime_path,
+        arm="FULL2",
+    )
+    assert chunk_controller.authenticate_launch(launch_args)["status"] == "AUTHENTICATED_STAGEC_CHUNK_LAUNCH"
+
+    rehearsal_bundle = tmp_path / "rehearsal-bundle.json"
+    assert acceptance_bundle_builder.main([
+        "--bindings", str(bindings_path), "--receipts",
+        *(str(path) for path in rehearsal_receipts), "--output", str(rehearsal_bundle),
+    ]) == 0
+    with pytest.raises(common.StageCError, match="acceptance bundle identity drifted"):
+        chunk_controller.authenticate_launch(
+            argparse.Namespace(**{**vars(launch_args), "acceptance_bundle": rehearsal_bundle})
+        )
 
 
 class _ProducerFixtureAdapter:

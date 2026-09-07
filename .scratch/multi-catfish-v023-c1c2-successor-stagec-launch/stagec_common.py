@@ -55,6 +55,30 @@ NUMERICAL_THREAD_ENV = (
     "MKL_NUM_THREADS",
     "NUMEXPR_NUM_THREADS",
 )
+CHUNK_EQUIVALENCE_PROVENANCE_ONLY_FIELDS = (
+    "schema",
+    "status",
+    "chunk_id",
+    "range",
+    "start_boundary",
+    "end_boundary",
+    "start_boundary_state_sha256",
+    "end_boundary_state_sha256",
+    "threads",
+    "runtime",
+    "parent_checkpoint",
+    "ordered_episode_records",
+    "ordered_episode_record_digest",
+    "started_utc",
+    "ended_utc",
+    "execution_mode",
+)
+CHUNK_EQUIVALENCE_ARTIFACTS = (
+    "receipts",
+    "checkpoints",
+    "rungs",
+    "resume_states",
+)
 
 
 class StageCError(RuntimeError):
@@ -453,7 +477,7 @@ def verify_acceptance_bundle(path: str | Path, bindings: Mapping[str, object]) -
     if (
         payload.get("schema") != SCHEMA_ACCEPTANCE_BUNDLE
         or payload.get("status") != "PASS_ALL_FOUR_ARM_CHUNK_EQUIVALENCE"
-        or payload.get("formal") is not False
+        or payload.get("formal") is not True
         or payload.get("arms") != list(ARMS)
         or payload.get("bindings_sha256") != bindings.get("bindings_sha256")
         or payload.get("code_manifest_sha256") != bindings.get("code", {}).get("external_manifest_sha256")
@@ -472,11 +496,18 @@ def verify_acceptance_bundle(path: str | Path, bindings: Mapping[str, object]) -
         receipt = read_json(receipt_path, field=f"{arm} acceptance receipt")
         if (
             receipt.get("status") != "PASS_BITWISE_CHUNK_EQUIVALENCE"
-            or receipt.get("formal") is not False
+            or receipt.get("formal") is not True
             or receipt.get("arm") != arm
+            or receipt.get("episodes") != 200
+            or receipt.get("chunks") != [[1, 100], [101, 200]]
+            or receipt.get("rehearsal_chunk") is not None
             or receipt.get("bindings_sha256") != payload.get("bindings_sha256")
             or receipt.get("code_manifest_sha256") != payload.get("code_manifest_sha256")
             or receipt.get("acceptance_procedure_sha256") != procedure_sha
+            or receipt.get("receipt_comparison_excluded_provenance_fields")
+            != list(CHUNK_EQUIVALENCE_PROVENANCE_ONLY_FIELDS)
+            or receipt.get("merged_artifacts_compared")
+            != list(CHUNK_EQUIVALENCE_ARTIFACTS)
         ):
             raise StageCError(f"{arm} acceptance receipt did not authenticate equivalence")
     return {**payload, "acceptance_bundle_path": str(Path(path).resolve()), "acceptance_bundle_sha256": bundle_sha}

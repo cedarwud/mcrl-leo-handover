@@ -1981,6 +1981,15 @@ def _merge_arm_chunks_locked(
             raise C1C2PhysicalError("arm chunk ordered-record digest drifted")
         chunks.append((receipt, root))
     chunks.sort(key=lambda item: int(item[0]["start_boundary"]))
+    if not formal_required:
+        rehearsal_ranges = [
+            (int(receipt["start_boundary"]), int(receipt["end_boundary"]))
+            for receipt, _root in chunks
+        ]
+        if rehearsal_ranges != [(0, 50), (50, 100)]:
+            raise C1C2PhysicalError(
+                "non-formal arm merge is limited to the explicit 100/2x50 acceptance rehearsal"
+            )
     cursor = 0
     all_rows: list[EpisodeReceipt] = []
     all_states: dict[int, dict[str, object]] = {}
@@ -2080,7 +2089,12 @@ def _merge_arm_chunks_locked(
         or any(row.policy_binding != policy_binding for row in all_rows)
     ):
         raise C1C2PhysicalError("arm chunk provenance changed across merge")
-    for boundary in range(CHECKPOINT_EVERY, cursor + 1, CHECKPOINT_EVERY):
+    artifact_boundaries = (
+        tuple(range(CHECKPOINT_EVERY, cursor + 1, CHECKPOINT_EVERY))
+        if formal_required
+        else (50, 100)
+    )
+    for boundary in artifact_boundaries:
         prefix = all_rows[:boundary]
         pooled = pool_receipts(prefix, arm=arm)
         _write_once(output / "checkpoints" / f"checkpoint-{boundary:06d}.json", {
