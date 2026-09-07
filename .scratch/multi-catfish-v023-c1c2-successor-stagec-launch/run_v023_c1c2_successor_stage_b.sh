@@ -6,6 +6,9 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 python_bin="${V023_STAGEC_PYTHON:-/home/sat/mcrl-leo-handover/.venv/bin/python}"
 export PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=2
+export OPENBLAS_NUM_THREADS=2
+export MKL_NUM_THREADS=2
+export NUMEXPR_NUM_THREADS=2
 export PYTHONPATH="${repo_root}/src"
 export TMPDIR="${repo_root}/.tmp"
 mkdir -p "${TMPDIR}"

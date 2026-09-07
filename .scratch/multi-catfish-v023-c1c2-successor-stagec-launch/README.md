@@ -14,48 +14,46 @@ and 3,000. Only the 3,000 boundary writes `result.json` and the single
 `C1C2_DEVELOPMENT_PREDICTION_HELD`/`...FALSIFIED` token with all applicable
 non-exclusive reasons.
 
-The execution binding also pins the scheduling addendum byte digest. The binder
-publishes `early_baseline_admission.json` and its named sidecar; that admission
-binds the plan, addendum, BASELINE checkpoint/status/adapter closure, code
-manifest, execution configuration, TLE, PREREG, and prospective authority. It
-admits only `BASELINE` episodes 1--3,000 with
-`execution_mode: "arm_decoupled"`. It carries no fabricated Stage-A export or
-Stage-B PASS receipt. Learned-arm chunks continue to require the existing
-Stage-A/B runtime admission.
+The prospective execution binding pins the sealed scheduling addendum, the
+acceptance-procedure digest, code closure, baseline, PREREG, TLE, configuration,
+plan, and predetermined Stage-A/B/C roots before Stage A. Stage A and Stage B
+are later imported by the separately sealed, append-only
+`STAGE-AB-ADMISSION-SUPPLEMENT.json`. All four arms use that supplement and one
+authenticated runtime admission; the withdrawn early-BASELINE mode does not
+exist. Formal chunks additionally require the sealed all-four-arm acceptance
+bundle.
 
 ## Freeze order
 
-1. Seal Stage A with `PASS_SOURCE_TRAINING_INTEGRITY`, `MANIFEST.sha256`,
-   `COMPLETE`, the canonical receipt, and exactly three epoch-100 producer
-   exports in `FULL2`, `DROP_C1`, `DROP_C2` order.
-2. Install the post-fix baseline adapter that explicitly exposes
+1. Install the post-fix baseline adapter that explicitly exposes
    `contract_fields_excluded: true`. The binder intentionally fails closed if
    that assertion is absent even when the checkpoint and status authenticate.
-3. Build and externally pin the code closure:
+2. Complete (but let the controller seal) scheduling-addendum section 2 and
+   the acceptance procedure. Build and externally pin the code closure:
 
    ```bash
    /home/sat/mcrl-leo-handover/.venv/bin/python build_v023_c1c2_successor_stagec_manifest.py --write
    ```
 
-4. Run `bind_v023_c1c2_successor_stagec_freeze.py`. It authenticates Stage A,
-   the baseline, PREREG, the frozen TLE tree, git commit/tree, physical package,
+3. Run `bind_v023_c1c2_successor_stagec_freeze.py` before Stage A. It binds the
+   predetermined Stage-A root and authenticates the baseline, PREREG, TLE,
+   sealed addendum, acceptance procedure, git commit/tree, physical package,
    bundle, and transitive closure; builds the world plan write-once; checks its
    semantic digest is
    `866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb`;
    and publishes `V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json` plus its
    external `.sha256` sidecar. The JSON never embeds its own digest.
-5. Run `preflight_v023_c1c2_successor_stagec.py` against an absent output root.
+4. Run and seal Stage A, then run Stage B with the prospectively bound Stage-A
+   root. Import both PASS receipts with the binder's `--import-bindings` mode.
+5. Run the four server equivalence acceptances and build the sealed acceptance
+   bundle. Run `preflight_v023_c1c2_successor_stagec.py` against an absent root.
    It reconstructs the baseline adapter, repeats a deterministic masked-policy
    invariance check, authenticates the plan and closure, rejects circular
    bindings and forbidden topology/split tokens, and writes a preflight receipt
    plus sidecar.
-6. Run `run_v023_c1c2_successor_stage_b.sh`; retain its formal gate and plumbing
-   receipt. Both record the sealed runtime-admission path/digest, the exact
-   Stage-A PASS receipt, and the three admitted Stage-A export paths/digests.
-7. Launch the 100 rung in tmux through
-   `sync_launch_v023_c1c2_successor_stagec_server.sh`. Resume explicitly from
-   checkpoint 100 to 500, 500 to 1,500, and 1,500 to 3,000. Earlier rungs never
-   emit or select a scientific disposition.
+6. Use `launch_stage_c_chunks.sh --barrier 100`, then 500, 1500, and 3000.
+   Each invocation schedules only that interval; merge and independently verify
+   the cumulative arm roots before releasing the next barrier.
 8. Independently run `verify_v023_c1c2_successor_stagec.py` after 3,000. Any
    inconsistency is `STOP_PHYSICAL_EVALUATION_INTEGRITY`, never a scientific
    result.
@@ -119,32 +117,19 @@ Stage-A/B runtime admission.
 ## Server launch and resume
 
 `--dry-run` performs no SSH, rsync, tmux, simulator, or artifact write beyond
-local temporary bookkeeping. It prints the exact remote bind, preflight,
-Stage-B, tmux, acknowledgement, and log locations:
+local temporary bookkeeping. It prints only checkout preparation, closure
+verification, and prospective binding:
 
 ```bash
 ./sync_launch_v023_c1c2_successor_stagec_server.sh --dry-run
 ```
 
-Before Stage A exists, the prospectively bound early-BASELINE route is:
-
-```bash
-./sync_launch_v023_c1c2_successor_stagec_server.sh \
-  --dry-run --early-baseline-only
-./sync_launch_v023_c1c2_successor_stagec_server.sh \
-  --early-baseline-only
-```
-
-This omits `--stage-a-output`, runs the early-BASELINE preflight, and starts
-only BASELINE 100-episode chunks. It does not run Stage B or a learned arm.
-
 The formal launcher first requires the seed checkout's commit/tree to match the
 local bound commit/tree, synchronizes the manifest closure into a fresh copy,
 then verifies the copied checkout's commit/tree again before binding. It never
 overlays a seed checkout from a different tree. It runs the
-bind/preflight/Stage-B gates, starts the 100 rung in a
-named tmux session, and waits at most 120 seconds for both a write-once startup
-marker and a live tmux session.
+prospective bind. It starts no Stage-B or Stage-C process; preparation and
+launch are separate operator actions.
 
 Subsequent cumulative calls use the same bindings, preflight receipt, Stage-B
 root, output root, and plan. For example, the 500 call adds:
@@ -170,13 +155,13 @@ declared continuation decision is pending.
 
 ## Arm-decoupled chunk execution
 
-`launch_stage_c_chunks.sh` fans one fixed-plan arm into contiguous 100-episode
-chunks. It caps tmux workers at `cores-2`, pins OMP/OpenBLAS/MKL/NumExpr to one
-thread, skips chunks carrying a complete authenticated receipt, resumes only a
-contiguous write-once prefix, and refuses a duplicate completed chunk or live
-duplicate tmux session. Use `--early-baseline-admission` only for `BASELINE`;
-use `--runtime-admission` for a learned arm. A second invocation with `--merge`
-requires all 30 chunks and creates the per-arm ordered merge.
+`launch_stage_c_chunks.sh` requires a current cumulative barrier, the Stage-A/B
+supplement, runtime admission, and all-four-arm acceptance bundle. Capacity is
+allocated under a shared lock as `(cores-2)-occupied Stage-C workers`, across
+arms and sessions. Every worker attests OMP/OpenBLAS/MKL/NumExpr = 1. `--merge`
+authenticates every chunk with the independent verifier before publishing a
+cumulative arm merge; indexed file hashes, checkpoints, boundary states,
+attempt dates, and chunk provenance are retained.
 
 `run_v023_c1c2_successor_stage_c_chunks.py merge-four` refuses a missing arm.
 It assembles episode records in the frozen `FULL2, DROP_C1, DROP_C2, BASELINE`

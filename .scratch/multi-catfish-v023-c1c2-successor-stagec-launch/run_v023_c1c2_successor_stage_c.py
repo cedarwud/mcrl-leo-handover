@@ -47,7 +47,9 @@ def _rngs(seed: int) -> tuple[Any, Any]:
     return np.random.default_rng(children[0]), np.random.default_rng(children[1])
 
 
-def _authenticate_preflight(path: Path, bindings_sha: str) -> None:
+def _authenticate_preflight(
+    path: Path, bindings_sha: str, *, supplement_sha: str, acceptance_sha: str
+) -> None:
     receipt = common.read_json(path, field="Stage-C preflight receipt")
     common.verify_named_sidecar(path)
     if (
@@ -55,6 +57,8 @@ def _authenticate_preflight(path: Path, bindings_sha: str) -> None:
         or receipt.get("formal") is not True
         or receipt.get("bindings_sha256") != bindings_sha
         or receipt.get("arms") != list(common.ARMS)
+        or receipt.get("stage_ab_supplement_sha256") != supplement_sha
+        or receipt.get("acceptance_evidence_sha256") != acceptance_sha
     ):
         raise common.StageCError("Stage-C preflight receipt drifted")
 
@@ -216,6 +220,8 @@ def _formal_admission_payload(
     runtime_admission: Mapping[str, object],
     admission_mapping: Mapping[str, object],
     policy_bindings: Mapping[str, object],
+    stage_ab_supplement_sha256: str,
+    acceptance_evidence_sha256: str,
 ) -> dict[str, object]:
     inputs = {
         "prereg": runtime_admission["prereg"],
@@ -247,6 +253,9 @@ def _formal_admission_payload(
         "stage_b_pass_receipt_sha256": inputs["stage_b_pass_receipt"]["sha256"],
         "authenticated_inputs": inputs,
         "git": bindings["git"],
+        "stage_ab_supplement_sha256": stage_ab_supplement_sha256,
+        "acceptance_evidence_sha256": acceptance_evidence_sha256,
+        "acceptance_procedure_sha256": bindings["acceptance_procedure"]["sha256"],
     }
 
 
@@ -311,6 +320,14 @@ def _continuation_banner(args: argparse.Namespace) -> str:
 
 def run(args: argparse.Namespace) -> dict[str, object]:
     bindings = common.verify_bindings(args.bindings)
+    supplement = common.verify_stage_ab_supplement(
+        args.admission_supplement, args.bindings, bindings
+    )
+    acceptance = common.verify_acceptance_bundle(
+        args.acceptance_bundle,
+        {**bindings, "bindings_sha256": common.file_sha256(args.bindings)},
+    )
+    bindings = common.materialize_stage_ab(bindings, supplement)
     common.verify_runtime_identity(bindings)
     bindings_sha = common.file_sha256(args.bindings)
     code_sha, _entries = common.verify_code_manifest()
@@ -324,7 +341,11 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         raise common.StageCError("Stage-C frozen TLE tree drifted")
     if str(args.output.resolve(strict=False)) != bindings.get("stage_c_output_root"):
         raise common.StageCError("Stage-C output root differs from frozen binding")
-    _authenticate_preflight(args.preflight_receipt, bindings_sha)
+    _authenticate_preflight(
+        args.preflight_receipt, bindings_sha,
+        supplement_sha=supplement["supplement_sha256"],
+        acceptance_sha=acceptance["acceptance_bundle_sha256"],
+    )
     _authenticate_stage_b(args.stage_b_root, bindings_sha)
     runner = _module(common.PHYSICAL / "v023_c1c2_successor_physical_runner.py")
     admission_root = args.runtime_admission_root
@@ -388,6 +409,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             runtime_admission=runtime_admission,
             admission_mapping=admission_mapping,
             policy_bindings=adapter.policy_bindings,
+            stage_ab_supplement_sha256=supplement["supplement_sha256"],
+            acceptance_evidence_sha256=acceptance["acceptance_bundle_sha256"],
         ),
     )
     if (
@@ -402,6 +425,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bindings", type=Path, required=True)
     parser.add_argument("--preflight-receipt", type=Path, required=True)
+    parser.add_argument("--admission-supplement", type=Path, required=True)
+    parser.add_argument("--acceptance-bundle", type=Path, required=True)
     parser.add_argument("--stage-b-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--pause-at", type=int, choices=(*common.PAUSES, 9000), required=True)

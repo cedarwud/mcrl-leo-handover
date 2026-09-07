@@ -17,6 +17,7 @@ if str(HERE) not in sys.path:
 
 import build_v023_c1c2_successor_world_plan as builder
 import v023_c1c2_successor_physical_runner as runner
+from mcrl.runtime.trainer_env import TrainerEnvironment
 
 
 def _plan() -> runner.EvaluationPlan:
@@ -360,8 +361,8 @@ def _rngs(seed: int):
     return np.random.default_rng(children[0]), np.random.default_rng(children[1])
 
 
-class _AgeStreamAdapter:
-    """Producer-shaped adapter exercising the real persisted age-stream rule."""
+class _ChunkTransportStub:
+    """Fast persistence/merge transport stub; never acceptance evidence."""
 
     def __init__(self, arm: str, *, interrupt_after: int | None = None) -> None:
         self.arm = arm
@@ -375,6 +376,16 @@ class _AgeStreamAdapter:
             "fixed_policy": True,
         }
         self._state = None
+        self.archive = object()
+        self.environment_factory = self._environment_factory
+
+    @staticmethod
+    def _environment_factory(_archive, _users):
+        environment = object.__new__(TrainerEnvironment)
+        environment.environment = SimpleNamespace(
+            physics=SimpleNamespace(segment_warm_start="uniform-episode-length")
+        )
+        return environment
 
     @property
     def policy_bindings(self):
@@ -440,7 +451,7 @@ class _AgeStreamAdapter:
         return receipt
 
 
-def _chunk_context(adapter: _AgeStreamAdapter) -> dict[str, object]:
+def _chunk_context(adapter: _ChunkTransportStub) -> dict[str, object]:
     digests = {
         name: runner.canonical_sha256({"fixture": name})
         for name in (
@@ -450,10 +461,14 @@ def _chunk_context(adapter: _AgeStreamAdapter) -> dict[str, object]:
             "tle_sha256",
             "prereg_sha256",
             "admission_sha256",
+            "stage_ab_supplement_sha256",
+            "acceptance_evidence_sha256",
+            "acceptance_procedure_sha256",
         )
     }
+    arm = getattr(adapter, "arm", next(iter(adapter.policy_bindings)))
     return {
-        "arm": adapter.arm,
+        "arm": arm,
         "adapter": adapter,
         "schedule_sha256": runner.canonical_sha256({"schedule": "fixture"}),
         "execution_mode": "arm_decoupled",
@@ -466,28 +481,30 @@ def _direct_sequential(plan, adapter, episodes=200):
     rows = []
     state = None
     states = {}
+    arm = getattr(adapter, "arm", next(iter(adapter.policy_bindings)))
     for index in range(episodes):
         row = adapter.run_episode(
-            arm=adapter.arm,
+            arm=arm,
             world=plan.worlds[index],
             plan_sha256=plan.plan_sha256,
             resume_state=state,
         )
         rows.append(row)
-        state = adapter.resume_state_for(adapter.arm)
-        if index + 1 in {100, 200}:
+        state = adapter.resume_state_for(arm)
+        if index + 1 in {100, 200} or episodes <= 2:
             states[index + 1] = json.loads(json.dumps(runner._jsonable(state)))
     return rows, states
 
 
 @pytest.mark.parametrize("arm", runner.ARMS)
-def test_sequential_200_equals_two_100_chunks_bitwise(
+def test_synthetic_transport_preserves_two_100_chunk_values(
     arm: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    for name in runner.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
     plan = _plan()
-    sequential_rows, sequential_states = _direct_sequential(plan, _AgeStreamAdapter(arm))
-    adapter = _AgeStreamAdapter(arm)
+    sequential_rows, sequential_states = _direct_sequential(plan, _ChunkTransportStub(arm))
+    adapter = _ChunkTransportStub(arm)
     table_a = runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 100, 200))
     table_b = runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 100, 200))
     assert {key: value.as_dict() for key, value in table_a.items()} == {
@@ -520,25 +537,200 @@ def test_sequential_200_equals_two_100_chunks_bitwise(
 def test_chunk_interruption_preserves_prefix_and_resumes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    for name in runner.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
     plan = _plan()
-    adapter = _AgeStreamAdapter("BASELINE", interrupt_after=17)
+    adapter = _ChunkTransportStub("BASELINE", interrupt_after=17)
     table = runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 100))
     root = tmp_path / "interrupted"
     with pytest.raises(KeyboardInterrupt):
         runner.run_arm_chunk("BASELINE", 0, 100, table[0], root)
     assert len(list((root / "episodes").glob("episode-*.json"))) == 17
+    first_started = runner._read_json(
+        root / "attempts/attempt-000001.json", label="first attempt"
+    )["started_utc"]
     adapter.interrupt_after = None
     receipt = runner.run_arm_chunk("BASELINE", 0, 100, table[0], root)
     assert receipt["status"] == "COMPLETE_ARM_CHUNK"
     assert len(list((root / "episodes").glob("episode-*.json"))) == 100
+    assert receipt["started_utc"] == first_started
+    assert len(receipt["execution_attempts"]) == 2
+
+
+def test_nonformal_50_alignment_is_narrow_and_cannot_merge_formally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in runner.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
+    plan = _plan()
+    adapter = _ChunkTransportStub("FULL2")
+    context = _chunk_context(adapter)
+    context.update({
+        "formal": False,
+        "acceptance_mode": "NONFORMAL_EQUIVALENCE_REHEARSAL",
+        "chunk_alignment": 50,
+    })
+    table = runner.build_chunk_boundary_states(plan, context, (0, 50, 100))
+    first = tmp_path / "FULL2-000000-000050"
+    second = tmp_path / "FULL2-000050-000100"
+    assert runner.run_arm_chunk("FULL2", 0, 50, table[0], first)["formal"] is False
+    assert runner.run_arm_chunk("FULL2", 50, 100, table[50], second)["formal"] is False
+    with pytest.raises(runner.C1C2PhysicalError, match="identity"):
+        runner.merge_arm_chunks("FULL2", (first, second), tmp_path / "formal-merge")
+    merged = runner.merge_arm_chunks(
+        "FULL2", (first, second), tmp_path / "acceptance-merge",
+        formal_required=False,
+    )
+    assert merged["formal"] is False
+    context.pop("acceptance_mode")
+    with pytest.raises(runner.C1C2PhysicalError, match="explicit non-formal"):
+        runner.build_chunk_boundary_states(plan, context, (0, 50, 100))
+
+
+def test_boundary_builder_fails_closed_for_other_warm_start_mode() -> None:
+    plan = _plan()
+    adapter = _ChunkTransportStub("BASELINE")
+
+    def wrong_mode(_archive, _users):
+        environment = object.__new__(TrainerEnvironment)
+        environment.environment = SimpleNamespace(
+            physics=SimpleNamespace(segment_warm_start="uniform-segment-length")
+        )
+        return environment
+
+    adapter.environment_factory = wrong_mode
+    with pytest.raises(runner.C1C2PhysicalError, match="segment_warm_start"):
+        runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 100))
+
+
+def test_merge_rejects_stale_indexed_episode_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in runner.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
+    plan = _plan()
+    adapter = _ChunkTransportStub("BASELINE")
+    table = runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 100))
+    root = tmp_path / "BASELINE-000000-000100"
+    runner.run_arm_chunk("BASELINE", 0, 100, table[0], root)
+    record = root / "episodes/episode-000001.json"
+    record.write_bytes(record.read_bytes() + b" ")
+    with pytest.raises(runner.C1C2PhysicalError, match="indexed episode hash"):
+        runner.merge_arm_chunks("BASELINE", (root,), tmp_path / "merged")
+
+
+def test_real_environment_sequential_equals_chunked_bitwise(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise the retained adapter and real Step/Trainer environment, not an age stub."""
+
+    import struct
+    from mcrl.env.constants import TLE_ROOT_DEFAULT
+    from mcrl.env.ephemeris import TRAIN, BlockAlternatingSplit, EpisodeStartSampler
+    from mcrl.env.mobility import MobilityConfig
+    from mcrl.env.scenario import ScenarioConfig, ScenarioDriver
+    from mcrl.env.step import StepEnvironment
+    from mcrl.env.tle import TleArchive
+
+    for name in runner.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
+    archive = TleArchive(Path(TLE_ROOT_DEFAULT).expanduser())
+
+    def environment_factory(bound_archive, users):
+        driver = ScenarioDriver(
+            bound_archive,
+            ScenarioConfig(mobility=MobilityConfig(num_users=users)),
+        )
+        split = BlockAlternatingSplit.for_archive(bound_archive)
+        sampler = EpisodeStartSampler.for_archive(bound_archive, split, TRAIN)
+        return TrainerEnvironment(StepEnvironment(driver), sampler)
+
+    plan = _plan()
+    policy = runner.load_baseline_policy(
+        checkpoint_path=HERE.parents[1] / "artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt",
+        status_path=HERE.parents[1] / "artifacts/training-2026-08-25-rerun01/main/status.json",
+        expected_status_sha256=runner.file_sha256(
+            HERE.parents[1] / "artifacts/training-2026-08-25-rerun01/main/status.json"
+        ),
+    )
+    sampler_sha = runner.canonical_sha256(environment_factory(archive, runner.USERS).sampler.as_dict())
+    sources = {
+        "FULL2": ["informed", "informed"],
+        "DROP_C1": ["neutral", "informed"],
+        "DROP_C2": ["informed", "neutral"],
+    }
+    admission_path = tmp_path / "runtime-admission.json"
+    admission_payload = {
+        "schema": f"{runner.SCHEMA}-runtime-admission-v1",
+        "status": "FORMAL_RUNTIME_ADMITTED",
+        "split": runner.SPLIT,
+        "admitted_evaluation_sha256": plan.plan_sha256,
+        "sampler": {"part": "train", "as_dict_sha256": sampler_sha},
+        "learned_training_provenance": {
+            arm: {
+                "arm": arm,
+                "checkpoint_sha256": runner.canonical_sha256({"fixture": arm}),
+                "source_mapping": sources[arm],
+                "stage_a_status": "PASS_SOURCE_TRAINING_INTEGRITY",
+                "manifest_sha256": "a" * 64,
+            }
+            for arm in runner.LEARNED_ARMS
+        },
+        "predecessor_pass_receipts": [],
+    }
+    admission_sha = _seal_json(admission_path, admission_payload)
+    admission = {
+        **admission_payload,
+        "admission_path": str(admission_path.resolve()),
+        "admission_sha256": admission_sha,
+        "authenticated_predecessor_statuses": [
+            "PASS_SOURCE_TRAINING_INTEGRITY", "PASS_PLUMBING_INTEGRITY"
+        ],
+    }
+
+    def adapter():
+        return runner.FixedPolicyEpisodeAdapter(
+            policies=(policy,), archive=archive,
+            environment_factory=environment_factory, rng_factory=_rngs,
+            runtime_admission=admission,
+        )
+
+    direct_rows, direct_states = _direct_sequential(plan, adapter(), episodes=2)
+    chunk_adapter = adapter()
+    context = _chunk_context(chunk_adapter)
+    context.update({
+        "formal": False,
+        "acceptance_mode": "NONFORMAL_EQUIVALENCE_REHEARSAL",
+        "chunk_alignment": 1,
+    })
+    table = runner.build_chunk_boundary_states(plan, context, (0, 1, 2))
+    roots = (tmp_path / "real-0-1", tmp_path / "real-1-2")
+    runner.run_arm_chunk("BASELINE", 0, 1, table[0], roots[0])
+    runner.run_arm_chunk("BASELINE", 1, 2, table[1], roots[1])
+    chunk_rows = [
+        runner._read_episode_record(root / f"episodes/episode-{episode:06d}.json")[0]
+        for root, episode in zip(roots, (1, 2), strict=True)
+    ]
+
+    def bitwise(left, right):
+        if isinstance(left, float) or isinstance(right, float):
+            return isinstance(left, float) and isinstance(right, float) and struct.pack(">d", left) == struct.pack(">d", right)
+        if isinstance(left, dict) and isinstance(right, dict):
+            return set(left) == set(right) and all(bitwise(left[key], right[key]) for key in left)
+        if isinstance(left, list) and isinstance(right, list):
+            return len(left) == len(right) and all(bitwise(a, b) for a, b in zip(left, right, strict=True))
+        return left == right
+
+    assert bitwise([row.as_dict() for row in direct_rows], [row.as_dict() for row in chunk_rows])
+    assert table[1]["resume_state"] == direct_states[1]
+    assert table[2]["resume_state"] == direct_states[2]
 
 
 def test_chunk_refuses_early_baseline_above_3000_and_missing_fourth_arm(
     tmp_path: Path,
 ) -> None:
     plan = _plan()
-    adapter = _AgeStreamAdapter("BASELINE")
+    adapter = _ChunkTransportStub("BASELINE")
     with pytest.raises(runner.C1C2PhysicalError, match="continuation authority"):
         runner.build_chunk_boundary_states(plan, _chunk_context(adapter), (0, 3100))
     with pytest.raises(runner.C1C2PhysicalError, match="every arm"):

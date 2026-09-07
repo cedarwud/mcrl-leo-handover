@@ -319,6 +319,25 @@ def _verify_cumulative_prefix(
                 )
 
 
+def _verify_arm_merge_provenance(value: object) -> None:
+    if not isinstance(value, Mapping) or tuple(value) != common.ARMS:
+        raise common.StageCError("four-arm output lost arm-merge provenance")
+    for arm in common.ARMS:
+        record = value[arm]
+        if not isinstance(record, Mapping):
+            raise common.StageCError(f"{arm} arm-merge provenance is malformed")
+        path = Path(str(record.get("path", "")))
+        if common.file_sha256(path, field=f"{arm} arm merge") != record.get("sha256"):
+            raise common.StageCError(f"{arm} arm-merge bytes drifted")
+        merge = common.read_json(path, field=f"{arm} arm merge")
+        chunks = record.get("chunk_receipts")
+        if merge.get("chunk_receipts") != chunks or not isinstance(chunks, list):
+            raise common.StageCError(f"{arm} chunk provenance was disconnected")
+        for chunk in chunks:
+            if not isinstance(chunk, Mapping) or common.file_sha256(str(chunk.get("path", ""))) != chunk.get("sha256"):
+                raise common.StageCError(f"{arm} indexed chunk receipt drifted")
+
+
 def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
     if root.is_symlink() or not root.is_dir():
         raise common.StageCError("finished Stage-C root is unavailable")
@@ -399,6 +418,8 @@ def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
             or checkpoint.get("admission_mapping") != expected_admission_mapping
         ):
             raise common.StageCError(f"checkpoint identity drifted at {boundary}")
+        if checkpoint.get("execution_mode") == "arm_decoupled":
+            _verify_arm_merge_provenance(checkpoint.get("arm_merge_provenance"))
         rows = checkpoint.get("receipts")
         if not isinstance(rows, list):
             raise common.StageCError(f"checkpoint receipts missing at {boundary}")
@@ -416,6 +437,8 @@ def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
             or rung.get("admission_mapping") != expected_admission_mapping
         ):
             raise common.StageCError(f"rung receipt identity drifted at {boundary}")
+        if rung.get("execution_mode") == "arm_decoupled":
+            _verify_arm_merge_provenance(rung.get("arm_merge_provenance"))
         for arm in common.ARMS:
             _verify_pool(rung.get("pooled_by_arm", {}).get(arm), pooled[arm], field=f"rung {boundary} {arm}")
         _verify_cumulative_prefix(
@@ -439,6 +462,8 @@ def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
         raise common.StageCError("result contains no valid single scientific token")
     if result.get("admission_mapping") != expected_admission_mapping:
         raise common.StageCError("3000 result admission mapping drifted")
+    if result.get("execution_mode") == "arm_decoupled":
+        _verify_arm_merge_provenance(result.get("arm_merge_provenance"))
     if completed == 9000 or result.get("overall_token") == FALSIFIED:
         common.verify_tree_seal(root)
     if completed == 9000:
@@ -530,16 +555,38 @@ def verify_arm_chunk(
     bindings_path: Path,
     *,
     arm: str,
+    admission_supplement: Path,
+    acceptance_bundle: Path,
+    runtime_admission: Path,
 ) -> dict[str, object]:
     """Independently recompute one chunk's plan, stream, coverage and pools."""
 
     if root.is_symlink() or not root.is_dir():
         raise common.StageCError("chunk root is unavailable")
+    _reject_nonformal(root)
     bindings = common.verify_bindings(bindings_path)
+    supplement = common.verify_stage_ab_supplement(
+        admission_supplement, bindings_path, bindings
+    )
+    acceptance = common.verify_acceptance_bundle(
+        acceptance_bundle,
+        {**bindings, "bindings_sha256": common.file_sha256(bindings_path)},
+    )
+    bindings = common.materialize_stage_ab(bindings, supplement)
     common.verify_runtime_identity(bindings, chunk_mode=True)
+    physical_runner = _physical_runner()
+    admission_sha = common.verify_named_sidecar(runtime_admission)
+    physical_runner.authenticate_runtime_admission(
+        runtime_admission,
+        expected_sha256=admission_sha,
+        expected_statuses=("PASS_SOURCE_TRAINING_INTEGRITY", "PASS_PLUMBING_INTEGRITY"),
+    )
     receipt = common.read_json(root / "chunk-receipt.json", field="chunk receipt")
     if (
-        receipt.get("arm") != arm
+        receipt.get("schema") != physical_runner.CHUNK_RECEIPT_SCHEMA
+        or receipt.get("status") != "COMPLETE_ARM_CHUNK"
+        or receipt.get("formal") is not True
+        or receipt.get("arm") != arm
         or receipt.get("execution_mode") != "arm_decoupled"
         or receipt.get("scientific_disposition_emitted") is not False
         or receipt.get("plan_sha256") != common.PLAN_SHA256
@@ -547,14 +594,18 @@ def verify_arm_chunk(
     ):
         raise common.StageCError("chunk receipt identity drifted")
     forbidden = receipt.get("forbidden_boundary_flags")
-    if not isinstance(forbidden, Mapping) or any(value is not False for value in forbidden.values()):
+    if (
+        not isinstance(forbidden, Mapping)
+        or set(forbidden) != set(physical_runner.FORBIDDEN_BOUNDARY_FLAGS)
+        or any(value is not False for value in forbidden.values())
+    ):
         raise common.StageCError("chunk crossed a forbidden boundary")
     start = receipt.get("start_boundary")
     end = receipt.get("end_boundary")
     if type(start) is not int or type(end) is not int or start < 0 or end <= start or start % 100 or end % 100:
         raise common.StageCError("chunk range is not contiguous 100-aligned coverage")
-    if end > 3000:
-        raise common.StageCError("chunk exceeds early Stage-C authority")
+    if end > 3000 or receipt.get("range") != [start + 1, end] or receipt.get("chunk_id") != f"{arm}-{start:06d}-{end:06d}":
+        raise common.StageCError("chunk endpoint arithmetic/authority drifted")
     plan = common.read_json(bindings["world_plan"]["path"], field="frozen world plan")
     plan_body = dict(plan)
     plan_body.pop("plan_sha256", None)
@@ -563,6 +614,21 @@ def verify_arm_chunk(
     expected_policy = _expected_policy_binding(bindings, arm)
     if receipt.get("policy_binding") != expected_policy:
         raise common.StageCError("chunk policy provenance drifted")
+    expected_provenance = {
+        "authority_sha256": common.file_sha256(bindings_path),
+        "code_manifest_sha256": bindings["code"]["external_manifest_sha256"],
+        "configuration_sha256": common.canonical_sha256(bindings["execution"]),
+        "tle_sha256": bindings["physical_inputs"]["tle_manifest_sha256"],
+        "prereg_sha256": bindings["physical_inputs"]["prereg_sha256"],
+        "admission_sha256": admission_sha,
+        "stage_ab_supplement_sha256": supplement["supplement_sha256"],
+        "acceptance_evidence_sha256": acceptance["acceptance_bundle_sha256"],
+        "acceptance_procedure_sha256": bindings["acceptance_procedure"]["sha256"],
+    }
+    if receipt.get("provenance") != expected_provenance:
+        raise common.StageCError("chunk full provenance drifted")
+    if receipt.get("threads") != {name: 1 for name in common.NUMERICAL_THREAD_ENV}:
+        raise common.StageCError("chunk numerical-thread attestation drifted")
     record_index = receipt.get("ordered_episode_records")
     if not isinstance(record_index, list) or receipt.get("ordered_episode_record_digest") != common.canonical_sha256(record_index):
         raise common.StageCError("chunk ordered episode-record digest drifted")
@@ -571,6 +637,7 @@ def verify_arm_chunk(
     if [path.name for path in paths] != names or len(record_index) != len(paths):
         raise common.StageCError("chunk episode coverage is incomplete or duplicated")
     rows: list[Mapping[str, object]] = []
+    actual_states: dict[int, Mapping[str, object]] = {}
     for episode, path, index in zip(range(start + 1, end + 1), paths, record_index, strict=True):
         record = common.read_json(path, field=f"chunk episode {episode}")
         body = dict(record)
@@ -594,14 +661,32 @@ def verify_arm_chunk(
         ):
             raise common.StageCError("chunk episode plan/provenance/state drifted")
         rows.append(row)
+        actual_states[episode] = state
     sequence = np.random.SeedSequence(plan["worlds"][0]["world_seed"])
     environment_rng = np.random.default_rng(sequence.spawn(2)[0])
     age_rng = environment_rng.spawn(1)[0]
     states: dict[int, Mapping[str, object]] = {}
     for episode in range(1, end + 1):
         age_rng.integers(0, 10, size=100)
-        if episode in {start, end}:
-            states[episode] = dict(age_rng.bit_generator.state)
+        states[episode] = dict(age_rng.bit_generator.state)
+        if episode > start:
+            world = plan["worlds"][episode - 1]
+            expected_state = {
+                "schema": f"{physical_runner.SCHEMA}-resume-state",
+                "arm": arm,
+                "episode_index": episode,
+                "world_id": world["world_id"],
+                "world_seed": world["world_seed"],
+                "field_root_digest": world["field_root_digest"],
+                "plan_sha256": common.PLAN_SHA256,
+                "policy_binding": expected_policy,
+                "environment_training_state": {
+                    "format_version": 1,
+                    "age_rng_state": states[episode],
+                },
+            }
+            if actual_states.get(episode) != expected_state:
+                raise common.StageCError("chunk actual resume state disagrees with replay")
     start_payload = common.read_json(root / "boundary-start.json", field="chunk start boundary")
     end_payload = common.read_json(root / "boundary-end.json", field="chunk end boundary")
     _verify_boundary_state(
@@ -625,6 +710,76 @@ def verify_arm_chunk(
         or receipt.get("end_boundary_state_sha256") != end_payload["boundary_state_sha256"]
     ):
         raise common.StageCError("chunk receipt boundary hashes drifted")
+    checkpoint_paths = sorted((root / "checkpoints").glob("checkpoint-*.json"))
+    expected_checkpoint_episodes = list(range(start + 100, end + 1, 100))
+    if [path.name for path in checkpoint_paths] != [f"checkpoint-{episode:06d}.json" for episode in expected_checkpoint_episodes]:
+        raise common.StageCError("chunk checkpoint cadence/completeness drifted")
+    for episode, checkpoint_path in zip(expected_checkpoint_episodes, checkpoint_paths, strict=True):
+        checkpoint = physical_runner._read_chunk_checkpoint(checkpoint_path)
+        if (
+            checkpoint.get("formal") is not True
+            or checkpoint.get("arm") != arm
+            or checkpoint.get("chunk_id") != receipt["chunk_id"]
+            or checkpoint.get("completed_episode") != episode
+            or checkpoint.get("resume_state") != actual_states[episode]
+            or checkpoint.get("threads") != {name: 1 for name in common.NUMERICAL_THREAD_ENV}
+            or checkpoint.get("forbidden_boundary_flags")
+            != {name: False for name in physical_runner.FORBIDDEN_BOUNDARY_FLAGS}
+        ):
+            raise common.StageCError("chunk checkpoint identity/state drifted")
+    final_checkpoint = receipt.get("final_checkpoint")
+    final_path = root / "checkpoints" / f"checkpoint-{end:06d}.json"
+    if (
+        not isinstance(final_checkpoint, Mapping)
+        or final_checkpoint.get("path") != str(final_path.resolve())
+        or final_checkpoint.get("sha256") != common.file_sha256(final_path)
+    ):
+        raise common.StageCError("chunk final checkpoint binding drifted")
+    parent = receipt.get("parent_checkpoint")
+    if not isinstance(parent, Mapping):
+        raise common.StageCError("chunk parent checkpoint is missing")
+    if parent.get("kind") == "authenticated-boundary-table":
+        if (
+            parent.get("episode_index") != start
+            or parent.get("boundary_state_sha256") != start_payload["boundary_state_sha256"]
+        ):
+            raise common.StageCError("chunk boundary parent checkpoint drifted")
+    elif parent.get("kind") == "arm-chunk-checkpoint":
+        parent_path = Path(str(parent.get("path", "")))
+        if common.file_sha256(parent_path) != parent.get("sha256"):
+            raise common.StageCError("chunk parent checkpoint bytes drifted")
+        parent_payload = physical_runner._read_chunk_checkpoint(parent_path)
+        if parent_payload.get("completed_episode") != start or parent_payload.get("resume_state") != start_payload.get("resume_state"):
+            raise common.StageCError("chunk parent checkpoint state drifted")
+    else:
+        raise common.StageCError("chunk parent checkpoint kind drifted")
+    attempts = receipt.get("execution_attempts")
+    if not isinstance(attempts, list) or not attempts:
+        raise common.StageCError("chunk execution-attempt provenance is missing")
+    for ordinal, record in enumerate(attempts, 1):
+        if not isinstance(record, Mapping) or record.get("attempt") != ordinal:
+            raise common.StageCError("chunk execution-attempt index drifted")
+        attempt_path = root / "attempts" / str(record.get("path", ""))
+        if common.file_sha256(attempt_path) != record.get("sha256"):
+            raise common.StageCError("chunk execution-attempt hash drifted")
+        attempt = common.read_json(attempt_path, field="chunk execution attempt")
+        if attempt.get("attempt") != ordinal or attempt.get("threads") != {name: 1 for name in common.NUMERICAL_THREAD_ENV}:
+            raise common.StageCError("chunk execution-attempt attestation drifted")
+        if ordinal == 1 and receipt.get("started_utc") != attempt.get("started_utc"):
+            raise common.StageCError("chunk original start time was not preserved")
+    repair_path = root / "repair-receipt.json"
+    if repair_path.exists():
+        repair = common.read_json(repair_path, field="chunk repair receipt")
+        authority = repair.get("repair_authority")
+        if (
+            repair.get("status") != "REPAIRED_CHECKPOINT_PUBLICATION"
+            or repair.get("chunk_id") != receipt["chunk_id"]
+            or repair.get("prefix_episode") != end
+            or not isinstance(authority, Mapping)
+            or common.file_sha256(str(authority.get("path", ""))) != authority.get("sha256")
+            or common.verify_named_sidecar(str(authority.get("path", ""))) != authority.get("sha256")
+        ):
+            raise common.StageCError("chunk repair authority/receipt drifted")
     pooled = _pool(rows, arm)
     return {
         "status": "VERIFIED_ARM_CHUNK",
@@ -642,10 +797,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--bindings", type=Path, required=True)
     parser.add_argument("--arm", choices=common.ARMS)
+    parser.add_argument("--admission-supplement", type=Path)
+    parser.add_argument("--acceptance-bundle", type=Path)
+    parser.add_argument("--runtime-admission", type=Path)
     args = parser.parse_args(argv)
     try:
         report = (
-            verify_arm_chunk(args.root, args.bindings, arm=args.arm)
+            verify_arm_chunk(
+                args.root, args.bindings, arm=args.arm,
+                admission_supplement=args.admission_supplement,
+                acceptance_bundle=args.acceptance_bundle,
+                runtime_admission=args.runtime_admission,
+            )
             if args.arm is not None
             else verify_finished(args.root, args.bindings)
         )

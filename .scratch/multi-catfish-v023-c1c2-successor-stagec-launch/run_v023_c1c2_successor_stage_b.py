@@ -50,9 +50,17 @@ def _args_from_bindings(
 
 
 def run(
-    bindings_path: Path, output: Path, *, admission_root: Path | None = None
+    bindings_path: Path, output: Path, *, stage_a_output: Path | None = None,
+    admission_root: Path | None = None
 ) -> dict[str, object]:
     bindings = common.verify_bindings(bindings_path)
+    if stage_a_output is None:
+        raise common.StageCError("Stage-B requires the predetermined Stage-A output")
+    pending = bindings.get("stage_a")
+    if not isinstance(pending, Mapping) or pending.get("root") != str(stage_a_output.resolve()):
+        raise common.StageCError("Stage-A output differs from the prospective binding")
+    binder = _module(common.HERE / "bind_v023_c1c2_successor_stagec_freeze.py")
+    bindings = {**bindings, "stage_a": binder.bind_stage_a(stage_a_output)}
     common.verify_runtime_identity(bindings)
     code_sha, _entries = common.verify_code_manifest()
     if bindings.get("code", {}).get("external_manifest_sha256") != code_sha:
@@ -122,10 +130,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bindings", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--stage-a-output", type=Path, required=True)
     parser.add_argument("--admission-root", type=Path)
     args = parser.parse_args(argv)
     try:
-        run(args.bindings, args.output, admission_root=args.admission_root)
+        run(
+            args.bindings, args.output, stage_a_output=args.stage_a_output,
+            admission_root=args.admission_root,
+        )
     except Exception as error:
         print(f"STOP_PLUMBING_INTEGRITY: {error}", file=sys.stderr)
         return 2

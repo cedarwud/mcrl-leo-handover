@@ -1,88 +1,85 @@
 # Mandatory server acceptance — Stage-C chunk equivalence
 
-This is a heavy, server-only acceptance run. Budget about 12--20 minutes for
-`BASELINE`, then 1.5--2 hours wall time for the three learned arms when run in
-parallel (about 4.5 core-hours total), based on the measured 13.6 seconds per
-learned episode. Each arm executes 200 direct sequential episodes plus two
-100-episode chunks. Do not run this on WSL2.
+Run only on the Ubuntu server from a real git checkout whose commit contains
+the complete Stage-C closure. A shadow directory without `.git` is invalid.
+The checkout must pass the manifest `--check` before any acceptance episode.
 
-## Setup
+The acceptance is explicitly non-formal and emits no scientific result. The
+default comparison is sequential 200 versus 2×100. For the three learned arms,
+`--episodes 100 --chunks 2 --non-formal` admits exactly 2×50 for this acceptance
+only; formal Stage-C chunks remain 100-aligned. At the measured rate, each
+learned-arm rehearsal costs about 25 minutes instead of 45+ minutes.
 
 ```bash
 ssh sat
-cd /home/sat/mcrl-v023-successor-shadow-20260907
+cd /home/sat/mcrl-v023-c1c2-successor-stagec-20260907-r1-checkout
+test -d .git
 git status --short --branch
 git rev-parse HEAD
-test -x .venv/bin/python
+test -x /home/sat/mcrl-leo-handover/.venv/bin/python
+
 export PYTHONDONTWRITEBYTECODE=1
-export OMP_NUM_THREADS=1
-export OPENBLAS_NUM_THREADS=1
-export MKL_NUM_THREADS=1
-export NUMEXPR_NUM_THREADS=1
-export PYTHONPATH="$PWD/src"
-export TMPDIR="$PWD/.tmp"
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+export PYTHONPATH="$PWD/src" TMPDIR="$PWD/.tmp"
 echo 1000 > /proc/self/oom_score_adj
 mkdir -p "$TMPDIR"
 
 BUNDLE="$PWD/.scratch/multi-catfish-v023-c1c2-successor-stagec-launch"
+PY=/home/sat/mcrl-leo-handover/.venv/bin/python
 BINDINGS="$BUNDLE/V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json"
-EARLY="$BUNDLE/early_baseline_admission.json"
-RUNTIME="/home/sat/mcrl-v023-successor-stagec-admission/stage-c-runtime-admission.json"
-ACCEPT_ROOT="/home/sat/mcrl-v023-successor-stagec-equivalence-20260908"
-test -f "$BINDINGS"
-test -f "$BINDINGS.sha256"
-test -f "$EARLY"
-test -f "$EARLY.sha256"
+SUPPLEMENT="$BUNDLE/STAGE-AB-ADMISSION-SUPPLEMENT.json"
+RUNTIME=/home/sat/mcrl-v023-c1c2-successor-stagec-controller-20260907-r1/stage-c-admission/stage-c-runtime-admission.json
+ACCEPT_ROOT=/home/sat/mcrl-v023-successor-stagec-equivalence-20260908
+
+"$PY" "$BUNDLE/build_v023_c1c2_successor_stagec_manifest.py" --check
+test -f "$BINDINGS" -a -f "$BINDINGS.sha256"
+test -f "$SUPPLEMENT" -a -f "$SUPPLEMENT.sha256"
+test -f "$RUNTIME" -a -f "$RUNTIME.sha256"
 test ! -e "$ACCEPT_ROOT"
 ```
 
-The checkout and artifacts must first be synchronized through
-`sync_launch_v023_c1c2_successor_stagec_server.sh`; do not copy individual
-Python files around the manifest. The learned-arm commands additionally require
-the Stage-A/B-generated `$RUNTIME` file and its sidecar.
-
-## BASELINE first
+Run BASELINE with the default 200/2×100 comparison:
 
 ```bash
-"$PWD/.venv/bin/python" "$BUNDLE/accept_stage_c_chunk_equivalence.py" \
-  --bindings "$BINDINGS" \
-  --arm BASELINE \
-  --early-baseline-admission "$EARLY" \
+"$PY" "$BUNDLE/accept_stage_c_chunk_equivalence.py" \
+  --bindings "$BINDINGS" --admission-supplement "$SUPPLEMENT" \
+  --runtime-admission "$RUNTIME" --arm BASELINE \
   --output "$ACCEPT_ROOT/BASELINE"
 ```
 
-Require exit 0 and
-`status=PASS_BITWISE_CHUNK_EQUIVALENCE` in `BASELINE/ACCEPTANCE.json` before
-starting learned-arm acceptance. This acceptance reads no Stage-A export and no
-Stage-B PASS receipt.
-
-## Learned arms
+Run each learned arm with the bounded non-formal 100/2×50 rehearsal:
 
 ```bash
-test -f "$RUNTIME"
-test -f "$RUNTIME.sha256"
-tmux new-session -d -s v023-stagec-equivalence -n FULL2 \
-  "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH='$PWD/src' TMPDIR='$PWD/.tmp' '$PWD/.venv/bin/python' '$BUNDLE/accept_stage_c_chunk_equivalence.py' --bindings '$BINDINGS' --arm FULL2 --runtime-admission '$RUNTIME' --output '$ACCEPT_ROOT/FULL2'"
-tmux new-window -t v023-stagec-equivalence -n DROP_C1 \
-  "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH='$PWD/src' TMPDIR='$PWD/.tmp' '$PWD/.venv/bin/python' '$BUNDLE/accept_stage_c_chunk_equivalence.py' --bindings '$BINDINGS' --arm DROP_C1 --runtime-admission '$RUNTIME' --output '$ACCEPT_ROOT/DROP_C1'"
-tmux new-window -t v023-stagec-equivalence -n DROP_C2 \
-  "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH='$PWD/src' TMPDIR='$PWD/.tmp' '$PWD/.venv/bin/python' '$BUNDLE/accept_stage_c_chunk_equivalence.py' --bindings '$BINDINGS' --arm DROP_C2 --runtime-admission '$RUNTIME' --output '$ACCEPT_ROOT/DROP_C2'"
-tmux attach -t v023-stagec-equivalence
-```
-
-## Final acceptance check
-
-```bash
-for arm in BASELINE FULL2 DROP_C1 DROP_C2; do
-  test -f "$ACCEPT_ROOT/$arm/ACCEPTANCE.json"
-  test -f "$ACCEPT_ROOT/$arm/ACCEPTANCE.json.sha256"
-  (cd "$ACCEPT_ROOT/$arm" && sha256sum -c ACCEPTANCE.json.sha256)
-  "$PWD/.venv/bin/python" -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["status"]=="PASS_BITWISE_CHUNK_EQUIVALENCE"; assert p["episodes"]==200; assert p["chunks"]==[[1,100],[101,200]]' "$ACCEPT_ROOT/$arm/ACCEPTANCE.json"
+for arm in FULL2 DROP_C1 DROP_C2; do
+  "$PY" "$BUNDLE/accept_stage_c_chunk_equivalence.py" \
+    --bindings "$BINDINGS" --admission-supplement "$SUPPLEMENT" \
+    --runtime-admission "$RUNTIME" --arm "$arm" \
+    --episodes 100 --chunks 2 --non-formal \
+    --output "$ACCEPT_ROOT/$arm"
 done
 ```
 
-The script compares every episode receipt and each 100/200 cumulative pool by
-canonical binary64 JSON bytes, and compares the exact persisted boundary state
-at 100 and 200. The only excluded receipt fields are the explicitly listed
-chunk provenance fields in each `ACCEPTANCE.json`. Until all four files pass,
-formal chunk execution remains pending.
+The comparison is bitwise binary64 through canonical JSON. It compares episode
+receipts, exact persisted boundary states, and the actual merged checkpoints,
+rungs, receipts, and resume states. The only excluded provenance keys are:
+`schema`, `status`, `chunk_id`, `range`, `start_boundary`, `end_boundary`,
+`start_boundary_state_sha256`, `end_boundary_state_sha256`, `threads`,
+`runtime`, `parent_checkpoint`, `ordered_episode_records`,
+`ordered_episode_record_digest`, `started_utc`, `ended_utc`, and
+`execution_mode`. The script applies this list; merely reporting it is not an
+acceptance.
+
+After all four receipts pass, seal the aggregate engineering-evidence bundle:
+
+```bash
+"$PY" "$BUNDLE/build_stage_c_chunk_acceptance_bundle.py" \
+  --bindings "$BINDINGS" \
+  --receipts "$ACCEPT_ROOT/FULL2/ACCEPTANCE.json" \
+             "$ACCEPT_ROOT/DROP_C1/ACCEPTANCE.json" \
+             "$ACCEPT_ROOT/DROP_C2/ACCEPTANCE.json" \
+             "$ACCEPT_ROOT/BASELINE/ACCEPTANCE.json" \
+  --output "$BUNDLE/STAGEC-CHUNK-ACCEPTANCE-BUNDLE.json"
+```
+
+Formal launch authenticates that bundle and each named receipt. Missing,
+reordered, non-PASS, code-drifted, or procedure-drifted evidence fails closed.

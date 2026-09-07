@@ -463,72 +463,21 @@ def test_dry_run_prints_commands_without_remote_execution(tmp_path: Path) -> Non
     assert "rsync -aR --files-from=" in completed.stdout
     assert "rev-parse HEAD" in completed.stdout
     assert "rev-parse 'HEAD^{tree}'" in completed.stdout
-    assert "tmux new-session" in completed.stdout
-    assert "wait-up-to-120s" in completed.stdout
-    assert "LOG_PATH=" in completed.stdout
+    assert "mode=prepare-and-bind-only-no-stage-b-no-stage-c-launch" in completed.stdout
+    assert "tmux new-session" not in completed.stdout
+    assert "NO_STAGE_B_OR_STAGE_C_PROCESS_LAUNCHED" not in completed.stdout
     early = subprocess.run(
         [str(launcher), "--dry-run", "--early-baseline-only"], cwd=REPO,
         env=environment, capture_output=True, text=True, check=False,
     )
-    assert early.returncode == 0, early.stderr
-    assert "--early-baseline-admission" in early.stdout
-    assert "--arm BASELINE" in early.stdout
-    assert "run_v023_c1c2_successor_stage_b.sh" not in early.stdout
+    assert early.returncode == 2
+    assert "usage" in early.stderr
 
 
-def test_early_baseline_admission_is_sealed_and_authenticates(tmp_path: Path) -> None:
-    policy = runner.load_baseline_policy(
-        checkpoint_path=common.BASELINE_CHECKPOINT,
-        status_path=common.BASELINE_STATUS,
-        expected_status_sha256=common.file_sha256(common.BASELINE_STATUS),
-    )
-    path = tmp_path / common.EARLY_BASELINE_ADMISSION_NAME
-    payload = {
-        "schema": runner.EARLY_BASELINE_ADMISSION_SCHEMA,
-        "status": "EARLY_BASELINE_ADMITTED",
-        "formal": True,
-        "split": "TRAIN",
-        "arm": "BASELINE",
-        "execution_mode": "arm_decoupled",
-        "episode_range": [1, 3000],
-        "plan_sha256": common.PLAN_SHA256,
-        "scheduling_addendum_sha256": common.file_sha256(common.SCHEDULING_ADDENDUM),
-        "baseline_checkpoint_sha256": common.BASELINE_CHECKPOINT_SHA256,
-        "baseline_status_sha256": common.file_sha256(common.BASELINE_STATUS),
-        "baseline_adapter_sha256": common.file_sha256(common.BASELINE / "baseline_adapter.py"),
-        "policy_binding_sha256": runner.canonical_sha256(policy.binding()),
-        "runner_code_manifest_sha256": common.file_sha256(HERE / common.CODE_MANIFEST_NAME),
-        "authority_sha256": "1" * 64,
-        "configuration_sha256": "2" * 64,
-        "tle_sha256": "3" * 64,
-        "prereg_sha256": common.file_sha256(common.PREREG),
-        "continuation_to_9000_authorized": False,
-    }
-    common.write_once(path, payload, newline=False)
-    common.write_digest_sidecar(path)
-    admitted = runner.authenticate_early_baseline_admission(
-        path,
-        expected_sha256=common.file_sha256(path),
-        plan_sha256=common.PLAN_SHA256,
-        policy_binding=policy.binding(),
-    )
-    assert admitted["execution_mode"] == "arm_decoupled"
-    assert admitted["episode_range"] == [1, 3000]
-    adapter = runner.FixedPolicyEpisodeAdapter(
-        policies=(policy,),
-        archive=object(),
-        environment_factory=lambda archive, users: None,
-        rng_factory=lambda seed: (),
-        runtime_admission=admitted,
-    )
-    assert tuple(adapter.policy_bindings) == ("BASELINE",)
-    with pytest.raises(runner.C1C2PhysicalError, match="expected a regular file"):
-        runner.authenticate_early_baseline_admission(
-            tmp_path / "missing.json",
-            expected_sha256="0" * 64,
-            plan_sha256=common.PLAN_SHA256,
-            policy_binding=policy.binding(),
-        )
+def test_withdrawn_early_baseline_mode_is_absent() -> None:
+    assert not hasattr(runner, "authenticate_early_baseline_admission")
+    assert "early-baseline" not in (HERE / "launch_stage_c_chunks.sh").read_text(encoding="utf-8")
+    assert "early-baseline" not in (HERE / "sync_launch_v023_c1c2_successor_stagec_server.sh").read_text(encoding="utf-8")
 
 
 def test_chunk_launcher_enforces_worker_cap_and_has_merge_step() -> None:
@@ -536,14 +485,20 @@ def test_chunk_launcher_enforces_worker_cap_and_has_merge_step() -> None:
     syntax = subprocess.run(["bash", "-n", str(launcher)], capture_output=True, text=True, check=False)
     assert syntax.returncode == 0, syntax.stderr
     source = launcher.read_text(encoding="utf-8")
-    assert "capacity=$((cores - 2))" in source
+    assert "reserve_capacity=$((cores - 2))" in source
+    assert "occupied=$(pgrep" in source
+    assert "flock -x 9" in source
     assert "OMP_NUM_THREADS=1" in source
+    assert "OPENBLAS_NUM_THREADS=1" in source
+    assert "--barrier" in source
     assert "chunk-receipt.json" in source
     assert "merge-arm" in source
     assert chunk_controller._parser().parse_args(
         [
-            "run-chunk", "--bindings", "bindings.json", "--arm", "BASELINE",
+            "run-chunk", "--bindings", "bindings.json",
+            "--admission-supplement", "supplement.json",
+            "--acceptance-bundle", "acceptance.json",
+            "--runtime-admission", "runtime.json", "--arm", "BASELINE",
             "--start", "0", "--end", "100", "--chunk-root", "chunk",
-            "--early-baseline-admission", "early.json",
         ]
     ).end == 100

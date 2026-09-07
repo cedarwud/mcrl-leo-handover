@@ -157,19 +157,31 @@ def build_bindings(args: argparse.Namespace) -> dict[str, object]:
         raise common.StageCError("Stage-B output root must be absent at freeze")
     code_sha, code_entries = common.verify_code_manifest()
     declaration_sha = common.verify_named_sidecar(common.DECLARATION)
-    schedule_sha = common.file_sha256(
-        common.SCHEDULING_ADDENDUM, field="Stage-C scheduling addendum"
+    schedule_sha = common.verify_named_sidecar(common.SCHEDULING_ADDENDUM)
+    schedule_text = common.SCHEDULING_ADDENDUM.read_text(encoding="utf-8")
+    acceptance_sha = common.file_sha256(
+        common.ACCEPTANCE_PROCEDURE, field="acceptance procedure"
     )
-    stage_a = (
-        bind_stage_a(args.stage_a_output)
-        if args.stage_a_output is not None
-        else {
-            "status": "PENDING_PREDETERMINED_STAGE_A_AUTHENTICATION",
-            "required_for_arms": list(common.LEARNED_ARMS),
-            "scheduling_addendum_sha256": schedule_sha,
-            "exports": [],
-        }
+    required_schedule_tokens = (
+        "StepEnvironment._age_rng` only",
+        "segment_warm_start == \"uniform-episode-length\"",
+        acceptance_sha,
+        "ordered_episode_record_digest",
+        "parent_checkpoint",
+        "No other field is excluded",
+        "There is no early-BASELINE admission mode",
     )
+    if any(token not in schedule_text for token in required_schedule_tokens):
+        raise common.StageCError("sealed scheduling addendum lacks completed section 2 bindings")
+    if args.stage_a_output is None:
+        raise common.StageCError("prospective freeze requires the predetermined Stage-A output root")
+    stage_a = {
+        "status": "PENDING_PREDETERMINED_STAGE_A_AUTHENTICATION",
+        "root": str(args.stage_a_output.resolve(strict=False)),
+        "required_for_arms": list(common.LEARNED_ARMS),
+        "scheduling_addendum_sha256": schedule_sha,
+        "exports": [],
+    }
     baseline = bind_baseline(args.baseline_checkpoint, args.baseline_status)
 
     builder = _load_module(
@@ -236,11 +248,54 @@ def build_bindings(args: argparse.Namespace) -> dict[str, object]:
             "stage_a_pin_name": "stage_c_scheduling_addendum_sha256",
             "scientific_declaration_changed": False,
         },
+        "acceptance_procedure": {
+            "path": str(common.ACCEPTANCE_PROCEDURE.resolve()),
+            "sha256": acceptance_sha,
+        },
         "claim_ceiling": common.FORMAL_CLAIM,
         "continuation_to_9000_authorized": False,
     }
     common.assert_no_placeholders(result)
     return result
+
+
+def build_stage_ab_supplement(args: argparse.Namespace) -> dict[str, object]:
+    if args.import_bindings is None or args.stage_a_output is None:
+        raise common.StageCError("Stage-A/B import requires bindings and the Stage-A root")
+    bindings = common.verify_bindings(args.import_bindings)
+    bindings_sha = common.file_sha256(args.import_bindings, field="prospective execution bindings")
+    pending = bindings.get("stage_a")
+    if (
+        not isinstance(pending, Mapping)
+        or pending.get("status") != "PENDING_PREDETERMINED_STAGE_A_AUTHENTICATION"
+        or pending.get("root") != str(args.stage_a_output.resolve())
+    ):
+        raise common.StageCError("Stage-A output is not the prospectively bound root")
+    stage_a = bind_stage_a(args.stage_a_output)
+    gate_path = args.stage_b_output / "stage-b-gate.json"
+    gate = common.read_json(gate_path, field="Stage-B PASS gate")
+    gate_sha = common.verify_named_sidecar(gate_path)
+    if (
+        gate.get("status") != "PASS_PLUMBING_INTEGRITY"
+        or gate.get("formal") is not True
+        or gate.get("bindings_sha256") != bindings_sha
+    ):
+        raise common.StageCError("Stage-B gate does not authenticate the prospective bindings")
+    return {
+        "schema": common.SCHEMA_STAGE_AB_SUPPLEMENT,
+        "status": "PASS_STAGE_AB_IMPORTED_FOR_STAGE_C",
+        "formal": True,
+        "bindings_path": str(args.import_bindings.resolve()),
+        "bindings_sha256": bindings_sha,
+        "stage_a": stage_a,
+        "stage_b_pass_receipt": {
+            "path": str(gate_path.resolve()),
+            "sha256": gate_sha,
+            "status": "PASS_PLUMBING_INTEGRITY",
+        },
+        "acceptance_procedure_sha256": bindings["acceptance_procedure"]["sha256"],
+        "append_only_import": True,
+    }
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -253,6 +308,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline-status", type=Path, default=common.BASELINE_STATUS)
     parser.add_argument("--tle-root", type=Path, default=common.TLE_ROOT)
     parser.add_argument("--output-dir", type=Path, default=common.HERE)
+    parser.add_argument("--import-bindings", type=Path)
+    parser.add_argument("--supplement-output", type=Path)
     return parser
 
 
@@ -260,28 +317,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     destination = args.output_dir / common.BINDINGS_NAME
     try:
-        if destination.exists() or destination.is_symlink():
-            raise common.StageCError("execution bindings already exist")
-        bindings = build_bindings(args)
-        common.write_once(destination, bindings)
+        if args.import_bindings is not None:
+            destination = args.supplement_output or args.output_dir / common.STAGE_AB_SUPPLEMENT_NAME
+            payload = build_stage_ab_supplement(args)
+        else:
+            if destination.exists() or destination.is_symlink():
+                raise common.StageCError("execution bindings already exist")
+            payload = build_bindings(args)
+        common.write_once(destination, payload)
         common.write_digest_sidecar(destination)
-        runner = _load_module(
-            "v023_stagec_physical_runner_early_admission",
-            common.PHYSICAL / "v023_c1c2_successor_physical_runner.py",
-        )
-        baseline = bindings["baseline"]
-        policy = runner.load_baseline_policy(
-            checkpoint_path=baseline["checkpoint_path"],
-            status_path=baseline["status_path"],
-            expected_status_sha256=baseline["status_sha256"],
-        )
-        common.ensure_early_baseline_admission(
-            bindings=bindings,
-            bindings_path=destination,
-            path=args.output_dir / common.EARLY_BASELINE_ADMISSION_NAME,
-            runner_schema=runner.SCHEMA,
-            policy_binding=policy.binding(),
-        )
     except Exception as error:
         print(f"STAGEC_BIND_ERROR: {error}", file=sys.stderr)
         return 2

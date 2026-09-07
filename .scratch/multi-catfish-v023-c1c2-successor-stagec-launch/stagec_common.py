@@ -41,10 +41,20 @@ CODE_PIN_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST-FROZEN.sha256"
 SCHEMA_BINDINGS = "multi-catfish-mcrl-v023-c1c2-successor-stagec-execution-bindings-v1"
 FORMAL_CLAIM = "TRAIN_DEVELOPMENT_C1C2_SUCCESSOR_PHYSICAL_EVALUATION_NO_C3_NO_TEST_NO_EFFICACY"
 FORMAL_ADMISSION_NAME = "FORMAL-ADMISSION.json"
-EARLY_BASELINE_ADMISSION_NAME = "early_baseline_admission.json"
+STAGE_AB_SUPPLEMENT_NAME = "STAGE-AB-ADMISSION-SUPPLEMENT.json"
+ACCEPTANCE_BUNDLE_NAME = "STAGEC-CHUNK-ACCEPTANCE-BUNDLE.json"
+ACCEPTANCE_PROCEDURE = HERE / "ACCEPTANCE-SERVER-EQUIVALENCE.md"
+SCHEMA_STAGE_AB_SUPPLEMENT = "multi-catfish-mcrl-v023-c1c2-successor-stage-ab-admission-supplement-v1"
+SCHEMA_ACCEPTANCE_BUNDLE = "multi-catfish-mcrl-v023-c1c2-successor-stagec-chunk-acceptance-bundle-v1"
 TREE_MANIFEST_NAME = "MANIFEST.sha256"
 COMPLETE_NAME = "COMPLETE"
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
+NUMERICAL_THREAD_ENV = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
 
 
 class StageCError(RuntimeError):
@@ -233,9 +243,9 @@ def tree_manifest(root: Path) -> tuple[list[dict[str, object]], str]:
 def process_environment(*, expected_threads: int = 2) -> dict[str, object]:
     expected = {
         "PYTHONDONTWRITEBYTECODE": "1",
-        "OMP_NUM_THREADS": str(expected_threads),
         "PYTHONPATH": str(REPO / "src"),
         "TMPDIR": str(REPO / ".tmp"),
+        **{name: str(expected_threads) for name in NUMERICAL_THREAD_ENV},
     }
     for key, value in expected.items():
         if os.environ.get(key) != value:
@@ -285,7 +295,7 @@ def verify_runtime_identity(
     observed = process_environment(expected_threads=1) if chunk_mode else process_environment()
     expected = dict(execution) if isinstance(execution, Mapping) else {}
     if chunk_mode:
-        expected["OMP_NUM_THREADS"] = "1"
+        expected.update({name: "1" for name in NUMERICAL_THREAD_ENV})
     if not isinstance(execution, Mapping) or expected != observed:
         raise StageCError("runtime process/resource configuration differs from frozen binding")
 
@@ -406,6 +416,113 @@ def publish_sealed_json(path: Path, payload: Mapping[str, object], *, field: str
     return file_sha256(path, field=field)
 
 
+def _verify_stage_a_record(stage_a: object) -> dict[str, object]:
+    if not isinstance(stage_a, Mapping):
+        raise StageCError("Stage-A supplement binding is missing")
+    root = Path(str(stage_a.get("root", "")))
+    manifest_sha = digest(stage_a.get("manifest_sha256"), field="Stage-A manifest digest")
+    if file_sha256(root / "MANIFEST.sha256", field="Stage-A manifest") != manifest_sha:
+        raise StageCError("Stage-A supplement manifest drifted")
+    pass_receipt = stage_a.get("pass_receipt")
+    if not isinstance(pass_receipt, Mapping):
+        raise StageCError("Stage-A supplement PASS receipt is missing")
+    pass_path = root / str(pass_receipt.get("path", ""))
+    if file_sha256(pass_path, field="Stage-A PASS receipt") != pass_receipt.get("sha256"):
+        raise StageCError("Stage-A supplement PASS receipt drifted")
+    receipt = read_json(pass_path, field="Stage-A PASS receipt")
+    decision = receipt.get("epoch_100_integrity")
+    if not isinstance(decision, Mapping) or decision.get("decision") != "PASS_SOURCE_TRAINING_INTEGRITY":
+        raise StageCError("Stage-A supplement does not authenticate PASS")
+    exports = stage_a.get("exports")
+    if not isinstance(exports, list) or [entry.get("arm") for entry in exports if isinstance(entry, Mapping)] != list(LEARNED_ARMS):
+        raise StageCError("Stage-A supplement export coverage drifted")
+    for arm, entry in zip(LEARNED_ARMS, exports, strict=True):
+        if not isinstance(entry, Mapping):
+            raise StageCError(f"{arm} Stage-A export binding is malformed")
+        path = root / str(entry.get("path", ""))
+        if file_sha256(path, field=f"{arm} Stage-A export") != entry.get("sha256"):
+            raise StageCError(f"{arm} Stage-A supplement export drifted")
+    return dict(stage_a)
+
+
+def verify_acceptance_bundle(path: str | Path, bindings: Mapping[str, object]) -> dict[str, Any]:
+    payload = read_json(path, field="Stage-C chunk acceptance bundle")
+    bundle_sha = verify_named_sidecar(path)
+    procedure_sha = file_sha256(ACCEPTANCE_PROCEDURE, field="acceptance procedure")
+    receipts = payload.get("receipts")
+    if (
+        payload.get("schema") != SCHEMA_ACCEPTANCE_BUNDLE
+        or payload.get("status") != "PASS_ALL_FOUR_ARM_CHUNK_EQUIVALENCE"
+        or payload.get("formal") is not False
+        or payload.get("arms") != list(ARMS)
+        or payload.get("bindings_sha256") != bindings.get("bindings_sha256")
+        or payload.get("code_manifest_sha256") != bindings.get("code", {}).get("external_manifest_sha256")
+        or payload.get("acceptance_procedure_sha256") != procedure_sha
+        or not isinstance(receipts, list)
+        or len(receipts) != len(ARMS)
+    ):
+        raise StageCError("Stage-C acceptance bundle identity drifted")
+    for arm, record in zip(ARMS, receipts, strict=True):
+        if not isinstance(record, Mapping) or record.get("arm") != arm:
+            raise StageCError("Stage-C acceptance arm order drifted")
+        receipt_path = regular_file(str(record.get("path")), field=f"{arm} acceptance receipt")
+        expected = digest(record.get("sha256"), field=f"{arm} acceptance receipt digest")
+        if file_sha256(receipt_path) != expected or verify_named_sidecar(receipt_path) != expected:
+            raise StageCError(f"{arm} acceptance receipt bytes drifted")
+        receipt = read_json(receipt_path, field=f"{arm} acceptance receipt")
+        if (
+            receipt.get("status") != "PASS_BITWISE_CHUNK_EQUIVALENCE"
+            or receipt.get("formal") is not False
+            or receipt.get("arm") != arm
+            or receipt.get("bindings_sha256") != payload.get("bindings_sha256")
+            or receipt.get("code_manifest_sha256") != payload.get("code_manifest_sha256")
+            or receipt.get("acceptance_procedure_sha256") != procedure_sha
+        ):
+            raise StageCError(f"{arm} acceptance receipt did not authenticate equivalence")
+    return {**payload, "acceptance_bundle_path": str(Path(path).resolve()), "acceptance_bundle_sha256": bundle_sha}
+
+
+def verify_stage_ab_supplement(
+    path: str | Path, bindings_path: str | Path, bindings: Mapping[str, object] | None = None
+) -> dict[str, Any]:
+    base = verify_bindings(bindings_path) if bindings is None else dict(bindings)
+    base_sha = file_sha256(bindings_path, field="prospective execution bindings")
+    payload = read_json(path, field="Stage-A/B admission supplement")
+    supplement_sha = verify_named_sidecar(path)
+    stage_a = _verify_stage_a_record(payload.get("stage_a"))
+    stage_b = payload.get("stage_b_pass_receipt")
+    if (
+        payload.get("schema") != SCHEMA_STAGE_AB_SUPPLEMENT
+        or payload.get("status") != "PASS_STAGE_AB_IMPORTED_FOR_STAGE_C"
+        or payload.get("formal") is not True
+        or payload.get("bindings_sha256") != base_sha
+        or not isinstance(stage_b, Mapping)
+    ):
+        raise StageCError("Stage-A/B supplement identity drifted")
+    stage_b_path = regular_file(str(stage_b.get("path")), field="Stage-B PASS gate")
+    if file_sha256(stage_b_path) != stage_b.get("sha256") or verify_named_sidecar(stage_b_path) != stage_b.get("sha256"):
+        raise StageCError("Stage-B PASS gate bytes drifted")
+    stage_b_payload = read_json(stage_b_path, field="Stage-B PASS gate")
+    if stage_b_payload.get("status") != "PASS_PLUMBING_INTEGRITY" or stage_b_payload.get("formal") is not True:
+        raise StageCError("Stage-B supplement does not authenticate PASS")
+    return {
+        **payload,
+        "stage_a": stage_a,
+        "supplement_path": str(Path(path).resolve()),
+        "supplement_sha256": supplement_sha,
+    }
+
+
+def materialize_stage_ab(bindings: Mapping[str, object], supplement: Mapping[str, object]) -> dict[str, Any]:
+    result = dict(bindings)
+    result["stage_a"] = dict(supplement["stage_a"])
+    result["stage_ab_supplement"] = {
+        "path": supplement["supplement_path"],
+        "sha256": supplement["supplement_sha256"],
+    }
+    return result
+
+
 def ensure_runtime_admission(
     *,
     bindings: Mapping[str, object],
@@ -495,57 +612,6 @@ def ensure_runtime_admission(
     }
 
 
-def ensure_early_baseline_admission(
-    *,
-    bindings: Mapping[str, object],
-    bindings_path: Path,
-    path: Path,
-    runner_schema: str,
-    policy_binding: Mapping[str, object],
-) -> dict[str, object]:
-    """Publish the prospective, execution-only BASELINE 1--3000 admission."""
-
-    baseline = bindings.get("baseline")
-    world_plan = bindings.get("world_plan")
-    code = bindings.get("code")
-    physical = bindings.get("physical_inputs")
-    execution = bindings.get("execution")
-    schedule = bindings.get("scheduling_addendum")
-    if not all(isinstance(value, Mapping) for value in (baseline, world_plan, code, physical, execution, schedule)):
-        raise StageCError("early BASELINE admission bindings are incomplete")
-    bindings_sha = file_sha256(bindings_path, field="execution bindings")
-    payload: dict[str, object] = {
-        "schema": f"{runner_schema}-early-baseline-admission-v1",
-        "status": "EARLY_BASELINE_ADMITTED",
-        "formal": True,
-        "split": "TRAIN",
-        "arm": "BASELINE",
-        "execution_mode": "arm_decoupled",
-        "episode_range": [1, 3000],
-        "plan_sha256": digest(world_plan.get("plan_sha256"), field="world plan digest"),
-        "scheduling_addendum_path": str(SCHEDULING_ADDENDUM.resolve()),
-        "scheduling_addendum_sha256": digest(schedule.get("sha256"), field="scheduling addendum digest"),
-        "baseline_checkpoint_sha256": digest(baseline.get("checkpoint_sha256"), field="BASELINE checkpoint digest"),
-        "baseline_status_sha256": digest(baseline.get("status_sha256"), field="BASELINE status digest"),
-        "baseline_adapter_sha256": digest(baseline.get("adapter_closure_sha256"), field="BASELINE adapter digest"),
-        "policy_binding_sha256": canonical_sha256(policy_binding),
-        "runner_code_manifest_sha256": digest(code.get("external_manifest_sha256"), field="runner code manifest digest"),
-        "authority_sha256": bindings_sha,
-        "configuration_sha256": canonical_sha256(execution),
-        "tle_sha256": digest(physical.get("tle_manifest_sha256"), field="TLE digest"),
-        "prereg_sha256": digest(physical.get("prereg_sha256"), field="PREREG digest"),
-        "continuation_to_9000_authorized": False,
-        "stage_a_exports_required_for_learned_arms": True,
-        "scientific_declaration_changed": False,
-    }
-    admission_sha = publish_sealed_json(path, payload, field="early BASELINE admission")
-    return {
-        **payload,
-        "admission_path": str(path.resolve()),
-        "admission_sha256": admission_sha,
-    }
-
-
 def write_tree_seal(root: Path) -> str:
     if root.is_symlink() or not root.is_dir():
         raise StageCError("cannot seal a missing or symlinked result root")
@@ -625,8 +691,33 @@ def verify_bindings(path: str | Path) -> dict[str, Any]:
         not isinstance(schedule, Mapping)
         or schedule.get("path") != str(SCHEDULING_ADDENDUM.resolve())
         or file_sha256(SCHEDULING_ADDENDUM, field="scheduling addendum") != schedule.get("sha256")
+        or verify_named_sidecar(SCHEDULING_ADDENDUM) != schedule.get("sha256")
     ):
         raise StageCError("execution bindings scheduling addendum drifted")
+    procedure = value.get("acceptance_procedure")
+    if (
+        not isinstance(procedure, Mapping)
+        or procedure.get("path") != str(ACCEPTANCE_PROCEDURE.resolve())
+        or file_sha256(ACCEPTANCE_PROCEDURE, field="acceptance procedure") != procedure.get("sha256")
+    ):
+        raise StageCError("execution bindings acceptance procedure drifted")
+    code_sha, _entries = verify_code_manifest()
+    if value.get("code", {}).get("external_manifest_sha256") != code_sha:
+        raise StageCError("execution bindings code closure drifted")
+    physical = value.get("physical_inputs")
+    if not isinstance(physical, Mapping):
+        raise StageCError("execution bindings physical inputs are missing")
+    if file_sha256(str(physical.get("prereg_path")), field="PREREG") != physical.get("prereg_sha256"):
+        raise StageCError("execution bindings PREREG bytes drifted")
+    tle_rows, tle_sha = tree_manifest(Path(str(physical.get("tle_root"))))
+    if tle_rows != physical.get("tle_manifest") or tle_sha != physical.get("tle_manifest_sha256"):
+        raise StageCError("execution bindings TLE closure drifted")
+    plan = value.get("world_plan")
+    if (
+        not isinstance(plan, Mapping)
+        or file_sha256(str(plan.get("path")), field="world plan") != plan.get("file_sha256")
+    ):
+        raise StageCError("execution bindings world-plan bytes drifted")
     return value
 
 

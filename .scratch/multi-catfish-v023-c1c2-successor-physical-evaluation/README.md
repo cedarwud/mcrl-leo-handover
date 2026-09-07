@@ -29,11 +29,15 @@ chunk surface replays the actual persisted `StepEnvironment._age_rng` draws
 (`integers(0, 10, size=100)`) from the episode-1 spawned stream and freezes
 states at every 100-episode boundary; it never uses arithmetic RNG advance.
 `run_arm_chunk` writes one arm/range exclusively with per-episode records,
-authenticated boundaries and one-thread provenance. `merge_arm_chunks` pools
-individual episode totals with the unchanged `math.fsum` reduction.
+authenticated boundaries, an exclusive root lock, complete checkpoint-before-
+receipt publication, append-only attempts, and all-backend one-thread
+provenance. `merge_arm_chunks` verifies indexed hashes and boundary/checkpoint
+state continuity, preserves chunk receipts/dates, and pools individual episode
+totals with the unchanged `math.fsum` reduction.
 `merge_four_arm` refuses incomplete arm coverage and is the only chunk path
-that may emit four-arm rungs or the 3,000 disposition. A sealed early-BASELINE
-admission permits only BASELINE 1--3,000 and never admits a learned arm.
+that may emit four-arm rungs or the 3,000 disposition. All four arms authenticate
+the Stage-A/B supplement, runtime admission, and all-four-arm equivalence
+evidence; the withdrawn early-BASELINE mode is absent.
 
 `v023_c1c2_successor_plumbing_diagnostic.py` is the exact one-world Stage B
 check: world index 1, id
