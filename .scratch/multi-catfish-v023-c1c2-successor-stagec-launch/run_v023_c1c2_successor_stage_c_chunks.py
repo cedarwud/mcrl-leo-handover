@@ -173,6 +173,7 @@ def check_barrier(args: argparse.Namespace) -> dict[str, object]:
         merge.get("status") != "COMPLETE_ARM_MERGE"
         or merge.get("formal") is not True
         or merge.get("arm") != args.arm
+        or merge.get("arm_order") != list(common.ARMS)
         or merge.get("completed_episode") != args.completed
     ):
         raise common.StageCError("previous cumulative arm barrier is not complete")
@@ -180,13 +181,29 @@ def check_barrier(args: argparse.Namespace) -> dict[str, object]:
         common.HERE / "verify_v023_c1c2_successor_stagec.py"
     )
     chunks = merge.get("chunk_receipts")
-    if not isinstance(chunks, list):
+    if not isinstance(chunks, list) or len(chunks) != args.completed // 100:
         raise common.StageCError("previous barrier lacks chunk provenance")
-    for record in chunks:
+    runner = _runner()
+    rows: list[object] = []
+    expected_chunk_ids = []
+    for index, record in enumerate(chunks):
         if not isinstance(record, Mapping):
             raise common.StageCError("previous barrier chunk record is malformed")
+        start = index * 100
+        end = start + 100
+        expected_chunk_id = f"{args.arm}-{start:06d}-{end:06d}"
+        expected_chunk_ids.append(expected_chunk_id)
         receipt_path = Path(str(record.get("path", "")))
-        if common.file_sha256(receipt_path) != record.get("sha256"):
+        receipt = common.read_json(receipt_path, field="previous barrier chunk receipt")
+        if (
+            common.file_sha256(receipt_path) != record.get("sha256")
+            or record.get("chunk_id") != expected_chunk_id
+            or receipt.get("chunk_id") != expected_chunk_id
+            or receipt.get("arm") != args.arm
+            or receipt.get("range") != [start + 1, end]
+            or receipt.get("start_boundary") != start
+            or receipt.get("end_boundary") != end
+        ):
             raise common.StageCError("previous barrier chunk receipt drifted")
         verifier.verify_arm_chunk(
             receipt_path.parent, args.bindings, arm=args.arm,
@@ -194,10 +211,89 @@ def check_barrier(args: argparse.Namespace) -> dict[str, object]:
             acceptance_bundle=args.acceptance_bundle,
             runtime_admission=args.runtime_admission,
         )
-    checkpoint = root / "checkpoints" / f"checkpoint-{args.completed:06d}.json"
-    rung = root / "rungs" / f"rung-{args.completed:06d}.json"
-    if not checkpoint.is_file() or not rung.is_file():
-        raise common.StageCError("previous barrier checkpoint/rung is incomplete")
+        for episode in range(start + 1, end + 1):
+            row, _state = runner._read_episode_record(
+                receipt_path.parent / "episodes" / f"episode-{episode:06d}.json"
+            )
+            rows.append(row)
+    if merge.get("chunk_ids") != expected_chunk_ids:
+        raise common.StageCError("previous barrier chunk set is not exact contiguous coverage")
+    expected_names = [f"checkpoint-{boundary:06d}.json" for boundary in range(100, args.completed + 1, 100)]
+    if (
+        [path.name for path in sorted((root / "checkpoints").glob("checkpoint-*.json"))]
+        != expected_names
+        or [path.name for path in sorted((root / "rungs").glob("rung-*.json"))]
+        != [name.replace("checkpoint", "rung") for name in expected_names]
+    ):
+        raise common.StageCError("previous barrier checkpoint/rung cadence is incomplete")
+    artifacts = merge.get("barrier_artifacts")
+    expected_boundaries = {str(boundary) for boundary in range(100, args.completed + 1, 100)}
+    if not isinstance(artifacts, Mapping) or set(artifacts) != expected_boundaries:
+        raise common.StageCError("previous barrier artifact bindings are incomplete")
+    checkpoint_fields = {
+        "schema", "arm", "completed_episode", "plan_sha256", "schedule_sha256",
+        "receipts", "pooled", "execution_mode", "chunk_receipts", "resume_state",
+        "scientific_disposition_emitted",
+    }
+    rung_fields = {
+        "schema", "arm", "completed_episode", "plan_sha256", "schedule_sha256",
+        "pooled", "execution_mode", "chunk_receipts", "scientific_disposition_emitted",
+    }
+    for boundary in range(100, args.completed + 1, 100):
+        record = artifacts[str(boundary)]
+        if not isinstance(record, Mapping):
+            raise common.StageCError("previous barrier artifact binding is malformed")
+        loaded = {}
+        for kind, expected_path in (
+            ("checkpoint", root / "checkpoints" / f"checkpoint-{boundary:06d}.json"),
+            ("rung", root / "rungs" / f"rung-{boundary:06d}.json"),
+        ):
+            binding = record.get(kind)
+            if (
+                not isinstance(binding, Mapping)
+                or Path(str(binding.get("path", ""))).resolve(strict=False)
+                != expected_path.resolve(strict=False)
+                or common.file_sha256(expected_path) != binding.get("sha256")
+            ):
+                raise common.StageCError(f"previous barrier {kind} digest drifted")
+            loaded[kind] = common.read_json(expected_path, field=f"barrier {kind} {boundary}")
+        checkpoint = loaded["checkpoint"]
+        rung = loaded["rung"]
+        prefix = rows[:boundary]
+        pooled = runner.pool_receipts(prefix, arm=args.arm)
+        if (
+            set(checkpoint) != checkpoint_fields
+            or checkpoint.get("schema") != f"{runner.CHECKPOINT_SCHEMA}-arm-merge-v1"
+            or checkpoint.get("arm") != args.arm
+            or checkpoint.get("completed_episode") != boundary
+            or checkpoint.get("plan_sha256") != merge.get("plan_sha256")
+            or checkpoint.get("schedule_sha256") != merge.get("schedule_sha256")
+            or checkpoint.get("receipts") != [row.as_dict() for row in prefix]
+            or checkpoint.get("pooled") != pooled
+            or checkpoint.get("chunk_receipts") != chunks
+            or checkpoint.get("scientific_disposition_emitted") is not False
+            or checkpoint.get("execution_mode") != "arm_decoupled"
+        ):
+            raise common.StageCError("previous barrier checkpoint contents drifted")
+        if (
+            set(rung) != rung_fields
+            or rung.get("schema") != f"{runner.RUNG_SCHEMA}-arm-merge-v1"
+            or rung.get("arm") != args.arm
+            or rung.get("completed_episode") != boundary
+            or rung.get("plan_sha256") != merge.get("plan_sha256")
+            or rung.get("schedule_sha256") != merge.get("schedule_sha256")
+            or rung.get("pooled") != pooled
+            or rung.get("chunk_receipts") != chunks
+            or rung.get("scientific_disposition_emitted") is not False
+            or rung.get("execution_mode") != "arm_decoupled"
+        ):
+            raise common.StageCError("previous barrier rung contents drifted")
+    if (
+        merge.get("ordered_episode_digest")
+        != runner.canonical_sha256([row.as_dict() for row in rows])
+        or merge.get("pooled") != runner.pool_receipts(rows, arm=args.arm)
+    ):
+        raise common.StageCError("previous barrier merged episode count/pool drifted")
     return {
         "status": "AUTHENTICATED_CUMULATIVE_BARRIER",
         "arm": args.arm,

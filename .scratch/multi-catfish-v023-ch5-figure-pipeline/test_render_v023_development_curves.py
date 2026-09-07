@@ -5,7 +5,6 @@ import hashlib
 import json
 from pathlib import Path
 import sys
-from types import MethodType
 
 import pytest
 
@@ -18,6 +17,7 @@ for path in (HERE, PRODUCER_DIR, STAGEC_DIR):
         sys.path.insert(0, str(path))
 
 import render_v023_development_curves as figures
+import stagec_common
 import test_cadence_resume as producer_fixture
 import verify_v023_c1c2_successor_stagec as independent_verifier
 import v023_c1c2_successor_physical_runner as runner
@@ -177,143 +177,6 @@ def _rewrite_tree_seal(root: Path) -> None:
     _write_tree_seal(root)
 
 
-class _FormalTestPolicy:
-    def __init__(self, arm: str, checkpoint: Path, authentication: Path) -> None:
-        self.arm = arm
-        self.routes = () if arm == "BASELINE" else runner.ROUTES
-        self.checkpoint_path = checkpoint
-        self.checkpoint_sha256 = runner.file_sha256(checkpoint)
-        self.authentication_path = authentication
-        self.authentication_sha256 = runner.file_sha256(authentication)
-
-    def verify(self) -> None:
-        assert runner.file_sha256(self.checkpoint_path) == self.checkpoint_sha256
-
-    def binding(self) -> dict[str, object]:
-        result = {
-            "arm": self.arm,
-            "routes": list(self.routes),
-            "checkpoint_path": str(self.checkpoint_path.resolve()),
-            "checkpoint_sha256": self.checkpoint_sha256,
-            "fixed_policy": True,
-        }
-        if self.arm == "BASELINE":
-            result.update(
-                {
-                    "authentication_path": str(self.authentication_path.resolve()),
-                    "authentication_sha256": self.authentication_sha256,
-                }
-            )
-        return result
-
-
-def _actual_adapter_fixture(tmp_path: Path):
-    evidence = tmp_path / "actual-adapter-evidence"
-    evidence.mkdir()
-    authentication = evidence / "baseline-status.json"
-    authentication.write_text('{"status":"complete"}', encoding="ascii")
-    policies = []
-    for arm in runner.ARMS:
-        checkpoint = evidence / f"{arm}.pt"
-        checkpoint.write_bytes(f"actual-adapter-policy:{arm}".encode("ascii"))
-        policies.append(_FormalTestPolicy(arm, checkpoint, authentication))
-    sources = {
-        "FULL2": ["informed", "informed"],
-        "DROP_C1": ["neutral", "informed"],
-        "DROP_C2": ["informed", "neutral"],
-    }
-    provenance = {
-        policy.arm: {
-            "arm": policy.arm,
-            "checkpoint_sha256": policy.checkpoint_sha256,
-            "source_mapping": sources[policy.arm],
-            "stage_a_status": "PASS_SOURCE_TRAINING_INTEGRITY",
-            "manifest_sha256": runner.canonical_sha256({"stage_a": "manifest"}),
-        }
-        for policy in policies[:3]
-    }
-    admission_payload = {
-        "schema": f"{runner.SCHEMA}-runtime-admission-v1",
-        "status": "FORMAL_RUNTIME_ADMITTED",
-        "split": runner.SPLIT,
-        "admitted_evaluation_sha256": producer_fixture._plan().plan_sha256,
-        "tle_root": "/home/sat/mcrl-runtime/tle-frozen-20260820",
-        "physical_configuration": {
-            "users": runner.USERS,
-            "steps": runner.STEPS,
-            "split": runner.SPLIT,
-            "field_component": runner.FIELD_COMPONENT,
-            "tle_root": "/home/sat/mcrl-runtime/tle-frozen-20260820",
-        },
-        "prereg": {"path": "unused", "sha256": "a" * 64},
-        "tle_manifest": {"path": "unused", "sha256": "b" * 64, "file_set_sha256": "c" * 64},
-        "execution_configuration": {"path": "unused", "sha256": "d" * 64},
-        "predecessor_pass_receipts": [],
-        "sampler": {"part": "train", "as_dict_sha256": "e" * 64},
-        "learned_training_provenance": provenance,
-    }
-    admission_path = evidence / "runtime-admission.json"
-    runner._write_once(admission_path, admission_payload)
-    admission_sha = runner.file_sha256(admission_path)
-    admission_path.with_name(admission_path.name + ".sha256").write_text(
-        f"{admission_sha}  {admission_path.name}\n", encoding="ascii"
-    )
-    admission = {
-        **admission_payload,
-        "admission_path": str(admission_path.resolve()),
-        "admission_sha256": admission_sha,
-        "authenticated_predecessor_statuses": [],
-    }
-    adapter = runner.FixedPolicyEpisodeAdapter(
-        policies=policies,
-        archive=object(),
-        environment_factory=lambda _archive, _users: object(),
-        rng_factory=lambda _seed: (),
-        runtime_admission=admission,
-        required_predecessor_statuses=(),
-    )
-
-    def run_episode(self, *, arm, world, plan_sha256, resume_state=None):
-        offset = runner.ARMS.index(arm)
-        bits = float(4000 - offset * 500 + world.episode_index / 1000)
-        binding = self.policy_bindings[arm]
-        receipt = runner.EpisodeReceipt(
-            schema=runner.RECEIPT_SCHEMA,
-            status=runner.STATUS,
-            split=runner.SPLIT,
-            arm=arm,
-            routes=() if arm == "BASELINE" else runner.ROUTES,
-            episode_index=world.episode_index,
-            world_id=world.world_id,
-            world_seed=world.world_seed,
-            users=runner.USERS,
-            steps=runner.STEPS,
-            decision_interval_s=1.0,
-            total_bits=bits,
-            total_energy_j=10.0,
-            ratio_of_sums_ee_bits_per_j=bits / 10.0,
-            served_user_steps=1000,
-            service_opportunities=1000,
-            service_fraction=1.0,
-            initial_world_sha256=runner.canonical_sha256({"world": world.world_id}),
-            field_component=runner.FIELD_COMPONENT,
-            field_root_digest=world.field_root_digest,
-            action_trace_sha256=runner.canonical_sha256({"arm": arm, "world": world.world_id}),
-            plan_sha256=plan_sha256,
-            policy_binding=binding,
-        )
-        self._resume_by_arm[arm] = {
-            "arm": arm,
-            "episode_index": world.episode_index,
-            "plan_sha256": plan_sha256,
-            "policy_binding": binding,
-        }
-        return receipt
-
-    adapter.run_episode = MethodType(run_episode, adapter)
-    return adapter
-
-
 def _write_five_arm_variant(source: Path, target: Path) -> Path:
     """Derive a future-shape fixture from producer-written payloads, not literals."""
 
@@ -379,13 +242,21 @@ def test_four_arm_300_episode_render_and_determinism(tmp_path: Path, plan) -> No
             assert (first / record["path"]).read_bytes() == (second / record["path"]).read_bytes()
 
 
-def test_actual_adapter_terminal_verifier_renderer_chain(
+def test_runner_written_terminal_passes_full_verifier_before_renderer(
     tmp_path: Path, plan, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # One 3000-cadence checkpoint keeps the integration fixture bounded while
-    # still exercising the actual formal adapter object and terminal writer.
-    monkeypatch.setattr(runner, "CHECKPOINT_EVERY", 3000)
-    adapter = _actual_adapter_fixture(tmp_path)
+    adapter = producer_fixture._FastHeldAdapter()
+    evidence = tmp_path / "full-verifier-evidence"
+    evidence.mkdir()
+    authentication = evidence / "BASELINE-status.json"
+    authentication.write_text('{"status":"complete"}', encoding="ascii")
+    for arm in runner.ARMS:
+        checkpoint = evidence / f"{arm}.pt"
+        checkpoint.write_bytes(f"full-verifier-policy:{arm}".encode("ascii"))
+        adapter._bindings[arm]["checkpoint_path"] = str(checkpoint.resolve())
+        adapter._bindings[arm]["checkpoint_sha256"] = runner.file_sha256(checkpoint)
+    adapter._bindings["BASELINE"]["authentication_path"] = str(authentication.resolve())
+    adapter._bindings["BASELINE"]["authentication_sha256"] = runner.file_sha256(authentication)
     mapping = _admission_mapping(adapter.policy_bindings)
     evaluation = runner.FixedPolicyEvaluationRunner(
         adapter=adapter,
@@ -396,21 +267,71 @@ def test_actual_adapter_terminal_verifier_renderer_chain(
     root = tmp_path / "actual-adapter-terminal"
     summary = evaluation.run(output_dir=root, pause_at=3000)
     assert summary["overall_token"] == runner.HELD
+    plan_path = tmp_path / "world-plan.json"
+    runner._write_once(plan_path, figures.PLAN_BUILDER.build_world_plan())
+    bindings_path = tmp_path / "bindings.json"
+    runner._write_once(bindings_path, {"fixture": "full-finished-verifier"})
+    bindings_sha = runner.file_sha256(bindings_path)
+    frozen_git = {"commit": "a" * 40, "tree": "b" * 40}
+    bindings = {
+        "stage_c_output_root": str(root.resolve()),
+        "code": {"external_manifest_sha256": "c" * 64},
+        "git": frozen_git,
+        "world_plan": {
+            "path": str(plan_path.resolve()),
+            "file_sha256": runner.file_sha256(plan_path),
+        },
+    }
+    supplement_path = tmp_path / "stage-ab-supplement.json"
+    runner._write_once(supplement_path, {"fixture": "authenticated-by-focused-E4-test"})
+    supplement = {
+        "supplement_sha256": runner.file_sha256(supplement_path),
+        "stage_a": {"fixture": "materialized"},
+    }
+    runner._write_once(
+        root / "FORMAL-RUN.json",
+        {
+            "formal": True,
+            "arms": list(runner.ARMS),
+            "bindings_sha256": bindings_sha,
+            "admission_mapping_sha256": runner.canonical_sha256(mapping),
+        },
+    )
     _seal_formal_root(root, plan.plan_sha256, adapter.policy_bindings)
-
-    checkpoint = independent_verifier._read_checkpoint(
-        root / "checkpoints/checkpoint-003000.json"
+    admission = json.loads(
+        (root / figures.FORMAL_ADMISSION_NAME).read_text(encoding="ascii")
     )
-    pooled = independent_verifier.verify_episode_rows(
-        checkpoint["receipts"],
-        figures.PLAN_BUILDER.build_world_plan(),
-        3000,
-        expected_policy_bindings=adapter.policy_bindings,
+    monkeypatch.setattr(stagec_common, "verify_bindings", lambda _path: copy.deepcopy(bindings))
+    monkeypatch.setattr(
+        stagec_common,
+        "verify_stage_ab_supplement",
+        lambda _path, _bindings_path, _bindings=None: copy.deepcopy(supplement),
     )
-    assert independent_verifier._disposition(pooled)["overall_token"] == runner.HELD
-    loaded = figures.load_root(root)
-    assert loaded.rungs[-1].completed == 3000
-    assert loaded.receipt_count == 3000 * len(runner.ARMS)
+    monkeypatch.setattr(stagec_common, "materialize_stage_ab", lambda value, _supplement: value)
+    monkeypatch.setattr(stagec_common, "verify_runtime_identity", lambda _bindings: None)
+    monkeypatch.setattr(stagec_common, "verify_code_manifest", lambda: ("c" * 64, {}))
+    monkeypatch.setattr(
+        stagec_common,
+        "stage_c_admission_mapping",
+        lambda _bindings, _policies: copy.deepcopy(mapping),
+    )
+    monkeypatch.setattr(
+        independent_verifier,
+        "_expected_policy_bindings",
+        lambda _bindings: copy.deepcopy(adapter.policy_bindings),
+    )
+    monkeypatch.setattr(
+        independent_verifier,
+        "_verify_formal_admission",
+        lambda _root, _bindings, _policies, _bindings_sha, _supplement: admission,
+    )
+    report = independent_verifier.verify_finished(
+        root, bindings_path, supplement_path
+    )
+    assert report["status"] == "VERIFIED"
+    output = tmp_path / "full-verifier-figures"
+    manifest = figures.render([root], output)
+    assert manifest["input_roots"][0]["rung_range"] == [100, 3000]
 
 
 def test_current_schema_rejects_extra_fifth_arm(tmp_path: Path, plan) -> None:

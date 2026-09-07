@@ -116,6 +116,7 @@ def _verify_formal_admission(
     bindings: Mapping[str, object],
     expected_policy_bindings: Mapping[str, object],
     bindings_sha256: str,
+    supplement: Mapping[str, object],
 ) -> dict[str, object]:
     path = root / common.FORMAL_ADMISSION_NAME
     payload = common.read_json(path, field="formal Stage-C admission")
@@ -142,6 +143,27 @@ def _verify_formal_admission(
             raise common.StageCError(f"formal admission input bytes drifted: {name}")
         if name in {"tle_manifest", "execution_configuration", "stage_b_pass_receipt", "runtime_admission"}:
             common.verify_named_sidecar(str(record.get("path")))
+    stage_a = supplement.get("stage_a")
+    stage_b = supplement.get("stage_b_pass_receipt")
+    if not isinstance(stage_a, Mapping) or not isinstance(stage_b, Mapping):
+        raise common.StageCError("formal admission lacks authenticated Stage-A/B supplement inputs")
+    stage_a_pass = stage_a.get("pass_receipt")
+    if not isinstance(stage_a_pass, Mapping):
+        raise common.StageCError("formal admission lacks the supplemented Stage-A PASS receipt")
+    expected_stage_a_path = (
+        Path(str(stage_a.get("root", ""))) / str(stage_a_pass.get("path", ""))
+    ).resolve()
+    expected_stage_b_path = Path(str(stage_b.get("path", ""))).resolve()
+    for name, expected_path, expected_sha in (
+        ("stage_a_pass_receipt", expected_stage_a_path, stage_a_pass.get("sha256")),
+        ("stage_b_pass_receipt", expected_stage_b_path, stage_b.get("sha256")),
+    ):
+        record = inputs[name]
+        if (
+            Path(str(record.get("path", ""))).resolve() != expected_path
+            or record.get("sha256") != expected_sha
+        ):
+            raise common.StageCError(f"formal admission {name} differs from Stage-A/B supplement")
     if (
         payload.get("schema") != f"{_physical_runner().SCHEMA}-formal-admission-v1"
         or payload.get("status") != "FORMAL_STAGE_C_ADMITTED"
@@ -151,6 +173,8 @@ def _verify_formal_admission(
         or payload.get("arms") != list(common.ARMS)
         or payload.get("plan_sha256") != common.PLAN_SHA256
         or payload.get("bindings_sha256") != bindings_sha256
+        or payload.get("stage_ab_supplement_sha256")
+        != supplement.get("supplement_sha256")
         or payload.get("git") != bindings.get("git")
         or payload.get("policy_bindings_sha256") != common.canonical_sha256(expected_policy_bindings)
         or payload.get("admission_mapping_sha256") != common.canonical_sha256(mapping)
@@ -319,8 +343,12 @@ def _verify_cumulative_prefix(
                 )
 
 
-def _verify_arm_merge_provenance(value: object) -> None:
-    if not isinstance(value, Mapping) or tuple(value) != common.ARMS:
+def _verify_arm_merge_provenance(value: object, arm_order: object) -> None:
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != set(common.ARMS)
+        or arm_order != list(common.ARMS)
+    ):
         raise common.StageCError("four-arm output lost arm-merge provenance")
     for arm in common.ARMS:
         record = value[arm]
@@ -338,11 +366,17 @@ def _verify_arm_merge_provenance(value: object) -> None:
                 raise common.StageCError(f"{arm} indexed chunk receipt drifted")
 
 
-def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
+def verify_finished(
+    root: Path, bindings_path: Path, admission_supplement: Path
+) -> dict[str, object]:
     if root.is_symlink() or not root.is_dir():
         raise common.StageCError("finished Stage-C root is unavailable")
     _reject_nonformal(root)
     bindings = common.verify_bindings(bindings_path)
+    supplement = common.verify_stage_ab_supplement(
+        admission_supplement, bindings_path, bindings
+    )
+    bindings = common.materialize_stage_ab(bindings, supplement)
     common.verify_runtime_identity(bindings)
     bindings_sha = common.file_sha256(bindings_path)
     code_sha, _entries = common.verify_code_manifest()
@@ -353,7 +387,7 @@ def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
     expected_policy_bindings = _expected_policy_bindings(bindings)
     expected_admission_mapping = common.stage_c_admission_mapping(bindings, expected_policy_bindings)
     admission = _verify_formal_admission(
-        root, bindings, expected_policy_bindings, bindings_sha
+        root, bindings, expected_policy_bindings, bindings_sha, supplement
     )
     marker = common.read_json(root / "FORMAL-RUN.json", field="formal root marker")
     if marker.get("formal") is not True or marker.get("arms") != list(common.ARMS):
@@ -419,7 +453,9 @@ def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
         ):
             raise common.StageCError(f"checkpoint identity drifted at {boundary}")
         if checkpoint.get("execution_mode") == "arm_decoupled":
-            _verify_arm_merge_provenance(checkpoint.get("arm_merge_provenance"))
+            _verify_arm_merge_provenance(
+                checkpoint.get("arm_merge_provenance"), checkpoint.get("arm_order")
+            )
         rows = checkpoint.get("receipts")
         if not isinstance(rows, list):
             raise common.StageCError(f"checkpoint receipts missing at {boundary}")
@@ -438,7 +474,9 @@ def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
         ):
             raise common.StageCError(f"rung receipt identity drifted at {boundary}")
         if rung.get("execution_mode") == "arm_decoupled":
-            _verify_arm_merge_provenance(rung.get("arm_merge_provenance"))
+            _verify_arm_merge_provenance(
+                rung.get("arm_merge_provenance"), rung.get("arm_order")
+            )
         for arm in common.ARMS:
             _verify_pool(rung.get("pooled_by_arm", {}).get(arm), pooled[arm], field=f"rung {boundary} {arm}")
         _verify_cumulative_prefix(
@@ -463,7 +501,9 @@ def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
     if result.get("admission_mapping") != expected_admission_mapping:
         raise common.StageCError("3000 result admission mapping drifted")
     if result.get("execution_mode") == "arm_decoupled":
-        _verify_arm_merge_provenance(result.get("arm_merge_provenance"))
+        _verify_arm_merge_provenance(
+            result.get("arm_merge_provenance"), result.get("arm_order")
+        )
     if completed == 9000 or result.get("overall_token") == FALSIFIED:
         common.verify_tree_seal(root)
     if completed == 9000:
@@ -797,7 +837,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--bindings", type=Path, required=True)
     parser.add_argument("--arm", choices=common.ARMS)
-    parser.add_argument("--admission-supplement", type=Path)
+    parser.add_argument("--admission-supplement", type=Path, required=True)
     parser.add_argument("--acceptance-bundle", type=Path)
     parser.add_argument("--runtime-admission", type=Path)
     args = parser.parse_args(argv)
@@ -810,7 +850,7 @@ def main(argv: list[str] | None = None) -> int:
                 runtime_admission=args.runtime_admission,
             )
             if args.arm is not None
-            else verify_finished(args.root, args.bindings)
+            else verify_finished(args.root, args.bindings, args.admission_supplement)
         )
     except Exception as error:
         print(f"{STOP}: {error}", file=sys.stderr)

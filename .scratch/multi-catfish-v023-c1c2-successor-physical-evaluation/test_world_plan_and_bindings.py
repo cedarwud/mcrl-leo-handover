@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -20,6 +22,7 @@ for path in (HERE, REPO / "src", SOURCE_RUNNER):
 
 import build_v023_c1c2_successor_world_plan as builder
 import v023_c1c2_successor_physical_runner as runner
+import v023_two_route_source_training_runner as source_runner
 
 
 def _reseal(payload: dict[str, object]) -> dict[str, object]:
@@ -162,14 +165,115 @@ def test_learned_deployment_is_unweighted_masked_and_lowest_index_on_ties() -> N
     assert runner.select_learned_q12_actions(q1, q2, masks).tolist() == [3, 4]
 
 
+def _write_producer_source_receipt(root: Path) -> Path:
+    """Write the Stage-A receipt through its canonical producer method."""
+
+    (root / "checkpoints").mkdir(parents=True)
+    for epoch in (0, 100):
+        checkpoint = source_runner._checkpoint_path(root, epoch)
+        checkpoint.write_bytes(f"producer-checkpoint:{epoch}".encode("ascii"))
+        source_runner._write_sidecar(
+            checkpoint, source_runner._file_sha256(checkpoint)
+        )
+    authority = source_runner.RunAuthorityDigests(
+        authority_sha256="a" * 64,
+        code_sha256="b" * 64,
+        input_sha256="c" * 64,
+    )
+    config = SimpleNamespace(
+        orchestrator_config=SimpleNamespace(formal_use=True),
+        authority_digests=authority,
+        to_payload=lambda: {
+            "fixture": "canonical-producer-writer",
+            "authority_digests": asdict(authority),
+        },
+    )
+    producer = object.__new__(source_runner.V023TwoRouteSourceTrainingRunner)
+    producer.output_root = root
+    producer.config = config
+    producer.provider_identity = "producer-fixture"
+    producer.orchestrator = SimpleNamespace(initialization_sha256="d" * 64)
+    producer._write_final_receipt(
+        {
+            "decision": "PASS_SOURCE_TRAINING_INTEGRITY",
+            "checkpoint_sha256": "e" * 64,
+        }
+    )
+    return root / "canonical-receipt.json"
+
+
+@pytest.fixture
+def producer_written_source_receipt(tmp_path: Path) -> Path:
+    return _write_producer_source_receipt(tmp_path / "source-run")
+
+
+def test_runtime_admission_reads_pass_from_canonical_source_writer(
+    tmp_path: Path, producer_written_source_receipt: Path
+) -> None:
+    admission_dir = tmp_path / "admission"
+    admission_dir.mkdir()
+    for name, payload in (
+        ("prereg.json", {"frozen": True}),
+        ("tle.json", {"frozen_files": [{"file": "x"}], "file_set_sha256": "a" * 64}),
+        ("configuration.json", {"threads": 1}),
+    ):
+        runner._write_once(admission_dir / name, payload)
+    receipt_path = admission_dir / "stage-a.json"
+    receipt_path.write_bytes(producer_written_source_receipt.read_bytes())
+    payload = {
+        "schema": f"{runner.SCHEMA}-runtime-admission-v1",
+        "status": "FORMAL_RUNTIME_ADMITTED",
+        "split": runner.SPLIT,
+        "admitted_evaluation_sha256": "b" * 64,
+        "physical_configuration": {
+            "users": runner.USERS,
+            "steps": runner.STEPS,
+            "split": runner.SPLIT,
+            "field_component": runner.FIELD_COMPONENT,
+            "tle_root": "/home/sat/mcrl-runtime/tle-frozen-20260820",
+        },
+        "prereg": {"path": "prereg.json", "sha256": runner.file_sha256(admission_dir / "prereg.json")},
+        "tle_manifest": {
+            "path": "tle.json",
+            "sha256": runner.file_sha256(admission_dir / "tle.json"),
+            "file_set_sha256": "a" * 64,
+        },
+        "execution_configuration": {
+            "path": "configuration.json",
+            "sha256": runner.file_sha256(admission_dir / "configuration.json"),
+        },
+        "predecessor_pass_receipts": [{
+            "path": "stage-a.json",
+            "sha256": runner.file_sha256(receipt_path),
+            "status": "PASS_SOURCE_TRAINING_INTEGRITY",
+        }],
+        "sampler": {"part": "train", "as_dict_sha256": "c" * 64},
+    }
+    admission = admission_dir / "runtime-admission.json"
+    runner._write_once(admission, payload)
+    digest = runner.file_sha256(admission)
+    admission.with_name(admission.name + ".sha256").write_text(
+        f"{digest}  {admission.name}\n", encoding="ascii"
+    )
+    authenticated = runner.authenticate_runtime_admission(
+        admission,
+        expected_sha256=digest,
+        expected_statuses=("PASS_SOURCE_TRAINING_INTEGRITY",),
+    )
+    assert authenticated["authenticated_predecessor_statuses"] == [
+        "PASS_SOURCE_TRAINING_INTEGRITY"
+    ]
+
+
 def _sealed_runtime_admission(tmp_path: Path, checkpoint_sha: str) -> dict[str, object]:
     for name, payload in (
         ("prereg.json", {"frozen": True}),
         ("tle.json", {"frozen_files": [{"file": "x"}], "file_set_sha256": "a" * 64}),
         ("configuration.json", {"threads": 1}),
-        ("stage-a.json", {"status": "PASS_SOURCE_TRAINING_INTEGRITY"}),
     ):
         runner._write_once(tmp_path / name, payload)
+    source_receipt = _write_producer_source_receipt(tmp_path / "source-writer")
+    (tmp_path / "stage-a.json").write_bytes(source_receipt.read_bytes())
     provenance = {
         arm: {
             "checkpoint_sha256": checkpoint_sha,

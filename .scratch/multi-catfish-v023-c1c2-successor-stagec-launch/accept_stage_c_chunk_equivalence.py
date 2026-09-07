@@ -196,6 +196,18 @@ def accept(args: argparse.Namespace) -> dict[str, object]:
         )
     merged_root = args.output / "merged"
     runner.merge_arm_chunks(args.arm, roots, merged_root, formal_required=formal)
+    expected_chunk_receipts = []
+    for root in roots:
+        receipt_path = root / "chunk-receipt.json"
+        receipt = common.read_json(receipt_path, field="acceptance chunk receipt")
+        expected_chunk_receipts.append({
+            "chunk_id": receipt["chunk_id"],
+            "path": str(receipt_path.resolve()),
+            "sha256": common.file_sha256(receipt_path),
+            "started_utc": receipt["started_utc"],
+            "ended_utc": receipt["ended_utc"],
+            "provenance": receipt["provenance"],
+        })
     merged_rows = [
         common.read_json(
             merged_root / "episodes" / f"episode-{episode:06d}.json",
@@ -218,18 +230,28 @@ def accept(args: argparse.Namespace) -> dict[str, object]:
         )
         expected_pool = runner.pool_receipts(sequential_rows[:boundary], arm=args.arm)
         expected_checkpoint = {
+            "schema": f"{runner.CHECKPOINT_SCHEMA}-arm-merge-v1",
             "arm": args.arm,
             "completed_episode": boundary,
             "plan_sha256": plan.plan_sha256,
+            "schedule_sha256": bindings["scheduling_addendum"]["sha256"],
             "receipts": [row.as_dict() for row in sequential_rows[:boundary]],
             "pooled": expected_pool,
+            "execution_mode": "arm_decoupled",
+            "chunk_receipts": expected_chunk_receipts,
             "resume_state": sequential_states[boundary],
+            "scientific_disposition_emitted": False,
         }
         expected_rung = {
+            "schema": f"{runner.RUNG_SCHEMA}-arm-merge-v1",
             "arm": args.arm,
             "completed_episode": boundary,
             "plan_sha256": plan.plan_sha256,
+            "schedule_sha256": bindings["scheduling_addendum"]["sha256"],
             "pooled": expected_pool,
+            "execution_mode": "arm_decoupled",
+            "chunk_receipts": expected_chunk_receipts,
+            "scientific_disposition_emitted": False,
         }
         merged_resume_state = common.read_json(
             merged_root / "resume-states" / f"state-{boundary:06d}.json",
@@ -239,16 +261,16 @@ def accept(args: argparse.Namespace) -> dict[str, object]:
             merged_resume_state, sequential_states[boundary],
             artifact=f"resume_states.merged[{boundary}]",
         )
-        for key, value in expected_checkpoint.items():
-            _assert_equivalent(
-                merged_checkpoint.get(key), value,
-                artifact=f"checkpoints[{boundary}].{key}",
-            )
-        for key, value in expected_rung.items():
-            _assert_equivalent(
-                merged_rung.get(key), value,
-                artifact=f"rungs[{boundary}].{key}",
-            )
+        _assert_equivalent(
+            merged_checkpoint,
+            expected_checkpoint,
+            artifact=f"checkpoints[{boundary}]",
+        )
+        _assert_equivalent(
+            merged_rung,
+            expected_rung,
+            artifact=f"rungs[{boundary}]",
+        )
     result = {
         "schema": f"{runner.SCHEMA}-server-chunk-equivalence-v1",
         "status": "PASS_BITWISE_CHUNK_EQUIVALENCE",

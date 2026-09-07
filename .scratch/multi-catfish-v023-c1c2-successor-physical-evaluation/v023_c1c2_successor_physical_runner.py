@@ -376,8 +376,16 @@ def authenticate_runtime_admission(
             record, base=base, label=f"predecessor_pass_receipts[{index}]"
         )
         receipt = _read_json(receipt_path, label="predecessor PASS receipt")
-        status = receipt.get("status", receipt.get("overall_token"))
         declared = record.get("status") if isinstance(record, Mapping) else None
+        if declared == "PASS_SOURCE_TRAINING_INTEGRITY":
+            epoch_100_integrity = receipt.get("epoch_100_integrity")
+            status = (
+                epoch_100_integrity.get("decision")
+                if isinstance(epoch_100_integrity, Mapping)
+                else None
+            )
+        else:
+            status = receipt.get("status", receipt.get("overall_token"))
         if status != declared:
             raise C1C2PhysicalError("predecessor PASS status disagrees with receipt")
         observed.append(str(status))
@@ -1751,7 +1759,7 @@ def _run_arm_chunk_locked(
         resume_state = state
     if resume_state != _expected_resume_state(boundary_state, start + len(receipts)):
         raise C1C2PhysicalError("chunk prefix resume state disagrees with replayed persisted stream")
-    if (root / "integrity-stop.json").exists() and len(receipts) != end:
+    if (root / "integrity-stop.json").exists() and len(receipts) != end - start:
         raise C1C2PhysicalError("integrity STOP permits only authorized checkpoint-publication repair")
     attempts_dir = root / "attempts"
     existing_attempts = sorted(attempts_dir.glob("attempt-*.json")) if attempts_dir.is_dir() else []
@@ -2121,17 +2129,40 @@ def _merge_arm_chunks_locked(
             "chunk_receipts": chunk_receipt_index,
             "scientific_disposition_emitted": False,
         })
+    barrier_artifacts = {
+        str(boundary): {
+            "checkpoint": {
+                "path": str(
+                    (output / "checkpoints" / f"checkpoint-{boundary:06d}.json").resolve()
+                ),
+                "sha256": file_sha256(
+                    output / "checkpoints" / f"checkpoint-{boundary:06d}.json"
+                ),
+            },
+            "rung": {
+                "path": str(
+                    (output / "rungs" / f"rung-{boundary:06d}.json").resolve()
+                ),
+                "sha256": file_sha256(
+                    output / "rungs" / f"rung-{boundary:06d}.json"
+                ),
+            },
+        }
+        for boundary in artifact_boundaries
+    }
     payload = {
         "schema": ARM_MERGE_SCHEMA,
         "status": "COMPLETE_ARM_MERGE",
         "formal": formal_required,
         "arm": arm,
+        "arm_order": list(ARMS),
         "completed_episode": cursor,
         "plan_sha256": next(iter(plan_values)),
         "schedule_sha256": next(iter(schedule_values)),
         "policy_binding": policy_binding,
         "chunk_ids": [receipt["chunk_id"] for receipt, _ in chunks],
         "chunk_receipts": chunk_receipt_index,
+        "barrier_artifacts": barrier_artifacts,
         "boundary_state_hash_pairs": boundary_pairs,
         "ordered_episode_digest": canonical_sha256([row.as_dict() for row in all_rows]),
         "pooled": pool_receipts(all_rows, arm=arm),
@@ -2222,6 +2253,7 @@ def _merge_four_arm_locked(
             "completed_episode": boundary,
             "plan_sha256": plan_sha,
             "arms": list(ARMS),
+            "arm_order": list(ARMS),
             "checkpoint_every": CHECKPOINT_EVERY,
             "policy_bindings": policy_bindings,
             "admission_mapping": dict(admission_mapping),
@@ -2261,6 +2293,7 @@ def _merge_four_arm_locked(
             "completed_episode": boundary,
             "plan_sha256": plan_sha,
             "arms": list(ARMS),
+            "arm_order": list(ARMS),
             "pooled_by_arm": pooled,
             "admission_mapping": dict(admission_mapping),
             "scientific_disposition_emitted": False,
@@ -2287,6 +2320,7 @@ def _merge_four_arm_locked(
         "plan_sha256": plan_sha,
         "schedule_sha256": next(iter(schedule_values)),
         "arms": list(ARMS),
+        "arm_order": list(ARMS),
         "pooled_by_arm": pooled_final,
         "execution_mode": "arm_decoupled",
         "scientific_disposition_emitted": False,
@@ -2311,6 +2345,7 @@ def _merge_four_arm_locked(
             "terminal_boundary": 3000,
             "plan_sha256": plan_sha,
             "arms": list(ARMS),
+            "arm_order": list(ARMS),
             "pooled_by_arm": pooled_final,
             "admission_mapping": dict(admission_mapping),
             "continuation_authority_sha256": None,

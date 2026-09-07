@@ -37,7 +37,9 @@ export PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NU
 export PYTHONPATH="$repo_root/src"
 if [[ "$dry_run" == 1 ]]; then export TMPDIR=${TMPDIR:-$repo_root/.tmp}; else export TMPDIR=$repo_root/.tmp; fi
 mkdir -p "$TMPDIR"
-"$check_python" "$package/build_v023_c1c2_successor_stagec_manifest.py" --check >/dev/null
+if [[ "$dry_run" == 0 ]]; then
+  "$check_python" "$package/build_v023_c1c2_successor_stagec_manifest.py" --check >/dev/null
+fi
 
 local_commit=$(git -C "$repo_root" rev-parse HEAD)
 local_tree=$(git -C "$repo_root" rev-parse 'HEAD^{tree}')

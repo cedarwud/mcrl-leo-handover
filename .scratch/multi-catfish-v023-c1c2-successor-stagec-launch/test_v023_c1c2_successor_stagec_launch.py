@@ -188,6 +188,63 @@ def test_stage_a_binding_uses_model_written_exports(producer_exports) -> None:
     assert [entry["sha256"] for entry in bound["exports"]] == [entry["sha256"] for entry in entries]
 
 
+def test_finished_verifier_requires_and_materializes_authenticated_stage_ab_supplement(
+    tmp_path: Path,
+    producer_exports,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stage_a_root, _entries = producer_exports
+    stage_a = binder.bind_stage_a(stage_a_root)
+    bindings_path = tmp_path / "prospective-bindings.json"
+    _write_json(bindings_path, {"fixture": "prospective-empty-stage-a"})
+    stage_b_path = tmp_path / "stage-b-gate.json"
+    _write_json(
+        stage_b_path,
+        {"status": "PASS_PLUMBING_INTEGRITY", "formal": True},
+    )
+    common.write_digest_sidecar(stage_b_path)
+    supplement_path = tmp_path / "stage-ab-supplement.json"
+    _write_json(
+        supplement_path,
+        {
+            "schema": common.SCHEMA_STAGE_AB_SUPPLEMENT,
+            "status": "PASS_STAGE_AB_IMPORTED_FOR_STAGE_C",
+            "formal": True,
+            "bindings_sha256": common.file_sha256(bindings_path),
+            "stage_a": stage_a,
+            "stage_b_pass_receipt": {
+                "path": str(stage_b_path.resolve()),
+                "sha256": common.file_sha256(stage_b_path),
+            },
+        },
+    )
+    common.write_digest_sidecar(supplement_path)
+    root = tmp_path / "finished-root"
+    root.mkdir()
+    prospective = {
+        "stage_a": {"root": "", "exports": [], "manifest_sha256": "0" * 64},
+        "stage_c_output_root": str(root.resolve()),
+        "code": {"external_manifest_sha256": "c" * 64},
+        "git": {"commit": "d" * 40, "tree": "e" * 40},
+    }
+    monkeypatch.setattr(common, "verify_bindings", lambda _path: copy.deepcopy(prospective))
+    monkeypatch.setattr(common, "verify_runtime_identity", lambda _bindings: None)
+    monkeypatch.setattr(common, "verify_code_manifest", lambda: ("c" * 64, {}))
+
+    def observe_materialized(bindings):
+        assert bindings["stage_a"] == stage_a
+        raise common.StageCError("observed materialized Stage-A supplement")
+
+    monkeypatch.setattr(verifier, "_expected_policy_bindings", observe_materialized)
+    with pytest.raises(common.StageCError, match="observed materialized"):
+        verifier.verify_finished(root, bindings_path, supplement_path)
+    with pytest.raises(common.StageCError, match="missing"):
+        verifier.verify_finished(root, bindings_path, tmp_path / "missing-supplement.json")
+    _write_json(bindings_path, {"fixture": "prospective-bindings-drifted-after-supplement"})
+    with pytest.raises(common.StageCError, match="supplement identity drifted"):
+        verifier.verify_finished(root, bindings_path, supplement_path)
+
+
 def test_acceptance_end_to_end_formal_mutation_rehearsal_and_launch_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -274,13 +331,14 @@ def test_acceptance_end_to_end_formal_mutation_rehearsal_and_launch_gate(
         merged_root = Path(args[2])
         rung_path = merged_root / "rungs/rung-000100.json"
         rung = common.read_json(rung_path, field="mutation fixture rung")
-        rung["pooled"]["total_bits"] += 1.0
+        rung["scientific_disposition_emitted"] = True
         _write_json(rung_path, rung)
         return result
 
     monkeypatch.setattr(runner, "merge_arm_chunks", merge_then_mutate)
     with pytest.raises(
-        common.StageCError, match=r"rungs\[100\]\.pooled\.total_bits"
+        common.StageCError,
+        match=r"rungs\[100\]\.scientific_disposition_emitted",
     ):
         chunk_acceptance.accept(
             acceptance_args("FULL2", tmp_path / "mutated", non_formal=False)
@@ -412,6 +470,146 @@ def test_verifier_rejects_rewritten_cumulative_prefix(runner_written_rung) -> No
     with pytest.raises(common.StageCError, match="prefix was rewritten"):
         verifier._verify_cumulative_prefix(
             previous, pooled, rewritten, pooled, boundary=200
+        )
+
+
+@pytest.fixture
+def runner_written_arm_barrier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    for name in common.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
+    payload = plan_builder.build_world_plan()
+    plan = runner.EvaluationPlan(
+        worlds=tuple(runner.WorldBinding(**row) for row in payload["worlds"]),
+        plan_sha256=payload["plan_sha256"],
+    )
+    adapter = _AcceptanceProducerAdapter("BASELINE")
+    provenance = {
+        name: common.canonical_sha256({"barrier-fixture": name})
+        for name in (
+            "authority_sha256",
+            "code_manifest_sha256",
+            "configuration_sha256",
+            "tle_sha256",
+            "prereg_sha256",
+            "admission_sha256",
+            "stage_ab_supplement_sha256",
+            "acceptance_evidence_sha256",
+            "acceptance_procedure_sha256",
+        )
+    }
+    context = {
+        "arm": "BASELINE",
+        "adapter": adapter,
+        "schedule_sha256": "a" * 64,
+        "execution_mode": "arm_decoupled",
+        "formal": True,
+        "continuation_limit": 3000,
+        "provenance": provenance,
+    }
+    table = runner.build_chunk_boundary_states(plan, context, (0, 100, 200))
+    roots = []
+    for start, end in ((0, 100), (100, 200)):
+        root = tmp_path / f"BASELINE-{start:06d}-{end:06d}"
+        runner.run_arm_chunk("BASELINE", start, end, table[start], root)
+        roots.append(root)
+    merged = tmp_path / "BASELINE-merged"
+    runner.merge_arm_chunks("BASELINE", roots, merged)
+    return merged
+
+
+def _barrier_args(root: Path) -> argparse.Namespace:
+    return argparse.Namespace(
+        arm_merge_root=root,
+        arm="BASELINE",
+        completed=200,
+        bindings=Path("bindings.json"),
+        admission_supplement=Path("supplement.json"),
+        acceptance_bundle=Path("acceptance.json"),
+        runtime_admission=Path("runtime.json"),
+    )
+
+
+def _stub_chunk_verifier(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(chunk_controller, "_runner", lambda: runner)
+    monkeypatch.setattr(
+        controller,
+        "_module",
+        lambda _path: SimpleNamespace(verify_arm_chunk=lambda *_args, **_kwargs: {}),
+    )
+
+
+def test_barrier_authenticates_exact_runner_written_cumulative_contents(
+    runner_written_arm_barrier: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_chunk_verifier(monkeypatch)
+    result = chunk_controller.check_barrier(_barrier_args(runner_written_arm_barrier))
+    assert result["status"] == "AUTHENTICATED_CUMULATIVE_BARRIER"
+
+
+@pytest.mark.parametrize("mutation", ["empty", "missing", "wrong-count", "tampered-rung"])
+def test_barrier_rejects_incomplete_or_tampered_cumulative_contents(
+    runner_written_arm_barrier: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    _stub_chunk_verifier(monkeypatch)
+    merge_path = runner_written_arm_barrier / "arm-merge.json"
+    merge = common.read_json(merge_path, field="barrier mutation merge")
+    if mutation == "empty":
+        merge["chunk_receipts"] = []
+    elif mutation == "missing":
+        merge["chunk_receipts"].pop()
+    elif mutation == "wrong-count":
+        checkpoint_path = runner_written_arm_barrier / "checkpoints/checkpoint-000200.json"
+        checkpoint = common.read_json(checkpoint_path, field="barrier mutation checkpoint")
+        checkpoint["receipts"].pop()
+        _write_json(checkpoint_path, checkpoint)
+        merge["barrier_artifacts"]["200"]["checkpoint"]["sha256"] = common.file_sha256(
+            checkpoint_path
+        )
+    else:
+        rung_path = runner_written_arm_barrier / "rungs/rung-000200.json"
+        rung = common.read_json(rung_path, field="barrier mutation rung")
+        rung["pooled"]["total_bits"] += 1.0
+        _write_json(rung_path, rung)
+        merge["barrier_artifacts"]["200"]["rung"]["sha256"] = common.file_sha256(
+            rung_path
+        )
+    _write_json(merge_path, merge)
+    with pytest.raises(common.StageCError):
+        chunk_controller.check_barrier(_barrier_args(runner_written_arm_barrier))
+
+
+def test_arm_merge_provenance_uses_explicit_order_after_canonical_serialisation(
+    tmp_path: Path,
+) -> None:
+    provenance = {}
+    for arm in common.ARMS:
+        merge_path = tmp_path / f"{arm}-arm-merge.json"
+        _write_json(merge_path, {"chunk_receipts": []})
+        provenance[arm] = {
+            "path": str(merge_path.resolve()),
+            "sha256": common.file_sha256(merge_path),
+            "chunk_receipts": [],
+        }
+    receipt_path = tmp_path / "canonical-receipt.json"
+    _write_json(
+        receipt_path,
+        {
+            "arm_order": list(common.ARMS),
+            "arm_merge_provenance": provenance,
+        },
+    )
+    receipt = common.read_json(receipt_path, field="canonical arm-order receipt")
+    assert list(receipt["arm_merge_provenance"]) != list(common.ARMS)
+    verifier._verify_arm_merge_provenance(
+        receipt["arm_merge_provenance"], receipt["arm_order"]
+    )
+    with pytest.raises(common.StageCError, match="arm-merge provenance"):
+        verifier._verify_arm_merge_provenance(
+            receipt["arm_merge_provenance"], list(reversed(common.ARMS))
         )
 
 

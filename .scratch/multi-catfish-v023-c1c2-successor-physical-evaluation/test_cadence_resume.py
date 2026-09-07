@@ -557,6 +557,71 @@ def test_chunk_interruption_preserves_prefix_and_resumes(
     assert len(receipt["execution_attempts"]) == 2
 
 
+def test_second_chunk_repairs_failed_terminal_checkpoint_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in runner.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
+    plan = _plan()
+    adapter = _ChunkTransportStub("BASELINE")
+    context = _chunk_context(adapter)
+    table = runner.build_chunk_boundary_states(plan, context, (0, 100, 200))
+    root = tmp_path / "BASELINE-000100-000200"
+    original_write = runner._write_once
+    failed = False
+
+    def fail_terminal_checkpoint(path, payload):
+        nonlocal failed
+        target = Path(path)
+        if target.name == "checkpoint-000200.json" and not failed:
+            failed = True
+            raise OSError("simulated checkpoint publication failure")
+        return original_write(target, payload)
+
+    monkeypatch.setattr(runner, "_write_once", fail_terminal_checkpoint)
+    with pytest.raises(OSError, match="simulated checkpoint publication failure"):
+        runner.run_arm_chunk("BASELINE", 100, 200, table[100], root)
+    monkeypatch.setattr(runner, "_write_once", original_write)
+    assert len(list((root / "episodes").glob("episode-*.json"))) == 100
+    rows = [
+        runner._read_episode_record(path)[0].as_dict()
+        for path in sorted((root / "episodes").glob("episode-*.json"))
+    ]
+    stop = root / "integrity-stop.json"
+    authority = tmp_path / "repair-authority.json"
+    authority_sha = _seal_json(
+        authority,
+        {
+            "schema": runner.REPAIR_AUTHORITY_SCHEMA,
+            "status": "AUTHORIZED_INFRASTRUCTURE_REPAIR",
+            "plan_sha256": plan.plan_sha256,
+            "chunk_id": "BASELINE-000100-000200",
+            "chunk_root": str(root.resolve()),
+            "prefix_episode": 200,
+            "prefix_digest": runner.canonical_sha256(rows),
+            "integrity_stop_sha256": runner.file_sha256(stop),
+            "preserve_valid_history": True,
+            "smallest_invalid_unit": "checkpoint-publication",
+        },
+    )
+    repair_context = {
+        **context,
+        "repair_authority_path": authority,
+        "repair_authority_sha256": authority_sha,
+    }
+    repair_state = runner.ChunkBoundaryState(
+        table[100].payload,
+        table[100].plan,
+        table[100].adapter,
+        repair_context,
+        table[100].table_payloads,
+    )
+    receipt = runner.run_arm_chunk("BASELINE", 100, 200, repair_state, root)
+    assert receipt["status"] == "COMPLETE_ARM_CHUNK"
+    assert receipt["range"] == [101, 200]
+    assert (root / "repair-receipt.json").is_file()
+
+
 def test_nonformal_50_alignment_is_narrow_and_cannot_merge_formally(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
