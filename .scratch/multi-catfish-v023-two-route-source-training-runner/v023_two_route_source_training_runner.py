@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import sys
 from typing import Any
 
@@ -53,7 +54,7 @@ from v023_two_route_learner_orchestrator import (
 RUNNER_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-two-route-source-training-runner-v1"
 STATUS_SCHEMA = f"{RUNNER_SCHEMA}-canonical-status"
 RECEIPT_SCHEMA = f"{RUNNER_SCHEMA}-canonical-receipt"
-CHECKPOINT_SCHEMA = f"{RUNNER_SCHEMA}-checkpoint"
+CHECKPOINT_SCHEMA = f"{RUNNER_SCHEMA}-checkpoint-v1.1"
 CHECKPOINT_RECEIPT_SCHEMA = f"{RUNNER_SCHEMA}-checkpoint-receipt"
 EXPORT_MANIFEST_SCHEMA = f"{RUNNER_SCHEMA}-three-model-exports"
 CLAIM_CEILING = (
@@ -118,6 +119,148 @@ def _jsonable(value: object) -> object:
     return value
 
 
+_CANONICAL_TYPE_KEY = "__runner_canonical_type__"
+
+
+def _canonical_tree_payload(value: object) -> object:
+    """Encode non-tensor state without pickle object-identity side effects."""
+
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "canonical checkpoint mapping keys must be strings"
+            )
+        return {
+            _CANONICAL_TYPE_KEY: "mapping",
+            "items": [
+                [key, _canonical_tree_payload(item)] for key, item in value.items()
+            ],
+        }
+    if isinstance(value, list):
+        return [_canonical_tree_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return {
+            _CANONICAL_TYPE_KEY: "tuple",
+            "items": [_canonical_tree_payload(item) for item in value],
+        }
+    if isinstance(value, bytes):
+        return {_CANONICAL_TYPE_KEY: "bytes", "hex": value.hex()}
+    if isinstance(value, Path):
+        return {_CANONICAL_TYPE_KEY: "path", "value": str(value)}
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    raise V023TwoRouteSourceTrainingRunnerError(
+        f"unsupported canonical checkpoint value: {type(value).__name__}"
+    )
+
+
+def _restore_canonical_tree(value: object) -> object:
+    if isinstance(value, list):
+        return [_restore_canonical_tree(item) for item in value]
+    if isinstance(value, Mapping):
+        marker = value.get(_CANONICAL_TYPE_KEY)
+        if marker is None:
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "canonical checkpoint mapping marker is missing"
+            )
+        if marker == "mapping" and set(value) == {_CANONICAL_TYPE_KEY, "items"}:
+            items = value["items"]
+            if not isinstance(items, list):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "canonical mapping payload is malformed"
+                )
+            restored: dict[str, object] = {}
+            for pair in items:
+                if (
+                    not isinstance(pair, list)
+                    or len(pair) != 2
+                    or not isinstance(pair[0], str)
+                    or pair[0] in restored
+                ):
+                    raise V023TwoRouteSourceTrainingRunnerError(
+                        "canonical mapping payload is malformed"
+                    )
+                restored[pair[0]] = _restore_canonical_tree(pair[1])
+            return restored
+        if marker == "tuple" and set(value) == {_CANONICAL_TYPE_KEY, "items"}:
+            items = value["items"]
+            if not isinstance(items, list):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "canonical tuple payload is malformed"
+                )
+            return tuple(_restore_canonical_tree(item) for item in items)
+        if marker == "bytes" and set(value) == {_CANONICAL_TYPE_KEY, "hex"}:
+            encoded = value["hex"]
+            if not isinstance(encoded, str):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "canonical bytes payload is malformed"
+                )
+            try:
+                return bytes.fromhex(encoded)
+            except ValueError as error:
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "canonical bytes payload is malformed"
+                ) from error
+        if marker == "path" and set(value) == {_CANONICAL_TYPE_KEY, "value"}:
+            encoded = value["value"]
+            if not isinstance(encoded, str):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "canonical path payload is malformed"
+                )
+            return Path(encoded)
+        raise V023TwoRouteSourceTrainingRunnerError(
+            "canonical checkpoint type marker is malformed"
+        )
+    return value
+
+
+def _canonical_tree_bytes(value: object) -> bytes:
+    return _canonical_json_bytes(_canonical_tree_payload(value))
+
+
+def _read_canonical_tree(value: object, *, field: str) -> object:
+    if not isinstance(value, bytes):
+        raise V023TwoRouteSourceTrainingRunnerError(
+            f"{field} must be canonical JSON bytes"
+        )
+    try:
+        encoded = json.loads(value.decode("ascii"))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise V023TwoRouteSourceTrainingRunnerError(
+            f"{field} canonical JSON is invalid"
+        ) from error
+    if _canonical_json_bytes(encoded) != value:
+        raise V023TwoRouteSourceTrainingRunnerError(
+            f"{field} canonical JSON bytes are non-canonical"
+        )
+    return _restore_canonical_tree(encoded)
+
+
+def decode_checkpoint_ledger(checkpoint: Mapping[str, Any]) -> list[dict[str, Any]]:
+    rows = _read_canonical_tree(
+        checkpoint.get("update_ledger_rows"), field="update ledger rows"
+    )
+    if not isinstance(rows, list):
+        raise V023TwoRouteSourceTrainingRunnerError(
+            "update ledger rows canonical payload must be a list"
+        )
+    return rows
+
+
+def decode_checkpoint_orchestrator_state(
+    checkpoint: Mapping[str, Any],
+) -> dict[str, Any]:
+    state = _read_canonical_tree(
+        checkpoint.get("orchestrator_state"), field="orchestrator state"
+    )
+    if not isinstance(state, dict) or "arms" in state:
+        raise V023TwoRouteSourceTrainingRunnerError(
+            "orchestrator canonical payload is malformed"
+        )
+    state["arms"] = checkpoint.get("models_and_optimizers")
+    return state
+
+
 def _torch_bytes(value: object) -> bytes:
     stream = BytesIO()
     torch.save(value, stream)
@@ -159,12 +302,11 @@ def _atomic_write_once(path: Path, payload: bytes) -> str:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        try:
-            os.link(temporary, path)
-        except FileExistsError as error:
+        if path.exists() or path.is_symlink():
             raise V023TwoRouteSourceTrainingRunnerError(
                 f"refusing to overwrite artifact: {path}"
-            ) from error
+            )
+        os.rename(temporary, path)
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -511,40 +653,129 @@ class V023TwoRouteSourceTrainingRunner:
             "updates_per_source_training_epoch": UPDATES_PER_EPOCH,
             "formal_checkpoint_cadence_updates": FORMAL_CHECKPOINT_UPDATES,
             "checkpoint_cadence_updates": self.checkpoint_cadence_updates,
-            "update_ledger_rows": deepcopy(self.update_ledger_rows),
+            "update_ledger_rows": _canonical_tree_bytes(self.update_ledger_rows),
             "models_and_optimizers": deepcopy(state["arms"]),
-            "provider_sampler_state": deepcopy(state["provider_sampler_state"]),
-            "consumed_file_order": deepcopy(state["file_order"]),
-            "orchestrator_state": state,
+            "provider_sampler_state": _canonical_tree_bytes(
+                state["provider_sampler_state"]
+            ),
+            "consumed_file_order": _canonical_tree_bytes(state["file_order"]),
+            "orchestrator_state": _canonical_tree_bytes(
+                {key: value for key, value in state.items() if key != "arms"}
+            ),
         }
+
+    @staticmethod
+    def _checkpoint_prefix_paths(root: Path, epoch: int) -> tuple[Path, ...]:
+        checkpoint = _checkpoint_path(root, epoch)
+        return (
+            root / "exports" / f"epoch-{epoch:04d}",
+            _export_manifest_path(root, epoch),
+            _checkpoint_receipt_path(root, epoch),
+            checkpoint,
+            checkpoint.with_suffix(checkpoint.suffix + ".sha256"),
+        )
+
+    @classmethod
+    def _has_complete_sealed_prefix(cls, root: Path, epoch: int) -> bool:
+        export_dir, manifest, receipt, checkpoint, sidecar = cls._checkpoint_prefix_paths(
+            root, epoch
+        )
+        for path in (export_dir, manifest, receipt, checkpoint, sidecar):
+            if path.is_symlink():
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "checkpoint publication prefix contains a symlink"
+                )
+        present = (
+            export_dir.is_dir()
+            and manifest.is_file()
+            and receipt.is_file()
+            and checkpoint.is_file()
+            and sidecar.is_file()
+        )
+        if sidecar.exists():
+            _verify_sidecar(checkpoint)
+        return present
+
+    @classmethod
+    def _clear_unsealed_checkpoint_prefix(cls, root: Path, epoch: int) -> None:
+        if cls._has_complete_sealed_prefix(root, epoch):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "refusing to replace a sealed checkpoint epoch"
+            )
+        _, _, receipt, checkpoint, sidecar = cls._checkpoint_prefix_paths(root, epoch)
+        for path in (sidecar, checkpoint, receipt):
+            if path.is_symlink() or (path.exists() and not path.is_file()):
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "unsealed checkpoint prefix contains a non-file artifact"
+                )
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
 
     def _write_exports(self, root: Path, epoch: int) -> tuple[list[dict[str, Any]], str]:
         directory = root / "exports" / f"epoch-{epoch:04d}"
-        if directory.exists() or directory.is_symlink():
-            raise V023TwoRouteSourceTrainingRunnerError("export directory already exists")
-        directory.mkdir(mode=0o700)
+        manifest_path = _export_manifest_path(root, epoch)
+        if self._has_complete_sealed_prefix(root, epoch):
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "refusing to replace a sealed epoch export directory"
+            )
+        if directory.is_symlink() or manifest_path.is_symlink():
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "unsealed export prefix contains a symlink"
+            )
+        if directory.exists() and not directory.is_dir():
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "unsealed export path is not a directory"
+            )
+        if manifest_path.exists() and not manifest_path.is_file():
+            raise V023TwoRouteSourceTrainingRunnerError(
+                "unsealed export manifest is not a file"
+            )
+        if directory.is_dir():
+            shutil.rmtree(directory)
+        try:
+            manifest_path.unlink()
+        except FileNotFoundError:
+            pass
+        for stale in directory.parent.glob(f".{directory.name}.*.tmp"):
+            if stale.is_symlink() or not stale.is_dir():
+                raise V023TwoRouteSourceTrainingRunnerError(
+                    "unsealed temporary export path is invalid"
+                )
+            shutil.rmtree(stale)
+        temporary_directory = (
+            directory.parent / f".{directory.name}.{secrets.token_hex(16)}.tmp"
+        )
+        temporary_directory.mkdir(mode=0o700)
         entries = []
         counts = self.orchestrator.route_update_counts
-        for index, arm in enumerate(ARMS):
-            state = self.orchestrator.models[arm].checkpoint_state(
-                update_count=self.orchestrator.update_cursor,
-                route_update_counts=counts,
-            )
-            filename = f"{index:02d}-{arm}.current-ee-axis-two-route.pt"
-            path = directory / filename
-            digest = _atomic_write_once(path, _torch_bytes(state))
-            _write_sidecar(path, digest)
-            entries.append(
-                {
-                    "arm": arm,
-                    "path": str(path.relative_to(root)),
-                    "sha256": digest,
-                    "schema": TWO_ROUTE_CHECKPOINT_SCHEMA,
-                    "algorithm": TWO_ROUTE_ALGORITHM,
-                    "source_mapping": list(SOURCE_MAP[arm]),
-                    "update_count": self.orchestrator.update_cursor,
-                }
-            )
+        try:
+            for index, arm in enumerate(ARMS):
+                state = self.orchestrator.models[arm].checkpoint_state(
+                    update_count=self.orchestrator.update_cursor,
+                    route_update_counts=counts,
+                )
+                filename = f"{index:02d}-{arm}.current-ee-axis-two-route.pt"
+                temporary_path = temporary_directory / filename
+                final_path = directory / filename
+                digest = _atomic_write_once(temporary_path, _torch_bytes(state))
+                _write_sidecar(temporary_path, digest)
+                entries.append(
+                    {
+                        "arm": arm,
+                        "path": str(final_path.relative_to(root)),
+                        "sha256": digest,
+                        "schema": TWO_ROUTE_CHECKPOINT_SCHEMA,
+                        "algorithm": TWO_ROUTE_ALGORITHM,
+                        "source_mapping": list(SOURCE_MAP[arm]),
+                        "update_count": self.orchestrator.update_cursor,
+                    }
+                )
+            os.rename(temporary_directory, directory)
+        finally:
+            if temporary_directory.is_dir():
+                shutil.rmtree(temporary_directory)
         manifest = {
             "schema": EXPORT_MANIFEST_SCHEMA,
             "formal": self.formal,
@@ -556,14 +787,15 @@ class V023TwoRouteSourceTrainingRunner:
             "source_ablation_map": _source_map_payload(),
             "exports": entries,
         }
-        return entries, _atomic_json_once(_export_manifest_path(root, epoch), manifest)
+        return entries, _atomic_json_once(manifest_path, manifest)
 
     def _write_checkpoint(self, epoch: int) -> dict[str, Any]:
         root = self._require_root()
         payload = self._checkpoint_payload(epoch)
         path = _checkpoint_path(root, epoch)
-        digest = _atomic_write_once(path, _torch_bytes(payload))
-        _write_sidecar(path, digest)
+        checkpoint_bytes = _torch_bytes(payload)
+        digest = sha256(checkpoint_bytes).hexdigest()
+        self._clear_unsealed_checkpoint_prefix(root, epoch)
         exports, manifest_digest = self._write_exports(root, epoch)
         receipt = {
             "schema": CHECKPOINT_RECEIPT_SCHEMA,
@@ -579,6 +811,8 @@ class V023TwoRouteSourceTrainingRunner:
             "exports": exports,
         }
         _atomic_json_once(_checkpoint_receipt_path(root, epoch), receipt)
+        _atomic_write_once(path, checkpoint_bytes)
+        _write_sidecar(path, digest)
         return receipt
 
     @staticmethod
@@ -721,7 +955,14 @@ class V023TwoRouteSourceTrainingRunner:
         epoch = checkpoint["epoch"]
         if epoch not in self.checkpoint_epochs or checkpoint["update_count"] != epoch * 2:
             raise V023TwoRouteSourceTrainingRunnerError("checkpoint cadence is invalid")
-        state = checkpoint["orchestrator_state"]
+        state = decode_checkpoint_orchestrator_state(checkpoint)
+        sampler = _read_canonical_tree(
+            checkpoint["provider_sampler_state"], field="provider sampler state"
+        )
+        file_order = _read_canonical_tree(
+            checkpoint["consumed_file_order"], field="consumed file order"
+        )
+        ledger_rows = decode_checkpoint_ledger(checkpoint)
         if (
             checkpoint["initialization_sha256"] != self.orchestrator.initialization_sha256
             or not isinstance(state, Mapping)
@@ -730,11 +971,8 @@ class V023TwoRouteSourceTrainingRunner:
             or state.get("arm_order") != list(ARMS)
             or state.get("route_order") != list(ROUTES)
             or not _tree_equal(checkpoint["models_and_optimizers"], state.get("arms"))
-            or not _tree_equal(
-                checkpoint["provider_sampler_state"],
-                state.get("provider_sampler_state"),
-            )
-            or not _tree_equal(checkpoint["consumed_file_order"], state.get("file_order"))
+            or not _tree_equal(sampler, state.get("provider_sampler_state"))
+            or not _tree_equal(file_order, state.get("file_order"))
         ):
             raise V023TwoRouteSourceTrainingRunnerError("orchestrator state binding drifted")
         expected_counts = {"C1": epoch, "C2": epoch}
@@ -757,11 +995,11 @@ class V023TwoRouteSourceTrainingRunner:
                     "checkpoint arm config/update binding drifted"
                 )
         self._validate_consumed_history(
-            checkpoint["consumed_file_order"], checkpoint["provider_sampler_state"],
+            file_order, sampler,
             updates=epoch * UPDATES_PER_EPOCH,
         )
         self._validate_ledger_rows(
-            checkpoint["update_ledger_rows"], updates=epoch * UPDATES_PER_EPOCH
+            ledger_rows, updates=epoch * UPDATES_PER_EPOCH
         )
 
     def _validate_ledger_rows(self, rows: object, *, updates: int) -> None:
@@ -953,6 +1191,7 @@ class V023TwoRouteSourceTrainingRunner:
         checkpoint = _read_torch(path)
         self._validate_checkpoint(checkpoint)
         self._validate_exports(root, checkpoint)
+        checkpoint_state = decode_checkpoint_orchestrator_state(checkpoint)
         try:
             independent_provider = _parse_factory_spec(
                 self.config.provider_factory_spec
@@ -966,7 +1205,7 @@ class V023TwoRouteSourceTrainingRunner:
                 "independent epoch-100 model/optimizer/provider/sampler restore failed"
             ) from error
         restored = independent.orchestrator.checkpoint_state()
-        if not _tree_equal(restored, checkpoint["orchestrator_state"]):
+        if not _tree_equal(restored, checkpoint_state):
             raise V023TwoRouteSourceTrainingRunnerError(
                 "independent epoch-100 state is not exact"
             )
@@ -1008,17 +1247,18 @@ class V023TwoRouteSourceTrainingRunner:
         if self._read_json(root / "canonical-status.json") != self._status_payload():
             raise V023TwoRouteSourceTrainingRunnerError("canonical status drifted")
         self._validate_exports(root, checkpoint)
+        checkpoint_state = decode_checkpoint_orchestrator_state(checkpoint)
         try:
-            self.orchestrator.load_checkpoint_state(deepcopy(checkpoint["orchestrator_state"]))
+            self.orchestrator.load_checkpoint_state(deepcopy(checkpoint_state))
         except Exception as error:
             raise V023TwoRouteSourceTrainingRunnerError("exact orchestrator resume failed") from error
         if not _tree_equal(
-            self.orchestrator.checkpoint_state(), checkpoint["orchestrator_state"]
+            self.orchestrator.checkpoint_state(), checkpoint_state
         ):
             raise V023TwoRouteSourceTrainingRunnerError(
                 "installed orchestrator state is not exact"
             )
-        self.update_ledger_rows = deepcopy(checkpoint["update_ledger_rows"])
+        self.update_ledger_rows = deepcopy(decode_checkpoint_ledger(checkpoint))
         self.output_root = root
 
     def resume_from_root(self, output_root: str | Path) -> Path:
@@ -1043,17 +1283,16 @@ class V023TwoRouteSourceTrainingRunner:
             raise V023TwoRouteSourceTrainingRunnerError(
                 "resume output root contains an unauthorized checkpoint"
             )
-        existing = [
+        sealed = [
             epoch
             for epoch in self.checkpoint_epochs
-            if _checkpoint_path(root, epoch).is_file()
-            and not _checkpoint_path(root, epoch).is_symlink()
+            if self._has_complete_sealed_prefix(root, epoch)
         ]
-        if not existing:
+        if not sealed:
             raise V023TwoRouteSourceTrainingRunnerError(
-                "resume output root has no authorized checkpoint"
+                "resume output root has no fully sealed authorized checkpoint"
             )
-        path = _checkpoint_path(root, max(existing))
+        path = _checkpoint_path(root, max(sealed))
         self.resume_from_checkpoint(path)
         return path
 
@@ -1220,4 +1459,5 @@ __all__ = [
     "EPOCH_100_INTEGRITY_DECISION", "FORMAL_TRAIN_SEED",
     "FROZEN_MODEL_CONFIG_SHA256",
     "V023TwoRouteSourceTrainingRunnerError", "build_parser", "main", "preflight_from_args",
+    "decode_checkpoint_ledger", "decode_checkpoint_orchestrator_state",
 ]

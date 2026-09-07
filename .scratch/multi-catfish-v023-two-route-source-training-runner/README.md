@@ -26,6 +26,12 @@ sidecars, and a final receipt exactly once. Formal construction authenticates
 the frozen model JSON and seed, admits only a digest-verifiable factory-v3
 identity, and cross-binds the authority, learner-code manifest, r8 manifest,
 provider-config and model-config digests before constructing any learner.
+Runner checkpoints use schema
+`multi-catfish-mcrl-v023-c1c2-successor-two-route-source-training-runner-v1-checkpoint-v1.1`.
+String-heavy ledger, sampler, consumed-file, and orchestrator state is stored
+as canonical JSON bytes while model/optimizer tensors remain native PyTorch
+state, making checkpoint containers and their receipt digests reproducible
+after resume.
 Resume validates complete arm/export state, route counts, consumed-file
 history, exact Adam defaults and finite optimizer state before installation.
 Before the terminal receipt, epoch 100 is restored into independent provider,
@@ -47,6 +53,12 @@ adds rehearsal-only checkpoints every 10 epochs (`0,10,...,100`). These
 intermediate checkpoints retain the finite per-update ledger rows as well as
 model, optimizer, provider sampler, and consumed-file state, so a resumed
 rehearsal is bitwise identical to uninterrupted continuation.
+
+Each checkpoint epoch is published atomically in dependency order: exports,
+checkpoint receipt, checkpoint, then checkpoint SHA-256 sidecar last. The
+sidecar seals the complete epoch. Resume ignores incomplete publication
+prefixes, and a retry may replace only an unsealed partial export directory;
+sealed epoch exports remain write-once.
 
 This is TRAIN-development source learning only. It has no C3, no all-neutral
 control, no `FULL` or `BASELINE` training arm, no simulator, no physical or TEST

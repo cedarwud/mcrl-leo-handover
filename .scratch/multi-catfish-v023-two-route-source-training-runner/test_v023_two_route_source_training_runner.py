@@ -9,6 +9,7 @@ import json
 import multiprocessing
 import os
 from pathlib import Path
+import shutil
 import signal
 import sys
 from typing import Any
@@ -195,6 +196,33 @@ def _run_nonformal_then_sigkill(root: str, stop_epoch: int) -> None:
     os.kill(os.getpid(), signal.SIGKILL)
 
 
+def _artifact_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _remove_epoch_artifacts_after_simulated_kill(
+    root: Path, epoch: int, *, write_point: str
+) -> None:
+    """Reduce a sealed epoch to the prefix visible before one atomic publish."""
+
+    checkpoint = root / f"checkpoints/epoch-{epoch:04d}.runner.pt"
+    receipt = root / f"checkpoint-receipts/epoch-{epoch:04d}.json"
+    manifest = root / f"exports/epoch-{epoch:04d}.json"
+    export_dir = root / f"exports/epoch-{epoch:04d}"
+    checkpoint.with_suffix(checkpoint.suffix + ".sha256").unlink()
+    if write_point in {"checkpoint", "receipt", "exports"}:
+        checkpoint.unlink()
+    if write_point in {"receipt", "exports"}:
+        receipt.unlink()
+    if write_point == "exports":
+        manifest.unlink()
+        shutil.rmtree(export_dir)
+
+
 def test_authenticated_real_a_to_b_boundary_and_cycle(authenticated_boundary):
     provider = _provider(authenticated_boundary)
     orchestrator = ORCH.V023TwoRouteLearnerOrchestrator(
@@ -362,6 +390,27 @@ def test_epoch_zero_export_reload_and_runner_resume_are_exact(
     )
 
 
+def test_checkpoint_v1_1_rejects_noncanonical_embedded_state(
+    authenticated_boundary, tmp_path,
+):
+    provider = _provider(authenticated_boundary)
+    runner = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider), provider
+    )
+    root = tmp_path / "checkpoint-schema"
+    runner.begin_new(root)
+    checkpoint = RUNNER._read_torch(root / "checkpoints/epoch-0000.runner.pt")
+    assert checkpoint["schema"] == RUNNER.CHECKPOINT_SCHEMA
+    assert checkpoint["schema"].endswith("-v1.1")
+
+    mutated = deepcopy(checkpoint)
+    mutated["update_ledger_rows"] += b"\n"
+    with pytest.raises(
+        RUNNER.V023TwoRouteSourceTrainingRunnerError, match="non-canonical"
+    ):
+        runner._validate_checkpoint(mutated)
+
+
 def test_epoch_100_independent_restore_exports_and_terminal_integrity(
     authenticated_boundary, tmp_path
 ):
@@ -388,7 +437,8 @@ def test_epoch_100_independent_restore_exports_and_terminal_integrity(
     )
     resumed.resume_from_checkpoint(root / "checkpoints/epoch-0100.runner.pt")
     _assert_tree_identical(
-        resumed.orchestrator.checkpoint_state(), checkpoint["orchestrator_state"]
+        resumed.orchestrator.checkpoint_state(),
+        RUNNER.decode_checkpoint_orchestrator_state(checkpoint),
     )
 
 
@@ -425,11 +475,158 @@ def test_nonformal_resume_is_bitwise_exact_at_boundary_and_nonboundary(
 
         checkpoint = RUNNER._read_torch(root / "checkpoints/epoch-0100.runner.pt")
         assert checkpoint["formal"] is False
-        assert len(checkpoint["update_ledger_rows"]) == 200
+        assert len(RUNNER.decode_checkpoint_ledger(checkpoint)) == 200
         assert all(
             state["formal"] is False
             for state in checkpoint["models_and_optimizers"].values()
         )
+
+
+@pytest.mark.parametrize("write_point", ["exports", "receipt", "checkpoint", "sidecar"])
+def test_resume_ignores_each_unsealed_atomic_write_prefix_and_reproduces_final_bytes(
+    authenticated_boundary, tmp_path, write_point,
+):
+    reference_provider = _provider(authenticated_boundary)
+    reference = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(reference_provider, formal=False), reference_provider
+    )
+    reference_root = tmp_path / "reference-kill-REHEARSAL-NONFORMAL"
+    reference.begin_new(reference_root)
+    reference.run()
+
+    provider = _provider(authenticated_boundary)
+    interrupted = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider, formal=False), provider
+    )
+    root = tmp_path / f"kill-{write_point}-REHEARSAL-NONFORMAL"
+    interrupted.begin_new(root)
+    interrupted.run_to_epoch(20)
+    _remove_epoch_artifacts_after_simulated_kill(
+        root, 20, write_point=write_point
+    )
+
+    resumed_provider = _provider(authenticated_boundary)
+    resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(resumed_provider, formal=False), resumed_provider
+    )
+    selected = resumed.resume_from_root(root)
+    assert selected.name == "epoch-0010.runner.pt"
+    resumed.run()
+    assert _artifact_bytes(root) == _artifact_bytes(reference_root)
+
+
+def test_sealed_epoch_export_directory_is_never_replaced(
+    authenticated_boundary, tmp_path,
+):
+    provider = _provider(authenticated_boundary)
+    runner = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider, formal=False), provider
+    )
+    root = tmp_path / "sealed-export-REHEARSAL-NONFORMAL"
+    runner.begin_new(root)
+    runner.run_to_epoch(10)
+    before = _artifact_bytes(root / "exports/epoch-0010")
+
+    with pytest.raises(
+        RUNNER.V023TwoRouteSourceTrainingRunnerError,
+        match="sealed|export directory already exists",
+    ):
+        runner._write_exports(root, 10)
+    assert _artifact_bytes(root / "exports/epoch-0010") == before
+
+
+def test_resume_ignores_pre_fix_checkpoint_and_sidecar_without_dependencies(
+    authenticated_boundary, tmp_path,
+):
+    provider = _provider(authenticated_boundary)
+    interrupted = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider, formal=False), provider
+    )
+    root = tmp_path / "old-order-partial-REHEARSAL-NONFORMAL"
+    interrupted.begin_new(root)
+    interrupted.run_to_epoch(20)
+    (root / "checkpoint-receipts/epoch-0020.json").unlink()
+    (root / "exports/epoch-0020.json").unlink()
+    shutil.rmtree(root / "exports/epoch-0020")
+
+    resumed_provider = _provider(authenticated_boundary)
+    resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(resumed_provider, formal=False), resumed_provider
+    )
+    selected = resumed.resume_from_root(root)
+    assert selected.name == "epoch-0010.runner.pt"
+    resumed.run_to_epoch(20)
+    assert resumed.resume_from_root(root).name == "epoch-0020.runner.pt"
+
+
+def test_resumed_nonformal_checkpoints_and_receipts_are_byte_identical(
+    authenticated_boundary, tmp_path,
+):
+    reference_provider = _provider(authenticated_boundary)
+    reference = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(reference_provider, formal=False), reference_provider
+    )
+    reference_root = tmp_path / "reference-bytes-REHEARSAL-NONFORMAL"
+    reference.begin_new(reference_root)
+    reference.run()
+
+    provider = _provider(authenticated_boundary)
+    interrupted = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider, formal=False), provider
+    )
+    root = tmp_path / "resumed-bytes-REHEARSAL-NONFORMAL"
+    interrupted.begin_new(root)
+    interrupted.run_to_epoch(40)
+    resumed_provider = _provider(authenticated_boundary)
+    resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(resumed_provider, formal=False), resumed_provider
+    )
+    resumed.resume_from_root(root)
+    resumed.run()
+
+    for epoch in range(50, 101, 10):
+        for relative in (
+            f"checkpoints/epoch-{epoch:04d}.runner.pt",
+            f"checkpoints/epoch-{epoch:04d}.runner.pt.sha256",
+            f"checkpoint-receipts/epoch-{epoch:04d}.json",
+        ):
+            assert (root / relative).read_bytes() == (reference_root / relative).read_bytes()
+    assert (root / "canonical-receipt.json").read_bytes() == (
+        reference_root / "canonical-receipt.json"
+    ).read_bytes()
+
+
+def test_resumed_formal_epoch_100_checkpoint_and_receipts_are_byte_identical(
+    authenticated_boundary, tmp_path,
+):
+    reference_provider = _provider(authenticated_boundary)
+    reference = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(reference_provider), reference_provider
+    )
+    reference_root = tmp_path / "reference-formal-bytes"
+    reference.begin_new(reference_root)
+    reference.run()
+
+    provider = _provider(authenticated_boundary)
+    interrupted = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(provider), provider
+    )
+    root = tmp_path / "resumed-formal-bytes"
+    interrupted.begin_new(root)
+    resumed_provider = _provider(authenticated_boundary)
+    resumed = RUNNER.V023TwoRouteSourceTrainingRunner(
+        _runner_config(resumed_provider), resumed_provider
+    )
+    resumed.resume_from_root(root)
+    resumed.run()
+
+    for relative in (
+        "checkpoints/epoch-0100.runner.pt",
+        "checkpoints/epoch-0100.runner.pt.sha256",
+        "checkpoint-receipts/epoch-0100.json",
+        "canonical-receipt.json",
+    ):
+        assert (root / relative).read_bytes() == (reference_root / relative).read_bytes()
 
 
 def test_formal_resume_before_epoch_100_selects_only_epoch_zero(

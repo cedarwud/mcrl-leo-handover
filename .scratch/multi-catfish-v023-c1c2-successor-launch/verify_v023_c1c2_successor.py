@@ -367,12 +367,16 @@ def verify_output(
     factory, runner_module = _load_modules(repo)
     checkpoint = runner_module._read_torch(checkpoint_path)
     if (
-        checkpoint.get("epoch") != 100 or checkpoint.get("update_count") != 200
+        checkpoint.get("schema") != runner_module.CHECKPOINT_SCHEMA
+        or checkpoint.get("epoch") != 100 or checkpoint.get("update_count") != 200
         or checkpoint.get("arm_order") != list(ARM_ORDER)
         or checkpoint.get("route_order") != list(ROUTE_ORDER)
     ):
         raise VerificationError("epoch-100 checkpoint topology drifted")
-    state = checkpoint.get("orchestrator_state")
+    try:
+        state = runner_module.decode_checkpoint_orchestrator_state(checkpoint)
+    except runner_module.V023TwoRouteSourceTrainingRunnerError as error:
+        raise VerificationError("epoch-100 canonical checkpoint state is invalid") from error
     if not isinstance(state, Mapping) or state.get("route_update_counts") != {"C1": 100, "C2": 100} or state.get("next_route_index") != 0:
         raise VerificationError("epoch-100 resume boundary is not exact")
     file_order = state.get("file_order")
