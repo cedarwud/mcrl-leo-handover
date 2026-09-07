@@ -1,0 +1,55 @@
+Traceback (most recent call last):
+  File "/home/sat/mcrl-leo-handover-v04-c2-20260901/.scratch/c3-v04/run_v05_c2_controlled_source.py", line 640, in <module>
+    raise SystemExit(_cli())
+                     ~~~~^^
+  File "/home/sat/mcrl-leo-handover-v04-c2-20260901/.scratch/c3-v04/run_v05_c2_controlled_source.py", line 630, in _cli
+    result = _shard(args)
+  File "/home/sat/mcrl-leo-handover-v04-c2-20260901/.scratch/c3-v04/run_v05_c2_controlled_source.py", line 469, in _shard
+    _materialize_source_row(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        anchor=anchor,
+        ^^^^^^^^^^^^^^
+    ...<6 lines>...
+        tape_policy=args.tape_policy,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/sat/mcrl-leo-handover-v04-c2-20260901/.scratch/c3-v04/run_v05_c2_controlled_source.py", line 400, in _materialize_source_row
+    row = mechanics._materialize_controlled_pair(
+        prepared=prepared,
+    ...<9 lines>...
+        tape_policy=tape_policy,
+    )
+  File "/home/sat/mcrl-leo-handover-v04-c2-20260901/.scratch/c3-v04/run_v05_c2_controlled_tape.py", line 356, in _materialize_controlled_pair
+    controlled.remap_physical_actions_for_branch(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        tuple(candidate_taped_physical),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        candidate_slot_tables[-1],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        field=f"candidate_slot_tables[{offset}]",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ),
+    ^
+  File "/tmp/mcrl-ee-axis-v05-c2-controlled-tape-20260901.py", line 562, in remap_physical_actions_for_branch
+    return _remap_physical_actions(
+        physical_actions,
+        slot_tables,
+        field=field,
+    )
+  File "/tmp/mcrl-ee-axis-v05-c2-controlled-tape-20260901.py", line 532, in _remap_physical_actions
+    _unique_action_for_physical(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        table,
+        ^^^^^^
+        physical,
+        ^^^^^^^^^
+        field=f"{field}[{user}]",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/tmp/mcrl-ee-axis-v05-c2-controlled-tape-20260901.py", line 505, in _unique_action_for_physical
+    raise ControlledTapeContractError(
+        f"{field} physical key is {reason}; matches={matches}"
+    )
+mcrl.runtime.ee_axis_v05_c2_controlled_tape.ControlledTapeContractError: candidate_slot_tables[3][27] physical key is missing; matches=[]

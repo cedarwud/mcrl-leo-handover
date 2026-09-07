@@ -1,0 +1,177 @@
+{
+  "title": "Energy-efficiency stratification (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Three-way routing of catfish transitions in the implemented MCRL framework. Mechanism only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1904,
+    "height": 650,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 231.39,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "trans",
+      "label": [
+        "Catfish transition",
+        "energy efficiency η"
+      ],
+      "x": 30,
+      "y": 250,
+      "w": 444,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "rule",
+      "label": [
+        "Stratify by quantiles",
+        "q_lo, q_hi over window W"
+      ],
+      "x": 624,
+      "y": 250,
+      "w": 570,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6",
+        "strokeWidth": 3.0
+      }
+    },
+    {
+      "id": "cf_pool",
+      "label": [
+        "Catfish replay buffer",
+        "highest band"
+      ],
+      "x": 1404,
+      "y": 30,
+      "w": 470,
+      "h": 150,
+      "style": {
+        "stroke": "#333941",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "main_pool",
+      "label": [
+        "Main replay buffer",
+        "middle band"
+      ],
+      "x": 1404,
+      "y": 250,
+      "w": 436,
+      "h": 150,
+      "style": {
+        "stroke": "#333941"
+      }
+    },
+    {
+      "id": "discard",
+      "label": [
+        "Discard",
+        "lowest band"
+      ],
+      "x": 1404,
+      "y": 470,
+      "w": 322,
+      "h": 150,
+      "style": {
+        "stroke": "#78818a"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-trans-rule",
+      "from": "trans",
+      "to": "rule",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-rule-main",
+      "from": "rule",
+      "to": "main_pool",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-rule-cf",
+      "from": "rule",
+      "to": "cf_pool",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 1314,
+          "y": 325
+        },
+        {
+          "x": 1314,
+          "y": 105
+        }
+      ]
+    },
+    {
+      "id": "e-rule-discard",
+      "from": "rule",
+      "to": "discard",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 1314,
+          "y": 325
+        },
+        {
+          "x": 1314,
+          "y": 545
+        }
+      ]
+    }
+  ],
+  "annotations": []
+}

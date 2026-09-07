@@ -1,0 +1,79 @@
+{
+  "schema": "multi-catfish-mcrl-v03-c2-keyed-viability-prereg-v1",
+  "sealed_at_local_date": "2026-08-31",
+  "status": "SEALED_BEFORE_MULTI_SEED_OUTCOMES",
+  "claim_ceiling": "BOUNDED_C2_PHYSICAL_HEADROOM_ONLY_NOT_LEARNABILITY_OR_EE_EFFICACY",
+  "method": "Multi-Catfish MCRL V0.3",
+  "checkpoint_sha256": "e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b",
+  "fading": {
+    "mode": "keyed-branch-independent-v1",
+    "same_field_required_for_twins": true,
+    "branch_identity_forbidden_from_key": true
+  },
+  "multiplier": {
+    "calibration_seed": 2026082401,
+    "split": "TRAIN",
+    "lambda_bits_per_j": 84994621.12635651,
+    "lambda_hex": "0x1.443a8f481639ap+26",
+    "freeze_scope": "all seeds, anchors, candidates, routes, and offsets"
+  },
+  "evaluation": {
+    "seeds": [2026083101, 2026083102, 2026083103, 2026083104, 2026083105],
+    "maximum_anchors_per_seed": 3,
+    "maximum_candidates_per_anchor": 3,
+    "maximum_attempts": 45,
+    "minimum_anchors_per_seed": 2,
+    "minimum_attempts_per_seed": 6,
+    "horizon_offsets": [0, 1, 2, 3],
+    "temporal_target_offsets": [1, 2, 3],
+    "early_stopping": false,
+    "smoke_seed_excluded": 2026082801
+  },
+  "source_grammar": {
+    "eligible_anchor": "Main proposes a physical departure and at least four offsets remain",
+    "focal_sampling": "uniform without replacement from eligible departure users using a domain-separated preoutcome schedule RNG",
+    "candidate_rule": "hold incumbent when legal; otherwise choose maximum predecision candidate_sinr legal non-Main rival",
+    "tie_break": "ascending physical NORAD ID, cell ID, then action ID",
+    "fallback_score_provenance": "current observation candidate_sinr evaluated against previous-step radiating set",
+    "schedule_seal": "discover and hash the complete seed schedule before computing any z2 for that seed"
+  },
+  "retention": {
+    "complete_positive_zero_negative": "retain all",
+    "support_loss": "right-censor with branch side, offset, user, physical key, and reason",
+    "other_error": "retain exact class and message; never impute or substitute"
+  },
+  "service_guard": {
+    "offsets": [1, 2, 3],
+    "no_new_outage": "every reference-served user remains candidate-served",
+    "served_count": "candidate served count is not lower than reference",
+    "focal": "a reference-served focal user remains candidate-served"
+  },
+  "decision": {
+    "go": {
+      "contract_or_numeric_errors": 0,
+      "unresolved_infrastructure_errors": 0,
+      "minimum_total_attempts": 30,
+      "minimum_complete_fraction": 0.6666666666666666,
+      "maximum_censor_fraction": 0.3333333333333333,
+      "minimum_complete_per_seed": 3,
+      "minimum_service_safe_complete_per_seed": 2,
+      "positive_definition": "service-safe complete trace with z2 > 0.0",
+      "minimum_positive_seeds": 4,
+      "minimum_distinct_positive_seed_anchor_digests": 4,
+      "main_networks_and_replay_unchanged": true,
+      "lambda_hex_constant": true
+    },
+    "scientific_no_go": "instrument conditions pass but positive criterion fails",
+    "instrument_fail": "any contract, seal, keyed-field, offset, numeric, or non-mutation violation",
+    "indeterminate": "coverage minimum cannot be met or an infrastructure error remains after at most two logged retries"
+  },
+  "forbidden_decision_inputs": [
+    "legacy r2",
+    "legacy C2 certificate pass or margin",
+    "z2 magnitude threshold",
+    "mean z2",
+    "smoke trace",
+    "post-outcome candidate replacement"
+  ],
+  "go_authorizes_only": "one separately preregistered bounded learnability pilot on a non-overlapping seed block"
+}

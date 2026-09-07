@@ -1,0 +1,221 @@
+{
+  "schema": "multi-catfish-mcrl-v03b-c2-reactive-keyed-headroom-prereg-v1",
+  "sealed_at_local_date": "2026-08-31",
+  "status": "SEALED_BEFORE_V03B_HEADROOM_OUTCOMES",
+  "gate_name": "c2-v03b-reactive-keyed-physical-headroom-gate-20260831",
+  "claim_ceiling": "BOUNDED_V03B_C2_PHYSICAL_HEADROOM_ONLY_NOT_LEARNABILITY_OR_EE_EFFICACY",
+  "baseline": {
+    "prereg_path": "artifacts/PREREG-FROZEN-2026-08-25-R2.json",
+    "prereg_sha256": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+    "checkpoint_path": "artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt",
+    "checkpoint_sha256": "e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b",
+    "ephemeris_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9"
+  },
+  "supersedes": {
+    "path": "artifacts/c2-v03-gate-20260831",
+    "status": "SEALED_INDETERMINATE_IMMUTABLE_NOT_REUSED",
+    "result_sha256": "f8fa59c3b274e730c0029d4b2ecfacf9c1c9f041f29863a3983bda02d904a2bd",
+    "prereg_sha256": "3bb277ac5e50c32a4a45499e675dd40cdf1231ffec88d60464355e5dda70828f"
+  },
+  "implementation": {
+    "c2_policy_version": "C2_V0.3B_HOLD_WHILE_LEGAL_MONOTONE_RELEASE",
+    "forecast_authority_schema": "c2-v03-domain-separated-forecast-authority-v5",
+    "chronology_schema": "c2-v03-preoutcome-chronology-receipt-v2",
+    "forecast_schema": "c2-v03-trainer-backend-forecast-rng-v4",
+    "anchor_schema": "c2-v03-trainer-backend-anchor-v4",
+    "policy_compositor_version": "candidate-local-main-hold-while-legal-release-v2",
+    "horizon_steps": 3,
+    "offsets": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "temporal_target_offsets": [
+      1,
+      2,
+      3
+    ],
+    "release_reasons": [
+      "horizon",
+      "support_expired"
+    ],
+    "fading_mode": "keyed-branch-independent-v1",
+    "opening_source_rules": [
+      "incumbent-hold",
+      "max-lagged-candidate-sinr-rival"
+    ],
+    "release_trigger": "current candidate-branch contemporaneous predecision held-key match count != 1; first loss only",
+    "forbidden_trigger_inputs": [
+      "future offset",
+      "reference branch",
+      "outcome",
+      "z2 target",
+      "post-hoc score"
+    ],
+    "reacquisition": false,
+    "branch_suffix": "complete contemporaneous candidate-branch Main"
+  },
+  "multiplier": {
+    "calibration_seed": 2026082401,
+    "split": "TRAIN",
+    "lambda_hex": "0x1.443a8f481639ap+26",
+    "lambda_bits_per_j": 84994621.12635651,
+    "freeze_scope": "all fresh evaluation seeds, anchors, candidates, routes, offsets"
+  },
+  "evaluation": {
+    "seeds": [
+      2026090101,
+      2026090102,
+      2026090103,
+      2026090104,
+      2026090105
+    ],
+    "maximum_anchors_per_seed": 3,
+    "maximum_candidates_per_anchor": 3,
+    "minimum_anchors_per_seed": 2,
+    "minimum_attempts_per_seed": 6,
+    "maximum_attempts": 45,
+    "horizon_offsets": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "temporal_target_offsets": [
+      1,
+      2,
+      3
+    ],
+    "early_stopping": false,
+    "focal_sampling": "uniform_without_replacement_domain_separated_schedule_rng",
+    "anchor_rule": "Main proposes physical departure and >=4 offsets remain",
+    "departure_mass": "record eligible_departure_user_count and scheduled_focal_user_count at every anchor"
+  },
+  "burned_seeds": {
+    "ids": [
+      2026082401,
+      2026082402,
+      2026082403,
+      2026082404,
+      2026082405,
+      2026082406,
+      2026082407,
+      2026082408,
+      2026082409,
+      2026082410,
+      2026082411,
+      2026082412,
+      2026082413,
+      2026082801,
+      2026083101,
+      2026083102,
+      2026083103,
+      2026083104,
+      2026083105
+    ],
+    "blocks": [
+      {
+        "label": "P6 calibration/train-era seeds",
+        "ids": [
+          2026082401,
+          2026082402,
+          2026082403,
+          2026082404,
+          2026082405,
+          2026082406,
+          2026082407,
+          2026082408,
+          2026082409,
+          2026082410,
+          2026082411,
+          2026082412,
+          2026082413
+        ]
+      },
+      {
+        "label": "development smoke",
+        "ids": [
+          2026082801
+        ]
+      },
+      {
+        "label": "sealed fixed-hold C2 gate",
+        "ids": [
+          2026083101,
+          2026083102,
+          2026083103,
+          2026083104,
+          2026083105
+        ]
+      }
+    ],
+    "reason": "never pool old schedules/outcomes into prospective V0.3B gate"
+  },
+  "row_bindings": [
+    "c2_policy_version",
+    "source_rule",
+    "held_physical_key",
+    "held_key_match_count per offset",
+    "release_offset",
+    "release_reason",
+    "support_match_counts",
+    "reference/candidate served vectors",
+    "per-offset rates/system power/g_k",
+    "anchor_schedule_sha256",
+    "seed/checkpoint/environment/reward/fading/source digests"
+  ],
+  "service_guard": {
+    "offsets": [
+      1,
+      2,
+      3
+    ],
+    "no_new_outage_for_reference_served_users": true,
+    "candidate_served_count_not_lower": true,
+    "reference_served_focal_remains_candidate_served": true,
+    "guard_is_acceptance_not_reward": true
+  },
+  "decision": {
+    "contract_or_numeric_errors": 0,
+    "unresolved_infrastructure_errors": 0,
+    "minimum_total_attempts": 30,
+    "minimum_anchors_per_seed": 2,
+    "minimum_attempts_per_seed": 6,
+    "minimum_complete_fraction": 0.9,
+    "maximum_opening_censor_fraction": 0.1,
+    "maximum_postopening_censor_count": 0,
+    "minimum_complete_per_seed": 4,
+    "minimum_service_safe_complete_per_seed": 3,
+    "minimum_release_offset_values": 2,
+    "minimum_support_expired_traces": 1,
+    "minimum_horizon_traces": 1,
+    "minimum_positive_seeds": 4,
+    "minimum_positive_anchor_digests": 4,
+    "minimum_anchor_digests_per_source_rule": 1,
+    "positive_definition": "service-safe complete trace with z2_temporal_surplus_bits > 0.0",
+    "release_diversity_definition": "at least 2 distinct offsets plus at least one support_expired and one horizon",
+    "fallback_definition": "both source rules observed on complete traces and each spans min anchor digests",
+    "anchor_replication_definition": "positive complete service-safe traces span min seeds and distinct sealed anchor digests",
+    "departure_mass_definition": "every seed has nonzero eligible and scheduled focal departure mass",
+    "main_networks_replay_checkpoint_unchanged": true
+  },
+  "forbidden_decision_inputs": [
+    "sealed old fixed-hold C2 result",
+    "legacy r2",
+    "old C2 certificate pass/margin",
+    "mean z2",
+    "z2 magnitude threshold",
+    "post-outcome candidate replacement",
+    "training/replay updates"
+  ],
+  "run_contract": {
+    "training": false,
+    "live_c2_execution": false,
+    "replay_write": false,
+    "old_output_namespace": "must remain untouched",
+    "new_output_namespace": "artifacts/c2-v03b-reactive-keyed-physical-headroom-gate-20260831",
+    "launch_command": "./.venv/bin/python .scratch/ee-axis-redesign/run_c2_v03b_keyed_physical_headroom_gate.py --prereg artifacts/c2-v03b-reactive-keyed-physical-headroom-gate-20260831/prereg.json --seal artifacts/c2-v03b-reactive-keyed-physical-headroom-gate-20260831/prereg.sha256 --source-manifest artifacts/c2-v03b-reactive-keyed-physical-headroom-gate-20260831/source-manifest.json --output artifacts/c2-v03b-reactive-keyed-physical-headroom-gate-20260831/result.json"
+  },
+  "go_authorizes_only": "one separately preregistered bounded matched learnability pilot on non-overlapping seeds; never full training"
+}

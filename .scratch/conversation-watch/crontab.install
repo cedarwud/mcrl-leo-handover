@@ -1,0 +1,13 @@
+# >>> headroom default >>>
+@reboot /home/u24/.headroom/deploy/default/ensure-headroom.sh
+*/5 * * * * /home/u24/.headroom/deploy/default/ensure-headroom.sh
+# <<< headroom default <<<
+
+# >>> headroom account >>>
+@reboot /home/u24/.headroom/deploy/account/ensure-headroom.sh
+*/5 * * * * /home/u24/.headroom/deploy/account/ensure-headroom.sh
+# <<< headroom account <<<
+
+# >>> codex capacity recovery 01a02ee2-3a25-7c03-aa70-5ad81bdfb765 >>>
+*/3 * * * * /usr/bin/python3 /home/u24/papers/mcrl-leo-handover/.scratch/conversation-watch/capacity_watch.py >> /home/u24/papers/mcrl-leo-handover/.scratch/conversation-watch/cron.log 2>&1
+# <<< codex capacity recovery 01a02ee2-3a25-7c03-aa70-5ad81bdfb765 <<<

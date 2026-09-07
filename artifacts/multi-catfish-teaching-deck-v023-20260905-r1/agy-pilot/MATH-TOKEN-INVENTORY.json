@@ -1,0 +1,822 @@
+{
+  "metadata": {
+    "deck_title": "Multi-Catfish MCRL Teaching Deck V0.23",
+    "template": "/home/u24/pptx-craft/assets/wmnlab.pptx",
+    "math_engine": "Microsoft PowerPoint OfficeMath (OMML)",
+    "typographic_spec": {
+      "font_family": "Times New Roman",
+      "slide_title_pt": 28,
+      "body_text_pt": 24,
+      "diagram_box_pt": 20,
+      "prohibited_sizes": [
+        26,
+        22,
+        18,
+        16,
+        14
+      ],
+      "variables": "italic",
+      "constants_and_acronyms": "upright",
+      "operators": "standard mathematical spacing"
+    },
+    "active_symbol_authority": "artifacts/chinese-word-v023-lcsrs-20260905-r2/active-symbol-table-v023-20260905.md \u00a710.13",
+    "subscript_rule": "Strictly atomic single-letter or single-digit components. No multi-letter words in subscripts/superscripts.",
+    "audit_source": "artifacts/chinese-word-v023-lcsrs-20260905-r2/SYMBOL-COLLISION-AND-SINGLE-LETTER-AUDIT.md"
+  },
+  "slides": [
+    {
+      "slide_number": 1,
+      "slide_title": "Multi-Catfish MCRL: Teaching Deck Overview",
+      "formulas": [
+        {
+          "formula_id": "f01_heads",
+          "display": "Q_1, Q_2, Q_3",
+          "omml_structure": "Q_1, Q_2, Q_3",
+          "symbols": [
+            "Q_1",
+            "Q_2",
+            "Q_3"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        },
+        {
+          "formula_id": "f01_ee",
+          "display": "\\eta^N",
+          "omml_structure": "\\eta^N",
+          "symbols": [
+            "\\eta^N"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 2,
+      "slide_title": "LEO Satellite Network Context: Orbital Dynamics & Narrow Beams",
+      "formulas": [
+        {
+          "formula_id": "f02_geom",
+          "display": "\\theta_{u,s,v}(t), d_{u,s,v}(t)",
+          "omml_structure": "\\theta_{u,s,v}(t), d_{u,s,v}(t)",
+          "symbols": [
+            "\\theta_{u,s,v}",
+            "d_{u,s,v}",
+            "t"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        },
+        {
+          "formula_id": "f02_bw",
+          "display": "B^w / U_{s,v}, u \\in \\mathcal{U}, v \\in \\mathcal{V}",
+          "omml_structure": "B^w / U_{s,v}, u \\in \\mathcal{U}, v \\in \\mathcal{V}",
+          "symbols": [
+            "B^w",
+            "U_{s,v}",
+            "\\mathcal{U}",
+            "\\mathcal{V}"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 3,
+      "slide_title": "Coupled Satellite Resources: Beam Power & Ground Interference",
+      "formulas": [
+        {
+          "formula_id": "f03_power",
+          "display": "P^N(t) = P^B + \\sum_s P_s(t) + \\sum_{s,v} z_{s,v}(t) P^M",
+          "omml_structure": "P^N(t) = P^B + \\sum_s P_s(t) + \\sum_{s,v} z_{s,v}(t) P^M",
+          "symbols": [
+            "P^N",
+            "P^B",
+            "P_s",
+            "z_{s,v}",
+            "P^M"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        },
+        {
+          "formula_id": "f03_sinr",
+          "display": "\\gamma_{u,s,v}(t) = \\frac{p_{u,s,v}(t) g_{u,s,v}(t)}{\\sigma^2 + I_{u,s,v}(t)}",
+          "omml_structure": "\\gamma_{u,s,v}(t) = (p_{u,s,v}(t) g_{u,s,v}(t)) / (\\sigma^2 + I_{u,s,v}(t))",
+          "symbols": [
+            "\\gamma_{u,s,v}",
+            "p_{u,s,v}",
+            "g_{u,s,v}",
+            "\\sigma",
+            "I_{u,s,v}"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 4,
+      "slide_title": "Limits of Conventional Multi-Objective Handover: The MODQN Dilemma",
+      "formulas": [
+        {
+          "formula_id": "f04_scalar",
+          "display": "r(t) = w_1 r_1(t) + w_2 r_2(t) + w_3 r_3(t), \\quad \\sum_k w_k = 1",
+          "omml_structure": "r(t) = w_1 r_1(t) + w_2 r_2(t) + w_3 r_3(t), \\sum_k w_k = 1",
+          "symbols": [
+            "r",
+            "r_1",
+            "r_2",
+            "r_3",
+            "w_1",
+            "w_2",
+            "w_3"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 5,
+      "slide_title": "The Canonical Endpoint: Network Ratio-of-Sums Energy Efficiency",
+      "formulas": [
+        {
+          "formula_id": "f05_ee",
+          "display": "\\eta^N = \\frac{\\mathcal{B}}{\\mathcal{E}} = \\frac{\\sum_t \\sum_{u\\in\\mathcal{U}} R_u(t) \\Delta t}{\\sum_t P^N(t) \\Delta t}",
+          "omml_structure": "\\eta^N = \\mathcal{B} / \\mathcal{E} = (\\sum_t \\sum_{u\\in\\mathcal{U}} R_u(t) \\Delta t) / (\\sum_t P^N(t) \\Delta t)",
+          "symbols": [
+            "\\eta^N",
+            "\\mathcal{B}",
+            "\\mathcal{E}",
+            "R_u",
+            "P^N",
+            "\\Delta t"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 6,
+      "slide_title": "Linear Surplus Formulation and the Frozen Multiplier",
+      "formulas": [
+        {
+          "formula_id": "f06_surplus",
+          "display": "\\lambda = \\mathcal{B}_0^M / \\mathcal{E}_0^M, \\quad G(x) = \\sum_{u\\in\\mathcal{U}} B_u(x) - \\lambda E(x)",
+          "omml_structure": "\\lambda = \\mathcal{B}_0^M / \\mathcal{E}_0^M, G(x) = \\sum_{u\\in\\mathcal{U}} B_u(x) - \\lambda E(x)",
+          "symbols": [
+            "\\lambda",
+            "\\mathcal{B}_0^M",
+            "\\mathcal{E}_0^M",
+            "G",
+            "B_u",
+            "E"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 7,
+      "slide_title": "The Causal Attribution Dilemma in Multi-User Handover",
+      "formulas": [
+        {
+          "formula_id": "f07_diff",
+          "display": "\\Delta G(t) = G(x(t)) - G(x^0(t))",
+          "omml_structure": "\\Delta G(t) = G(x(t)) - G(x^0(t))",
+          "symbols": [
+            "\\Delta G",
+            "G",
+            "x",
+            "x^0"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 8,
+      "slide_title": "Architecture Invariant: Three Independent Q Networks",
+      "formulas": [
+        {
+          "formula_id": "f08_sum",
+          "display": "Q(s_u, a) = Q_1(s_u, a) + Q_2(s_u, a) + Q_3(s_u, a)",
+          "omml_structure": "Q(s_u, a) = Q_1(s_u, a) + Q_2(s_u, a) + Q_3(s_u, a)",
+          "symbols": [
+            "Q",
+            "Q_1",
+            "Q_2",
+            "Q_3",
+            "s_u",
+            "a"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        },
+        {
+          "formula_id": "f08_param",
+          "display": "\\theta_1 \\cap \\theta_2 = \\emptyset, \\quad \\theta_1 \\cap \\theta_3 = \\emptyset, \\quad \\theta_2 \\cap \\theta_3 = \\emptyset",
+          "omml_structure": "\\theta_1 \\cap \\theta_2 = \\emptyset, \\theta_1 \\cap \\theta_3 = \\emptyset, \\theta_2 \\cap \\theta_3 = \\emptyset",
+          "symbols": [
+            "\\theta_1",
+            "\\theta_2",
+            "\\theta_3"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 9,
+      "slide_title": "Architecture Invariant: Route-Local Zero-Bootstrap Training",
+      "formulas": [
+        {
+          "formula_id": "f09_loss",
+          "display": "\\mathcal{L}_k(\\theta_k) = \\mathbb{E}[(Q_k(s, a) - y_k)^2], \\quad \\gamma_b = 0",
+          "omml_structure": "\\mathcal{L}_k(\\theta_k) = \\mathbb{E}[(Q_k(s, a) - y_k)^2], \\gamma_b = 0",
+          "symbols": [
+            "\\mathcal{L}_k",
+            "\\theta_k",
+            "Q_k",
+            "y_k",
+            "\\gamma_b"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 10,
+      "slide_title": "Unilateral Counterfactual Evaluation: The C1 Opening Intervention",
+      "formulas": [
+        {
+          "formula_id": "f10_unilateral",
+          "display": "x_u^a = (a, a_{-u}^0), \\quad \\Delta G_u(a) = G(x_u^a) - G(x^0)",
+          "omml_structure": "x_u^a = (a, a_{-u}^0), \\Delta G_u(a) = G(x_u^a) - G(x^0)",
+          "symbols": [
+            "x_u^a",
+            "a_{-u}^0",
+            "\\Delta G_u",
+            "G",
+            "x^0"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 11,
+      "slide_title": "The Coalition Exception: Why C3 Breaks Unilateral Symmetry",
+      "formulas": [
+        {
+          "formula_id": "f11_coalition",
+          "display": "\\Delta E_1(10) = 0, \\quad \\Delta E_2(01) = 0, \\quad \\Delta E(11) = -P^M \\Delta t",
+          "omml_structure": "\\Delta E_1(10) = 0, \\Delta E_2(01) = 0, \\Delta E(11) = -P^M \\Delta t",
+          "symbols": [
+            "\\Delta E_1",
+            "\\Delta E_2",
+            "\\Delta E",
+            "P^M",
+            "\\Delta t"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 12,
+      "slide_title": "Route C1 Role: Focal Opening Net Surplus",
+      "formulas": [
+        {
+          "formula_id": "f12_c1_role",
+          "display": "y_1 = \\Delta B_u(a) - \\lambda \\Delta E(a), \\quad a \\in \\mathcal{A}_u^+(t)",
+          "omml_structure": "y_1 = \\Delta B_u(a) - \\lambda \\Delta E(a), a \\in \\mathcal{A}_u^+(t)",
+          "symbols": [
+            "y_1",
+            "\\Delta B_u",
+            "\\lambda",
+            "\\Delta E",
+            "\\mathcal{A}_u^+"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 13,
+      "slide_title": "Route C1 Target Formulation: Assigning Opening Energy",
+      "formulas": [
+        {
+          "formula_id": "f13_c1_target",
+          "display": "y_{1,u}(a) = [B_u(x_u^a) - B_u(x^0)] - \\lambda [E(x_u^a) - E(x^0)]",
+          "omml_structure": "y_{1,u}(a) = [B_u(x_u^a) - B_u(x^0)] - \\lambda [E(x_u^a) - E(x^0)]",
+          "symbols": [
+            "y_{1,u}",
+            "B_u",
+            "x_u^a",
+            "x^0",
+            "\\lambda",
+            "E"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 14,
+      "slide_title": "Route C1 Lineage: The RIS EXP/ACRM Lineage",
+      "formulas": [
+        {
+          "formula_id": "f14_c1_lineage",
+          "display": "Q_1(s_u, a) \\approx y_{1,u}(a), \\quad \\nabla_{\\theta_1} \\mathcal{L}_1",
+          "omml_structure": "Q_1(s_u, a) \\approx y_{1,u}(a), \\nabla_{\\theta_1} \\mathcal{L}_1",
+          "symbols": [
+            "Q_1",
+            "s_u",
+            "a",
+            "y_{1,u}",
+            "\\theta_1",
+            "\\mathcal{L}_1"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 15,
+      "slide_title": "Route C1 Historical Evidence: V0.4 Frozen-Policy Margin",
+      "formulas": [
+        {
+          "formula_id": "f15_c1_evid",
+          "display": "\\Delta \\eta^N = +254.596\\%",
+          "omml_structure": "\\Delta \\eta^N = +254.596%",
+          "symbols": [
+            "\\Delta \\eta^N"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 16,
+      "slide_title": "Route C2 Role: Evaluating Temporal Persistence",
+      "formulas": [
+        {
+          "formula_id": "f16_c2_role",
+          "display": "y_2 \\approx G(x(t+1)) - G(x^0(t+1)), \\quad k = 1",
+          "omml_structure": "y_2 \\approx G(x(t+1)) - G(x^0(t+1)), k = 1",
+          "symbols": [
+            "y_2",
+            "G",
+            "x",
+            "x^0",
+            "t",
+            "k"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 17,
+      "slide_title": "Route C2 Evolution: From Temporal-Fork to First-Successor k1",
+      "formulas": [
+        {
+          "formula_id": "f17_c2_k1",
+          "display": "y_{2,u}^{(1)} = \\Delta G_u(t+1)",
+          "omml_structure": "y_{2,u}^{(1)} = \\Delta G_u(t+1)",
+          "symbols": [
+            "y_{2,u}^{(1)}",
+            "\\Delta G_u",
+            "t"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 18,
+      "slide_title": "Route C2 Diagnostic Failures: V0.6 Screen and V0.7 R14 Audit",
+      "formulas": [
+        {
+          "formula_id": "f18_c2_diag",
+          "display": "\\Delta \\eta^N = -28.575\\%, \\quad \\mathrm{MSE}_h > \\mathrm{MSE}_0",
+          "omml_structure": "\\Delta \\eta^N = -28.575%, \\mathrm{MSE}_h > \\mathrm{MSE}_0",
+          "symbols": [
+            "\\Delta \\eta^N",
+            "\\mathrm{MSE}_h",
+            "\\mathrm{MSE}_0"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 19,
+      "slide_title": "Current C2 Status: Present but Unqualified OPS-3 Diagnostic",
+      "formulas": [
+        {
+          "formula_id": "f19_c2_ops3",
+          "display": "Q_2(s_u, a) \\in \\mathbb{R}, \\quad a_u^\\star(t) = \\arg\\max_{a\\in\\mathcal{A}_u^+(t)} [Q_1 + Q_2 + Q_3]",
+          "omml_structure": "Q_2(s_u, a) \\in \\mathbb{R}, a_u^\\star(t) = \\arg\\max_{a\\in\\mathcal{A}_u^+(t)} [Q_1 + Q_2 + Q_3]",
+          "symbols": [
+            "Q_2",
+            "s_u",
+            "a",
+            "a_u^\\star",
+            "\\mathcal{A}_u^+",
+            "Q_1",
+            "Q_3"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 20,
+      "slide_title": "The Spatial Externality Problem: Shared Beam Coupling",
+      "formulas": [
+        {
+          "formula_id": "f20_coupling",
+          "display": "u_1, u_2 \\in \\mathcal{U}, \\quad s(u_1)=s(u_2), \\quad v(u_1)=v(u_2), \\quad z_{s,v}(t) \\in \\{0, 1\\}",
+          "omml_structure": "u_1, u_2 \\in \\mathcal{U}, s(u_1)=s(u_2), v(u_1)=v(u_2), z_{s,v}(t) \\in \\{0, 1\\}",
+          "symbols": [
+            "u_1",
+            "u_2",
+            "\\mathcal{U}",
+            "s",
+            "v",
+            "z_{s,v}"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 21,
+      "slide_title": "The Beam Extinction Blindspot in Unilateral Exploration",
+      "formulas": [
+        {
+          "formula_id": "f21_blindspot",
+          "display": "z_{s,v}(10)=1, \\quad z_{s,v}(01)=1, \\quad z_{s,v}(11)=0, \\quad z_{s,v}(00)=1",
+          "omml_structure": "z_{s,v}(10)=1, z_{s,v}(01)=1, z_{s,v}(11)=0, z_{s,v}(00)=1",
+          "symbols": [
+            "z_{s,v}"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 22,
+      "slide_title": "The Two-User Cooperative Game: Four Matched Profiles",
+      "formulas": [
+        {
+          "formula_id": "f22_profiles",
+          "display": "x^0 = (a_1^0, a_2^0), \\quad x^1 = (a_1, a_2^0), \\quad x^2 = (a_1^0, a_2), \\quad x^c = (a_1, a_2)",
+          "omml_structure": "x^0 = (a_1^0, a_2^0), x^1 = (a_1, a_2^0), x^2 = (a_1^0, a_2), x^c = (a_1, a_2)",
+          "symbols": [
+            "x^0",
+            "x^1",
+            "x^2",
+            "x^c",
+            "a_1^0",
+            "a_2^0",
+            "a_1",
+            "a_2"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 23,
+      "slide_title": "Exact Two-Player LC-SRS Teacher Formulation",
+      "formulas": [
+        {
+          "formula_id": "f23_lcsrs",
+          "display": "\\ell_i = [B_i(x^i) - B_i(x^0)] - \\lambda [E(x^i) - E(x^0)], \\quad e_i = B_j(x^i) - B_j(x^0), \\quad j = 3 - i",
+          "omml_structure": "\\ell_i = [B_i(x^i) - B_i(x^0)] - \\lambda [E(x^i) - E(x^0)], e_i = B_j(x^i) - B_j(x^0), j = 3 - i",
+          "symbols": [
+            "\\ell_i",
+            "B_i",
+            "x^i",
+            "x^0",
+            "\\lambda",
+            "E",
+            "e_i",
+            "B_j",
+            "j",
+            "i"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        },
+        {
+          "formula_id": "f23_psi",
+          "display": "\\Psi = [B(x^c) - B(x^1) - B(x^2) + B(x^0)] - \\lambda [E(x^c) - E(x^1) - E(x^2) + E(x^0)], \\quad z_{3,i} = e_i + \\frac{\\Psi}{2}",
+          "omml_structure": "\\Psi = [B(x^c) - B(x^1) - B(x^2) + B(x^0)] - \\lambda [E(x^c) - E(x^1) - E(x^2) + E(x^0)], z_{3,i} = e_i + \\Psi / 2",
+          "symbols": [
+            "\\Psi",
+            "B",
+            "E",
+            "x^c",
+            "x^1",
+            "x^2",
+            "x^0",
+            "\\lambda",
+            "z_{3,i}",
+            "e_i"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 24,
+      "slide_title": "Super-Additive Interaction Surplus and the Shapley Target",
+      "formulas": [
+        {
+          "formula_id": "f24_shapley",
+          "display": "\\mathrm{Sh}_i = \\frac{1}{2}[v(\\{i\\}) - v(\\emptyset)] + \\frac{1}{2}[v(\\{1,2\\}) - v(\\{j\\})], \\quad z_{3,i} = \\mathrm{Sh}_i - \\ell_i = e_i + \\frac{\\Psi}{2}",
+          "omml_structure": "\\mathrm{Sh}_i = 1/2 [v({i}) - v(\\emptyset)] + 1/2 [v({1,2}) - v({j})], z_{3,i} = \\mathrm{Sh}_i - \\ell_i = e_i + \\Psi / 2",
+          "symbols": [
+            "\\mathrm{Sh}_i",
+            "v",
+            "z_{3,i}",
+            "\\ell_i",
+            "e_i",
+            "\\Psi"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 25,
+      "slide_title": "Construction-Level Exact Identity: Surplus Conservation",
+      "formulas": [
+        {
+          "formula_id": "f25_identity",
+          "display": "\\sum_{i=1}^2 (\\ell_i + z_{3,i}) = G(x^c) - G(x^0), \\quad |\\mathrm{res}| < 10^{-6} \\text{ bit}",
+          "omml_structure": "\\sum_{i=1}^2 (\\ell_i + z_{3,i}) = G(x^c) - G(x^0), |\\mathrm{res}| < 10^{-6}",
+          "symbols": [
+            "\\ell_i",
+            "z_{3,i}",
+            "G",
+            "x^c",
+            "x^0",
+            "\\mathrm{res}"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 26,
+      "slide_title": "The Teacher Anchor Surface: Supported, Reference, and Control",
+      "formulas": [
+        {
+          "formula_id": "f26_strata",
+          "display": "y_i(a) = \\kappa z_{3,i}(a) \\; (a \\in S), \\quad y_i(a_i^0) = 0 \\; (a_i^0 \\in R), \\quad y_i(a) = 0 \\; (a \\in C)",
+          "omml_structure": "y_i(a) = \\kappa z_{3,i}(a) (a \\in S), y_i(a_i^0) = 0 (a_i^0 \\in R), y_i(a) = 0 (a \\in C)",
+          "symbols": [
+            "y_i",
+            "\\kappa",
+            "z_{3,i}",
+            "a_i^0",
+            "S",
+            "R",
+            "C"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 27,
+      "slide_title": "Deployment C3View: Committed vs. Detached Context",
+      "formulas": [
+        {
+          "formula_id": "f27_detached",
+          "display": "a_i^0 = \\arg\\max_{a\\in\\mathcal{A}_i^+(t)} [Q_1(s_i, a) + Q_2(s_i, a)]",
+          "omml_structure": "a_i^0 = \\arg\\max_{a\\in\\mathcal{A}_i^+(t)} [Q_1(s_i, a) + Q_2(s_i, a)]",
+          "symbols": [
+            "a_i^0",
+            "\\mathcal{A}_i^+",
+            "Q_1",
+            "Q_2",
+            "s_i",
+            "a"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 28,
+      "slide_title": "Relational Token Architecture: Shared 67-64-64-1 Scorer",
+      "formulas": [
+        {
+          "formula_id": "f28_tokens",
+          "display": "c_{ia} \\in \\mathbb{R}^{29}, \\quad t_{iar} \\in \\mathbb{R}^{38}, \\quad x_{iar} = [c_{ia}, t_{iar}] \\in \\mathbb{R}^{67}, \\quad F_i(a) = \\sum_r m_{iar} f_\\theta(x_{iar})",
+          "omml_structure": "c_{ia} \\in \\mathbb{R}^{29}, t_{iar} \\in \\mathbb{R}^{38}, x_{iar} \\in \\mathbb{R}^{67}, F_i(a) = \\sum_r m_{iar} f_\\theta(x_{iar})",
+          "symbols": [
+            "c_{ia}",
+            "t_{iar}",
+            "x_{iar}",
+            "F_i",
+            "m_{iar}",
+            "f_\\theta"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 29,
+      "slide_title": "Reference-Centering: Enforcing the Structural Zero Invariant",
+      "formulas": [
+        {
+          "formula_id": "f29_rcent",
+          "display": "Q_{3,i}(a) = F_i(a) - F_i(a_i^0) \\implies Q_{3,i}(a_i^0) \\equiv 0 \\quad (\\forall \\theta)",
+          "omml_structure": "Q_{3,i}(a) = F_i(a) - F_i(a_i^0) => Q_{3,i}(a_i^0) = 0 (\\forall \\theta)",
+          "symbols": [
+            "Q_{3,i}",
+            "F_i",
+            "a",
+            "a_i^0",
+            "\\theta"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 30,
+      "slide_title": "Pairwise Advantage Learning: Zero-Bootstrap Loss",
+      "formulas": [
+        {
+          "formula_id": "f30_loss3",
+          "display": "\\mathcal{L}_3(\\theta) = \\frac{1}{|B|} \\sum_{(i,a)} (Q_{3,i}(a) - y_i(a))^2, \\quad \\gamma_b = 0",
+          "omml_structure": "\\mathcal{L}_3(\\theta) = 1/|B| \\sum_{(i,a)} (Q_{3,i}(a) - y_i(a))^2, \\gamma_b = 0",
+          "symbols": [
+            "\\mathcal{L}_3",
+            "\\theta",
+            "B",
+            "Q_{3,i}",
+            "y_i",
+            "\\gamma_b"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 31,
+      "slide_title": "Class-Balanced Tri-Partite Loss for LC-SRS",
+      "formulas": [
+        {
+          "formula_id": "f31_bal_loss",
+          "display": "\\mathcal{L}_b = \\frac{1}{3} \\mathcal{L}_S + \\frac{1}{3} \\mathcal{L}_R + \\frac{1}{3} \\mathcal{L}_C, \\quad w_c = 3 \\; (c \\in \\{S, R, C\\})",
+          "omml_structure": "\\mathcal{L}_b = 1/3 \\mathcal{L}_S + 1/3 \\mathcal{L}_R + 1/3 \\mathcal{L}_C, w_c = 3 (c \\in {S, R, C})",
+          "symbols": [
+            "\\mathcal{L}_b",
+            "\\mathcal{L}_S",
+            "\\mathcal{L}_R",
+            "\\mathcal{L}_C",
+            "w_c",
+            "S",
+            "R",
+            "C"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 32,
+      "slide_title": "One-Pass Deployment: Native Masked Argmax",
+      "formulas": [
+        {
+          "formula_id": "f32_argmax",
+          "display": "a_u^\\star(t) = \\arg\\max_{a\\in\\mathcal{A}_u^+(t)} [Q_1(s_u, a) + Q_2(s_u, a) + Q_3(s_u, a)]",
+          "omml_structure": "a_u^\\star(t) = \\arg\\max_{a\\in\\mathcal{A}_u^+(t)} [Q_1(s_u, a) + Q_2(s_u, a) + Q_3(s_u, a)]",
+          "symbols": [
+            "a_u^\\star",
+            "\\mathcal{A}_u^+",
+            "Q_1",
+            "Q_2",
+            "Q_3",
+            "s_u",
+            "a"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 33,
+      "slide_title": "Runtime Invariants: Prohibited Coordination Mechanisms",
+      "formulas": [
+        {
+          "formula_id": "f33_overhead",
+          "display": "C_{\\mathrm{coord}} = 0, \\quad a_u^\\star = g_u(s_u)",
+          "omml_structure": "C_{\\mathrm{coord}} = 0, a_u^\\star = g_u(s_u)",
+          "symbols": [
+            "C_{\\mathrm{coord}}",
+            "a_u^\\star",
+            "g_u",
+            "s_u"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 34,
+      "slide_title": "Method Safeguards: Native Masks and Propensity Strata",
+      "formulas": [
+        {
+          "formula_id": "f34_safeguards",
+          "display": "a \\in \\mathcal{A}_u^+(t) \\implies \\theta_{u,s,v} \\ge 10^\\circ, \\quad \\gamma_{u,s,v} \\ge \\gamma_{\\mathrm{th}}",
+          "omml_structure": "a \\in \\mathcal{A}_u^+(t) => \\theta_{u,s,v} >= 10^\\circ, \\gamma_{u,s,v} >= \\gamma_{\\mathrm{th}}",
+          "symbols": [
+            "\\mathcal{A}_u^+",
+            "\\theta_{u,s,v}",
+            "\\gamma_{u,s,v}",
+            "\\gamma_{\\mathrm{th}}"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 35,
+      "slide_title": "Active V0.23 Development Gate: Four Evaluation Arms",
+      "formulas": [
+        {
+          "formula_id": "f35_arms",
+          "display": "\\mathcal{M} = \\{\\text{INFORMED}, \\text{MATCHED\\_PLACEBO}, \\text{ZERO\\_SURFACE}, \\text{TEACHER\\_ORACLE}\\}, \\quad N_p \\ge 24",
+          "omml_structure": "\\mathcal{M} = {INFORMED, MATCHED_PLACEBO, ZERO_SURFACE, TEACHER_ORACLE}, N_p >= 24",
+          "symbols": [
+            "\\mathcal{M}",
+            "N_p"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 36,
+      "slide_title": "Active V0.23 Development Gate: Pre-Registered Passing Criteria",
+      "formulas": [
+        {
+          "formula_id": "f36_criteria",
+          "display": "\\mathrm{MSE}(R) = 0, \\quad \\mathrm{Skill}(\\text{INFORMED}) > \\mathrm{Skill}(\\text{PLACEBO}), \\quad \\rho_s < \\rho_0",
+          "omml_structure": "\\mathrm{MSE}(R) = 0, \\mathrm{Skill}(INFORMED) > \\mathrm{Skill}(PLACEBO), \\rho_s < \\rho_0",
+          "symbols": [
+            "\\mathrm{MSE}",
+            "R",
+            "\\mathrm{Skill}",
+            "\\rho_s",
+            "\\rho_0"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 37,
+      "slide_title": "Historical vs. Future Evaluation: The Multi-Arm Matrix",
+      "formulas": [
+        {
+          "formula_id": "f37_matrix",
+          "display": "\\mathcal{M}_{\\mathrm{eval}} = \\{M0, N000, A011, A101, A110, F111\\}, \\quad Q = Q_1 \\mathbb{I}_1 + Q_2 \\mathbb{I}_2 + Q_3 \\mathbb{I}_3",
+          "omml_structure": "\\mathcal{M}_{\\mathrm{eval}} = {M0, N000, A011, A101, A110, F111}, Q = Q_1 \\mathbb{I}_1 + Q_2 \\mathbb{I}_2 + Q_3 \\mathbb{I}_3",
+          "symbols": [
+            "\\mathcal{M}_{\\mathrm{eval}}",
+            "Q",
+            "Q_1",
+            "Q_2",
+            "Q_3",
+            "\\mathbb{I}_1",
+            "\\mathbb{I}_2",
+            "\\mathbb{I}_3"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    },
+    {
+      "slide_number": 38,
+      "slide_title": "Scientific Claim Ceiling: Development Gate Boundary",
+      "formulas": [
+        {
+          "formula_id": "f38_boundary",
+          "display": "\\eta^N = \\text{UNVERIFIED\\_EPISODE\\_ENDPOINT}, \\quad \\mathrm{Gate} = \\text{OFFLINE\\_OBSERVABILITY\\_ONLY}",
+          "omml_structure": "\\eta^N = UNVERIFIED_EPISODE_ENDPOINT, \\mathrm{Gate} = OFFLINE_OBSERVABILITY_ONLY",
+          "symbols": [
+            "\\eta^N",
+            "\\mathrm{Gate}"
+          ],
+          "subscript_audit": "PASS_ATOMIC"
+        }
+      ]
+    }
+  ]
+}

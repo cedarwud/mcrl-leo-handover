@@ -1,0 +1,370 @@
+{
+  "title": "Fig 4-7 Training and deployment procedure",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Per-step procedure of the implemented MCRL framework per thesis-mc/ch4-method.md 4.7. Order of operations only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1408,
+    "height": 908,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 171.11,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "rx": 3,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 24,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "arrowSize": 9,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 22,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 1.5,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000",
+      "lineHeight": 30
+    }
+  },
+  "sections": [
+    {
+      "id": "loop",
+      "label": "Per-step main loop",
+      "x": 24,
+      "y": 24,
+      "w": 1360,
+      "h": 420
+    },
+    {
+      "id": "train",
+      "label": "Training only",
+      "x": 24,
+      "y": 489,
+      "w": 1360,
+      "h": 395,
+      "style": {
+        "dash": "7 5"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "state",
+      "label": [
+        "Augmented state",
+        "[s_u, χ_u]"
+      ],
+      "x": 97,
+      "y": 94,
+      "w": 262,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      },
+      "section": "loop"
+    },
+    {
+      "id": "norm",
+      "label": [
+        "Context normalization",
+        "network input s̃_u"
+      ],
+      "x": 513,
+      "y": 94,
+      "w": 316,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      },
+      "section": "loop"
+    },
+    {
+      "id": "value",
+      "label": [
+        "Three objective Q-networks",
+        "combined value b_u(a)"
+      ],
+      "x": 983,
+      "y": 94,
+      "w": 370,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "loop"
+    },
+    {
+      "id": "act",
+      "label": [
+        "Per-user arg max",
+        "ε-greedy during training"
+      ],
+      "x": 505,
+      "y": 284,
+      "w": 332,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "loop"
+    },
+    {
+      "id": "env",
+      "label": [
+        "Environment",
+        "lights at most v_max beams"
+      ],
+      "x": 44,
+      "y": 284,
+      "w": 368,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "loop"
+    },
+    {
+      "id": "route",
+      "label": [
+        "Stratified routing",
+        "into two replay buffers"
+      ],
+      "x": 69,
+      "y": 644,
+      "w": 318,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "upd_main",
+      "label": [
+        "Main agent update",
+        "discount β_M"
+      ],
+      "x": 544,
+      "y": 544,
+      "w": 278,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "train"
+    },
+    {
+      "id": "upd_cf",
+      "label": [
+        "Catfish role update",
+        "discount β_CF > β_M"
+      ],
+      "x": 544,
+      "y": 744,
+      "w": 312,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "interv",
+      "label": [
+        "Intervention point",
+        "extra mixed-batch update"
+      ],
+      "x": 1004,
+      "y": 544,
+      "w": 344,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "lcap",
+      "label": [
+        "Penalty shaping L_cap",
+        "added to the main loss"
+      ],
+      "x": 864,
+      "y": 744,
+      "w": 318,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-state-norm",
+      "from": "state",
+      "to": "norm",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-norm-value",
+      "from": "norm",
+      "to": "value",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-value-act",
+      "from": "value",
+      "to": "act",
+      "fromAnchor": "bottom-left",
+      "toAnchor": "top",
+      "waypoints": [
+        {
+          "x": 1133,
+          "y": 242
+        },
+        {
+          "x": 671,
+          "y": 242
+        }
+      ]
+    },
+    {
+      "id": "e-act-env",
+      "from": "act",
+      "to": "env",
+      "fromAnchor": "left",
+      "toAnchor": "right",
+      "label": "joint action",
+      "style": {
+        "labelDy": 95
+      }
+    },
+    {
+      "id": "e-env-state",
+      "from": "env",
+      "to": "state",
+      "fromAnchor": "top",
+      "toAnchor": "bottom",
+      "label": "reward vector, next state",
+      "style": {
+        "labelDx": 175
+      }
+    },
+    {
+      "id": "e-env-route",
+      "from": "env",
+      "to": "route",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-route-cf",
+      "from": "route",
+      "to": "upd_cf",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 444,
+          "y": 697
+        },
+        {
+          "x": 444,
+          "y": 797
+        }
+      ]
+    },
+    {
+      "id": "e-route-main",
+      "from": "route",
+      "to": "upd_main",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 444,
+          "y": 697
+        },
+        {
+          "x": 444,
+          "y": 597
+        }
+      ]
+    },
+    {
+      "id": "e-interv-main",
+      "from": "interv",
+      "to": "upd_main",
+      "fromAnchor": "left",
+      "toAnchor": "right"
+    },
+    {
+      "id": "e-lcap-main",
+      "from": "lcap",
+      "to": "upd_main",
+      "fromAnchor": "top",
+      "toAnchor": "bottom-right",
+      "waypoints": [
+        {
+          "x": 1023,
+          "y": 684
+        },
+        {
+          "x": 718,
+          "y": 684
+        }
+      ]
+    },
+    {
+      "id": "e-main-value",
+      "from": "upd_main",
+      "to": "value",
+      "fromAnchor": "top",
+      "toAnchor": "bottom-right",
+      "label": "gradient step",
+      "style": {
+        "labelDy": -60
+      },
+      "waypoints": [
+        {
+          "x": 683,
+          "y": 466
+        },
+        {
+          "x": 1203,
+          "y": 466
+        }
+      ]
+    }
+  ],
+  "annotations": []
+}

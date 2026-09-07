@@ -1,0 +1,154 @@
+{
+  "title": "System scenario (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Scenario structure. Structure only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1990,
+    "height": 490,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 241.84,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "sat",
+      "label": [
+        "Satellites",
+        "each with V beams"
+      ],
+      "x": 30,
+      "y": 30,
+      "w": 440,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "gate",
+      "label": [
+        "Capacity gate",
+        "at most v_max beams lit"
+      ],
+      "x": 691,
+      "y": 30,
+      "w": 530,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "strokeWidth": 3.0
+      }
+    },
+    {
+      "id": "serve",
+      "label": [
+        "Beams serve users",
+        "handover cost φ_1, φ_2"
+      ],
+      "x": 1442,
+      "y": 30,
+      "w": 518,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "env",
+      "label": [
+        "Environment step",
+        "applies the joint action"
+      ],
+      "x": 1450,
+      "y": 310,
+      "w": 502,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "reward",
+      "label": [
+        "Reward vector",
+        "[r_1, r_2, r_3]"
+      ],
+      "x": 844,
+      "y": 310,
+      "w": 366,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-sat-gate",
+      "from": "sat",
+      "to": "gate",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-gate-serve",
+      "from": "gate",
+      "to": "serve",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-serve-env",
+      "from": "serve",
+      "to": "env",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-env-reward",
+      "from": "env",
+      "to": "reward",
+      "fromAnchor": "left",
+      "toAnchor": "right"
+    }
+  ],
+  "annotations": []
+}

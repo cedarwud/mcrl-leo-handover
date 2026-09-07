@@ -1,0 +1,63 @@
+{
+  "schema": "c2-v03-fresh-context-policy-alignment-review-v1",
+  "reviewer": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "ultra",
+    "session_id": "01a04e2d-c7c6-71f1-8774-390bc079cbd1"
+  },
+  "prompt": {
+    "path": ".scratch/c2-v03/reviews/SOL-ULTRA-C2-FORECAST-LIVE-DECISION-2026-08-29.md",
+    "sha256": "b89d8705b2eb7c3e9785c1ab83f9d166b70b9d3798473db3eb356772475ba6f9"
+  },
+  "reviewed_manifest_status": "PASS",
+  "verdict": "KEEP_H3_FIX_POLICY_ALIGNMENT",
+  "forecast_live_alignment_finding": {
+    "status": "RESULT_VALIDITY_BLOCKER",
+    "finding": "The reviewed forecast copied reference-branch future physical actions for non-focal users during hold, while live execution recomputed Main on the live option branch and overrode only the focal user.",
+    "preferred_alignment": "Both paths must recompute frozen Main on their own contemporaneous branch input, override only the focal user at hold offsets 0 through 2, and execute complete branch-local Main at release offset 3. Cross-world non-focal action equality is not required; branch-local Main policy alignment is required."
+  },
+  "h3_adjudication": "Retain fixed H=3 for the alignment retest because the pre-fix four-seed evidence established reachability and heterogeneity. Do not select adaptive H before removing the policy confound.",
+  "warmup_adjudication": "Do not add warm-up to repair policy alignment; it changes the checkpoint and anchor distribution and needs separate evidence.",
+  "minimum_changes": [
+    "Use one shared candidate-local Main focal-hold compositor in forecast and live execution.",
+    "Replace cross-world non-focal physical identity with branch-local Main policy alignment.",
+    "Hash-bind checkpoint, objective weights, policy/compositor versions, per-offset inputs, Main outputs and composed outputs.",
+    "Version and segregate pre-fix certificates and learning receipts."
+  ],
+  "postfix_gate": {
+    "required": "At least two independent fixed seeds contain one K>=2 schedule after alignment.",
+    "claim_limit": "Opportunity and mechanics only; no EE efficacy, superiority, Chapter-5 or deployment claim."
+  },
+  "application_status_2026_08_30": {
+    "status": "IMPLEMENTED_AND_BOUNDED_GATE_PASS",
+    "candidate_version": "C2_V0.3A_POLICY_ALIGNED_TEMPORAL_FORK",
+    "policy_compositor_version": "candidate-local-main-focal-hold-v1",
+    "tests": {
+      "c2": "230/230 PASS",
+      "retained_v02": "100/100 PASS"
+    },
+    "four_seed_aggregate": {
+      "seeds": 4,
+      "schedules": 8,
+      "scheduled_candidates": 32,
+      "certificate_pass": 6,
+      "certificate_fail": 10,
+      "support_rejection": 16,
+      "contract_error": 0,
+      "K0": 5,
+      "K1": 0,
+      "K_ge_2": 3,
+      "seeds_with_K_ge_2": 2,
+      "options_executed": 3,
+      "q2f_updates": 1,
+      "joint_commits": 1
+    },
+    "code_authority_sha256": "6d6311a75a8eaebeb9bb0f66914aebbe9dfe92d90fd2def249603110f5d7cc4b",
+    "receipt_paths": [
+      "artifacts/c2-v03a-bound-u10-k9-f111-2ep-seed11-20260830-r2.json",
+      "artifacts/c2-v03a-bound-u10-k9-f111-2ep-seed31-20260830-r2.json",
+      "artifacts/c2-v03a-bound-u10-k9-f111-2ep-seed41-20260830-r2.json",
+      "artifacts/c2-v03a-bound-u10-k9-f111-2ep-seed51-20260830-r2.json"
+    ]
+  }
+}

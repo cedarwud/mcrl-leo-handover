@@ -1,0 +1,102 @@
+{
+  "ablation_arms": [
+    "A101",
+    "A011",
+    "A110"
+  ],
+  "ablation_order": [
+    "A101",
+    "A011",
+    "A110"
+  ],
+  "ablation_output_root": "artifacts/multi-catfish-v03a-r7-preliminary-500-20260830-r1",
+  "acrm_eta": 1.0,
+  "base_authorities": {
+    "0.001": {
+      "path": "artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json",
+      "sha256": "d95469b98b2335f32ba7b309bb0a415083d6439f5b68f51989129245fb0fbbc7"
+    },
+    "0.01": {
+      "path": "artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json",
+      "sha256": "ce6f8c49127ba29b4b0af27f123b499c641ae83b97f1c3b53e8c72c4eaa6c265"
+    }
+  },
+  "bridge_output": "artifacts/multi-catfish-v03a-r7-prefix-bridge-20260830-r1",
+  "cached_c2_implementation": false,
+  "checkpoint_every_episodes": 100,
+  "claim_ceiling": "ONE_TRAINED_POLICY_500EP_PRELIMINARY_MAIN_ONLY_TEST_NOT_CHAPTER5_NOT_FORMAL_EFFICACY_NOT_9000",
+  "created_utc": "2026-08-30T14:24:05.351302+00:00",
+  "decision_document": "docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md",
+  "developmental_training_authorized": true,
+  "developmental_training_condition": "VALID_MACHINE_LR_RECEIPT_REQUIRED",
+  "donor_beta": 0.25,
+  "ee_aggregation": "RATIO_OF_POOLED_USEFUL_BITS_TO_POOLED_SYSTEM_ENERGY",
+  "episodes": 500,
+  "epsilon_decay_episodes": 2000,
+  "evaluation_partition": "TEST",
+  "evaluation_policy": "MAIN_ONLY_MASKED_GREEDY",
+  "evaluation_seeds": [
+    2026082904,
+    2026082905,
+    2026082906,
+    2026082907,
+    2026082908
+  ],
+  "evaluation_users": [
+    60,
+    80,
+    100,
+    120,
+    140
+  ],
+  "formal_training_authorized": false,
+  "fresh_training_required": true,
+  "max_c2_candidates": 9,
+  "outcome_values_used_to_freeze": false,
+  "pinned_files": {
+    ".scratch/c2-v03a-trend/freeze_r7_500_authority.py": "c6c095111387ed545a69ae49a9d96dfc6b9f37879ec5b9e6512fd084069e7de4",
+    ".scratch/c2-v03a-trend/r7_500_arm.py": "ed9a1626ab7884f90dc335bddc5595f7e1aeb538da6b9ef38845ff5d0eab413c",
+    ".scratch/c2-v03a-trend/r7_500_authority.py": "dd382c4d6b5037b75217c8f5b172a80b57786d8b540464f07e9dac077d8519d2",
+    ".scratch/c2-v03a-trend/r7_500_evaluate.py": "fd2142d58c4f150554d9a448ee0e9253c4db516326ab9bfabf109b33cbcd2830",
+    ".scratch/c2-v03a-trend/r7_500_lr_router.py": "50353c3b16e41f9f46cdc764a711723596ea3dbad0842f51cf48f61cdd70c24e",
+    ".scratch/c2-v03a-trend/r7_500_prefix_bridge.py": "3d46fe94e42cf9f3b23923e80f4fa2ef2063c26649edc44002f6bc8facc1a82e",
+    "artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json": "d95469b98b2335f32ba7b309bb0a415083d6439f5b68f51989129245fb0fbbc7",
+    "artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json": "ce6f8c49127ba29b4b0af27f123b499c641ae83b97f1c3b53e8c72c4eaa6c265",
+    "docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md": "33d65591967b680651c1f2c5ae3d713420f146f93a06b4eeb8735b5b4259d6af"
+  },
+  "prefix_arms": [
+    "B000",
+    "F111"
+  ],
+  "prefix_evaluation_authorized": true,
+  "resume_allowed": false,
+  "routing_rule": {
+    "checkpoint_selection_performed": false,
+    "contrast": "100*(F111-B000)/B000",
+    "eligibility": "D_FULL_GT_0_AND_SERVICE_LOSS_LE_2PP_AND_ALL_GUARDS_PASS",
+    "eligible_action": "A101_FIRST_THEN_A011_THEN_A110",
+    "endpoint_episodes": 500,
+    "endpoint_metric": "mean_ee_bits_per_j",
+    "endpoint_users": 100,
+    "neither_eligible_action": "A101_FAILURE_ANALYSIS_ONLY",
+    "service_loss_limit_percentage_points": 2.0,
+    "tie_band_relative_percent": 4.0,
+    "tie_metric": "D_full",
+    "tie_preference": 0.001
+  },
+  "schema": "multi-catfish-mcrl-c2-v03a-r7-500-authority-v1",
+  "seeds": {
+    "environment": 2026082902,
+    "mobility": 2026082903,
+    "training": 2026082901
+  },
+  "selected_learning_rate": null,
+  "selection_state": "WAITING_FOR_MACHINE_GATE",
+  "source_matrix_paths": {
+    "0.001": "artifacts/multi-catfish-v03a-1500-lr0p001-20260830-r2",
+    "0.01": "artifacts/multi-catfish-v03a-1500-lr0p01-20260830-r2"
+  },
+  "specialist_bundle_replay_capacity": 2000,
+  "target_update_every": 50,
+  "users": 100
+}

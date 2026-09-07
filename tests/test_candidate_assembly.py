@@ -8,6 +8,7 @@ term is deliberately absent — it needs the power model, which is still open
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -127,7 +128,14 @@ def scene():
     }
 
 
-def _resolve(scene, incumbents=None):
+def _resolve(
+    scene,
+    incumbents=None,
+    *,
+    snapshot=None,
+    dwell_snapshot=None,
+    frozen_window_norad_ids=None,
+):
     return resolve_candidates(
         step_index=0,
         user_xy_km=scene["xy"],
@@ -135,11 +143,16 @@ def _resolve(scene, incumbents=None):
         tracked_satellite_ecef_km=scene["tracked"],
         grid=scene["grid"],
         dwell=scene["dwell"],
-        d2_snapshot=scene["snapshot"],
-        dwell_snapshot=scene["dwell_snapshot"],
+        d2_snapshot=scene["snapshot"] if snapshot is None else snapshot,
+        dwell_snapshot=(
+            scene["dwell_snapshot"]
+            if dwell_snapshot is None
+            else dwell_snapshot
+        ),
         incumbent_norads=(
             np.full(NUM_USERS, -1, dtype=np.int64) if incumbents is None else incumbents
         ),
+        frozen_window_norad_ids=frozen_window_norad_ids,
     )
 
 
@@ -210,6 +223,123 @@ def test_an_incumbent_takes_slot_zero_for_that_user_only(scene):
             assert np.array_equal(
                 withheld.window_norad_ids[uid], plain.window_norad_ids[uid]
             )
+
+
+@requires_archive
+def test_a_frozen_dwell_window_defers_replacements_but_refreshes_d2_state(scene):
+    """B6: slot identities freeze; eligibility and D2 fields do not.
+
+    The test forces both sides of the ablation.  A cached identity loses D2
+    eligibility while an outside satellite becomes the best candidate.  A
+    within-dwell resolve must mask the old row and defer the replacement;
+    an uncached boundary resolve must admit the replacement.  Merely seeing
+    the same window on benign geometry would not test the boundary cache.
+    """
+    boundary = _resolve(scene)
+    frozen = boundary.window_norad_ids.copy()
+    uid = 0
+    dropped = int(frozen[uid, 0])
+    snapshot = scene["snapshot"]
+    column_of = {
+        int(norad): index
+        for index, norad in enumerate(snapshot.norad_ids.tolist())
+    }
+    outside = next(
+        int(norad)
+        for norad in snapshot.norad_ids.tolist()
+        if bool(snapshot.eligible[uid, column_of[int(norad)]])
+        and int(norad) not in set(frozen[uid].tolist())
+    )
+
+    eligible = snapshot.eligible.copy()
+    margin = snapshot.margin_km.copy()
+    ttt = snapshot.ttt_elapsed.copy()
+    rate = snapshot.range_rate_km_s.copy()
+    eligible[uid, column_of[dropped]] = False
+    margin[uid, column_of[outside]] = float(margin[uid].max() + 10_000.0)
+    kept = int(frozen[uid, 1])
+    margin[uid, column_of[kept]] = 123.0
+    ttt[uid, column_of[kept]] = 17
+    rate[uid, column_of[kept]] = -4.5
+    changed = replace(
+        snapshot,
+        eligible=eligible,
+        margin_km=margin,
+        ttt_elapsed=ttt,
+        range_rate_km_s=rate,
+    )
+    within_dwell = replace(
+        scene["dwell_snapshot"],
+        step_index=1,
+        phase=1.0 / 3.0,
+        is_boundary=False,
+        rekeyed_users=np.zeros(NUM_USERS, dtype=bool),
+    )
+
+    within = _resolve(
+        scene,
+        snapshot=changed,
+        dwell_snapshot=within_dwell,
+        frozen_window_norad_ids=frozen,
+    )
+    rebuilt = _resolve(scene, snapshot=changed)
+
+    assert np.array_equal(within.window_norad_ids, frozen)
+    assert not bool(within.slot_occupied[uid, 0])
+    assert not within.masks[uid, :NUM_BEAM_SLOTS].any()
+    assert outside not in within.window_norad_ids[uid]
+    assert outside in rebuilt.window_norad_ids[uid]
+    assert within.assignments[uid].margin_km[1] == pytest.approx(123.0)
+    assert within.assignments[uid].ttt_counter[1] == 17
+    assert within.assignments[uid].radial_rate_km_s[1] == pytest.approx(-4.5)
+
+    reentered_eligibility = eligible.copy()
+    reentered_eligibility[uid, column_of[dropped]] = True
+    reentered = _resolve(
+        scene,
+        snapshot=replace(changed, eligible=reentered_eligibility),
+        dwell_snapshot=within_dwell,
+        frozen_window_norad_ids=frozen,
+    )
+    assert np.array_equal(reentered.window_norad_ids, frozen)
+    assert bool(reentered.slot_occupied[uid, 0])
+    assert reentered.masks[uid, :NUM_BEAM_SLOTS].any()
+
+
+@requires_archive
+def test_a_frozen_window_is_rejected_on_a_dwell_boundary(scene):
+    frozen = _resolve(scene).window_norad_ids
+    with pytest.raises(MCRLContractError, match="boundary must rebuild"):
+        _resolve(scene, frozen_window_norad_ids=frozen)
+
+
+@requires_archive
+def test_all_four_cached_identities_can_become_a_declared_no_op(scene):
+    boundary = _resolve(scene)
+    frozen = boundary.window_norad_ids.copy()
+    snapshot = scene["snapshot"]
+    column_of = {
+        int(norad): index
+        for index, norad in enumerate(snapshot.norad_ids.tolist())
+    }
+    eligible = snapshot.eligible.copy()
+    for norad in frozen[0]:
+        eligible[0, column_of[int(norad)]] = False
+    within_dwell = replace(
+        scene["dwell_snapshot"],
+        step_index=1,
+        phase=1.0 / 3.0,
+        is_boundary=False,
+        rekeyed_users=np.zeros(NUM_USERS, dtype=bool),
+    )
+    result = _resolve(
+        scene,
+        snapshot=replace(snapshot, eligible=eligible),
+        dwell_snapshot=within_dwell,
+        frozen_window_norad_ids=frozen,
+    )
+    assert result.starved_users[0]
+    assert not result.masks[0].any()
 
 
 # -- geometry --------------------------------------------------------------

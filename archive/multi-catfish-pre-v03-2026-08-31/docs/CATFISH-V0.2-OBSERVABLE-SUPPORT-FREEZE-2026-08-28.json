@@ -1,0 +1,55 @@
+{
+  "schema": "multi-catfish-mcrl-v0.2-observable-support-freeze-v1",
+  "status": "FROZEN_BEFORE_SUPPORT_CENSUS",
+  "public_method_name": "Multi-Catfish MCRL",
+  "support_version": "V0.2_OBSERVABLE_ELIGIBILITY",
+  "revision_note": "Portable-evidence and checkpoint-safe intermediate route R6: role predicates, diagonal donor formula, rewards, beta, and option semantics remain unchanged. The C1 EXP corpus is now a v2 repository-relative package with an explicit runtime TLE binding; its original corpus bytes, seeds, strata, and hashes are unchanged, and the outer trend authority fully loads the nested package before any arm launch. The support census authenticates the complete frozen C1 loader, builder, and regression-test set. Every bounded trend arm emits a round-trip-verified Main policy snapshot every 100 episodes plus one rolling latest exact-resume state. Specialist replay remains a 2000 complete-bundle FIFO and the 1500/3000 route remains fail-closed one-seed trend evidence only.",
+  "spec": {
+    "path": "docs/CATFISH-V0.2-OBSERVABLE-SUPPORT-SPEC-2026-08-28.md",
+    "sha256": "a2e9fe0f2a73d58467718c1e1e2bae8196ec795f57e0a30bd217bc2cee4c5cbd"
+  },
+  "implementation": {
+    ".scratch/smc-er-short-ep/smc_er_core.py": "097f550d64bf17600ad3cc86fdbc6094ff796d7782b19d6ba936b4370f6eb666",
+    ".scratch/smc-er-short-ep/smc_er_roles.py": "5f32873ffab4559a2695eff27b3cf76230c0a130cd12f43ae37be2f2f282dfea",
+    ".scratch/smc-er-short-ep/run_short_ep.py": "c2dc73c2bf9f9fc03e7c4ee7d3b336d490c5e92ac028f98a82c12422a63ce953",
+    ".scratch/smc-er-short-ep/c1_exp_corpus.py": "ddb4af1a64460111e42a86d9f21345bf2913e4353c17214c46ee2997c25684d0",
+    ".scratch/smc-er-short-ep/build_c1_exp_corpus.py": "381eaf9c1295fff40c110822fe08008dfcd1adb4464908a27f7918d9cd8f076e"
+  },
+  "tests": {
+    ".scratch/smc-er-short-ep/test_smc_er_core.py": "0efac7720cbb32ab7e9e374c112a22a8d6a275e8064d4cf361b74ce760862764",
+    ".scratch/smc-er-short-ep/test_smc_er_roles.py": "d999a3a48aaa28f73ebf81c82c599014e93191e7ae1ffa108d73e36217f3a17c",
+    ".scratch/smc-er-short-ep/test_run_short_ep.py": "9091d68edf54f75abcbe899334b8b61e64a10cc1cfa2877079040fe7d93dede8",
+    ".scratch/smc-er-short-ep/test_c1_exp_corpus.py": "5cf3567d0f6ea019597d42c2784722313b40e72e6613050288a487e7c7e49256",
+    ".scratch/smc-er-short-ep/test_build_c1_exp_corpus.py": "367510ea83fb2764430159cdca40cb2d3f9d23cdb4c11139beebd539cd565d71"
+  },
+  "census_implementation": {
+    ".scratch/smc-er-short-ep/support_census.py": "b6a3ff7352411561ddad417896104b746d695c7c0a7208407389af58dbe04b13",
+    ".scratch/smc-er-short-ep/test_support_census.py": "76bc5afd151a176c5b996758fce3dd772833a62eab5b144379d9136d739a188c"
+  },
+  "fixed_inputs": {
+    "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+    "baseline_checkpoint": {
+      "path": "artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt",
+      "sha256": "e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b"
+    },
+    "c1_exp_corpus_manifest": {
+      "path": "artifacts/smc-er-c1-authority-20260828/smc-er-c1-exp-corpus-canonical-tle-20260829-v4/c1-exp-corpus-manifest.json",
+      "sha256": "60d05c4b81d3429f15df256f1ea2a8296f0623be2e507fb7f7b4e75c0e570c15"
+    }
+  },
+  "support_census": {
+    "partition": "TRAIN",
+    "episodes_per_seed_pair": 10,
+    "steps_per_episode": 10,
+    "logical_steps_total": 300,
+    "environment_mobility_seed_pairs": [
+      [2026082811, 2026082821],
+      [2026082812, 2026082822],
+      [2026082813, 2026082823]
+    ],
+    "minimum_exposed_step_fraction_per_role": 0.1,
+    "minimum_exposed_steps_per_role": 30,
+    "reward_or_successor_used_for_eligibility": false
+  },
+  "formal_training_authorized": false
+}

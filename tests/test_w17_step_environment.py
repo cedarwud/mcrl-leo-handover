@@ -19,14 +19,21 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mcrl.env.action_contract import NO_OP_ACTION, NUM_ACTIONS, HandoverClass
+from mcrl.env.action_contract import (
+    NO_OP_ACTION,
+    NUM_ACTIONS,
+    HandoverClass,
+    decode_action,
+)
 from mcrl.env.constants import TLE_ROOT_DEFAULT
+from mcrl.env.geometry import angle_between_deg
 from mcrl.env.interference import CANDIDATE_SINR_PROVENANCE
 from mcrl.env.link_budget import (
     BEAM_POWER_MAX_W,
     SEGMENT_GAIN_BUDGET_DB,
     SEGMENT_START_EXCEEDS_BEAM_CEILING,
     SEGMENT_START_POWER_W,
+    recurrence_power_w,
     segment_start_feasibility_report,
 )
 from mcrl.env.mobility import MobilityConfig
@@ -397,6 +404,74 @@ def test_the_warm_start_is_reproducible_and_uses_the_environment_stream():
     assert not np.array_equal(first.link_power_w, other.link_power_w)
 
 
+@requires_archive
+def test_each_user_warm_starts_from_its_own_segment_age(monkeypatch):
+    """The episode boundary must not collapse distinct ages by NORAD id."""
+    from mcrl.env.antenna import transmit_gain_linear
+
+    forced_ages = np.resize(np.array([1, 2, 4, 7, 9]), USERS)
+    monkeypatch.setattr(
+        StepEnvironment,
+        "_draw_segment_ages",
+        lambda self, rng: forced_ages.copy(),
+    )
+    environment = _environment(FROZEN)
+    rng = np.random.default_rng(13)
+    observation = environment.reset(START, rng)
+    actions = np.array(
+        [int(np.flatnonzero(mask)[0]) for mask in observation.masks],
+        dtype=np.int64,
+    )
+
+    user_ecef = environment.driver.user_ecef_km()
+    expected = np.zeros(USERS, dtype=np.float64)
+    wrong_max_age = np.zeros(USERS, dtype=np.float64)
+    max_age_positions = environment.driver.satellite_ecef_at(
+        -int(forced_ages.max())
+    )
+    for uid, action in enumerate(actions.tolist()):
+        slot, beam = decode_action(action)
+        association = observation.candidates.slot_tables[uid].association(action)
+        current_gain = float(
+            transmit_gain_linear(
+                np.asarray(
+                    [observation.candidates.off_axis_deg[uid, slot, beam]]
+                )
+            )[0]
+        )
+
+        def power_from(position: np.ndarray) -> float:
+            start_angle = angle_between_deg(
+                position,
+                environment.driver.grid.centers_ecef_km[association.cell_id],
+                user_ecef[uid],
+            )
+            start_gain = float(
+                transmit_gain_linear(np.asarray([start_angle]))[0]
+            )
+            return float(
+                recurrence_power_w(
+                    start_gain,
+                    current_gain,
+                    p0_w=FROZEN.segment_start_power_w,
+                )
+            )
+
+        own_age_positions = environment.driver.satellite_ecef_at(
+            -int(forced_ages[uid])
+        )
+        expected[uid] = power_from(own_age_positions[association.norad_id])
+        wrong_max_age[uid] = power_from(
+            max_age_positions[association.norad_id]
+        )
+
+    assert not np.allclose(expected, wrong_max_age), (
+        "the fixture must distinguish per-user ages from the overwritten age"
+    )
+    outcome = environment.step(actions, rng)
+    assert np.allclose(outcome.link_power_w, expected, rtol=1e-12, atol=1e-12)
+
+
 def test_the_sensitivity_arm_needs_its_frozen_L():
     """``uniform-segment-length`` is the frozen second arm, not a free option."""
     PhysicsConfig(segment_warm_start="uniform-segment-length", segment_age_steps=6)
@@ -548,6 +623,61 @@ def test_a_different_seed_moves_the_fading_but_not_the_geometry():
     first = _run(_environment(FROZEN), seed=11)[0]
     second = _run(_environment(FROZEN), seed=12)[0]
     assert not np.allclose(first.link_sinr, second.link_sinr)
+
+
+@requires_archive
+def test_candidate_sinr_reuses_the_overlap_path_fading(monkeypatch):
+    """One user/satellite path gets one fading draw in an observation."""
+    from mcrl.env import step as step_module
+
+    environment = _environment(FROZEN)
+    rng = np.random.default_rng(0)
+    observation = environment.reset(START, rng)
+    actions = np.array(
+        [int(np.flatnonzero(mask)[0]) for mask in observation.masks],
+        dtype=np.int64,
+    )
+
+    def window_norads(candidates):
+        return {
+            int(norad)
+            for norad in candidates.window_norad_ids.reshape(-1)
+            if int(norad) >= 0
+        }
+
+    decision_ids = window_norads(observation.candidates)
+    rician_elements = []
+    shadow_elements = []
+    original_rician = step_module.rician_fading_gain
+    original_shadow = step_module.shadow_fading_db
+
+    def record_rician(*args, **kwargs):
+        value = original_rician(*args, **kwargs)
+        rician_elements.append(np.asarray(value).size)
+        return value
+
+    def record_shadow(*args, **kwargs):
+        value = original_shadow(*args, **kwargs)
+        shadow_elements.append(np.asarray(value).size)
+        return value
+
+    monkeypatch.setattr(step_module, "rician_fading_gain", record_rician)
+    monkeypatch.setattr(step_module, "shadow_fading_db", record_shadow)
+
+    outcome = environment.step(actions, rng)
+    next_ids = window_norads(outcome.observation.candidates)
+    previous_ids = {
+        int(norad) for norad in outcome.radiating.norad_ids.tolist()
+    }
+    overlap = next_ids & previous_ids
+    assert overlap, "the fixture must exercise candidate/previous overlap"
+
+    expected_vectors = (
+        len(decision_ids) + len(next_ids) + len(previous_ids - next_ids)
+    )
+    expected_elements = environment.num_users * expected_vectors
+    assert sum(rician_elements) == expected_elements
+    assert sum(shadow_elements) == expected_elements
 
 
 # -- fail-closed ----------------------------------------------------------

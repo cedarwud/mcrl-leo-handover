@@ -1,0 +1,111 @@
+{
+  "kind": "derived_current_mcrl_r2_r3_parameter_diagnostic",
+  "y_axis": "r2-handover-penalty",
+  "anchor_metric": "r2",
+  "anchor_episode": 1300,
+  "curve_order": [
+    {
+      "key": "baseline_modqn",
+      "label": "MODQN",
+      "uses_zscore": false
+    },
+    {
+      "key": "without_experience",
+      "label": "MCRL w/o experience shaping",
+      "uses_zscore": true
+    },
+    {
+      "key": "without_reward",
+      "label": "MCRL w/o reward shaping",
+      "uses_zscore": true
+    },
+    {
+      "key": "without_penalty",
+      "label": "MCRL w/o penalty shaping",
+      "uses_zscore": true
+    },
+    {
+      "key": "full_mcrl",
+      "label": "MCRL",
+      "uses_zscore": true
+    }
+  ],
+  "construction": "Completed per-seed trajectory anchor multiplied by the completed KC1 MCRL scenario ratio; r2 uses the completed handover-rate shape and r3 uses the completed raw-r3 shape.",
+  "trajectory_sources": [
+    {
+      "path": "artifacts/ep2k-scores/abl9k_baseline_raw-TRAJ.json",
+      "sha256": "de28b58c0f8893ba03552bb94637de58ec3647fc0be43e53d17bc057a934a667"
+    },
+    {
+      "path": "artifacts/ep2k-scores/abl9k_baseline-TRAJ.json",
+      "sha256": "f72345f7df72229eaa1089af94aabee7d700335f05e388585ed7314cee84a0fc"
+    },
+    {
+      "path": "artifacts/ep2k-scores/abl9k_strategy3_annealed-TRAJ.json",
+      "sha256": "ac3d5b98a8f525010ba81e5c693000b84ba53f0033fba8d5ce80f85bab265ea8"
+    },
+    {
+      "path": "artifacts/ep2k-scores/abl9k_strategy3_acrm-TRAJ.json",
+      "sha256": "bfd485ad5a9f17c14d19179e809dd2cbf9e7600bc4913d9ec69866d3435a2d32"
+    },
+    {
+      "path": "artifacts/ep2k-scores/abl9k_full_noacrm-TRAJ.json",
+      "sha256": "ea7551b7fb183dbdd87697f03f63d913b3032ff9ccc7143b7badbf43b7f62a6d"
+    },
+    {
+      "path": "artifacts/ep2k-scores/abl9k_full_mccrl-TRAJ.json",
+      "sha256": "fae1a542164675d19c1ebb5323dab8cc75d4726e61d92f0359590f62ed735460"
+    }
+  ],
+  "figures": [
+    {
+      "axis": "num_users",
+      "points": 10,
+      "scenario_shape_source": {
+        "path": "thesis-mc/figures/kc1-ablation/axis_num_users/kc1_ablation_num_users.json",
+        "sha256": "f4ddc4ecbf4215e770b59d8f9ea9357425aa6dbf66e78a6bd2d1fe47b4118a02"
+      }
+    },
+    {
+      "axis": "p_base_w",
+      "points": 10,
+      "scenario_shape_source": {
+        "path": "thesis-mc/figures/kc1-ablation/axis_p_base_w/kc1_ablation_p_base_w.json",
+        "sha256": "630659c4a3658046e4279fbe381f16baf62c39ed4ca87dc4f67e3080d6c503aa"
+      }
+    },
+    {
+      "axis": "p_max_w",
+      "points": 10,
+      "scenario_shape_source": {
+        "path": "thesis-mc/figures/kc1-ablation/axis_p_max_w/kc1_ablation_p_max_w.json",
+        "sha256": "41d317a13465600bd0c346f08dbf27a585615187deecf76a65be0030ced84b83"
+      }
+    },
+    {
+      "axis": "bandwidth_hz",
+      "points": 10,
+      "scenario_shape_source": {
+        "path": "thesis-mc/figures/kc1-ablation/axis_bandwidth_hz/kc1_ablation_bandwidth_hz.json",
+        "sha256": "614ace2ad16cac7aefdb3e63f6f73555370f08e16c40e9fbc0619e1656458fe9"
+      }
+    },
+    {
+      "axis": "noise_psd_dbm_hz",
+      "points": 11,
+      "scenario_shape_source": {
+        "path": "thesis-mc/figures/kc1-ablation/axis_noise_psd_dbm_hz/kc1_ablation_noise_psd_dbm_hz.json",
+        "sha256": "84e473b76e9ba7b83c336ac8745e71822001e462414142bf98779689e8e7543e"
+      }
+    },
+    {
+      "axis": "k_cap",
+      "points": 13,
+      "scenario_shape_source": {
+        "path": "thesis-mc/figures/kc1-ablation/axis_k_cap/kc1_ablation_k_cap.json",
+        "sha256": "bc1e564aed9e8491357f73d48de602674c0b190d876c0e1eba6c701a26331f00"
+      }
+    }
+  ],
+  "claim_ceiling": "Derived visual diagnostic from completed experiments; not a new matched r2/r3 parameter-sweep result."
+}

@@ -122,6 +122,25 @@ def test_an_incumbent_is_honoured_through_the_driver(driver):
 
 
 @requires_archive
+def test_candidate_slot_identities_do_not_reorder_inside_a_dwell(driver):
+    """B6: an incumbent change cannot silently rename the action slots."""
+    first = driver.reset(START, np.random.default_rng(0))
+    new_incumbents = first.window_norad_ids[:, 2].copy()
+
+    # Step 1 is inside the N=4 dwell.  Without the boundary cache, the
+    # ordinary assignment rule would move every requested incumbent to slot
+    # zero and this assertion would fail for a reason forced by the test.
+    second = driver.step(
+        np.random.default_rng(1), incumbent_norads=new_incumbents
+    )
+    assert not second.dwell.is_boundary
+    assert np.array_equal(second.window_norad_ids, first.window_norad_ids)
+    assert np.all(
+        [assignment.is_incumbent[2] for assignment in second.assignments]
+    )
+
+
+@requires_archive
 def test_stepping_before_reset_fails_loud():
     driver = ScenarioDriver(
         TleArchive(_ARCHIVE), ScenarioConfig(mobility=MobilityConfig(num_users=4))

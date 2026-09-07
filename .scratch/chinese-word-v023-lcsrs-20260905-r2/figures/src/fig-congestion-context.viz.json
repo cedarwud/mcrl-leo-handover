@@ -1,0 +1,199 @@
+{
+  "title": "Congestion-context state augmentation",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Construction of the congestion context in the implemented MCRL framework per thesis-mc/ch4-method.md 4.2, equations (4.7) to (4.9). Encoding only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1220,
+    "height": 424,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 148.26,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "rx": 3,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 24,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "arrowSize": 9,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 22,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 1.5,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000",
+      "lineHeight": 30
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "occ",
+      "label": [
+        "Prior occupancy",
+        "last-step users on the beam"
+      ],
+      "x": 24,
+      "y": 24,
+      "w": 358,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "cont",
+      "label": [
+        "Contender count",
+        "users choosing it this step"
+      ],
+      "x": 24,
+      "y": 159,
+      "w": 346,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "rank",
+      "label": [
+        "Signal rank",
+        "this user among contenders"
+      ],
+      "x": 24,
+      "y": 294,
+      "w": 362,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "chi",
+      "label": [
+        "Congestion context χ_u",
+        "three per-beam values"
+      ],
+      "x": 494,
+      "y": 159,
+      "w": 326,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "base",
+      "label": [
+        "Base state s_u"
+      ],
+      "x": 947,
+      "y": 24,
+      "w": 236,
+      "h": 78,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "aug",
+      "label": [
+        "Augmented state",
+        "[s_u, χ_u]"
+      ],
+      "x": 934,
+      "y": 159,
+      "w": 262,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-occ-chi",
+      "from": "occ",
+      "to": "chi",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 464,
+          "y": 77
+        },
+        {
+          "x": 464,
+          "y": 212
+        }
+      ]
+    },
+    {
+      "id": "e-cont-chi",
+      "from": "cont",
+      "to": "chi",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-rank-chi",
+      "from": "rank",
+      "to": "chi",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 464,
+          "y": 347
+        },
+        {
+          "x": 464,
+          "y": 212
+        }
+      ]
+    },
+    {
+      "id": "e-chi-aug",
+      "from": "chi",
+      "to": "aug",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-base-aug",
+      "from": "base",
+      "to": "aug",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    }
+  ],
+  "annotations": []
+}

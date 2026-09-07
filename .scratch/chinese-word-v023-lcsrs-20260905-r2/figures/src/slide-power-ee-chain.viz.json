@@ -1,0 +1,155 @@
+{
+  "title": "Angle-aware energy efficiency chain (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "System-model chain for the first objective. Model only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1990,
+    "height": 490,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 241.84,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "theta",
+      "label": [
+        "Off-axis angle θ",
+        "beam axis to user"
+      ],
+      "x": 30,
+      "y": 30,
+      "w": 412,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "gain",
+      "label": [
+        "Transmit beam gain",
+        "G^T(θ)"
+      ],
+      "x": 698,
+      "y": 30,
+      "w": 454,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "power",
+      "label": [
+        "Beam power P^DL, P^tot",
+        "amplifier and fixed"
+      ],
+      "x": 1408,
+      "y": 30,
+      "w": 552,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "share",
+      "label": [
+        "Per-user power share",
+        "κ of beam power"
+      ],
+      "x": 1447,
+      "y": 310,
+      "w": 474,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "eta",
+      "label": [
+        "Angle-aware EE",
+        "r_1 = η^EE"
+      ],
+      "x": 829,
+      "y": 310,
+      "w": 398,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6",
+        "strokeWidth": 3.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-theta-gain",
+      "from": "theta",
+      "to": "gain",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-gain-power",
+      "from": "gain",
+      "to": "power",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-power-share",
+      "from": "power",
+      "to": "share",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-share-eta",
+      "from": "share",
+      "to": "eta",
+      "fromAnchor": "left",
+      "toAnchor": "right"
+    }
+  ],
+  "annotations": []
+}

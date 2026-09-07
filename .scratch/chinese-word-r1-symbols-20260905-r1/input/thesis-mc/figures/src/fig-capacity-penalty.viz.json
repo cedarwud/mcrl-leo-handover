@@ -1,0 +1,180 @@
+{
+  "title": "Capacity penalty",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Differentiable capacity penalty in the implemented MCRL framework per thesis-mc/ch4-method.md 4.6, equations (4.17) to (4.19). Mechanism only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1355,
+    "height": 344,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 164.67,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "rx": 3,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 24,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "arrowSize": 9,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 22,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 1.5,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000",
+      "lineHeight": 30
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "val",
+      "label": [
+        "Scalarized value",
+        "V_u(a)"
+      ],
+      "x": 24,
+      "y": 24,
+      "w": 258,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "soft",
+      "label": [
+        "Per-user preference π_u(a)",
+        "softmax of Ṽ_u at temp. τ"
+      ],
+      "x": 475,
+      "y": 24,
+      "w": 356,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "press",
+      "label": [
+        "Per-beam pressure Π",
+        "summed over users"
+      ],
+      "x": 1024,
+      "y": 24,
+      "w": 300,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "loss",
+      "label": [
+        "Added to the training loss",
+        "deployment arg max unchanged"
+      ],
+      "x": 31,
+      "y": 214,
+      "w": 406,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "pen",
+      "label": [
+        "Capacity penalty L_cap",
+        "λ Σ Δ_s²"
+      ],
+      "x": 563,
+      "y": 214,
+      "w": 328,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "tail",
+      "label": [
+        "Tail mass Δ_s",
+        "beyond the top v_max"
+      ],
+      "x": 1017,
+      "y": 214,
+      "w": 314,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-val-soft",
+      "from": "val",
+      "to": "soft",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-soft-press",
+      "from": "soft",
+      "to": "press",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-press-tail",
+      "from": "press",
+      "to": "tail",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-tail-pen",
+      "from": "tail",
+      "to": "pen",
+      "fromAnchor": "left",
+      "toAnchor": "right"
+    },
+    {
+      "id": "e-pen-loss",
+      "from": "pen",
+      "to": "loss",
+      "fromAnchor": "left",
+      "toAnchor": "right"
+    }
+  ],
+  "annotations": []
+}

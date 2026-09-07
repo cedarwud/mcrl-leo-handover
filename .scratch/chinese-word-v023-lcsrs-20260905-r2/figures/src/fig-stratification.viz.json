@@ -1,0 +1,177 @@
+{
+  "title": "Energy-efficiency stratification",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Three-way routing of catfish transitions in the implemented MCRL framework per thesis-mc/ch4-method.md 4.3, equation (4.10). Mechanism only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1158,
+    "height": 424,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 140.73,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "rx": 3,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 24,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "arrowSize": 9,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 22,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 1.5,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000",
+      "lineHeight": 30
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "trans",
+      "label": [
+        "Catfish role transition",
+        "energy efficiency η"
+      ],
+      "x": 24,
+      "y": 159,
+      "w": 310,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "rule",
+      "label": [
+        "Stratify by quantiles",
+        "q_lo, q_hi over window W"
+      ],
+      "x": 424,
+      "y": 159,
+      "w": 358,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6",
+        "strokeWidth": 2.5
+      }
+    },
+    {
+      "id": "cf_pool",
+      "label": [
+        "Catfish replay buffer",
+        "highest band"
+      ],
+      "x": 834,
+      "y": 24,
+      "w": 300,
+      "h": 106,
+      "style": {
+        "stroke": "#333941",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "main_pool",
+      "label": [
+        "Main replay buffer",
+        "middle band"
+      ],
+      "x": 834,
+      "y": 159,
+      "w": 280,
+      "h": 106,
+      "style": {
+        "stroke": "#333941"
+      }
+    },
+    {
+      "id": "discard",
+      "label": [
+        "Discard",
+        "lowest band"
+      ],
+      "x": 834,
+      "y": 294,
+      "w": 216,
+      "h": 106,
+      "style": {
+        "stroke": "#78818a"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-trans-rule",
+      "from": "trans",
+      "to": "rule",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-rule-main",
+      "from": "rule",
+      "to": "main_pool",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-rule-cf",
+      "from": "rule",
+      "to": "cf_pool",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 794,
+          "y": 212
+        },
+        {
+          "x": 794,
+          "y": 77
+        }
+      ]
+    },
+    {
+      "id": "e-rule-discard",
+      "from": "rule",
+      "to": "discard",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 794,
+          "y": 212
+        },
+        {
+          "x": 794,
+          "y": 347
+        }
+      ]
+    }
+  ],
+  "annotations": []
+}

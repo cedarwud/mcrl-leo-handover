@@ -1,0 +1,192 @@
+{
+  "title": "Two ways per-user arg max can lose throughput or coverage",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Two structural situations the per-user arg max rule can produce under the capacity limit, per thesis-mc/ch4-method.md 4.1, 4.2 and 4.6. These are possibilities of the decision rule, NOT a claim that the baseline degenerates. Structure only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1408,
+    "height": 673,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 171.11,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "rx": 3,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 24,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "arrowSize": 9,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 22,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 1.5,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000",
+      "lineHeight": 30
+    }
+  },
+  "sections": [
+    {
+      "id": "crowd",
+      "label": "Same-beam crowding: bandwidth is shared",
+      "x": 24,
+      "y": 24,
+      "w": 1360,
+      "h": 290
+    },
+    {
+      "id": "cap",
+      "label": "More distinct beams than a satellite can light",
+      "x": 24,
+      "y": 359,
+      "w": 1360,
+      "h": 290
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a_pick",
+      "label": [
+        "Users with similar inputs",
+        "each take arg max"
+      ],
+      "x": 54,
+      "y": 114,
+      "w": 340,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "crowd"
+    },
+    {
+      "id": "a_same",
+      "label": [
+        "Several can choose",
+        "the same beam"
+      ],
+      "x": 558,
+      "y": 114,
+      "w": 284,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "crowd"
+    },
+    {
+      "id": "a_harm",
+      "label": [
+        "Bandwidth is shared",
+        "throughput per user drops"
+      ],
+      "x": 1006,
+      "y": 114,
+      "w": 348,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "strokeWidth": 2.5
+      },
+      "section": "crowd"
+    },
+    {
+      "id": "b_spread",
+      "label": [
+        "Users choose more distinct",
+        "beams than v_max"
+      ],
+      "x": 54,
+      "y": 449,
+      "w": 360,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "cap"
+    },
+    {
+      "id": "b_gate",
+      "label": [
+        "Satellite lights only",
+        "v_max of them"
+      ],
+      "x": 582,
+      "y": 449,
+      "w": 286,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "cap"
+    },
+    {
+      "id": "b_harm",
+      "label": [
+        "Users on unlit beams",
+        "get no service this step"
+      ],
+      "x": 1036,
+      "y": 449,
+      "w": 318,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "strokeWidth": 2.5
+      },
+      "section": "cap"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-a_pick-a_same",
+      "from": "a_pick",
+      "to": "a_same",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-a_same-a_harm",
+      "from": "a_same",
+      "to": "a_harm",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-b_spread-b_gate",
+      "from": "b_spread",
+      "to": "b_gate",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-b_gate-b_harm",
+      "from": "b_gate",
+      "to": "b_harm",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    }
+  ],
+  "annotations": []
+}

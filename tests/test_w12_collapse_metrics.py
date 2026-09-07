@@ -164,10 +164,49 @@ def test_the_range_used_for_normalisation_is_reported():
     q = _dispersed(rng)
     metrics = compute_collapse_metrics(q, _all_valid(), q.argmax(axis=1))
     assert metrics.q_range > 0.0
-    assert metrics.q_margin == pytest.approx(
-        metrics.q_margin_raw / metrics.q_range
+    ordered = np.sort(q, axis=1)[:, ::-1]
+    per_user = (ordered[:, 0] - ordered[:, 1]) / (
+        ordered[:, 0] - ordered[:, -1]
     )
+    assert metrics.q_margin == pytest.approx(float(np.mean(per_user)))
     assert "q_range" in metrics.as_dict()
+
+
+def test_normalised_margin_is_averaged_per_user_not_as_a_ratio_of_means():
+    """Heterogeneous Q scales must not let one user dominate the normaliser.
+
+    User 0 has a 1/100 relative margin and user 1 has a 1/1 relative
+    margin.  The frozen wording is per-user normalisation, so the aggregate
+    is mean([0.01, 1.0]) = 0.505.  Dividing the two population means would
+    instead return 1/50.5 and silently reweight users by their Q range.
+    """
+    q = np.array(
+        [
+            [100.0, 99.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ]
+    )
+    metrics = compute_collapse_metrics(
+        q,
+        np.ones_like(q, dtype=bool),
+        np.array([0, 0]),
+    )
+
+    assert metrics.q_margin == pytest.approx(0.505)
+    assert metrics.q_margin_raw == pytest.approx(1.0)
+    assert metrics.q_range == pytest.approx(50.5)
+
+
+def test_legacy_active_beam_name_exposes_its_action_slot_semantics():
+    q = np.array([[2.0, 1.0], [1.0, 2.0]])
+    metrics = compute_collapse_metrics(
+        q,
+        np.ones_like(q, dtype=bool),
+        np.array([0, 1]),
+    )
+
+    assert metrics.active_action_slot_count == metrics.active_beam_count == 2.0
+    assert "distinct_action_slots" in metrics.format_report()
 
 
 # -- entropy ---------------------------------------------------------------

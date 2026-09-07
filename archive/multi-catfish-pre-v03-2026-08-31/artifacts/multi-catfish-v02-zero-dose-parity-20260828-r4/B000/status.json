@@ -1,0 +1,116 @@
+{
+  "arm": "B000",
+  "authority": {
+    "prereg_path": "/home/u24/papers/mcrl-leo-handover/artifacts/PREREG-FROZEN-2026-08-25-R2.json",
+    "prereg_sha256": "8bf13e289e18d663699a39c778dfe5af5b7538781c08b42bf5d085776cd44543",
+    "tle_file_count": 373,
+    "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+    "tle_root_path": "/tmp/mcrl-tle-frozen-20260820-v1"
+  },
+  "claim_ceiling": "ONE-SEED-SHORT-EP-DEVELOPMENTAL-NOT-CHAPTER5",
+  "config": {
+    "activation": "tanh",
+    "batch_size": 128,
+    "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+    "checkpoint_primary_report": "final-episode-policy",
+    "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+    "comparison_role": "Baseline MODQN",
+    "device": "cpu",
+    "discount_factor": 0.9,
+    "episodes": 2,
+    "epsilon_decay_episodes": 1,
+    "epsilon_end": 0.01,
+    "epsilon_start": 1.0,
+    "hidden_layers": [
+      100,
+      50,
+      50
+    ],
+    "learning_rate": 0.001,
+    "load_balance_calibration_mode": "baseline-paper-weight",
+    "load_normalization": "divide_by_num_users",
+    "method_family": "MODQN-baseline",
+    "objective_weights": [
+      0.5,
+      0.3,
+      0.2
+    ],
+    "offset_scale_km": 100.0,
+    "phase": "developmental-short-ep",
+    "policy_sharing_mode": "shared",
+    "r1_reward_label": "system-energy-efficiency",
+    "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+    "replay_capacity": 50000,
+    "reward_calibration_enabled": true,
+    "reward_calibration_mode": "divide-by-fixed-scales",
+    "reward_calibration_scales": [
+      2029238.4328742754,
+      1.0,
+      6.0
+    ],
+    "reward_calibration_source": "probe-P3-and-analytic-bound",
+    "reward_normalization_mode": "raw-unscaled",
+    "snr_encoding": "log1p",
+    "target_update_every_episodes": 1,
+    "theta_encoding": "raw_radians",
+    "training_experiment_id": "B000",
+    "training_experiment_kind": "baseline-short-ep"
+  },
+  "gate_manifest": {
+    "schema": "multi-catfish-mcrl-consumer-gates-v2",
+    "status": "absent-fail-closed",
+    "verdicts": {
+      "C1": "shadow",
+      "C2": "shadow",
+      "C3": "shadow"
+    }
+  },
+  "label": "Baseline MODQN",
+  "result": {
+    "checkpoint": "/home/u24/papers/mcrl-leo-handover/artifacts/multi-catfish-v02-zero-dose-parity-20260828-r4/B000/final-checkpoint.pt",
+    "checkpoint_sha256": "fb84d80883e1ede2152989104d6e569662bf5a8d4f158df5559acc75fb3bca98",
+    "dispatch": "unchanged_MODQNTrainer.train",
+    "episodes": 2,
+    "masking_diagnostics": {
+      "all_invalid_next_transitions_skipped": 0,
+      "decision_steps_seen": 2000,
+      "no_op_transitions_skipped": 0
+    },
+    "training_state": "/home/u24/papers/mcrl-leo-handover/artifacts/multi-catfish-v02-zero-dose-parity-20260828-r4/B000/training-state.pt",
+    "training_state_sha256": "d4a6b68017248fe732ae447434f5cca8ec5cbb084bfeced2b6ff8df266ae5963"
+  },
+  "runtime": {
+    "numpy": "2.5.2",
+    "python": "3.12.3",
+    "torch": "2.13.0+cpu"
+  },
+  "schema": "multi-catfish-mcrl-one-arm-short-ep-v2",
+  "seeds": {
+    "environment": 2026082831,
+    "mobility": 2026082841,
+    "training": 2026082805
+  },
+  "source_files_sha256": {
+    "CATFISH-V0.2-OBSERVABLE-SUPPORT-FREEZE-2026-08-28.json": "2722a916212f53b0bf2194e6d48e2e9a0fdad249ccd15aaade239f9088416595",
+    "CATFISH-V0.2-OBSERVABLE-SUPPORT-SPEC-2026-08-28.md": "a2e9fe0f2a73d58467718c1e1e2bae8196ec795f57e0a30bd217bc2cee4c5cbd",
+    "MULTI-CATFISH-CONCEPT-ALGORITHM-FREEZE-V0.1-2026-08-27.md": "66ed0e56baa0915ef12b98f720ada3af36d60fb55ad852f4e3e35cdc8407b312",
+    "MULTI-CATFISH-PAPER-ALGORITHM-V0.4-2026-08-27.md": "314e7a63e1d3fdd537f51bab451ebea1620eee59f4157fa9feae0bcd073ad6ad",
+    "PREREG-FROZEN-2026-08-25-R2.json": "8bf13e289e18d663699a39c778dfe5af5b7538781c08b42bf5d085776cd44543",
+    "THREE-CATFISH-EE-POSITIVE-ACCEPTANCE-CONTRACT-V0.1-2026-08-28.md": "eda80c6688b79c3e311116d3599c14644251655dd569bcaeb3425fa683a485db",
+    "c1_exp_corpus.py": "ff35c4992e4980b9138b89a7b9633de4444955944d794cd59c29caf3fe764e59",
+    "c2_activation_churn_core.py": "0d7f85714779366cf8c18ca07adbb9f7ac0367cb34deef28f24a5134ee3f15d1",
+    "c2_activation_churn_dev_support.py": "7bd728c3a6ae093fd700e55383662c0ae512025004de00729165ac3719dccc47",
+    "c2_activation_churn_runtime_adapter.py": "61a93feea69d4411fbcbbb970c709a22a69f0585937b56472a962f27342f6dc9",
+    "c3_reward_aligned_v3_core.py": "89e4663db80b7c1bacd900bb3264e628a787e9604e36c8e5e68166c4041171e3",
+    "c3_reward_aligned_v3_runtime_adapter.py": "05f7593c31f84c01c2ddc83b6c17a52c38d19c6108810112382a86b5965e5c26",
+    "c3_reward_aligned_v3_shadow_runner.py": "11fc1e38cfbb27284f98289223b0a57c9c09a7ffe9a1a15137c8e346175a0b58",
+    "c3_reward_aligned_v3_trainer_backend.py": "6b52849d4735b580bc2733872dc2e986fdd106e45dd05acc98669109ffa0e9a2",
+    "intermediate_trend_authority.py": "c064e6d2707f4ac177c802d6e79ccd8e998f1f521435cdb6618d651e6042e818",
+    "run_short_ep.py": "811331f5ea6e018c332b580de3f9693e0a7782d158b48f9a23d3f197bd89fe91",
+    "smc_er_core.py": "c791ed4bc5825f5a7d1b32e897ab1a914fd7f582ab629ffc05f08bfafa1252bd",
+    "smc_er_roles.py": "5f32873ffab4559a2695eff27b3cf76230c0a130cd12f43ae37be2f2f282dfea",
+    "sweep_evaluation.py": "50d80c8b2ff27667bdd33bd43d2e5fb5d810420e786fef9b416ba636b84462b0"
+  },
+  "status": "complete",
+  "users": 100
+}

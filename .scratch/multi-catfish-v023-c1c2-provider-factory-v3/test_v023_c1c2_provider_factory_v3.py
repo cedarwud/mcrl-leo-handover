@@ -1,0 +1,556 @@
+"""Producer-derived contract tests for the C1/C2 successor provider factory."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+from dataclasses import replace
+from functools import lru_cache
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import shutil
+import sys
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+sys.path.insert(0, str(HERE))
+
+import v023_c1c2_provider_factory_v3 as FACTORY
+
+from mcrl.env.action_contract import NUM_ACTIONS
+from mcrl.runtime.ee_axis_c1_selector import (
+    C1_CLUSTER_NEUTRAL_SOURCE_RULE,
+    C1_INFORMED_SOURCE_RULE,
+)
+from mcrl.runtime.ee_axis_c2_neutral_source import C2_INFORMED_SOURCE_RULE
+from mcrl.runtime.ee_axis_opening_dataset import (
+    EEAxisOpeningDataset,
+    EEAxisOpeningDatasetRow,
+    write_opening_dataset,
+)
+from mcrl.runtime.ee_axis_opening_runner import C3_NEUTRAL_SOURCE_RULE
+from mcrl.runtime.ee_axis_opening_source import (
+    EEAxisOpeningRawPair,
+    _canonical_sha256 as opening_sha256,
+    _raw_payload as opening_raw_payload,
+)
+from mcrl.runtime.ee_axis_state import (
+    EE_AXIS_STATE_DIM,
+    EE_AXIS_STATE_SCHEMA,
+    EE_AXIS_STATE_SCHEMA_SHA256,
+)
+from mcrl.runtime.ee_axis_temporal_pairs import C2_NEUTRAL_SOURCE_RULE
+
+
+GENERATOR_PATH = (
+    REPO
+    / ".scratch/multi-catfish-v023-c1c2-target-generation/"
+    "generate_v023_c1c2_targets.py"
+)
+LAUNCH_DIR = REPO / ".scratch/multi-catfish-v023-c1c2-target-generation-launch"
+REAL_EXCERPT = LAUNCH_DIR / "fixtures-real-shard/c2-neutral-world-2026121708.excerpt.json"
+
+
+def _sha_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _digest(label: str) -> str:
+    return hashlib.sha256(label.encode("ascii")).hexdigest()
+
+
+def _canonical(payload: object) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+        + b"\n"
+    )
+
+
+def _load_path_module(name: str, path: Path):
+    existing = sys.modules.get(name)
+    if existing is not None:
+        return existing
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@lru_cache(maxsize=1)
+def _producer_modules():
+    controller = _load_path_module(
+        "v023_c1c2_v3_fixture_controller",
+        LAUNCH_DIR / "run_v023_c1c2_targets_server.py",
+    )
+    generator = controller._load_generator()
+    assert Path(generator.__file__).resolve() == GENERATOR_PATH.resolve()
+    sealer = _load_path_module(
+        "v023_c1c2_v3_fixture_sealer",
+        LAUNCH_DIR / "seal_v023_c1c2_target_output.py",
+    )
+    return generator, controller, sealer
+
+
+def _c1_dataset(*, mode: str, world: int) -> EEAxisOpeningDataset:
+    source_manifest = _digest("successor-target-source-manifest")
+    checkpoint = _digest("successor-target-checkpoint")
+    common_field = _digest(f"successor-common-field-{mode}-{world}")
+    state = np.zeros(EE_AXIS_STATE_DIM, dtype=np.float32)
+    state[0] = np.float32(world % 1000)
+    mask = np.zeros(NUM_ACTIONS, dtype=np.bool_)
+    mask[[0, 1]] = True
+    reference_joint = np.asarray([0, 1], dtype=np.int64)
+    candidate_joint = np.asarray([1, 1], dtype=np.int64)
+    raw_placeholder = EEAxisOpeningRawPair(
+        source_policy_version=1,
+        anchor_sha256=_digest(f"c1-anchor-{mode}-{world}"),
+        source_manifest_sha256=source_manifest,
+        checkpoint_sha256=checkpoint,
+        common_random_field_sha256=common_field,
+        state_schema=EE_AXIS_STATE_SCHEMA,
+        state_schema_sha256=EE_AXIS_STATE_SCHEMA_SHA256,
+        state_observation_sha256=_digest(f"c1-observation-{mode}-{world}"),
+        focal_user=0,
+        state=state,
+        action_mask=mask,
+        reference_action=0,
+        candidate_action=1,
+        reference_joint_actions=reference_joint,
+        candidate_joint_actions=candidate_joint,
+        reference_physical_keys=((500, 1), (501, 1)),
+        candidate_physical_keys=((501, 1), (501, 1)),
+        reference_rates_bps=np.asarray([100.0, 50.0], dtype=np.float64),
+        candidate_rates_bps=np.asarray([110.0, 50.0], dtype=np.float64),
+        reference_system_power_w=10.0,
+        candidate_system_power_w=11.0,
+        lambda_bits_per_j=float.fromhex(FACTORY.EXPECTED_LAMBDA_HEX),
+        interval_s=float.fromhex(FACTORY.EXPECTED_INTERVAL_HEX),
+        comparison_sha256="0" * 64,
+    )
+    raw = replace(
+        raw_placeholder,
+        comparison_sha256=opening_sha256(opening_raw_payload(raw_placeholder)),
+    )
+    from mcrl.runtime.ee_axis_opening_pairs import build_opening_pair
+
+    c1_rule = (
+        C1_INFORMED_SOURCE_RULE
+        if mode == "informed"
+        else C1_CLUSTER_NEUTRAL_SOURCE_RULE
+    )
+    kwargs = {
+        "source_policy_version": raw.source_policy_version,
+        "anchor_sha256": raw.anchor_sha256,
+        "source_manifest_sha256": source_manifest,
+        "checkpoint_sha256": checkpoint,
+        "common_random_field_sha256": common_field,
+        "focal_user": 0,
+        "state": state,
+        "action_mask": mask,
+        "reference_action": 0,
+        "candidate_action": 1,
+        "reference_joint_actions": reference_joint,
+        "candidate_joint_actions": candidate_joint,
+        "reference_rates_bps": raw.reference_rates_bps,
+        "candidate_rates_bps": raw.candidate_rates_bps,
+        "reference_system_power_w": raw.reference_system_power_w,
+        "candidate_system_power_w": raw.candidate_system_power_w,
+        "lambda_bits_per_j": raw.lambda_bits_per_j,
+        "interval_s": raw.interval_s,
+    }
+    c1 = build_opening_pair(source_route="C1", source_rule=c1_rule, **kwargs)
+    c3 = build_opening_pair(
+        source_route="C3", source_rule=C3_NEUTRAL_SOURCE_RULE, **kwargs
+    )
+    row = EEAxisOpeningDatasetRow(
+        raw_pair=raw,
+        admitted_route="C1",
+        c1_source_rule=c1.source_rule,
+        c3_source_rule=c3.source_rule,
+        c1_comparison_sha256=c1.comparison_sha256,
+        c3_comparison_sha256=c3.comparison_sha256,
+        zeta1_focal_surplus_bits=c1.zeta1_focal_surplus_bits,
+        zeta3_nonfocal_externality_bits=c3.zeta3_nonfocal_externality_bits,
+        identity_residual_bits=c1.identity_residual_bits,
+    )
+    return EEAxisOpeningDataset(
+        source_policy_version=1,
+        source_manifest_sha256=source_manifest,
+        checkpoint_sha256=checkpoint,
+        common_random_field_sha256=common_field,
+        state_schema=EE_AXIS_STATE_SCHEMA,
+        state_schema_sha256=EE_AXIS_STATE_SCHEMA_SHA256,
+        rows=(row,),
+    )
+
+
+def _c1_binding(
+    dataset: EEAxisOpeningDataset, *, mode: str, world: int
+) -> dict[str, object]:
+    row = dataset.rows[0]
+    raw = row.raw_pair
+    candidate = raw.candidate_physical_keys[raw.focal_user]
+    assert candidate is not None
+    return {
+        "mode": mode,
+        "source_anchor_sha256": raw.anchor_sha256,
+        "source_record_sha256": _digest(f"source-record-{mode}-{world}"),
+        "world": world,
+        "step_index": 0,
+        "focal_user": raw.focal_user,
+        "reference_action": raw.reference_action,
+        "candidate_action": raw.candidate_action,
+        "candidate_physical_key": list(candidate),
+        "source_rule": row.c1_source_rule,
+        "source_seed": world,
+        "common_random_field_sha256": raw.common_random_field_sha256,
+        "comparison_sha256": raw.comparison_sha256,
+    }
+
+
+def _c2_dataset_and_binding(
+    *, mode: str, world: int
+) -> tuple[dict[str, object], dict[str, object]]:
+    excerpt = json.loads(REAL_EXCERPT.read_text(encoding="ascii"))
+    row = deepcopy(excerpt["rows"][0])
+    row["world"] = world
+    row["mode"] = mode
+    row["source_rule"] = (
+        C2_INFORMED_SOURCE_RULE if mode == "informed" else C2_NEUTRAL_SOURCE_RULE
+    )
+    binding = {
+        "mode": mode,
+        "source_anchor_sha256": row["source_anchor_sha256"],
+        "world": world,
+        "step_index": row["step_index"],
+        "focal_user": row["focal_user"],
+        "reference_action": row["reference_action"],
+        "candidate_action": row["candidate_action"],
+        "candidate_physical_key": row["candidate_physical_key"],
+        "source_rule": row["source_rule"],
+        "schedule_sha256": row["schedule_sha256"],
+        "ops3_anchor_sha256": row["provenance"]["ops3_anchor_sha256"],
+        "ops3_projection_sha256": row["provenance"]["ops3_projection_sha256"],
+        "target_delta": row["target_delta"],
+        "target_unit": row["target_unit"],
+    }
+    dataset = {
+        "schema": excerpt["schema"],
+        "source_manifest_sha256": _digest("successor-target-source-manifest"),
+        "checkpoint_sha256": _digest("successor-target-checkpoint"),
+        "lambda_bits_per_j": FACTORY.EXPECTED_LAMBDA_HEX,
+        "kappa_bits": FACTORY.EXPECTED_KAPPA_HEX,
+        "target_unit": excerpt["target_unit"],
+        "rows": [row],
+    }
+    return dataset, binding
+
+
+def _schedule_row(binding: Mapping[str, object], *, route: str) -> dict[str, object]:
+    excluded = (
+        {"mode", "common_random_field_sha256", "comparison_sha256"}
+        if route == "C1"
+        else {
+            "mode",
+            "schedule_sha256",
+            "ops3_anchor_sha256",
+            "ops3_projection_sha256",
+            "target_delta",
+            "target_unit",
+        }
+    )
+    return {key: value for key, value in binding.items() if key not in excluded}
+
+
+def _write_artifact(root: Path) -> Path:
+    generator, controller, sealer = _producer_modules()
+    shards: dict[str, Path] = {}
+    expected_schedule: dict[str, dict[str, object]] = {}
+    sealed = SimpleNamespace(
+        capture_path=root.parent / "capture.json",
+        capture_sha256=_digest("capture"),
+        materialization_dir=root.parent / "materialization",
+        materialization_manifest_sha256=_digest("materialization-manifest"),
+        pool_sha256=_digest("pool"),
+        source_manifest_sha256=_digest("successor-target-source-manifest"),
+        checkpoint_sha256=_digest("successor-target-checkpoint"),
+    )
+    ctx = SimpleNamespace(
+        modules=SimpleNamespace(
+            opening_dataset=SimpleNamespace(
+                write_opening_dataset=write_opening_dataset
+            )
+        ),
+        source_family="producer-derived-successor-fixture",
+        lambda_bits_per_j=float.fromhex(FACTORY.EXPECTED_LAMBDA_HEX),
+        kappa_bits=float.fromhex(FACTORY.EXPECTED_KAPPA_HEX),
+        interval_s=float.fromhex(FACTORY.EXPECTED_INTERVAL_HEX),
+    )
+    for mode in ("informed", "neutral"):
+        for world in FACTORY.EXPECTED_WORLDS:
+            c1_dataset = _c1_dataset(mode=mode, world=world)
+            c1_binding = _c1_binding(c1_dataset, mode=mode, world=world)
+            c2_dataset, c2_binding = _c2_dataset_and_binding(
+                mode=mode, world=world
+            )
+            key = f"{mode}:{world}"
+            shard_schedule = {
+                key: {
+                    "mode": mode,
+                    "world": world,
+                    "C1": [_schedule_row(c1_binding, route="C1")],
+                    "C2": [_schedule_row(c2_binding, route="C2")],
+                }
+            }
+            shard = root.parent / f"{root.name}-{mode}-{world}-shard"
+            generator._write_outputs(
+                shard,
+                sealed=sealed,
+                ctx=ctx,
+                schedule=shard_schedule,
+                c1_datasets={(mode, world): c1_dataset},
+                c2_datasets={(mode, world): c2_dataset},
+                c1_bindings=(c1_binding,),
+                c2_bindings=(c2_binding,),
+            )
+            shards[key] = shard
+            expected_schedule.update(shard_schedule)
+    controller._merge(shards, root, expected_schedule=expected_schedule)
+    sealer.seal(root)
+    return root
+
+
+def _reseal(root: Path) -> None:
+    files = {
+        path.name: path.read_bytes()
+        for path in root.iterdir()
+        if path.name not in {"MANIFEST.sha256", "COMPLETE"}
+    }
+    manifest = "".join(
+        f"{hashlib.sha256(files[name]).hexdigest()}  {name}\n"
+        for name in sorted(files)
+    ).encode("ascii")
+    (root / "MANIFEST.sha256").write_bytes(manifest)
+    (root / "COMPLETE").write_bytes(
+        f"{hashlib.sha256(manifest).hexdigest()}  MANIFEST.sha256\n".encode(
+            "ascii"
+        )
+    )
+
+
+def _write_learner_manifest(path: Path) -> Path:
+    bindings = [
+        {
+            "path": relative,
+            "module": module,
+            "sha256": _sha_file(REPO / relative),
+        }
+        for relative, module in sorted(
+            FACTORY.REQUIRED_LEARNER_RUNTIME_MODULES.items()
+        )
+    ]
+    path.write_bytes(
+        _canonical(
+            {
+                "schema": FACTORY.LEARNER_MANIFEST_SCHEMA,
+                "status": FACTORY.LEARNER_MANIFEST_STATUS,
+                "claim_ceiling": FACTORY.CLAIM_CEILING,
+                "bindings": bindings,
+            }
+        )
+    )
+    return path
+
+
+@pytest.fixture(scope="module")
+def sealed_inputs(tmp_path_factory):
+    base = tmp_path_factory.mktemp("provider-fixture")
+    target = _write_artifact(base / "targets")
+    learner_manifest = _write_learner_manifest(base / "learner-manifest.json")
+    return target, learner_manifest
+
+
+def _config_payload(target: Path, learner_manifest: Path) -> dict[str, object]:
+    return {
+        "schema": FACTORY.CONFIG_SCHEMA,
+        "contract_sha256": _digest("successor-contract"),
+        "target_root": str(target),
+        "target_manifest_sha256": _sha_file(target / "MANIFEST.sha256"),
+        "target_receipt_sha256": _sha_file(target / "receipt.json"),
+        "learner_manifest_sha256": _sha_file(learner_manifest),
+        "model_config_sha256": _digest("successor-model-config"),
+        "train_seed": FACTORY.TRAIN_SEED,
+        "epoch_budget": FACTORY.EPOCH_BUDGET,
+    }
+
+
+def _provider(monkeypatch, target: Path, learner_manifest: Path):
+    monkeypatch.setenv(
+        FACTORY.LEARNER_MANIFEST_PATH_ENV, str(learner_manifest)
+    )
+    config = FACTORY.C1C2ProviderConfig.from_payload(
+        _config_payload(target, learner_manifest)
+    )
+    return FACTORY.build_provider(config)
+
+
+def _call(provider, cursor: int, route: str):
+    neutral = provider.next_batch(
+        route=route, source="neutral", update_cursor=cursor
+    )
+    informed = provider.next_batch(
+        route=route, source="informed", update_cursor=cursor
+    )
+    return neutral, informed
+
+
+def test_positive_load_identity_and_exact_resume(sealed_inputs, monkeypatch):
+    target, learner_manifest = sealed_inputs
+    first = _provider(monkeypatch, target, learner_manifest)
+    second = _provider(monkeypatch, target, learner_manifest)
+    assert isinstance(first, FACTORY.DeterministicRouteBatchProvider)
+    assert first.provider_identity == second.provider_identity
+    assert first.planned_epoch_budget == 100
+    identity = first.provider_identity_payload
+    assert identity["routes"] == ["C1", "C2"]
+    assert identity["train_seed"] == FACTORY.TRAIN_SEED
+    assert len(identity["learner_runtime"]) == len(
+        FACTORY.REQUIRED_LEARNER_RUNTIME_MODULES
+    )
+    assert all(record["loaded_from"].startswith(str(REPO)) for record in identity["learner_runtime"])
+
+    _call(first, 0, "C1")
+    partial = first.next_batch(route="C2", source="neutral", update_cursor=1)
+    saved = first.sampler_state()
+    continuation = first.next_batch(
+        route="C2", source="informed", update_cursor=1
+    )
+
+    second.load_sampler_state(saved)
+    restored = second.next_batch(
+        route="C2", source="informed", update_cursor=1
+    )
+    assert restored.file_id == continuation.file_id
+    assert np.array_equal(restored.batch.states, continuation.batch.states)
+    assert np.array_equal(
+        restored.batch.normalized_target_deltas,
+        continuation.batch.normalized_target_deltas,
+    )
+    assert partial.source == "neutral"
+    assert len(second.sampler_state()["consumed_file_order"]) == 4
+
+
+def test_third_route_request_is_rejected(sealed_inputs, monkeypatch):
+    target, learner_manifest = sealed_inputs
+    provider = _provider(monkeypatch, target, learner_manifest)
+    with pytest.raises(FACTORY.V023C1C2ProviderFactoryError, match="C1/C2"):
+        provider.next_batch(route="C3", source="neutral", update_cursor=0)
+
+
+@pytest.mark.parametrize("field", ("r7_root", "extra"))
+def test_closed_config_rejects_r7_and_extra_fields(sealed_inputs, field):
+    target, learner_manifest = sealed_inputs
+    payload = _config_payload(target, learner_manifest)
+    payload[field] = "/tmp/authority" if field == "r7_root" else True
+    with pytest.raises(FACTORY.V023C1C2ProviderFactoryError):
+        FACTORY.C1C2ProviderConfig.from_payload(payload)
+
+
+def test_missing_neutral_mode_fails_closed(sealed_inputs, monkeypatch, tmp_path):
+    source, learner_manifest = sealed_inputs
+    target = tmp_path / "targets"
+    shutil.copytree(source, target)
+    receipt_path = target / "receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="ascii"))
+    for route in ("C1", "C2"):
+        receipt["datasets"][route] = {
+            key: value
+            for key, value in receipt["datasets"][route].items()
+            if key.startswith("informed:")
+        }
+        receipt["row_bindings"][route] = [
+            item
+            for item in receipt["row_bindings"][route]
+            if item["mode"] == "informed"
+        ]
+    for path in target.glob("*-neutral-world-*.json"):
+        path.unlink()
+    receipt_path.write_bytes(_canonical(receipt))
+    _reseal(target)
+    with pytest.raises(FACTORY.V023C1C2ProviderFactoryError):
+        _provider(monkeypatch, target, learner_manifest)
+
+
+def test_one_flipped_shard_byte_fails_closed(sealed_inputs, monkeypatch, tmp_path):
+    source, learner_manifest = sealed_inputs
+    target = tmp_path / "targets"
+    shutil.copytree(source, target)
+    shard = target / f"c1-informed-world-{FACTORY.EXPECTED_WORLDS[0]}.json"
+    raw = bytearray(shard.read_bytes())
+    raw[len(raw) // 2] ^= 1
+    shard.write_bytes(bytes(raw))
+    with pytest.raises(FACTORY.V023C1C2ProviderFactoryError, match="digest drifted"):
+        _provider(monkeypatch, target, learner_manifest)
+
+
+def test_manifest_drift_after_load_is_detected(sealed_inputs, monkeypatch, tmp_path):
+    source, learner_manifest = sealed_inputs
+    target = tmp_path / "targets"
+    shutil.copytree(source, target)
+    provider = _provider(monkeypatch, target, learner_manifest)
+    manifest = target / "MANIFEST.sha256"
+    manifest.write_bytes(manifest.read_bytes() + b"\n")
+    with pytest.raises(FACTORY.V023C1C2ProviderFactoryError):
+        provider.next_batch(route="C1", source="neutral", update_cursor=0)
+
+
+def test_c2_target_delta_is_never_divided_again(sealed_inputs, monkeypatch):
+    target, learner_manifest = sealed_inputs
+    loaded = FACTORY._TARGET.load_completed_target_artifact(target)
+    expected = loaded.for_mode("neutral").c2_pair_batch.normalized_target_deltas
+    provider = _provider(monkeypatch, target, learner_manifest)
+    _call(provider, 0, "C1")
+    delivered = provider.next_batch(
+        route="C2", source="neutral", update_cursor=1
+    ).batch.normalized_target_deltas
+    assert delivered.dtype == expected.dtype
+    assert delivered.shape == expected.shape
+    assert delivered.tobytes() == expected.tobytes()
+
+
+def test_uppercase_test_path_is_rejected(sealed_inputs):
+    target, learner_manifest = sealed_inputs
+    payload = _config_payload(target, learner_manifest)
+    payload["target_root"] = "/tmp/closed-TEST-targets"
+    with pytest.raises(FACTORY.V023C1C2ProviderFactoryError, match="TEST"):
+        FACTORY.C1C2ProviderConfig.from_payload(payload)
+
+
+def test_make_provider_uses_digest_bound_environment_config(
+    sealed_inputs, monkeypatch, tmp_path
+):
+    target, learner_manifest = sealed_inputs
+    config_path = tmp_path / "provider-config.json"
+    config_path.write_bytes(_canonical(_config_payload(target, learner_manifest)))
+    monkeypatch.setenv(FACTORY.CONFIG_PATH_ENV, str(config_path))
+    monkeypatch.setenv(FACTORY.CONFIG_SHA256_ENV, _sha_file(config_path))
+    monkeypatch.setenv(
+        FACTORY.LEARNER_MANIFEST_PATH_ENV, str(learner_manifest)
+    )
+    provider = FACTORY.make_provider()
+    assert provider.planned_epoch_budget == FACTORY.EPOCH_BUDGET
+

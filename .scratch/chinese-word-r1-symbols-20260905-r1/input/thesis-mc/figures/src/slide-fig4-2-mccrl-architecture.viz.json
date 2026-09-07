@@ -1,0 +1,285 @@
+{
+  "title": "MCRL overall architecture (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Architecture of the implemented MCRL framework. Structure only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 2104,
+    "height": 730,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 255.69,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [
+    {
+      "id": "deploy",
+      "label": "Deployment path",
+      "x": 30,
+      "y": 30,
+      "w": 2044,
+      "h": 300
+    },
+    {
+      "id": "train",
+      "label": "Training only",
+      "x": 30,
+      "y": 380,
+      "w": 2044,
+      "h": 320,
+      "style": {
+        "dash": "7 5"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "env",
+      "label": [
+        "Environment",
+        "beam cap v_max"
+      ],
+      "x": 83,
+      "y": 130,
+      "w": 404,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "context",
+      "label": [
+        "Congestion context",
+        "+ normalization"
+      ],
+      "x": 581,
+      "y": 130,
+      "w": 446,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "qnets",
+      "label": [
+        "Three Q-networks",
+        "Q_1, Q_2, Q_3"
+      ],
+      "x": 1121,
+      "y": 130,
+      "w": 426,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "strokeWidth": 3.0
+      }
+    },
+    {
+      "id": "select",
+      "label": [
+        "Scalarize by Ω",
+        "per-user arg max"
+      ],
+      "x": 1641,
+      "y": 130,
+      "w": 402,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "catfish",
+      "label": [
+        "Catfish Q-networks",
+        "competes on r_1"
+      ],
+      "x": 60,
+      "y": 510,
+      "w": 450,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "buffers",
+      "label": [
+        "Stratified routing",
+        "to replay buffers"
+      ],
+      "x": 600,
+      "y": 510,
+      "w": 408,
+      "h": 150,
+      "style": {
+        "stroke": "#333941"
+      },
+      "section": "train"
+    },
+    {
+      "id": "interv",
+      "label": [
+        "Periodic intervention",
+        "mixed batch"
+      ],
+      "x": 1097,
+      "y": 510,
+      "w": 474,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "cappen",
+      "label": [
+        "Capacity penalty",
+        "into training loss"
+      ],
+      "x": 1640,
+      "y": 510,
+      "w": 404,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-env-context",
+      "from": "env",
+      "to": "context",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-context-q",
+      "from": "context",
+      "to": "qnets",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-q-select",
+      "from": "qnets",
+      "to": "select",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-select-env",
+      "from": "select",
+      "to": "env",
+      "fromAnchor": "top",
+      "toAnchor": "top",
+      "label": "joint action",
+      "waypoints": [
+        {
+          "x": 1842,
+          "y": 75
+        },
+        {
+          "x": 285,
+          "y": 75
+        }
+      ]
+    },
+    {
+      "id": "e-env-catfish",
+      "from": "env",
+      "to": "catfish",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "label": "transitions",
+      "style": {
+        "labelDx": 160,
+        "labelDy": 85
+      }
+    },
+    {
+      "id": "e-catfish-buffers",
+      "from": "catfish",
+      "to": "buffers",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-buffers-interv",
+      "from": "buffers",
+      "to": "interv",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-interv-q",
+      "from": "interv",
+      "to": "qnets",
+      "fromAnchor": "top",
+      "toAnchor": "bottom"
+    },
+    {
+      "id": "e-cappen-q",
+      "from": "cappen",
+      "to": "qnets",
+      "fromAnchor": "top",
+      "toAnchor": "bottom-right",
+      "waypoints": [
+        {
+          "x": 1842,
+          "y": 445
+        },
+        {
+          "x": 1369,
+          "y": 445
+        }
+      ]
+    }
+  ],
+  "annotations": []
+}

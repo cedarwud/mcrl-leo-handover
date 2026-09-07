@@ -1,0 +1,239 @@
+{
+  "title": "Multi-objective Markov decision process",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Formalization used by the implemented framework per thesis-mc/ch4-method.md 4.1 and 4.2. Structure only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1374,
+    "height": 588,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 166.98,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "rx": 3,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 24,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "arrowSize": 9,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 22,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 1.5,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000",
+      "lineHeight": 30
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "state",
+      "label": [
+        "State s_u(t)",
+        "connection, SINR, angle, load"
+      ],
+      "x": 24,
+      "y": 24,
+      "w": 390,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "context",
+      "label": [
+        "Congestion context",
+        "χ_u per candidate beam"
+      ],
+      "x": 547,
+      "y": 24,
+      "w": 328,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "norm",
+      "label": [
+        "Context normalization",
+        "input s̃_u"
+      ],
+      "x": 1008,
+      "y": 24,
+      "w": 316,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "qnets",
+      "label": [
+        "Three objective",
+        "Q-networks Q_1, Q_2, Q_3"
+      ],
+      "x": 982,
+      "y": 214,
+      "w": 368,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "select",
+      "label": [
+        "Scalarize ζ by Ω",
+        "per-user arg max"
+      ],
+      "x": 580,
+      "y": 214,
+      "w": 262,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "env",
+      "label": [
+        "Environment",
+        "capacity limit v_max"
+      ],
+      "x": 68,
+      "y": 214,
+      "w": 302,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "reward",
+      "label": [
+        "Reward vector",
+        "[r_1, r_2, r_3]"
+      ],
+      "x": 99,
+      "y": 384,
+      "w": 240,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "feasible",
+      "label": [
+        "Feasible actions",
+        "from mask m_u(t)"
+      ],
+      "x": 574,
+      "y": 384,
+      "w": 274,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-state-context",
+      "from": "state",
+      "to": "context",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-context-norm",
+      "from": "context",
+      "to": "norm",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-norm-qnets",
+      "from": "norm",
+      "to": "qnets",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-qnets-select",
+      "from": "qnets",
+      "to": "select",
+      "fromAnchor": "left",
+      "toAnchor": "right"
+    },
+    {
+      "id": "e-select-env",
+      "from": "select",
+      "to": "env",
+      "fromAnchor": "left",
+      "toAnchor": "right",
+      "label": "action a_u(t)"
+    },
+    {
+      "id": "e-feasible-select",
+      "from": "feasible",
+      "to": "select",
+      "fromAnchor": "top",
+      "toAnchor": "bottom"
+    },
+    {
+      "id": "e-env-reward",
+      "from": "env",
+      "to": "reward",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-env-state",
+      "from": "env",
+      "to": "state",
+      "fromAnchor": "top",
+      "toAnchor": "bottom",
+      "label": "transition P, next state",
+      "style": {
+        "labelDx": 130
+      }
+    }
+  ],
+  "annotations": [
+    {
+      "id": "beta_note",
+      "label": [
+        "Q-networks give the expected β-discounted return"
+      ],
+      "x": 99,
+      "y": 534
+    }
+  ]
+}

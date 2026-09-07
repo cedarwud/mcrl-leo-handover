@@ -1,0 +1,87 @@
+{
+  "schema": "multi-catfish-mcrl-pilot100-request-v1",
+  "claim_ceiling": "ONE_SEED_100EP_PILOT_NOT_TREND_NOT_EFFICACY_NOT_CHAPTER5",
+  "formal_training_authorized": false,
+  "automatic_longer_run_authorized": false,
+  "9000_authorized": false,
+  "episodes": 100,
+  "learning_rate": 0.001,
+  "arms": [
+    "B000",
+    "F111",
+    "A011",
+    "A101",
+    "A110"
+  ],
+  "seeds": {
+    "training": 2026082911,
+    "environment": 2026082912,
+    "mobility": 2026082913
+  },
+  "evaluation_seeds": [
+    2026082914,
+    2026082915,
+    2026082916,
+    2026082917,
+    2026082918
+  ],
+  "users": 100,
+  "evaluation_users": [
+    60,
+    80,
+    100,
+    120,
+    140
+  ],
+  "epsilon_decay_episodes": 2000,
+  "target_update_every": 50,
+  "checkpoint_every_episodes": 100,
+  "specialist_bundle_replay_capacity": 2000,
+  "donor_beta": 0.25,
+  "acrm_eta": 1.0,
+  "output_root": "artifacts/multi-catfish-v02-pilot100-20260829-lr0p001",
+  "freeze_manifest": {
+    "path": "docs/CATFISH-V0.2-OBSERVABLE-SUPPORT-FREEZE-2026-08-28.json",
+    "sha256": "a3676e9d0cb42ed16245b3ce574e6cf1975bed4095aa877d936f679327a7047d"
+  },
+  "parent_intermediate_authority": {
+    "path": "artifacts/multi-catfish-v02-intermediate-authority-20260828/1500-lr0p001.json",
+    "sha256": "84085d54b30bce3e33d203ea2e44c329cf21a8b85ac06bb05729c85adbe6742f"
+  },
+  "ten_ep_smoke_receipt": {
+    "path": "artifacts/multi-catfish-v02-server-smoke-20260829-r2-lr0p001/matrix-receipt.json",
+    "sha256": "0eebb582a3d4e9194f64429f75ba9c81b8aba1de67ac1abe8230052b2fe65f0c"
+  },
+  "protected_source_sha256": {
+    ".scratch/smc-er-short-ep/build_c1_exp_corpus.py": "381eaf9c1295fff40c110822fe08008dfcd1adb4464908a27f7918d9cd8f076e",
+    ".scratch/smc-er-short-ep/c1_exp_corpus.py": "ddb4af1a64460111e42a86d9f21345bf2913e4353c17214c46ee2997c25684d0",
+    ".scratch/smc-er-short-ep/intermediate_trend_authority.py": "a8793469fdd74a8a32e633d32c0f36e9ec1ed52367b18db1edfcc6639673a464",
+    ".scratch/smc-er-short-ep/run_intermediate_trend_matrix.py": "532224b278087a1948d5ea6c7532e478ac732fb6e2e4e993e4a4bddb90298075",
+    ".scratch/smc-er-short-ep/run_short_ep.py": "c2dc73c2bf9f9fc03e7c4ee7d3b336d490c5e92ac028f98a82c12422a63ce953",
+    ".scratch/smc-er-short-ep/smc_er_core.py": "097f550d64bf17600ad3cc86fdbc6094ff796d7782b19d6ba936b4370f6eb666",
+    ".scratch/smc-er-short-ep/smc_er_roles.py": "5f32873ffab4559a2695eff27b3cf76230c0a130cd12f43ae37be2f2f282dfea",
+    ".scratch/smc-er-short-ep/sweep_evaluation.py": "50d80c8b2ff27667bdd33bd43d2e5fb5d810420e786fef9b416ba636b84462b0"
+  },
+  "protected_authority_sha256": {
+    "artifacts/multi-catfish-v02-intermediate-authority-20260828/1500-lr0p001.json": "84085d54b30bce3e33d203ea2e44c329cf21a8b85ac06bb05729c85adbe6742f",
+    "artifacts/multi-catfish-v02-intermediate-authority-20260828/1500-lr0p01.json": "ed2fbbf5e5770e24d1be6f13e8e61602da9e708e926ad0b126ab2d5a3f843b78",
+    "artifacts/multi-catfish-v02-intermediate-authority-20260828/3000-lr0p001.json": "92b314fc0b50e68425c17f4a0d443ce3b5ee401afb735ce6a89314a013a82803",
+    "artifacts/multi-catfish-v02-intermediate-authority-20260828/3000-lr0p01.json": "644595a7913c92fd0a7536ff5b43c266c82105e5bf2626764e5c0164aed6c231"
+  },
+  "pilot_route_source_sha256": {
+    ".scratch/smc-er-short-ep/pilot100_arm_verifier.py": "438ac7695e508820c4de7d5ec9d07a9cab0c93e2f19086170c70296a8c5ec8e7",
+    ".scratch/smc-er-short-ep/pilot100_authority.py": "1366f4b69eb0d44bd3d518ba495ef4961d16ff9bd8b13b5bee651d07ae8acfd5",
+    ".scratch/smc-er-short-ep/pilot100_sweep_verifier.py": "d19cebf40561c99824a7999fb47e93da4f9363bbf37ef27f98294adb8bef1db8",
+    ".scratch/smc-er-short-ep/run_pilot100_arm.py": "e2baa14e5935358d5446ba8bb7a77500812a280c0f433720846ce8bc15f173c2",
+    ".scratch/smc-er-short-ep/run_pilot100_matrix.py": "66aa9e2b06eb7aa4be1d34ac90c3ce058841b686f916e2fd4f4a213807faea01"
+  },
+  "continuation_rule": {
+    "automatic_longer_run": false,
+    "complete_all_five_arms_and_sweep_after_start": true,
+    "early_stop_on_observed_ee_sign": false,
+    "technical_stop": "Stop queued arms only after launch/runtime/receipt verification failure; drain already-running arms and preserve the failed receipt.",
+    "c2_redesign_gate": "If C2 marginal Full-(Full-C2) is negative at all five user loads, do not launch 1500EP before a C2 design adjudication.",
+    "zero_power_policy": "Nonzero zero-power intervals preserve the completed diagnostic data but block longer-run eligibility pending a physics adjudication.",
+    "longer_run_gate": "Any 1500EP decision requires a fresh post-pilot review; this authority never launches or authorises it automatically."
+  }
+}

@@ -1,5 +1,105 @@
 # 偏離登記表 — 相對 MODQN(PAP-2024-MORL-MULTIBEAM)明載值
 
+## Multi-Catfish 實驗證據偏離（不屬於 X 類參數偏離）
+
+### E-1 10EP matched ablation：`VOID_UNINTERPRETABLE_INSTRUMENT`
+
+`artifacts/multi-catfish-v03-10ep-matched-ablation-20260831/receipt.json`
+保留為 provenance，但不得作為 C1/C2/C3 正負效果或 EE efficacy 證據。
+審核發現三個 Q 的總分主要由 state-independent per-action bias 支配，且
+`A101`、`A110`、`N000` 在受查 real-state set 上產生相同動作；因此原本
+五個 `directional_pass` 欄位全部失去 route-level 解析力。C1 neutral
+control 另有 anchor-user cluster geometry 不匹配，C2 另只使用兩筆
+plumbing-smoke rows。正式 invalidation overlay 為同目錄的
+`AUDIT-VOID.json`；完整證據與下一個 E1 gate 見
+`MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md`。
+
+### E-2 free-output E1 validation：`DESIGN_ONLY_ACTION_SLOT_SHORTCUT`
+
+第一版 E1 的三個 `228 -> 28` free-output Q surface 在 held-out states 上
+有約 0.90--0.96 的 fixed action-slot explanatory fraction；而 C2/C3 的
+action-only null MAE 又比 parameter-free zero predictor 更差，因此舊
+`skill` 會高估 learnability。這不否定 C1/C2/C3 的物理 target，但否定
+該 learner 與單一 action-only denominator 作為 test-opening authority。
+修正採三個獨立 local action-shared scalar scorers，並以
+`min(action-only, zero, train-median)` 作 stronger null。舊 validation 已
+參與修正選擇，降為 design-only；舊 test 仍封存未讀。Fresh 4/3/0
+train/validation supplement 與 bounded 500EP gate 見
+`MULTI-CATFISH-MCRL-V03-E1-ACTION-SHARED-AMENDMENT-2026-09-01.md`。
+
+### E-3 action-shared E1 validation：`INSUFFICIENT_C2_ACTION_GRAPH_COVERAGE`
+
+Fresh action-shared 4/3/0 corpus 在任何 target、MAE、model prediction、EE 或
+test outcome 被檢視之前，target-free census 發現 C1/C3 的 train comparison
+graph 已涵蓋全部 28 actions，但 C2 的 36 筆 validation contrasts 中有 6 筆
+跨越未連通 component。依 instrument-validity contract §7，這是
+`INSUFFICIENT_COVERAGE`，不是 C2 target 或 Multi-Catfish efficacy 的負結果。
+依同一 contract §9，只允許一次已封存規則的 C2 train-only fresh-seed
+expansion：不得重生 C1/C3、不得更動 validation bytes、不得開 test、不得計算
+EE，也不得依 target/outcome 選 seed。補充後若 C2 graph 仍未連通，必須停止並
+重新設計，不得再換第二組 seed pool。
+
+固定 20-seed prepare 後，所有原不支援 contrasts 在 schedule topology 上已連通，
+但事前加嚴的 `3 clusters / 2 seeds` redundancy gate 中，actions 4 與 14 各只有
+`2 clusters / 2 seeds`，因此 receipt 仍為 `INSUFFICIENT_COVERAGE` 且未生成任何
+pair outcome。後續 target-free design probe 把 focal enumeration 暫時展開到
+100，只能證明 actions 4/14 的物理候選存在；上位 contract §3.1 明定每個 world
+anchor 最多五個 focal users，因此該 probe 不得成為正式 source。Opus Max 裁定
+下一個合法方向是維持 cap=5、增加 distinct-anchor／per-seed schedule coverage 的
+action-balanced C2 source-selector redesign；不得事後放寬 gate、換第二個 seed
+pool，亦不得改動 C1/C3/EE 公式。
+
+### E-4 fresh action-shared validation：`ONE_SHOT_MASKED_MEANMAX_FALLBACK`
+
+正式 action-balanced C2 TRAIN expansion 以固定 seed prefix `2026092201--04`
+生成 48 筆 sealed rows，completed-row action graph 通過原定的
+`3 clusters / 2 seeds` gate；沒有開 test 或計算 EE。其後 fresh V3 validation
+在共同 rung 10 通過 C1、C2、collision、action-main-effect 與全部 C2
+anchor-balanced／leave-one-anchor-out gates，但 C3 對 strongest null 的 mean
+skill 為 `-0.008553`（`0/3` initializations 為正），因此依 action-shared
+amendment §6 回傳 `EVALUATE_MASKED_MEANMAX_ONCE`，不是 500EP GO。
+
+`masked mean/max` 並非在看到這個 fresh C3 結果後才發明。它先在
+design-only rows 上與四個 context variants 比較，當時使用 action-only null：
+
+| scorer | C1 skill | C2 skill | C3 skill |
+|---|---:|---:|---:|
+| local | 0.2711 | 0.2659 | 0.1298 |
+| mean | 0.2477 | 0.2681 | 0.1286 |
+| **meanmax** | 0.2440 | 0.2669 | **0.1532** |
+| deepset | 0.2402 | 0.2656 | 0.1395 |
+
+因此 meanmax 是 design split 上依 C3 選出的單一 fallback；fresh split 才是
+它第一次接受 `min(action-only, zero, train-median)` strongest-null gate。這也
+表示同一 fresh validation bytes 共有兩次預先界定的 look：先 local、再且只再
+一次 meanmax。此 exploratory sign gate 沒有 alpha-control；第二次結果不論
+GO/STOP 都耗盡 fallback，不得改 seed、rung、null、source、target、hyperparameter
+或再試第三個 scorer family。
+
+Meanmax 只把每個 route-local shared scorer 的輸入由
+`[x_a,g]` 擴成 `[x_a,g,mean_m(x),max_m(x)]`，legal mask 必須使用資料中的
+顯式 Boolean action mask，不得從 state feature 推導。每個 head 的輸入寬度
+`12 -> 28`、參數數 `8,951 -> 10,551`（約 `+17.9%`）；三個 initialization
+seed 相同，但因第一層寬度不同，不是 weight-matched comparison。物理 C1/C2/C3、
+三個獨立 Q heads、pair loss、`beta=0.1`、`lr=0.001`、hidden widths、共同 rung
+規則、deployment sum/masked argmax 與 EE endpoint 全部不變。只有完整重跑同一
+Section 5 gate 且三 routes 全過，才可授權一次 bounded 500-source-epoch screen；
+否則必須記為 `STOP_MASKED_MEANMAX_VALIDATION`。
+
+### E-5 C2-k1 successor：`OFFSET_ONE_TARGET_FOUR_OFFSET_FALSIFICATION`
+
+V0.3 §3 的「offsets 1--3 全屬 C2，不能省略 release offset 3」只約束現已退役的
+four-offset hold/release C2。V0.5 controlled-tape 因 candidate branch 缺乏 native
+support 而封存為 diagnostics-only 後，V0.6 改以 offset 1 的乾淨 branch-local
+Q1+Q3 successor effect 作為 C2 target；offsets 2--3 不再進 target，只作為
+four-offset oracle-headroom falsification outcome，用來檢查 surrogate reversal。此偏離
+不改 final ratio-of-sums EE、C1、C3、三個獨立 Q networks、共同 safe mask、或
+deployment 的直接未加權 `argmax(Q1+Q2+Q3)`。V0.6 T1 通過只允許一次 bounded
+Q2 learner screen；失敗只否證該 single-application C2-k1 formulation，不得移除
+mandatory C2 route。
+
+---
+
 類別依 `NEW-PROJECT-PARAMETER-SPEC-2026-08-21.md` §0:
 **P** 原文明載 / **P′** 其他已發表來源 / **D** 推導 / **S** 自訂 / **X** **偏離 P**。
 

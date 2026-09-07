@@ -1,0 +1,79 @@
+{
+  "augments_prereg": "artifacts/PREREG-FROZEN-2026-08-25.json",
+  "augments_prereg_digest": "d469d81fab617485b86897180ff52bacc2c514ca604bb676ab1585c8b15560f6",
+  "authority": "controller instruction '按照你的建議進行' authorizes the recommended corrected rerun protocol before any corrected probe result is observed",
+  "claim_boundary": "This is a post-freeze corrective execution addendum. It does not claim that the 2026-08-25 prereg record originally contained a probe epoch seed.",
+  "date": "2026-08-25",
+  "digest": "0d778ccdbbaf016310e1b541c421d98f95b06c993bc509a637ef37d386824560",
+  "epoch_protocol": {
+    "distribution": "EpisodeStartSampler over the frozen train split: date uniform over available file dates and time uniform over [0,86400) seconds, floor-snapped to the frozen decision step",
+    "matching": "one 200-epoch schedule is drawn once; P2 and each P3 policy use all 200 epochs; P7 arms use the same first 100 epochs",
+    "seed_derivation": "numpy SeedSequence(master_seed).spawn(4); child index 3 draws episode epochs"
+  },
+  "grid": {
+    "P2": {
+      "dwell_steps": [
+        2,
+        3,
+        4
+      ],
+      "episodes_per_arm": 200,
+      "policy": "stay-if-possible",
+      "users": 100
+    },
+    "P3": {
+      "episodes_per_policy": 200,
+      "policies": [
+        "nearest-eligible",
+        "random-masked",
+        "stay-if-possible"
+      ],
+      "selection_mapping_policy": "stay-if-possible",
+      "users": 100
+    },
+    "P7": {
+      "arms": {
+        "main": {
+          "mode": "uniform-episode-length"
+        },
+        "sensitivity": {
+          "mode": "uniform-segment-length",
+          "segment_age_steps": 6
+        }
+      },
+      "episodes_per_arm": 100,
+      "policy": "random-masked",
+      "users": 100
+    }
+  },
+  "historical_scripts": {
+    "scripts/run_probe_p3.py": "12-episode, one-policy diagnostic only; not a formal corrected-grid entry point",
+    "scripts/run_probes.py": "8-episode smoke diagnostic only; not a formal corrected-grid entry point"
+  },
+  "master_seed": 20260823,
+  "master_seed_provenance": "retained from the pre-result 2026-08-23 P2/P4/P5/P7 probe runner and P2 artifact; selected before corrected results, not tuned from them",
+  "output_policy": {
+    "default_directory": "artifacts/probes-2026-08-25-rerun01",
+    "existing_directory": "REFUSE",
+    "historical_artifacts": "PRESERVE"
+  },
+  "reference_policy_seed": 20260822,
+  "result_policy": {
+    "c1_comparison_decimals": 3,
+    "c1_comparison_rule": "ROUND_HALF_UP the corrected continuous p95 to the three decimal places stored by the frozen resolved literal before testing equality",
+    "c1_rule": "p95 of r1 over served steps under stay-if-possible",
+    "c3_rule": "p95 of abs(r3) over served steps under stay-if-possible, rounded to the nearest integer",
+    "p6_on_mapping_change": "BLOCK",
+    "p6_on_mapping_match": "UNLOCK",
+    "required_artifact_on_change": "a new visible corrective prereg seal that applies the already-declared deterministic mappings"
+  },
+  "schema": "mcrl-corrected-probe-protocol-v1",
+  "status": "SEALED-BEFORE-CORRECTED-PROBE-RESULTS",
+  "steps_per_episode": 10,
+  "stream_layout": {
+    "action": 2,
+    "env": 0,
+    "episode_epoch": 3,
+    "mobility": 1
+  }
+}

@@ -1,0 +1,418 @@
+{
+  "title": "Fig 4-2 MCRL overall architecture",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Architecture of the implemented MCRL framework per thesis-mc/ch4-method.md 4.1 and thesis-mc/notation-table.md. Structure only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1428,
+    "height": 898,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 173.54,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "rx": 3,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 24,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "arrowSize": 9,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 22,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 1.5,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000",
+      "lineHeight": 30
+    }
+  },
+  "sections": [
+    {
+      "id": "deploy",
+      "label": "Deployment path",
+      "x": 44,
+      "y": 24,
+      "w": 1360,
+      "h": 260
+    },
+    {
+      "id": "train",
+      "label": "Catfish mechanisms, training only",
+      "x": 44,
+      "y": 329,
+      "w": 1360,
+      "h": 545,
+      "style": {
+        "dash": "7 5"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "env",
+      "label": [
+        "Environment",
+        "capacity limit v_max"
+      ],
+      "x": 64,
+      "y": 114,
+      "w": 302,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "deploy"
+    },
+    {
+      "id": "input",
+      "label": [
+        "Congestion context χ_u",
+        "normalized input s̃_u"
+      ],
+      "x": 386,
+      "y": 114,
+      "w": 326,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      },
+      "section": "deploy"
+    },
+    {
+      "id": "qnets",
+      "label": [
+        "Three objective",
+        "Q-networks Q_1, Q_2, Q_3"
+      ],
+      "x": 732,
+      "y": 114,
+      "w": 368,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "strokeWidth": 2.5
+      },
+      "section": "deploy"
+    },
+    {
+      "id": "select",
+      "label": [
+        "Scalarize by Ω",
+        "per-user arg max"
+      ],
+      "x": 1120,
+      "y": 114,
+      "w": 262,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "deploy"
+    },
+    {
+      "id": "catfish",
+      "label": [
+        "Catfish Q-nets Q_j^CF",
+        "independent rollout; same model"
+      ],
+      "x": 64,
+      "y": 454,
+      "w": 416,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "main_pool",
+      "label": [
+        "Main",
+        "replay buffer"
+      ],
+      "x": 604,
+      "y": 384,
+      "w": 224,
+      "h": 106,
+      "style": {
+        "stroke": "#333941"
+      },
+      "section": "train"
+    },
+    {
+      "id": "cf_pool",
+      "label": [
+        "Catfish",
+        "replay buffer"
+      ],
+      "x": 604,
+      "y": 544,
+      "w": 224,
+      "h": 106,
+      "style": {
+        "stroke": "#333941",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "interv",
+      "label": [
+        "Periodic intervention",
+        "mixed batch, share ρ_I"
+      ],
+      "x": 994,
+      "y": 454,
+      "w": 318,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "acrm",
+      "label": [
+        "Reward shaping (ACRM)",
+        "same-state comparison"
+      ],
+      "x": 98,
+      "y": 704,
+      "w": 348,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    },
+    {
+      "id": "lcap",
+      "label": [
+        "Penalty shaping L_cap",
+        "on intent concentration"
+      ],
+      "x": 755,
+      "y": 704,
+      "w": 322,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      },
+      "section": "train"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-env-input",
+      "from": "env",
+      "to": "input",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-input-q",
+      "from": "input",
+      "to": "qnets",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-q-sel",
+      "from": "qnets",
+      "to": "select",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-sel-env",
+      "from": "select",
+      "to": "env",
+      "fromAnchor": "top",
+      "toAnchor": "top",
+      "label": "joint action",
+      "waypoints": [
+        {
+          "x": 1251,
+          "y": 69
+        },
+        {
+          "x": 215,
+          "y": 69
+        }
+      ]
+    },
+    {
+      "id": "e-env-mainpool",
+      "from": "env",
+      "to": "main_pool",
+      "fromAnchor": "bottom",
+      "toAnchor": "top",
+      "label": "main-agent transitions",
+      "style": {
+        "labelDy": 55
+      },
+      "waypoints": [
+        {
+          "x": 215,
+          "y": 302
+        },
+        {
+          "x": 716,
+          "y": 302
+        }
+      ]
+    },
+    {
+      "id": "e-cf-mainpool",
+      "from": "catfish",
+      "to": "main_pool",
+      "fromAnchor": "top",
+      "toAnchor": "left",
+      "label": "middle band",
+      "style": {
+        "labelDy": -30
+      },
+      "waypoints": [
+        {
+          "x": 272,
+          "y": 437
+        }
+      ]
+    },
+    {
+      "id": "e-cf-cfpool",
+      "from": "catfish",
+      "to": "cf_pool",
+      "fromAnchor": "bottom-right",
+      "toAnchor": "left",
+      "label": "highest band",
+      "style": {
+        "labelDy": 30
+      },
+      "waypoints": [
+        {
+          "x": 307,
+          "y": 597
+        }
+      ]
+    },
+    {
+      "id": "e-mainpool-interv",
+      "from": "main_pool",
+      "to": "interv",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 894,
+          "y": 437
+        },
+        {
+          "x": 894,
+          "y": 507
+        }
+      ]
+    },
+    {
+      "id": "e-cfpool-interv",
+      "from": "cf_pool",
+      "to": "interv",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 894,
+          "y": 597
+        },
+        {
+          "x": 894,
+          "y": 507
+        }
+      ]
+    },
+    {
+      "id": "e-interv-q",
+      "from": "interv",
+      "to": "qnets",
+      "fromAnchor": "top",
+      "toAnchor": "bottom-right",
+      "label": "extra update",
+      "style": {
+        "labelDx": 150,
+        "labelDy": 80
+      },
+      "waypoints": [
+        {
+          "x": 1153,
+          "y": 312
+        },
+        {
+          "x": 951,
+          "y": 312
+        }
+      ]
+    },
+    {
+      "id": "e-cfpool-cf",
+      "from": "cf_pool",
+      "to": "catfish",
+      "fromAnchor": "bottom",
+      "toAnchor": "left",
+      "label": "own update",
+      "waypoints": [
+        {
+          "x": 716,
+          "y": 846
+        },
+        {
+          "x": 24,
+          "y": 846
+        },
+        {
+          "x": 24,
+          "y": 507
+        }
+      ]
+    },
+    {
+      "id": "e-acrm-cf",
+      "from": "acrm",
+      "to": "catfish",
+      "fromAnchor": "top",
+      "toAnchor": "bottom"
+    },
+    {
+      "id": "e-lcap-q",
+      "from": "lcap",
+      "to": "qnets",
+      "fromAnchor": "top",
+      "toAnchor": "bottom"
+    }
+  ],
+  "annotations": []
+}

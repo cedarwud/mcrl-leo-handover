@@ -1,0 +1,62 @@
+{
+  "artifact_comparisons": {
+    "c2-option-chronology-audits.json": {
+      "comparison_mode": "normalized-exact",
+      "raw_difference_count_capped": 10,
+      "status": "PASS",
+      "unexpected_difference_count": 0,
+      "variance_policy": "four monotonic timestamps and six bound hashes excluded"
+    },
+    "c2-training-receipts.json": {
+      "comparison_mode": "normalized-exact",
+      "raw_difference_count_capped": 2,
+      "status": "PASS",
+      "unexpected_difference_count": 0,
+      "variance_policy": "per-candidate forecast elapsed time excluded"
+    },
+    "episode-logs.json": {
+      "comparison_mode": "normalized-exact",
+      "raw_difference_count_capped": 2,
+      "status": "PASS",
+      "unexpected_difference_count": 0,
+      "variance_policy": "per-episode forecast wall time excluded"
+    },
+    "main-update-receipts.json": {
+      "comparison_mode": "normalized-exact",
+      "raw_difference_count_capped": 3,
+      "status": "PASS",
+      "unexpected_difference_count": 0,
+      "variance_policy": "three chronology-derived C2 transaction hashes excluded"
+    },
+    "run-telemetry.json": {
+      "comparison_mode": "tight-numeric-semantic",
+      "raw_difference_count_capped": 4,
+      "status": "PASS",
+      "unexpected_difference_count": 0,
+      "variance_policy": "aggregate forecast wall time excluded; numeric sums use tight tolerance"
+    }
+  },
+  "claim_ceiling": "bounded artifact-history and training-result reconstruction equivalence only; no EE efficacy, training trend, Chapter-5 result, or deployment authorization",
+  "episode_range": {
+    "episode_count": 2,
+    "episodes_completed": 2,
+    "start_episode": 0
+  },
+  "main_ratio_of_sums_ee": {
+    "meaning": "numeric reconstruction parity only, not an efficacy comparison",
+    "merged_bits_per_j": 77534424.29127452,
+    "reference_bits_per_j": 77534424.2912745,
+    "relative_error": 1.921876808921452e-16,
+    "status": "PASS"
+  },
+  "merged_history": {
+    "merge_receipt_sha256": "bbbb8cf128f70debf6913a3675710f7549567fc68f8a1d22544a340fbbaf2b7b",
+    "path": "/home/u24/papers/mcrl-leo-handover/artifacts/c2-v03-resume-merged-history-u10-2ep-20260829"
+  },
+  "reference_run": {
+    "path": "/home/u24/papers/mcrl-leo-handover/.scratch/c2-v03/resume-parity-v4-u10-full2-20260829",
+    "status_sha256": "3a7beb5c540958fa5de9b17843407a819d95bd9d05ccff9436ab7c516e66e9be"
+  },
+  "schema": "c2-v03-merged-history-parity-receipt-v1",
+  "status": "PASS"
+}

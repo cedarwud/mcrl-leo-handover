@@ -1,0 +1,71 @@
+{
+  "claim_ceiling": "bounded implementation/smoke mechanics only; no EE efficacy, chapter-5 result, or deployment authorization",
+  "config": {
+    "acrm_eta": 1.0,
+    "arm": "F111",
+    "beta": 0.25,
+    "checkpoint_every": 2,
+    "env_seed": 2026082942,
+    "episodes": 2,
+    "max_c2_candidates": 9,
+    "mobility_seed": 2026082943,
+    "train_seed": 2026082941,
+    "users": 10
+  },
+  "result_summary": {
+    "checkpoint_sha256": "9b43ac308c253f9f6cbc58fe405bda63989e445bab01db5166d888cfd742c42e",
+    "dispatch": "C2-V0.3-formal-selection-training-step-joint-transaction",
+    "episodes": 2,
+    "joint_transaction_count": 0
+  },
+  "schema": "c2-v03-bounded-run-journal-v2",
+  "status": "complete",
+  "trainer_config": {
+    "activation": "tanh",
+    "batch_size": 128,
+    "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+    "checkpoint_primary_report": "final-episode-policy",
+    "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+    "comparison_role": "Full Multi-Catfish MCRL",
+    "device": "cpu",
+    "discount_factor": 0.9,
+    "episodes": 2,
+    "epsilon_decay_episodes": 1,
+    "epsilon_end": 0.01,
+    "epsilon_start": 1.0,
+    "hidden_layers": [
+      100,
+      50,
+      50
+    ],
+    "learning_rate": 0.001,
+    "load_balance_calibration_mode": "baseline-paper-weight",
+    "load_normalization": "divide_by_num_users",
+    "method_family": "Multi-Catfish-MCRL-developmental",
+    "objective_weights": [
+      0.5,
+      0.3,
+      0.2
+    ],
+    "offset_scale_km": 100.0,
+    "phase": "developmental-short-ep",
+    "policy_sharing_mode": "shared",
+    "r1_reward_label": "system-energy-efficiency",
+    "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+    "replay_capacity": 50000,
+    "reward_calibration_enabled": true,
+    "reward_calibration_mode": "divide-by-fixed-scales",
+    "reward_calibration_scales": [
+      2029238.4328742754,
+      1.0,
+      6.0
+    ],
+    "reward_calibration_source": "probe-P3-and-analytic-bound",
+    "reward_normalization_mode": "raw-unscaled",
+    "snr_encoding": "log1p",
+    "target_update_every_episodes": 2,
+    "theta_encoding": "raw_radians",
+    "training_experiment_id": "F111",
+    "training_experiment_kind": "multi-catfish-mcrl-short-ep"
+  }
+}

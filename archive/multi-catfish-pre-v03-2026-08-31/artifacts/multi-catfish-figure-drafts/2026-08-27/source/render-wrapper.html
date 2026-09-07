@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SMC-ER SVG render wrapper</title>
+  <style>
+    html, body { margin: 0; width: 1600px; height: 920px; overflow: hidden; background: #fbfaf6; }
+    #figure { display: block; width: 1600px; height: 920px; object-fit: contain; }
+  </style>
+</head>
+<body>
+  <img id="figure" alt="Rendered editable SMC-ER figure">
+  <script>
+    const requested = new URLSearchParams(location.search).get('src');
+    if (!requested || !/^[a-z0-9-]+\.svg$/.test(requested)) {
+      throw new Error('Expected a safe SVG filename in ?src=');
+    }
+    document.getElementById('figure').src = `../svg/${requested}`;
+  </script>
+</body>
+</html>

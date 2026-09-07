@@ -1,0 +1,192 @@
+{
+  "title": "Two failure modes of per-user arg max (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "The two pathologies the framework targets, from the baseline decision rule. Problem structure only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 2380,
+    "height": 860,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 289.24,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [
+    {
+      "id": "crowd",
+      "label": "Same-beam crowding: bandwidth is shared",
+      "x": 30,
+      "y": 30,
+      "w": 2320,
+      "h": 370
+    },
+    {
+      "id": "cap",
+      "label": "More distinct beams than a satellite can light",
+      "x": 30,
+      "y": 460,
+      "w": 2320,
+      "h": 370
+    }
+  ],
+  "nodes": [
+    {
+      "id": "a0",
+      "label": [
+        "Users with similar",
+        "inputs take arg max"
+      ],
+      "x": 90,
+      "y": 170,
+      "w": 450,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "crowd"
+    },
+    {
+      "id": "a1",
+      "label": [
+        "All choose",
+        "the same beam"
+      ],
+      "x": 954,
+      "y": 170,
+      "w": 370,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "crowd"
+    },
+    {
+      "id": "a2",
+      "label": [
+        "Bandwidth is shared",
+        "throughput per user drops"
+      ],
+      "x": 1738,
+      "y": 170,
+      "w": 552,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "strokeWidth": 3.0
+      },
+      "section": "crowd"
+    },
+    {
+      "id": "b0",
+      "label": [
+        "Users pick more",
+        "distinct beams than v_max"
+      ],
+      "x": 90,
+      "y": 600,
+      "w": 570,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "cap"
+    },
+    {
+      "id": "b1",
+      "label": [
+        "Satellite lights",
+        "only v_max of them"
+      ],
+      "x": 994,
+      "y": 600,
+      "w": 460,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      },
+      "section": "cap"
+    },
+    {
+      "id": "b2",
+      "label": [
+        "Users on unlit beams",
+        "get no service this step"
+      ],
+      "x": 1788,
+      "y": 600,
+      "w": 502,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "strokeWidth": 3.0
+      },
+      "section": "cap"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-a0-a1",
+      "from": "a0",
+      "to": "a1",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-a1-a2",
+      "from": "a1",
+      "to": "a2",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-b0-b1",
+      "from": "b0",
+      "to": "b1",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-b1-b2",
+      "from": "b1",
+      "to": "b2",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    }
+  ],
+  "annotations": []
+}

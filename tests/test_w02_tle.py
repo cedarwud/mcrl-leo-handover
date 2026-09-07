@@ -160,12 +160,18 @@ def test_archive_reports_a_helpful_range_on_a_missing_date(tmp_path):
 
 
 @requires_archive
-def test_real_archive_covers_the_documented_range():
+def test_real_archive_contains_the_documented_frozen_range():
+    """A growing live archive may extend, but must not lose frozen coverage.
+
+    Exact membership and file hashes belong to the PREREG manifest test.
+    Treating the mutable mount's newest date as a constant makes an ordinary
+    append look like a scientific-regression failure.
+    """
     archive = TleArchive(_ARCHIVE_ROOT)
     first, last = archive.date_range
-    assert first == dt.date(2025, 7, 27)
-    assert last == dt.date(2026, 8, 20)
-    assert len(archive.dates) == 373
+    assert first <= dt.date(2025, 7, 27)
+    assert last >= dt.date(2026, 8, 20)
+    assert len(archive.dates) >= 373
 
 
 @requires_archive

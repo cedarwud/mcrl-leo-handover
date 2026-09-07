@@ -1,0 +1,30 @@
+The gate is **blocked by current code and provenance defects**. No files changed or scientific workloads ran. I verified hashes, compiled 25 Python files in memory, ran `bash -n`, and executed 46 selected existing synthetic cases; those cases passed. Additional memory-only probes reproduced two defects.
+
+- **BLOCKER — incorrect placebo-key digest.** [The fit-independent verifier](/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-c3-observability/verify_v023_lcsrs_fit_independent.py:59) contains a 65-character digest and rejects the correct frozen source identity. W199 fixtures copy that erroneous constant.  
+  **Smallest fix:** replace it with `7dc54ab9323b60b30a1bfdbde60872b1f825e4b142dac2c0c0f2269d147a0825`. **Proof:** assert equality to SHA-256 of the literal addendum key, then verify a source fixture using that independently computed digest.
+
+- **BLOCKER — legitimate differences between learned arms invalidate the final panel.** [Cross-arm verification](/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-c3-observability/verify_v023_lcsrs_final.py:1618) compares entire physical action/bits/energy/service arrays, including learned role 1. INFORMED and MATCHED-PLACEBO may differ there. My probe reproduced rejection for each of those learned-only differences.  
+  **Smallest fix:** compare roles 0 and 2 for action-dependent physical arrays; preserve shared source/common-field checks. **Proof:** learned-role differences pass this join, while baseline, teacher, Q12, and common-field mismatches still fail.
+
+- **BLOCKER — preflight closure is incomplete.** The manifest’s companion seal matches, but only **74/76 bindings match**: the launcher and W202 hashes are stale. The actual preflight rejects them. Separately, [the frozen contract](/home/u24/papers/mcrl-leo-handover/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-OBSERVABILITY-GATE-CONTRACT-2026-09-05.md:374) requires serialized learner configuration and initial parameter digests in preflight; those fields are absent.  
+  **Smallest fix:** bind the complete frozen configuration and three seed-specific initial digests, enforce receipt agreement, then reseal all changed bindings. **Proof:** external preflight passes; changing any bound file, configuration value, or initialization digest fails before workload execution.
+
+- **BLOCKER — result-directory closure is missing.** [The launcher](/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-c3-observability/run_v023_lcsrs_full_gate_server.sh:510) hashes only three files. It does not emit the contract-required `MANIFEST.sha256` covering every result file or preserve the required contract/preflight copies.  
+  **Smallest fix:** preserve those frozen inputs and create a complete, write-once result manifest before `COMPLETE`. **Proof:** every required artifact appears exactly once; modifying a fit or composition sidecar invalidates verification.
+
+- **BLOCKER — prescribed negative decisions have unreachable paths.** [Source generation](/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-c3-observability/v023_lcsrs_source_adapter.py:1779) aborts on the first ordinary physical mechanics/service failure, although the contract evaluates the complete denominator against 90%. [Fit preparation](/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-c3-observability/v023_lcsrs_fit_adapter.py:1010) aborts below 80% placebo coverage; the launcher then never reaches the required `INSUFFICIENT_PAIRS` decision.  
+  **Smallest fixes:** retain finite failed-mechanics receipts without dropping pairs, while keeping integrity/mutation errors fatal; provide an authenticated source-stage insufficiency decision before fitting. **Proof:** synthetic 27/30 versus 26/30 mechanics panels exercise the frozen threshold, and 79% placebo coverage produces `INSUFFICIENT_PAIRS` without starting a fit or permitting a rescue.
+
+The other requested boundaries are substantially present:
+
+- **Runtime/TLE:** the full launcher binds the production `build_runtime` factory. Source and composition use `/home/sat/mcrl-runtime/tle-frozen-20260820`, with preregistration/ephemeris authentication before world construction. Server contents were not opened.
+- **Coverage:** the complete-panel schedule and final identity checks enforce eight worlds × three seeds × two arms: **8/48/48**.
+- **Final JSON:** handling is correct. My in-memory launcher-guard probe rejected zero-exit `INVALID_RUN`, incomplete counts, and TEST opening; an integrity-valid scientific STOP passed.
+- **C1/C2, leakage, mutation:** authentication explicitly binds checkpoint lineage, repriced target formula/multiplier/horizon and target-free Q2 state. Replay binds native observation/C3View identities; inference and physical boundaries check mutation. Context HOLD remains separate from C3 adjudication.
+- **Resume limitation / optional hardening:** existing receipts are reauthenticated downstream. A partial fit sidecar can cause repeated computation before publication refuses overwrite; checking all fit sidecars before invoking the fit would avoid that waste.
+
+**The logical-network hash gap alone is nonblocking under this contract.** The independent verifier authenticates NPZ/tensor bytes but leaves the logical digest unverified. [Production composition](/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-c3-observability/v023_lcsrs_composition_adapter.py:2561) reconstructs the actual Q3 and recomputes that digest; final verification cross-binds it. The contract does not require a separate NumPy implementation of that redundant hash. Preserve the standalone verifier’s limitation; carrying it into final JSON is optional transparency hardening.
+
+The obsolete W196 failure and historical worker prose are not grounds for this verdict. No efficacy conclusion or episode-training authorization is implied.
+
+BLOCKED

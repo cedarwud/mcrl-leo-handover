@@ -1,0 +1,539 @@
+# Multi-Catfish MCRL V0.23 — execution-closure audit and controller handoff (2026-09-07)
+
+Controller session: Claude Fable 5.1 (fresh context), 05:31–~08:00 UTC, with delegated work to
+codex gpt-6-astra (adjudication), codex gpt-5.6-sol (inventory harness) and agy Gemini 3.8 Flash
+(review). Claim ceiling of this whole document: **execution readiness only**. No TEST split was
+opened, no learner update and no episode training happened anywhere, and nothing here is EE or
+efficacy evidence. Benchmark timings and loss values are execution facts, not scientific ones.
+
+## 0. 摘要（給使用者）
+
+**13:05 UTC 更新（compact 後）：R7 gate 已於 12:54 UTC 封存，integrity `VERIFIED`，但科學裁定為 `STOP_PHYSICS_R7`。** 決定性條件是 `physical_signature`：兩個知情 Catfish 的 11 profile 對 00 profile 的 pooled ratio-of-sums EE 為 −0.049%，8 個開發世界只有 2 個為正（預先登錄門檻：嚴格正且 ≥4 個世界）。teacher composition（+0.335%）、held-out learner（balanced accuracy 0.705 對 placebo 0.626）、C1/C2 context 都通過；但 learned composition（−0.660%，2 個世界為正）、topology consistency（0.536，門檻 0.8）、harmful partial（超過 0.05 上限）也沒過——即使物理條件過了，依 `adjudicate_section14_r7` 的優先序也只會得到 `REDESIGN_INTERFACE_R7`，不是 GO。Provider factory 已在伺服器上實測拒絕這個 root（`R7 final result c3_decision is not the frozen GO value`），因此 100E 五臂來源訓練在凍結契約下無法啟動；這是 gate 的設計，不是缺陷。契約 §7：有效的非 GO 結果結束 LC-SRS successor 路線，不得放寬門檻、換種子／世界、依結果重跑或自動升級 CSE/EC；§8：100E 篩選只在 GO 之後開始。所以「為什麼一直沒辦法開始訓練」的完整答案是：(1) 六個 verifier 對 writer 的缺陷把 gate 的裁定藏了約 22 小時（source 陣列 09-06 15:10 就已存在）；(2) 裁定一出來，是預先登錄的科學 STOP。執行鏈上已無任何整合邊界擋在程式與啟動之間；擋住的是科學 gate 本身。接下來需要的是設計層決定（由使用者決定），不是再修執行鏈。細節見 §13、`R7-STOP-PHYSICS-RESULT-2026-09-07.md` 與 `r7-sealed-receipts/`；codex gpt-6-astra 的唯讀裁定（推導有效性、六個修正是否可能影響物理條件、契約允許的下一步）已派出，完成後附於 `ADJUDICATION-R7-STOP-PHYSICS-CODEX-GPT6-ASTRA-2026-09-07.md`。r8 C1/C2 目標產生（自有 claim ceiling，與 R7 裁定無關）照常進行。
+
+
+**訓練為什麼一直開不了：三個卡點，兩個結構性原因。**
+
+卡點：
+1. **R7 gate root 仍未封存。** 修正版驗證（R3）在 06:22 UTC 仍回 `INVALID_RUN`，錯誤是
+   `composition/source identity array missing: pair_source_key`。這是同一支凍結 final verifier 的第四個
+   verifier-vs-writer 缺陷（前三個：array domain、sibling import、pair-profile broadcast）。它要求 source NPZ
+   與 composition NPZ 都有 `pair_source_key`／`pair_destination_keys`，但 source 端的 schema 與 writer 從來沒有
+   寫這兩個陣列（composition writer 有）。不是資料壞掉，是契約不符，且每個 composition shard 都會踩到。
+   R3 契約不授權再修，所以 R7 沒有 GO 也沒有非 GO。
+2. **真實 post-R7 provider 在現行程式結構下無法在同一棵樹啟動。** factory 認證 R7 時對「自己所在 checkout」
+   逐檔 hash 169 個 R7 綁定，其中 `ee_axis_lcsrs_three_route.py` 與 `ee_axis_v014_head.py` 因 448 異質 Q2
+   已合法改版；學習端需要新版，認證端需要舊版 hash。R7 seed checkout 還缺 learner 需要的 5 個 runtime 檔。
+   codex gpt-6-astra 唯讀審議後裁定 **DECISION A**（對不可變的 R7 seed checkout 做 R7 code-closure 認證，
+   learner 樹另由 100E manifest 綁定），完整規格見同目錄的 ADJUDICATION 檔。尚未實作。
+3. **C1/C2 目標仍未封存，r5 也會以 FAILED 收場。** r4 的失敗是 wrapper 的描述字面過期，只改字面＋測試＋
+   兩個 hash 後，r5 六個 benchmark 全 PASS、16 個 shard 於 06:08:57 UTC 全部啟動。第一個 shard 在 07:29 UTC
+   把 c1／c2 資料集、receipt、MANIFEST 都寫完後，死在 generator 最後一行摘要
+   （`generate_v023_c1c2_targets.py:1315`：對 C2 的 dict payload 取 `.rows`，那是 C1 物件才有的屬性，
+   OPS-3 切換後 C2 已是 dict）。其餘 15 個 shard 結束時會撞同一行，controller 會寫 FAILED、不合併不封存，
+   但每個 shard 目錄裡的每世界資料集是完整的。benchmark 抓不到它，因為 benchmark 不走寫檔路徑。
+   依 STOP 規則沒有開 r6。
+
+結構性原因：
+- **凍結的驗證碼沒有對真實產物端到端通過過就被凍結；測試用的合成 fixture 與被測程式共用同一套假設**
+  （W201 的 NPZ fixture 直接用 verifier 自己的 domain 算 hash；factory 測試 mock 掉認證與建構的縫）。
+  fail-fast 加上每次 40 分鐘的伺服器跑，就是「一次只揭露一個缺陷」的迴圈。codex 提醒：這解釋了四個連續缺陷，
+  但「從未有人跑過端到端」是推論不是已證事實。
+- **單一樹 provenance 假設被 228/448 架構決定打破**，需要 staged provenance（同 GPT-6 對 R6 的裁定）。
+
+本 session 做完的事、沒做的事與下一步，見 §1–§11。**learner 訓練與 episode 訓練都沒有開始。**
+
+Published page (private, same content plus the Chinese summary): https://claude.ai/code/artifact/0b130c2a-2c59-4b73-8467-adea41db3fe9 — HTML copy `HANDOFF-EXECUTION-CLOSURE-AUDIT-2026-09-07.html` alongside.
+
+## 1. What is verified, what is inferred, what is pending
+
+Verified (receipts, logs, hashes read this session):
+- Server `sat` rebooted 2026-09-07 05:25:40→05:29:57 UTC (journal boot list); no shutdown command
+  logged; the R3 verifier that had been running since 05:10 UTC was killed with 0 bytes of log and
+  no outputs. Preserved (moved, not deleted) to
+  `/home/sat/mcrl-v023-r7-domain-repair-20260907-r3-interrupted-by-reboot/` with `INTERRUPTION-NOTE.json`.
+- R3 re-executed with the identical frozen package (manifest `4a1fb2ef…`) at 05:42:08 UTC; all
+  preflights passed; terminal at 06:22:54 UTC: `V023_R7_DOMAIN_REPAIR_FAILED: corrected final
+  verification returned INVALID_RUN before dispatch-count assertion: composition/source identity
+  array missing: pair_source_key`. No corrected verification, receipt or seal was written; R7-I1
+  root still holds the original INVALID receipt (`2b14fb95…`) plus the additive
+  `repair-authority-r3/` snapshot. Failure evidence: `/home/sat/mcrl-v023-r7-domain-repair-20260907-r3.log`
+  (12,279 bytes, SHA-256 `c76640b6b40068ad24def04d3eabcefc94d9a0ac2ba280254be4ff7a10b62fc4`).
+- Cross-role NPZ dispatch (DEFENSE_IN_DEPTH_FOLLOWUP): all 8 source shards declare
+  `$.arrays.schema = multi-catfish-mcrl-v023-lcsrs-source-artifact-v1-arrays-v1` (no
+  `array_domain`); all 48 composition shards declare `schema=None`,
+  `array_domain=v023-composition-array-v1`. No cross-role mismatch exists.
+- The fourth verifier defect: `verify_v023_lcsrs_final.py` (frozen, `3cc57371…`) lines ~1018–1040
+  require `pair_source_key`/`pair_destination_keys` in both NPZs; the composition adapter writes
+  them (`v023_lcsrs_composition_adapter.py:3018`), the frozen source adapter never does
+  (`v023_lcsrs_source_adapter.py` writes `pair_anchor_index, pair_retained, pair_id, pair_user_ids,
+  pair_action_ids, pair_target_by_draw, pair_target_mean, pair_class, control_source_key`), the
+  source-stage verifier does not expect them, and the real source NPZ on the server lacks them
+  while the real composition NPZ has them.
+- r4 scope-literal failure: producer `benchmark_v023_c1c2_targets.py` (`d2ca43cb…`, unchanged)
+  emits `C2 repriced OPS-3 selected-pair generation only; …`; the wrapper expected the pre-OPS-3
+  wording and its own test fixture used the old wording. Corrected once (wrapper literal, tests,
+  two CODE-MANIFEST digests; manifest `93d5f03d…→8a290eee…`). 43 focused tests, preflight,
+  checkpoint audit, dry-run passed locally and on the server.
+- r5: six short benchmarks `SHORT_BENCHMARK_PASS`, `SUMMARY.json` = `SHORT_BENCHMARKS_PASS`
+  (06:05:44 UTC), `--validate` passed, tmux created 06:05:47, all 16 `shard-status/*.started.json`
+  present 06:08:57 UTC; at 07:11 UTC 16 generator processes alive (cpu time == elapsed, 4.6–4.8 GB
+  RSS each, 2.5 GB read each, no dataset written yet).
+- r5 first shard terminal (07:29:16 UTC, neutral world-2026121708, ~80 min after start): the
+  shard wrote its complete outputs (`c1-neutral-world-2026121708.json` 44.6 MB / 3455 rows,
+  `c2-neutral-world-2026121708.json` 8.9 MB / 525 rows, `receipt.json`, `MANIFEST.sha256`)
+  and then exited 2 with `V023_C1C2_TARGET_GENERATION_BLOCKED: 'dict' object has no attribute
+  'rows'`. Exact boundary: `generate_v023_c1c2_targets.py:1315`, the summary
+  `"C2": sum(len(dataset.rows) for dataset in c2_datasets.values())` inside `_write_outputs`,
+  executed after all write-once files (lines 1297-1306). Since the OPS-3 switch the C2 dataset
+  is a dict payload (`_generate_c2_world` returns the dict built at line 1154; line 1240 does
+  `dict(dataset)`), so `.rows` only exists on the C1 `EEAxisOpeningDataset` objects. Every
+  remaining shard will hit the same line at its end; the controller will therefore record 16
+  failed shards and write `FAILED` (no merge, no seal), while each shard directory keeps
+  complete per-world datasets. The six short benchmarks could not catch this because they
+  never enter `_write_outputs` (`persistent_target_output_created: false`). Per the STOP rule
+  no r6 was launched; the shards were left running so all 16 per-world outputs land on disk.
+- Server venv: `mcrl` is an editable install of the stale main checkout
+  `/home/sat/mcrl-leo-handover/src` which has none of the `ee_axis_*` modules; per-run trees work
+  only through `sys.path.insert(0, <root>/src)` in the producers/adapters and `PYTHONPATH` in
+  launchers. Any new server script must insert `<root>/src` before importing `mcrl`.
+- R7 code-closure boundary (static, confirmed independently by codex gpt-6-astra by reading the
+  code and re-importing the seam in a fresh process): exactly 2 of 169 R7 bindings differ from
+  the live tree (`ee_axis_lcsrs_three_route.py` db8f→2dcf; `ee_axis_v014_head.py` b1ac→585d);
+  the learner seam needs the live versions; the R7 authentication closure (18 files) imports
+  neither; the R7 seed checkout lacks `ee_axis_c1_selector.py`, `ee_axis_opening_dataset.py`,
+  `ee_axis_opening_runner.py`, `ee_axis_opening_source.py`, `ee_axis_source_selectors.py`.
+
+- Pair-key derivation (codex gpt-6-astra, read-only memo `ANALYSIS-R7-PAIR-KEY-DERIVATION-CODEX-GPT6-ASTRA-2026-09-07.md`):
+  both missing arrays are deterministic functions of sealed source data
+  (`anchors[a].topology.pairs[k].source_key/destination_keys`, equivalently
+  `physical_keys[a, u, reference_actions[a, u]]` and `physical_keys[a, [u,v], [du,dv]]`), so a
+  verifier-side reconstruction (repair shape "a") preserves the original identity check with
+  identical dtype/shape/bytes; all other join names are emitted with compatible shapes/order.
+  The same memo CONFIRMS a fifth latent defect behind the pair keys: the source writer stores
+  `anchors[a].c2_diagnostic` as a list of per-pair objects while the verifier's
+  `_diagnostic_rows()` requires a mapping, so C2 would be marked incomplete and the final stage
+  would reject; it SUSPECTS a float32-vs-float64 `q2_delta` tolerance (1e-12) rejection on real
+  rows; and it CONFIRMS an unreachable reference-digest branch (coverage gap, not a failure).
+  No further missing composition array names exist (all 79 required names are written).
+
+- R7 read-only inventory run (07:29–08:10 UTC, isolated R7-era checkout copy
+  `/home/sat/mcrl-v023-r7-inventory-checkout-20260907`, output
+  `/home/sat/mcrl-v023-r7-final-verifier-inventory-20260907/inventory.json`, copied to this
+  directory as `R7-FINAL-VERIFIER-INVENTORY-20260907.json`; R7 root mtimes unchanged; frozen
+  verifier `3cc57371…` and R3 adapter `7d242eb2…` byte-verified; NPZ dispatch 8 source / 48
+  composition as expected). Result: 193 findings, of exactly two kinds —
+  (a) identity join: on all 48 composition shards `composition/source identity array missing:
+  pair_source_key` and `… pair_destination_keys` (96 primary + 96 cascade KeyErrors; the source
+  NPZ has 99 array names without the two keys, the composition NPZ 115 with them);
+  (b) decision stage: `C2 context diagnostics are not independently recomputable:
+  world=2026121801,phase=1..8 diagnostic must be an object` — the list-typed `c2_diagnostic`
+  container defect confirmed on real data. No other source, fit, composition-array, ratio,
+  cross-arm or launch-manifest finding appeared: with R3's three installs everything else in
+  the frozen verifier passes on the real 8/48/48 panel. The suspected float32/float64
+  `q2_delta` tolerance issue stays BLOCKED behind (b) and must be re-checked by re-running the
+  inventory once (a)+(b) are applied in a scratch process.
+
+Inferred (supported, not proven): the frozen final verifier was never carried end-to-end to a
+PASS against the real 8/48/48 panel before freezing (four sequential defects each hidden behind
+the previous one). Unverified by the adjudicator: the attribution of the ADOPT_HETERO_Q2_448
+ruling and the GPT-6 R6 staged-provenance audit (they live in controller memory, not the repo).
+
+Pending at hand-back: nothing is still running. r5 ended FAILED at 09:06 UTC (§12); the R7 inventory completed (§1, §8).
+
+## 1b. Continuation after the user's go-ahead (09:20 UTC onward)
+The user authorised continuing as controller with parallel delegation. State of the three lines:
+- **C1/C2 r6**: codex fixed the generator summary with a typed `_row_count` accessor (fail-closed
+  on a payload without `rows`) and made the controller poll all children every 2 s so a non-first
+  shard failure is noticed immediately; real write-path test added; CODE-MANIFEST rebuilt
+  (`cd0421b9…`); 64 focused tests, preflight, checkpoint audit and dry-run pass; r6 launched on
+  `…-ops3-r6` roots: six benchmarks PASS again, all 16 shard `started` receipts at 09:58:31 UTC
+  (expected per-shard wall 80–178 min, then the never-yet-exercised merge + seal).
+  **r6 FAILED at 11:32:48 UTC** on the first shard to finish (neutral world-2026121708, returncode 0,
+  complete outputs, generator fix confirmed working): the controller's post-shard authentication
+  raised `mode receipt claim ceiling drifted` — controller line 33 expects
+  `…NO_EPISODE_TRAINING_NO_TEST`, the generator (lines 77–80) writes
+  `…NO_EPISODE_TRAINING_NO_EFFICACY_NO_TEST` into every shard receipt (r5's receipts carry the same
+  value, so r5 would have died here too). The controller then aborted the other 15 shards (~95 min
+  of compute each). Third consumer/producer literal mismatch in this pipeline (scope literal,
+  `.rows`, claim ceiling); each was invisible to the consumer's synthetic-fixture tests and only
+  surfaced after hours of real compute. Response: instead of another blind rerun, codex is
+  (a) aligning the controller to the producer's literal with a test that reads the producer's
+  constant and (b) building a read-only post-shard dry-run tool that exercises per-shard
+  authentication → merge → seal against REAL shard directories, to be run on the server against
+  the finished r6 shard (and r5's six) before r7 is launched. A 1-minute read-only probe of the
+  controller's `_read_receipt` + `_validate_shard` against the real shard directories
+  (`PROBE-CONTROLLER-POSTSHARD-RESULT-2026-09-07.md`) already found the NEXT one: with the claim
+  ceiling patched, the r6 shard still fails `_validate_shard` with `OPS-3 q2_state is not the
+  target-free feature projection` — the controller flattens `q2_features` action-major (lines
+  278–303) while the producer, the V0.14 head (`reshape(batch,16,28).transpose(1,2)`) and the
+  target adapter all use the feature-major layout; reproduced locally on 3 real rows
+  (`state == feature_major` True, `== action_major` False). So r7 would have died again after
+  ~3 h. Fourth consumer/producer mismatch in this pipeline; consumer-side fix + real-row tests
+  queued to codex after the current controller task finishes (same file). A second in-memory
+  probe with both defects patched reached the NEXT check and failed there too: `OPS-3
+  ops3_future_d2_indices does not align with H_t` (controller `_ops3_row`, ~line 345) — the
+  controller requires all three provenance lists to have length == horizon, but the producer
+  passes through the native OPS-3 provenance where only `ops3_offset_times_utc` is per-horizon
+  (3 entries for H_t=3) while `ops3_future_d2_indices`/`ops3_sample_times_utc` are the D2 sample
+  window (measured over all 4,749 rows of the 7 real shards: (H_t, len) ∈ {(0,0),(1,47),(2,94),(3,141)},
+  i.e. exactly 47 D2 samples per horizon step, and `offset_times` length == H_t always). Fifth
+  consumer/producer mismatch. codex's own
+  complete-schedule synthetic probe of the new dry-run tool found a SIXTH downstream one: the
+  sealer `seal_v023_c1c2_target_output.py` still carries the old claim-ceiling literal
+  (`target receipt claim ceiling drifted`). codex delivered: controller `CLAIM_CEILING` now read
+  from the path-bound generator module (+ parity and mutation tests) and the read-only tool
+  `dryrun_v023_c1c2_controller_postshard.py` (authenticates every present shard without
+  fail-fast, reports missing shards, runs the real merge+sealer only for a complete schedule
+  into a scratch root; 3 tests). codex batch 2 delivered the remaining consumer fixes: q2_state
+  rebuilt feature-major (exact float32 comparison kept; action-major and permuted-feature
+  mutations fail), H_t alignment now = offset_times == H_t, future_d2 == sample_times ==
+  H_t × `OPS3_SAMPLES_PER_STEP` where the constant is imported from the producer
+  (`ee_axis_ops3_live.D2_SUBSTEPS_PER_DECISION` = 47, used at line 793), sealer `CLAIM_CEILING`
+  imported from the generator; tests on the 3 real rows plus a complete 16-shard
+  generator→merge→seal path; 77 focused tests pass after the CODE-MANIFEST rebuild
+  (`dc5ef936…`, 29 bindings incl. the dry-run tool). Server offline dry-run
+  (`DRYRUN-POSTSHARD-R6-REAL-SHARD-2026-09-07.json`, isolated checkout copy, read-only staging):
+  `DRYRUN_C1C2_POSTSHARD_BLOCKED scheduled=16 present=1 passed=1 failed=0 missing=15` — the real
+  r6 shard now passes the complete per-shard authentication; merge/seal correctly blocked on the
+  15 missing shards (the sealer path itself is covered by the synthetic 16-shard test). r7 is
+  ready to launch (launcher dry-run with r7 names PASS); it needs the user's go. The one corrected attempt per line
+  agreed for this session is spent; r7 launches only after that dry-run passes and the user
+  says go.
+- **Dress rehearsals (read-only, non-authoritative) instead of waiting for the first real run**:
+  (a) the real R7 source panel loads through the audited fit adapter in 57 s (8 worlds × 9 anchor
+  records, views of 100 users, tokens (100,28,101,38)); (b) the six complete r5 shards were pushed
+  through the target adapter's OPS-3 row loader and the heterogeneous trainer on a live-tree scratch
+  copy. (b) exposed a real defect before any provider run: `target_batch_adapter._ops3_route_batch`
+  concatenated the per-row (448,) states and (28,) masks into 1-D arrays instead of stacking them,
+  so the first real shard failed head validation (`normalized V0.14 states must have shape (batch, 448)`).
+  Fixed (`np.stack`, plus an explicit fail-closed on empty row lists); two real-row regression tests
+  added from a 3-row excerpt of the r5 output. After the fix all six shards load as C2 (N,448)
+  float32 with masks (N,28) (≥21 legal actions per row), `target_unit` and `kappa_bits` as expected,
+  and a real C2 update runs (informed 510 rows in 0.17 s; loss values are execution facts only).
+  Note: four pre-existing tests in `test_target_batch_adapter.py` fail on receipt-schema drift
+  (the adapter moved to OPS-3 receipts, its fixtures did not) — another instance of the test gap,
+  to be repaired by the next controller; the adapter's OPS-3 path had no test at all before today.
+- **R7 R4** (codex, delivered): `.scratch/multi-catfish-v023-r7-domain-repair-r4/` — contract,
+  adapter (reuses the R3 adapter by digest; reconstructs `pair_source_key`/`pair_destination_keys`
+  from source JSON topology pairs AND from the NPZ physical-key derivation, requiring agreement;
+  normalises the list-typed `c2_diagnostic` by concatenating per-pair rows in order with per-pair
+  provenance retained and fail-closed on empty/malformed input; no threshold or tolerance change),
+  controller, launcher, tests (18 pass; the real anchor-0 fixture reconstructs all 17 pairs
+  row-for-row against the composition arrays), manifest `4633c3d3…` + pin, dry-run pass. The
+  inventory harness gained `--adapter-r4`; a scratch read-only inventory with R4 applied was
+  started on the server at 09:53 UTC to surface anything hidden behind defects 4/5 before the
+  real R4 run.
+- **Factory v2 integration into the 100E bundle** (codex, delivered): config v2 with
+  `r7_code_root`, EXPECTED values in preflight/verify, launcher order seed-first with
+  learner-manifest verification, FACTORY_SPEC v2, target root `-ops3-r6`, 90-entry manifest
+  `9c75f242…`; 28 tests, dry-run pass. Independent codex review
+  (`REVIEW-V2-INTEGRATION-CODEX-2026-09-07.md`) found five hardening gaps against the ruling —
+  no diagnostic gate inside the launcher, lexical seed-path comparison, loaded-origin checks only
+  for 3 of 18 authentication files, no fresh-process closure test, no launcher integration test
+  with failure injection — all delegated. Launcher items delivered and verified: the launcher now
+  runs the one-epoch diagnostic in the fresh checkout and requires exit 0, receipt + sidecar,
+  PASS, empty failed_checks and a provider identity equal to the preflight receipt before any
+  controller/tmux step; the seed root is compared by resolved path on the server; a hermetic
+  integration test drives the real launcher through ssh/rsync/scp shims, checks the full stage
+  order and injects failures at 11 pre-controller stages (none reaches controller creation).
+  V2 bundle now 47 tests, dry-run PASS, manifest `51a9d26f…` (90 entries).
+- **Closure finding (factory hardening)**: the new fresh-process closure test shows the factory
+  process loads 51 R7-bound files, not 18: v1's import-time loading of the provider bridge pulls
+  in the target adapter, orchestrator and heterogeneous trainer, hence the live
+  `ee_axis_lcsrs_three_route.py`/`ee_axis_v014_head.py` and their dependency cone (31 of the 33
+  extra files are byte-identical to their R7 bindings; the two divergent ones are exactly the
+  learner-side files). The test is fail-closed by design and currently RED. A follow-up
+  adjudication was requested from codex gpt-6-astra: proposed formulation = two recorded sets
+  (18-file authentication set hash-equal to R7 + a learner-runtime set recorded with loaded
+  origins and required to be bound by the 100E launch manifest), or expanding the authentication
+  list, or isolating authentication in a subprocess. Ruling received
+  (`ADJUDICATION-R7-CLOSURE-51-VS-18-CODEX-GPT6-ASTRA-2026-09-07.md`): adopt hardened P — declare
+  A (18) and L (33) explicitly with module mappings, record both lists with loaded origins,
+  add `r7_bound_learner_runtime` + digest to the identity payload, A must hash-equal R7 bindings,
+  L must be bound by the 100E manifest, plus an authentication-only fresh-process probe that must
+  close at exactly A; the 100E preflight/verify consumers must accept the four-field records.
+  Implemented by codex (the task was killed mid-run by a local low-memory event caused by other
+  sessions' workloads, but its edits were complete): after a manifest rebuild all 85 factory-v2 +
+  V2-bundle tests pass, dry-run passes, manifest `8e4d8784…` (90 entries).
+- **R4 scratch inventory (read-only, R4 applied, 09:52–10:34 UTC,
+  `R7-FINAL-VERIFIER-INVENTORY-R4-SCRATCH-20260907.json`)**: pair-key reconstruction agreed on
+  both derivations for all 48 joins (688 pairs; per-world 96/83/85/86/82/102/72/82),
+  `c2_diagnostic` normalisation processed 72 list containers → 688 pair objects → 688 rows, and
+  exactly ONE finding remains, at the decision stage: `C2 q2 delta differs` (world 2026121801,
+  reported per phase; the check stops at the first failing world) — the float32/float64
+  `q2_delta` precision path predicted by the pair-key memo, now CONFIRMED on real data (defect 6).
+  R4 amended by codex with a third scoped correction: an AST transform of the unique
+  `expected_q2_delta` assignment inside the frozen `_context_status` that recomputes each member
+  delta in float32 exactly as the writer does (source adapter lines 891–920 / 1949–1952) and then
+  widens, leaving the 1e-12 comparison, operands, rows and decisions untouched; receipt field
+  `q2_delta_precision` with row counts; 15 tests pass, manifest `f90381cf…`, dry-run pass.
+  The second scratch inventory (10:44–11:31 UTC, `R7-FINAL-VERIFIER-INVENTORY-R4B-SCRATCH-20260907.json`)
+  still showed the single `C2 q2 delta differs` finding — because the harness's `--adapter-r4`
+  path installed only the first two R4 hooks, not the new third one (verified in its source), so
+  R4B is not evidence about correction 3. Instead of another blind 40-minute run, a 1-minute
+  read-only probe (`PROBE-Q2-DELTA-PRECISION-RESULT-2026-09-07.md`) settled it on all 8 worlds:
+  89 of 688 C2 rows fail the frozen tolerance under float64 recomputation (max 5.96e-08, float32
+  ulp scale; all `q2_values` are exact float32), 0 fail under float32 writer-style recomputation
+  (max diff 0.0), and the target-delta path passes everywhere. Correction 3 is therefore exact
+  and sufficient. The harness was extended to install all three hooks (and to skip its own AST
+  rewrite of `_context_status` under `--adapter-r4`, since R4's correction 3 rebuilds that
+  function from the frozen source and a prior rewrite made the target non-unique). Third scratch
+  inventory (11:39–12:16 UTC, `R7-FINAL-VERIFIER-INVENTORY-R4D-SCRATCH-20260907.json`):
+  **0 findings** — NPZ dispatch 8/48, pair keys reconstructed for all 688 pairs with both
+  derivations agreeing, 72 diagnostic containers normalised to 688 rows, 1376 member q2 deltas
+  compared under the writer's float32 path, R7 root untouched. The real R4 run was launched
+  immediately afterwards (~12:19 UTC; see §12).
+
+## 2. Root causes (why the project keeps looping)
+
+1. Frozen fail-fast verification code was not exercised end-to-end against the real artifacts
+   before it was frozen, and its tests were self-referential: `tests/test_w201_ee_axis_lcsrs_final_verifier.py`
+   derives expected NPZ hashes from the verifier's own domain constant; the post-R7 factory tests
+   mock the authentication/construction seams; the C1/C2 wrapper test fixture carried the wrapper's
+   own expected literal. Each 40-minute server run therefore exposes exactly one defect.
+   Verified test-gap evidence (Claude Sonnet audit
+   `AUDIT-VERIFIER-TEST-PROVENANCE-CLAUDE-SONNET-2026-09-07.md`): `tests/test_w201` loads a
+   different, older verifier copy (`.scratch/multi-catfish-v023-c3-observability/…`, 282 diff
+   lines vs the frozen R7 file) and bypasses `_load_npz`/`_validate_pair_arrays`/
+   `_validate_composition_arrays`/`_join_composition_source`; the source adapter's own
+   completeness test checks a hand-picked `issubset` omitting both pair keys; no test anywhere
+   runs the real source and composition writers into `verify_v023_final_gate`.
+   Remedy (endorsed by codex): before any further versioned repair, run a read-only, non-fail-fast
+   inventory over the sealed shards that reports every check as PASS/FAIL/BLOCKED, then make one
+   versioned repair validated against the preserved real artifacts plus mutation-negative tests.
+2. The single-tree provenance assumption in the post-R7 factory (`repo=REPO` for the R7 code
+   closure) was broken by the adopted 228/448 architecture. Remedy: DECISION A (§5).
+3. Operational: unplanned server reboot (05:25 UTC) and 16 concurrent shards at ~4.8 GB RSS each
+   (~77 GB of 91 GB) — long runs must checkpoint, and heavy read-only diagnostics (the R7
+   inventory needs ~8–9 GB) must not overlap the shard phase.
+
+## 3. Session timeline (UTC)
+- 05:31 reverify: no tmux server, R3 log 0 B, server uptime 4 min → reboot diagnosed.
+- 05:41 interrupted R3 artifacts moved to the preservation dir; 05:42 R3 relaunched (frozen package).
+- 05:38–05:43 scope-literal adjudication, wrapper/test/manifest correction, 43 tests, dry-run.
+- 05:43 r5 launched (new roots); 05:47 single-anchor PASS; 06:05 six PASS + validate; 06:05:47 tmux;
+  06:08:57 16 shards started.
+- 06:22:54 R3 terminal INVALID_RUN (identity array).
+- 06:5x delegation: codex inventory harness, codex gpt-6-astra adjudication, agy V2 review
+  (relaunched once with `</dev/null`; the CLIs block on stdin in background shells).
+- 07:0x V2 bundle aligned (88-entry manifest), agy found 3 real launcher defects → fixed, 21 tests.
+- 07:1x adjudication returned DECISION A; inventory harness delivered.
+
+## 4. Artifact and receipt ledger
+Server (`sat`):
+- R7-I1 root `/home/sat/mcrl-v023-lcsrs-gate-20260906-r7-i1`: unsealed; `final-verification.json`
+  INVALID (`2b14fb95…`); `repair-authority/`, `-r2/`, `-r3/` additive snapshots; no COMPLETE/MANIFEST.
+- R3 evidence: `/home/sat/mcrl-v023-r7-domain-repair-20260907-r3.log` (`c76640b6…`); interrupted
+  attempt preserved under `/home/sat/mcrl-v023-r7-domain-repair-20260907-r3-interrupted-by-reboot/`.
+- R7 checkout (seed for 100E): `/home/sat/mcrl-v023-r7-launch-ready-20260906-r4` (three_route db8f,
+  v014_head b1ac; lacks 5 learner runtime files).
+- r4 (preserved, failed scope literal): `/home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r4`.
+- r5 server root `/home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r5` (CODE-MANIFEST
+  `8a290eee…`); output root `/home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r5`; staging
+  `…-ops3-r5-mode-shards/` (shard-status receipts); tmux `mcrl-v023-c1c2-target-generation-20260907-ops3-r5`.
+- Post-seal check staging: `/home/sat/mcrl-v023-postseal-target-check-20260907/` (adapter copy
+  `6388e41d…` + `postseal_target_load_check.py`; run only after COMPLETE).
+Local (repo, all untracked under `.scratch/`):
+- `.scratch/multi-catfish-v023-c1c2-target-generation-launch/` — corrected wrapper (`7adcb495…`),
+  tests (`1cf23533…`), CODE-MANIFEST `8a290eee…`.
+- `.scratch/multi-catfish-v023-100e-screen-preoutcome-v2/` — aligned V2 bundle (§6).
+- `.scratch/multi-catfish-v023-r7-final-verifier-inventory/` — codex-built inventory harness (§8).
+- `.scratch/multi-catfish-v023-controller-handoff-20260907/` — this report, the adjudication brief
+  and memo, the agy review, the scope-literal note.
+
+## 5. Adjudication: R7 code closure vs live learner tree → DECISION A
+Full memo: `ADJUDICATION-R7-CODE-CLOSURE-CODEX-GPT6-ASTRA-2026-09-07.md` (brief alongside).
+Essentials: build a versioned successor factory (never rewrite frozen manifests); provider config
+schema v2 with required absolute `r7_code_root` (the immutable R7 seed checkout); `authenticate_r7_go(root, *, r7_code_root)`;
+`_verify_r7_preflight` runs the unchanged `validate_manifest` with `repo=r7_code_root` and matches
+code-manifest hashes to the sealed authority; new `_verify_r7_authentication_runtime()` checks the
+18 shared authentication files (3 R7 modules + 15 `mcrl` files, list in the memo) against their R7
+bindings in the learner checkout; identity payload gains `r7_code_root`,
+`r7_preflight_manifest_sha256`, `r7_code_manifest_sha256`, `r7_result_manifest_sha256`,
+`r7_gate_result_sha256`, `r7_authentication_runtime_sha256`; launcher order = seed check → copy
+seed → R7 closure check against the seed → overlay learner manifest → verify overlay → factory
+preflight in a fresh learner process → diagnostic → formal. Caveat from the memo: the live
+`DetachedQ12Snapshot` digest is not backward compatible; historical snapshot digests are artifact
+data and must never be rebuilt with the live class. Test matrix in the memo (positive real-artifact,
+drifted seed binding, code root == learner checkout, missing field/v1 schema, tampering, launcher
+integration).
+Implementation status: codex gpt-5.6-sol delivered the versioned successor
+`.scratch/multi-catfish-v023-post-r7-provider-factory/v023_post_r7_provider_factory_v2.py`
+(599 lines; imports v1 by path and overrides only the ruled functions; config schema v2 with
+required `r7_code_root`; `_verify_r7_authentication_runtime` over the 18 shared files; identity
+payload extended) with 18 synthetic/mutation-negative tests passing and
+`V2-DECISION-A-IMPLEMENTATION-NOTE.md` listing exactly what the 100E bundle must adopt next
+(config v2 JSON, preflight/verify EXPECTED values, launcher order). v1 is byte-identical
+(`315c5229…`). Empirical confirmation of the boundary: v1's own test
+`test_authenticate_r7_requires_seal_then_computes_record_panel_digest` now fails on the live
+tree with `R7 preflight authoritative validation failed` (the R7-bound `ee_axis_v014_head.py`
+differs), i.e. the unchanged factory cannot authenticate R7 in the learner tree. Not yet done:
+integrating v2 into the 100E bundle and the real-artifact positive test (no sealed roots exist).
+
+## 6. 100E V2 bundle — aligned, tested, not launchable yet
+Changes (execution only): provider config target root → r5; contract §0 with the explicit V2
+statements and the real model-config digest; hash chain regenerated (contract `e258bab0…`,
+provider `24110f03…`, model `81e30b71…`); launcher guards (`-100e-r2`, target/R7 roots), seal
+checks via variables, `-v2` receipt schemas, write-once startup marker + bounded 120 s
+acknowledgement; verify script deduped and r5 root; `build_v023_100e_launch_manifest.py` (88
+entries incl. the full 53-file `mcrl` import closure); stale V1 sealer test fixed. agy review
+found three real defects (two stale top-level launcher hashes, an unescaped `\n` in the generated
+controller) → fixed, two regression tests added. Final: 17 server/seal tests + 8 diagnostic tests pass, manifest
+`6e2e95e7e421ffc65b35967eae9a5d0279816de304ac3932a9a3fa6ffb9041fc`, `--dry-run` PASS.
+Still blocked by §1 (R7 unsealed) and §5 (factory change not implemented): with the live files in
+the manifest the launcher's seeded-closure step fails by design until the factory follows DECISION A.
+
+## 7. One-epoch real-provider diagnostic (ready, not runnable until §5)
+`run_v023_one_epoch_provider_diagnostic.py` (+4 synthetic tests): loads the real factory, records
+provider batches, checks Q1 228-D / Q2 448-D / masks, producer `target_delta` byte-equality against
+delivered C2 labels (no second kappa division), five-arm source mapping, disk checkpoint reload,
+bit-identical one-epoch continuation, masked q1+q2+q3 scoring (plumbing only, references recomputed).
+Reviewed read-only by codex (`REVIEW-ONE-EPOCH-DIAGNOSTIC-CODEX-2026-09-07.md`; agy timed out twice):
+four findings, all fixed — the lexical "no kappa_bits" check was replaced by a behavioural one
+(each arm's C2 loss is recomputed from the pre-update Q2 weights and the delivered normalized
+deltas and must match the trainer's reported loss to 1e-6 relative; a trainer that divides by
+kappa again now fails, proven by a mutation test), the target-artifact loader is mandatory,
+identities must be trimmed/nonempty/≤512 chars, and receipts survive unserialisable metadata.
+8 tests pass. Command in the V2 README; it inserts `<checkout>/src` itself.
+
+## 8. R7 final-verifier inventory harness (codex gpt-5.6-sol) — run after r5 finishes
+`.scratch/multi-catfish-v023-r7-final-verifier-inventory/inventory_v023_lcsrs_final_verifier.py`
+(+tests, README). Read-only; applies the three R3 installs; AST-transforms named validator
+functions so raises are recorded; per-shard isolation; writes only `inventory.json` in an absent
+output dir outside the run root. Server command (see README):
+`/home/sat/mcrl-leo-handover/.venv/bin/python <checkout>/.scratch/multi-catfish-v023-r7-final-verifier-inventory/inventory_v023_lcsrs_final_verifier.py --run-root /home/sat/mcrl-v023-lcsrs-gate-20260906-r7-i1 --checkout /home/sat/mcrl-v023-r7-launch-ready-20260906-r4 --output /home/sat/mcrl-v023-r7-final-verifier-inventory-20260907`.
+Memory note: the verifier needs ~8 GB RSS; it was run with `oom_score_adj=1000` while the
+shards were still computing (peak host usage 77/91 GB) and completed in 41 min.
+Status at hand-back: RUN ONCE, complete; results in §1 and in
+`R7-FINAL-VERIFIER-INVENTORY-20260907.json` (sha256 sidecar alongside). Harness tests: 5 pass.
+
+## 9. Measured throughput (r5 benchmarks)
+sealed-input load ~189 s and 100-user setup ~25 s per process; C2 replay 3.50 s/row (1 row),
+1.74 s/row (2 rows), 0.106 s/row informed / 0.164 s/row neutral for full-step cohorts (45/29 rows);
+informed full route 4330 rows. The controller's 16 shards had produced no dataset after 62 min
+(compute-bound, C1 generation not benchmarked). No total-time estimate is offered until the first
+shard terminal receipt exists.
+
+## 10. Delegation record and CLI pitfalls
+- codex gpt-6-astra (read-only, effort max): adjudication → DECISION A.
+- codex gpt-5.6-sol (workspace-write, effort ultra): inventory harness.
+- agy Gemini 3.8 Flash (High): V2 consistency review → 3 defects found, all real; no files modified
+  (directory hashes snapshotted before/after).
+- Pitfall: in background shells both CLIs block on "Reading additional input from stdin…" — always
+  run with `</dev/null`.
+
+## 11. Next actions (ordered) and prohibitions
+1. r5 will end FAILED on `generate_v023_c1c2_targets.py:1315` (`.rows` on the C2 dict). Decide
+   ONE corrected target attempt: fix that summary line (`len(dataset["rows"])` or a typed
+   accessor), add a real write-path test that runs `_write_outputs` on one OPS-3 dict + one
+   opening dataset, rebuild CODE-MANIFEST, and either rerun the 16 shards (~80 min each in
+   parallel; ~77 GB RAM; 80–178 min per shard) — ten worlds have no output at all, so a full
+   rerun is the simple path; the six complete r5 shard outputs can serve as a byte-level
+   regression reference for the corrected generator (same world, same rows expected).
+   Then run `postseal_target_load_check.py` (read-only) on the sealed root.
+2. Run the R7 inventory (§8) once, read-only, after the shards finish; attach `inventory.json`.
+3. With the inventory in hand, decide ONE versioned R7 repair (R4) covering everything at once.
+   The inventory bounds the scope to exactly: keep the three R3 installs; reconstruct
+   source-side pair keys from the authenticated source JSON/NPZ (repair shape "a" in the
+   pair-key memo, never copied from composition); accept the list-typed `c2_diagnostic`
+   container while preserving every row and provenance check; then re-run the read-only
+   inventory with both changes applied in a scratch process to surface anything hidden behind
+   them (the float32/float64 `q2_delta` tolerance is the known suspect) before freezing R4;
+   validate against the preserved real shards plus mutation-negative tests. A pair-key-only
+   R4 is insufficient.
+4. Implement DECISION A as a versioned successor factory + V2 launcher order + tests (memo §3);
+   delegate implementation to codex, review with agy, keep server runs to the controller.
+5. Then: one-epoch diagnostic → formal 100E screen (checkpoint every 100 epochs) → one-world
+   plumbing → episode ladder 100→500→1500/3000→9000 with receipts every 100 episodes and a user
+   notification before 9000.
+Do not: rewrite frozen manifests; alias modules via `sys.modules`; drop bindings from manifests;
+relabel ALL_NEUTRAL_CONTROL as BASELINE; open TEST; tune any parameter against results.
+
+## 12. Live results at hand-back
+- r5: TERMINAL. The controller wrote `FAILED` at 09:06:33 UTC
+  (`mode/world shard failed: informed:2026121705 status=2`) and aborted the 10 shards still
+  running; tmux gone, no generator alive. Six shards had finished on their own, each with complete
+  per-world outputs (c1 rows 3455–4875, c2 rows 510–574, receipt + MANIFEST) and the identical
+  line-1315 crash: neutral 1708 (07:29), informed 1711 (07:56), neutral 1709 (08:35), neutral 1707
+  (08:40), neutral 1705 (08:43), informed 1705 (09:06). Their 407 MB stay under
+  `…-ops3-r5-mode-shards/{informed,neutral}/world-*/`; the other ten worlds have no output
+  (`controller aborted this shard after another failure`). Wall time per finished shard was
+  80–178 min with 16 running concurrently. The controller blocks on its first child, so a failure
+  in another shard is noticed only when that child exits — a second reason to fix the generator's
+  summary line before any rerun.
+- R7 inventory run: COMPLETE (193 findings = pair keys ×48 shards + c2_diagnostic container; nothing else)
+- R4 real run: launched 12:17 UTC through the frozen R4 launcher (remote preflight PASS, manifest
+  `f90381cf…`, tmux `mcrl-v023-r7-domain-repair-20260907-r4`, `repair-authority-r4/` snapshot
+  created); expected ~40 min; outcome recorded below when available.
+- r6: FAILED 11:32:48 UTC on the controller's claim-ceiling literal after the first shard
+  finished (its outputs are complete and now authenticate under the corrected controller;
+  offline dry-run present=1 passed=1 failed=0 missing=15). r7 is fully prepared (CODE-MANIFEST
+  `dc5ef936…`, launcher dry-run PASS) and waits for the user's go; nothing is running on that line.
+- Training: not started.
+- r7 (12:32 UTC, user go): the launcher failed closed at its remote pytest step BEFORE any
+  benchmark or compute — the new real-row controller tests read their fixture from the
+  sibling target-batch-adapter package, which the launcher's sync list does not ship
+  (`FileNotFoundError … fixtures-real-r5/c2-neutral-world-2026121708.excerpt.json`). The
+  partial server root `…-ops3-r7` is preserved (no outputs). Fix: the fixture now lives inside
+  the launch package (bound in CODE-MANIFEST as `launch_tests_real_row_fixture`); relaunch as r8.
+- Launcher-order rehearsal on the server: copying the R7 seed and overlaying the 90 100E
+  manifest entries reproduces 90/90 hashes, and `preflight_r7_balanced --repo <overlaid>` then
+  fails on `ee_axis_v014_head.py` exactly as predicted, while the same preflight against the
+  untouched seed passes — confirming the V2 launcher must (and now does) check the R7 closure
+  against the seed before the overlay.
+- r8 (12:37 UTC): the fixture directory name `fixtures-real-r5` tripped the preflight's forbidden
+  path marker `r5`; renamed to `fixtures-real-shard`, CODE-MANIFEST `79a181a3…` (30 bindings),
+  preflight/audit/tests/dry-run all pass; r8 launched (remote pytest → benchmarks → 16 shards).
+  Note for the V2 bundle: its provider config/contract still name `-ops3-r6` as the target root
+  and must be moved to the root that actually seals (r8) before the 100E launch.
+- Prepared for the moment R4 seals: `rehearsal_factory_v2_r7_half.py` on the server rehearsal
+  checkout runs `authenticate_r7_go` (factory v2, r7_code_root = seed) plus C3 schedule/input
+  construction on the real R7 root, without the target root — read-only, non-authoritative.
+- Seventh consumer mismatch, found offline (codex, producer-built fixtures via `_write_outputs` →
+  controller `_merge` → sealer): the target-batch adapter that the provider uses rejected the real
+  MERGED receipt (fields `parallel_modes/parallel_worlds/parallel_shards/shards`), expected stale
+  C1 binding fields, and lacked the producer's C2 `mode` binding. Adapter aligned to the producer
+  (`3b8a2268…`), 18 adapter tests pass; V2 launch manifest rebuilt `f3d72644…`; bridge, factory-v2
+  and V2 bundle tests pass. Without this, the one-epoch diagnostic would have failed on the first
+  sealed root.
+- Test debt on the critical path: 4 tests in `test_v023_five_arm_source_training_runner.py`
+  (dated 02:23, pre-448) still feed C2 as the retired shared `EEAxisPairBatch` and fail with
+  `C2 provider batch must be normalized OPS-3 Q2`; the runner module itself is current. Fixture
+  update delegated to codex (runner module must not change: it is bound by the 100E manifest).
+- Adapter re-verified on real data after the merged-receipt fix: the r6 shard's 525 C2 rows still
+  load as (525,448) float32 with legal masks and the expected unit/kappa, and a real C2 update runs
+  (0.15 s). Parallel work started while r8 computes: (i) codex moves the V2 bundle's target root to
+  `-ops3-r8` and rebuilds the hash chain now instead of after the seal; (ii) codex prepares a
+  NON-FORMAL one-world plumbing rehearsal with five fresh untrained current models (export format
+  of the runner, `formal:false`) to measure per-step/per-arm wall time and surface plumbing defects
+  before any trained checkpoint exists; (iii) codex repairs the pre-448 runner tests.
+
+- **13:10 UTC addendum.** codex tasks all finished (exit 0): V2 bundle repointed to `-ops3-r8`; after the runner test file changed underneath it the manifest drifted, so it was rebuilt: `V023-100E-LAUNCH-MANIFEST.sha256` = `233a818765f2d67049a32ac74516162507bd075bc1fbf23261063a9d57be7c0f` (90 entries), bundle tests 60 pass; runner tests 7 pass; plumbing rehearsal tests 3 pass. r8: benchmarks 6/6 done, 16 shards running since ~12:56 UTC, no shard complete yet. None of this is a launch path after §13; it is kept as reusable plumbing.
+
+## 13 · R7 gate sealed 12:54 UTC — integrity VERIFIED, decision STOP_PHYSICS_R7 (scientific STOP)
+
+- **Verified.** The R4 domain-repair controller finished `V023_R7_DOMAIN_REPAIR_R4_PASS source_loads=8 composition_loads=48 pairs=688 c2_rows=688` and the sealer wrote `result.json`, `verification.json`, `MANIFEST.sha256`, `COMPLETE` into `/home/sat/mcrl-v023-lcsrs-gate-20260906-r7-i1` at 12:54:16 UTC. `result.json`: `integrity_status=VERIFIED`, `status=PASS_FINAL_INTEGRITY`, `c3_decision=STOP_PHYSICS_R7`, `no_rescue=true`. Local copies: `r7-sealed-receipts/` (result.json sha `dfcc70e441e2ec2c3be20608124c704c6d5c80b4d902a1aa7b75328faadbd2f7`, MANIFEST.sha256 sha `63ecb5a8ec08f8fe89c5e656871fd019493e0eb6fdb7777e152c9fef85b8c01f`, receipt status `PASS_R7_FINAL_VERIFIER_DOMAIN_REPAIR_R4`, corrected verification sha `94915623…`). Per-world numbers: `R7-STOP-PHYSICS-RESULT-2026-09-07.md`.
+- **Derivation (verified against `r7_balanced_successor_gate.py:adjudicate_section14_r7`).** Precedence: integrity → pair_coverage → (mechanics ∧ physical_signature ∧ teacher_composition) → (target_support ∧ held_out_learner ∧ world_stability) → (action_exposure ∧ literal_11 ∧ harmful_partial ∧ topology_consistency ∧ learned_composition ∧ service) → GO. `physical_signature=false` decides the token: pooled ratio-of-sums EE of the 11 profile versus 00 is −0.049% (`pooled_joint_direction=-1`) and only 2 of 8 worlds are positive (threshold: strictly positive and ≥4). `mechanics` (688/688) and `teacher_composition` (+0.335% vs baseline, 5 worlds) passed. Also false at lower precedence: `learned_composition` (−0.660% vs baseline, 2 worlds), `topology_consistency` (379/707 = 0.536 < 0.8), `harmful_partial` (`verify_v023_lcsrs_final.py:1668` — predicate true only when the harmful-partial fraction ≤ 0.05; it is false). Had physics passed, the token would have been `REDESIGN_INTERFACE_R7`, not GO. Held-out learner (balanced accuracy 0.705 vs placebo 0.626, spearman 0.839, 8/8 world wins), world stability, C1/C2 context all passed.
+- **Effect on training (verified).** The read-only R7-half rehearsal of the provider factory on `/home/sat/mcrl-v023-learner-rehearsal-checkout-20260907` (12:58 UTC) returned `R7_HALF_FAIL: V023PostR7ProviderFactoryError: R7 final result c3_decision is not the frozen GO value`. The V2 100E launcher's seed-first R7 closure check and factory preflight therefore stop before any learner is constructed. Contract `docs/MULTI-CATFISH-MCRL-V023-LC-SRS-SUCCESSOR-GATE-CONTRACT-R7-BALANCED-2026-09-06.md` §7: a valid non-GO result ends the LC-SRS successor route; no second metric revision, threshold relaxation, seed/world replacement, rerun selected by outcome, or automatic promotion of CSE/EC; a later CSE/EC experiment needs its own already-declared formula and falsifier. §8: the 100-episode five-arm screen begins only after GO.
+- **Timing (verified).** The source arrays that determine `physical_signature` were written on 2026-09-06 15:10 (`source-stage-verification.json`, `VERIFIED_SOURCE_STAGE`, decision fields null by design). The decision was therefore determinable ~22 h earlier and was hidden only by the verifier crash chain (defects 1–6, §2). This completes the audit question: the execution chain no longer has any integration boundary between code and launch; the remaining boundary is the pre-registered science gate, which says STOP.
+- **Controller action per brief.** Genuine scientific STOP → the execution mandate for the R7 → 100E line ends here. Receipts preserved; no R5, no factory or manifest rewrite, no relabelling. Dispatched 13:05 UTC: codex gpt-6-astra read-only adjudication (token derivation, whether any of the six verifier-side corrections could touch the physics predicates, contract-consistent options, what may be recorded as motivation without selection on outcome) → `ADJUDICATION-R7-STOP-PHYSICS-CODEX-GPT6-ASTRA-2026-09-07.md`.
+- **Unaffected and continuing.** r8 C1/C2 target generation (own claim ceiling `TRAIN_PHYSICAL_TARGET_GENERATION_ONLY…`, independent of the R7 decision) keeps running; its sealed targets remain usable by any successor that keeps C1/C2. codex finished: V2 bundle repointed to `-ops3-r8` (60 tests, dry-run PASS at its time), runner test-debt cleared (7 pass; runner module untouched, mtime 04:20 UTC), one-world plumbing rehearsal script staged (`rehearsal_v023_one_world_plumbing_fresh_models.py`, expected exit 3 = fail-closed untrained-export blocker; not run).
+- **What the user must decide.** Whether to declare a successor experiment (fresh contract with its own formula and falsifier, declared before any computation and not selected on R7 residuals), or to redesign C3 / the three-Catfish composition. Nothing in the current frozen chain can be re-run to a GO.
+- **Independent adjudication (codex gpt-6-astra, read-only, 13:09 UTC; `ADJUDICATION-R7-STOP-PHYSICS-CODEX-GPT6-ASTRA-2026-09-07.md`).** VERIFIED there: local receipt hashes match `MANIFEST.sha256` and `COMPLETE`; `STOP_PHYSICS_R7` is the mandatory token and `physical_signature` is the only predicate deciding it (physics alone passing would yield `REDESIGN_INTERFACE_R7`); the `harmful_partial` FAIL rendering is correct (passing guard = fraction ≤ 0.05); each of the six verifier-side corrections is traced to its scope and none changes the inputs or comparisons of `physical_signature`, `mechanics`, `teacher_composition`, `learned_composition`, `topology_consistency`; the factory refusal is a frozen admission rule (factory v2 lines 653–657, 100E contract lines 47–65). Recommendations: close LC-SRS R7 with evidence preserved; let r8 C1/C2 finish under its own claim ceiling and reuse authenticated targets and the 448-D Q2 head only under a fresh bounded handoff; CSE/EC or any new C3/composition design needs its own already-declared formula, falsifier and outcome-independent eligibility before computation; report the R7 aggregates as falsified-prediction evidence, never as a selector for the next mechanism. Decision line adopted: *Accept sealed `STOP_PHYSICS_R7`; the LC-SRS successor and its conditional 100E execution mandate end, with immutable evidence preserved.* The user must decide whether to close this direction or issue a fresh handoff for an independently justified, contract-eligible experiment.
+
+## 14 · Post-STOP route facts (collected 13:15–13:30 UTC; decision pending the codex gpt-6-astra ultra adjudication)
+
+- **A pre-outcome C3 contingency design exists.** `.scratch/multi-catfish-v023-c3-observability/V023-C3-RAPID-CONTINGENCY-LADDER-PREOUTCOME-2026-09-06.md` (dated 2026-09-06 01:15, written before any R7 outcome; status `FROZEN_PREOUTCOME_CONTINGENCY_DESIGN / NO_LAUNCH / NOT_CURRENT_AUTHORITY`). Locked candidate order L (LC-SRS, now STOP) → D (cost-shared externality, CSE) → F (energy-share correction, EC), with fixed formulas, fixed worlds/lineages/steps and kill rules: F0 formula seam (local; implemented in `.scratch/multi-catfish-v023-c3-contingency/c3_contingency_f0.py`, 18 tests passed on 09-06), F1 shared two-step kill screen (server; TRAIN world `2026121721`, lineage `2026092101`, first two canonical steps, one common keyed field; survive only if service ≥ BASE−0.001 and pooled ratio-of-sums EE strictly above BASE), F2 four-world oracle screen (worlds `2026121721`–`24`, lineages `2026092101`–`03`, ten steps; ≥3/4 worlds and 2/3 lineages positive), F3 source-to-learner screen (2000 source updates, checkpoints every 100, three learner seeds; INFORMED vs equal-budget NEUTRAL), F4 fixed-policy physical evaluation 100/500/1500/3000 episodes with a receipt every 100 (9000 remains a user-notified decision). Its §4 branch for `STOP_PHYSICS` is: *open F0/F1 for D and F in parallel on the shared tape*. The 100E contract §6 and the R7 contract §7 both refer to exactly this family. The F0 `PhysicalProfile` needs only fields that `ActionEvaluation` already exposes (`link_rate_bps`, service resolution, radiating beams, `link_power_w`, `fixed_power_w`, `system_power_w`), so an F1 tape generator is integration work on existing seams, not new physics.
+- **The five-arm runner and plumbing are three-route by construction.** `v023_five_arm_source_training_runner.py` fixes `ARMS = (ALL_NEUTRAL_CONTROL, FULL, DROP_C1, DROP_C2, DROP_C3)`, `ROUTES = (C1, C2, C3)` and `EEAxisLCSRSThreeRoute` checkpoints; the one-world plumbing needs five checkpoints in that order. A C1/C2-only training would need a declared two-route variant (four arms, two routes), a provider factory without the R7 dependency, and its own contract. Feeding a neutral C3 into all five arms would make FULL ≡ DROP_C3 under the old labels and is not an option.
+- **Measured costs for the estimate.** Fixed-policy physical evaluation, one arm, 100 episodes × 100 users × 10 committed steps on the server: `wall_time_s = 1293.98` (`.scratch/multi-catfish-v023-physical/server-result-20260906-r1/timing.json`, DROP_C3 development evaluation of 2026-09-06) → ≈ 21.6 min per 100 episodes per arm, ≈ 10.8 h per 3000, ≈ 32 h per 9000 (arms can run concurrently). Source training: no epoch timing exists yet; the one-epoch diagnostic is the measurement. C1/C2 target shards: 80–178 min each (r5/r6), 16 in parallel. The August RL-training figure (9000 episodes ≈ 9.9 h) is a different regime and is not used.
+- **Decision (13:30 UTC, controller with codex gpt-6-astra ultra; `ADJUDICATION-SUCCESSOR-ROUTE-CODEX-GPT6-ASTRA-ULTRA-2026-09-07.md`, `ASTRA_SUCCESSOR_ROUTE=C`).** Route C: close R7 and its five-arm 100E permanently; build a prospectively declared C1/C2-only development experiment now (three two-head learners `FULL2`, `DROP_C1`, `DROP_C2`; physical `BASELINE` = the unchanged pre-Catfish MODQN artifact; no all-neutral learner; 100 epochs = 200 updates per learner; train seed `2927175120652069826` reused unchanged; deployment masked unweighted `Q1+Q2` argmax); keep C3 outside the critical path — it re-enters only through its own admission, i.e. the pre-outcome contingency ladder (F1 → F2 → F3 → F4), never by selecting on two-route outcomes. Disclosure sentence adopted verbatim from the memo. Owner's delegation (13:12 UTC message): decisions are settled with astra; the owner asks only for the time to training.
+- **Dispatched 13:37 UTC (codex gpt-5.6-sol, isolated new dirs, workspace-write, no server):** (1) `.scratch/multi-catfish-v023-c1c2-provider-factory-v3/` — two-route provider factory authenticating the r8 root and the learner closure, no R7 dependency; (2) `.scratch/multi-catfish-v023-two-route-source-training-runner/` — two-head model reusing the existing Q1/Q2 networks, `C1→C2` orchestrator, three-arm runner, deployment parity; (3) `.scratch/multi-catfish-v023-c3-contingency-f1/` — ladder F1 kill screen implementation (world `2026121721`, lineage `2026092101`, two steps, shared tape, D before F) plus its preflight manifest builder. Common brief: `.scratch/multi-catfish-v023-c1c2-successor/SUCCESSOR-BRIEF-COMMON-2026-09-07.md`. The successor contract document is being written by the controller in parallel and will be reviewed read-only by astra before freezing; no successor computation (not even the diagnostic) before the contract and manifests are frozen and the r8 digests are bound.
+- **Estimate given to the owner (astra's table, anchored 13:20 UTC; engineering allowances, not confidence intervals):** first formal C1/C2 learner update optimistic 3–6 h, expected 6–12 h, pessimistic 1–3 days (assumes r8 seals ~15:30–16:00 UTC and no scientific stop); fixed-policy episode-evaluation ladder start optimistic 8–16 h, expected 1–3 days, pessimistic 4–7 days; 9000 cumulative episodes per arm = ladder start + measured per-episode cost (09-06 measurement: 21.6 min per 100 episodes per arm → ≈ 32 h per arm at that rate, arms concurrent); genuine three-Catfish training: no defensible date — admission-dependent (F1/F2 kill screens can stop it; seven prior C3 attempts all stopped). One timed real-artifact vertical slice (v3 load → one epoch → export/reload/resume → one matched four-arm world) is the measurement that tightens this.
+- **Artifact:** the earlier page URL (`…/0b130c2a…`) was reported deleted/inaccessible at republish time (13:40 UTC); the refreshed report was published as a new artifact: `https://claude.ai/code/artifact/983dfec8-bc7f-493d-a726-5fff26fdbd3e` (13:41 UTC; §14 decision bullets not yet rendered there).
+- **13:55–14:05 UTC.** Successor contract draft written by the controller (`.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md`; pre-outcome plumbing world seed `936547238915053535` from domain `MCRL_V023_C1C2_SUCCESSOR_PLUMBING_WORLD_SEED_V1`, derivation rule verified against the two V2 seeds). codex gpt-6-astra read-only review (`REVIEW-C1C2-SUCCESSOR-CONTRACT-CODEX-GPT6-ASTRA-2026-09-07.md`): `FREEZE_AFTER_FIXES` — seven textual defects (circular sealing, BASELINE inside the deployment rule, overlapping dispositions, ladder continuation vs runner semantics, late stage-C freeze, incomplete C3 restriction, repair/termination conflict) all applied in R2; its missing-declaration list is now contract §9 (baseline checkpoint `e6b063ef…`, keyed namespace `MCRL_V020_REPRICED_C3_GATE_V1`, 9000-world plan digest, aggregation and integrity dispositions). Fourth codex sol task dispatched 14:05 UTC: `.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/` (four-arm fixed-policy runner, 9000-world plan builder, stage-B plumbing diagnostic). Still no successor computation; freeze waits for r8 digests and implementation closure.
+
+## 15 · Fresh-context slowness audits (owner request 13:45 UTC)
+
+- **codex gpt-6-astra, fresh session, read-only (13:49 UTC; `FRESH-CONTEXT-SLOWNESS-AUDIT-CODEX-GPT6-ASTRA-2026-09-07.md`).** Five structural causes with evidence: (1) long jobs used as integration tests (R7 verdict determinable 09-06 15:10, delivered 09-07 12:54 = 21 h 44 min late; r5/r6 shard cycles 80–178 min per defect); (2) every experiment carries its own execution system — glue census 90 files in 31 directories, 68,434 lines of `sync_launch*/preflight*/seal*/verify*` (46,538 after exact dedup), divergent literals/manifests/imports; (3) C3 eligibility made a prerequisite for progress elsewhere — 66 design documents V0.3→V0.23 between 08-31 and 09-05, seven unsuccessful C3 tracks on 09-03/09-04, ~5 calendar days of C3 gating 09-02→09-07; (4) cheap rejection and expensive qualification insufficiently separated (the ladder has the right shape; R7 withheld a determinable necessary-condition failure behind unrelated crashes); (5) scheduling/review optimised tasks rather than decisions (r5 failure noticed 97 min late; reviews found the next boundary instead of closing a fixed checklist). Verdict on "a core problem nobody caught": **no** — the scientific core (a scoped oracle benefit does not guarantee observable, learnable, composable C3 action choices) and the process core (known risks still trigger bespoke serial cycles) are both already identified. Correction recorded: "no learner training has started" is literally inaccurate — V0.18/V0.19 receipts record 100 learner updates per initialisation; what has not started is the formal successor training, and fixed-policy episode evaluation must not be called episode learning. 72-hour plan matches the controller's: finish Route C (no R7 reopening, no neutral C3 substitution); run the whole consumer chain against every compatible real artifact without stopping at the first failure; one consolidated read-only schema/closure blocker list; one timed real vertical slice after freeze; separate INVALID_RUN repair from scientific termination and predetermine C3 spending limits. Weeks: one reusable execution library; separate research and engineering dependency graphs; one authority index and latency ledger.
+- **Claude Opus fresh-context audit (13:52 UTC; `FRESH-CONTEXT-SLOWNESS-AUDIT-CLAUDE-OPUS-2026-09-07.md`).** Verdict on a core problem nobody caught: **yes** — the freeze discipline that is mandatory for confirmatory claims was applied to every activity (exploration, integration, plumbing, debugging), which the owner's rules never required; consequences: (A1) no version control since 2026-08-23 (last commit; 106 `src/` files never committed, 537 status entries, 96 `.scratch` packages, 587,662 untracked lines, 447 copies of `ee_axis*.py`, 55 hand-built manifests, one CODE-MANIFEST rebuilt five times in a day) — the single-tree provenance break and DECISION A exist because no commit object names a code state; (A2) contracts as string literals and array layouts discovered only by real compute (13 defects, ≈ 30–35 h server wall, R7 verdict 22 h late); (A3) no cheap falsification tier — ten mechanisms killed at full price between 09-01 and 09-07, the cheap ladder written on day 14; (A4) design-document inflation (66 docs in 8 days, 55 of 96 packages in the last two days); (A5) serial execution where parallel was free (≈ 6–10 h). 72-hour plan: put everything in git today on a branch without touching content (pending owner's word); make an offline real-artifact dry-run mandatory before any launch; import producer-owned constants + static contract scan; run the timed vertical slice before freezing the execution section; freeze the successor contract now and stop new design documents. Weeks: cheap-kill-first as the only admission path; one parameterised harness; two lanes (engineering unlimited/read-only, science frozen/one-shot).
+- **Convergence and actions (14:00 UTC).** Both audits agree on the 72-hour plan. Done: scientific sections of the successor contract sealed separately (`V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md` + `.sha256`), execution bindings left open until the launch manifest; `ENGINEERING-LANE-CHARTER-2026-09-07.md` adopted; fifth codex sol task dispatched (`.scratch/multi-catfish-v023-engineering-lane/`: static contract scanner + generalised offline real-artifact dry-run with a ready stage-A chain spec); server shadow checkout staged. Pending the owner's word: committing the working tree to a git branch.

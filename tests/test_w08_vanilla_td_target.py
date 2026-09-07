@@ -161,7 +161,10 @@ def test_the_scalarised_weights_never_reach_the_target():
     """They belong to selection only — §8 forbids a shared scalarised action."""
     selection = inspect.getsource(MODQNTrainer.select_actions)
     assert "objective_weights" in selection
-    assert "_scalarize_q_values" in selection
+    assert "scalarized_q_values" in selection
+    diagnostic_surface = inspect.getsource(MODQNTrainer.scalarized_q_values)
+    assert "objective_weights" in diagnostic_surface
+    assert "_scalarize_q_values" in diagnostic_surface
     update = inspect.getsource(MODQNTrainer.update)
     assert "objective_weights" not in update
 

@@ -1,0 +1,196 @@
+{
+  "title": "Multi-objective Markov decision process (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Formalization used by the framework. Structure only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 2064,
+    "height": 918,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 250.83,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "state",
+      "label": [
+        "State s_u",
+        "connection, SINR, angle, load"
+      ],
+      "x": 30,
+      "y": 30,
+      "w": 626,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "context",
+      "label": [
+        "Congestion context",
+        "normalization → input s̃_u"
+      ],
+      "x": 678,
+      "y": 30,
+      "w": 572,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "qnets",
+      "label": [
+        "Three objective",
+        "Q-networks Q_1, Q_2, Q_3"
+      ],
+      "x": 1272,
+      "y": 30,
+      "w": 588,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "select",
+      "label": [
+        "Scalarize by Ω",
+        "per-user arg max"
+      ],
+      "x": 1365,
+      "y": 380,
+      "w": 402,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "env",
+      "label": [
+        "Environment",
+        "capacity limit v_max"
+      ],
+      "x": 106,
+      "y": 380,
+      "w": 474,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "feasible",
+      "label": [
+        "Feasible actions",
+        "from mask m_u(t)"
+      ],
+      "x": 1353,
+      "y": 630,
+      "w": 426,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-state-context",
+      "from": "state",
+      "to": "context",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-context-qnets",
+      "from": "context",
+      "to": "qnets",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-qnets-select",
+      "from": "qnets",
+      "to": "select",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-select-env",
+      "from": "select",
+      "to": "env",
+      "fromAnchor": "left",
+      "toAnchor": "right",
+      "label": "action a_u(t)"
+    },
+    {
+      "id": "e-env-state",
+      "from": "env",
+      "to": "state",
+      "fromAnchor": "top",
+      "toAnchor": "bottom",
+      "label": "reward vector, next state",
+      "style": {
+        "labelDx": 190
+      }
+    },
+    {
+      "id": "e-feasible-select",
+      "from": "feasible",
+      "to": "select",
+      "fromAnchor": "top",
+      "toAnchor": "bottom"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "beta_note",
+      "label": [
+        "Q-networks give the expected β-discounted return"
+      ],
+      "x": 1353,
+      "y": 840
+    }
+  ]
+}

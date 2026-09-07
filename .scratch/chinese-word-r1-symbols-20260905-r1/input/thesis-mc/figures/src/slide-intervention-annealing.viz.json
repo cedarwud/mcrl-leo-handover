@@ -1,0 +1,175 @@
+{
+  "title": "Periodic intervention: ratio-based injection (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "How the periodic intervention composes its mixed batch in the implemented MCRL framework, per thesis-mc/ch4-method.md 4.3. The catfish share is a fixed ratio; intervention annealing was removed from the framework on 2026-07-20. Mechanism only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1722,
+    "height": 650,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 209.27,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "share",
+      "label": [
+        "Catfish share",
+        "ρ_I"
+      ],
+      "x": 30,
+      "y": 30,
+      "w": 340,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "cfbuf",
+      "label": [
+        "Catfish",
+        "replay buffer"
+      ],
+      "x": 30,
+      "y": 250,
+      "w": 338,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "mainbuf",
+      "label": [
+        "Main",
+        "replay buffer"
+      ],
+      "x": 30,
+      "y": 470,
+      "w": 338,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "mix",
+      "label": [
+        "Mixed batch",
+        "size B"
+      ],
+      "x": 630,
+      "y": 250,
+      "w": 332,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6",
+        "strokeWidth": 3.0
+      }
+    },
+    {
+      "id": "upd",
+      "label": [
+        "Main-agent extra update",
+        "interval [T_lo, T_hi]"
+      ],
+      "x": 1162,
+      "y": 250,
+      "w": 530,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-share-mix",
+      "from": "share",
+      "to": "mix",
+      "fromAnchor": "right",
+      "toAnchor": "top",
+      "waypoints": [
+        {
+          "x": 796,
+          "y": 105
+        }
+      ]
+    },
+    {
+      "id": "e-cfbuf-mix",
+      "from": "cfbuf",
+      "to": "mix",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "label": "n_CF"
+    },
+    {
+      "id": "e-mainbuf-mix",
+      "from": "mainbuf",
+      "to": "mix",
+      "fromAnchor": "right",
+      "toAnchor": "bottom",
+      "label": "B − n_CF",
+      "style": {
+        "labelDx": -90
+      },
+      "waypoints": [
+        {
+          "x": 796,
+          "y": 545
+        }
+      ]
+    },
+    {
+      "id": "e-mix-upd",
+      "from": "mix",
+      "to": "upd",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    }
+  ],
+  "annotations": []
+}

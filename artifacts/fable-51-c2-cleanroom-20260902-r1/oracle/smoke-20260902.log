@@ -1,0 +1,52 @@
+mode=smoke seeds=[2026090299] lineages=[2026092101] arms=['P1', 'P3', 'P2', 'P12', 'P13', 'P23', 'P123', 'MAIN']
+output-dir=/tmp/claude-1000/-home-u24-papers-mcrl-leo-handover/d47a2ac0-70e1-49ca-b412-995b22bcb231/scratchpad/oracle/smoke-20260902
+lambda0=84994621.12635651 hex=0x1.443a8f481639ap+26
+kappa_bits=10097071012.757404 hex=0x1.2cea89d260f2ap+33
+[source-closure] source closure re-check FAILED and was not required: source authority is not ready; exact missing/invalid source artifact: prepared source authority failed: current source closure differs from sealed V0.4 manifest
+  [2026090299] MAIN            EE=9.03555e+07 served=0.9990 hold=0.6350 12.53s
+  [2026090299/2026092101] P1         EE=1.11259e+08 served=0.9990 hold=0.3990 19.24s
+  [2026090299/2026092101] P2         EE=1.11432e+08 served=1.0000 hold=0.1370 12.46s
+  [2026090299/2026092101] P3         EE=6.37755e+07 served=0.9570 hold=0.0730 11.96s
+  [2026090299/2026092101] P12        EE=1.10988e+08 served=1.0000 hold=0.1580 11.51s
+  [2026090299/2026092101] P13        EE=9.8231e+07 served=1.0000 hold=0.2050 12.16s
+  [2026090299/2026092101] P23        EE=1.09597e+08 served=1.0000 hold=0.1320 9.00s
+  [2026090299/2026092101] P123       EE=1.1087e+08 served=1.0000 hold=0.1540 8.32s
+
+wrote /tmp/claude-1000/-home-u24-papers-mcrl-leo-handover/d47a2ac0-70e1-49ca-b412-995b22bcb231/scratchpad/oracle/smoke-20260902/result.json
+wrote /tmp/claude-1000/-home-u24-papers-mcrl-leo-handover/d47a2ac0-70e1-49ca-b412-995b22bcb231/scratchpad/oracle/smoke-20260902/rows.jsonl
+
+=== per-arm pooled (ratio of sums) ===
+arm    episodes       EE bit/J   served     hold   infeas
+P1            1    1.11259e+08   0.9990   0.3990        1
+P2            1    1.11432e+08   1.0000   0.1370        0
+P3            1    6.37755e+07   0.9570   0.0730       43
+P12           1    1.10988e+08   1.0000   0.1580        0
+P13           1     9.8231e+07   1.0000   0.2050        0
+P23           1    1.09597e+08   1.0000   0.1320        0
+P123          1     1.1087e+08   1.0000   0.1540        0
+MAIN          1    9.03555e+07   0.9990   0.6350        1
+
+=== named contrasts (pooled) ===
+ P123 - P13   dEE=+1.26392e+07 (+12.8669%)  dserved=+0.0000  [primary_c2_direction]
+ P123 - P12   dEE=-117369 (-0.1057%)  dserved=+0.0000  [primary_c3_direction]
+ P123 - P23   dEE=+1.27343e+06 (+1.1619%)  dserved=+0.0000  [primary_c1_direction]
+ P123 - MAIN  dEE=+2.05147e+07 (+22.7044%)  dserved=+0.0010  [named_vs_main]
+  P13 - P1    dEE=-1.30284e+07 (-11.7099%)  dserved=+0.0010  [named_q3_marginal]
+  P12 - P1    dEE=-271789 (-0.2443%)  dserved=+0.0010  [named_q2star_marginal]
+   P1 - MAIN  dEE=+2.09038e+07 (+23.1351%)  dserved=+0.0000  [named_q1_vs_main]
+  P13 - MAIN  dEE=+7.87544e+06 (+8.7161%)  dserved=+0.0010  [named_dropc2_vs_main]
+
+=== self-checks ===
+(i)   G_a(0) geometry parity: max |rel err| = 2.561906170694133e-11 over 26572 legal slots; max |theta err| = 4.298516750878001e-11 deg
+(ii)  realized p(t+1) vs predicted p_a(1) on continued segments (origin t>=1): n=138 median rel err=0.00415425636933372 p95=0.013516636310042835 max=0.01700758454813675
+      step-0-origin predictions (environment warm-starts those segments): n=16 median rel err=0.08008379542698599 p95=0.4125427206489931
+(iii) P13 selection == five_arm.route_actions(DROP_C2): True (scrambled middle surface: True)
+
+=== one-step surface statistics (step 1) ===
+Q2*      min/median/max = -4.37913 / 0.0114262 / 4.81984
+Q1+Q3    min/median/max = -0.741221 / -0.198056 / 0.571145
+ZETA2* median (bits)   = 1.15371e+08
+argmax flip fraction when Q2* is added to Q1+Q3 = 0.6300
+
+8 episodes in 163.4s (mean 12.15s/episode)
+projected wall time for 6 seeds x 3 lineages x 7 arms + 6 MAIN = 132 episodes: 26.7 min at this rate

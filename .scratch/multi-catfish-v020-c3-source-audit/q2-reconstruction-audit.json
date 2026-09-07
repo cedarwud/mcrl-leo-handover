@@ -1,0 +1,84 @@
+{
+  "error_metrics_on_legal_entries": {
+    "absolute_bits": {
+      "count": 26425,
+      "max": 1551.5457935333252,
+      "median": 32.223602414131165,
+      "p95": 380.0288904190063
+    },
+    "relative_to_max_abs_target_scale": {
+      "count": 26425,
+      "max": 7.19617294278321e-08,
+      "median": 1.4945521864585158e-09,
+      "p95": 1.7625993574326557e-08
+    },
+    "relative_to_nonzero_target": {
+      "count": 23632,
+      "max": 0.00017426366424165392,
+      "median": 1.022689234740234e-08,
+      "p95": 1.7538938809509587e-07
+    }
+  },
+  "frozen_assumptions": {
+    "action_count": 28,
+    "beam_bandwidth_hz": 166666666.66666666,
+    "beam_power_max_w": 1.65,
+    "horizon_rule": "min(3, total_steps - 1 - step_index)",
+    "interval_s": 30.080000000000002,
+    "kappa_bits": 10097071012.757404,
+    "old_lambda_bits_per_j": 84994621.12635651,
+    "old_lambda_bits_per_j_hex": "0x1.443a8f481639ap+26",
+    "pa_max_efficiency": 0.35,
+    "pa_saturation_power_w": 5.217758139277826,
+    "total_steps": 10,
+    "user_count": 100
+  },
+  "horizon_counts": {
+    "0": 100,
+    "1": 100,
+    "2": 100,
+    "3": 700
+  },
+  "interpretation": {
+    "float32_precision_ceiling_observed": 1551.5457935333252,
+    "scientific_boundary": "Linear lambda repricing is supported under the frozen V0.14 100-user/10-step OPS3 contract. The state is not bit-exact because its 16 features are float32, and repricing does not recompute geometry or a changed policy/physics model.",
+    "state_sufficient_under_contract": true
+  },
+  "legal_entries": 26425,
+  "metadata_npz_sha256": "f5f38dafaa2ab32f13a4b472d9ee5288734ff3f0edf916b116a5a2a925acc163",
+  "repricing": {
+    "affine_reconstruction_absolute_bits": {
+      "count": 26425,
+      "max": 3.814697265625e-06,
+      "median": 0.0,
+      "p95": 9.5367431640625e-07
+    },
+    "formula": "z2(lambda') = z2(lambda) - (lambda' - lambda) * mean_h[chi_h * interval * dP_h]",
+    "new_lambda_bits_per_j": 42497310.563178256,
+    "new_lambda_bits_per_j_hex": "0x1.443a8f481639ap+25",
+    "physics_rerun": false,
+    "target_bits_max": 23217119982.17032,
+    "target_bits_median": -941707489.9582678,
+    "target_bits_min": -10416249649.971737
+  },
+  "rows": 1000,
+  "schema": "multi-catfish-mcrl-v020-c3-q2-state-reconstruction-audit-v1",
+  "source": "/home/u24/papers/mcrl-leo-handover/artifacts/multi-catfish-v014-learnability-20260903-r1/server-run/source-panel/shards/2026108001-2026092101/source.npz",
+  "source_metadata": {
+    "q2_state_dim": 448,
+    "q2_target_semantics": "uncentered-OPS3-z2-bits-surface",
+    "row_count": 1000,
+    "schema": "multi-catfish-mcrl-v014-compact-source-shard-v1",
+    "split": "TRAIN",
+    "test_split_opened": false
+  },
+  "source_receipt": {
+    "arrays_sha256": "1713d3679d7f63ba53e999052dd5d611f2c59c5227377306764c22e61ad202a1",
+    "metadata_sha256": "7f48eeabc464cdf58cf7706a8ef1e15925cbac34385dff162e02e2ffc8d859b0",
+    "npz_sha256": "f5f38dafaa2ab32f13a4b472d9ee5288734ff3f0edf916b116a5a2a925acc163",
+    "schema": "multi-catfish-mcrl-v014-compact-source-shard-v1"
+  },
+  "source_receipt_matches": true,
+  "source_sha256": "f5f38dafaa2ab32f13a4b472d9ee5288734ff3f0edf916b116a5a2a925acc163",
+  "zero_target_legal_entries": 2793
+}

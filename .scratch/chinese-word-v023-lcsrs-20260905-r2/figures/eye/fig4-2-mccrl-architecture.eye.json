@@ -1,0 +1,96 @@
+{
+  "generatedAt": "2026-07-19T18:51:52Z",
+  "spec": "/home/u24/papers/modqn-paper-reproduction/thesis-mc/figures/src/fig4-2-mccrl-architecture.viz.json",
+  "svg": "/home/u24/papers/modqn-paper-reproduction/thesis-mc/figures/fig4-2-mccrl-architecture.editable.svg",
+  "svgSha256": "941adb5387ed3ce1aeffd496c3c8e1bd583fbd77422fbbd8779d7fa22bd71c2a",
+  "targetWidthMm": 173.54,
+  "png": {
+    "eye": "/home/u24/.claude/jobs/c9a0375b/tmp/eye/fig4-2-mccrl-architecture.eye.png",
+    "eyeGray": "/home/u24/.claude/jobs/c9a0375b/tmp/eye/fig4-2-mccrl-architecture.eye-gray.png",
+    "scale": 1.4354,
+    "dpi": 300,
+    "widthPx": 2050,
+    "heightPx": 1289,
+    "note": "targetWidthMm=173.54mm at 300dpi (scale=1.4354)"
+  },
+  "verdictVocabulary": {
+    "pass": "meets the rule as rendered, no caveats",
+    "fixable": "misses the rule but the fix is known and cheap -- note MUST say what",
+    "fail": "misses the rule, ships broken if unaddressed",
+    "unreviewed": "not yet judged by a human or fresh-context agent -- the template default"
+  },
+  "items": [
+    {
+      "id": "rule-1-ink",
+      "rule": "Pure-black #000000 text; white background; box fills white or none -- no soft-black/gray body text.",
+      "verdict": "pass",
+      "note": "Text is #000000 throughout; canvas is #ffffff. Contribution boxes carry a light sand fill #f3efe6 (USER-SET 2026-07-19, lum 0.865 > the 0.55 dark-fill floor); all other boxes are #ffffff. No gray body text."
+    },
+    {
+      "id": "rule-2-colour-budget",
+      "rule": "<=2 non-gray hue families, each hue encodes exactly one declared meaning; colour only on borders/arrows/icons/data, zero decorative tint.",
+      "verdict": "pass",
+      "note": "One tint + two border hues, each encoding one declared meaning. Sand #f3efe6 fill = this thesis's contribution vs the MODQN baseline (a single tint for a single meaning — academic.md rule 2's sanctioned light tint). Borders: navy #2f5d80 = main agent / deployment path, ochre #8a5740 = catfish roles and training-only mechanisms. No decorative colour; the meaning is stated in the caption."
+    },
+    {
+      "id": "rule-3-effects",
+      "rule": "No gradient/shadow/glow/3D/clip-art/photo texture; corner radius <= ~5% of box height.",
+      "verdict": "pass",
+      "note": "Flat rects, rx=3 against h=78/106 (<5%); no gradient, shadow, glow, 3D or clip-art."
+    },
+    {
+      "id": "rule-4-strokes",
+      "rule": "Exactly 1-2 stroke weights (normal ~1.5pt, emphasis ~2.5pt); emphasis = the thicker stroke, never a dark fill.",
+      "verdict": "pass",
+      "note": "Two weights only: 1.5px normal, 2.5px emphasis. Emphasis is the thicker border, never a dark fill."
+    },
+    {
+      "id": "rule-5-type",
+      "rule": "One serif family (Times New Roman) matching the paper body, <=2 sizes, math variables italic, Unicode operators not ASCII ->/<=.",
+      "verdict": "pass",
+      "note": "Times New Roman only; two sizes (24 node / 22 edge, section, annotation); variables italic via autoNotation; Unicode operators only."
+    },
+    {
+      "id": "rule-6-icons",
+      "rule": "Small line-style icons only where they carry meaning; at most one signature glyph per project, confined to the boxes it names.",
+      "verdict": "pass",
+      "note": "No icons or glyphs in this figure."
+    },
+    {
+      "id": "rule-7-density",
+      "rule": "Whitespace lives between semantic groups, not inside boxes; a panel more than 1/3 empty must shrink or grow.",
+      "verdict": "pass",
+      "note": "Whitespace sits between semantic groups, not inside boxes."
+    },
+    {
+      "id": "rule-8-reading-order",
+      "rule": "Self-evident left-to-right spine (or row-major fold with an explicit wrap line); dashed = hypothesis/side-context declared in a legend; frameless labels; no in-figure title.",
+      "verdict": "pass",
+      "note": "Self-evident spine; dashed frame = training-only. No footer prose (academic.md rule 9): frame / fill / dashed meaning lives in the thesis caption."
+    },
+    {
+      "id": "composition-density",
+      "rule": "Whole-canvas balance at print scale: no dead zones / empty regions left once every box individually passes rule 7.",
+      "verdict": "pass",
+      "note": "Checked at print scale on the raster; no dead region large enough to read as an unfinished panel."
+    },
+    {
+      "id": "composition-reading-order",
+      "rule": "At a glance the eye actually follows the intended flow -- the holistic read, not just the structural self-evidence rule 8 encodes.",
+      "verdict": "pass",
+      "note": "The eye follows the spine as intended; verified on the raster, not the spec."
+    },
+    {
+      "id": "composition-label-arrow-attribution",
+      "rule": "Every edge label is unambiguous about which arrow it names -- no near-miss with a neighboring edge or label.",
+      "verdict": "pass",
+      "note": "Every edge label sits on the straight run of the edge it names, clear of neighbouring edges and of every box border."
+    },
+    {
+      "id": "grayscale-semantic",
+      "rule": "Every semantic distinction (hue-encoded meaning, dashed-vs-solid, emphasis stroke) still reads once the figure is converted to grayscale.",
+      "verdict": "pass",
+      "note": "Verified on the grayscale twin: solid-vs-dashed frames and the 2.5px emphasis stroke survive. The sand fill is subtle in grayscale by design — it is REDUNDANT encoding (border hue + the caption also state contribution), so no information is lost in black-and-white print."
+    }
+  ]
+}

@@ -209,9 +209,11 @@ def test_the_real_trainer_runs_real_episodes(adapter):
     trainer = MODQNTrainer(
         adapter, config, train_seed=0, env_seed=1, mobility_seed=2
     )
-    logs = trainer.train()
+    streamed_logs = []
+    logs = trainer.train(episode_callback=streamed_logs.append)
 
     assert len(logs) == 2
+    assert streamed_logs == logs, "server progress callbacks must see every episode"
     for log in logs:
         assert log.replay_size > 0, "transitions must reach replay"
         assert np.isfinite(log.scalar_reward)

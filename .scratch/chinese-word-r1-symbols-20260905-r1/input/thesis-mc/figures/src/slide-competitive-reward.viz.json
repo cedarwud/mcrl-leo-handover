@@ -1,0 +1,156 @@
+{
+  "title": "Competitive reward mechanism (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Paired same-state action comparison for the competitive reward on the first objective. Mechanism only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 2078,
+    "height": 510,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 252.53,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "cf_act",
+      "label": [
+        "Catfish action",
+        "reward r_1^CF"
+      ],
+      "x": 30,
+      "y": 30,
+      "w": 374,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "m_act",
+      "label": [
+        "Main greedy action",
+        "reward r_1^M"
+      ],
+      "x": 30,
+      "y": 330,
+      "w": 446,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "shape",
+      "label": [
+        "Shaped catfish reward",
+        "r_1^CF + η_w (r_1^CF − r_1^M)"
+      ],
+      "x": 696,
+      "y": 180,
+      "w": 688,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6",
+        "strokeWidth": 3.0
+      }
+    },
+    {
+      "id": "cf_upd",
+      "label": [
+        "Updates catfish only",
+        "raw r_1^CF to main pool"
+      ],
+      "x": 1504,
+      "y": 180,
+      "w": 544,
+      "h": 150,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-cf-shape",
+      "from": "cf_act",
+      "to": "shape",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 586,
+          "y": 105
+        },
+        {
+          "x": 586,
+          "y": 255
+        }
+      ]
+    },
+    {
+      "id": "e-m-shape",
+      "from": "m_act",
+      "to": "shape",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 586,
+          "y": 405
+        },
+        {
+          "x": 586,
+          "y": 255
+        }
+      ]
+    },
+    {
+      "id": "e-shape-upd",
+      "from": "shape",
+      "to": "cf_upd",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    }
+  ],
+  "annotations": []
+}

@@ -1,0 +1,27 @@
+Traceback (most recent call last):
+  File "/home/sat/mcrl-leo-handover-mc-v02-20260829/.scratch/smc-er-short-ep/run_short_ep.py", line 1840, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/sat/mcrl-leo-handover-mc-v02-20260829/.scratch/smc-er-short-ep/run_short_ep.py", line 1770, in main
+    result = run_treatment(
+        arm=args.arm,
+    ...<3 lines>...
+        **common,
+    )
+  File "/home/sat/mcrl-leo-handover-mc-v02-20260829/.scratch/smc-er-short-ep/run_short_ep.py", line 961, in run_treatment
+    c1_corpus = load_verified_c1_corpus(
+        c1_corpus_manifest,
+        expected_state_dim=main.state_dim,
+        expected_action_dim=main.action_dim,
+    )
+  File "/home/sat/mcrl-leo-handover-mc-v02-20260829/.scratch/smc-er-short-ep/c1_exp_corpus.py", line 255, in load_verified_c1_corpus
+    checkpoint = _require_bound_file(
+        manifest_path,
+    ...<2 lines>...
+        digest_field="checkpoint_sha256",
+    )
+  File "/home/sat/mcrl-leo-handover-mc-v02-20260829/.scratch/smc-er-short-ep/c1_exp_corpus.py", line 117, in _require_bound_file
+    path = _resolve_authority_path(manifest_path, authority.get(path_field), field=path_field)
+  File "/home/sat/mcrl-leo-handover-mc-v02-20260829/.scratch/smc-er-short-ep/c1_exp_corpus.py", line 94, in _resolve_authority_path
+    raise RuntimeError(f"C1 corpus authority {field} is unavailable")
+RuntimeError: C1 corpus authority checkpoint_path is unavailable

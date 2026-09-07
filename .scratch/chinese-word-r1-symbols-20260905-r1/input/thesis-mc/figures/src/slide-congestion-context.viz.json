@@ -1,0 +1,199 @@
+{
+  "title": "Congestion-context state augmentation (slide)",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Construction of the congestion context. Encoding only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1940,
+    "height": 650,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 235.76,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 42,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 2.0,
+      "arrowSize": 13,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 34,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 2.0,
+      "rx": 6,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 34,
+      "textFill": "#000000",
+      "lineHeight": 48
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "occ",
+      "label": [
+        "Prior occupancy",
+        "last-step users on it"
+      ],
+      "x": 30,
+      "y": 30,
+      "w": 444,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "cont",
+      "label": [
+        "Contender count",
+        "users choosing it now"
+      ],
+      "x": 30,
+      "y": 250,
+      "w": 486,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "rank",
+      "label": [
+        "Signal rank",
+        "this user's SINR order"
+      ],
+      "x": 30,
+      "y": 470,
+      "w": 490,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "chi",
+      "label": [
+        "Congestion context χ_u",
+        "three per-beam values"
+      ],
+      "x": 780,
+      "y": 250,
+      "w": 516,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6",
+        "strokeWidth": 3.0
+      }
+    },
+    {
+      "id": "aug",
+      "label": [
+        "Augmented state",
+        "[s_u, χ_u]"
+      ],
+      "x": 1506,
+      "y": 250,
+      "w": 404,
+      "h": 150,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "base",
+      "label": [
+        "Base state s_u"
+      ],
+      "x": 1529,
+      "y": 30,
+      "w": 358,
+      "h": 100,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-occ-chi",
+      "from": "occ",
+      "to": "chi",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 640,
+          "y": 105
+        },
+        {
+          "x": 640,
+          "y": 325
+        }
+      ]
+    },
+    {
+      "id": "e-cont-chi",
+      "from": "cont",
+      "to": "chi",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-rank-chi",
+      "from": "rank",
+      "to": "chi",
+      "fromAnchor": "right",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 640,
+          "y": 545
+        },
+        {
+          "x": 640,
+          "y": 325
+        }
+      ]
+    },
+    {
+      "id": "e-chi-aug",
+      "from": "chi",
+      "to": "aug",
+      "fromAnchor": "right",
+      "toAnchor": "left"
+    },
+    {
+      "id": "e-base-aug",
+      "from": "base",
+      "to": "aug",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    }
+  ],
+  "annotations": []
+}

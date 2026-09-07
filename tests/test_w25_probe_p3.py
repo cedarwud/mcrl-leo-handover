@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -233,6 +234,31 @@ def test_p3_is_reproducible_from_its_three_streams(record):
 def test_the_accumulator_refuses_to_summarise_nothing():
     with pytest.raises(MCRLContractError):
         P3Accumulator().summarise()
+
+
+def test_c1_calibration_reports_only_served_steps_separately_from_all_steps():
+    accumulator = P3Accumulator()
+    tables = [_table([(1, 10)]) for _ in range(3)]
+    observation = SimpleNamespace(
+        user_states=[object(), object(), object()],
+        candidates=SimpleNamespace(slot_tables=tables),
+        candidate_sinr=np.ones((3, NUM_ACTIONS), dtype=np.float64),
+    )
+    outcome = SimpleNamespace(
+        resolution=SimpleNamespace(served=np.array([True, False, True])),
+        reward_matrix=np.array(
+            [[10.0, 0.0, -1.0], [0.0, -1.0, 0.0], [30.0, 0.0, -2.0]],
+            dtype=np.float64,
+        ),
+        system_power_w=1.0,
+    )
+
+    accumulator.observe(observation, outcome, beam_bandwidth_hz=1.0)
+    result = accumulator.summarise()
+
+    assert result["r1"]["count"] == 3.0
+    assert result["r1_over_served_steps"]["count"] == 2.0
+    assert result["r1_over_served_steps"]["p95"] == pytest.approx(29.0)
 
 
 # -- the null baseline (ruling W-26 §2) ------------------------------------

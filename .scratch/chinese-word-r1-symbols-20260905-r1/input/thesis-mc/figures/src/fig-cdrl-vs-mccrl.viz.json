@@ -1,0 +1,587 @@
+{
+  "title": "CDRL and MCRL training procedures",
+  "metadata": {
+    "truthMode": "implemented",
+    "claimBoundary": "Side-by-side training procedure of CDRL [12] and the implemented MCRL framework, per thesis-mc/mc-modqn-base.md 2.1 and ch4-method.md 4.1-4.7. Rows are aligned so that a step present only in MCRL leaves its CDRL row empty. The four catfish mechanisms are inherited from CDRL [12]. Procedure only — no effectiveness claim, no result numbers."
+  },
+  "canvas": {
+    "width": 1511,
+    "height": 1224,
+    "backgroundFill": "#ffffff"
+  },
+  "targetWidthMm": 183.63,
+  "autoNotation": true,
+  "validateLayout": true,
+  "style": {
+    "node": {
+      "fill": "#ffffff",
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "rx": 3,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 24,
+      "textFill": "#000000"
+    },
+    "edge": {
+      "stroke": "#333941",
+      "strokeWidth": 1.5,
+      "arrowSize": 9,
+      "labelFontFamily": "Times New Roman, Times, serif",
+      "labelFontSize": 22,
+      "labelFill": "#000000"
+    },
+    "section": {
+      "fill": "#ffffff",
+      "stroke": "#78818a",
+      "strokeWidth": 1.5,
+      "rx": 4,
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000"
+    },
+    "annotation": {
+      "fontFamily": "Times New Roman, Times, serif",
+      "fontSize": 22,
+      "textFill": "#000000",
+      "lineHeight": 30
+    }
+  },
+  "sections": [],
+  "nodes": [
+    {
+      "id": "c_state",
+      "label": [
+        "State"
+      ],
+      "x": 125,
+      "y": 94,
+      "w": 148,
+      "h": 78,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "c_q",
+      "label": [
+        "Single-objective",
+        "Q-network"
+      ],
+      "x": 70,
+      "y": 374,
+      "w": 258,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "c_act",
+      "label": [
+        "Select action"
+      ],
+      "x": 87,
+      "y": 514,
+      "w": 224,
+      "h": 78,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "c_env",
+      "label": [
+        "Environment",
+        "scalar EE reward"
+      ],
+      "x": 67,
+      "y": 654,
+      "w": 264,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "c_upd",
+      "label": [
+        "Main agent update",
+        "discount β_M"
+      ],
+      "x": 60,
+      "y": 794,
+      "w": 278,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "c_cf",
+      "label": [
+        "One catfish role",
+        "no decision output"
+      ],
+      "x": 395,
+      "y": 374,
+      "w": 278,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "c_comp",
+      "label": [
+        "Competitive reward",
+        "vs the main agent"
+      ],
+      "x": 388,
+      "y": 514,
+      "w": 292,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "c_strat",
+      "label": [
+        "EE stratification",
+        "two buffers"
+      ],
+      "x": 406,
+      "y": 654,
+      "w": 256,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "c_cfupd",
+      "label": [
+        "Catfish update",
+        "discount β_CF"
+      ],
+      "x": 414,
+      "y": 794,
+      "w": 240,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "c_interv",
+      "label": [
+        "Periodic intervention",
+        "fixed mixed batch"
+      ],
+      "x": 383,
+      "y": 944,
+      "w": 302,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "m_state",
+      "label": [
+        "State and",
+        "congestion context"
+      ],
+      "x": 749,
+      "y": 94,
+      "w": 280,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "m_norm",
+      "label": [
+        "Context",
+        "normalization"
+      ],
+      "x": 772,
+      "y": 234,
+      "w": 234,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "m_q",
+      "label": [
+        "Three objective",
+        "Q-networks"
+      ],
+      "x": 764,
+      "y": 374,
+      "w": 250,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "m_act",
+      "label": [
+        "Per-user arg max"
+      ],
+      "x": 757,
+      "y": 514,
+      "w": 264,
+      "h": 78,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "m_env",
+      "label": [
+        "Environment",
+        "reward vector"
+      ],
+      "x": 773,
+      "y": 654,
+      "w": 232,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "m_upd",
+      "label": [
+        "Main agent update",
+        "β_M, loss with L_cap"
+      ],
+      "x": 734,
+      "y": 794,
+      "w": 310,
+      "h": 106,
+      "style": {
+        "stroke": "#2f5d80"
+      }
+    },
+    {
+      "id": "m_cf",
+      "label": [
+        "Three catfish",
+        "independent rollout; same model"
+      ],
+      "x": 1071,
+      "y": 374,
+      "w": 416,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    },
+    {
+      "id": "m_comp",
+      "label": [
+        "Competitive reward",
+        "on r_1"
+      ],
+      "x": 1133,
+      "y": 514,
+      "w": 292,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "m_strat",
+      "label": [
+        "EE stratification",
+        "by EE rank, two buffers"
+      ],
+      "x": 1114,
+      "y": 654,
+      "w": 330,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "m_cfupd",
+      "label": [
+        "Catfish update",
+        "discount β_CF"
+      ],
+      "x": 1159,
+      "y": 794,
+      "w": 240,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "m_interv",
+      "label": [
+        "Periodic intervention",
+        "fixed mixed batch"
+      ],
+      "x": 1128,
+      "y": 944,
+      "w": 302,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740"
+      }
+    },
+    {
+      "id": "m_lcap",
+      "label": [
+        "Capacity penalty L_cap",
+        "in the training objective"
+      ],
+      "x": 725,
+      "y": 1094,
+      "w": 328,
+      "h": 106,
+      "style": {
+        "stroke": "#8a5740",
+        "fill": "#f3efe6"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-c_state-c_q",
+      "from": "c_state",
+      "to": "c_q",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-c_q-c_act",
+      "from": "c_q",
+      "to": "c_act",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-c_act-c_env",
+      "from": "c_act",
+      "to": "c_env",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-c_env-c_upd",
+      "from": "c_env",
+      "to": "c_upd",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-c_cf-c_comp",
+      "from": "c_cf",
+      "to": "c_comp",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-c_comp-c_strat",
+      "from": "c_comp",
+      "to": "c_strat",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-c_strat-c_cfupd",
+      "from": "c_strat",
+      "to": "c_cfupd",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-c-strat-upd",
+      "from": "c_strat",
+      "to": "c_upd",
+      "fromAnchor": "left",
+      "toAnchor": "right",
+      "waypoints": [
+        {
+          "x": 359,
+          "y": 707
+        },
+        {
+          "x": 359,
+          "y": 847
+        }
+      ]
+    },
+    {
+      "id": "e-c-interv-upd",
+      "from": "c_interv",
+      "to": "c_upd",
+      "fromAnchor": "left",
+      "toAnchor": "bottom",
+      "waypoints": [
+        {
+          "x": 199,
+          "y": 997
+        }
+      ]
+    },
+    {
+      "id": "e-c-loop",
+      "from": "c_upd",
+      "to": "c_state",
+      "fromAnchor": "left",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 24,
+          "y": 847
+        },
+        {
+          "x": 24,
+          "y": 133
+        }
+      ]
+    },
+    {
+      "id": "e-m_state-m_norm",
+      "from": "m_state",
+      "to": "m_norm",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-m_norm-m_q",
+      "from": "m_norm",
+      "to": "m_q",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-m_q-m_act",
+      "from": "m_q",
+      "to": "m_act",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-m_act-m_env",
+      "from": "m_act",
+      "to": "m_env",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-m_env-m_upd",
+      "from": "m_env",
+      "to": "m_upd",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-m_cf-m_comp",
+      "from": "m_cf",
+      "to": "m_comp",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-m_comp-m_strat",
+      "from": "m_comp",
+      "to": "m_strat",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-m_strat-m_cfupd",
+      "from": "m_strat",
+      "to": "m_cfupd",
+      "fromAnchor": "bottom",
+      "toAnchor": "top"
+    },
+    {
+      "id": "e-m-strat-upd",
+      "from": "m_strat",
+      "to": "m_upd",
+      "fromAnchor": "left",
+      "toAnchor": "right",
+      "waypoints": [
+        {
+          "x": 1064,
+          "y": 707
+        },
+        {
+          "x": 1064,
+          "y": 847
+        }
+      ]
+    },
+    {
+      "id": "e-m-interv-upd",
+      "from": "m_interv",
+      "to": "m_upd",
+      "fromAnchor": "left",
+      "toAnchor": "bottom-right",
+      "waypoints": [
+        {
+          "x": 924,
+          "y": 997
+        }
+      ]
+    },
+    {
+      "id": "e-m-lcap-upd",
+      "from": "m_lcap",
+      "to": "m_upd",
+      "fromAnchor": "top",
+      "toAnchor": "bottom"
+    },
+    {
+      "id": "e-m-loop",
+      "from": "m_upd",
+      "to": "m_state",
+      "fromAnchor": "left",
+      "toAnchor": "left",
+      "waypoints": [
+        {
+          "x": 704,
+          "y": 847
+        },
+        {
+          "x": 704,
+          "y": 147
+        }
+      ]
+    }
+  ],
+  "annotations": [
+    {
+      "id": "hdr_l",
+      "label": [
+        "CDRL [12]: RIS-assisted link"
+      ],
+      "x": 29,
+      "y": 24
+    },
+    {
+      "id": "hdr_r",
+      "label": [
+        "MCRL: LEO multi-beam handover"
+      ],
+      "x": 759,
+      "y": 24
+    }
+  ]
+}

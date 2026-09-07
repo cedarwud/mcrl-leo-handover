@@ -1,25 +1,40 @@
 # PREREG 草案(W-13)— 第一份 baseline MODQN 預先註冊
 
-**狀態:已凍結(2026-08-23)。本檔自此為人讀副本,不再是權威。**
+**狀態:corrected-probe Q-F mapping 已於 2026-08-25 以 R2 seal 確定性套用。
+本檔是人讀的歷史產生來源,不再是執行權威。**
 
-> ## ⛔ 權威記錄:`artifacts/PREREG-FROZEN-2026-08-23.json`
+> ## ⛔ 現行權威記錄:`artifacts/PREREG-FROZEN-2026-08-25-R2.json`
 >
 > | | |
 > |---|---|
 > | schema | `mcrl-prereg-v1` |
-> | digest | `d35ddaffda580c8c109f758372956d41aa947b9eb3915d742f3f5f9b7aaecf08` |
+> | digest | `3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4` |
 > | 留出承諾 | `b9fa64909f81b70e…`(salt `mcrl-leo-handover-2026-08-22`) |
-> | 區段 | 17 個,125,740 bytes |
+> | 區段 | 18 個,133,304 bytes |
 > | 開放問題 | Q-D / Q-E / Q-F / Q-G **四項全數關閉並凍結** |
 >
-> 凍結由 `scripts/freeze_prereg.py` 執行,**它拒絕覆寫** ——
+> corrected freeze 由 `scripts/freeze_prereg.py` 執行,**它拒絕覆寫** ——
 > 可以再凍一次的記錄不算凍結。重開是一個要被看見、要被論證的動作,
 > 不是重跑一次腳本。
 >
+> 2026-08-23 與 2026-08-24 seal **都沒有被編輯或刪除**。其中 2026-08-24
+> byte SHA-256 為
+> `8c5603c94ecdebf65d5c5aee72fcd0c0feb0cfb94eeea6f0cfe6a0f11a3478b3`,
+> self-digest 為
+> `01b0d85cedbd67f80a24c2adf7ff4181c728070111d06334e8dc55f07f52c022`。
+> 2026-08-23 原始 seal:
+> `PREREG-FROZEN-2026-08-23.json` 的 byte SHA-256 仍為
+> `0deefc4473772bc8e512cd839a57a6d0a7838da766f17688dec19ab1fdc5877d`,
+> self-digest 仍為
+> `d35ddaffda580c8c109f758372956d41aa947b9eb3915d742f3f5f9b7aaecf08`。
+> 新 seal 的 `refreeze_provenance` 明列 supersession、原 digest、兩項 runtime
+> invariant 與 `按照你的建議進行` 的授權邊界。
+>
 > ### ⚠ 重算 digest 時會遇到的「不符」
 >
-> 記錄裡的 `digest` **不是檔案原始位元組的 sha256**。檔案位元組雜湊是
-> `0deefc4473772bc8…`,兩者不同,而那是正確的 —— **自指雜湊必須排除
+> 記錄裡的 `digest` **不是檔案原始位元組的 sha256**。新檔位元組雜湊是
+> `2f8377d73a1ae0190df13a2b59b7d02803dd5769a7d577d94e17e1b613a8c8c2`,
+> 兩者不同,而那是正確的 —— **自指雜湊必須排除
 > `digest` 欄位本身**。要重算,取 `{schema, sections, holdout}` 三者,
 > 以 `sort_keys=True, ensure_ascii=False` 序列化後 sha256
 > (`PreregRecord._hashable()`)。
@@ -34,14 +49,25 @@
 > 與實作它的常數必須仍然相等,取樣點與動作版本的措辭與 `CollapseSample`
 > 的結構必須仍然對得上。
 >
-> **簽核:2026-08-23 通過**(`CONTROLLER-SIGNOFF-PREREG-2026-08-23.md`)。
+> 原始簽核於 2026-08-23 通過(`CONTROLLER-SIGNOFF-PREREG-2026-08-23.md`);
+> corrected freeze 的額外權威是
+> `CONTROLLER-RULINGS-GPT-CLOSURE-2026-08-24.md`。
 > W-22 §6 的十二項凍結值逐一對過,追加裁決 A(貪婪 argmax)與 B(兩點取樣)
 > 都在記錄裡;八個稽核面向全部查過,其中 G-1…G-12 這一輪查的是**判準是否實際達成**,
 > 不是程式是否存在。
 
+> **Completion receipt (2026-08-24 17:35 Asia/Taipei):** server full suite
+> `792 passed, 1 skipped`,fresh live digest/TLE/SGP4 gate PASS；P6 三個
+> 9,000-episode arms 全數完成,凍結 selector 選出 `α=0.001`,獨立 main 完成
+> 9,000/9,000 episodes。完整 post-run analysis 與限制見
+> `POST-RUN-VALIDATION-2026-08-24.md`；本歷史草案不回寫結果或改動凍結契約。
+> Server live 目錄已增至 375 檔；本 run 不刪新檔,而以 373-file hard-link view
+> 消費這份 record 的 `frozen_files`。`tle_root` 僅是 host-specific mount path；
+> 檔案 hashes、dates、split/sampling 與 SGP4 contract 仍須逐項相等。
+
 **⚠ 任何 probe(含 P1)在本文件凍結之前不得執行**(SDD §7.1)。
-—— 已滿足:P1…P5、P7 皆在草案凍結流程下以 `build_draft()` 的同一份區段驅動,
-P6 需訓練輸出,留待 server。
+—— 已滿足:P1…P5、P7 皆在草案凍結流程下以 `build_draft()` 的同一份區段驅動；
+P6 當時留待 server,現已完成,結果另見 `POST-RUN-VALIDATION-2026-08-24.md`。
 
 > ## 凍結器已實作(W-13):`src/mcrl/runtime/prereg.py`
 >
@@ -72,6 +98,10 @@ P6 需訓練輸出,留待 server。
 ---
 
 ## 0. 凍結狀態總表
+
+> **歷史閱讀注意:**下表保留草案在各 W 階段的「待凍結/開放」狀態,用來說明
+> 決策如何形成；它不是 2026-08-24 的 current-state dashboard。現況只由上列
+> corrected artifact 與 live guards 判定。
 
 | # | 項目 | 值 | 類別 | 狀態 |
 |---|---|---|---|---|
@@ -299,6 +329,19 @@ verdict              rate > ceiling ⇒ semi-MDP 為**強制**,不是可選
 
 **`α` 的網格**:P6 規定跑 `{0.01, 0.003, 0.001}`,並須報告 §6 G-3 四項
 (`active_beam_count`、`argmax_agreement`、**正規化後的** `q_margin`、`q_entropy`)。
+
+2026-08-24 corrected freeze 將 P6 補成可執行協定:三臂各 9000 回合、共用一組
+training/environment/mobility seeds,以相同十個 train-split seeds 評估 final policy。
+主選取量是十個 seeds 的**平均校準 scalar reward**;不完整或非有限臂排除,完全同分
+依 `(0.01, 0.003, 0.001)` 宣告順序。random-near-tie、Q perturbation 與 cross-seed
+ranking 只作診斷,不得改選 learning rate。完整定義見 corrected artifact 的
+`probe_grid.P6.operational_protocol`。
+
+唯一 server launcher 另以 live guards 鎖住這份 frozen contract:重建 373-file TLE
+manifest 與 sgp4 2.27/WGS-72、逐項比對 P6/main/evaluation seeds,並直接從上述
+Q-F/Q-G/Q-D selection mappings 讀入 `(2029238.4328742754, 1.0, 6)`。每 100 回合的
+episode-boundary resume 保存 replay 與所有影響後續軌跡的 RNG；只有 source、依賴、
+TLE、seeds、LR 與完整 TrainerConfig fingerprint 全同才可續跑或重用結果。
 
 ## 6a. W-09 之後的實作面事實
 

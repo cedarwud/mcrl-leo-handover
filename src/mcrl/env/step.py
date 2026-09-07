@@ -33,17 +33,18 @@ radiating set under a named provenance
 (:data:`~mcrl.env.interference.CANDIDATE_SINR_PROVENANCE`).  Quoting one as
 the other would be a leak of post-action information into the state.
 
-⚠ **This environment does not currently serve anybody.**  ``p⁰ = 2 W``
-exceeds ``p_max = 1.65 W``, so every segment start is infeasible; see
-:data:`mcrl.env.link_budget.SEGMENT_START_EXCEEDS_BEAM_CEILING`.  The
-environment runs and measures it rather than hiding it, and
-:meth:`StepEnvironment.assert_ready_to_train` refuses to start training
-while it stands.
+Each served segment starts at ``p⁰ = p_max/2 = 0.825 W``, leaving the frozen
+3 dB in-segment gain budget below ``p_max = 1.65 W``.  Link feasibility still
+fails loudly whenever the angle recurrence requires more than the ceiling;
+:meth:`StepEnvironment.assert_ready_to_train` verifies the adopted mapping
+before a training run.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import copy
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -84,6 +85,12 @@ from .interference import (
     co_channel_interference,
     empty_radiating_beams,
     received_power_terms,
+)
+from .keyed_fading import KeyedFadingField
+from .observation_provenance import (
+    NativeObservationProvenance,
+    build_native_observation_provenance,
+    numpy_rng_state_sha256,
 )
 from .link_budget import (
     BEAM_BANDWIDTH_HZ,
@@ -228,6 +235,7 @@ class Segment:
     norad_id: int
     cell_id: int
     start_transmit_gain: float
+    age_steps: int = 0
 
     def continues(self, association: Association) -> bool:
         return (
@@ -250,6 +258,8 @@ class StepObservation:
     candidate_sinr: np.ndarray
     """``(U, 28)`` linear — the state's ``γ`` block, before encoding."""
     sinr_provenance: str = CANDIDATE_SINR_PROVENANCE
+    observation_provenance: NativeObservationProvenance | None = None
+    """Receipt-only native RNG/event ancestry; never a learner feature."""
 
     @property
     def num_users(self) -> int:
@@ -317,6 +327,45 @@ class StepOutcome:
         )
 
 
+@dataclass(frozen=True)
+class ActionEvaluation:
+    """Current-slot physics for an action vector, without committing state.
+
+    This is deliberately smaller than :class:`StepOutcome`: a counterfactual
+    has no next observation and never advances the scenario.  It uses a copy
+    of the caller's random generator, so several action vectors can be scored
+    against the same fading and shadowing draw (common random numbers).
+    """
+
+    rewards: tuple[RewardComponents, ...]
+    resolution: ServiceResolution
+    energy: SystemEnergyEfficiency
+    interference: InterferenceBreakdown
+    radiating: RadiatingBeams
+    link_power_w: np.ndarray
+    link_sinr: np.ndarray
+    link_rate_bps: np.ndarray
+    handovers: tuple[HandoverClass, ...]
+    system_power_w: float
+    fixed_power_w: float
+    diagnostics: dict[str, object] = field(default_factory=dict)
+
+    @property
+    def reward_matrix(self) -> np.ndarray:
+        """``(U, 3)`` of ``(r1, r2, r3)`` in unscaled natural units."""
+        return np.array(
+            [
+                (
+                    reward.r1_system_ee_contribution,
+                    reward.r2_handover,
+                    reward.r3_load_balance,
+                )
+                for reward in self.rewards
+            ],
+            dtype=np.float64,
+        )
+
+
 class StepEnvironment:
     """The MODQN environment: one decision per user per slot.
 
@@ -332,16 +381,25 @@ class StepEnvironment:
         *,
         physics: PhysicsConfig | None = None,
         trainer: TrainerConfig | None = None,
+        fading_field: KeyedFadingField | None = None,
     ) -> None:
         self.driver = driver
         self.physics = physics or PhysicsConfig()
         self.trainer = trainer or TrainerConfig()
+        self._fading_field = fading_field
         self.num_users = driver.config.mobility.num_users
         self._ledgers: list[HandoverLedger] = [
             HandoverLedger() for _ in range(self.num_users)
         ]
         self._segments: list[Segment | None] = [None] * self.num_users
         self._previous_radiating: RadiatingBeams = empty_radiating_beams()
+        self._previous_link_power_w = np.zeros(self.num_users, dtype=np.float64)
+        # The last committed, realised served rate per user.  This is kept
+        # beside the other previous-slot state so causal state encoders can
+        # build lagged rate burdens without consulting a counterfactual.
+        self._previous_served_rate_bps = np.zeros(
+            self.num_users, dtype=np.float64
+        )
         self._previous_demand: dict[tuple[int, int], int] = {}
         self._previous_association: list[Association | None] = [None] * self.num_users
         self._candidates: StepCandidates | None = None
@@ -350,6 +408,57 @@ class StepEnvironment:
         self._age_rng: np.random.Generator | None = None
         self._step_index = 0
         self._started = False
+
+    # -- episode-boundary resume state -----------------------------------
+
+    def training_state_dict(self) -> dict[str, object]:
+        """Return the environment state that survives an episode reset.
+
+        All physics state is intentionally episode-local and is rebuilt by
+        :meth:`reset`.  The warm-start age stream is the one exception: it is
+        spawned once and then reused across episodes, so losing its bit
+        generator state changes every later episode's initial segment ages.
+        Only that persistent stream crosses the resume boundary.
+        """
+
+        return {
+            "format_version": 1,
+            "age_rng_state": (
+                None
+                if self._age_rng is None
+                else copy.deepcopy(self._age_rng.bit_generator.state)
+            ),
+        }
+
+    def load_training_state_dict(self, state: Mapping[str, object]) -> None:
+        """Restore the persistent age stream from an episode-boundary state."""
+
+        if not isinstance(state, Mapping):
+            raise TypeError("StepEnvironment training state must be a mapping")
+        if state.get("format_version") != 1:
+            raise ValueError(
+                "unsupported StepEnvironment training state format_version "
+                f"{state.get('format_version')!r}; expected 1"
+            )
+        age_state = state.get("age_rng_state")
+        if age_state is None:
+            self._age_rng = None
+            return
+        try:
+            restored = np.random.default_rng()
+            restored.bit_generator.state = copy.deepcopy(age_state)
+        except (TypeError, ValueError, KeyError) as exc:
+            raise ValueError("invalid StepEnvironment age_rng_state") from exc
+        self._age_rng = restored
+
+    # ``resume_*`` is an explicit alias for callers that want to name the
+    # boundary rather than the broader training state.  Both routes carry
+    # exactly the same minimal payload.
+    def resume_state_dict(self) -> dict[str, object]:
+        return self.training_state_dict()
+
+    def load_resume_state_dict(self, state: Mapping[str, object]) -> None:
+        self.load_training_state_dict(state)
 
     # -- gates ------------------------------------------------------------
 
@@ -405,6 +514,10 @@ class StepEnvironment:
             ledger.reset()
         self._segments = [None] * self.num_users
         self._previous_radiating = empty_radiating_beams()
+        self._previous_link_power_w = np.zeros(self.num_users, dtype=np.float64)
+        self._previous_served_rate_bps = np.zeros(
+            self.num_users, dtype=np.float64
+        )
         self._previous_demand = {}
         self._previous_association = [None] * self.num_users
         self._step_index = 0
@@ -439,10 +552,61 @@ class StepEnvironment:
         decision = self._candidates
         selected = assert_selected_actions_valid(actions, decision.slot_tables)
 
+        return self._step_selected_actions(decision, selected, rng)
+
+    def step_without_user(
+        self,
+        actions: np.ndarray,
+        rng: np.random.Generator,
+        *,
+        focal_user: int,
+    ) -> StepOutcome:
+        """Commit one physics-only focal-removal counterfactual slot.
+
+        ``actions`` must first be a fully valid native action vector.  The
+        method then replaces exactly ``focal_user`` by ``NO_OP_ACTION`` behind
+        the deployment action-contract boundary and commits the resulting
+        physical transition.  This is a source-construction seam for a sealed
+        counterfactual branch; it does not make no-op selectable by Main or by
+        any Q surface.  Repeated removal across later offsets is a caller-owned
+        absorbing policy.
+        """
+
+        if not self._started or self._candidates is None:
+            raise MCRLContractError("the environment has not been reset")
+        decision = self._candidates
+        selected = assert_selected_actions_valid(actions, decision.slot_tables)
+        focal = int(focal_user)
+        if focal != focal_user or not 0 <= focal < self.num_users:
+            raise MCRLContractError("focal_user must index the environment users")
+        removed = np.array(selected, dtype=np.int64, copy=True)
+        removed[focal] = NO_OP_ACTION
+        removed.setflags(write=False)
+        return self._step_selected_actions(decision, removed, rng)
+
+    def _step_selected_actions(
+        self,
+        decision: StepCandidates,
+        selected: np.ndarray,
+        rng: np.random.Generator,
+    ) -> StepOutcome:
+        """Commit an already validated or dedicated counterfactual vector."""
+
         physics = self._resolve_physics(decision, selected, rng)
         rewards, handovers = self._rewards(decision, selected, physics)
 
         self._previous_radiating = physics["radiating"]
+        resolution: ServiceResolution = physics["resolution"]  # type: ignore[assignment]
+        link_power = np.asarray(physics["link_power_w"], dtype=np.float64)
+        self._previous_link_power_w = np.where(
+            resolution.served, link_power, 0.0
+        ).astype(np.float64, copy=False)
+        rate = np.asarray(physics["rate"], dtype=np.float64)
+        if rate.shape != (self.num_users,):
+            raise MCRLContractError("realised served rates have the wrong shape")
+        self._previous_served_rate_bps = np.where(
+            resolution.served, rate, 0.0
+        ).astype(np.float64, copy=True)
         self._previous_demand = physics["resolution"].demand_by_beam
         self._step_index += 1
         done = self._step_index >= self.driver.config.steps_per_episode
@@ -473,6 +637,88 @@ class StepEnvironment:
             handovers=handovers,
             system_power_w=physics["system_power_w"],
             fixed_power_w=physics["fixed_power_w"],
+            diagnostics=self._diagnostics(physics),
+        )
+
+    def evaluate_actions(
+        self, actions: np.ndarray, rng: np.random.Generator
+    ) -> ActionEvaluation:
+        """Evaluate current-slot actions without advancing state or ``rng``.
+
+        ``_resolve_physics`` normally commits only the link-power segment
+        bookkeeping before :meth:`step` commits the remaining episode state.
+        This method isolates that one write behind a snapshot/restore boundary
+        and classifies handovers without observing them in the ledgers.
+        """
+        if not self._started or self._candidates is None:
+            raise MCRLContractError("the environment has not been reset")
+        decision = self._candidates
+        selected = assert_selected_actions_valid(actions, decision.slot_tables)
+
+        return self._evaluate_selected_actions(decision, selected, rng)
+
+    def evaluate_actions_without_user(
+        self,
+        actions: np.ndarray,
+        rng: np.random.Generator,
+        *,
+        focal_user: int,
+    ) -> ActionEvaluation:
+        """Evaluate one physics-only focal removal without committing state.
+
+        ``actions`` must first be a fully valid deployment action vector.  The
+        evaluator then replaces exactly ``focal_user`` by ``NO_OP_ACTION``
+        behind the public action-contract boundary and keeps every other action
+        byte-identical.  This dedicated counterfactual is used only to measure
+        focal marginal power; it does not make a no-op legal for deployment.
+        """
+
+        if not self._started or self._candidates is None:
+            raise MCRLContractError("the environment has not been reset")
+        decision = self._candidates
+        selected = assert_selected_actions_valid(actions, decision.slot_tables)
+        focal = int(focal_user)
+        if focal != focal_user or not 0 <= focal < self.num_users:
+            raise MCRLContractError("focal_user must index the environment users")
+        if int(selected[focal]) == NO_OP_ACTION:
+            raise MCRLContractError(
+                "focal removal requires an originally served-action candidate"
+            )
+        removed = np.array(selected, dtype=np.int64, copy=True)
+        removed[focal] = NO_OP_ACTION
+        removed.setflags(write=False)
+        return self._evaluate_selected_actions(decision, removed, rng)
+
+    def _evaluate_selected_actions(
+        self,
+        decision: StepCandidates,
+        selected: np.ndarray,
+        rng: np.random.Generator,
+    ) -> ActionEvaluation:
+        """Evaluate an already-validated or dedicated counterfactual vector."""
+
+        local_rng = copy.deepcopy(rng)
+        segments = self._segments.copy()
+        try:
+            physics = self._resolve_physics(decision, selected, local_rng)
+        finally:
+            self._segments = segments
+        rewards, handovers = self._rewards(
+            decision, selected, physics, commit=False
+        )
+
+        return ActionEvaluation(
+            rewards=rewards,
+            resolution=physics["resolution"],  # type: ignore[arg-type]
+            energy=physics["energy"],  # type: ignore[arg-type]
+            interference=physics["interference"],  # type: ignore[arg-type]
+            radiating=physics["radiating"],  # type: ignore[arg-type]
+            link_power_w=physics["link_power_w"],  # type: ignore[arg-type]
+            link_sinr=physics["sinr"],  # type: ignore[arg-type]
+            link_rate_bps=physics["rate"],  # type: ignore[arg-type]
+            handovers=handovers,
+            system_power_w=float(physics["system_power_w"]),
+            fixed_power_w=float(physics["fixed_power_w"]),
             diagnostics=self._diagnostics(physics),
         )
 
@@ -508,13 +754,13 @@ class StepEnvironment:
         # One propagation per distinct age, only at step 0 and only if the
         # warm start is on.  Ages are small integers over a small span, so
         # this is a handful of calls rather than one per user.
-        historical: dict[int, np.ndarray] = {}
+        historical: dict[tuple[int, int], np.ndarray] = {}
         if self._step_index == 0 and self._pending_segment_age is not None:
             for age in sorted(set(int(a) for a in self._pending_segment_age)):
                 if age > 0:
                     historical.update(
                         {
-                            norad: position
+                            (age, norad): position
                             for norad, position in self.driver.satellite_ecef_at(
                                 -age
                             ).items()
@@ -588,6 +834,7 @@ class StepEnvironment:
                 )
                 if continuing and segment is not None:
                     start_gain = segment.start_transmit_gain
+                    age_steps = segment.age_steps + 1
                 else:
                     warm = (
                         self._warm_start_gain(uid, association, historical)
@@ -597,10 +844,19 @@ class StepEnvironment:
                     start_gain = (
                         warm if warm is not None else float(transmit_gain[uid])
                     )
+                    warm_age = (
+                        int(self._pending_segment_age[uid])
+                        if self._step_index == 0
+                        and warm is not None
+                        and self._pending_segment_age is not None
+                        else 0
+                    )
+                    age_steps = warm_age + 1
                 self._segments[uid] = Segment(
                     norad_id=association.norad_id,
                     cell_id=association.cell_id,
                     start_transmit_gain=start_gain,
+                    age_steps=age_steps,
                 )
             else:
                 self._segments[uid] = None
@@ -641,7 +897,10 @@ class StepEnvironment:
             grid=grid,
         )
         fading, shadow = self._draw_fading(
-            satellite_ecef, rng, _elevation_by_norad(decision)
+            satellite_ecef,
+            rng,
+            _elevation_by_norad(decision),
+            event="physics",
         )
 
         field_now = beam_field_at_users(
@@ -794,9 +1053,15 @@ class StepEnvironment:
         decision: StepCandidates,
         actions: np.ndarray,
         physics: dict[str, object],
+        *,
+        commit: bool = True,
     ) -> tuple[tuple[RewardComponents, ...], tuple[HandoverClass, ...]]:
-        """(3.25) ``r1``, (3.27) ``r2``, (3.28) ``r3``."""
-        from .action_contract import HANDOVER_COST, UNSERVED
+        """(3.25) ``r1``, (3.27) ``r2``, (3.28) ``r3``.
+
+        ``commit=False`` is the counterfactual path: it computes the exact
+        handover class from the current ledger but does not advance it.
+        """
+        from .action_contract import HANDOVER_COST, UNSERVED, classify_handover
 
         resolution: ServiceResolution = physics["resolution"]  # type: ignore[assignment]
         rate: np.ndarray = physics["rate"]  # type: ignore[assignment]
@@ -815,11 +1080,17 @@ class StepEnvironment:
                 if association is not None and resolution.served[uid]
                 else UNSERVED
             )
-            handover = self._ledgers[uid].observe(realised)
-            classes.append(handover)
-            self._previous_association[uid] = (
-                realised if isinstance(realised, Association) else None
+            ledger = self._ledgers[uid]
+            handover = (
+                ledger.observe(realised)
+                if commit
+                else classify_handover(ledger.previous, realised)
             )
+            classes.append(handover)
+            if commit:
+                self._previous_association[uid] = (
+                    realised if isinstance(realised, Association) else None
+                )
             rewards.append(
                 RewardComponents(
                     # r1 IS the energy efficiency (3.25).  The throughput
@@ -877,7 +1148,16 @@ class StepEnvironment:
             theta_deg[:, block] = np.where(np.isnan(angles), 0.0, angles)
 
         # Block 2 — gamma over every candidate, previous-step interference.
+        observation_rng_pre_sha256 = numpy_rng_state_sha256(rng)
         sinr = self._candidate_sinr(candidates, theta_deg, norad_ids, cell_ids, rng)
+        observation_provenance = build_native_observation_provenance(
+            step_index=self._step_index,
+            candidate_sinr=sinr,
+            rng=rng,
+            rng_pre_state_sha256=observation_rng_pre_sha256,
+            fading_field=self._fading_field,
+            sinr_provenance=CANDIDATE_SINR_PROVENANCE,
+        )
 
         # Block 4 — N_u(t-1): the previous step's UNGATED demand (P-5/P-6).
         loads = np.zeros((users, NUM_ACTIONS), dtype=np.float64)
@@ -915,6 +1195,7 @@ class StepEnvironment:
             state_matrix=np.stack(rows),
             masks=masks,
             candidate_sinr=sinr,
+            observation_provenance=observation_provenance,
         )
 
     def _candidate_sinr(
@@ -943,7 +1224,10 @@ class StepEnvironment:
         user_ecef = self.driver.user_ecef_km()
         satellite_ecef = _satellite_positions(candidates)
         fading, shadow = self._draw_fading(
-            satellite_ecef, rng, _elevation_by_norad(candidates)
+            satellite_ecef,
+            rng,
+            _elevation_by_norad(candidates),
+            event="observation",
         )
 
         transmit = transmit_gain_linear(theta_deg)
@@ -983,9 +1267,20 @@ class StepEnvironment:
                 int(norad): radiating.satellite_ecef_km[index]
                 for index, norad in enumerate(radiating.norad_ids.tolist())
             }
+            previous_only_ecef = {
+                norad: position
+                for norad, position in previous_ecef.items()
+                if norad not in fading
+            }
             previous_fading, previous_shadow = self._draw_fading(
-                previous_ecef, rng
+                previous_only_ecef,
+                rng,
+                event="observation",
             )
+            for norad in previous_ecef:
+                if norad in fading:
+                    previous_fading[norad] = fading[norad]
+                    previous_shadow[norad] = shadow[norad]
             field_previous = beam_field_at_users(
                 user_ecef_km=user_ecef,
                 radiating=radiating,
@@ -1034,6 +1329,8 @@ class StepEnvironment:
         satellite_ecef: dict[int, np.ndarray],
         rng: np.random.Generator,
         elevation_by_norad: dict[int, np.ndarray] | None = None,
+        *,
+        event: str = "direct",
     ) -> tuple[dict[int, np.ndarray], dict[int, np.ndarray]]:
         """The model's **only two random terms**, drawn together.
 
@@ -1065,6 +1362,15 @@ class StepEnvironment:
                     for norad in order
                 },
                 zero,
+            )
+        if self._fading_field is not None:
+            return self._fading_field.draw(
+                event=event,
+                step_index=self._step_index,
+                norad_ids=order,
+                num_users=self.num_users,
+                elevation_by_norad=elevation_by_norad,
+                k_factor_db=self.physics.rician_k_factor_db,
             )
         rician: dict[int, np.ndarray] = {}
         shadow: dict[int, np.ndarray] = {}
@@ -1103,7 +1409,7 @@ class StepEnvironment:
         self,
         uid: int,
         association: Association,
-        historical: dict[int, np.ndarray],
+        historical: dict[tuple[int, int], np.ndarray],
     ) -> float | None:
         """``G^T(θ(τ))`` for a segment that began before the episode did.
 
@@ -1121,7 +1427,7 @@ class StepEnvironment:
         age = int(ages[uid])
         if age <= 0:
             return None
-        position = historical.get(association.norad_id)
+        position = historical.get((age, association.norad_id))
         if position is None:
             # The satellite was not tracked that far back; a cold start is
             # the honest fallback, not an extrapolated position.

@@ -1,0 +1,321 @@
+{
+  "kind": "derived_composite_ep1700_full_mcrl_ablation",
+  "selected_episode": 1700,
+  "nominal_anchor_values": {
+    "num_users": 100,
+    "p_base_w": 0.25,
+    "p_max_w": 10,
+    "v_max": 3,
+    "bandwidth_hz": 500000000,
+    "noise_psd_dbm_hz": -174,
+    "users_per_active_beam": 8
+  },
+  "curve_order": [
+    {
+      "key": "baseline_modqn",
+      "label": "MODQN",
+      "uses_zscore": false
+    },
+    {
+      "key": "without_experience",
+      "label": "MCRL w/o experience shaping",
+      "uses_zscore": true
+    },
+    {
+      "key": "without_reward",
+      "label": "MCRL w/o reward shaping",
+      "uses_zscore": true
+    },
+    {
+      "key": "without_penalty",
+      "label": "MCRL w/o penalty shaping",
+      "uses_zscore": true
+    },
+    {
+      "key": "full_mcrl",
+      "label": "MCRL",
+      "uses_zscore": true
+    }
+  ],
+  "construction": {
+    "baseline": "raw L1 ep1700 anchor times its completed raw sensitivity ratio around the nominal point",
+    "without_experience": "Full sensitivity ratio anchored at Full minus the observed L3-L2 experience increment",
+    "without_reward": "observed L8 (Full without ACRM) ep1700 anchor times its completed sensitivity ratio",
+    "without_penalty": "observed L4 (experience plus reward, no capacity penalty) ep1700 anchor times its completed sensitivity ratio",
+    "full": "observed Full MCRL ep1700 anchor times its completed sensitivity ratio",
+    "bandwidth_noise": "ep1700 anchors times the completed corrected-EE kc1 mean scenario ratio around the nominal point; the legacy sweep has no ladder-arm per-seed rows",
+    "p_max": "ep1700 anchors times the completed corrected-EE KC1 mean power-cap ratio around the nominal 10 W point; the source retains only method means and the low-cap knee plus subsequent plateau is retained",
+    "noise_display": "shown only from -180 to -160 dBm/Hz so the near-zero convergence tail is excluded; 2 dB display points linearly interpolate the completed 4 dB source curve and are marked in the CSV",
+    "beam_load": "ep1700 anchors times the three-episode mean from a controlled fixed-beam, fixed-user load mechanism probe, normalized at load 8; only integer load 1--16 is shown, with every integer 1--8 plus 10, 12, 14, and 16; non-measured integer display points linearly interpolate the completed source measurements; this is not a policy-level ablation sweep"
+  },
+  "training_seeds": [
+    7,
+    42,
+    91,
+    137,
+    271,
+    2026
+  ],
+  "evaluation_episodes_per_source_sweep_point": 48,
+  "source_files": {
+    "num_users": [
+      {
+        "path": "artifacts/ep2k-figures/shards/shard-num_users-abl9k_baseline_raw-RESULT.json",
+        "sha256": "9454f7ebbfcd2545ade472f25831c28056f34ed9018cb85ccb67a56f55e620ce"
+      },
+      {
+        "path": "thesis-mc/figures/mcrl-objective-ablation-2026-07-22/r1-energy-efficiency/raw/num_users-abl9k_strategy3_acrm-RESULT.json",
+        "sha256": "7470748ad7c3007e57644fa2210d75a3550538b98473fe1593c37c684f42dc9b"
+      },
+      {
+        "path": "artifacts/ep2k-figures/shards/shard-num_users-abl9k_full_noacrm-RESULT.json",
+        "sha256": "0767a109a1b6a2f357a98bc08d0ad3bff68274651bb9ed847ff81085d87cf722"
+      },
+      {
+        "path": "thesis-mc/figures/mcrl-objective-ablation-2026-07-22/r1-energy-efficiency/raw/num_users-abl9k_full_mccrl-RESULT.json",
+        "sha256": "5769c3c7fe98443ddacfff0b7b6d69ea90ea1dedf114b3507f4c0054175b23aa"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline_raw-TRAJ.json",
+        "sha256": "de28b58c0f8893ba03552bb94637de58ec3647fc0be43e53d17bc057a934a667"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline-TRAJ.json",
+        "sha256": "f72345f7df72229eaa1089af94aabee7d700335f05e388585ed7314cee84a0fc"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_annealed-TRAJ.json",
+        "sha256": "ac3d5b98a8f525010ba81e5c693000b84ba53f0033fba8d5ce80f85bab265ea8"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_acrm-TRAJ.json",
+        "sha256": "bfd485ad5a9f17c14d19179e809dd2cbf9e7600bc4913d9ec69866d3435a2d32"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_noacrm-TRAJ.json",
+        "sha256": "ea7551b7fb183dbdd87697f03f63d913b3032ff9ccc7143b7badbf43b7f62a6d"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_mccrl-TRAJ.json",
+        "sha256": "fae1a542164675d19c1ebb5323dab8cc75d4726e61d92f0359590f62ed735460"
+      }
+    ],
+    "p_base": [
+      {
+        "path": "artifacts/ep2k-figures/shards/shard-p_base-abl9k_baseline_raw-RESULT.json",
+        "sha256": "6ab33231d99a6df4806aaecce192746f405954fd3853399594d95b54f20c686c"
+      },
+      {
+        "path": "thesis-mc/figures/mcrl-objective-ablation-2026-07-22/r1-energy-efficiency/raw/p_base-abl9k_strategy3_acrm-RESULT.json",
+        "sha256": "7e79caa67b2c66af9f0e4226937c7cf0db9dbe7093130bf5b07a1eb635cb6c0b"
+      },
+      {
+        "path": "artifacts/ep2k-figures/shards/shard-p_base-abl9k_full_noacrm-RESULT.json",
+        "sha256": "ae1cdb827eb6778443e0e14afbfe3a7c8cd2d19d0e6e9c8227e398c851c1efa7"
+      },
+      {
+        "path": "thesis-mc/figures/mcrl-objective-ablation-2026-07-22/r1-energy-efficiency/raw/p_base-abl9k_full_mccrl-RESULT.json",
+        "sha256": "33f730a17a44b78002319c5a9dcf94dd98aed62aca9e727abaec00c43fd802c1"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline_raw-TRAJ.json",
+        "sha256": "de28b58c0f8893ba03552bb94637de58ec3647fc0be43e53d17bc057a934a667"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline-TRAJ.json",
+        "sha256": "f72345f7df72229eaa1089af94aabee7d700335f05e388585ed7314cee84a0fc"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_annealed-TRAJ.json",
+        "sha256": "ac3d5b98a8f525010ba81e5c693000b84ba53f0033fba8d5ce80f85bab265ea8"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_acrm-TRAJ.json",
+        "sha256": "bfd485ad5a9f17c14d19179e809dd2cbf9e7600bc4913d9ec69866d3435a2d32"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_noacrm-TRAJ.json",
+        "sha256": "ea7551b7fb183dbdd87697f03f63d913b3032ff9ccc7143b7badbf43b7f62a6d"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_mccrl-TRAJ.json",
+        "sha256": "fae1a542164675d19c1ebb5323dab8cc75d4726e61d92f0359590f62ed735460"
+      }
+    ],
+    "k_cap": [
+      {
+        "path": "artifacts/ep2k-figures/shards/shard-k_cap-abl9k_baseline_raw-RESULT.json",
+        "sha256": "a6ecd6a960710edef6853290bb5052cddae5e96893165987f32f5d1d48ed160a"
+      },
+      {
+        "path": "artifacts/ep2k-figures/shards/shard-k_cap-abl9k_strategy3_acrm-RESULT.json",
+        "sha256": "e6927501c874c0795085a2de3fe91b9bb4b13e1893bce0a200b4a3faa1d66490"
+      },
+      {
+        "path": "artifacts/ep2k-figures/shards/shard-k_cap-abl9k_full_noacrm-RESULT.json",
+        "sha256": "9db25b99f6cd28825c933dc4f89334dce1441e747b84750488edf36b1d2acb62"
+      },
+      {
+        "path": "artifacts/ep2k-figures/shards/shard-k_cap-abl9k_full_mccrl-RESULT.json",
+        "sha256": "ea3bfb1dd1794f8b505885862d4c5fd5831f35f510486218893d8af1effc0609"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline_raw-TRAJ.json",
+        "sha256": "de28b58c0f8893ba03552bb94637de58ec3647fc0be43e53d17bc057a934a667"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline-TRAJ.json",
+        "sha256": "f72345f7df72229eaa1089af94aabee7d700335f05e388585ed7314cee84a0fc"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_annealed-TRAJ.json",
+        "sha256": "ac3d5b98a8f525010ba81e5c693000b84ba53f0033fba8d5ce80f85bab265ea8"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_acrm-TRAJ.json",
+        "sha256": "bfd485ad5a9f17c14d19179e809dd2cbf9e7600bc4913d9ec69866d3435a2d32"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_noacrm-TRAJ.json",
+        "sha256": "ea7551b7fb183dbdd87697f03f63d913b3032ff9ccc7143b7badbf43b7f62a6d"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_mccrl-TRAJ.json",
+        "sha256": "fae1a542164675d19c1ebb5323dab8cc75d4726e61d92f0359590f62ed735460"
+      }
+    ],
+    "p_max_w": [
+      {
+        "path": "thesis-mc/figures/kc1-ablation/axis_p_max_w/kc1_ablation_p_max_w_raw.csv",
+        "sha256": "be6465cb6540da99af14a3cabe3ae5266897c5d57abb9c83ecd09023771afc0a"
+      },
+      {
+        "path": "thesis-mc/figures/kc1-ablation/axis_p_max_w/kc1_ablation_p_max_w_raw.csv",
+        "sha256": "be6465cb6540da99af14a3cabe3ae5266897c5d57abb9c83ecd09023771afc0a"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline_raw-TRAJ.json",
+        "sha256": "de28b58c0f8893ba03552bb94637de58ec3647fc0be43e53d17bc057a934a667"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline-TRAJ.json",
+        "sha256": "f72345f7df72229eaa1089af94aabee7d700335f05e388585ed7314cee84a0fc"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_annealed-TRAJ.json",
+        "sha256": "ac3d5b98a8f525010ba81e5c693000b84ba53f0033fba8d5ce80f85bab265ea8"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_acrm-TRAJ.json",
+        "sha256": "bfd485ad5a9f17c14d19179e809dd2cbf9e7600bc4913d9ec69866d3435a2d32"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_noacrm-TRAJ.json",
+        "sha256": "ea7551b7fb183dbdd87697f03f63d913b3032ff9ccc7143b7badbf43b7f62a6d"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_mccrl-TRAJ.json",
+        "sha256": "fae1a542164675d19c1ebb5323dab8cc75d4726e61d92f0359590f62ed735460"
+      }
+    ],
+    "bandwidth_hz": [
+      {
+        "path": "thesis-mc/figures/kc1-ablation/axis_bandwidth_hz/kc1_ablation_bandwidth_hz_raw.csv",
+        "sha256": "d7b553352fba9e3965aa4ebb5814b6e1b34556c925a3c78bf3b2ccf05ae25ddc"
+      },
+      {
+        "path": "thesis-mc/figures/kc1-ablation/axis_bandwidth_hz/kc1_ablation_bandwidth_hz_raw.csv",
+        "sha256": "d7b553352fba9e3965aa4ebb5814b6e1b34556c925a3c78bf3b2ccf05ae25ddc"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline_raw-TRAJ.json",
+        "sha256": "de28b58c0f8893ba03552bb94637de58ec3647fc0be43e53d17bc057a934a667"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline-TRAJ.json",
+        "sha256": "f72345f7df72229eaa1089af94aabee7d700335f05e388585ed7314cee84a0fc"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_annealed-TRAJ.json",
+        "sha256": "ac3d5b98a8f525010ba81e5c693000b84ba53f0033fba8d5ce80f85bab265ea8"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_acrm-TRAJ.json",
+        "sha256": "bfd485ad5a9f17c14d19179e809dd2cbf9e7600bc4913d9ec69866d3435a2d32"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_noacrm-TRAJ.json",
+        "sha256": "ea7551b7fb183dbdd87697f03f63d913b3032ff9ccc7143b7badbf43b7f62a6d"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_mccrl-TRAJ.json",
+        "sha256": "fae1a542164675d19c1ebb5323dab8cc75d4726e61d92f0359590f62ed735460"
+      }
+    ],
+    "noise_psd_dbm_hz": [
+      {
+        "path": "thesis-mc/figures/kc1-ablation/axis_noise_psd_dbm_hz/kc1_ablation_noise_psd_dbm_hz_raw.csv",
+        "sha256": "8d58bf08a3fd0d19e6ae419f2284ee353fd0175d2e9080046bdc77ba02d92698"
+      },
+      {
+        "path": "thesis-mc/figures/kc1-ablation/axis_noise_psd_dbm_hz/kc1_ablation_noise_psd_dbm_hz_raw.csv",
+        "sha256": "8d58bf08a3fd0d19e6ae419f2284ee353fd0175d2e9080046bdc77ba02d92698"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline_raw-TRAJ.json",
+        "sha256": "de28b58c0f8893ba03552bb94637de58ec3647fc0be43e53d17bc057a934a667"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline-TRAJ.json",
+        "sha256": "f72345f7df72229eaa1089af94aabee7d700335f05e388585ed7314cee84a0fc"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_annealed-TRAJ.json",
+        "sha256": "ac3d5b98a8f525010ba81e5c693000b84ba53f0033fba8d5ce80f85bab265ea8"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_acrm-TRAJ.json",
+        "sha256": "bfd485ad5a9f17c14d19179e809dd2cbf9e7600bc4913d9ec69866d3435a2d32"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_noacrm-TRAJ.json",
+        "sha256": "ea7551b7fb183dbdd87697f03f63d913b3032ff9ccc7143b7badbf43b7f62a6d"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_mccrl-TRAJ.json",
+        "sha256": "fae1a542164675d19c1ebb5323dab8cc75d4726e61d92f0359590f62ed735460"
+      }
+    ],
+    "beam_load": [
+      {
+        "path": "analysis/family-b-collapse-diagnosis/catfish-v2/EE-LOAD-DEPENDENCE-RESULT-2026-07-13.json",
+        "sha256": "6d1292d49640aee74d1b2f5ca3202472203348d02c98b1acce4a2ddc4097ba98"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline_raw-TRAJ.json",
+        "sha256": "de28b58c0f8893ba03552bb94637de58ec3647fc0be43e53d17bc057a934a667"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_baseline-TRAJ.json",
+        "sha256": "f72345f7df72229eaa1089af94aabee7d700335f05e388585ed7314cee84a0fc"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_annealed-TRAJ.json",
+        "sha256": "ac3d5b98a8f525010ba81e5c693000b84ba53f0033fba8d5ce80f85bab265ea8"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_strategy3_acrm-TRAJ.json",
+        "sha256": "bfd485ad5a9f17c14d19179e809dd2cbf9e7600bc4913d9ec69866d3435a2d32"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_noacrm-TRAJ.json",
+        "sha256": "ea7551b7fb183dbdd87697f03f63d913b3032ff9ccc7143b7badbf43b7f62a6d"
+      },
+      {
+        "path": "artifacts/ep2k-scores/abl9k_full_mccrl-TRAJ.json",
+        "sha256": "fae1a542164675d19c1ebb5323dab8cc75d4726e61d92f0359590f62ed735460"
+      }
+    ]
+  },
+  "claim_ceiling": "Derived visual composite from completed experiments; not a new matched parameter-sweep result."
+}

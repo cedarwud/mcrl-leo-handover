@@ -36,6 +36,6 @@ T7–T10 為第 4 輪加入,T9 於 r7 更正,T11 於 r8 撤除,T12 為第 5 輪�
 | 現任失格則槽 0 給當步餘裕最大者 | `::test_an_ineligible_incumbent_yields_slot_zero_to_the_best_margin` |
 | 餘裕相同以 NORAD ID 破平手 | `::test_ties_in_margin_are_broken_by_norad_id` |
 | `cell_id(j)` 與 `l` 無關(§4A.2 正交性) | `::test_cell_identity_does_not_depend_on_the_satellite_slot` |
-| 狀態契約欄位為 13 維、總維度 125 | `::test_contract_state_block_is_thirteen_dimensions`、`::test_state_dimension_is_the_authoritative_125` |
+| 正式狀態為 112 維；13 維契約欄位僅於消融開關啟用時追加，屆時總維度 125 | `::test_contract_state_block_is_thirteen_dimensions`、`::test_state_dimension_is_the_authoritative_112` |
 | 每目標各自在自己的目標網路取 max(B1 vanilla) | `test_w03_td_target_masking.py::test_each_objective_maxes_over_its_own_target_network` |
 | P-4 動作有效性斷言 | `::test_T12_selected_action_validation_rejects_a_fallback_index` |
