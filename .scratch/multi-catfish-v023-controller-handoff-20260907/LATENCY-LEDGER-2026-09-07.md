@@ -32,5 +32,6 @@
 | 09-07 18:08 | stage-A verifier | positive path unreachable for rehearsals (root binding + formal:true) — correct but untestable | V2 rerun #3 | fix pass 5 adds `--nonformal` reconstruction mode |
 | 09-07 19:15 | stage-A runner checkpoint write | checkpoint + sidecar published before exports/receipt → a kill in the critical section leaves an unrecoverable root | V2 rerun #4 interruption drill | fix pass 6; would have destroyed a formal run on the next reboot |
 | 09-07 19:15 | stage-A runner checkpoint bytes | not byte-reproducible after `--resume` (pickle string identity) → receipt digests differ | V2 rerun #4 drill | fix pass 6 |
+| 09-07 19:50 | stage-A runner stale temps | export-manifest atomic temp matches the 'invalid unless dir' glob → kill inside the manifest write leaves an unresumable root (T); killed checkpoint temp survives and the verifier passes the root (S) | V2 rerun #5 drill | fix pass 7 |
 
 Pattern: defects found by launching cost 40 min–22 h each; the same classes found by offline probes, import smokes and read-only audits cost 30 s–8 min. Every new defect is appended here with the same five columns.
