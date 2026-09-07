@@ -11,7 +11,7 @@ from successor_launch_common import (
     BUNDLE_REL, LAUNCH_MANIFEST_NAME, LAUNCH_MANIFEST_SCHEMA,
     SuccessorLaunchError, assert_sync_coverage, canonical_bytes, file_manifest,
     launch_manifest_additions, required_sync_closure,
-    sidecar_path, validate_no_circular_digest, verify_launch_manifest,
+    sidecar_path, stage_c_manifest_members, validate_no_circular_digest, verify_launch_manifest,
     write_reproducible,
 )
 
@@ -25,6 +25,7 @@ def closure_groups(repo: Path) -> list[dict[str, object]]:
     candidates: list[tuple[str, list[Path]]] = [
         ("authoritative_shadow_closure", authoritative_closure),
         ("enumerated_bundle_additions", launch_manifest_additions(repo)),
+        ("stage_c_manifest_members", stage_c_manifest_members(repo)),
     ]
     result = []
     seen: set[Path] = set()

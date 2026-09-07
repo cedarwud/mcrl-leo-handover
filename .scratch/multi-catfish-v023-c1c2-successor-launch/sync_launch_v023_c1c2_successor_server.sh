@@ -31,6 +31,7 @@ declaration=${repo_root}/${successor_rel}/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARA
 
 remote_bundle=${checkout}/${bundle_rel}
 remote_bind=${remote_bundle}/bind_v023_c1c2_successor_freeze.py
+remote_builder=${remote_bundle}/build_v023_c1c2_successor_launch_manifest.py
 remote_preflight=${remote_bundle}/preflight_v023_c1c2_successor.py
 remote_diagnostic=${remote_bundle}/run_v023_c1c2_successor_one_epoch_diagnostic.py
 remote_formal_runner=${remote_bundle}/run_v023_c1c2_successor_formal.py
@@ -118,6 +119,8 @@ if ((dry_run)); then
   quote_command "${dry_rsync[@]}"
   printf ')\n'
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
+    "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_builder' --repo '$checkout' --check >/dev/null"
+  printf 'REMOTE ssh -- %q %q\n' "$server_host" \
     "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_bind' --repo '$checkout' --verify-learner-manifest-only"
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
     "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt' --target-root '$target_root' --formal"
@@ -160,6 +163,8 @@ rsync_args+=("${server_host}:${checkout}/")
 (cd "$repo_root" && "${rsync_args[@]}") || die 'authenticated launch closure sync failed'
 
 remote_env="export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONPATH='$checkout/src:$checkout:$checkout/$factory_rel:$checkout/$runner_rel'"
+ssh -- "$server_host" "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_builder' --repo '$checkout' --check >/dev/null" \
+  || die 'server launch payload or Stage-C manifest member verification failed'
 ssh -- "$server_host" "set -Eeuo pipefail; cd '$checkout'; $remote_env; '$server_python' '$remote_bind' --repo '$checkout' --verify-learner-manifest-only" \
   || die 'server learner manifest verification failed'
 

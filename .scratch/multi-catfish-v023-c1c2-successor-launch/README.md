@@ -35,6 +35,14 @@ For this stage-A bundle, the executable portion is therefore:
    a finite receipt for every one of the 200 route updates, then runs the
    independent verifier. Only the verifier may publish
    `PASS_SOURCE_TRAINING_INTEGRITY`, the output manifest, and `COMPLETE`.
+6. Before Stage B, run
+   `verify_v023_c1c2_successor.py --replay-arms OUTPUT_ROOT`. This separately
+   rebuilds each arm from the sealed epoch-0 state with a fresh authenticated
+   provider, replays all 200 C1/C2 updates, and bitwise-compares final tensors
+   and Adam state with that arm's epoch-100 export. It writes one sibling
+   `*-REPLAY-ARMS.json` receipt and SHA-256 sidecar without changing the sealed
+   Stage-A root. This separate precondition does not affect the formal verifier
+   PASS token.
 
 For an end-to-end engineering drill, the same wrapper accepts `--nonformal`
 only with a `formal:false` preflight receipt and an output basename containing
@@ -48,11 +56,12 @@ integrity token.
 
 The synchronized payload is intentionally a documented superset of the
 authoritative 246-path shadow closure. Its exact set is the closure union the
-closed `LAUNCH_MANIFEST_ADDITIONS` list in `successor_launch_common.py` (the ten
-bundle source/documentation files, generated binder outputs when present, the
-review, the closure-list authority, and the Stage-C code manifest plus its frozen
-pin). The launch manifest and its sidecar are then transferred as the two
-external authenticators; no closure-equality claim is made.
+closed `LAUNCH_MANIFEST_ADDITIONS` list in `successor_launch_common.py` and every
+member parsed from the currently pinned Stage-C code manifest. The Stage-C set
+is derived at build time, not hand-listed. The launch manifest and its sidecar
+are then transferred as the two external authenticators; after sync, the server
+re-verifies every payload member before preflight. No closure-equality claim is
+made.
 
 The fixed server identities are:
 
@@ -78,7 +87,8 @@ or replace stage A.
 - `run_v023_c1c2_successor_formal.py`: stock-runner controller that adds the
   required per-update finite ledger.
 - `verify_v023_c1c2_successor.py`: exact three-arm, 200-update, common-init,
-  provider-route, export, storage-isolation, and epoch-100 resume verifier.
+  provider-route, export, storage-isolation, and epoch-100 resume verifier,
+  plus the separate Stage-B arm-replay precondition.
 - `sync_launch_v023_c1c2_successor_server.sh`: authenticated sync, diagnostic,
   tmux launch, 120-second acknowledgement, and path handoff.
 

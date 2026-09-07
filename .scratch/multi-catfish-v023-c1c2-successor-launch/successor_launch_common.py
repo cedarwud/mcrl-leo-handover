@@ -52,6 +52,12 @@ LAUNCH_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-LAUNCH-MANIFEST.json"
 LAUNCH_MANIFEST_SIDECAR = LAUNCH_MANIFEST_NAME + ".sha256"
 STAGE_C_CODE_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST.sha256"
 STAGE_C_CODE_PIN_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST-FROZEN.sha256"
+STAGE_C_ADDENDUM_REL = SUCCESSOR_REL / (
+    "V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md"
+)
+STAGE_C_ADDENDUM_SIDECAR_REL = Path(
+    STAGE_C_ADDENDUM_REL.as_posix() + ".sha256"
+)
 
 # The authoritative 246-path shadow closure intentionally predates this launch
 # bundle.  These are the only additional payloads the Stage-A sync may add.
@@ -306,6 +312,14 @@ def launch_manifest_additions(root: Path) -> list[Path]:
     )
 
 
+def stage_c_manifest_members(root: Path) -> list[Path]:
+    """Return the live, authenticated member set declared by Stage C."""
+
+    verify_stage_c_code_bundle(root)
+    manifest = root / STAGE_C_LAUNCH_REL / STAGE_C_CODE_MANIFEST_NAME
+    return sorted(Path(path) for path in _parse_sha256_manifest(manifest))
+
+
 def required_sync_closure(root: Path) -> list[Path]:
     source = root / CLOSURE_LIST_REL
     if source.is_symlink() or not source.is_file():
@@ -449,6 +463,37 @@ def verify_stage_c_code_bundle(repo: Path) -> dict[str, Any]:
     if pin_path.is_symlink() or observed_pin != expected_pin:
         raise SuccessorLaunchError("Stage-C code manifest disagrees with its frozen pin")
     entries = _parse_sha256_manifest(manifest_path)
+    missing_members = [
+        relative
+        for relative in entries
+        if not (repo / relative).is_file() or (repo / relative).is_symlink()
+    ]
+    if missing_members:
+        raise SuccessorLaunchError(
+            "Stage-C code manifest member is missing or symlinked: "
+            + ", ".join(missing_members)
+        )
+    stale_members = [
+        relative
+        for relative, declared in entries.items()
+        if file_sha256(repo / relative) != declared
+    ]
+    if stale_members:
+        raise SuccessorLaunchError(
+            "Stage-C code manifest member digest disagrees: "
+            + ", ".join(stale_members)
+        )
+    required_addendum_members = {
+        STAGE_C_ADDENDUM_REL.as_posix(),
+        STAGE_C_ADDENDUM_SIDECAR_REL.as_posix(),
+    }
+    absent_addendum_members = sorted(required_addendum_members - set(entries))
+    if absent_addendum_members:
+        raise SuccessorLaunchError(
+            "Stage-C addendum and sidecar must both be manifest members: "
+            + ", ".join(absent_addendum_members)
+        )
+    verify_sidecar(repo / STAGE_C_ADDENDUM_REL)
     physical_prefix = PHYSICAL_EVALUATION_REL.as_posix() + "/"
     physical_entries = {
         path: value for path, value in entries.items() if path.startswith(physical_prefix)

@@ -6,6 +6,7 @@ import json
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -29,6 +30,102 @@ import successor_launch_common as COMMON
 import test_v023_c1c2_provider_factory_v3 as PRODUCER_FIXTURE
 import v023_c1c2_provider_factory_v3 as FACTORY
 import verify_v023_c1c2_successor as VERIFY
+
+
+def _stage_c_bundle_fixture(tmp_path: Path) -> Path:
+    """Copy the real producer manifest closure and seal the addendum sidecar."""
+
+    repo = tmp_path / "repo"
+    source_manifest = (
+        REPO / COMMON.STAGE_C_LAUNCH_REL / COMMON.STAGE_C_CODE_MANIFEST_NAME
+    )
+    entries = COMMON._parse_sha256_manifest(source_manifest)
+    for relative in entries:
+        source = REPO / relative
+        destination = repo / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    addendum = repo / COMMON.STAGE_C_ADDENDUM_REL
+    if not addendum.is_file():
+        source = REPO / COMMON.STAGE_C_ADDENDUM_REL
+        addendum.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, addendum)
+    addendum_sidecar = repo / COMMON.STAGE_C_ADDENDUM_SIDECAR_REL
+    addendum_sha = COMMON.file_sha256(addendum)
+    addendum_sidecar.write_text(
+        f"{addendum_sha}  {addendum.name}\n", encoding="ascii"
+    )
+    members = sorted(set(entries) | {COMMON.STAGE_C_ADDENDUM_SIDECAR_REL.as_posix()})
+    manifest = repo / COMMON.STAGE_C_LAUNCH_REL / COMMON.STAGE_C_CODE_MANIFEST_NAME
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        "".join(f"{COMMON.file_sha256(repo / member)}  {member}\n" for member in members),
+        encoding="ascii",
+    )
+    pin = repo / COMMON.STAGE_C_LAUNCH_REL / COMMON.STAGE_C_CODE_PIN_NAME
+    pin.write_text(
+        f"{COMMON.file_sha256(manifest)}  {manifest.name}\n", encoding="ascii"
+    )
+    return repo
+
+
+def test_stage_c_code_bundle_authenticates_every_member_and_addendum_sidecar(
+    tmp_path: Path,
+):
+    repo = _stage_c_bundle_fixture(tmp_path)
+    result = COMMON.verify_stage_c_code_bundle(repo)
+    assert result["code_manifest_entry_count"] >= 270
+    members = COMMON.stage_c_manifest_members(repo)
+    assert COMMON.STAGE_C_ADDENDUM_REL in members
+    assert COMMON.STAGE_C_ADDENDUM_SIDECAR_REL in members
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("stale-member", "member digest disagrees"),
+        ("missing-member", "member is missing"),
+        ("missing-pin", "pin is unreadable"),
+        ("stale-pin", "disagrees with its frozen pin"),
+        ("missing-addendum-sidecar", "member is missing"),
+        ("unlisted-addendum-sidecar", "must both be manifest members"),
+    ],
+)
+def test_stage_c_code_bundle_rejects_member_and_seal_mutations(
+    tmp_path: Path, mutation: str, message: str,
+):
+    repo = _stage_c_bundle_fixture(tmp_path)
+    pin = repo / COMMON.STAGE_C_LAUNCH_REL / COMMON.STAGE_C_CODE_PIN_NAME
+    member = repo / COMMON.STAGE_C_LAUNCH_REL / "verify_v023_c1c2_successor_stagec.py"
+    if mutation == "stale-member":
+        member.write_bytes(member.read_bytes() + b"\n# stale\n")
+    elif mutation == "missing-member":
+        member.unlink()
+    elif mutation == "missing-pin":
+        pin.unlink()
+    elif mutation == "stale-pin":
+        pin.write_text(
+            f"{'0' * 64}  {COMMON.STAGE_C_CODE_MANIFEST_NAME}\n",
+            encoding="ascii",
+        )
+    elif mutation == "missing-addendum-sidecar":
+        (repo / COMMON.STAGE_C_ADDENDUM_SIDECAR_REL).unlink()
+    else:
+        manifest = (
+            repo / COMMON.STAGE_C_LAUNCH_REL / COMMON.STAGE_C_CODE_MANIFEST_NAME
+        )
+        retained = [
+            row
+            for row in manifest.read_text(encoding="ascii").splitlines()
+            if not row.endswith(COMMON.STAGE_C_ADDENDUM_SIDECAR_REL.as_posix())
+        ]
+        manifest.write_text("\n".join(retained) + "\n", encoding="ascii")
+        pin.write_text(
+            f"{COMMON.file_sha256(manifest)}  {manifest.name}\n",
+            encoding="ascii",
+        )
+    with pytest.raises(COMMON.SuccessorLaunchError, match=message):
+        COMMON.verify_stage_c_code_bundle(repo)
 
 
 def test_stage_a_placeholder_left_unresolved_makes_binding_fail():
@@ -110,7 +207,8 @@ def test_launch_manifest_is_exact_closure_union_enumerated_bundle_additions():
     assert len(required) == 246
     assert set(required) == {Path(row) for row in rows}
     additions = set(COMMON.launch_manifest_additions(REPO))
-    assert set(observed) == set(required) | additions
+    stage_c_members = set(COMMON.stage_c_manifest_members(REPO))
+    assert set(observed) == set(required) | additions | stage_c_members
     assert len(observed) == len(set(observed))
 
 
@@ -491,6 +589,64 @@ def test_formal_output_passes_independent_epoch_zero_and_100_reconstruction(
     assert result["exact_epoch_100_resume"] is True
 
 
+def test_replay_arms_retrains_each_arm_and_writes_one_sealed_receipt(
+    producer_output: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch,
+):
+    output, preflight, provider_config = producer_output
+    learner_manifest = provider_config.parent / "learner-manifest.json"
+    monkeypatch.setattr(VERIFY, "BUNDLE_REL", learner_manifest.parent)
+    monkeypatch.setattr(VERIFY, "LEARNER_MANIFEST_NAME", learner_manifest.name)
+    result = VERIFY.decision_for_replay(
+        repo=REPO,
+        output_root=output,
+        provider_config_path=provider_config,
+        model_config_path=REPO / COMMON.SUCCESSOR_REL / COMMON.MODEL_CONFIG_NAME,
+        preflight_receipt_path=preflight,
+    )
+    assert result["status"] == VERIFY.REPLAY_PASS, result
+    assert result["formal"] is True
+    assert list(result["per_arm"]) == list(COMMON.ARM_ORDER)
+    assert all(
+        item["initial_state_exact"]
+        and item["final_tensors_and_adam_bitwise_equal"]
+        and item["replay_state_sha256"] == item["sealed_state_sha256"]
+        for item in result["per_arm"].values()
+    )
+    if result["identical_export_pairs"]:
+        assert result["identical_informed_neutral_panel_routes"]
+        assert result["export_distinctness"].startswith(
+            "IDENTICAL_INFORMED_NEUTRAL_PANELS:"
+        )
+    receipt = VERIFY._seal_replay_receipt(output, result)
+    assert COMMON.verify_sidecar(receipt) == COMMON.file_sha256(receipt)
+    with pytest.raises(COMMON.SuccessorLaunchError, match="refusing to overwrite"):
+        VERIFY._seal_replay_receipt(output, result)
+
+
+def test_nonformal_replay_arms_uses_nonformal_status_and_receipt(
+    nonformal_output: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch,
+):
+    output, preflight, provider_config = nonformal_output
+    learner_manifest = provider_config.parent / "learner-manifest.json"
+    monkeypatch.setattr(VERIFY, "BUNDLE_REL", learner_manifest.parent)
+    monkeypatch.setattr(VERIFY, "LEARNER_MANIFEST_NAME", learner_manifest.name)
+    result = VERIFY.decision_for_replay(
+        repo=REPO,
+        output_root=output,
+        provider_config_path=provider_config,
+        model_config_path=REPO / COMMON.SUCCESSOR_REL / COMMON.MODEL_CONFIG_NAME,
+        preflight_receipt_path=preflight,
+        nonformal=True,
+    )
+    assert result["status"] == VERIFY.NONFORMAL_REPLAY_PASS, result
+    assert result["formal"] is False
+    receipt = VERIFY._seal_replay_receipt(output, result)
+    receipt_payload = json.loads(receipt.read_text(encoding="ascii"))
+    assert receipt_payload["status"] == VERIFY.NONFORMAL_REPLAY_PASS
+    assert receipt_payload["formal"] is False
+    assert receipt_payload["status"] != VERIFY.REPLAY_PASS
+
+
 @pytest.fixture(scope="module")
 def nonformal_output(
     producer_output: tuple[Path, Path, Path],
@@ -795,6 +951,10 @@ def test_launcher_orders_freeze_manifest_sync_diagnostic_and_tmux():
     text = (HERE / "sync_launch_v023_c1c2_successor_server.sh").read_text(encoding="utf-8")
     assert text.index('"${local_bind_cmd[@]}"') < text.index('"${local_manifest_cmd[@]}"')
     assert text.index("rsync_args=(rsync") < text.rindex("--verify-learner-manifest-only")
+    assert text.index("authenticated launch closure sync failed") < text.rindex(
+        "server launch payload or Stage-C manifest member verification failed"
+    )
+    assert "'$remote_builder' --repo '$checkout' --check >/dev/null" in text
     assert text.index("preflight_command=") < text.index("diagnostic_command=")
     assert text.index("diagnostic_command=") < text.rindex("tmux new-session")
     assert "OMP_NUM_THREADS=1" in text

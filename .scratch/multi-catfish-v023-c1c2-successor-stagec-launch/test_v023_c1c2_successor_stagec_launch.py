@@ -649,6 +649,12 @@ def test_manifest_requires_closure_list_and_syncs_every_closure_path(tmp_path: P
     sync_paths = set((HERE / manifest_builder.SYNC_LIST_NAME).read_text(encoding="ascii").splitlines())
     assert len(closure_paths) == 246
     assert closure_paths <= sync_paths
+    stage_c_members = set(manifest_builder.closure(REPO))
+    addendum = (
+        ".scratch/multi-catfish-v023-c1c2-successor/"
+        "V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md"
+    )
+    assert {addendum, f"{addendum}.sha256"} <= stage_c_members
 
 
 def test_circular_execution_binding_digest_is_rejected() -> None:

@@ -13,13 +13,15 @@ import math
 import os
 from pathlib import Path
 import re
+import struct
 import sys
+import tempfile
 from typing import Any
 
 from successor_launch_common import (
     ARM_ORDER, BUNDLE_REL, CLAIM_CEILING, EPOCH_BUDGET, FACTORY_REL,
     LEARNER_MANIFEST_NAME, PROVIDER_CONFIG_NAME, ROUTE_ORDER, RUNNER_REL,
-    SOURCE_MAP, TRAIN_SEED, SuccessorLaunchError, canonical_bytes,
+    SOURCE_MAP, SUCCESSOR_REL, TARGET_ROOT, TRAIN_SEED, SuccessorLaunchError, canonical_bytes,
     authenticate_preflight_freeze_authorities, file_sha256, read_canonical_json,
     verify_sidecar, write_once,
 )
@@ -30,6 +32,12 @@ PASS = "PASS_SOURCE_TRAINING_INTEGRITY"
 STOP = "STOP_SOURCE_TRAINING_INTEGRITY"
 NONFORMAL_PASS = "NONFORMAL_RECONSTRUCTION_PASS"
 NONFORMAL_FAIL = "NONFORMAL_RECONSTRUCTION_FAIL"
+REPLAY_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-arm-replay-v1"
+REPLAY_PASS = "REPLAY_ARMS_PASS"
+REPLAY_FAIL = "REPLAY_ARMS_FAIL"
+NONFORMAL_REPLAY_PASS = "NONFORMAL_REPLAY_ARMS_PASS"
+NONFORMAL_REPLAY_FAIL = "NONFORMAL_REPLAY_ARMS_FAIL"
+REPLAY_RECEIPT_SUFFIX = "-REPLAY-ARMS.json"
 LEDGER_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-update-ledger-v1"
 RESUME_RECEIPT_SCHEMA = (
     "multi-catfish-mcrl-v023-c1c2-successor-two-route-source-training-"
@@ -37,6 +45,8 @@ RESUME_RECEIPT_SCHEMA = (
 )
 _RESUME_RECEIPT_RE = re.compile(r"^resume-(?P<sequence>[0-9]{4})\.json$")
 _STALE_TEMP_RE = re.compile(r"^\..+\.[0-9a-f]{32}\.tmp$")
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
 
 
 class VerificationError(SuccessorLaunchError):
@@ -315,6 +325,343 @@ def _storage_isolation(rebuilt: Any) -> None:
                         if pointer in owners:
                             raise VerificationError("optimizer storage is not independent")
                         owners[pointer] = arm
+
+
+def _bitwise_tree_sha256(value: object) -> str:
+    """Digest tensor/Adam state without pickle storage-identity effects."""
+
+    import torch
+
+    result = hashlib.sha256()
+    result.update(b"MCRL_V023_C1C2_REPLAY_STATE_V1\0")
+
+    def visit(item: object) -> None:
+        if isinstance(item, torch.Tensor):
+            tensor = item.detach().cpu().contiguous()
+            result.update(b"tensor\0" + str(tensor.dtype).encode("ascii") + b"\0")
+            result.update(str(tuple(tensor.shape)).encode("ascii") + b"\0")
+            if tensor.numel():
+                result.update(
+                    tensor.reshape(-1).view(torch.uint8).numpy().tobytes()
+                )
+            return
+        if isinstance(item, Mapping):
+            result.update(b"mapping\0" + str(len(item)).encode("ascii") + b"\0")
+            for key, child in item.items():
+                visit(key)
+                visit(child)
+            return
+        if isinstance(item, list):
+            result.update(b"list\0" + str(len(item)).encode("ascii") + b"\0")
+            for child in item:
+                visit(child)
+            return
+        if isinstance(item, tuple):
+            result.update(b"tuple\0" + str(len(item)).encode("ascii") + b"\0")
+            for child in item:
+                visit(child)
+            return
+        if item is None:
+            result.update(b"none\0")
+        elif isinstance(item, bool):
+            result.update(b"bool\0" + (b"1" if item else b"0"))
+        elif isinstance(item, int):
+            result.update(b"int\0" + str(item).encode("ascii") + b"\0")
+        elif isinstance(item, float):
+            result.update(b"float\0" + struct.pack(">d", item))
+        elif isinstance(item, str):
+            encoded = item.encode("utf-8")
+            result.update(b"str\0" + str(len(encoded)).encode("ascii") + b"\0" + encoded)
+        elif isinstance(item, bytes):
+            result.update(b"bytes\0" + str(len(item)).encode("ascii") + b"\0" + item)
+        else:
+            raise VerificationError(
+                f"unsupported replay state value: {type(item).__name__}"
+            )
+
+    visit(value)
+    return result.hexdigest()
+
+
+def _batch_bitwise_sha256(route: str, batch: object) -> str:
+    """Digest the numerical panel, excluding its informed/neutral label."""
+
+    import numpy as np
+
+    result = hashlib.sha256()
+    result.update(b"MCRL_V023_C1C2_REPLAY_PANEL_V1\0" + route.encode("ascii"))
+    target_field = (
+        "target_surplus_bits"
+        if hasattr(batch, "target_surplus_bits")
+        else "normalized_target_deltas"
+    )
+    for field in (
+        "states", "reference_actions", "candidate_actions", target_field,
+        "action_masks",
+    ):
+        array = np.ascontiguousarray(np.asarray(getattr(batch, field)))
+        result.update(b"\0" + field.encode("ascii") + b"\0")
+        result.update(array.dtype.str.encode("ascii") + b"\0")
+        result.update(np.asarray(array.shape, dtype=np.int64).tobytes())
+        result.update(array.tobytes())
+    return result.hexdigest()
+
+
+def _replay_receipt_path(output_root: Path) -> Path:
+    return output_root.parent / f"{output_root.name}{REPLAY_RECEIPT_SUFFIX}"
+
+
+def _seal_replay_receipt(output_root: Path, result: Mapping[str, Any]) -> Path:
+    path = _replay_receipt_path(output_root)
+    raw = canonical_bytes(dict(result))
+    value = write_once(path, raw)
+    write_once(
+        path.with_name(path.name + ".sha256"),
+        f"{value}  {path.name}\n".encode("ascii"),
+    )
+    return path
+
+
+def replay_arms(
+    *, repo: Path, output_root: Path, provider_config_path: Path,
+    model_config_path: Path, preflight_receipt_path: Path,
+    nonformal: bool = False,
+) -> dict[str, Any]:
+    """Replay each arm independently from epoch zero and compare bitwise state."""
+
+    verification = verify_output(
+        repo=repo,
+        output_root=output_root,
+        provider_config_path=provider_config_path,
+        model_config_path=model_config_path,
+        preflight_receipt_path=preflight_receipt_path,
+        reconstruct=True,
+        nonformal=nonformal,
+    )
+    expected_verification_status = NONFORMAL_PASS if nonformal else PASS
+    if verification.get("status") != expected_verification_status:
+        raise VerificationError("Stage-A verification is not PASS for replay mode")
+    provider_config_sha = verify_sidecar(provider_config_path)
+    provider_config = read_canonical_json(
+        provider_config_path, field="replay provider config"
+    )
+    model_config_sha = verify_sidecar(model_config_path)
+    target_root_raw = provider_config.get("target_root")
+    if not isinstance(target_root_raw, str):
+        raise VerificationError("replay provider target root is missing")
+    real_target = Path(target_root_raw) == TARGET_ROOT
+    factory, runner_module = _load_modules(repo)
+    orchestrator_module = importlib.import_module(
+        "v023_two_route_learner_orchestrator"
+    )
+    model_config = runner_module._load_model_config(model_config_path)
+    orchestrator_config = (
+        runner_module.V023TwoRouteOrchestratorConfig(
+            model_config=model_config,
+            train_seed=TRAIN_SEED,
+            model_config_sha256=model_config_sha,
+            lineage="v023-c1c2-successor-REHEARSAL-NONFORMAL",
+            checkpoint_cadence_updates=runner_module.NONFORMAL_CHECKPOINT_UPDATES,
+            formal_use=False,
+        )
+        if nonformal
+        else runner_module.V023TwoRouteOrchestratorConfig.formal(
+            model_config=model_config,
+            train_seed=TRAIN_SEED,
+            model_config_sha256=model_config_sha,
+        )
+    )
+    initial_manifest = _runner_json(
+        output_root / "exports/epoch-0000.json",
+        field="epoch-0 export manifest",
+    )
+    final_manifest = _runner_json(
+        output_root / "exports/epoch-0100.json",
+        field="epoch-100 export manifest",
+    )
+    initial_exports = {entry["arm"]: output_root / entry["path"] for entry in initial_manifest["exports"]}
+    final_exports = {entry["arm"]: output_root / entry["path"] for entry in final_manifest["exports"]}
+    if tuple(initial_exports) != ARM_ORDER or tuple(final_exports) != ARM_ORDER:
+        raise VerificationError("replay export arm order drifted")
+
+    old_environment = {
+        factory.CONFIG_PATH_ENV: os.environ.get(factory.CONFIG_PATH_ENV),
+        factory.CONFIG_SHA256_ENV: os.environ.get(factory.CONFIG_SHA256_ENV),
+        factory.LEARNER_MANIFEST_PATH_ENV: os.environ.get(
+            factory.LEARNER_MANIFEST_PATH_ENV
+        ),
+    }
+    os.environ[factory.CONFIG_PATH_ENV] = str(provider_config_path.resolve())
+    os.environ[factory.CONFIG_SHA256_ENV] = provider_config_sha
+    os.environ[factory.LEARNER_MANIFEST_PATH_ENV] = str(
+        (repo / BUNDLE_REL / LEARNER_MANIFEST_NAME).resolve()
+    )
+    import torch
+
+    previous_torch_threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+    per_arm: dict[str, dict[str, Any]] = {}
+    replay_states: dict[str, Mapping[str, Any]] = {}
+    panel_digests: dict[str, dict[str, str]] = {
+        route: {} for route in ROUTE_ORDER
+    }
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix=f".{output_root.name}-replay-arms-", dir=output_root.parent
+        ) as scratch_raw:
+            scratch = Path(scratch_raw)
+            for arm in ARM_ORDER:
+                provider = factory.make_provider()
+                orchestrator_module.authenticate_factory_v3_provider_identity(
+                    provider,
+                    expected_train_seed=TRAIN_SEED,
+                    expected_model_config_sha256=model_config_sha,
+                )
+                model = orchestrator_module.EEAxisTwoRouteModel(
+                    orchestrator_config.model_config,
+                    train_seed=TRAIN_SEED,
+                    formal=not nonformal,
+                )
+                trainer = orchestrator_module.V023TwoRouteTrainer(model)
+                initial_state = model.checkpoint_state(
+                    update_count=0,
+                    route_update_counts={"C1": 0, "C2": 0},
+                )
+                sealed_initial = runner_module._read_torch(initial_exports[arm])
+                initial_exact = runner_module._tree_equal(
+                    initial_state, sealed_initial
+                )
+                if not initial_exact:
+                    raise VerificationError(
+                        f"{arm} replay did not start at its sealed epoch-0 state"
+                    )
+                observed_panels: dict[str, str] = {}
+                for update_cursor in range(EPOCH_BUDGET * len(ROUTE_ORDER)):
+                    route = ROUTE_ORDER[update_cursor % len(ROUTE_ORDER)]
+                    provided_by_source = {}
+                    for source in ("neutral", "informed"):
+                        provided = provider.next_batch(
+                            route=route,
+                            source=source,
+                            update_cursor=update_cursor,
+                        )
+                        checked = orchestrator_module.V023TwoRouteLearnerOrchestrator._checked_batch(
+                            provided, route=route, source=source
+                        )
+                        provided_by_source[source] = checked
+                        key = f"{route}:{source}"
+                        value = _batch_bitwise_sha256(route, checked.batch)
+                        previous = observed_panels.setdefault(key, value)
+                        if previous != value:
+                            raise VerificationError(
+                                f"{arm} replay panel changed across deterministic updates: {key}"
+                            )
+                    source = SOURCE_MAP[arm][route]
+                    trainer.update_route(route, provided_by_source[source].batch)
+                for route in ROUTE_ORDER:
+                    for source in ("neutral", "informed"):
+                        value = observed_panels[f"{route}:{source}"]
+                        previous = panel_digests[route].setdefault(source, value)
+                        if previous != value:
+                            raise VerificationError(
+                                f"independent replay providers disagreed for {route}/{source}"
+                            )
+                replay_state = model.checkpoint_state(
+                    update_count=EPOCH_BUDGET * len(ROUTE_ORDER),
+                    route_update_counts={route: EPOCH_BUDGET for route in ROUTE_ORDER},
+                )
+                scratch_export = scratch / f"{arm}.pt"
+                scratch_export.write_bytes(runner_module._torch_bytes(replay_state))
+                replay_state = runner_module._read_torch(scratch_export)
+                sealed_state = runner_module._read_torch(final_exports[arm])
+                replay_digest = _bitwise_tree_sha256(replay_state)
+                sealed_digest = _bitwise_tree_sha256(sealed_state)
+                exact = runner_module._tree_equal(replay_state, sealed_state)
+                replay_states[arm] = replay_state
+                per_arm[arm] = {
+                    "source_mapping": dict(SOURCE_MAP[arm]),
+                    "initial_state_exact": initial_exact,
+                    "replay_state_sha256": replay_digest,
+                    "sealed_state_sha256": sealed_digest,
+                    "sealed_export_file_sha256": file_sha256(final_exports[arm]),
+                    "final_tensors_and_adam_bitwise_equal": exact,
+                }
+    finally:
+        torch.set_num_threads(previous_torch_threads)
+        for key, value in old_environment.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    identical_export_pairs = [
+        [left, right]
+        for index, left in enumerate(ARM_ORDER)
+        for right in ARM_ORDER[index + 1 :]
+        if runner_module._tree_equal(replay_states[left], replay_states[right])
+    ]
+    identical_panel_routes = [
+        route
+        for route in ROUTE_ORDER
+        if panel_digests[route]["neutral"] == panel_digests[route]["informed"]
+    ]
+    all_replays_exact = all(
+        item["final_tensors_and_adam_bitwise_equal"] for item in per_arm.values()
+    )
+    distinctness_ok = not identical_export_pairs
+    distinctness_report = "PAIRWISE_DISTINCT"
+    if identical_export_pairs:
+        if real_target:
+            distinctness_report = "REAL_TARGET_EXPORTS_NOT_PAIRWISE_DISTINCT"
+        elif identical_panel_routes:
+            distinctness_ok = True
+            distinctness_report = (
+                "IDENTICAL_INFORMED_NEUTRAL_PANELS:" + ",".join(identical_panel_routes)
+            )
+        else:
+            distinctness_report = "UNEXPLAINED_NON_DISTINCT_EXPORTS"
+    success_status = NONFORMAL_REPLAY_PASS if nonformal else REPLAY_PASS
+    failure_status = NONFORMAL_REPLAY_FAIL if nonformal else REPLAY_FAIL
+    status = success_status if all_replays_exact and distinctness_ok else failure_status
+    output_manifest = output_root / "MANIFEST.sha256"
+    return {
+        "schema": REPLAY_SCHEMA,
+        "status": status,
+        "formal": not nonformal,
+        "claim_ceiling": CLAIM_CEILING,
+        "output_root": str(output_root.resolve()),
+        "output_manifest_sha256": (
+            file_sha256(output_manifest) if output_manifest.is_file() else None
+        ),
+        "provider_config_sha256": provider_config_sha,
+        "model_config_sha256": model_config_sha,
+        "preflight_receipt_sha256": file_sha256(preflight_receipt_path),
+        "train_seed": TRAIN_SEED,
+        "epoch_budget": EPOCH_BUDGET,
+        "source_map": SOURCE_MAP,
+        "target_kind": "SEALED_R8_REAL" if real_target else "NON_R8_OR_SYNTHETIC",
+        "panel_sha256_by_route_and_source": panel_digests,
+        "identical_informed_neutral_panel_routes": identical_panel_routes,
+        "identical_export_pairs": identical_export_pairs,
+        "export_distinctness": distinctness_report,
+        "per_arm": per_arm,
+    }
+
+
+def decision_for_replay(**kwargs: Any) -> dict[str, Any]:
+    try:
+        return replay_arms(**kwargs)
+    except Exception as error:
+        nonformal = bool(kwargs.get("nonformal"))
+        return {
+            "schema": REPLAY_SCHEMA,
+            "status": NONFORMAL_REPLAY_FAIL if nonformal else REPLAY_FAIL,
+            "formal": not nonformal,
+            "claim_ceiling": CLAIM_CEILING,
+            "output_root": str(Path(kwargs["output_root"]).resolve(strict=False)),
+            "error": f"{type(error).__name__}: {error}",
+            "per_arm": {},
+        }
 
 
 def verify_output(
@@ -663,21 +1010,65 @@ def decision_for_output(**kwargs: Any) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", type=Path, required=True)
-    parser.add_argument("--output-root", type=Path, required=True)
-    parser.add_argument("--provider-config", type=Path, required=True)
-    parser.add_argument("--model-config", type=Path, required=True)
-    parser.add_argument("--preflight-receipt", type=Path, required=True)
+    parser.add_argument("--repo", type=Path, default=REPO)
+    parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--replay-arms", type=Path, metavar="OUTPUT_ROOT")
+    parser.add_argument("--provider-config", type=Path)
+    parser.add_argument("--model-config", type=Path)
+    parser.add_argument("--preflight-receipt", type=Path)
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--nonformal", action="store_true")
     parser.add_argument("--no-reconstruct", action="store_true", help=argparse.SUPPRESS)
     arguments = parser.parse_args(argv)
+    if (arguments.output_root is None) == (arguments.replay_arms is None):
+        parser.error("exactly one of --output-root or --replay-arms is required")
+    repo = arguments.repo.resolve()
+    provider_config = arguments.provider_config or (
+        repo / BUNDLE_REL / PROVIDER_CONFIG_NAME
+    )
+    model_config = arguments.model_config or (
+        repo / SUCCESSOR_REL / "V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"
+    )
+    preflight_receipt = arguments.preflight_receipt or (
+        repo / BUNDLE_REL / "PREFLIGHT-RECEIPT.json"
+    )
+    if arguments.replay_arms is not None:
+        if arguments.write or arguments.no_reconstruct:
+            parser.error("--replay-arms does not accept verifier mode flags")
+        output_root = arguments.replay_arms.resolve()
+        result = decision_for_replay(
+            repo=repo,
+            output_root=output_root,
+            provider_config_path=provider_config,
+            model_config_path=model_config,
+            preflight_receipt_path=preflight_receipt,
+            nonformal=arguments.nonformal,
+        )
+        try:
+            receipt = _seal_replay_receipt(output_root, result)
+        except Exception as error:
+            failure = NONFORMAL_REPLAY_FAIL if arguments.nonformal else REPLAY_FAIL
+            print(
+                f"{failure}: {type(error).__name__}: {error}",
+                file=sys.stderr,
+            )
+            return 3
+        digests = " ".join(
+            f"{arm}={item.get('replay_state_sha256', 'unavailable')}"
+            for arm, item in result.get("per_arm", {}).items()
+        )
+        detail = result.get("export_distinctness", result.get("error", "unknown"))
+        print(
+            f"{result['status']} {digests} distinctness={detail} receipt={receipt}"
+        )
+        success = NONFORMAL_REPLAY_PASS if arguments.nonformal else REPLAY_PASS
+        return 0 if result["status"] == success else 3
     try:
         result = verify_output(
-            repo=arguments.repo.resolve(), output_root=arguments.output_root,
-            provider_config_path=arguments.provider_config,
-            model_config_path=arguments.model_config,
-            preflight_receipt_path=arguments.preflight_receipt,
+            repo=repo, output_root=arguments.output_root,
+            provider_config_path=provider_config,
+            model_config_path=model_config,
+            preflight_receipt_path=preflight_receipt,
             reconstruct=not arguments.no_reconstruct,
             nonformal=arguments.nonformal,
         )
