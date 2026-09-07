@@ -22,3 +22,10 @@ Operating rules:
 5. Version control: the recommendation to commit the whole working tree to a branch (content unchanged, no history
    rewrite) and to bind future freezes to commit SHA + tree hash in addition to manifests is pending the owner's word,
    because committing is an action the owner asked to be consulted on.
+
+## Addendum 14:50 UTC — defaults adopted unprompted (owner's feedback: propose methods, do not wait to be asked)
+6. **N=1 full-chain gate on every change:** `offline_realartifact_dryrun.py` with the stage-A chain spec (and later a stage-C spec) runs after any edit to a successor package, against the newest real artifact available; a launcher may not run while that gate is red.
+7. **Budget ladder on one code path:** rehearsals run 1 → 10 → 100 epochs (and 1 → 10 → 100 episodes) through the same modules as the formal run; the formal run changes only the budget, the root and the authority.
+8. **Design-document stop rule:** no new version family or contract until the current one has produced at least one development curve (or a valid STOP token). Method notes go into the existing package README, not a new `docs/` family.
+9. **Latency ledger:** every defect found today onward is logged in `LATENCY-LEDGER-2026-09-07.md` with the layer it lived in, how it was found, and the minutes it cost; the ledger is reviewed at each hand-back.
+10. **Shared typed schema module (next structural step, after the current blocker fixes land):** one module both producer and consumer import for receipt keys, array names/dtypes/layouts and token literals, so the static scanner becomes a backstop rather than the first line of defence.
