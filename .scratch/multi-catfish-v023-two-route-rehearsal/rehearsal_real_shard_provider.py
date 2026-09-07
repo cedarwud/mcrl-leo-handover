@@ -1,6 +1,7 @@
 """Authenticated, deterministic C1/C2 provider for non-formal rehearsals.
 
-Every completed shard is authenticated independently by the target adapter.
+Every completed shard is authenticated independently by the producer
+controller before the target adapter performs typed loading.
 The provider deliberately tolerates different world sets in the informed and
 neutral mode directories; it never manufactures or substitutes a missing
 world.
@@ -27,15 +28,18 @@ from mcrl.algorithms.ee_axis_v014_head import EEAxisV014NormalizedPairBatch
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 ADAPTER_DIR = REPO / ".scratch/multi-catfish-v023-target-batch-adapter"
+CONTROLLER_DIR = REPO / ".scratch/multi-catfish-v023-c1c2-target-generation-launch"
 TWO_ROUTE_DIR = REPO / ".scratch/multi-catfish-v023-two-route-source-training-runner"
 ADAPTER_PATH = ADAPTER_DIR / "target_batch_adapter.py"
+CONTROLLER_PATH = CONTROLLER_DIR / "run_v023_c1c2_targets_server.py"
 ORCHESTRATOR_PATH = TWO_ROUTE_DIR / "v023_two_route_learner_orchestrator.py"
 
-for _directory in (ADAPTER_DIR, TWO_ROUTE_DIR):
+for _directory in (ADAPTER_DIR, CONTROLLER_DIR, TWO_ROUTE_DIR):
     if str(_directory) not in sys.path:
         sys.path.insert(0, str(_directory))
 
 _TARGET = importlib.import_module("target_batch_adapter")
+_CONTROLLER = importlib.import_module("run_v023_c1c2_targets_server")
 _ORCHESTRATOR = importlib.import_module("v023_two_route_learner_orchestrator")
 DeterministicRouteBatchProvider = _ORCHESTRATOR.DeterministicRouteBatchProvider
 ProvidedRouteBatch = _ORCHESTRATOR.ProvidedRouteBatch
@@ -90,13 +94,98 @@ def _canonical_sha256(value: object) -> str:
 
 def _require_adapter_primitives() -> None:
     for name in (
-        "_authenticate_root",
         "_validate_receipt_header",
         "_load_mode",
         "_aggregate_pair_batches",
     ):
         if not callable(getattr(_TARGET, name, None)):
             _fail(f"target adapter lacks required authenticated shard primitive {name}")
+
+
+def _require_controller_primitives() -> None:
+    for name in ("_canonical", "_read_receipt", "_validate_shard"):
+        if not callable(getattr(_CONTROLLER, name, None)):
+            _fail(f"target controller lacks required shard primitive {name}")
+
+
+def _manifest_listing(shard_root: Path) -> dict[str, str]:
+    """Parse the controller-authenticated flat shard manifest for the adapter."""
+
+    manifest = shard_root / "MANIFEST.sha256"
+    try:
+        raw = manifest.read_bytes()
+        text = raw.decode("ascii")
+    except (OSError, UnicodeDecodeError) as cause:
+        _fail(f"cannot read shard manifest: {manifest}", cause=cause)
+    if not raw or not raw.endswith(b"\n") or b"\r" in raw:
+        _fail(f"shard manifest must be newline-terminated ASCII with LF endings: {manifest}")
+    listed: dict[str, str] = {}
+    names: list[str] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if line.count("  ") != 1:
+            _fail(f"shard manifest line {line_number} is malformed: {manifest}")
+        digest, name = line.split("  ", 1)
+        if (
+            len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+            or Path(name).name != name
+            or name in {"", ".", "..", "MANIFEST.sha256", "COMPLETE", "FAILED"}
+            or "/" in name
+            or "\\" in name
+            or name in listed
+        ):
+            _fail(f"shard manifest line {line_number} is unsafe: {manifest}")
+        listed[name] = digest
+        names.append(name)
+    if names != sorted(names) or "receipt.json" not in listed:
+        _fail(f"shard manifest closure is not canonical: {manifest}")
+    return listed
+
+
+def _status_path(shard_root: Path, *, mode: str, world: int) -> Path:
+    return (
+        shard_root.parent.parent
+        / "shard-status"
+        / f"{mode}-world-{world}.terminal.json"
+    )
+
+
+def _status_evidence(
+    shard_root: Path,
+    *,
+    mode: str,
+    world: int,
+) -> Mapping[str, Any] | None:
+    """Authenticate the controller terminal receipt adjacent to a shard tree."""
+
+    status_path = _status_path(shard_root, mode=mode, world=world)
+    if not status_path.exists():
+        return None
+    if status_path.is_symlink() or not status_path.is_file():
+        _fail(f"shard terminal status is not a regular file: {status_path}")
+    try:
+        raw = status_path.read_bytes()
+        payload = json.loads(raw.decode("ascii"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as cause:
+        _fail(f"shard terminal status is malformed: {status_path}", cause=cause)
+    if not isinstance(payload, dict) or raw != _CONTROLLER._canonical(payload):
+        _fail(f"shard terminal status is not canonical: {status_path}")
+    if (
+        payload.get("schema") != _CONTROLLER.SHARD_STATUS_SCHEMA
+        or payload.get("event") != "terminal"
+        or payload.get("mode") != mode
+        or payload.get("world") != world
+        or not isinstance(payload.get("state"), str)
+        or not payload["state"]
+    ):
+        _fail(f"shard terminal status identity drifted: {status_path}")
+    return MappingProxyType(
+        {
+            "path": str(status_path.resolve(strict=True)),
+            "sha256": _file_sha256(status_path),
+            "state": payload["state"],
+        }
+    )
 
 
 def _module_origin(module: ModuleType, expected: Path, *, label: str) -> None:
@@ -108,11 +197,14 @@ def _module_origin(module: ModuleType, expected: Path, *, label: str) -> None:
 def _snapshot_from_authenticated(
     shard_root: Path,
     listed: Mapping[str, str],
+    status: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
         "manifest_sha256": _file_sha256(shard_root / "MANIFEST.sha256"),
         "receipt_sha256": _file_sha256(shard_root / "receipt.json"),
-        "complete_sha256": _file_sha256(shard_root / "COMPLETE"),
+        "status_path": status["path"],
+        "status_sha256": status["sha256"],
+        "status_state": status["state"],
         "files": dict(listed),
     }
 
@@ -121,17 +213,23 @@ def _load_authenticated_shard(
     shard_root: Path,
     *,
     expected_mode: str,
-) -> tuple[Any, Mapping[str, object], Mapping[str, Any]]:
+) -> tuple[Any, Mapping[str, object], Mapping[str, Any]] | None:
     """Load one shard solely through the adapter's authenticated primitives."""
 
     _require_adapter_primitives()
+    _require_controller_primitives()
     try:
-        destination, receipt, listed = _TARGET._authenticate_root(shard_root)
+        receipt = _CONTROLLER._read_receipt(shard_root)
+        listed = _manifest_listing(shard_root)
         source, _formula, lambda_bits, interval = _TARGET._validate_receipt_header(
             receipt
         )
     except Exception as cause:
-        _fail(f"adapter authentication rejected shard {shard_root}", cause=cause)
+        _fail(
+            f"controller manifest/receipt authentication rejected shard "
+            f"{shard_root}: {cause}",
+            cause=cause,
+        )
 
     shard_identity = receipt.get("shard")
     if not isinstance(shard_identity, dict) or set(shard_identity) != {
@@ -143,17 +241,32 @@ def _load_authenticated_shard(
     world = shard_identity["world"]
     if mode != expected_mode or type(world) is not int or world < 1:
         _fail(f"shard receipt mode/world disagrees with its mode directory: {shard_root}")
+    key = f"{mode}:{world}"
     schedule = receipt.get("schedule")
     if (
         not isinstance(schedule, dict)
         or not isinstance(schedule.get("shards"), dict)
-        or set(schedule["shards"]) != {f"{mode}:{world}"}
+        or set(schedule["shards"]) != {key}
     ):
         _fail(f"shard receipt schedule is not single-shard exact: {shard_root}")
+    expected = schedule["shards"][key]
+    if not isinstance(expected, Mapping):
+        _fail(f"shard receipt schedule entry is malformed: {shard_root}")
+    status = _status_evidence(shard_root, mode=mode, world=world)
+    if status is None:
+        return None
+
+    try:
+        _CONTROLLER._validate_shard(key, shard_root, receipt, expected)
+    except Exception as cause:
+        _fail(
+            f"controller validation rejected shard {shard_root}: {cause}",
+            cause=cause,
+        )
 
     try:
         inputs = _TARGET._load_mode(
-            destination=destination,
+            destination=shard_root,
             listed=listed,
             receipt=receipt,
             source=source,
@@ -168,7 +281,7 @@ def _load_authenticated_shard(
     ) != (world,):
         _fail(f"adapter returned a non-exact world from shard {shard_root}")
     return inputs, MappingProxyType(dict(receipt)), MappingProxyType(
-        _snapshot_from_authenticated(destination, listed)
+        _snapshot_from_authenticated(shard_root, listed, status)
     )
 
 
@@ -266,12 +379,14 @@ class RehearsalRealShardProvider:
         if any(part.upper() == "TEST" for part in root.parts):
             _fail("TEST shard roots are forbidden")
         _module_origin(_TARGET, ADAPTER_PATH, label="target adapter")
+        _module_origin(_CONTROLLER, CONTROLLER_PATH, label="target controller")
         _module_origin(_ORCHESTRATOR, ORCHESTRATOR_PATH, label="two-route orchestrator")
 
         self._root = root.resolve()
         self._planned_epoch_budget = planned_epoch_budget
         self._shards: dict[tuple[str, int], dict[str, Any]] = {}
         self._skipped_incomplete: list[str] = []
+        self._skipped_shards: list[dict[str, str]] = []
         mode_inputs: dict[str, list[Any]] = {mode: [] for mode in DISCOVERY_MODES}
 
         for mode in DISCOVERY_MODES:
@@ -297,19 +412,33 @@ class RehearsalRealShardProvider:
                     continue
                 else:
                     resolved = candidate.resolve(strict=True)
-                required = tuple(resolved / name for name in (
-                    "COMPLETE",
-                    "MANIFEST.sha256",
-                    "receipt.json",
-                ))
+                required = tuple(
+                    resolved / name for name in ("MANIFEST.sha256", "receipt.json")
+                )
                 if not all(path.is_file() and not path.is_symlink() for path in required):
-                    self._skipped_incomplete.append(
-                        candidate.relative_to(self._root).as_posix()
+                    relative = candidate.relative_to(self._root).as_posix()
+                    self._skipped_incomplete.append(relative)
+                    self._skipped_shards.append(
+                        {
+                            "shard_dir": relative,
+                            "reason": "missing regular MANIFEST.sha256 or receipt.json",
+                        }
                     )
                     continue
-                inputs, receipt, snapshot = _load_authenticated_shard(
+                loaded = _load_authenticated_shard(
                     resolved, expected_mode=mode
                 )
+                if loaded is None:
+                    relative = candidate.relative_to(self._root).as_posix()
+                    self._skipped_incomplete.append(relative)
+                    self._skipped_shards.append(
+                        {
+                            "shard_dir": relative,
+                            "reason": "missing sibling shard terminal status file",
+                        }
+                    )
+                    continue
+                inputs, receipt, snapshot = loaded
                 world = int(receipt["shard"]["world"])
                 key = (mode, world)
                 if key in self._shards:
@@ -395,7 +524,9 @@ class RehearsalRealShardProvider:
                 "is_symlink": record["is_symlink"],
                 "manifest_sha256": record["snapshot"]["manifest_sha256"],
                 "receipt_sha256": record["snapshot"]["receipt_sha256"],
-                "complete_sha256": record["snapshot"]["complete_sha256"],
+                "status_path": record["snapshot"]["status_path"],
+                "status_sha256": record["snapshot"]["status_sha256"],
+                "status_state": record["snapshot"]["status_state"],
             }
             for (mode, world), record in sorted(
                 self._shards.items(),
@@ -413,8 +544,10 @@ class RehearsalRealShardProvider:
             "worlds_used_by_mode": worlds_used,
             "shard_digests_used": shard_digests,
             "skipped_incomplete_shard_dirs": list(self._skipped_incomplete),
+            "skipped_shards": deepcopy(self._skipped_shards),
             "planned_epoch_budget": planned_epoch_budget,
             "target_adapter_sha256": _file_sha256(ADAPTER_PATH),
+            "target_controller_sha256": _file_sha256(CONTROLLER_PATH),
         }
         self._identity_payload = MappingProxyType(deepcopy(identity_payload))
         self._identity = f"{PROVIDER_SCHEMA}:{_canonical_sha256(identity_payload)}"
@@ -455,15 +588,31 @@ class RehearsalRealShardProvider:
             "target_adapter_sha256"
         ]:
             _fail("target adapter changed after provider construction")
+        _module_origin(_CONTROLLER, CONTROLLER_PATH, label="target controller")
+        if _file_sha256(CONTROLLER_PATH) != self._identity_payload[
+            "target_controller_sha256"
+        ]:
+            _fail("target controller changed after provider construction")
         for record in self._shards.values():
             try:
-                destination, _receipt, listed = _TARGET._authenticate_root(record["root"])
+                receipt = _CONTROLLER._read_receipt(record["root"])
+                listed = _manifest_listing(record["root"])
+                shard = receipt.get("shard")
+                if not isinstance(shard, Mapping):
+                    _fail(f"shard identity disappeared: {record['root']}")
+                status = _status_evidence(
+                    record["root"],
+                    mode=str(shard.get("mode")),
+                    world=int(shard.get("world")),
+                )
+                if status is None:
+                    _fail(f"shard terminal status disappeared: {record['root']}")
             except Exception as cause:
                 _fail(
-                    f"adapter re-authentication rejected shard {record['root']}",
+                    f"controller re-authentication rejected shard {record['root']}",
                     cause=cause,
                 )
-            current = _snapshot_from_authenticated(destination, listed)
+            current = _snapshot_from_authenticated(record["root"], listed, status)
             if current != dict(record["snapshot"]):
                 _fail(f"authenticated shard changed after loading: {record['root']}")
 

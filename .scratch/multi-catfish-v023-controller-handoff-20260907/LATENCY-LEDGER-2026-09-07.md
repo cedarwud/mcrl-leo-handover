@@ -20,5 +20,6 @@
 | 09-07 14:52 | controller ops | r8 shard completion files are `.terminal.json`, shadow verifier watched `.complete.json`; pkill self-match killed the ssh shell twice | monitor review | ~15 min of controller time; no run impact |
 | 09-07 15:0x | heterogeneous-trainer tests | 3 stale tests build a plain `EEAxisPairBatch` for C2 while `update_c2` correctly requires `EEAxisV014NormalizedPairBatch` (pre-448 test debt) | server + local pytest via the closure agent | fix (tests only) dispatched; module untouched |
 | 09-07 15:40 | successor dependents | hardened factory/runner contracts (formal seed at construction, `model_config_sha256` required) broke the rehearsal trainer and the stage-B/C gate | local full-tree pytest after pull-back | ~5 min to find; alignment dispatched; astra asked whether the seed check sits at the right layer |
+| 09-07 15:08 | V1 rehearsal (attempt 3, in workspace) | r5 shards' receipt code closure drifted from the live producer closure → correctly rejected by controller validation; only r8 shards are valid inputs | server codex real-shard probe | ~0 min lost (discovery); V1 retargeted to r8 shards |
 
 Pattern: defects found by launching cost 40 min–22 h each; the same classes found by offline probes, import smokes and read-only audits cost 30 s–8 min. Every new defect is appended here with the same five columns.

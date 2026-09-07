@@ -33,7 +33,7 @@ def _digest(label: str) -> str:
 def _write_producer_shard(root: Path, *, mode: str, world: int) -> Path:
     """Use the producer writer, factory-v3 helpers, and real excerpt row."""
 
-    generator, _controller, sealer = FACTORY_HELPERS._producer_modules()
+    generator, controller, _sealer = FACTORY_HELPERS._producer_modules()
     c1_dataset = FACTORY_HELPERS._c1_dataset(mode=mode, world=world)
     c1_binding = FACTORY_HELPERS._c1_binding(
         c1_dataset, mode=mode, world=world
@@ -85,7 +85,26 @@ def _write_producer_shard(root: Path, *, mode: str, world: int) -> Path:
         c1_bindings=(c1_binding,),
         c2_bindings=(c2_binding,),
     )
-    sealer.seal(root)
+    status = {
+        "schema": controller.SHARD_STATUS_SCHEMA,
+        "event": "terminal",
+        "state": "PASS",
+        "mode": mode,
+        "world": world,
+        "recorded_unix_s": 0.0,
+        "returncode": 0,
+        "receipt_sha256": PROVIDER._file_sha256(root / "receipt.json"),
+        "manifest_sha256": PROVIDER._file_sha256(root / "MANIFEST.sha256"),
+        "log": f"{mode}-world-{world}.log",
+    }
+    status_path = (
+        root.parent.parent
+        / "shard-status"
+        / f"{mode}-world-{world}.terminal.json"
+    )
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    status_path.write_bytes(controller._canonical(status))
+    assert not (root / "COMPLETE").exists()
     return root
 
 
@@ -123,11 +142,14 @@ def _single_torch_thread():
 def _adapter_aggregate(root: Path, *, mode: str, route: str):
     route_batches: list[Any] = []
     for shard in sorted((root / mode).iterdir()):
-        if not (shard / "COMPLETE").is_file():
+        if not (shard / "MANIFEST.sha256").is_file():
             continue
-        inputs, _receipt, _snapshot = PROVIDER._load_authenticated_shard(
+        loaded = PROVIDER._load_authenticated_shard(
             shard, expected_mode=mode
         )
+        if loaded is None:
+            continue
+        inputs, _receipt, _snapshot = loaded
         route_batches.extend(
             inputs.c1_route_batches if route == "C1" else inputs.c2_route_batches
         )
@@ -170,7 +192,16 @@ def test_provider_identity_batches_c2_units_and_skip_missing(shard_panel: Path) 
     assert identity["skipped_incomplete_shard_dirs"] == [
         "neutral/world-2026121707-incomplete"
     ]
+    assert identity["skipped_shards"] == [
+        {
+            "shard_dir": "neutral/world-2026121707-incomplete",
+            "reason": "missing regular MANIFEST.sha256 or receipt.json",
+        }
+    ]
     assert all(not shard["is_symlink"] for shard in identity["shard_digests_used"])
+    assert all("status_path" in shard for shard in identity["shard_digests_used"])
+    assert all("status_sha256" in shard for shard in identity["shard_digests_used"])
+    assert all("complete_sha256" not in shard for shard in identity["shard_digests_used"])
     assert all(
         shard["entry_path"] == shard["resolved_path"]
         for shard in identity["shard_digests_used"]
@@ -316,9 +347,56 @@ def test_individual_shard_authentication_mutation_is_rejected(tmp_path: Path) ->
     dataset = neutral / "c2-neutral-world-2026121705.json"
     dataset.write_bytes(dataset.read_bytes() + b" ")
     with pytest.raises(
-        PROVIDER.RehearsalShardProviderError, match="authentication rejected"
+        PROVIDER.RehearsalShardProviderError, match="mode manifest hash drifted"
     ):
         PROVIDER.RehearsalRealShardProvider(root, planned_epoch_budget=2)
+
+
+def test_producer_shard_without_complete_and_with_status_loads(tmp_path: Path) -> None:
+    root = tmp_path / "unsealed-producer-panel"
+    (root / "informed").mkdir(parents=True)
+    (root / "neutral").mkdir()
+    _write_producer_shard(
+        root / "informed/world-2026121705",
+        mode="informed",
+        world=2026121705,
+    )
+    _write_producer_shard(
+        root / "neutral/world-2026121705",
+        mode="neutral",
+        world=2026121705,
+    )
+
+    provider = PROVIDER.RehearsalRealShardProvider(root, planned_epoch_budget=1)
+
+    assert provider.worlds_used_by_mode == {
+        "informed": (2026121705,),
+        "neutral": (2026121705,),
+    }
+    assert not any((shard / "COMPLETE").exists() for shard in root.glob("*/*"))
+
+
+def test_producer_shard_missing_status_is_skipped_with_reason(tmp_path: Path) -> None:
+    root = _write_shard_panel(tmp_path / "missing-status-panel")
+    missing = _write_producer_shard(
+        root / "neutral/world-2026121708",
+        mode="neutral",
+        world=2026121708,
+    )
+    status = (
+        root
+        / "shard-status"
+        / "neutral-world-2026121708.terminal.json"
+    )
+    status.unlink()
+
+    provider = PROVIDER.RehearsalRealShardProvider(root, planned_epoch_budget=1)
+
+    assert missing.is_dir()
+    assert provider.provider_identity_payload["skipped_shards"][-1] == {
+        "shard_dir": "neutral/world-2026121708",
+        "reason": "missing sibling shard terminal status file",
+    }
 
 
 def test_rehearsal_writes_no_complete_and_prints_nonformal_pass(
