@@ -24,6 +24,9 @@ import numpy as np
 
 import f3_common as common
 from f3_neutral_rule import (
+    C1_CLUSTER_NEUTRAL_SOURCE_RULE,
+    C2_NEUTRAL_SOURCE_RULE,
+    F3_NEUTRAL_KEY,
     F3_NEUTRAL_KEY_SHA256,
     F3_NEUTRAL_RULE,
     IMPORTED_NEUTRAL_RULES,
@@ -40,6 +43,22 @@ HERE = common.HERE
 SOURCE_SCHEMA = f"{common.SCHEMA}-source-artifact"
 SOURCE_RECORD_SCHEMA = f"{SOURCE_SCHEMA}-record"
 SOURCE_RECEIPT_SCHEMA = f"{SOURCE_SCHEMA}-receipt"
+
+
+def neutral_rule_binding() -> dict[str, object]:
+    """Distinguish C3 label permutation from C1/C2 source selection."""
+
+    return {
+        "c3_f3": {
+            "rule": F3_NEUTRAL_RULE,
+            "key": F3_NEUTRAL_KEY,
+            "scope": "FOLD_LOCAL_TRAINING_ONLY_LABEL_PERMUTATION",
+        },
+        "c1_predecision_source_selection": C1_CLUSTER_NEUTRAL_SOURCE_RULE,
+        "c2_predecision_source_selection": C2_NEUTRAL_SOURCE_RULE,
+    }
+
+
 SOURCE_MANIFEST_SCHEMA = f"{SOURCE_SCHEMA}-manifest"
 DEFAULT_PREFLIGHT = HERE / "F3-PREFLIGHT-MANIFEST.json"
 
@@ -397,7 +416,7 @@ def write_source_artifact(
             },
             "record_count": len(record_entries),
             "records": record_entries,
-            "neutral_rule": F3_NEUTRAL_RULE,
+            "neutral_rule": neutral_rule_binding(),
             "neutral_folds": neutral_entries,
             "test_split_opened": False,
             "episode_training": False,
@@ -417,6 +436,11 @@ def write_source_artifact(
             "neutral_coverage_min_observed": min(
                 float(entry["coverage"]) for entry in neutral_entries
             ),
+            "neutral_rule": neutral_rule_binding(),
+            "method_provenance": {
+                "loss": common.panel_bindings()["loss"],
+                "thresholds": common.threshold_bindings(),
+            },
             "test_split_opened": False,
             "episode_training": False,
             "efficacy_claim": False,

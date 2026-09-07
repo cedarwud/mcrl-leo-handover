@@ -187,8 +187,18 @@ def test_source_rows_use_f2_writer_and_f0_target_path(shared_view: C3View) -> No
 
 def test_neutral_rule_is_imported_and_fold_safe() -> None:
     assert source.build_f3_neutral is neutral_rule.build_f3_neutral
-    assert neutral_rule.IMPORTED_NEUTRAL_RULES["c1"] == neutral_rule.C1_CLUSTER_NEUTRAL_SOURCE_RULE
-    assert neutral_rule.IMPORTED_NEUTRAL_RULES["c2"] == neutral_rule.C2_NEUTRAL_SOURCE_RULE
+    assert (
+        neutral_rule.IMPORTED_NEUTRAL_RULES["c1_predecision_source_selection"]
+        == neutral_rule.C1_CLUSTER_NEUTRAL_SOURCE_RULE
+    )
+    assert (
+        neutral_rule.IMPORTED_NEUTRAL_RULES["c2_predecision_source_selection"]
+        == neutral_rule.C2_NEUTRAL_SOURCE_RULE
+    )
+    assert (
+        source.neutral_rule_binding()["c3_f3"]["scope"]
+        == "FOLD_LOCAL_TRAINING_ONLY_LABEL_PERMUTATION"
+    )
 
 
 def _panel_records(shared_view: C3View) -> tuple[source.F3SourceRecord, ...]:
@@ -243,7 +253,7 @@ def _threshold_kwargs() -> dict[str, object]:
     }
 
 
-def test_metric_truth_table_accepts_all_copied_boundaries() -> None:
+def test_metric_truth_table_accepts_r7_copies_and_panel_adaptations() -> None:
     assert runner.observability_threshold_truth(**_threshold_kwargs()) is True
 
 
@@ -269,8 +279,6 @@ def _composition_payload() -> dict[str, object]:
     for index, world in enumerate(common.WORLDS):
         improved = index < 2
         worlds[str(world)] = {
-            "pairs": 6,
-            "literal_11": 2 if index < 2 else 1,
             "profiles": {
                 "BASE": {"bits": 100.0, "energy_j": 1.0, "service_fraction": 1.0},
                 "ORACLE": {"bits": 101.0 if improved else 100.0, "energy_j": 1.0, "service_fraction": 0.99},
@@ -281,15 +289,11 @@ def _composition_payload() -> dict[str, object]:
     return {
         "schema": runner.COMPOSITION_INPUT_SCHEMA,
         "integrity": True,
-        "counts": {
-            "pairs": 24,
-            "action_opportunities": 100,
-            "action_changes": 10,
-            "literal_11": 6,
-            "partial": 20,
-            "harmful_partial": 1,
-            "selected_11": 5,
-            "topology_consistent_11": 4,
+        "closure_diagnostics": {
+            "selected_11": 0,
+            "literal_11_fraction": 0.0,
+            "harmful_partial_fraction": 1.0,
+            "topology_consistency_fraction": None,
         },
         "worlds": worlds,
     }
@@ -303,13 +307,30 @@ def test_composition_check_is_mandatory_and_at_boundaries() -> None:
     assert runner.adjudicate(integrity=False, observability=True, composition=True) == "INVALID_RUN"
 
 
-def test_zero_selected_11_fails_topology_gate() -> None:
+def test_closure_diagnostics_do_not_veto_nonclosure_candidates() -> None:
     payload = _composition_payload()
-    payload["counts"]["selected_11"] = 0
-    payload["counts"]["topology_consistent_11"] = 0
     result = runner.evaluate_composition_check(payload)
-    assert result["predicates"]["topology_consistency"] is False
-    assert result["passes"] is False
+    assert set(result["predicates"]) == {"teacher_ee", "informed_ee", "service"}
+    assert result["closure_diagnostics_role"] == "SERIALIZED_NONDECISIVE_IF_PRESENT"
+    assert result["passes"] is True
+
+
+def test_threshold_provenance_labels_r7_copies_and_panel_adaptations() -> None:
+    bindings = common.threshold_bindings()
+    assert bindings["r7_copy"]["informed_mean_spearman_min"] == 0.20
+    assert (
+        bindings["panel_adaptation"][
+            "informed_over_neutral_mean_seed_spearman_wins_min"
+        ]
+        == 3
+    )
+    assert (
+        bindings["composition"]["panel_adaptation"][
+            "teacher_ee_above_base_worlds_min"
+        ]
+        == 2
+    )
+    assert common.panel_bindings()["loss"]["provenance"] == "panel_adaptation"
 
 
 def test_native_composition_uses_lowest_exact_tie() -> None:

@@ -206,6 +206,10 @@ def panel_bindings() -> dict[str, object]:
         "updates_per_fit": UPDATES,
         "checkpoints": list(CHECKPOINTS),
         "batch_size": BATCH_SIZE,
+        "loss": {
+            "name": "MEAN_SQUARED_ERROR_LEGAL_NONREFERENCE_CELLS",
+            "provenance": "panel_adaptation",
+        },
         "fit_count": len(WORLDS) * len(learner_seeds()) * len(ARMS),
         "total_updates": len(WORLDS) * len(learner_seeds()) * len(ARMS) * UPDATES,
         "kappa_bits_hex": KAPPA_BITS.hex(),
@@ -218,26 +222,29 @@ def panel_bindings() -> dict[str, object]:
 
 def threshold_bindings() -> dict[str, object]:
     return {
-        "sign_eligibility_absolute_target_min": SIGN_THRESHOLD,
-        "informed_mean_spearman_min": MEAN_INFORMED_SPEARMAN_MIN,
-        "informed_mean_balanced_accuracy_min": MEAN_INFORMED_BACC_MIN,
-        "informed_minus_neutral_balanced_accuracy_min": BACC_GAP_MIN,
-        "positive_rows_min": MIN_CLASS_ROWS,
-        "negative_rows_min": MIN_CLASS_ROWS,
-        "informed_over_neutral_world_wins_min": INFORMED_WORLD_WINS_MIN,
-        "per_seed_nonnegative_worlds_min": PER_SEED_NONNEGATIVE_WORLDS_MIN,
-        "neutral_permutation_coverage_per_fold_min": PLACEBO_COVERAGE_MIN,
+        "r7_copy": {
+            "sign_eligibility_absolute_target_min": SIGN_THRESHOLD,
+            "informed_mean_spearman_min": MEAN_INFORMED_SPEARMAN_MIN,
+            "informed_mean_balanced_accuracy_min": MEAN_INFORMED_BACC_MIN,
+            "informed_minus_neutral_balanced_accuracy_min": BACC_GAP_MIN,
+            "positive_rows_min": MIN_CLASS_ROWS,
+            "negative_rows_min": MIN_CLASS_ROWS,
+            "neutral_permutation_coverage_per_fold_min": PLACEBO_COVERAGE_MIN,
+        },
+        "panel_adaptation": {
+            "informed_over_neutral_mean_seed_spearman_wins_min": INFORMED_WORLD_WINS_MIN,
+            "per_seed_nonnegative_spearman_worlds_min": PER_SEED_NONNEGATIVE_WORLDS_MIN,
+        },
         "composition": {
-            "closure_pairs_min": 24,
-            "pairs_per_world_min": 1,
-            "action_change_fraction_min": 0.10,
-            "literal_11_fraction_min": 0.25,
-            "literal_11_positive_worlds_min": 2,
-            "harmful_partial_fraction_max": 0.05,
-            "topology_consistency_fraction_min": 0.80,
-            "teacher_positive_worlds_min": 2,
-            "learned_positive_worlds_min": 2,
-            "service_per_world_margin": 0.01,
+            "applicability": (
+                "D/F are unilateral continuous corrections, not closure pairs; "
+                "closure-pair diagnostics are nondecisive and zero selected-11 cannot veto"
+            ),
+            "r7_copy": {"informed_service_per_world_margin": 0.01},
+            "panel_adaptation": {
+                "teacher_ee_above_base_worlds_min": 2,
+                "informed_ee_above_base_worlds_min": 2,
+            },
         },
     }
 
@@ -391,7 +398,7 @@ def authority_document_bindings() -> list[dict[str, str]]:
         ),
         (
             "binding_f3_design_memo",
-            REPO / ".scratch/multi-catfish-v023-controller-handoff-20260907/DESIGN-F3-LEARNER-SCREEN-PREOUTCOME-CODEX-GPT6-ASTRA-2026-09-07.md",
+            REPO / ".scratch/multi-catfish-v023-controller-handoff-20260907/DESIGN-F3-LEARNER-SCREEN-PREOUTCOME-R2-CODEX-GPT6-ASTRA-2026-09-07.md",
         ),
         (
             "r7_balanced_contract",

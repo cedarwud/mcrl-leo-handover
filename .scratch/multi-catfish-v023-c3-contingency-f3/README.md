@@ -15,13 +15,12 @@ at F3 never opens F.
 - `V023-C3-RAPID-CONTINGENCY-LADDER-PREOUTCOME-2026-09-06.md` section 3:
   F3 is INFORMED versus equal-budget NEUTRAL, at source-update checkpoints
   `0,100,...,2000`, for three fixed seeds.
-- `DESIGN-F3-LEARNER-SCREEN-PREOUTCOME-CODEX-GPT6-ASTRA-2026-09-07.md`:
+- `DESIGN-F3-LEARNER-SCREEN-PREOUTCOME-R2-CODEX-GPT6-ASTRA-2026-09-07.md`:
   F2 panel reuse, noninitial anchors 1--9, dense D/F targets, fold-local
   neutral labels, Q3-only MSE, four LOWO folds, and mandatory composition veto.
 - R7 successor contract sections 4--6 and R7 code: sign eligibility 0.02,
   balanced accuracy 0.60, informed-minus-neutral 0.05, Spearman 0.20,
-  24 rows per sign, copied composition thresholds, and native lowest-index
-  masked argmax.
+  24 rows per sign, service margin 0.01, and native lowest-index masked argmax.
 - F2's `verify_unit_tape` and `target_surfaces_from_step`: shared-tape
   authentication and F0 `compute_c3_targets` reuse.  Targets are retained as
   raw bits and divided exactly once by
@@ -41,14 +40,15 @@ Every source, startup, checkpoint/heartbeat, job, and terminal receipt says:
 
 ## Plainest readings recorded
 
-1. The design memo corrects the earlier shorthand “use the C1/C2 neutral
-   rule”: C1/C2 randomize predecision source selection and do not define a
-   dense same-row D/F target replacement.  Therefore `f3_neutral_rule.py`
-   imports the C1/C2 rule identities for provenance and imports R7's frozen
-   nonzero cyclic-shift implementation and 0.80 coverage threshold.  It owns
-   only the memo-declared extension to opening `{0,1}`, occupancy `{0,1,2+}`,
-   and the added lineage key.  `build_f3_source_artifact.py` imports this rule;
-   it contains no second neutral implementation.
+1. C1 uses `c1-cluster-profile-matched-randomized-predecision-v2` and C2 uses
+   `c2-equal-budget-uniform-predecision-v1`; both select sources before physical
+   targets exist.  They do not define C3 label replacement.  F3 instead uses
+   the distinct fold-local, training-only matched label permutation
+   `MCRL_V023_C3_F3_NEUTRAL_V1`.  Within each R2 stratum it sorts cells by
+   `(world,lineage,step,user,action)` and applies R7's frozen nonzero hash shift.
+   Singletons remain unchanged, held-out labels never move, and every seed
+   shares the same mapping.  `build_f3_source_artifact.py` imports this sole
+   implementation.
 2. Step 0 advances the BASE trajectory but is not a source record.  The
    artifact has `4 worlds x 3 lineages x 9 anchors = 108` records.
 3. “Every legal action” means every native-mask legal cell is present in the
@@ -63,12 +63,30 @@ Every source, startup, checkpoint/heartbeat, job, and terminal receipt says:
    `1e-12` absolute equality tolerance is used only to prevent binary
    representation of `0.60 - 0.55` from rejecting the stated boundary; it
    does not relax a genuinely smaller gap.
-6. The composition input contains per-world matched totals over the declared
-   three seed evaluations and 32 outcome-blind pair-profile draws.  The runner
-   pools bits and joules before comparing ratios.  `ORACLE` is survivor X;
-   `INFORMED` and `NEUTRAL` are native one-pass `Q1+Q2+Q3` arms.  The sealed
-   input must include all four profiles and exact raw counts; a zero selected-
-   11 denominator fails topology consistency.
+6. The mandatory composition veto is supplied by the contingency ladder and
+   specified by R2 as an outcome-blind interface sanity check before F4.
+   `ORACLE` is survivor X; `INFORMED` and `NEUTRAL` use native one-pass
+   `Q1+Q2+Q3`.  The runner pools bits and joules and uses inherited tolerance
+   and ratio-of-sums direction checks.  For D/F, the decisive predicates are:
+   teacher and INFORMED EE above BASE both pooled and in at least 2/4 worlds,
+   plus INFORMED service at least `BASE - 0.01` in every world.  D/F are
+   unilateral continuous corrections, not closure pairs.  Literal-11,
+   harmful-partial, topology, pair-count, and action-exposure diagnostics are
+   nondecisive; zero selected-11 cannot veto D/F, and no added closure
+   simulation is required.
+
+## Numerical provenance labels
+
+- `r7_copy`: sign eligibility `0.02`, INFORMED mean Spearman `0.20`, balanced
+  accuracy `0.60`, INFORMED-minus-NEUTRAL balanced accuracy `0.05`, at least
+  `24` positive and `24` negative eligible rows, neutral permutation coverage
+  `0.80`, and INFORMED per-world service margin `0.01`.
+- `panel_adaptation`: four-world INFORMED-over-NEUTRAL mean-seed Spearman wins
+  at least `3/4` (from `6/8`), each seed nonnegative in at least `3/4` worlds
+  (from `5/8`), and teacher/INFORMED EE above BASE in at least `2/4` worlds
+  (from `4/8`).
+- `panel_adaptation`: the newly specified loss is mean squared error over legal
+  nonreference cells.  It is not an R7 loss copy.
 
 ## Source and learner workflow
 
@@ -108,8 +126,8 @@ MCRL_V023_C3_F3_LEARNER_SEED_3_V1 -> 6946862304711082547
 Freeze the F3 preflight bytes and sidecar; every code/import digest; the F2
 panel/anchor reuse; target/kappa convention; Q3 config; seed domains and
 derived numbers; optimizer, MSE, batch, schedule, checkpoints; neutral key,
-strata, singleton and 80% rules; LOWO construction; every R7 learner and
-four-world composition threshold; composition-input schema and draw/profile
+strata, singleton and 80% rules; LOWO construction; every R7-copy learner
+threshold and every labelled panel adaptation; composition-input profile
 construction; deterministic process environment; output roots; launch-
 authority schema; receipt schemas; failure precedence; and the independent
 verification command.  After F2, only the launch authority's `survivor` value
@@ -155,7 +173,7 @@ from the Q1/Q2 proxy.
 ## Remaining launch-time question
 
 The package deliberately does not nominate an F2 result or a production
-composition-input path pre-outcome.  The controller must bind the already-
-frozen outcome-blind closure replay producer and its sealed composition input
-before launch; it may not create or revise that input after learner metrics
-are opened.  F4 remains separate and unauthorized.
+composition-input path pre-outcome.  The controller must bind a sealed input
+that implements the ladder/R2 EE-and-service scope before launch; it may not
+create or revise that input after learner metrics are opened.  F4 remains
+separate and unauthorized.

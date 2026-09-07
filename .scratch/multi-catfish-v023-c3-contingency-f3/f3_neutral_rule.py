@@ -1,8 +1,8 @@
-"""Declared fold-safe F3 neutral-label materialisation.
+"""Declared fold-local, training-only F3 neutral-label permutation.
 
-The policy is the design memo's plain extension of the imported R7 cyclic
-matched-placebo primitive.  This module is the only owner of the extension;
-the source builder imports it and never reimplements neutral sampling.
+This C3 rule is distinct from the C1/C2 predecision source selectors.  It uses
+the R2-declared strata and the imported R7 hash-shift primitive without moving
+held-out labels.  The source builder imports this sole implementation.
 """
 
 from __future__ import annotations
@@ -24,12 +24,12 @@ from mcrl.runtime.ee_axis_lcsrs_c3_placebo import (
 )
 
 
-F3_NEUTRAL_RULE = "f3-r7-matched-label-placebo-general-df-v1"
+F3_NEUTRAL_RULE = "c3-f3-fold-local-training-only-matched-label-permutation-v1"
 F3_NEUTRAL_KEY = "MCRL_V023_C3_F3_NEUTRAL_V1"
 F3_NEUTRAL_KEY_SHA256 = hashlib.sha256(F3_NEUTRAL_KEY.encode("ascii")).hexdigest()
 IMPORTED_NEUTRAL_RULES = {
-    "c1": C1_CLUSTER_NEUTRAL_SOURCE_RULE,
-    "c2": C2_NEUTRAL_SOURCE_RULE,
+    "c1_predecision_source_selection": C1_CLUSTER_NEUTRAL_SOURCE_RULE,
+    "c2_predecision_source_selection": C2_NEUTRAL_SOURCE_RULE,
     "r7_coverage_min": LCSRS_C3_PLACEBO_MIN_COVERAGE,
     "r7_shift_implementation": "mcrl.runtime.ee_axis_lcsrs_c3_placebo._shift",
 }
@@ -196,7 +196,7 @@ def build_f3_neutral(
     *,
     training_worlds: Sequence[int],
 ) -> F3NeutralMaterialization:
-    """Permute only training-fold legal nonreference labels within declared strata."""
+    """Apply R2's fold-local rule to training legal nonreference labels only."""
 
     frozen = tuple(records)
     allowed = frozenset(int(world) for world in training_worlds)

@@ -3,7 +3,7 @@
 
 Each ``--job WORLD:SEED`` performs the paired INFORMED/NEUTRAL LOWO fit.
 ``--merge`` authenticates all twelve terminal jobs, applies the imported R7
-learner arithmetic, then applies the mandatory R7-threshold composition veto.
+learner arithmetic, then applies the ladder/R2 outcome-blind composition veto.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from mcrl.runtime.ee_axis_lcsrs_c3_learner import (
     lcsrs_c3_network_sha256,
     make_lcsrs_c3_student,
 )
+from mcrl.runtime.ee_axis_lcsrs_c3_gate_metrics import ratio_of_sums_direction
 from mcrl.runtime.ee_axis_lcsrs_c3_state import C3View
 
 
@@ -810,7 +811,7 @@ def observability_threshold_truth(
     informed_world_wins: int,
     per_seed_nonnegative_worlds: Mapping[int, int],
 ) -> bool:
-    """Pure copied-threshold truth table used by the raw-panel evaluator."""
+    """R7-copy scalar thresholds plus R2 four-world panel adaptations."""
 
     values = (
         mean_informed_spearman,
@@ -875,49 +876,22 @@ def _profile(value: object, *, field: str) -> dict[str, float]:
 
 
 def evaluate_composition_check(payload: Mapping[str, object]) -> dict[str, object]:
-    """Apply the memo's four-world R7 composition thresholds without rescoring."""
+    """Apply R2's outcome-blind EE/service veto for non-closure D/F."""
 
     if payload.get("schema") != COMPOSITION_INPUT_SCHEMA or payload.get("integrity") is not True:
         return {"integrity": False, "passes": False}
-    counts = payload.get("counts")
     worlds = payload.get("worlds")
-    if not isinstance(counts, Mapping) or not isinstance(worlds, Mapping) or set(worlds) != {str(w) for w in common.WORLDS}:
-        raise common.F3Error("composition input panel/counts are malformed")
-    required_counts = {
-        "pairs",
-        "action_opportunities",
-        "action_changes",
-        "literal_11",
-        "partial",
-        "harmful_partial",
-        "selected_11",
-        "topology_consistent_11",
-    }
-    if set(counts) != required_counts or any(type(counts[name]) is not int or counts[name] < 0 for name in counts):
-        raise common.F3Error("composition count keys/values are not exact")
-    pairs = int(counts["pairs"])
-    action_opportunities = int(counts["action_opportunities"])
-    partial = int(counts["partial"])
-    selected_11 = int(counts["selected_11"])
-    action_fraction = None if action_opportunities == 0 else int(counts["action_changes"]) / action_opportunities
-    literal_fraction = None if pairs == 0 else int(counts["literal_11"]) / pairs
-    harmful_fraction = 0.0 if partial == 0 else int(counts["harmful_partial"]) / partial
-    topology_fraction = None if selected_11 == 0 else int(counts["topology_consistent_11"]) / selected_11
+    if not isinstance(worlds, Mapping) or set(worlds) != {str(w) for w in common.WORLDS}:
+        raise common.F3Error("composition input panel is malformed")
     pooled = {arm: {"bits": 0.0, "energy_j": 0.0} for arm in ("BASE", "ORACLE", "INFORMED", "NEUTRAL")}
     teacher_positive = 0
     learned_positive = 0
-    literal_worlds = 0
     service_ok = True
-    pairs_per_world = True
     world_receipts = {}
     for world in common.WORLDS:
         row = worlds[str(world)]
-        if not isinstance(row, Mapping) or set(row) != {"pairs", "literal_11", "profiles"}:
+        if not isinstance(row, Mapping) or set(row) != {"profiles"}:
             raise common.F3Error("composition world keys are not exact")
-        if type(row["pairs"]) is not int or type(row["literal_11"]) is not int:
-            raise common.F3Error("composition world counts must be exact integers")
-        pairs_per_world &= row["pairs"] >= 1
-        literal_worlds += int(row["literal_11"] >= 1)
         profiles_raw = row["profiles"]
         if not isinstance(profiles_raw, Mapping) or set(profiles_raw) != set(pooled):
             raise common.F3Error("composition profiles omit a required arm")
@@ -925,49 +899,67 @@ def evaluate_composition_check(payload: Mapping[str, object]) -> dict[str, objec
         for arm in pooled:
             pooled[arm]["bits"] += profiles[arm]["bits"]
             pooled[arm]["energy_j"] += profiles[arm]["energy_j"]
-        base_ee = profiles["BASE"]["bits"] / profiles["BASE"]["energy_j"]
-        teacher = profiles["ORACLE"]["bits"] / profiles["ORACLE"]["energy_j"] > base_ee
-        learned = profiles["INFORMED"]["bits"] / profiles["INFORMED"]["energy_j"] > base_ee
+        teacher_direction = ratio_of_sums_direction(
+            left_bits=profiles["ORACLE"]["bits"],
+            left_energy_j=profiles["ORACLE"]["energy_j"],
+            right_bits=profiles["BASE"]["bits"],
+            right_energy_j=profiles["BASE"]["energy_j"],
+        )
+        learned_direction = ratio_of_sums_direction(
+            left_bits=profiles["INFORMED"]["bits"],
+            left_energy_j=profiles["INFORMED"]["energy_j"],
+            right_bits=profiles["BASE"]["bits"],
+            right_energy_j=profiles["BASE"]["energy_j"],
+        )
+        teacher = teacher_direction.direction == 1
+        learned = learned_direction.direction == 1
         teacher_positive += int(teacher)
         learned_positive += int(learned)
-        world_service = all(
-            profiles[arm]["service_fraction"] >= profiles["BASE"]["service_fraction"] - 0.01
-            for arm in ("ORACLE", "INFORMED", "NEUTRAL")
+        world_service = (
+            profiles["INFORMED"]["service_fraction"]
+            >= profiles["BASE"]["service_fraction"] - 0.01
         )
         service_ok &= world_service
         world_receipts[str(world)] = {
             "teacher_above_base": teacher,
-            "learned_above_base": learned,
+            "informed_above_base": learned,
             "service": world_service,
+            "teacher_ratio_of_sums_direction": teacher_direction.direction,
+            "informed_ratio_of_sums_direction": learned_direction.direction,
         }
-    teacher_pooled = pooled["ORACLE"]["bits"] / pooled["ORACLE"]["energy_j"] > pooled["BASE"]["bits"] / pooled["BASE"]["energy_j"]
-    learned_pooled = pooled["INFORMED"]["bits"] / pooled["INFORMED"]["energy_j"] > pooled["BASE"]["bits"] / pooled["BASE"]["energy_j"]
+    teacher_pooled_direction = ratio_of_sums_direction(
+        left_bits=pooled["ORACLE"]["bits"],
+        left_energy_j=pooled["ORACLE"]["energy_j"],
+        right_bits=pooled["BASE"]["bits"],
+        right_energy_j=pooled["BASE"]["energy_j"],
+    )
+    learned_pooled_direction = ratio_of_sums_direction(
+        left_bits=pooled["INFORMED"]["bits"],
+        left_energy_j=pooled["INFORMED"]["energy_j"],
+        right_bits=pooled["BASE"]["bits"],
+        right_energy_j=pooled["BASE"]["energy_j"],
+    )
     predicates = {
-        "pair_coverage": pairs >= 24 and pairs_per_world,
-        "action_exposure": action_fraction is not None and action_fraction >= 0.10,
-        "literal_11": literal_fraction is not None and literal_fraction >= 0.25 and literal_worlds >= 2,
-        "harmful_partial": harmful_fraction <= 0.05,
-        "topology_consistency": topology_fraction is not None and topology_fraction >= 0.80,
-        "teacher_composition": teacher_pooled and teacher_positive >= 2,
-        "learned_composition": learned_pooled and learned_positive >= 2,
+        "teacher_ee": teacher_pooled_direction.direction == 1 and teacher_positive >= 2,
+        "informed_ee": learned_pooled_direction.direction == 1 and learned_positive >= 2,
         "service": service_ok,
     }
     return {
         "integrity": True,
         "thresholds": common.threshold_bindings()["composition"],
-        "fractions": {
-            "action_change": action_fraction,
-            "literal_11": literal_fraction,
-            "harmful_partial": harmful_fraction,
-            "topology_consistency": topology_fraction,
-        },
         "positive_worlds": {
-            "literal_11": literal_worlds,
             "teacher": teacher_positive,
-            "learned": learned_positive,
+            "informed": learned_positive,
         },
-        "pooled": pooled,
+        "pooled": {
+            **pooled,
+            "teacher_ratio_of_sums_direction": teacher_pooled_direction.direction,
+            "informed_ratio_of_sums_direction": learned_pooled_direction.direction,
+        },
         "worlds": world_receipts,
+        "applicability": common.threshold_bindings()["composition"]["applicability"],
+        "closure_diagnostics_role": "SERIALIZED_NONDECISIVE_IF_PRESENT",
+        "closure_diagnostics": payload.get("closure_diagnostics"),
         "predicates": predicates,
         "passes": all(predicates.values()),
     }
@@ -1070,6 +1062,11 @@ def execute_merge(
             "job_receipts": job_receipts,
             "observability": observability,
             "composition": composition,
+            "neutral_rule": source_builder.neutral_rule_binding(),
+            "method_provenance": {
+                "loss": common.panel_bindings()["loss"],
+                "thresholds": common.threshold_bindings(),
+            },
             "composition_input": {
                 "path": str(Path(composition_input).resolve()),
                 "sha256": common.file_sha256(composition_input),
