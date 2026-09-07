@@ -102,3 +102,38 @@ FileNotFoundError: [Errno 2] No such file or directory: '.../.tmp/base-profile-a
 - 12 files changed (7 modified, 5 added — the r2 authority pair, the fixture copy, and the renamed pre-repair F2 preflight pair), no unrelated files swept in (pathspec-scoped).
 
 **(3) Replay:** **not run.** Launching a 90-minute shared-server job on a test suite I cannot verify at 41/41 — when the file I can directly inspect still fails the same way it did before — would repeat the same "don't proceed on an unverified premise" mistake this whole ladder is designed to prevent. Requesting: either point me to the actual fixed `test_run_v023_c3_contingency_f1.py` (or push it to `mcrl-v023-codex-ws-f1diag-20260907` or directly to this checkout) so I can re-verify 41/41 myself, or confirm the fixture-test failure should be explicitly waived (it does not gate the run itself — `run_v023_c3_contingency_f1.py --dry-run` and the launch authority are unaffected). No tmux session or output root was created for r2.
+
+---
+
+## r2 replay (executed) — 2026-09-07 — **outcome `FAST_SCREEN_NO_SUPPORT`**
+
+Root cause confirmed: my earlier server→local rsync had overwritten the coordinator's already-committed fix (two writers on one path). Fix re-verified from the **local repo only** (commit `077aed8`, no further pulls from `mcrl-v023-codex-ws-f1diag-20260907`): `test_run_v023_c3_contingency_f1.py` sha256 `c46578fd8c9ee0ae98d2d1cdca956372a4dd0fe9a5c23b117a3927aee5ee8c1a`, loads `fixtures-real-anchor/base-profile-anchor0.npz` from inside the package, asserts its sha256. **41/41 pass locally**, `F1_DRY_RUN_PASS`.
+
+Synced local → shadow only (three `rsync -a --exclude __pycache__` calls, one per package dir, exactly as specified). Server verification: test file sha256 confirmed `c46578fd8c9ee0ae…` (matches); **41/41 pass on the shadow checkout**; `F1_DRY_RUN_PASS`. r2 authority re-checked unchanged, `c3f9c2b2…`.
+
+Launched tmux `mcrl-v023-c3-f1-20260907-r2` at 2026-09-07 16:40:25 UTC (output root and log confirmed absent beforehand) with the r2 authority, TLE root, and env exactly as specified. My local bounded-wait process was killed mid-wait by an unrelated local low-memory event (not a server event); the server run was unaffected (detached tmux) and had already finished by the time I reconnected and checked directly.
+
+- **Outcome token: `FAST_SCREEN_NO_SUPPORT`** (`status="COMPLETE"`, not `INVALID_RUN` — no retry needed, nothing to quote).
+- Wall time: **383 s (~6 min 23 s)**, 16:40:25 → 16:46:48.25 UTC (tmux launch → receipt mtime).
+- Peak RSS: **not available** (monitor killed before any sample; process had already exited by reconnect).
+- Tape digest: `738f9f01b7a455e92d70f6e7348be8004b7d33f97b81b0557b77f4ffaeaba244` (matches tape manifest and receipt `tape_sha256`; tape file 62,022,148 bytes, mode 0444).
+- Receipt: `/home/sat/mcrl-v023-c3-contingency-f1-20260907-r2/receipt.json`.
+
+**Recorded, verbatim from `receipt.json`, without interpretation:**
+
+`kill_rules`:
+| | integrity | action_changed | service_noninferior | ee_strictly_above_base | survives |
+|---|---|---|---|---|---|
+| D | true | true | false | false | false |
+| F | true | true | true | false | false |
+
+(The receipt records "changes at least one legal action" only as this boolean `action_changed` field — true for both D and F; no numeric count field is present.)
+
+`metrics`:
+| | ratio_of_sums_ee_bits_per_j | served_user_steps | service_fraction | service_opportunities | total_bits | total_energy_j |
+|---|---|---|---|---|---|---|
+| BASE | 118630258.50679842 | 200 | 1.0 | 200 | 2619974613947.755 | 22085.21372983108 |
+| D | 117054987.33796957 | 199 | 0.995 | 200 | 2801477796300.5664 | 23933.006700619586 |
+| F | 113248875.74791098 | 200 | 1.0 | 200 | 3006393310511.618 | 26546.782832562247 |
+
+No further action taken on this receipt; the ladder's own branching for `FAST_SCREEN_NO_SUPPORT` is the controller's decision, not mine.
