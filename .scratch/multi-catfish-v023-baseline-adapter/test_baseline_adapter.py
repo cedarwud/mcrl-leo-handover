@@ -17,13 +17,14 @@ import baseline_adapter as adapter_module
 from baseline_adapter import (
     BaselineAdapter,
     BaselineAdapterError,
+    CONTRACT_FIELDS_EXCLUDED,
     EXPECTED_ACTION_DIM,
     EXPECTED_CHECKPOINT_SHA256,
     EXPECTED_EPISODES,
     EXPECTED_OBJECTIVE_WEIGHTS,
     EXPECTED_STATE_DIM,
 )
-from mcrl.env.action_contract import NO_OP_ACTION
+from mcrl.env.action_contract import CONTRACT_STATE_DIM, NO_OP_ACTION
 from mcrl.env.step_types import ActionMask, UserState
 
 
@@ -61,6 +62,18 @@ def _synthetic_state() -> UserState:
     )
 
 
+def _with_contract_fields(
+    state: UserState, contract_fields: np.ndarray | None
+) -> UserState:
+    return UserState(
+        access_vector=state.access_vector,
+        channel_quality=state.channel_quality,
+        beam_offsets=state.beam_offsets,
+        beam_loads=state.beam_loads,
+        contract_fields=contract_fields,
+    )
+
+
 def _mask(*valid_actions: int) -> ActionMask:
     values = np.zeros(EXPECTED_ACTION_DIM, dtype=bool)
     values[list(valid_actions)] = True
@@ -80,6 +93,14 @@ def test_real_checkpoint_load_is_authenticated_and_read_only():
     assert loaded.trainer_config["episodes"] == EXPECTED_EPISODES
     assert loaded.trainer_config["hidden_layers"] == (100, 50, 50)
     assert loaded.trainer_config["activation"] == "tanh"
+    assert loaded.contract_fields_excluded is CONTRACT_FIELDS_EXCLUDED is True
+    assert loaded.binding() == {
+        "checkpoint_sha256": EXPECTED_CHECKPOINT_SHA256,
+        "state_dim": EXPECTED_STATE_DIM,
+        "action_dim": EXPECTED_ACTION_DIM,
+        "training_episodes": EXPECTED_EPISODES,
+        "contract_fields_excluded": True,
+    }
     assert hashlib.sha256(CHECKPOINT.read_bytes()).hexdigest() == (
         EXPECTED_CHECKPOINT_SHA256
     )
@@ -135,6 +156,84 @@ def test_native_112d_encoding_and_weighted_masked_selection(adapter):
     assert bool(first_mask.mask[actions[0]])
     assert int(actions[1]) == NO_OP_ACTION
     assert adapter.select_action(state, first_mask, num_users=2) == int(actions[0])
+
+
+def test_random_native_encodings_are_bit_identical_with_contract_fields(adapter):
+    rng = np.random.default_rng(2927175120652069826)
+    for _ in range(64):
+        num_users = int(rng.integers(1, 257))
+        access = np.zeros(EXPECTED_ACTION_DIM, dtype=np.float32)
+        if bool(rng.integers(0, 2)):
+            access[int(rng.integers(0, EXPECTED_ACTION_DIM))] = 1.0
+        state = UserState(
+            access_vector=access,
+            channel_quality=rng.uniform(
+                0.0, 1.0e4, EXPECTED_ACTION_DIM
+            ).astype(np.float32),
+            beam_offsets=rng.uniform(
+                -np.pi, np.pi, EXPECTED_ACTION_DIM
+            ).astype(np.float32),
+            beam_loads=rng.integers(
+                0, num_users + 1, EXPECTED_ACTION_DIM
+            ).astype(np.float32),
+            contract_fields=None,
+        )
+        populated = _with_contract_fields(
+            state, rng.normal(size=CONTRACT_STATE_DIM).astype(np.float32)
+        )
+
+        absent_encoding = adapter.encode_user_state(state, num_users=num_users)
+        populated_encoding = adapter.encode_user_state(
+            populated, num_users=num_users
+        )
+
+        assert absent_encoding.shape == (EXPECTED_STATE_DIM,)
+        assert absent_encoding.tobytes(order="C") == populated_encoding.tobytes(
+            order="C"
+        )
+
+
+def test_contract_block_inclusion_mutation_changes_the_encoding(adapter):
+    state = _synthetic_state()
+    zero_contract = _with_contract_fields(
+        state, np.zeros(CONTRACT_STATE_DIM, dtype=np.float32)
+    )
+    signal_contract = _with_contract_fields(
+        state,
+        np.arange(1.0, CONTRACT_STATE_DIM + 1.0, dtype=np.float32),
+    )
+
+    zero_included = adapter_module.encode_state(
+        zero_contract,
+        5,
+        adapter._encoding_config,
+        include_contract_block=True,
+    )
+    signal_included = adapter_module.encode_state(
+        signal_contract,
+        5,
+        adapter._encoding_config,
+        include_contract_block=True,
+    )
+
+    assert zero_included.shape == signal_included.shape == (
+        EXPECTED_STATE_DIM + CONTRACT_STATE_DIM,
+    )
+    assert zero_included.tobytes(order="C") != signal_included.tobytes(order="C")
+
+
+def test_policy_construction_executes_contract_exclusion_check(monkeypatch):
+    calls = 0
+    original = adapter_module._assert_contract_fields_excluded
+
+    def counted(config):
+        nonlocal calls
+        calls += 1
+        original(config)
+
+    monkeypatch.setattr(adapter_module, "_assert_contract_fields_excluded", counted)
+    BaselineAdapter.from_artifacts(CHECKPOINT, STATUS)
+    assert calls == 1
 
 
 @pytest.mark.parametrize(

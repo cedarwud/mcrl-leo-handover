@@ -21,7 +21,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from mcrl.env.action_contract import NO_OP_ACTION
+from mcrl.env.action_contract import CONTRACT_STATE_DIM, NO_OP_ACTION
 from mcrl.env.step_types import ActionMask, UserState
 from mcrl.runtime.q_network import DQNNetwork
 from mcrl.runtime.state_encoding import encode_state
@@ -41,6 +41,7 @@ EXPECTED_CHECKPOINT_EPISODE = EXPECTED_EPISODES - 1
 EXPECTED_HIDDEN_LAYERS = (100, 50, 50)
 EXPECTED_ACTIVATION = "tanh"
 EXPECTED_OBJECTIVE_WEIGHTS = (0.5, 0.3, 0.2)
+CONTRACT_FIELDS_EXCLUDED = True
 
 _REPO_ROOT = Path(__file__).absolute().parents[2]
 DEFAULT_CHECKPOINT_PATH = (
@@ -395,11 +396,6 @@ def _validate_user_state(user_state: UserState) -> None:
         raise BaselineAdapterError(
             f"state must be native UserState, got {type(user_state).__name__}"
         )
-    if user_state.contract_fields is not None:
-        raise BaselineAdapterError(
-            "contract_fields are not part of the native 112-D state"
-        )
-
     arrays = {
         "access_vector": user_state.access_vector,
         "channel_quality": user_state.channel_quality,
@@ -430,6 +426,82 @@ def _validate_user_state(user_state: UserState) -> None:
         raise BaselineAdapterError("state.channel_quality must be non-negative")
     if bool(np.any(user_state.beam_loads < 0)):
         raise BaselineAdapterError("state.beam_loads must be non-negative")
+
+
+def _native_user_state(user_state: UserState) -> UserState:
+    """Return the baseline's four-array state, excluding every extension."""
+
+    return UserState(
+        access_vector=user_state.access_vector,
+        channel_quality=user_state.channel_quality,
+        beam_offsets=user_state.beam_offsets,
+        beam_loads=user_state.beam_loads,
+        contract_fields=None,
+    )
+
+
+def _encode_native_user_state(
+    user_state: UserState,
+    *,
+    num_users: int,
+    config: _EncodingConfig,
+) -> np.ndarray:
+    """Validate and encode only the authenticated native 112-D surface."""
+
+    _validate_user_count(num_users)
+    _validate_user_state(user_state)
+    try:
+        encoded = encode_state(
+            _native_user_state(user_state),
+            num_users,
+            config,
+            include_contract_block=False,
+        )
+    except Exception as exc:
+        raise BaselineAdapterError("native UserState encoding failed") from exc
+    encoded = np.asarray(encoded, dtype=np.float32)
+    if encoded.shape != (EXPECTED_STATE_DIM,):
+        raise BaselineAdapterError(
+            f"encoded state must have shape ({EXPECTED_STATE_DIM},), "
+            f"got {encoded.shape}"
+        )
+    if not bool(np.isfinite(encoded).all()):
+        raise BaselineAdapterError("encoded state contains nonfinite values")
+    return encoded.copy()
+
+
+def _assert_contract_fields_excluded(config: _EncodingConfig) -> None:
+    """Prove once per construction that contract data cannot change encoding."""
+
+    access = np.zeros(EXPECTED_ACTION_DIM, dtype=np.float32)
+    access[3] = 1.0
+    native_fields = {
+        "access_vector": access,
+        "channel_quality": np.linspace(
+            0.0, 3.0, EXPECTED_ACTION_DIM, dtype=np.float32
+        ),
+        "beam_offsets": np.linspace(
+            -0.3, 0.3, EXPECTED_ACTION_DIM, dtype=np.float32
+        ),
+        "beam_loads": np.arange(EXPECTED_ACTION_DIM, dtype=np.float32),
+    }
+    without_contract = UserState(**native_fields, contract_fields=None)
+    with_contract = UserState(
+        **native_fields,
+        contract_fields=np.arange(
+            1.0, CONTRACT_STATE_DIM + 1.0, dtype=np.float32
+        ),
+    )
+    absent = _encode_native_user_state(
+        without_contract, num_users=7, config=config
+    )
+    populated = _encode_native_user_state(
+        with_contract, num_users=7, config=config
+    )
+    if absent.tobytes(order="C") != populated.tobytes(order="C"):
+        raise BaselineAdapterError(
+            "native 112-D encoding is not invariant to contract_fields"
+        )
 
 
 def _validate_action_mask(action_mask: ActionMask) -> np.ndarray:
@@ -484,6 +556,7 @@ class BaselineAdapter:
         )
         self._objective_weights = EXPECTED_OBJECTIVE_WEIGHTS
         self._q_networks = q_networks
+        _assert_contract_fields_excluded(self._encoding_config)
 
     @classmethod
     def from_artifacts(
@@ -566,31 +639,31 @@ class BaselineAdapter:
     def objective_weights(self) -> tuple[float, float, float]:
         return self._objective_weights
 
+    @property
+    def contract_fields_excluded(self) -> bool:
+        return CONTRACT_FIELDS_EXCLUDED
+
+    def binding(self) -> dict[str, object]:
+        """Return the adapter-owned policy receipt fields."""
+
+        return {
+            "checkpoint_sha256": self._checkpoint_sha256,
+            "state_dim": EXPECTED_STATE_DIM,
+            "action_dim": EXPECTED_ACTION_DIM,
+            "training_episodes": EXPECTED_EPISODES,
+            "contract_fields_excluded": CONTRACT_FIELDS_EXCLUDED,
+        }
+
     def encode_user_state(
         self, user_state: UserState, *, num_users: int
     ) -> np.ndarray:
         """Encode one native UserState with the admitted checkpoint config."""
 
-        _validate_user_count(num_users)
-        _validate_user_state(user_state)
-        try:
-            encoded = encode_state(
-                user_state,
-                num_users,
-                self._encoding_config,
-                include_contract_block=False,
-            )
-        except Exception as exc:
-            raise BaselineAdapterError("native UserState encoding failed") from exc
-        encoded = np.asarray(encoded, dtype=np.float32)
-        if encoded.shape != (EXPECTED_STATE_DIM,):
-            raise BaselineAdapterError(
-                f"encoded state must have shape ({EXPECTED_STATE_DIM},), "
-                f"got {encoded.shape}"
-            )
-        if not bool(np.isfinite(encoded).all()):
-            raise BaselineAdapterError("encoded state contains nonfinite values")
-        return encoded.copy()
+        return _encode_native_user_state(
+            user_state,
+            num_users=num_users,
+            config=self._encoding_config,
+        )
 
     def encode_states(self, states: Sequence[UserState]) -> np.ndarray:
         """Encode a non-empty native state batch using its user count."""
@@ -696,6 +769,7 @@ class BaselineAdapter:
 __all__ = [
     "BaselineAdapter",
     "BaselineAdapterError",
+    "CONTRACT_FIELDS_EXCLUDED",
     "DEFAULT_CHECKPOINT_PATH",
     "DEFAULT_STATUS_PATH",
     "EXPECTED_ACTION_DIM",
