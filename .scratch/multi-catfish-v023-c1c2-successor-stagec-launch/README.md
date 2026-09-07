@@ -49,14 +49,33 @@ non-exclusive reasons.
 8. Independently run `verify_v023_c1c2_successor_stagec.py` after 3,000. Any
    inconsistency is `STOP_PHYSICAL_EVALUATION_INTEGRITY`, never a scientific
    result.
-9. A held 3,000 result may continue to 9,000 only with both a separate
-   continuation-authority file and a formal owner-notification JSON containing:
+9. A held 3,000 result may continue to 9,000 only after the controller notifies
+   the owner and writes a formal owner-notification marker quoting the owner's
+   literal reply, then writes a separate continuation-authority file plus its
+   `.sha256` sidecar. The marker contains:
 
    ```json
    {
      "formal": true,
      "status": "OWNER_NOTIFIED_FOR_9000_CONTINUATION",
-     "authority_sha256": "<digest of the separate authority file>",
+     "owner_acknowledgement": "<owner's literal acknowledgement reply>",
+     "result_3000_sha256": "<digest of the preserved 3000 result.json>",
+     "bindings_sha256": "<digest of the execution bindings file>",
+     "plan_sha256": "866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb"
+   }
+   ```
+
+   The authority is written after the marker and embeds the marker's SHA-256,
+   the SHA-256 of the literal acknowledgement string, the bindings digest, and
+   the plan digest. Its external named `.sha256` sidecar authenticates the
+   authority. This content chain, rather than file mtimes, proves the required
+   order: `result.json` -> owner marker -> authority -> authority sidecar.
+
+   ```json
+   {
+     "formal": true,
+     "owner_notification_sha256": "<digest of the owner marker>",
+     "owner_acknowledgement_sha256": "<SHA-256 of the exact UTF-8 reply>",
      "bindings_sha256": "<digest of the execution bindings file>",
      "plan_sha256": "866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb"
    }

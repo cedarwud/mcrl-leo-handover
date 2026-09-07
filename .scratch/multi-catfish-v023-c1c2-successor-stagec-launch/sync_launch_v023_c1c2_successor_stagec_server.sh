@@ -21,6 +21,10 @@ stage_c="${V023_STAGEC_OUTPUT_ROOT:-/home/sat/mcrl-v023-c1c2-successor-stagec-20
 run_root="${V023_STAGEC_RUN_ROOT:-/home/sat/mcrl-v023-c1c2-successor-stagec-controller-20260907-r1}"
 session="${V023_STAGEC_TMUX_SESSION:-mcrl-v023-c1c2-successor-stagec-20260907-r1}"
 python_bin="${V023_STAGEC_PYTHON:-/home/sat/mcrl-leo-handover/.venv/bin/python}"
+check_python="$python_bin"
+if [[ "$dry_run" == 1 && -z "${V023_STAGEC_PYTHON:-}" ]]; then
+  check_python="${repo_root}/.venv/bin/python"
+fi
 tle_root="${V023_STAGEC_TLE_ROOT:-/home/sat/mcrl-runtime/tle-frozen-20260820}"
 manifest="${package}/V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST.sha256"
 pin="${package}/V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST-FROZEN.sha256"
@@ -32,11 +36,11 @@ for value in "$checkout" "$seed_checkout" "$stage_a" "$stage_b" "$stage_c" "$run
 done
 [[ "$session" =~ ^[A-Za-z0-9_.-]+$ ]] || die "unsafe tmux session"
 [[ "$host" =~ ^[A-Za-z0-9_.-]+$ ]] || die "unsafe server host"
-[[ -x "$python_bin" ]] || [[ "$dry_run" == 1 ]] || die "python is not executable"
+[[ -x "$check_python" ]] || die "python is not executable: $check_python"
 
 export PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=2 PYTHONPATH="${repo_root}/src" TMPDIR="${repo_root}/.tmp"
 mkdir -p "$TMPDIR"
-"$python_bin" "$package/build_v023_c1c2_successor_stagec_manifest.py" --check >/dev/null
+"$check_python" "$package/build_v023_c1c2_successor_stagec_manifest.py" --check >/dev/null
 
 bindings="${checkout}/${package_rel}/V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json"
 plan="${run_root}/V023-C1C2-SUCCESSOR-9000-WORLD-PLAN.json"

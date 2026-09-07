@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import json
 import os
@@ -124,6 +125,38 @@ def _formal_marker(output: Path, bindings_sha: str, plan_sha: str) -> None:
         common.write_once(marker, payload)
 
 
+def _authenticate_continuation_authority(
+    *, result_path: Path, authority: Path, owner_marker: Path, bindings_sha: str,
+) -> tuple[str, str, str, str]:
+    result_sha = common.file_sha256(result_path, field="3000 scientific result")
+    owner = common.read_json(owner_marker, field="owner-notification marker")
+    acknowledgement = owner.get("owner_acknowledgement")
+    if (
+        owner.get("formal") is not True
+        or owner.get("status") != "OWNER_NOTIFIED_FOR_9000_CONTINUATION"
+        or owner.get("bindings_sha256") != bindings_sha
+        or owner.get("plan_sha256") != common.PLAN_SHA256
+        or owner.get("result_3000_sha256") != result_sha
+        or not isinstance(acknowledgement, str)
+        or not acknowledgement
+    ):
+        raise common.StageCError("owner-notification marker is absent or disagrees")
+    owner_sha = common.file_sha256(owner_marker, field="owner-notification marker")
+    acknowledgement_sha = hashlib.sha256(acknowledgement.encode("utf-8")).hexdigest()
+    authority_payload = common.read_json(authority, field="continuation authority")
+    common.verify_named_sidecar(authority)
+    if (
+        authority_payload.get("formal") is not True
+        or authority_payload.get("owner_notification_sha256") != owner_sha
+        or authority_payload.get("owner_acknowledgement_sha256") != acknowledgement_sha
+        or authority_payload.get("bindings_sha256") != bindings_sha
+        or authority_payload.get("plan_sha256") != common.PLAN_SHA256
+    ):
+        raise common.StageCError("continuation authority does not authenticate the owner acknowledgement marker")
+    authority_sha = common.file_sha256(authority, field="continuation authority")
+    return authority_sha, owner_sha, acknowledgement_sha, result_sha
+
+
 def _continuation(
     *, runner: Any, evaluation: Any, output: Path, checkpoint: Path,
     authority: Path, owner_marker: Path, bindings_sha: str,
@@ -131,22 +164,18 @@ def _continuation(
     result = common.read_json(output / "result.json", field="3000 scientific result")
     if result.get("overall_token") != runner.HELD or result.get("completed_episode") != 3000:
         raise common.StageCError("9000 continuation requires the held 3000 result")
-    authority_sha = common.file_sha256(authority, field="continuation authority")
-    owner = common.read_json(owner_marker, field="owner-notification marker")
-    if (
-        owner.get("formal") is not True
-        or owner.get("status") != "OWNER_NOTIFIED_FOR_9000_CONTINUATION"
-        or owner.get("authority_sha256") != authority_sha
-        or owner.get("bindings_sha256") != bindings_sha
-        or owner.get("plan_sha256") != common.PLAN_SHA256
-    ):
-        raise common.StageCError("owner-notification marker is absent or disagrees")
+    authority_sha, owner_sha, acknowledgement_sha, result_sha = _authenticate_continuation_authority(
+        result_path=output / "result.json", authority=authority,
+        owner_marker=owner_marker, bindings_sha=bindings_sha,
+    )
     authority_marker = output / "CONTINUATION-AUTHORITY.json"
     authority_binding = {
-        "schema": "multi-catfish-mcrl-v023-c1c2-successor-stagec-continuation-authority-binding-v1",
+        "schema": "multi-catfish-mcrl-v023-c1c2-successor-stagec-continuation-authority-binding-v2",
         "formal": True,
         "continuation_authority_sha256": authority_sha,
-        "owner_notification_sha256": common.file_sha256(owner_marker),
+        "owner_notification_sha256": owner_sha,
+        "owner_acknowledgement_sha256": acknowledgement_sha,
+        "result_3000_sha256": result_sha,
         "bindings_sha256": bindings_sha,
         "plan_sha256": common.PLAN_SHA256,
     }
@@ -189,7 +218,9 @@ def _continuation(
         "arms": list(common.ARMS),
         "pooled_by_arm": pooled,
         "continuation_authority_sha256": authority_sha,
-        "owner_notification_sha256": common.file_sha256(owner_marker),
+        "owner_notification_sha256": owner_sha,
+        "owner_acknowledgement_sha256": acknowledgement_sha,
+        "result_3000_sha256": result_sha,
         "continuation_authority_binding_sha256": common.file_sha256(authority_marker),
         "scientific_result_remains": result["overall_token"],
         "new_scientific_token_emitted": False,

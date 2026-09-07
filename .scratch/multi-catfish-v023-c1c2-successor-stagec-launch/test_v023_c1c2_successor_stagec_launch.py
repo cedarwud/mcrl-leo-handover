@@ -4,7 +4,9 @@ import copy
 import hashlib
 import importlib
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -23,6 +25,7 @@ for path in (
         sys.path.insert(0, str(path))
 
 import bind_v023_c1c2_successor_stagec_freeze as binder
+import build_v023_c1c2_successor_stagec_manifest as manifest_builder
 import build_v023_c1c2_successor_world_plan as plan_builder
 import preflight_v023_c1c2_successor_stagec as preflight
 import run_v023_c1c2_successor_stage_c as controller
@@ -185,6 +188,61 @@ def test_9000_refuses_missing_owner_notification_marker(tmp_path: Path) -> None:
         )
 
 
+def test_9000_authority_authenticates_literal_owner_reply_and_result(tmp_path: Path) -> None:
+    result = tmp_path / "result.json"
+    _write_json(result, {"overall_token": runner.HELD, "completed_episode": 3000})
+    bindings_sha = "a" * 64
+    acknowledgement = "I acknowledge and authorize the 9000-world continuation."
+    marker = tmp_path / "owner-notification.json"
+    _write_json(
+        marker,
+        {
+            "formal": True,
+            "status": "OWNER_NOTIFIED_FOR_9000_CONTINUATION",
+            "owner_acknowledgement": acknowledgement,
+            "result_3000_sha256": common.file_sha256(result),
+            "bindings_sha256": bindings_sha,
+            "plan_sha256": common.PLAN_SHA256,
+        },
+    )
+    authority = tmp_path / "authority.json"
+    _write_json(
+        authority,
+        {
+            "formal": True,
+            "owner_notification_sha256": common.file_sha256(marker),
+            "owner_acknowledgement_sha256": hashlib.sha256(acknowledgement.encode("utf-8")).hexdigest(),
+            "bindings_sha256": bindings_sha,
+            "plan_sha256": common.PLAN_SHA256,
+        },
+    )
+    common.write_digest_sidecar(authority)
+    authenticated = controller._authenticate_continuation_authority(
+        result_path=result, authority=authority, owner_marker=marker, bindings_sha=bindings_sha,
+    )
+    assert authenticated[1] == common.file_sha256(marker)
+    assert authenticated[2] == hashlib.sha256(acknowledgement.encode("utf-8")).hexdigest()
+    _write_json(marker.with_name("wrong-marker.json"), {"formal": True})
+    with pytest.raises(common.StageCError, match="owner-notification"):
+        controller._authenticate_continuation_authority(
+            result_path=result, authority=authority,
+            owner_marker=marker.with_name("wrong-marker.json"), bindings_sha=bindings_sha,
+        )
+
+
+def test_manifest_requires_closure_list_and_syncs_every_closure_path(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="required closure list missing"):
+        manifest_builder.closure(tmp_path)
+    closure_list = REPO / ".scratch/multi-catfish-v023-controller-handoff-20260907/SHADOW-CLOSURE-LIST-2026-09-07.txt"
+    closure_paths = {
+        line.strip() for line in closure_list.read_text(encoding="ascii").splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+    sync_paths = set((HERE / manifest_builder.SYNC_LIST_NAME).read_text(encoding="ascii").splitlines())
+    assert len(closure_paths) == 246
+    assert closure_paths <= sync_paths
+
+
 def test_circular_execution_binding_digest_is_rejected() -> None:
     with pytest.raises(common.StageCError, match="circular"):
         preflight._reject_circular_digest({"self_sha256": "a" * 64}, "b" * 64)
@@ -202,8 +260,17 @@ def test_baseline_dependency_fails_closed_until_postfix_assertion_exists() -> No
 
 def test_dry_run_prints_commands_without_remote_execution() -> None:
     launcher = HERE / "sync_launch_v023_c1c2_successor_stagec_server.sh"
-    text = launcher.read_text(encoding="utf-8")
-    assert "--dry-run" in text
-    assert "wait-up-to-120s" in text
-    assert "tmux new-session" in text
-    assert "LOG_PATH=" in text
+    syntax = subprocess.run(["bash", "-n", str(launcher)], capture_output=True, text=True, check=False)
+    assert syntax.returncode == 0, syntax.stderr
+    environment = dict(os.environ)
+    environment.pop("V023_STAGEC_PYTHON", None)
+    completed = subprocess.run(
+        [str(launcher), "--dry-run"], cwd=REPO, env=environment,
+        capture_output=True, text=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "ssh sat test -d" in completed.stdout
+    assert "rsync -aR --files-from=" in completed.stdout
+    assert "tmux new-session" in completed.stdout
+    assert "wait-up-to-120s" in completed.stdout
+    assert "LOG_PATH=" in completed.stdout

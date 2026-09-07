@@ -255,6 +255,9 @@ def verify_finished(root: Path, bindings_path: Path) -> dict[str, object]:
             or continuation.get("continuation_authority_binding_sha256") != common.file_sha256(authority_binding_path)
             or continuation.get("continuation_authority_sha256") != authority_binding.get("continuation_authority_sha256")
             or continuation.get("owner_notification_sha256") != authority_binding.get("owner_notification_sha256")
+            or continuation.get("owner_acknowledgement_sha256") != authority_binding.get("owner_acknowledgement_sha256")
+            or continuation.get("result_3000_sha256") != common.file_sha256(root / "result.json")
+            or authority_binding.get("result_3000_sha256") != common.file_sha256(root / "result.json")
         ):
             raise common.StageCError("9000 continuation authority/result semantics drifted")
         for arm in common.ARMS:

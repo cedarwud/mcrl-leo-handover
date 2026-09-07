@@ -14,67 +14,20 @@ from stagec_common import CODE_MANIFEST_NAME, CODE_PIN_NAME, HERE, PHYSICAL, REP
 EXCLUDED = {CODE_MANIFEST_NAME, CODE_PIN_NAME, "V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json", "V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json.sha256"}
 SYNC_LIST_NAME = "V023-C1C2-SUCCESSOR-STAGEC-SYNC-LIST.txt"
 EXCLUDED.add(SYNC_LIST_NAME)
-MCRL_RUNTIME_CLOSURE = (
-    "src/mcrl/__init__.py",
-    "src/mcrl/errors.py",
-    "src/mcrl/algorithms/__init__.py",
-    "src/mcrl/algorithms/ee_axis_action_shared.py",
-    "src/mcrl/algorithms/ee_axis_lcsrs_c3_head.py",
-    "src/mcrl/algorithms/ee_axis_lcsrs_three_route.py",
-    "src/mcrl/algorithms/ee_axis_pairwise.py",
-    "src/mcrl/algorithms/ee_axis_v014_head.py",
-    "src/mcrl/env/__init__.py",
-    "src/mcrl/env/action_contract.py",
-    "src/mcrl/env/antenna.py",
-    "src/mcrl/env/candidates.py",
-    "src/mcrl/env/cells.py",
-    "src/mcrl/env/constants.py",
-    "src/mcrl/env/d2.py",
-    "src/mcrl/env/dwell.py",
-    "src/mcrl/env/ephemeris.py",
-    "src/mcrl/env/geometry.py",
-    "src/mcrl/env/interference.py",
-    "src/mcrl/env/keyed_fading.py",
-    "src/mcrl/env/link_budget.py",
-    "src/mcrl/env/mobility.py",
-    "src/mcrl/env/observation_provenance.py",
-    "src/mcrl/env/pointing.py",
-    "src/mcrl/env/scenario.py",
-    "src/mcrl/env/service.py",
-    "src/mcrl/env/step.py",
-    "src/mcrl/env/step_types.py",
-    "src/mcrl/env/tle.py",
-    "src/mcrl/runtime/__init__.py",
-    "src/mcrl/runtime/bessel.py",
-    "src/mcrl/runtime/ee_axis_lcsrs_c3_state.py",
-    "src/mcrl/runtime/ee_axis_ops3.py",
-    "src/mcrl/runtime/ee_axis_ops3_live.py",
-    "src/mcrl/runtime/ee_axis_state.py",
-    "src/mcrl/runtime/ee_axis_v014_q2_state.py",
-    "src/mcrl/runtime/energy_efficiency.py",
-    "src/mcrl/runtime/finiteness.py",
-    "src/mcrl/runtime/q_network.py",
-    "src/mcrl/runtime/state_encoding.py",
-    "src/mcrl/runtime/trainer_env.py",
-    "src/mcrl/runtime/trainer_spec.py",
-)
-
-
 def closure(repo: Path = REPO) -> list[str]:
     owned = [path for path in HERE.iterdir() if path.is_file() and path.name not in EXCLUDED and not path.name.endswith(".pyc")]
     physical = [path for path in PHYSICAL.iterdir() if path.is_file() and not path.name.endswith(".pyc")]
     paths = owned + physical
     closure_list = repo / ".scratch/multi-catfish-v023-controller-handoff-20260907/SHADOW-CLOSURE-LIST-2026-09-07.txt"
-    if closure_list.is_file() and not closure_list.is_symlink():
-        for line in closure_list.read_text(encoding="ascii").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                fields = line.split()
-                if len(fields) == 2 and len(fields[0]) == 64 and all(character in "0123456789abcdef" for character in fields[0]):
-                    line = fields[1]
-                paths.append(repo / line)
-    else:
-        paths.extend(repo / relative for relative in MCRL_RUNTIME_CLOSURE)
+    if not closure_list.is_file() or closure_list.is_symlink():
+        raise SystemExit(f"required closure list missing or symlinked: {closure_list}")
+    for line in closure_list.read_text(encoding="ascii").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            fields = line.split()
+            if len(fields) == 2 and len(fields[0]) == 64 and all(character in "0123456789abcdef" for character in fields[0]):
+                line = fields[1]
+            paths.append(repo / line)
     for relative in (
         ".scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py",
         ".scratch/multi-catfish-v023-two-route-source-training-runner/ee_axis_two_route_model.py",
