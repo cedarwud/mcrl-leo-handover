@@ -616,10 +616,17 @@ class CostShareResult:
             sealed["beam_share_power_w"] + sealed["satellite_share_power_w"],
         ):
             raise C3F0Error("total share power does not equal beam plus satellite share")
-        if not np.array_equal(
-            sealed["total_share_energy_j"],
-            sealed["beam_share_energy_j"] + sealed["satellite_share_energy_j"],
-        ):
+        expected_total_share_energy = (
+            sealed["beam_share_energy_j"] + sealed["satellite_share_energy_j"]
+        )
+        total_share_energy_residual = np.abs(
+            sealed["total_share_energy_j"] - expected_total_share_energy
+        )
+        total_share_energy_tolerance = _roundoff_tolerance(
+            float(np.max(np.abs(sealed["total_share_energy_j"]), initial=0.0)),
+            float(np.max(np.abs(expected_total_share_energy), initial=0.0)),
+        )
+        if np.any(total_share_energy_residual > total_share_energy_tolerance):
             raise C3F0Error("total share energy does not equal beam plus satellite share")
         if not np.array_equal(
             sealed["active_satellite_ids"],

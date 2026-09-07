@@ -14,6 +14,7 @@ import pytest
 from mcrl.env.link_budget import fixed_power_w, pa_efficiency, supply_power_w, system_power_w
 
 import build_f1_preflight_manifest as preflight
+import c3_contingency_f0 as f0
 import run_v023_c3_contingency_f1 as f1
 
 
@@ -179,6 +180,63 @@ def test_targets_are_recomputed_through_f0_with_known_conservation() -> None:
         1,
         *([f1.NO_OP_ACTION] * 98),
     ]
+
+
+def test_real_base_anchor0_energy_roundoff_is_accepted() -> None:
+    fixture_path = Path(__file__).resolve().parents[2] / ".tmp" / "base-profile-anchor0.npz"
+    with np.load(fixture_path, allow_pickle=False) as fixture:
+        profile = f1.PhysicalProfile(
+            link_rate_bps=fixture["link_rate_bps"],
+            served=fixture["served"],
+            serving_satellite=fixture["serving_satellite"],
+            serving_cell=fixture["serving_cell"],
+            active_beam_satellites=fixture["active_beam_satellites"],
+            active_beam_cells=fixture["active_beam_cells"],
+            beam_power_w=fixture["beam_power_w"],
+            fixed_power_w=float(fixture["fixed_power_w"]),
+            system_power_w=float(fixture["system_power_w"]),
+            interval_s=float(fixture["interval_s"]),
+        )
+
+    canonical = f0._canonical_power_components(profile)
+    beam_keys = {
+        tuple(key): index for index, key in enumerate(profile.active_beam_keys.tolist())
+    }
+    satellite_ids = canonical.active_satellite_ids.tolist()
+    satellite_index = {satellite: index for index, satellite in enumerate(satellite_ids)}
+    beam_occupancy = np.zeros(profile.active_beams, dtype=np.int64)
+    satellite_occupancy = np.zeros(len(satellite_ids), dtype=np.int64)
+    user_beam = np.full(profile.users, -1, dtype=np.int64)
+    user_satellite = np.full(profile.users, -1, dtype=np.int64)
+    for user in np.flatnonzero(profile.served).tolist():
+        key = (int(profile.serving_satellite[user]), int(profile.serving_cell[user]))
+        user_beam[user] = beam_keys[key]
+        user_satellite[user] = satellite_index[key[0]]
+        beam_occupancy[user_beam[user]] += 1
+        satellite_occupancy[user_satellite[user]] += 1
+    beam_share = np.zeros(profile.users, dtype=np.float64)
+    satellite_share = np.zeros(profile.users, dtype=np.float64)
+    for user in np.flatnonzero(profile.served).tolist():
+        beam_share[user] = (
+            canonical.beam_cost_power_w[user_beam[user]] / beam_occupancy[user_beam[user]]
+        )
+        satellite_share[user] = (
+            f0.BASEBAND_POWER_PER_SATELLITE_W
+            / satellite_occupancy[user_satellite[user]]
+        )
+    direct_energy = (beam_share + satellite_share) * profile.interval_s
+    split_energy = (
+        beam_share * profile.interval_s + satellite_share * profile.interval_s
+    )
+    discrepancy = float(np.max(np.abs(direct_energy - split_energy)))
+
+    assert discrepancy == np.float64(2.842170943040401e-14)
+    assert discrepancy <= f0._roundoff_tolerance(
+        float(np.max(np.abs(direct_energy))),
+        float(np.max(np.abs(split_energy))),
+    )
+    result = f0.compute_cost_shares(profile)
+    assert result.sum_share_energy_j == profile.network_energy_j
 
 
 def test_tape_is_write_once_readonly_and_manifest_authenticated(tmp_path: Path) -> None:
