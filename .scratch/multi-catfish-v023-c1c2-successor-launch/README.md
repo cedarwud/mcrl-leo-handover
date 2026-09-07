@@ -36,6 +36,14 @@ For this stage-A bundle, the executable portion is therefore:
    independent verifier. Only the verifier may publish
    `PASS_SOURCE_TRAINING_INTEGRITY`, the output manifest, and `COMPLETE`.
 
+The synchronized payload is intentionally a documented superset of the
+authoritative 246-path shadow closure. Its exact set is the closure union the
+closed `LAUNCH_MANIFEST_ADDITIONS` list in `successor_launch_common.py` (the ten
+bundle source/documentation files, generated binder outputs when present, the
+review, the closure-list authority, and the Stage-C code manifest plus its frozen
+pin). The launch manifest and its sidecar are then transferred as the two
+external authenticators; no closure-equality claim is made.
+
 The fixed server identities are:
 
 - checkout: `/home/sat/mcrl-v023-c1c2-successor-source-training-20260907-100e-r1-checkout`

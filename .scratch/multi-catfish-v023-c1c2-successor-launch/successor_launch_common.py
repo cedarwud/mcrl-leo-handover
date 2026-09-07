@@ -31,6 +31,9 @@ TRAINER_REL = Path(
 PHYSICAL_EVALUATION_REL = Path(
     ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation"
 )
+STAGE_C_LAUNCH_REL = Path(
+    ".scratch/multi-catfish-v023-c1c2-successor-stagec-launch"
+)
 CLOSURE_LIST_REL = Path(
     ".scratch/multi-catfish-v023-controller-handoff-20260907/"
     "SHADOW-CLOSURE-LIST-2026-09-07.txt"
@@ -47,6 +50,40 @@ LEARNER_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-LEARNER-MANIFEST.json"
 PROVIDER_CONFIG_NAME = "V023-C1C2-SUCCESSOR-PROVIDER-CONFIG.json"
 LAUNCH_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-LAUNCH-MANIFEST.json"
 LAUNCH_MANIFEST_SIDECAR = LAUNCH_MANIFEST_NAME + ".sha256"
+STAGE_C_CODE_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST.sha256"
+STAGE_C_CODE_PIN_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST-FROZEN.sha256"
+
+# The authoritative 246-path shadow closure intentionally predates this launch
+# bundle.  These are the only additional payloads the Stage-A sync may add.
+# Generated freeze inputs are included once the binder has created them.
+LAUNCH_BUNDLE_SYNC_NAMES = frozenset(
+    {
+        "README.md",
+        "bind_v023_c1c2_successor_freeze.py",
+        "build_v023_c1c2_successor_launch_manifest.py",
+        "preflight_v023_c1c2_successor.py",
+        "run_v023_c1c2_successor_formal.py",
+        "run_v023_c1c2_successor_one_epoch_diagnostic.py",
+        "successor_launch_common.py",
+        "sync_launch_v023_c1c2_successor_server.sh",
+        "test_v023_c1c2_successor_launch.py",
+        "verify_v023_c1c2_successor.py",
+        BINDINGS_NAME,
+        BINDINGS_NAME + ".sha256",
+        LEARNER_MANIFEST_NAME,
+        PROVIDER_CONFIG_NAME,
+        PROVIDER_CONFIG_NAME + ".sha256",
+    }
+)
+LAUNCH_MANIFEST_ADDITIONS = frozenset(
+    {BUNDLE_REL / name for name in LAUNCH_BUNDLE_SYNC_NAMES}
+    | {
+        REVIEW_REL,
+        CLOSURE_LIST_REL,
+        STAGE_C_LAUNCH_REL / STAGE_C_CODE_MANIFEST_NAME,
+        STAGE_C_LAUNCH_REL / STAGE_C_CODE_PIN_NAME,
+    }
+)
 
 EXECUTION_BINDINGS_SCHEMA = (
     "multi-catfish-mcrl-v023-c1c2-successor-execution-bindings-v1"
@@ -88,6 +125,17 @@ STAGE_A_PLACEHOLDERS = frozenset(
         "factory_v3_manifest_sha256",
         "learner_manifest_sha256",
         "runner_manifest_sha256",
+    }
+)
+# The contract permits only identities produced by Stage A to be supplied at a
+# later Stage-C admission.  None of the predetermined Stage-C code bindings is
+# deferrable.  Keep this closed list here so a new nonempty reason cannot open a
+# deferral by accident.
+ALLOWED_LATER_CONTRACT_DEFERRALS = frozenset(
+    {
+        "stage_a_manifest_sha256",
+        "stage_a_pass_receipt_sha256",
+        "stage_a_exports_manifest_sha256",
     }
 )
 
@@ -142,7 +190,9 @@ def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def read_canonical_json(path: Path, *, field: str) -> dict[str, Any]:
-    raw = path.read_bytes() if path.is_file() and not path.is_symlink() else b""
+    if path.is_symlink() or not path.is_file():
+        raise SuccessorLaunchError(f"{field} is missing or symlinked")
+    raw = path.read_bytes()
     try:
         payload = json.loads(
             raw.decode("ascii"),
@@ -226,6 +276,33 @@ def directory_files(root: Path, relative_root: Path) -> list[Path]:
         and not path.is_symlink()
         and "__pycache__" not in path.parts
         and path.suffix != ".pyc"
+    )
+
+
+def launch_manifest_additions(root: Path) -> list[Path]:
+    """Return the exact enumerated bundle additions that currently exist."""
+
+    missing_static = [
+        path
+        for path in LAUNCH_MANIFEST_ADDITIONS
+        if path.parent != BUNDLE_REL or path.name not in {
+            BINDINGS_NAME,
+            BINDINGS_NAME + ".sha256",
+            LEARNER_MANIFEST_NAME,
+            PROVIDER_CONFIG_NAME,
+            PROVIDER_CONFIG_NAME + ".sha256",
+        }
+        if not (root / path).is_file() or (root / path).is_symlink()
+    ]
+    if missing_static:
+        raise SuccessorLaunchError(
+            "enumerated launch-bundle addition is missing or symlinked: "
+            + ", ".join(path.as_posix() for path in sorted(missing_static))
+        )
+    return sorted(
+        path
+        for path in LAUNCH_MANIFEST_ADDITIONS
+        if (root / path).is_file() and not (root / path).is_symlink()
     )
 
 
@@ -323,7 +400,11 @@ def assert_contract_placeholders(
             if not isinstance(record.get("value"), str) or not record["value"]:
                 malformed.add(key)
         elif status == "DEFERRED":
-            if not isinstance(record.get("reason"), str) or not record["reason"].strip():
+            if (
+                key not in ALLOWED_LATER_CONTRACT_DEFERRALS
+                or not isinstance(record.get("reason"), str)
+                or not record["reason"].strip()
+            ):
                 malformed.add(key)
         else:
             malformed.add(key)
@@ -332,6 +413,113 @@ def assert_contract_placeholders(
             "contract freeze placeholders are neither resolved nor explicitly deferred: "
             + ", ".join(sorted(missing | malformed))
         )
+
+
+def _parse_sha256_manifest(path: Path) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    try:
+        rows = path.read_text(encoding="ascii").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise SuccessorLaunchError("Stage-C code manifest is unreadable") from error
+    for row in rows:
+        match = re.fullmatch(r"([0-9a-f]{64})  ([^\x00]+)", row)
+        if match is None:
+            raise SuccessorLaunchError(f"malformed Stage-C manifest row: {row!r}")
+        declared, relative_raw = match.groups()
+        relative = safe_relative(relative_raw, field="Stage-C code manifest path")
+        if relative in entries:
+            raise SuccessorLaunchError(f"duplicate Stage-C manifest path: {relative}")
+        entries[relative] = declared
+    if not entries:
+        raise SuccessorLaunchError("Stage-C code manifest is empty")
+    return entries
+
+
+def verify_stage_c_code_bundle(repo: Path) -> dict[str, Any]:
+    """Authenticate the externally pinned Stage-C and physical code closure."""
+
+    manifest_path = repo / STAGE_C_LAUNCH_REL / STAGE_C_CODE_MANIFEST_NAME
+    pin_path = repo / STAGE_C_LAUNCH_REL / STAGE_C_CODE_PIN_NAME
+    manifest_sha = file_sha256(manifest_path)
+    expected_pin = f"{manifest_sha}  {STAGE_C_CODE_MANIFEST_NAME}\n"
+    try:
+        observed_pin = pin_path.read_text(encoding="ascii")
+    except (OSError, UnicodeError) as error:
+        raise SuccessorLaunchError("Stage-C code-manifest pin is unreadable") from error
+    if pin_path.is_symlink() or observed_pin != expected_pin:
+        raise SuccessorLaunchError("Stage-C code manifest disagrees with its frozen pin")
+    entries = _parse_sha256_manifest(manifest_path)
+    physical_prefix = PHYSICAL_EVALUATION_REL.as_posix() + "/"
+    physical_entries = {
+        path: value for path, value in entries.items() if path.startswith(physical_prefix)
+    }
+    expected_physical = {
+        path.as_posix() for path in directory_files(repo, PHYSICAL_EVALUATION_REL)
+    }
+    if set(physical_entries) != expected_physical:
+        raise SuccessorLaunchError(
+            "Stage-C code manifest does not exactly cover the physical-evaluation package"
+        )
+    stage_c_prefix = STAGE_C_LAUNCH_REL.as_posix() + "/"
+    stage_c_entries = {
+        path: value for path, value in entries.items() if path.startswith(stage_c_prefix)
+    }
+    verifier_path = (
+        STAGE_C_LAUNCH_REL / "verify_v023_c1c2_successor_stagec.py"
+    ).as_posix()
+    if verifier_path not in stage_c_entries:
+        raise SuccessorLaunchError("Stage-C verifier is absent from the pinned code manifest")
+    return {
+        "code_manifest_path": (STAGE_C_LAUNCH_REL / STAGE_C_CODE_MANIFEST_NAME).as_posix(),
+        "code_manifest_sha256": manifest_sha,
+        "code_manifest_pin_path": (STAGE_C_LAUNCH_REL / STAGE_C_CODE_PIN_NAME).as_posix(),
+        "code_manifest_pin_sha256": file_sha256(pin_path),
+        "physical_evaluation_package_manifest_sha256": canonical_sha256(
+            dict(sorted(physical_entries.items()))
+        ),
+        "stage_c_bundle_manifest_sha256": manifest_sha,
+        "code_manifest_entry_count": len(entries),
+    }
+
+
+def assert_predetermined_stage_c_bound(
+    repo: Path, bindings: Mapping[str, object]
+) -> dict[str, Any]:
+    """Reject all Stage-C code deferrals and authenticate their live bytes."""
+
+    placeholders = bindings.get("contract_placeholder_bindings")
+    stage_c = bindings.get("stage_c")
+    if not isinstance(placeholders, Mapping) or not isinstance(stage_c, Mapping):
+        raise SuccessorLaunchError("predetermined Stage-C bindings are missing")
+    evaluation = placeholders.get("evaluation_runner_manifest_sha256")
+    if (
+        not isinstance(evaluation, Mapping)
+        or evaluation.get("status") != "RESOLVED"
+    ):
+        raise SuccessorLaunchError("Stage-C evaluation runner manifest cannot be deferred")
+    live = verify_stage_c_code_bundle(repo)
+    physical_digest = digest(
+        evaluation.get("value"), field="Stage-C evaluation runner manifest"
+    )
+    runner_digest = digest(
+        stage_c.get("runner_bundle_manifest_sha256"),
+        field="Stage-C runner bundle manifest",
+    )
+    verifier_digest = digest(
+        stage_c.get("verifier_bundle_manifest_sha256"),
+        field="Stage-C verifier bundle manifest",
+    )
+    code = stage_c.get("code_bundle")
+    if not isinstance(code, Mapping) or dict(code) != live:
+        raise SuccessorLaunchError("Stage-C pinned code-bundle binding drifted")
+    if (
+        physical_digest != live["physical_evaluation_package_manifest_sha256"]
+        or stage_c.get("physical_evaluation_package_manifest_sha256") != physical_digest
+        or runner_digest != live["stage_c_bundle_manifest_sha256"]
+        or verifier_digest != live["stage_c_bundle_manifest_sha256"]
+    ):
+        raise SuccessorLaunchError("predetermined Stage-C code digest binding drifted")
+    return live
 
 
 def reject_forbidden_config(value: object) -> None:
@@ -426,3 +614,80 @@ def verify_launch_manifest(repo: Path, path: Path) -> dict[str, Any]:
     if payload["file_count"] != count:
         raise SuccessorLaunchError("successor launch manifest file count drifted")
     return {"sha256": manifest_sha, "paths": sorted(seen), "payload": payload}
+
+
+def authenticate_preflight_freeze_authorities(
+    *, repo: Path, preflight: Mapping[str, object], requested_output_root: Path
+) -> dict[str, Any]:
+    """Re-authenticate the two freeze authorities named by a preflight receipt."""
+
+    required = {
+        "launch_manifest_path",
+        "launch_manifest_sha256",
+        "execution_bindings_path",
+        "execution_bindings_sha256",
+        "requested_output_root",
+    }
+    missing = sorted(required - set(preflight))
+    if missing:
+        raise SuccessorLaunchError(
+            "preflight freeze authority fields are missing: " + ", ".join(missing)
+        )
+    launch_path_raw = preflight.get("launch_manifest_path")
+    bindings_path_raw = preflight.get("execution_bindings_path")
+    if not isinstance(launch_path_raw, str) or not isinstance(bindings_path_raw, str):
+        raise SuccessorLaunchError("preflight freeze authority paths are malformed")
+    launch_path = Path(launch_path_raw)
+    bindings_path = Path(bindings_path_raw)
+    if not launch_path.is_absolute():
+        launch_path = repo / safe_relative(
+            launch_path_raw, field="preflight launch manifest path"
+        )
+    if not bindings_path.is_absolute():
+        bindings_path = repo / safe_relative(
+            bindings_path_raw, field="preflight execution bindings path"
+        )
+    launch = verify_launch_manifest(repo, launch_path)
+    bindings_sha = verify_sidecar(bindings_path)
+    bindings = read_canonical_json(bindings_path, field="referenced execution bindings")
+    if (
+        bindings.get("schema") != EXECUTION_BINDINGS_SCHEMA
+        or bindings.get("status") != "FROZEN_STAGE_A"
+    ):
+        raise SuccessorLaunchError("referenced execution bindings are not frozen Stage A")
+    contract_path = repo / SUCCESSOR_REL / CONTRACT_NAME
+    assert_contract_placeholders(
+        contract_path.read_text(encoding="utf-8"),
+        bindings.get("contract_placeholder_bindings", {}),
+    )
+    assert_predetermined_stage_c_bound(repo, bindings)
+    declared_launch = digest(
+        preflight.get("launch_manifest_sha256"),
+        field="preflight launch_manifest_sha256",
+    )
+    declared_bindings = digest(
+        preflight.get("execution_bindings_sha256"),
+        field="preflight execution_bindings_sha256",
+    )
+    input_binding = preflight.get("input_binding")
+    if not isinstance(input_binding, Mapping):
+        raise SuccessorLaunchError("preflight input binding is missing")
+    if (
+        declared_launch != launch["sha256"]
+        or declared_bindings != bindings_sha
+        or input_binding.get("launch_manifest_sha256") != declared_launch
+        or input_binding.get("bindings_sha256") != declared_bindings
+    ):
+        raise SuccessorLaunchError("preflight freeze authority digest binding drifted")
+    expected_root = str(requested_output_root.resolve(strict=False))
+    if (
+        preflight.get("requested_output_root") != expected_root
+        or preflight.get("output_root") != expected_root
+    ):
+        raise SuccessorLaunchError("preflight requested output root drifted")
+    return {
+        "launch_manifest_sha256": declared_launch,
+        "execution_bindings_sha256": declared_bindings,
+        "requested_output_root": expected_root,
+        "bindings": bindings,
+    }

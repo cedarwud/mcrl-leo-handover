@@ -52,6 +52,7 @@ from successor_launch_common import (
     reject_forbidden_config,
     sidecar_path,
     validate_no_circular_digest,
+    verify_stage_c_code_bundle,
     verify_sidecar,
     write_reproducible,
 )
@@ -263,6 +264,7 @@ def build_payloads(repo: Path, target_root: Path) -> tuple[dict[str, Any], dict[
     physical_evaluation_manifest = file_manifest(
         repo, directory_files(repo, PHYSICAL_EVALUATION_REL)
     )
+    stage_c_code = verify_stage_c_code_bundle(repo)
     initialization_sha = _initialization_bytes_sha256(repo, model_path)
     world_plan_sha = _world_plan_sha256(repo)
     prereg_path = repo / "artifacts/PREREG-FROZEN-2026-08-25-R2.json"
@@ -288,15 +290,17 @@ def build_payloads(repo: Path, target_root: Path) -> tuple[dict[str, Any], dict[
         "status": "RESOLVED", "value": baseline_constant,
     }
     contract_placeholders["evaluation_runner_manifest_sha256"] = {
-        "status": "DEFERRED",
-        "reason": "DEFERRED_UNTIL_STAGEC_BUNDLE_LANDS: the physical-evaluation package is bound now, but the independently sealed Stage-C runner/verifier bundle is not yet present",
+        "status": "RESOLVED",
+        "value": stage_c_code[
+            "physical_evaluation_package_manifest_sha256"
+        ],
     }
     assert_contract_placeholders(
         contract_path.read_text(encoding="utf-8"), contract_placeholders
     )
     bindings_payload = {
         "schema": EXECUTION_BINDINGS_SCHEMA,
-        "status": "FROZEN_STAGE_A_WITH_EXPLICIT_STAGEC_DEFERRALS",
+        "status": "FROZEN_STAGE_A",
         "claim_ceiling": CLAIM_CEILING,
         "resolved_stage_a_placeholders": resolutions,
         "contract_placeholder_bindings": contract_placeholders,
@@ -362,15 +366,16 @@ def build_payloads(repo: Path, target_root: Path) -> tuple[dict[str, Any], dict[
         },
         "stage_c": {
             "world_plan_sha256": world_plan_sha,
-            "physical_evaluation_package_manifest_sha256": physical_evaluation_manifest["manifest_sha256"],
-            "runner_bundle_manifest_sha256": {
-                "status": "DEFERRED_UNTIL_STAGEC_BUNDLE_LANDS",
-                "reason": "independently sealed Stage-C runner bundle has not landed",
-            },
-            "verifier_bundle_manifest_sha256": {
-                "status": "DEFERRED_UNTIL_STAGEC_BUNDLE_LANDS",
-                "reason": "independent Stage-C verifier bundle has not landed",
-            },
+            "physical_evaluation_package_manifest_sha256": stage_c_code[
+                "physical_evaluation_package_manifest_sha256"
+            ],
+            "runner_bundle_manifest_sha256": stage_c_code[
+                "stage_c_bundle_manifest_sha256"
+            ],
+            "verifier_bundle_manifest_sha256": stage_c_code[
+                "stage_c_bundle_manifest_sha256"
+            ],
+            "code_bundle": stage_c_code,
             "keyed_field_namespace": "MCRL_V020_REPRICED_C3_GATE_V1",
             "aggregation": {
                 "energy_efficiency": "ratio-of-sums:additive-bits-over-additive-positive-energy",

@@ -11,8 +11,8 @@ import sys
 
 from successor_launch_common import (
     ARM_ORDER, CLAIM_CEILING, ROUTE_ORDER, RUNNER_REL, SOURCE_MAP,
-    SuccessorLaunchError, canonical_bytes, file_sha256, read_canonical_json,
-    verify_sidecar, write_once,
+    SuccessorLaunchError, authenticate_preflight_freeze_authorities,
+    canonical_bytes, file_sha256, read_canonical_json, verify_sidecar, write_once,
 )
 
 
@@ -47,32 +47,40 @@ def main(argv: list[str] | None = None) -> int:
         if str(path) not in sys.path:
             sys.path.insert(0, str(path))
     runner_module = importlib.import_module("v023_two_route_source_training_runner")
-    preflight = read_canonical_json(arguments.preflight_receipt, field="preflight receipt")
-    if preflight.get("status") != "PASS_FROZEN_C1C2_SUCCESSOR_PREFLIGHT":
-        parser.error("preflight receipt does not bind the requested formal run")
-    preflight_sha256 = verify_sidecar(arguments.preflight_receipt)
-    authority_sha256 = arguments.authority_sha256 or preflight.get("authority_sha256")
-    code_sha256 = arguments.code_sha256 or preflight.get("code_sha256")
-    input_sha256 = arguments.input_sha256 or preflight.get("input_sha256")
-    if any(
-        explicit is not None and explicit != observed
-        for explicit, observed in (
-            (arguments.authority_sha256, preflight.get("authority_sha256")),
-            (arguments.code_sha256, preflight.get("code_sha256")),
-            (arguments.input_sha256, preflight.get("input_sha256")),
-        )
-    ):
-        parser.error("explicit digest disagrees with the preflight receipt")
-    namespace = argparse.Namespace(
-        output_root=str(arguments.output_root), epochs=arguments.epochs,
-        provider_factory=arguments.provider_factory,
-        model_config_json=arguments.model_config_json,
-        train_seed=arguments.train_seed,
-        authority_sha256=authority_sha256,
-        code_sha256=code_sha256,
-        input_sha256=input_sha256, execute=arguments.execute,
-    )
     try:
+        preflight = read_canonical_json(arguments.preflight_receipt, field="preflight receipt")
+        if (
+            preflight.get("status") != "PASS_FROZEN_C1C2_SUCCESSOR_PREFLIGHT"
+            or preflight.get("formal") is not True
+        ):
+            raise SuccessorLaunchError("preflight receipt does not bind the requested formal run")
+        preflight_sha256 = verify_sidecar(arguments.preflight_receipt)
+        freeze_authorities = authenticate_preflight_freeze_authorities(
+            repo=repo,
+            preflight=preflight,
+            requested_output_root=arguments.output_root,
+        )
+        authority_sha256 = arguments.authority_sha256 or preflight.get("authority_sha256")
+        code_sha256 = arguments.code_sha256 or preflight.get("code_sha256")
+        input_sha256 = arguments.input_sha256 or preflight.get("input_sha256")
+        if any(
+            explicit is not None and explicit != observed
+            for explicit, observed in (
+                (arguments.authority_sha256, preflight.get("authority_sha256")),
+                (arguments.code_sha256, preflight.get("code_sha256")),
+                (arguments.input_sha256, preflight.get("input_sha256")),
+            )
+        ):
+            raise SuccessorLaunchError("explicit digest disagrees with the preflight receipt")
+        namespace = argparse.Namespace(
+            output_root=str(arguments.output_root), epochs=arguments.epochs,
+            provider_factory=arguments.provider_factory,
+            model_config_json=arguments.model_config_json,
+            train_seed=arguments.train_seed,
+            authority_sha256=authority_sha256,
+            code_sha256=code_sha256,
+            input_sha256=input_sha256, execute=arguments.execute,
+        )
         runner = runner_module.preflight_from_args(namespace)
         runner.begin_new(arguments.output_root)
         rows = []
@@ -131,6 +139,13 @@ def main(argv: list[str] | None = None) -> int:
             "provider_config_sha256": input_binding.get("provider_config_sha256"),
             "model_config_sha256": file_sha256(Path(arguments.model_config_json)),
             "provider_identity": input_binding.get("provider_identity"),
+            "launch_manifest_sha256": freeze_authorities[
+                "launch_manifest_sha256"
+            ],
+            "execution_bindings_sha256": freeze_authorities[
+                "execution_bindings_sha256"
+            ],
+            "requested_output_root": freeze_authorities["requested_output_root"],
         }
         write_once(
             arguments.output_root / "formal-provenance.json",

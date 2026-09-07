@@ -24,6 +24,7 @@ import run_v023_c1c2_successor_one_epoch_diagnostic as DIAGNOSTIC
 import bind_v023_c1c2_successor_freeze as BINDER
 import build_v023_c1c2_successor_launch_manifest as MANIFEST
 import preflight_v023_c1c2_successor as PREFLIGHT
+import run_v023_c1c2_successor_formal as FORMAL
 import successor_launch_common as COMMON
 import test_v023_c1c2_provider_factory_v3 as PRODUCER_FIXTURE
 import v023_c1c2_provider_factory_v3 as FACTORY
@@ -59,7 +60,7 @@ def test_digest_with_c3_is_validated_but_not_semantically_scanned():
         )
 
 
-def test_every_literal_contract_placeholder_requires_resolution_or_reason():
+def test_contract_deferrals_are_a_closed_stage_a_output_only_set():
     contract = (
         REPO / COMMON.SUCCESSOR_REL / COMMON.CONTRACT_NAME
     ).read_text(encoding="utf-8")
@@ -72,13 +73,28 @@ def test_every_literal_contract_placeholder_requires_resolution_or_reason():
         "status": "DEFERRED",
         "reason": "DEFERRED_UNTIL_STAGEC_BUNDLE_LANDS",
     }
+    with pytest.raises(COMMON.SuccessorLaunchError, match="evaluation_runner"):
+        COMMON.assert_contract_placeholders(contract, bindings)
+    bindings["evaluation_runner_manifest_sha256"] = {
+        "status": "RESOLVED",
+        "value": "b" * 64,
+    }
     COMMON.assert_contract_placeholders(contract, bindings)
     bindings.pop("baseline_checkpoint_sha256")
     with pytest.raises(COMMON.SuccessorLaunchError, match="baseline_checkpoint"):
         COMMON.assert_contract_placeholders(contract, bindings)
+    COMMON.assert_contract_placeholders(
+        "<<BIND_AT_FREEZE:stage_a_manifest_sha256>>",
+        {
+            "stage_a_manifest_sha256": {
+                "status": "DEFERRED",
+                "reason": "filled from the sealed Stage-A output",
+            }
+        },
+    )
 
 
-def test_launch_manifest_assigns_all_246_closure_paths_exactly_once():
+def test_launch_manifest_is_exact_closure_union_enumerated_bundle_additions():
     rows = (
         REPO / COMMON.CLOSURE_LIST_REL
     ).read_text(encoding="utf-8").splitlines()
@@ -93,7 +109,8 @@ def test_launch_manifest_assigns_all_246_closure_paths_exactly_once():
     required = COMMON.required_sync_closure(REPO)
     assert len(required) == 246
     assert set(required) == {Path(row) for row in rows}
-    assert set(required).issubset(observed)
+    additions = set(COMMON.launch_manifest_additions(REPO))
+    assert set(observed) == set(required) | additions
     assert len(observed) == len(set(observed))
 
 
@@ -192,6 +209,76 @@ def test_diagnostic_failure_receipt_makes_launcher_refuse(tmp_path: Path):
     assert "LAUNCH_REFUSED" in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("formal", "target_root", "expected"),
+    [
+        (False, Path("/tmp/rehearsal-target"), 0),
+        (True, Path("/tmp/rehearsal-target"), 3),
+        (True, COMMON.TARGET_ROOT, 0),
+    ],
+)
+def test_preflight_target_root_mode(
+    formal: bool, target_root: Path, expected: int,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    observed: dict[str, object] = {}
+
+    def fake_run_preflight(**kwargs: object) -> dict[str, object]:
+        observed.update(kwargs)
+        PREFLIGHT._verify_target_root(
+            bindings={"target": {"root": str(kwargs["target_root"])}},
+            provider_config={"target_root": str(kwargs["target_root"])},
+            target_root=kwargs["target_root"],
+            formal=kwargs["formal"],
+        )
+        return {
+            "input_sha256": "a" * 64,
+            "input_binding": {"provider_identity": "test-provider"},
+        }
+
+    monkeypatch.setattr(PREFLIGHT, "run_preflight", fake_run_preflight)
+    argv = [
+        "--bindings", "bindings.json", "--manifest", "manifest.json",
+        "--provider-config", "provider.json", "--model-config", "model.json",
+        "--declaration", "declaration.md", "--output-root", "output",
+        "--target-root", str(target_root),
+    ]
+    if formal:
+        argv.append("--formal")
+    assert PREFLIGHT.main(argv) == expected
+    if expected == 0:
+        assert observed["target_root"] == target_root
+        assert observed["formal"] is formal
+
+
+@pytest.mark.parametrize(
+    ("contents", "reason"),
+    [
+        (None, "preflight receipt is missing or symlinked"),
+        (b"not-json\n", "preflight receipt is not canonical ASCII JSON"),
+    ],
+)
+def test_formal_wrapper_reports_preflight_receipt_faults(
+    tmp_path: Path, contents: bytes | None, reason: str,
+):
+    receipt = tmp_path / "preflight.json"
+    if contents is not None:
+        receipt.write_bytes(contents)
+    result = subprocess.run(
+        [
+            str(REPO / ".venv/bin/python"), str(HERE / FORMAL.__file__),
+            "--output-root", str(tmp_path / "output"), "--epochs", "100",
+            "--provider-factory", "unused:factory", "--model-config-json", "unused.json",
+            "--train-seed", str(COMMON.TRAIN_SEED),
+            "--preflight-receipt", str(receipt), "--execute",
+        ],
+        cwd=REPO, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert result.returncode == 3
+    assert f"SUCCESSOR_FORMAL_RUN_FAIL: {reason}" in result.stderr
+
+
 @pytest.fixture(scope="module")
 def producer_output(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path, Path]:
     """Create the fixture through the real two-route runner/writer."""
@@ -215,6 +302,55 @@ def producer_output(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pat
         provider = FACTORY.make_provider()
     identity = provider.provider_identity
     identity_payload = dict(provider.provider_identity_payload)
+    stage_c_code = COMMON.verify_stage_c_code_bundle(REPO)
+    contract = (
+        REPO / COMMON.SUCCESSOR_REL / COMMON.CONTRACT_NAME
+    ).read_text(encoding="utf-8")
+    placeholder_names = set(COMMON.CONTRACT_PLACEHOLDER_RE.findall(contract))
+    placeholder_bindings = {
+        name: {"status": "RESOLVED", "value": "a" * 64}
+        for name in placeholder_names
+    }
+    placeholder_bindings["evaluation_runner_manifest_sha256"] = {
+        "status": "RESOLVED",
+        "value": stage_c_code[
+            "physical_evaluation_package_manifest_sha256"
+        ],
+    }
+    execution_bindings = root / "execution-bindings.json"
+    execution_bindings.write_bytes(
+        COMMON.canonical_bytes(
+            {
+                "schema": COMMON.EXECUTION_BINDINGS_SCHEMA,
+                "status": "FROZEN_STAGE_A",
+                "contract_placeholder_bindings": placeholder_bindings,
+                "stage_c": {
+                    "physical_evaluation_package_manifest_sha256": stage_c_code[
+                        "physical_evaluation_package_manifest_sha256"
+                    ],
+                    "runner_bundle_manifest_sha256": stage_c_code[
+                        "stage_c_bundle_manifest_sha256"
+                    ],
+                    "verifier_bundle_manifest_sha256": stage_c_code[
+                        "stage_c_bundle_manifest_sha256"
+                    ],
+                    "code_bundle": stage_c_code,
+                },
+            }
+        )
+    )
+    execution_bindings_sha = COMMON.file_sha256(execution_bindings)
+    COMMON.sidecar_path(execution_bindings).write_text(
+        f"{execution_bindings_sha}  {execution_bindings.name}\n",
+        encoding="ascii",
+    )
+    launch_manifest = root / "launch-manifest.json"
+    launch_manifest.write_bytes(MANIFEST.render(REPO))
+    launch_manifest_sha = COMMON.file_sha256(launch_manifest)
+    COMMON.sidecar_path(launch_manifest).write_text(
+        f"{launch_manifest_sha}  {launch_manifest.name}\n", encoding="ascii"
+    )
+    output = root / "formal-output"
     preflight = root / "preflight.json"
     preflight.write_bytes(
         COMMON.canonical_bytes(
@@ -222,6 +358,12 @@ def producer_output(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pat
                 "schema": "multi-catfish-mcrl-v023-c1c2-successor-preflight-v1",
                 "status": "PASS_FROZEN_C1C2_SUCCESSOR_PREFLIGHT",
                 "formal": True,
+                "output_root": str(output.resolve(strict=False)),
+                "requested_output_root": str(output.resolve(strict=False)),
+                "launch_manifest_path": str(launch_manifest.resolve()),
+                "launch_manifest_sha256": launch_manifest_sha,
+                "execution_bindings_path": str(execution_bindings.resolve()),
+                "execution_bindings_sha256": execution_bindings_sha,
                 "authority_sha256": provider_payload["contract_sha256"],
                 "code_sha256": provider_payload["learner_manifest_sha256"],
                 "input_sha256": provider_payload["target_manifest_sha256"],
@@ -232,6 +374,8 @@ def producer_output(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pat
                     "model_config_sha256": provider_payload["model_config_sha256"],
                     "learner_manifest_sha256": provider_payload["learner_manifest_sha256"],
                     "target_manifest_sha256": provider_payload["target_manifest_sha256"],
+                    "bindings_sha256": execution_bindings_sha,
+                    "launch_manifest_sha256": launch_manifest_sha,
                     "initialization_bytes_sha256": BINDER._initialization_bytes_sha256(
                         REPO,
                         REPO / COMMON.SUCCESSOR_REL / COMMON.MODEL_CONFIG_NAME,
@@ -244,7 +388,6 @@ def producer_output(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pat
     COMMON.sidecar_path(preflight).write_text(
         f"{preflight_sha}  {preflight.name}\n", encoding="ascii"
     )
-    output = root / "formal-output"
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
         [str(root), str(REPO / "src"), str(RUNNER_DIR), str(FACTORY_DIR), str(HERE)]
@@ -300,6 +443,33 @@ def test_preflight_rejects_factory_identity_field_set_drift(
 
     with pytest.raises(COMMON.SuccessorLaunchError, match="field set"):
         PREFLIGHT._provider_identity(ExtraIdentityField())
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("omit-launch-hash", "fields are missing"),
+        ("substitute-bindings-hash", "digest binding drifted"),
+        ("substitute-output-root", "output root drifted"),
+    ],
+)
+def test_preflight_freeze_authority_omission_or_substitution_is_rejected(
+    producer_output: tuple[Path, Path, Path], mutation: str, message: str,
+):
+    output, preflight_path, _provider_config = producer_output
+    preflight = json.loads(preflight_path.read_text(encoding="ascii"))
+    if mutation == "omit-launch-hash":
+        preflight.pop("launch_manifest_sha256")
+    elif mutation == "substitute-bindings-hash":
+        preflight["execution_bindings_sha256"] = "0" * 64
+    else:
+        preflight["requested_output_root"] = str(output.parent / "substituted")
+    with pytest.raises(COMMON.SuccessorLaunchError, match=message):
+        COMMON.authenticate_preflight_freeze_authorities(
+            repo=REPO,
+            preflight=preflight,
+            requested_output_root=output,
+        )
 
 
 def test_formal_output_passes_independent_epoch_zero_and_100_reconstruction(
@@ -368,11 +538,19 @@ def test_binder_records_all_stage_a_and_stage_c_authorities(
         "866d28e05b04a361041f829e424a2417f49987239b7771ee94f43022d35e01bb"
     )
     assert bindings["stage_c"]["physical_evaluation_package_manifest_sha256"]
+    stage_c_code = COMMON.verify_stage_c_code_bundle(REPO)
+    assert bindings["contract_placeholder_bindings"][
+        "evaluation_runner_manifest_sha256"
+    ] == {
+        "status": "RESOLVED",
+        "value": stage_c_code["physical_evaluation_package_manifest_sha256"],
+    }
     for name in ("runner_bundle_manifest_sha256", "verifier_bundle_manifest_sha256"):
-        assert bindings["stage_c"][name]["status"] == (
-            "DEFERRED_UNTIL_STAGEC_BUNDLE_LANDS"
-        )
-        assert bindings["stage_c"][name]["reason"]
+        assert bindings["stage_c"][name] == stage_c_code[
+            "stage_c_bundle_manifest_sha256"
+        ]
+    assert bindings["stage_c"]["code_bundle"] == stage_c_code
+    COMMON.assert_predetermined_stage_c_bound(REPO, bindings)
     assert bindings["execution_policy"]["required_absent_roots"]
     COMMON.assert_contract_placeholders(
         (REPO / COMMON.SUCCESSOR_REL / COMMON.CONTRACT_NAME).read_text(
@@ -389,4 +567,6 @@ def test_launcher_orders_freeze_manifest_sync_diagnostic_and_tmux():
     assert text.index("preflight_command=") < text.index("diagnostic_command=")
     assert text.index("diagnostic_command=") < text.rindex("tmux new-session")
     assert "OMP_NUM_THREADS=1" in text
+    assert "'$remote_preflight' --repo '$checkout'" in text
+    assert "--target-root '$target_root' --formal" in text
     assert "120 s" in text

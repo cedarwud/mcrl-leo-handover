@@ -151,7 +151,9 @@ def run_diagnostic(
         provider_a = factory.make_provider()
         identity, identity_payload = _identity(provider_a)
         config = runner._load_model_config(model_config)
-        model_a = orchestrator.EEAxisTwoRouteModel(config, train_seed=train_seed)
+        model_a = orchestrator.EEAxisTwoRouteModel(
+            config, train_seed=train_seed, formal=False
+        )
         trainer_a = orchestrator.V023TwoRouteTrainer(model_a)
         phase["factory_v3_real_target_load"] = round(time.perf_counter() - point, 6)
         payload["provider_identity"] = identity
@@ -216,7 +218,9 @@ def run_diagnostic(
         provider_b = factory.make_provider()
         identity_b, _ = _identity(provider_b)
         provider_b.load_sampler_state(deepcopy(loaded["provider_sampler_state"]))
-        model_b = orchestrator.EEAxisTwoRouteModel(config, train_seed=train_seed)
+        model_b = orchestrator.EEAxisTwoRouteModel(
+            config, train_seed=train_seed, formal=False
+        )
         model_b.load_checkpoint_state(deepcopy(loaded["model"]))
         trainer_b = orchestrator.V023TwoRouteTrainer(model_b)
         reload_exact = runner._tree_equal(checkpoint["model"], model_b.checkpoint_state(update_count=2, route_update_counts={"C1": 1, "C2": 1}))

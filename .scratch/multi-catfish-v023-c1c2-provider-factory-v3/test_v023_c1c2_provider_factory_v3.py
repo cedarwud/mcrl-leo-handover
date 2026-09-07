@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from copy import deepcopy
 from dataclasses import replace
 from functools import lru_cache
@@ -55,6 +56,12 @@ GENERATOR_PATH = (
 )
 LAUNCH_DIR = REPO / ".scratch/multi-catfish-v023-c1c2-target-generation-launch"
 REAL_EXCERPT = LAUNCH_DIR / "fixtures-real-shard/c2-neutral-world-2026121708.excerpt.json"
+FROZEN_LEARNER_EXECUTING_ROOTS = {
+    ".scratch/multi-catfish-v023-two-route-source-training-runner/ee_axis_two_route_model.py": "ee_axis_two_route_model",
+    ".scratch/multi-catfish-v023-two-route-source-training-runner/v023_two_route_learner_orchestrator.py": "v023_two_route_learner_orchestrator",
+    ".scratch/multi-catfish-v023-two-route-source-training-runner/v023_two_route_source_training_runner.py": "v023_two_route_source_training_runner",
+    ".scratch/multi-catfish-v023-heterogeneous-trainer/v023_heterogeneous_trainer.py": "v023_heterogeneous_trainer",
+}
 
 
 def _sha_file(path: Path) -> str:
@@ -76,6 +83,117 @@ def _canonical(payload: object) -> bytes:
         ).encode("ascii")
         + b"\n"
     )
+
+
+def _independent_module_path(module_name: str) -> Path | None:
+    if module_name == "mcrl" or module_name.startswith("mcrl."):
+        base = REPO / "src" / Path(*module_name.split("."))
+        candidates = (base.with_suffix(".py"), base / "__init__.py")
+    else:
+        candidates = tuple(
+            REPO / relative
+            for relative, declared_name in FROZEN_LEARNER_EXECUTING_ROOTS.items()
+            if declared_name == module_name
+        )
+    return next(
+        (
+            candidate.resolve(strict=True)
+            for candidate in candidates
+            if candidate.is_file() and not candidate.is_symlink()
+        ),
+        None,
+    )
+
+
+def _independent_module_name(path: Path) -> str:
+    relative = path.relative_to(REPO)
+    if relative.parts[:2] != ("src", "mcrl"):
+        return FROZEN_LEARNER_EXECUTING_ROOTS[relative.as_posix()]
+    parts = list(relative.with_suffix("").parts[1:])
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _independent_absolute_import(
+    *, current_module: str, current_path: Path, imported: str | None, level: int
+) -> str:
+    if level == 0:
+        return imported or ""
+    package = (
+        current_module
+        if current_path.name == "__init__.py"
+        else current_module.rpartition(".")[0]
+    )
+    parts = package.split(".") if package else []
+    if level > len(parts) + 1:
+        return ""
+    prefix = parts[: len(parts) - level + 1]
+    if imported:
+        prefix.extend(imported.split("."))
+    return ".".join(prefix)
+
+
+@lru_cache(maxsize=1)
+def _independent_expected_learner_runtime_modules() -> dict[str, str]:
+    """Static import scan rooted in the test's frozen producer donor list."""
+
+    pending = [
+        (REPO / relative).resolve(strict=True)
+        for relative in FROZEN_LEARNER_EXECUTING_ROOTS
+    ]
+    discovered: dict[Path, str] = {}
+    src = (REPO / "src").resolve(strict=True)
+    while pending:
+        path = pending.pop()
+        if path in discovered:
+            continue
+        module_name = _independent_module_name(path)
+        discovered[path] = module_name
+        if path.is_relative_to(src / "mcrl"):
+            parent = path.parent
+            while parent != src:
+                initializer = parent / "__init__.py"
+                if initializer.is_file() and not initializer.is_symlink():
+                    pending.append(initializer.resolve(strict=True))
+                parent = parent.parent
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imported_names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_names.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                base = _independent_absolute_import(
+                    current_module=module_name,
+                    current_path=path,
+                    imported=node.module,
+                    level=node.level,
+                )
+                if base:
+                    imported_names.add(base)
+                if node.module is None and base:
+                    imported_names.update(
+                        f"{base}.{alias.name}" for alias in node.names
+                    )
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "importlib"
+                and node.func.attr == "import_module"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                imported_names.add(node.args[0].value)
+        for imported_name in imported_names:
+            imported_path = _independent_module_path(imported_name)
+            if imported_path is not None and imported_path not in discovered:
+                pending.append(imported_path)
+    return {
+        path.relative_to(REPO).as_posix(): module
+        for path, module in sorted(discovered.items())
+    }
 
 
 def _load_path_module(path: Path):
@@ -389,7 +507,7 @@ def _write_learner_manifest(path: Path) -> Path:
             "sha256": _sha_file(REPO / relative),
         }
         for relative, module in sorted(
-            FACTORY.derive_learner_runtime_modules().items()
+            _independent_expected_learner_runtime_modules().items()
         )
     ]
     path.write_bytes(
@@ -447,7 +565,8 @@ def test_frozen_model_seed_and_complete_successor_closure_are_required():
     assert FACTORY.EXPECTED_LAMBDA_HEX == producer["lambda_hex"]
     assert FACTORY.EXPECTED_KAPPA_HEX == producer["kappa_hex"]
     assert FACTORY.EXPECTED_INTERVAL_HEX == producer["interval_hex"]
-    required = FACTORY.derive_learner_runtime_modules()
+    required = _independent_expected_learner_runtime_modules()
+    assert required == dict(FACTORY.derive_learner_runtime_modules())
     assert required[
         ".scratch/multi-catfish-v023-two-route-source-training-runner/"
         "ee_axis_two_route_model.py"
@@ -475,6 +594,39 @@ def test_frozen_model_seed_and_complete_successor_closure_are_required():
     )
 
 
+def test_omitted_transitive_learner_dependency_is_detected(tmp_path: Path):
+    expected = _independent_expected_learner_runtime_modules()
+    omitted = "src/mcrl/runtime/bessel.py"
+    assert omitted in expected
+    assert omitted not in FROZEN_LEARNER_EXECUTING_ROOTS
+    bindings = [
+        {
+            "path": relative,
+            "module": module,
+            "sha256": _sha_file(REPO / relative),
+        }
+        for relative, module in sorted(expected.items())
+        if relative != omitted
+    ]
+    manifest = tmp_path / "omitted-transitive-learner-manifest.json"
+    manifest.write_bytes(
+        _canonical(
+            {
+                "schema": FACTORY.LEARNER_MANIFEST_SCHEMA,
+                "status": FACTORY.LEARNER_MANIFEST_STATUS,
+                "claim_ceiling": FACTORY.CLAIM_CEILING,
+                "bindings": bindings,
+            }
+        )
+    )
+    with pytest.raises(
+        FACTORY.V023C1C2ProviderFactoryError, match="derived import graph"
+    ):
+        FACTORY._authenticate_learner_manifest(
+            manifest, expected_sha256=_sha_file(manifest)
+        )
+
+
 def _call(provider, cursor: int, route: str):
     neutral = provider.next_batch(
         route=route, source="neutral", update_cursor=cursor
@@ -498,7 +650,7 @@ def test_positive_load_identity_and_exact_resume(sealed_inputs, monkeypatch):
     assert identity["routes"] == ["C1", "C2"]
     assert identity["train_seed"] == FACTORY.TRAIN_SEED
     assert len(identity["learner_runtime"]) == len(
-        FACTORY.derive_learner_runtime_modules()
+        _independent_expected_learner_runtime_modules()
     )
     assert all(
         record["loaded_from"].startswith(str(REPO))

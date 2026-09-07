@@ -4,18 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 from pathlib import Path
 import sys
 
 from successor_launch_common import (
-    BASELINE_ADAPTER_REL, BINDINGS_NAME, BUNDLE_REL, CLOSURE_LIST_REL, CONTRACT_NAME,
-    DECLARATION_NAME, FACTORY_REL, LAUNCH_MANIFEST_NAME,
-    LAUNCH_MANIFEST_SCHEMA, LAUNCH_MANIFEST_SIDECAR, LEARNER_MANIFEST_NAME,
-    MODEL_CONFIG_NAME, PROTOCOL_REL, PROVIDER_CONFIG_NAME, REVIEW_REL,
-    RUNNER_REL, SUCCESSOR_REL, TARGET_ADAPTER_REL, TRAINER_REL,
-    SuccessorLaunchError, assert_sync_coverage, canonical_bytes, directory_files,
-    file_manifest, required_sync_closure,
+    BUNDLE_REL, LAUNCH_MANIFEST_NAME, LAUNCH_MANIFEST_SCHEMA,
+    SuccessorLaunchError, assert_sync_coverage, canonical_bytes, file_manifest,
+    launch_manifest_additions, required_sync_closure,
     sidecar_path, validate_no_circular_digest, verify_launch_manifest,
     write_reproducible,
 )
@@ -26,33 +21,10 @@ REPO = HERE.parents[1]
 
 
 def closure_groups(repo: Path) -> list[dict[str, object]]:
-    bundle_excluded = {
-        LAUNCH_MANIFEST_NAME, LAUNCH_MANIFEST_SIDECAR,
-        "PREFLIGHT-RECEIPT.json", "PREFLIGHT-RECEIPT.json.sha256",
-    }
-    for entry in (repo / "src", repo / FACTORY_REL):
-        if str(entry) not in sys.path:
-            sys.path.insert(0, str(entry))
-    factory = importlib.import_module("v023_c1c2_provider_factory_v3")
-    learner_paths = [Path(path) for path in factory.derive_learner_runtime_modules()]
     authoritative_closure = required_sync_closure(repo)
     candidates: list[tuple[str, list[Path]]] = [
-        ("launch_bundle", [p for p in directory_files(repo, BUNDLE_REL) if p.name not in bundle_excluded]),
-        ("learner_runtime", learner_paths),
-        ("factory_v3", directory_files(repo, FACTORY_REL)),
-        ("runner_package", directory_files(repo, RUNNER_REL)),
-        ("adapters", [TARGET_ADAPTER_REL, BASELINE_ADAPTER_REL]),
-        ("support_runtime", [PROTOCOL_REL, TRAINER_REL]),
-        ("successor_authority", [
-            SUCCESSOR_REL / CONTRACT_NAME,
-            SUCCESSOR_REL / DECLARATION_NAME,
-            SUCCESSOR_REL / (DECLARATION_NAME + ".sha256"),
-            SUCCESSOR_REL / MODEL_CONFIG_NAME,
-            SUCCESSOR_REL / (MODEL_CONFIG_NAME + ".sha256"),
-            REVIEW_REL,
-        ]),
-        ("sync_closure_authority", [CLOSURE_LIST_REL]),
-        ("complete_shadow_closure", authoritative_closure),
+        ("authoritative_shadow_closure", authoritative_closure),
+        ("enumerated_bundle_additions", launch_manifest_additions(repo)),
     ]
     result = []
     seen: set[Path] = set()

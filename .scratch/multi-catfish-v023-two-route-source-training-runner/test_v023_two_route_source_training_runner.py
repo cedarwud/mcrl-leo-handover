@@ -237,6 +237,70 @@ def test_model_config_digest_records_seed_and_q3_are_closed(tmp_path):
         RUNNER._load_model_config(changed)
 
 
+def test_formal_admission_rejects_nonformal_seed():
+    config = RUNNER._load_model_config(MODEL_CONFIG_PATH)
+    with pytest.raises(ValueError, match="formal train seed"):
+        ORCH.V023TwoRouteOrchestratorConfig.formal(
+            model_config=config,
+            train_seed=RUNNER.FORMAL_TRAIN_SEED + 17,
+            model_config_sha256=RUNNER.FROZEN_MODEL_CONFIG_SHA256,
+        )
+    with pytest.raises(ValueError, match="train_seed"):
+        MODEL.EEAxisTwoRouteModel(
+            config,
+            train_seed=RUNNER.FORMAL_TRAIN_SEED + 17,
+            formal=True,
+        )
+
+
+def test_explicit_nonformal_seed_and_budget_are_accepted_and_recorded(
+    authenticated_boundary,
+):
+    delegate = _provider(authenticated_boundary)
+    payload = deepcopy(delegate.provider_identity_payload)
+    for field in (
+        "predecessor_manifest_sha256",
+        "prereg_sha256",
+        "scientific_declaration_sha256",
+        "tle_file_set_sha256",
+    ):
+        payload.pop(field)
+    rehearsal_seed = 2026090807
+    rehearsal_budget = 7
+    payload["train_seed"] = rehearsal_seed
+    payload["epoch_budget"] = rehearsal_budget
+
+    class ExplicitNonformalProvider:
+        provider_identity_payload = payload
+        provider_identity = (
+            f"{FACTORY.FACTORY_SCHEMA}:{ORCH._canonical_sha256(payload)}"
+        )
+        planned_epoch_budget = rehearsal_budget
+        next_batch = delegate.next_batch
+        sampler_state = delegate.sampler_state
+        load_sampler_state = delegate.load_sampler_state
+
+    config = ORCH.V023TwoRouteOrchestratorConfig(
+        model_config=RUNNER._load_model_config(MODEL_CONFIG_PATH),
+        train_seed=rehearsal_seed,
+        model_config_sha256=RUNNER.FROZEN_MODEL_CONFIG_SHA256,
+        lineage="explicit-REHEARSAL-NONFORMAL",
+        checkpoint_cadence_updates=2,
+        formal_use=False,
+    )
+    orchestrator = ORCH.V023TwoRouteLearnerOrchestrator(
+        config, ExplicitNonformalProvider()
+    )
+    checkpoint = orchestrator.checkpoint_state()
+    assert checkpoint["config"]["formal_use"] is False
+    assert checkpoint["config"]["train_seed"] == rehearsal_seed
+    assert all(state["formal"] is False for state in checkpoint["arms"].values())
+    assert all(
+        state["train_seed"] == rehearsal_seed
+        for state in checkpoint["arms"].values()
+    )
+
+
 def test_unstarted_runner_consumes_nothing_and_changes_nothing(authenticated_boundary):
     provider = _provider(authenticated_boundary)
     runner = RUNNER.V023TwoRouteSourceTrainingRunner(

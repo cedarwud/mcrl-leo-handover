@@ -19,7 +19,8 @@ from successor_launch_common import (
     ARM_ORDER, BUNDLE_REL, CLAIM_CEILING, EPOCH_BUDGET, FACTORY_REL,
     LEARNER_MANIFEST_NAME, PROVIDER_CONFIG_NAME, ROUTE_ORDER, RUNNER_REL,
     SOURCE_MAP, TRAIN_SEED, SuccessorLaunchError, canonical_bytes,
-    file_sha256, read_canonical_json, verify_sidecar, write_once,
+    authenticate_preflight_freeze_authorities, file_sha256, read_canonical_json,
+    verify_sidecar, write_once,
 )
 
 
@@ -248,6 +249,12 @@ def verify_output(
         or preflight.get("formal") is not True
     ):
         raise VerificationError("preflight receipt is not PASS")
+    try:
+        freeze_authorities = authenticate_preflight_freeze_authorities(
+            repo=repo, preflight=preflight, requested_output_root=output_root
+        )
+    except SuccessorLaunchError as error:
+        raise VerificationError(str(error)) from error
     identity = preflight.get("input_binding", {}).get("provider_identity")
     identity_payload = preflight.get("input_binding", {}).get("provider_identity_payload")
     if receipt.get("provider_identity") != identity or not isinstance(identity_payload, Mapping) or identity_payload.get("routes") != list(ROUTE_ORDER):
@@ -288,6 +295,13 @@ def verify_output(
         "provider_config_sha256": provider_config_sha,
         "model_config_sha256": model_config_sha,
         "provider_identity": identity,
+        "launch_manifest_sha256": freeze_authorities[
+            "launch_manifest_sha256"
+        ],
+        "execution_bindings_sha256": freeze_authorities[
+            "execution_bindings_sha256"
+        ],
+        "requested_output_root": freeze_authorities["requested_output_root"],
     }
     if provenance != expected_provenance:
         raise VerificationError("formal provenance is not fully bound to the launch")

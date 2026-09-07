@@ -120,7 +120,7 @@ if ((dry_run)); then
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
     "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_bind' --repo '$checkout' --verify-learner-manifest-only"
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
-    "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt'"
+    "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt' --target-root '$target_root' --formal"
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
     "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$remote_diagnostic_root' && test ! -L '$remote_diagnostic_root'; '$server_python' '$remote_diagnostic' --repo '$checkout' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --output-root '$remote_diagnostic_root'"
   printf 'REMOTE ssh -- %q %q\n' "$server_host" \
@@ -165,7 +165,7 @@ ssh -- "$server_host" "set -Eeuo pipefail; cd '$checkout'; $remote_env; '$server
 
 provider_sha=$(sha256sum "$provider_config" | awk '{print $1}')
 factory_env="export MCRL_V023_C1C2_PROVIDER_CONFIG_PATH='$remote_provider_config' MCRL_V023_C1C2_PROVIDER_CONFIG_SHA256='$provider_sha' MCRL_V023_C1C2_LEARNER_MANIFEST_PATH='$remote_learner_manifest'"
-preflight_command="set -Eeuo pipefail; cd '$checkout'; $remote_env; $factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt'"
+preflight_command="set -Eeuo pipefail; cd '$checkout'; $remote_env; $factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt' --target-root '$target_root' --formal"
 ssh -- "$server_host" "$preflight_command" || die 'factory-v3 preflight failed'
 
 diagnostic_command="set -Eeuo pipefail; cd '$checkout'; $remote_env; $factory_env; test ! -e '$remote_diagnostic_root' && test ! -L '$remote_diagnostic_root'; '$server_python' '$remote_diagnostic' --repo '$checkout' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --output-root '$remote_diagnostic_root'"

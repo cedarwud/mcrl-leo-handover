@@ -165,15 +165,21 @@ class EEAxisTwoRouteModel(nn.Module):
         config: EEAxisTwoRouteConfig,
         *,
         train_seed: int,
+        formal: bool = True,
         device: str = "cpu",
     ) -> None:
         super().__init__()
         if not isinstance(config, EEAxisTwoRouteConfig):
             raise TypeError("config must be EEAxisTwoRouteConfig")
-        if type(train_seed) is not int or train_seed != FORMAL_TRAIN_SEED:
+        if type(formal) is not bool:
+            raise TypeError("formal must be a Boolean")
+        if type(train_seed) is not int:
+            raise TypeError("train_seed must be an integer")
+        if formal and train_seed != FORMAL_TRAIN_SEED:
             raise ValueError(f"train_seed must be exactly {FORMAL_TRAIN_SEED}")
         self.config = config
         self.train_seed = train_seed
+        self.formal = formal
         self.device = torch.device(device)
         torch.manual_seed(train_seed)
         self.q_networks = nn.ModuleList(
@@ -351,6 +357,7 @@ class EEAxisTwoRouteModel(nn.Module):
             "routes": list(ROUTES),
             "update_count": update_count,
             "route_update_counts": counts,
+            "formal": self.formal,
             "train_seed": self.train_seed,
             "config": asdict(self.config),
             "initialization": deepcopy(self._initialization),
@@ -374,7 +381,7 @@ class EEAxisTwoRouteModel(nn.Module):
             raise EEAxisTwoRouteError("Q3/C3 state is forbidden in a two-route checkpoint")
         expected = {
             "schema", "algorithm", "format_version", "routes", "update_count",
-            "route_update_counts", "train_seed", "config", "initialization",
+            "route_update_counts", "formal", "train_seed", "config", "initialization",
             "heads", "optimizers",
         }
         if set(state) != expected:
@@ -389,7 +396,11 @@ class EEAxisTwoRouteModel(nn.Module):
             raise EEAxisTwoRouteError("unsupported two-route checkpoint identity")
         if state["routes"] != list(ROUTES):
             raise EEAxisTwoRouteError("checkpoint routes must be exactly C1 and C2")
-        if state["train_seed"] != self.train_seed or state["config"] != asdict(self.config):
+        if (
+            state["formal"] is not self.formal
+            or state["train_seed"] != self.train_seed
+            or state["config"] != asdict(self.config)
+        ):
             raise EEAxisTwoRouteError("checkpoint configuration or seed mismatch")
         if state["initialization"] != self._initialization:
             raise EEAxisTwoRouteError("checkpoint initial-byte digests mismatch")

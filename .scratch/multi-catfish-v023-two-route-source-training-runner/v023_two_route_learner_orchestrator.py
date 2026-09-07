@@ -197,6 +197,8 @@ class V023TwoRouteOrchestratorConfig:
             raise TypeError("model_config must be EEAxisTwoRouteConfig")
         if type(self.train_seed) is not int:
             raise TypeError("train_seed must be an integer")
+        if type(self.formal_use) is not bool:
+            raise TypeError("formal_use must be a Boolean")
         if not isinstance(self.lineage, str) or not self.lineage or self.lineage != self.lineage.strip():
             raise ValueError("lineage must be a nonempty trimmed string")
         if isinstance(self.checkpoint_cadence_updates, bool) or not isinstance(self.checkpoint_cadence_updates, int) or self.checkpoint_cadence_updates < 1:
@@ -361,6 +363,7 @@ def _authenticate_provider_identity(
     provider: object,
     *,
     expected_train_seed: int,
+    expected_epoch_budget: int,
     expected_model_config_sha256: str,
     required_fields: frozenset[str],
 ) -> Mapping[str, Any]:
@@ -376,7 +379,7 @@ def _authenticate_provider_identity(
         payload.get("schema") != FACTORY_V3_IDENTITY_SCHEMA
         or payload.get("routes") != ["C1", "C2"]
         or payload.get("sources") != ["neutral", "informed"]
-        or payload.get("epoch_budget") != 100
+        or payload.get("epoch_budget") != expected_epoch_budget
         or payload.get("train_seed") != expected_train_seed
         or payload.get("model_config_sha256") != expected_model_config_sha256
     ):
@@ -397,11 +400,40 @@ def authenticate_factory_v3_provider_identity(
     expected_train_seed: int,
     expected_model_config_sha256: str,
 ) -> Mapping[str, Any]:
+    if expected_train_seed != FORMAL_TRAIN_SEED:
+        raise V023TwoRouteOrchestratorError(
+            f"formal train seed must be exactly {FORMAL_TRAIN_SEED}"
+        )
     return _authenticate_provider_identity(
         provider,
         expected_train_seed=expected_train_seed,
+        expected_epoch_budget=100,
         expected_model_config_sha256=expected_model_config_sha256,
         required_fields=FACTORY_V3_IDENTITY_FIELDS,
+    )
+
+
+def authenticate_nonformal_rehearsal_provider_identity(
+    provider: object,
+    *,
+    expected_train_seed: int,
+    expected_epoch_budget: int,
+    expected_model_config_sha256: str,
+) -> Mapping[str, Any]:
+    if type(expected_train_seed) is not int:
+        raise TypeError("non-formal train seed must be an integer")
+    if (
+        isinstance(expected_epoch_budget, bool)
+        or not isinstance(expected_epoch_budget, int)
+        or expected_epoch_budget < 1
+    ):
+        raise ValueError("non-formal epoch budget must be a positive integer")
+    return _authenticate_provider_identity(
+        provider,
+        expected_train_seed=expected_train_seed,
+        expected_epoch_budget=expected_epoch_budget,
+        expected_model_config_sha256=expected_model_config_sha256,
+        required_fields=NONFORMAL_REHEARSAL_IDENTITY_FIELDS,
     )
 
 
@@ -459,22 +491,32 @@ class V023TwoRouteLearnerOrchestrator:
         if not isinstance(provider, DeterministicRouteBatchProvider):
             raise TypeError("provider does not satisfy DeterministicRouteBatchProvider")
         validate_two_route_provider_identity(provider)
-        candidate_identity = _identity_payload(provider)
-        identity_fields = (
-            set(candidate_identity) if isinstance(candidate_identity, Mapping) else set()
-        )
-        if config.formal_use or identity_fields == FACTORY_V3_IDENTITY_FIELDS:
+        if config.formal_use:
             authenticate_factory_v3_provider_identity(
                 provider,
                 expected_train_seed=config.train_seed,
                 expected_model_config_sha256=config.model_config_sha256,
             )
         else:
-            _authenticate_provider_identity(
+            identity_payload = _identity_payload(provider)
+            budget = (
+                identity_payload.get("epoch_budget")
+                if isinstance(identity_payload, Mapping)
+                else None
+            )
+            declared_budget = getattr(provider, "planned_epoch_budget", None)
+            declared_budget = (
+                declared_budget() if callable(declared_budget) else declared_budget
+            )
+            if declared_budget is not None and declared_budget != budget:
+                raise V023TwoRouteOrchestratorError(
+                    "non-formal provider epoch-budget declaration drifted"
+                )
+            authenticate_nonformal_rehearsal_provider_identity(
                 provider,
                 expected_train_seed=config.train_seed,
+                expected_epoch_budget=budget,
                 expected_model_config_sha256=config.model_config_sha256,
-                required_fields=NONFORMAL_REHEARSAL_IDENTITY_FIELDS,
             )
         authenticated_sampler = provider.sampler_state()
         if (
@@ -492,7 +534,11 @@ class V023TwoRouteLearnerOrchestrator:
             )
         self.config = config
         self.provider = provider
-        template = EEAxisTwoRouteModel(config.model_config, train_seed=config.train_seed)
+        template = EEAxisTwoRouteModel(
+            config.model_config,
+            train_seed=config.train_seed,
+            formal=config.formal_use,
+        )
         self._initialization_bytes = _torch_bytes(
             template.checkpoint_state(update_count=0, route_update_counts={"C1": 0, "C2": 0})
         )
@@ -500,7 +546,11 @@ class V023TwoRouteLearnerOrchestrator:
         self.models: dict[str, EEAxisTwoRouteModel] = {}
         self._trainers: dict[str, V023TwoRouteTrainer] = {}
         for arm in ARMS:
-            model = EEAxisTwoRouteModel(config.model_config, train_seed=config.train_seed)
+            model = EEAxisTwoRouteModel(
+                config.model_config,
+                train_seed=config.train_seed,
+                formal=config.formal_use,
+            )
             initial = torch.load(BytesIO(self._initialization_bytes), map_location="cpu", weights_only=False)
             model.load_checkpoint_state(initial)
             self.models[arm] = model

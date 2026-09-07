@@ -19,6 +19,7 @@ from successor_launch_common import (
     MODEL_CONFIG_NAME, PROVIDER_CONFIG_NAME, PROVIDER_CONFIG_SCHEMA,
     ROUTE_ORDER, RUNNER_REL, SUCCESSOR_REL, TARGET_ROOT, TRAIN_SEED,
     SuccessorLaunchError, canonical_bytes, canonical_sha256, file_sha256,
+    assert_contract_placeholders, assert_predetermined_stage_c_bound,
     assert_sync_coverage, digest, read_canonical_json, reject_forbidden_config,
     required_sync_closure, sidecar_path,
     verify_launch_manifest, verify_sidecar, write_once,
@@ -188,18 +189,43 @@ def verify_diagnostic_receipt(
     return receipt
 
 
+def _verify_target_root(
+    *, bindings: dict[str, Any], provider_config: dict[str, Any],
+    target_root: Path, formal: bool,
+) -> None:
+    frozen_target_root = bindings.get("target", {}).get("root")
+    if not isinstance(frozen_target_root, str) or not frozen_target_root:
+        raise SuccessorLaunchError("execution bindings target root is missing")
+    if str(target_root) != frozen_target_root:
+        raise SuccessorLaunchError("requested target root disagrees with execution bindings")
+    if provider_config.get("target_root") != frozen_target_root:
+        raise SuccessorLaunchError("factory-v3 config drifted: target_root")
+    if formal and target_root != TARGET_ROOT:
+        raise SuccessorLaunchError("formal target root is not the declared target root")
+
+
 def run_preflight(
     *, repo: Path, bindings_path: Path, manifest_path: Path,
     provider_config_path: Path, model_config_path: Path,
     declaration_path: Path, output_root: Path, receipt_path: Path | None,
+    target_root: Path, formal: bool,
     instantiate_provider: bool = True,
 ) -> dict[str, Any]:
     if output_root.exists() or output_root.is_symlink():
         raise SuccessorLaunchError("formal output root must be absent")
     bindings_sha = verify_sidecar(bindings_path)
     bindings = read_canonical_json(bindings_path, field="execution bindings")
-    if bindings.get("schema") != EXECUTION_BINDINGS_SCHEMA:
+    if (
+        bindings.get("schema") != EXECUTION_BINDINGS_SCHEMA
+        or bindings.get("status") != "FROZEN_STAGE_A"
+    ):
         raise SuccessorLaunchError("execution bindings schema drifted")
+    contract_path = repo / SUCCESSOR_REL / "V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md"
+    assert_contract_placeholders(
+        contract_path.read_text(encoding="utf-8"),
+        bindings.get("contract_placeholder_bindings", {}),
+    )
+    assert_predetermined_stage_c_bound(repo, bindings)
     manifest = verify_launch_manifest(repo, manifest_path)
     assert_sync_coverage(required_sync_closure(repo), [Path(path) for path in manifest["paths"]])
     declaration_sha = verify_sidecar(declaration_path)
@@ -218,7 +244,6 @@ def run_preflight(
         raise SuccessorLaunchError("factory-v3 config field set drifted")
     expected = {
         "schema": PROVIDER_CONFIG_SCHEMA,
-        "target_root": str(TARGET_ROOT),
         "train_seed": TRAIN_SEED,
         "epoch_budget": EPOCH_BUDGET,
         "model_config_sha256": EXPECTED_MODEL_CONFIG_SHA256,
@@ -226,6 +251,10 @@ def run_preflight(
     for key, value in expected.items():
         if provider_config.get(key) != value:
             raise SuccessorLaunchError(f"factory-v3 config drifted: {key}")
+    _verify_target_root(
+        bindings=bindings, provider_config=provider_config,
+        target_root=target_root, formal=formal,
+    )
     if bindings.get("provider_config", {}).get("sha256") != provider_sha:
         raise SuccessorLaunchError("execution bindings disagree with provider config")
     learner_path = repo / BUNDLE_REL / LEARNER_MANIFEST_NAME
@@ -289,18 +318,24 @@ def run_preflight(
             "initialization_bytes_sha256"
         ),
     }
+    requested_output_root = str(output_root.resolve(strict=False))
     payload = {
         "schema": SCHEMA,
         "status": STATUS,
         "claim_ceiling": CLAIM_CEILING,
-        "formal": True,
+        "formal": formal,
         "epoch_budget": EPOCH_BUDGET,
         "completed_updates_required": 200,
         "train_seed": TRAIN_SEED,
         "arm_order": ["FULL2", "DROP_C1", "DROP_C2"],
         "route_order": list(ROUTE_ORDER),
         "source_split": "SOURCE_TRAIN",
-        "output_root": str(output_root),
+        "output_root": requested_output_root,
+        "requested_output_root": requested_output_root,
+        "launch_manifest_path": str(manifest_path.resolve(strict=True)),
+        "launch_manifest_sha256": manifest["sha256"],
+        "execution_bindings_path": str(bindings_path.resolve(strict=True)),
+        "execution_bindings_sha256": bindings_sha,
         "authority_sha256": provider_config["contract_sha256"],
         "code_sha256": learner_sha,
         "input_binding": input_binding,
@@ -325,6 +360,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model-config", type=Path)
     parser.add_argument("--declaration", type=Path)
     parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--target-root", type=Path, default=TARGET_ROOT)
+    parser.add_argument("--formal", action="store_true")
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--diagnostic-receipt", type=Path)
     parser.add_argument("--expected-provider-identity")
@@ -351,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
             manifest_path=arguments.manifest, provider_config_path=arguments.provider_config,
             model_config_path=arguments.model_config, declaration_path=arguments.declaration,
             output_root=arguments.output_root, receipt_path=arguments.receipt,
+            target_root=arguments.target_root, formal=arguments.formal,
             instantiate_provider=not arguments.no_provider_load,
         )
         print(
