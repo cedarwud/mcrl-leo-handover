@@ -118,41 +118,76 @@ exactly from retained physical observables, while the underlying link budget
 cannot be regenerated solely from those rows.  This is an evidence limitation,
 not a replay mismatch.
 
-## Three 2026-08-31 defect tests
+## Defects confirmed
+
+| Defect | File:line | Reproduction test | Affected artefacts | Successor fix location |
+|---|---|---|---|---|
+| OPS-3 lambda is not propagated | `ee_axis_ops3_live.py:879,926`; stale default `ee_axis_ops3.py:66,613` | `test_legacy_default_reproduces_nonbinding_cap_lambda_defect`: identical rates give C2 `-1.637204` through G0/default versus `-2.281140` through the nonbinding capped/repriced call | Original V0.14 NPZ Q2 targets are stale; R8 targets are repriced; R7/E1/S0/C3-S have a stale live call but do not use its target value (provenance below) | V0.25 live-surface API: require `lambda_bits_per_j` and forward it to every builder; `target_parity_suite.ops3_parity` is the isolated boundary |
+| Executed oracle is not declared C3 | `oracle_marginals.py:100-118,372-389`; declaration `ee_axis_coalition_residual_c3.py:378-384` | `test_declared_c3_fixture_and_atomic_selection`: unchanged bits, energies `10,10,10,8`, lambda 1 gives executed `(0,0)` but `Psi=2`, `z3=(1,1)`, atomic `11` | The old oracle-marginal diagnostic and its reused-G0 J comparison; this does not invalidate R7's genuine coalition labels | V0.25 set decoder/oracle: score atomic profiles and re-optimize J separately after each demand transform; `target_parity_suite.declared_c3_oracle` is the isolated oracle |
+
+## Lambda producer inventory and authenticated impact
+
+The AST/constant scan in `lambda-provenance.json` finds 28 builder calls: 25
+non-test production/archive calls can reach the stale default, one production
+call is explicit, and two are the regression fixture.  The complete omitted
+inventory is: live builder `src/.../ee_axis_ops3_live.py:926`; physical and
+successor physical runners `physical/...:992`, `c1c2-successor-physical-evaluation/...:1037`;
+candidate/contingency/E1 `c3-candidate-ca/...:1050`, `c3-contingency-f1/...:1312`,
+`c3-existence-e1/...:998`; observability, R5, R6-fit, R7-balanced, R7-launch
+composition/source adapters at respectively `986/880`, `986/880`, `986/880`,
+`997/880`, `997/880`; R6 diagnostic `:1021`; oracle G0 `:226`; real-world
+rehearsal `:358`; and both archived evidence trees (`c3-chatgpt-review-package`
+and `c3-outside-opinions/.../evidence`) at copied live `:926`, F1 `:1312`, and
+adapter `:880`.  The sole production explicit call is oracle capped `:256`.
+The C1 APIs in `ee_surplus_targets.py:98,191`, `ee_axis_opening_runner.py:60`,
+and `ee_axis_opening_source.py:445,522` all require lambda explicitly, so the
+scan found no fallback-capable C1 producer.
+The same scan records the two independent explicit stale authorities
+`ee_axis_v06_c2_k1_state_authority.py:55` and `ee_axis_v07_c2_d2.py:70`;
+they do not “fall back”, but a successor must not inherit them.
+
+| Artefact | Value actually used for targets/selection | Receipt/config evidence |
+|---|---|---|
+| Original C1 opening rows and V0.14 NPZ Q2 targets | **stale** | C1 payloads and shard metadata record `0x1.443...`; seven NPZ SHA-256s begin `f5f38d`, `d9bc15`, `62fda3`, `79fc65`, `6791e4`, `0ac56c`, `08a180` |
+| V0.20/R8 source targets and fitted Q1/Q2 | **repriced** | Q2 repricing result says new `0x1.c3c...`; R8 receipt SHA `e9f845...` binds `lambda_bits_per_j=0x1.c3c...`, target unit `normalized-repriced...`, checkpoint `d40a0f...`; current model-config SHA is `9eafcd...` |
+| R7 | **repriced target; stale call is feature-only** | sealed result SHA `dfcc70...` binds source manifest `41e163...`; adapter emits `target_free_inference=true`, `diagnostic_lambda=0x1.c3c...`, `runtime_default_lambda_used_for_target=false` and recomputes at lines 815-823 |
+| successor stage C | **no completed receipt exists** | pipeline `STATUS.md` SHA recorded in `lambda-provenance.json` says S1-S4/stage C blocked; provisional physical result SHA `f58fca...` binds repriced authority `a05ee8...`/checkpoint `d40a0f...`, with the same feature-only live path |
+| E1 | **repriced objective; stale call is feature-only** | terminal SHA `0bc54f...`; panel binds `lambda=0x1.c3c...`, preflight `1d7402...`, repriced Q1/Q2 authorities |
+| S0 | **eta, not OPS-3 lambda; inherits E1 feature path** | result SHA `ba496e...` binds E1 SHA `0bc54f...`, live-code SHA `684706...`, and exact `eta=0x1.d94f...` |
+| C3-S | **eta, not OPS-3 lambda; inherits E1/S0 feature path** | config SHA `5427ba...` and terminal SHA `a66b48...` bind exact `eta=0x1.d94f...`, E1/S0 producer closure, and preflight `ee114c...` |
+
+## Other 2026-08-31 defect tests
 
 | Test | Result | Evidence |
 |---|:---:|---|
-| lambda multiplier | **FAIL** | Sealed labels/provider bind repriced `0x1.c3c0a7b6b86d3p+26` = 118424222.8550065 (`v023_c1c2_provider_factory_v3.py:109,662-672`), but `ee_axis_ops3.py:66` defaults to stale `0x1.443a8f481639ap+26` = 84994621.12635651 and `ee_axis_ops3_live.py:926-944` omits the argument. 177/200 sampled C2 rows change under the stale value. Existing training labels are correct; fresh default-path generation is not. |
 | per-head bootstrap | **PASS** | `modqn.py:536-550` loops `obj_idx` and uses `target_nets[obj_idx]`; no head-0 reuse. |
 | r1 aggregation | **PASS** | Per-user `R_u/P_system` contributions sum to instantaneous `sum R/P` (`energy_efficiency.py:251-262`), while the physical endpoint pools total bits and energy then divides (`v023_c1c2_successor_physical_runner.py:878-899`). `modqn.py:1300` is an episode logging scale, not the endpoint. |
 
 ## Executed versus declared C3 oracle
 
-`oracle_marginals.py:100-118,282-309` computes C3 as other users' delivered-bit
-change for each unilateral deviation.  Its energy-adjusted variant is recorded
-but not composed; `compose_actions` uses raw `t3` (`:136-166,383-389`).  It is
-a row-wise additive masked argmax, not pair interaction or set decoding.
-`ORACLE-J` separately replays one catalog-selected complete joint profile.
+`declared_c3_oracle.py` implements the exact source decomposition:
+`F=sum(bits)-lambda*E`, `Psi=F11-F10-F01+F00`, and
+`z3_i=nonfocal_i+Psi/2`; selection is restricted atomically to 00/10/01/11.
+The legacy comparator independently signs unilateral total surplus.  The
+fixed fixture above proves these are different definitions.
 
-The final C1/C2 successor actually declares C3 absent
-(`V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md:21-31,73-76`).
-For the requested comparison, “declared C3” means the last frozen LC-SRS
-teacher: `z3_i=e_i+Psi/2` from four common-field profiles 00/10/01/11
-(`MULTI-CATFISH-MCRL-V023-LC-SRS-OBSERVABILITY-GATE-CONTRACT-2026-09-05.md:437-475`).
-Contingency D/F are different cost-shared/energy targets, not aliases for either
-oracle (`V023-C3-RAPID-CONTINGENCY-LADDER-PREOUTCOME-2026-09-06.md:24-60`).
+The old-physics diagnostic reran one SHA-derived world (`5680416530117720853`),
+the three fixed carriers, 30 steps each (90 anchors), with explicit repriced
+lambda at every score.  “Marginal” below is pooled EE(selected)-EE(DROP_C3)
+for the local two-user four-profile catalogue; it is diagnostic history, not
+a successor efficacy/admission claim.
 
-One synthetic W1 pair proposed shared beam `(58705,9)` under one common keyed
-field.  This is a definition comparison only—no efficacy or admission claim.
+| Demand | Executed unilateral | Declared, reuse G0 J | Declared, per-regime J |
+|---|---:|---:|---:|
+| G0 uncapped | 49,543.515 | 93,359.619 | 93,359.619 |
+| G1 200 Mb/s | 31,193.695 | 128,519.812 | 219,895.226 |
+| G2 50 Mb/s | 25,891.527 | 23,637.088 | 59,511.510 |
+| G3 10 Mb/s | 1,789.889 | 3,579.604 | 10,341.382 |
 
-| User/action | Executed unilateral C3 (bits) | LC-SRS C3 (bits) | Difference = Psi/2 | Executed / kappa | LC-SRS / kappa |
-|---|---:|---:|---:|---:|---:|
-| 39 / 23 | 17,275,158,415.925 | 17,423,284,976.254 | 148,126,560.329 | 1.710908 | 1.725578 |
-| 93 / 24 | 1,586,658,438.441 | 1,734,784,998.769 | 148,126,560.329 | 0.157140 | 0.171811 |
-
-`Psi=296,253,120.657 bits`; LC-SRS joint-identity residual is
-`2.38e-6 bits` (floating summation).  The executed oracle and LC-SRS therefore
-differ whenever the pair interaction is nonzero.
+Units are bit/J. Re-optimizing J changes every capped regime and is always
+higher on this finite catalogue. Evidence anchor SHA is `8ed717d1...` in
+`declared-c3-oracle-marginals.json`; two reruns produced file SHA
+`090bee75a9ded1dcd8624f22fabe2d222f2ecdcda66d90935a10e8aeba0c98f1`.
 
 ## Ambiguities and limitations
 
@@ -179,7 +214,11 @@ differ whenever the pair interaction is nonzero.
 - `reference_physics.py`: clean-room equations and executable anchors.
 - `differential_audit.py`: read-only extractor and 270-step comparison.
 - `target_replay.py`, `c3_oracle_comparison.py`: Parts 3 and 4.
-- `test_audit_regressions.py`: seven focused red-capable checks (`7 passed`).
+- `target_parity_suite/`: importable explicit-lambda wrapper, declared-C3
+  oracle, reversible physics extractor, and reward/endpoint identity check.
+- Pytest summary: `12 passed, 1 warning in 0.25s` (the warning is the disclosed
+  SciPy/NumPy version warning).
 - `part2-results-run1.json`, `part2-results-run2.json`,
-  `part3-target-replay.json`, `part4-c3-comparison.json`: evidence.
+  `part3-target-replay.json`, `part4-c3-comparison.json`,
+  `lambda-provenance.json`, `declared-c3-oracle-marginals.json`: evidence.
 - Run: `bash .scratch/multi-catfish-v023-differential-audit/run_audit.sh`.
