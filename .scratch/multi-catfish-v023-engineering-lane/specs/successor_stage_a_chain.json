@@ -12,7 +12,16 @@
     {"name": "target_root", "path": null},
     {"name": "successor_contract", "path": ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md"},
     {"name": "model_config", "path": ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"},
-    {"name": "learner_manifest", "path": ".scratch/multi-catfish-v023-two-route-source-training-runner/LEARNER-MANIFEST.json"},
+    {
+      "name": "learner_manifest",
+      "path": ".scratch/multi-catfish-v023-c1c2-successor-launch/V023-C1C2-SUCCESSOR-LEARNER-MANIFEST.json",
+      "requires_after": "bind_v023_c1c2_successor_freeze.py --write produces this artifact; run the Stage-A gate after bind and before the launcher"
+    },
+    {
+      "name": "provider_config",
+      "path": ".scratch/multi-catfish-v023-c1c2-successor-launch/V023-C1C2-SUCCESSOR-PROVIDER-CONFIG.json",
+      "requires_after": "bind_v023_c1c2_successor_freeze.py --write produces this artifact; run the Stage-A gate after bind and before the launcher"
+    },
     {"name": "factory_code", "path": ".scratch/multi-catfish-v023-c1c2-provider-factory-v3/v023_c1c2_provider_factory_v3.py"}
   ],
   "modules": {
@@ -118,8 +127,10 @@
         "epoch_budget": 100,
         "orchestrator_config": {"result": "orchestrator_config"},
         "provider_factory_spec": "v023_c1c2_provider_factory_v3:make_provider",
-        "authority_digests": {"result": "authority_digests"}
-      }
+        "authority_digests": {"result": "authority_digests"},
+        "provider_config_sha256": {"sha256": {"artifact": "provider_config"}}
+      },
+      "inputs": ["provider_config"]
     },
     {
       "name": "runner",

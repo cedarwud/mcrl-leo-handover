@@ -106,6 +106,39 @@ def test_missing_module_and_artifact_are_blocked(tmp_path: Path):
     assert [step["status"] for step in report["steps"]] == ["BLOCKED", "BLOCKED"]
 
 
+def test_missing_binder_output_prints_requires_after_reason(tmp_path: Path):
+    reason = (
+        "bind_v023_c1c2_successor_freeze.py --write produces this artifact; "
+        "run the Stage-A gate after bind and before the launcher"
+    )
+    spec = {
+        "schema": "multi-catfish-v023-offline-realartifact-chain-spec-v1",
+        "name": "BINDER_ORDER",
+        "artifacts": [{
+            "name": "binder_output",
+            "path": str(tmp_path / "not-bound-yet.json"),
+            "requires_after": reason,
+        }],
+        "modules": {
+            "fixture": {"path": str(HERE / "fixtures/dryrun_chain.py"), "name": "dryrun_chain"}
+        },
+        "steps": [{
+            "name": "needs_binder_output",
+            "callable": {"module": "fixture", "name": "consume_missing"},
+            "args": [{"artifact": "binder_output"}],
+        }],
+    }
+    spec_path = tmp_path / "binder-order.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+    output = tmp_path / "binder-order-output"
+    completed = _run("--spec", str(spec_path), "--repo", str(REPO), "--output", str(output))
+    assert completed.returncode == 3, completed.stderr + completed.stdout
+    report = json.loads((output / "dryrun-report.json").read_text(encoding="ascii"))
+    step = report["steps"][0]
+    assert step["status"] == "BLOCKED"
+    assert step["exception"]["text"].endswith(f"requires_after: {reason}")
+
+
 def test_list_real_artifacts_reports_present_and_missing(tmp_path: Path):
     candidates = tmp_path / "candidates.json"
     candidates.write_text(json.dumps({"artifacts": [

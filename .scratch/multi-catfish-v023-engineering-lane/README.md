@@ -114,10 +114,14 @@ performs the next epoch. It resolves unfinished inputs lazily:
   --output /tmp/v023-stage-a-dryrun
 ```
 
-The current spec expects the learner manifest at
-`.scratch/multi-catfish-v023-two-route-source-training-runner/LEARNER-MANIFEST.json`.
-Until that file and the real target root exist, affected steps correctly report
-BLOCKED. A pre-seal staging spec can use the same mechanism to add controller
+The current spec expects the binder-written learner manifest and provider
+configuration under `.scratch/multi-catfish-v023-c1c2-successor-launch/`.
+Run `bind_v023_c1c2_successor_freeze.py --write` first, then this Stage-A gate,
+then the launcher. Until either binder output or the real target root exists,
+affected steps report `BLOCKED`; binder-output blockers include the spec's
+`requires_after` reason. The provider-configuration file SHA-256 is passed to
+the producer-owned `FrozenSourceTrainingConfig` as `provider_config_sha256`.
+A pre-seal staging spec can use the same mechanism to add controller
 merge and sealer verification callables; the included self-test demonstrates
 the full authenticate → load → merge → seal-verify sequence.
 

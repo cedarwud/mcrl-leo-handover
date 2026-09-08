@@ -179,6 +179,19 @@ class ChainRuntime:
         self.spec = spec
         self.artifacts = dict(artifacts)
         self.identities = identities
+        artifact_defs = spec.get("artifacts", [])
+        if not isinstance(artifact_defs, list):
+            raise DryRunError("spec artifacts must be a list")
+        self.artifact_defs: dict[str, Mapping[str, Any]] = {}
+        for definition in artifact_defs:
+            if not isinstance(definition, dict) or not isinstance(definition.get("name"), str):
+                raise DryRunError("each artifact definition needs a name")
+            requires_after = definition.get("requires_after")
+            if requires_after is not None and (
+                not isinstance(requires_after, str) or not requires_after.strip()
+            ):
+                raise DryRunError("artifact requires_after must be a nonempty string")
+            self.artifact_defs[definition["name"]] = definition
         self.results: dict[str, Any] = {}
         self.modules: dict[str, ModuleType] = {}
         self.module_defs = spec.get("modules", {})
@@ -248,7 +261,7 @@ class ChainRuntime:
             if name not in self.artifacts:
                 raise StepBlocked(f"artifact is not configured: {name}")
             if self.identities[name]["status"] != "PRESENT":
-                raise StepBlocked(f"artifact is unavailable: {name} ({self.identities[name]['status']})")
+                raise StepBlocked(self.artifact_unavailable_reason(name))
             return self.artifacts[name]
         if set(value) == {"scratch"}:
             relative = Path(str(value["scratch"]))
@@ -289,6 +302,13 @@ class ChainRuntime:
         if "item" in value and "key" in value and len(value) == 2:
             return self.resolve(value["item"])[self.resolve(value["key"])]
         return {key: self.resolve(item) for key, item in value.items()}
+
+    def artifact_unavailable_reason(self, name: str) -> str:
+        reason = f"artifact is unavailable: {name} ({self.identities[name]['status']})"
+        requires_after = self.artifact_defs.get(name, {}).get("requires_after")
+        if isinstance(requires_after, str):
+            reason += f"; requires_after: {requires_after}"
+        return reason
 
     def callable(self, definition: Mapping[str, Any]) -> Any:
         if "module" in definition:
@@ -403,6 +423,16 @@ def _run_step(runtime: ChainRuntime, step: Mapping[str, Any]) -> dict[str, Any]:
         unavailable = [item for item in dependencies if item not in runtime.results]
         if unavailable:
             raise StepBlocked(f"required prior result is unavailable: {', '.join(unavailable)}")
+        unavailable_inputs = [
+            item
+            for item in sorted(inputs)
+            if item in runtime.identities
+            and runtime.identities[item]["status"] != "PRESENT"
+        ]
+        if unavailable_inputs:
+            raise StepBlocked(
+                "; ".join(runtime.artifact_unavailable_reason(item) for item in unavailable_inputs)
+            )
         function_spec = step.get("callable")
         if not isinstance(function_spec, dict):
             raise DryRunError(f"step {name} callable must be an object")
