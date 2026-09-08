@@ -10,14 +10,18 @@ authenticates all twelve units and solves U1 and J1 without running physics.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import dataclass
 import fcntl
 from fractions import Fraction
 import hashlib
+import importlib.metadata
 import json
 import math
 import os
 from pathlib import Path
+import platform
+import shutil
 import signal
 import sys
 import tempfile
@@ -88,6 +92,7 @@ DEFAULT_TERMINAL_RECEIPT_NAME = "terminal-receipt.json"
 DEFAULT_GLOBAL_INVALIDATION_NAME = "GLOBAL-INVALIDATION.json"
 DEFAULT_BUDGET_LEDGER_NAME = "budget-ledger.json"
 DEFAULT_BUDGET_WORKER_SECONDS = 57_600.0
+DEFAULT_BUDGET_RESERVATION_WORKER_SECONDS = DEFAULT_BUDGET_WORKER_SECONDS / 12.0
 CANONICAL_TLE_ROOT = Path("/home/sat/mcrl-runtime/tle-frozen-20260820")
 CANONICAL_INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
 
@@ -270,9 +275,11 @@ def expected_code_bindings() -> list[dict[str, str]]:
         ("e1_runner", HERE / "run_v023_c3_existence_e1.py"),
         ("e1_estimands", HERE / "e1_estimands.py"),
         ("e1_preflight_builder", HERE / "build_e1_preflight_manifest.py"),
+        ("e1_launch_authority_builder", HERE / "build_e1_launch_authority.py"),
         ("e1_estimand_tests", HERE / "test_e1_estimands.py"),
         ("e1_runner_tests", HERE / "test_run_v023_c3_existence_e1.py"),
         ("e1_readme", HERE / "README.md"),
+        ("e1_changelog", HERE / "CHANGELOG.md"),
         ("f1_tape_machinery_import", F1_DIR / "run_v023_c3_contingency_f1.py"),
         ("f2_unit_merge_conventions_import", F2_DIR / "run_v023_c3_contingency_f2.py"),
         ("f0_conservation_import", F0_DIR / "c3_contingency_f0.py"),
@@ -354,17 +361,72 @@ def prereg_tle_bindings() -> dict[str, object]:
     }
 
 
-def process_bindings() -> dict[str, object]:
+def _assert_server_interpreter() -> None:
     if Path(sys.executable).resolve() != CANONICAL_INTERPRETER.resolve():
         raise E1Error(f"E1 requires interpreter {CANONICAL_INTERPRETER}")
+
+
+def _cpu_model() -> str:
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.is_file():
+        for line in cpuinfo.read_text(encoding="utf-8", errors="replace").splitlines():
+            name, separator, value = line.partition(":")
+            if separator and name.strip() in {"model name", "Hardware"} and value.strip():
+                return value.strip()
+    return platform.processor() or platform.machine()
+
+
+def process_bindings() -> dict[str, object]:
+    _assert_server_interpreter()
+    import torch
+
+    venv_root = Path(sys.prefix).resolve()
+    pyvenv = venv_root / "pyvenv.cfg"
+    if not pyvenv.is_file() or pyvenv.is_symlink():
+        raise E1Error("selected virtual environment lacks a regular pyvenv.cfg")
+    thread_names = (
+        "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    )
+    sgp4_version = importlib.metadata.version("sgp4")
+    core_count = os.cpu_count()
+    if core_count is None or core_count <= 0 or not _cpu_model():
+        raise E1Error("hardware CPU identity is unavailable")
+    thread_environment = {name: os.environ.get(name) for name in thread_names}
+    torch_threads = {
+        "intraop": torch.get_num_threads(),
+        "interop": torch.get_num_interop_threads(),
+    }
     return {
         "checkout_root": str(REPO.resolve()),
-        "interpreter": str(CANONICAL_INTERPRETER),
+        "interpreter": str(Path(sys.executable).resolve()),
         "python_version": sys.version,
         "numpy_version": np.__version__,
-        "thread_environment": {
-            name: os.environ.get(name)
-            for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+        "torch_version": torch.__version__,
+        "sgp4_version": sgp4_version,
+        "third_party_versions": {
+            "numpy": np.__version__, "torch": torch.__version__, "sgp4": sgp4_version,
+        },
+        "hardware": {
+            "cpu_model": _cpu_model(),
+            "core_count": core_count,
+            "logical_core_count": core_count,
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "kernel": platform.release(),
+        },
+        "effective_threads": {
+            "environment": thread_environment,
+            "torch_num_threads": torch_threads["intraop"],
+            "torch_num_interop_threads": torch_threads["interop"],
+        },
+        "thread_environment": thread_environment,
+        "torch_threads": torch_threads,
+        "virtual_environment": {
+            "root": str(venv_root),
+            "pyvenv_cfg_path": str(pyvenv.resolve()),
+            "pyvenv_cfg_sha256": file_sha256(pyvenv),
+            "sys_prefix": sys.prefix,
         },
     }
 
@@ -423,12 +485,21 @@ def validate_preflight_manifest(path: Path) -> tuple[dict[str, Any], str]:
     if payload != expected:
         raise E1Error("E1 preflight manifest disagrees with exact bindings/code")
     digest = file_sha256(target)
-    sidecar = target.with_suffix(".sha256")
-    if sidecar.is_symlink() or not sidecar.is_file():
-        raise E1Error("E1 preflight digest sidecar is missing or symlinked")
-    if sidecar.read_text(encoding="ascii").split() != [digest, target.name]:
-        raise E1Error("E1 preflight digest sidecar disagrees")
+    _validate_digest_sidecar(target, digest=digest, label="E1 preflight")
     return payload, digest
+
+
+def _validate_digest_sidecar(path: Path, *, digest: str, label: str) -> Path:
+    target = Path(path)
+    sidecar = target.with_suffix(".sha256")
+    if (
+        target.is_symlink() or not target.is_file() or target.stat().st_mode & 0o222
+        or sidecar.is_symlink() or not sidecar.is_file() or sidecar.stat().st_mode & 0o222
+    ):
+        raise E1Error(f"{label} digest sidecar is missing or symlinked")
+    if sidecar.read_text(encoding="ascii").split() != [digest, target.name]:
+        raise E1Error(f"{label} digest sidecar disagrees")
+    return sidecar
 
 
 def _preflight_path_record(path: Path) -> str:
@@ -441,7 +512,11 @@ def validate_launch_authority(
     output_root: Path | None = None, tle_root: Path | None = None,
     launch_arguments: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    payload = _load_json(path, field="E1 launch authority")
+    authority_path = Path(path)
+    payload = _load_json(authority_path, field="E1 launch authority")
+    _validate_digest_sidecar(
+        authority_path, digest=file_sha256(authority_path), label="E1 launch authority"
+    )
     expected_keys = {
         "schema", "status", "claim_ceiling", "preflight_manifest", "contract",
         "bindings", "checkout_root", "output_root", "tle_root", "preregistration",
@@ -1118,6 +1193,51 @@ def _verify_published(path: Path, payload: Mapping[str, object], digest: str) ->
         raise E1Error(f"published artifact failed immutable hash readback: {path}")
 
 
+@contextmanager
+def _interruption_safe_publication() -> Any:
+    """Defer catchable process interruptions across the final atomic rename."""
+
+    mask = {signal.SIGINT, signal.SIGTERM}
+    previous: set[signal.Signals] | None = None
+    if hasattr(signal, "pthread_sigmask"):
+        try:
+            previous = signal.pthread_sigmask(signal.SIG_BLOCK, mask)
+        except (OSError, ValueError):
+            previous = None
+    try:
+        yield
+    finally:
+        if previous is not None:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
+def _publish_write_once(path: Path, payload: Mapping[str, object]) -> str:
+    """Stage, fsync, and atomically rename one immutable JSON artifact."""
+
+    target = Path(path)
+    if target.exists() or target.is_symlink():
+        raise E1Error(f"refusing to overwrite write-once artifact: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, stage_text = tempfile.mkstemp(
+        prefix=f".stage-{target.name}-", suffix=".tmp", dir=target.parent
+    )
+    os.close(descriptor)
+    stage = Path(stage_text)
+    stage.unlink()
+    try:
+        digest = _write_once(stage, payload)
+        _verify_published(stage, payload, digest)
+        with _interruption_safe_publication():
+            if target.exists() or target.is_symlink():
+                raise E1Error(f"refusing to overwrite write-once artifact: {target}")
+            os.rename(stage, target)
+        _verify_published(target, payload, digest)
+        return digest
+    finally:
+        if stage.exists() or stage.is_symlink():
+            stage.unlink()
+
+
 def _unit_dir(output: Path, key: UnitKey) -> Path:
     return Path(output) / "units" / key.slug
 
@@ -1181,25 +1301,35 @@ def write_unit_bundle(output: Path, *, key: UnitKey, tape: Mapping[str, object])
     tape_path = stage / DEFAULT_TAPE_NAME
     manifest_path = stage / DEFAULT_TAPE_MANIFEST_NAME
     receipt_path = stage / DEFAULT_UNIT_RECEIPT_NAME
-    tape_sha = _write_once(tape_path, tape)
-    manifest = {
-        "schema": UNIT_TAPE_MANIFEST_SCHEMA,
-        "status": "COMPLETE_IMMUTABLE_TAPE",
-        "claim_ceiling": CLAIM_CEILING,
-        "unit": key.as_dict(),
-        "tape": {"path": DEFAULT_TAPE_NAME, "sha256": tape_sha, "bytes": tape_path.stat().st_size, "mode": "0444"},
-        "formula_digests": formula_digests(),
-        "preflight_manifest_sha256": tape["preflight_manifest_sha256"],
-    }
-    manifest_sha = _write_once(manifest_path, manifest)
-    receipt_payload = _unit_receipt(tape, key=key, tape_sha256=tape_sha)
-    receipt_sha = _write_once(receipt_path, receipt_payload)
-    _verify_published(tape_path, tape, tape_sha)
-    _verify_published(manifest_path, manifest, manifest_sha)
-    _verify_published(receipt_path, receipt_payload, receipt_sha)
-    os.rename(stage, final)
-    authenticate_unit_bundle(root, key=key, preflight_sha256=str(tape["preflight_manifest_sha256"]))
-    return final / DEFAULT_TAPE_NAME, final / DEFAULT_TAPE_MANIFEST_NAME, final / DEFAULT_UNIT_RECEIPT_NAME
+    try:
+        tape_sha = _write_once(tape_path, tape)
+        manifest = {
+            "schema": UNIT_TAPE_MANIFEST_SCHEMA,
+            "status": "COMPLETE_IMMUTABLE_TAPE",
+            "claim_ceiling": CLAIM_CEILING,
+            "unit": key.as_dict(),
+            "tape": {"path": DEFAULT_TAPE_NAME, "sha256": tape_sha, "bytes": tape_path.stat().st_size, "mode": "0444"},
+            "formula_digests": formula_digests(),
+            "preflight_manifest_sha256": tape["preflight_manifest_sha256"],
+        }
+        manifest_sha = _write_once(manifest_path, manifest)
+        receipt_payload = _unit_receipt(tape, key=key, tape_sha256=tape_sha)
+        receipt_sha = _write_once(receipt_path, receipt_payload)
+        _verify_published(tape_path, tape, tape_sha)
+        _verify_published(manifest_path, manifest, manifest_sha)
+        _verify_published(receipt_path, receipt_payload, receipt_sha)
+        stage.chmod(0o555)
+        with _interruption_safe_publication():
+            if final.exists() or final.is_symlink():
+                raise E1Error(f"refusing to overwrite write-once unit {key.slug}")
+            os.rename(stage, final)
+        authenticate_unit_bundle(root, key=key, preflight_sha256=str(tape["preflight_manifest_sha256"]))
+        return final / DEFAULT_TAPE_NAME, final / DEFAULT_TAPE_MANIFEST_NAME, final / DEFAULT_UNIT_RECEIPT_NAME
+    finally:
+        if stage.exists() or stage.is_symlink():
+            if stage.is_dir() and not stage.is_symlink():
+                stage.chmod(0o755)
+            shutil.rmtree(stage)
 
 
 def incomplete_receipt(
@@ -1241,7 +1371,7 @@ def _write_incomplete(
     for sequence in range(1, 1_000_000):
         path = root / f"{stem}-{sequence:06d}.json"
         try:
-            digest = _write_once(path, payload)
+            digest = _publish_write_once(path, payload)
         except E1Error as collision:
             if "refusing to overwrite" in str(collision):
                 continue
@@ -1255,50 +1385,201 @@ def _budget_path(output: Path) -> Path:
     return Path(output) / DEFAULT_BUDGET_LEDGER_NAME
 
 
-def _read_budget(output: Path, cap: float) -> float:
-    path = _budget_path(output)
-    if not path.exists():
-        return 0.0
-    payload = _load_json(path, field="worker budget ledger")
-    if payload.get("schema") != f"{SCHEMA}-worker-budget-ledger" or payload.get("cap_worker_seconds_hex") != cap.hex():
+def _empty_budget(cap: float) -> dict[str, object]:
+    return {
+        "schema": f"{SCHEMA}-worker-budget-ledger",
+        "cap_worker_seconds_hex": cap.hex(),
+        "charged_worker_seconds_hex": 0.0.hex(),
+        "unit_charge_count": 0,
+        "unit_charged_worker_seconds_hex": 0.0.hex(),
+        "reservations": [],
+    }
+
+
+def _parse_budget(payload: Mapping[str, object], cap: float) -> tuple[float, int, float, list[dict[str, object]]]:
+    if set(payload) != set(_empty_budget(cap)) or (
+        payload.get("schema") != f"{SCHEMA}-worker-budget-ledger"
+        or payload.get("cap_worker_seconds_hex") != cap.hex()
+    ):
         raise E1Error("worker budget ledger binding drifted")
     try:
-        used = float.fromhex(str(payload["used_worker_seconds_hex"]))
-    except (KeyError, ValueError) as error:
+        charged = float.fromhex(str(payload["charged_worker_seconds_hex"]))
+        unit_charged = float.fromhex(str(payload["unit_charged_worker_seconds_hex"]))
+        count = payload["unit_charge_count"]
+        reservations = payload["reservations"]
+    except (KeyError, TypeError, ValueError) as error:
         raise E1Error("worker budget ledger is malformed") from error
-    if not math.isfinite(used) or used < 0.0:
+    if (
+        not math.isfinite(charged) or charged < 0.0 or charged > cap
+        or not math.isfinite(unit_charged) or unit_charged < 0.0
+        or type(count) is not int or count < 0
+        or not isinstance(reservations, list)
+    ):
         raise E1Error("worker budget ledger usage is malformed")
-    return used
+    seen: set[str] = set()
+    normalized: list[dict[str, object]] = []
+    for row in reservations:
+        if not isinstance(row, Mapping) or set(row) != {
+            "token", "scope", "unit", "reserved_worker_seconds_hex"
+        }:
+            raise E1Error("worker budget reservation is malformed")
+        token = row.get("token")
+        scope = row.get("scope")
+        unit = row.get("unit")
+        try:
+            reserved = float.fromhex(str(row.get("reserved_worker_seconds_hex")))
+        except (TypeError, ValueError) as error:
+            raise E1Error("worker budget reservation amount is malformed") from error
+        if (
+            not isinstance(token, str) or not token or token in seen
+            or scope not in {"unit", "merge"}
+            or unit is not None and not isinstance(unit, str)
+            or not math.isfinite(reserved) or reserved <= 0.0
+        ):
+            raise E1Error("worker budget reservation is malformed")
+        seen.add(token)
+        normalized.append(dict(row))
+    if charged + math.fsum(
+        float.fromhex(str(row["reserved_worker_seconds_hex"])) for row in normalized
+    ) > cap:
+        raise E1Error("worker budget reservations exceed the total pool")
+    return charged, count, unit_charged, normalized
 
 
-def _record_budget(output: Path, cap: float, elapsed: float) -> float:
+def _locked_budget_update(
+    output: Path, cap: float,
+    update: Callable[[dict[str, object]], tuple[dict[str, object], Any]],
+) -> Any:
     root = Path(output)
     root.mkdir(parents=True, exist_ok=True)
     path = _budget_path(root)
-    lock_path = root / f".{DEFAULT_BUDGET_LEDGER_NAME}.lock"
-    with lock_path.open("a+b") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    with path.open("a+b") as ledger:
+        fcntl.flock(ledger.fileno(), fcntl.LOCK_EX)
         try:
-            used = _read_budget(root, cap) + max(0.0, elapsed)
-            payload = {
-                "schema": f"{SCHEMA}-worker-budget-ledger",
-                "cap_worker_seconds_hex": cap.hex(),
-                "used_worker_seconds_hex": used.hex(),
-            }
-            temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-            if temporary.exists() or temporary.is_symlink():
-                raise E1Error("worker budget ledger staging path already exists")
-            encoded = canonical_bytes(payload) + b"\n"
-            with temporary.open("xb") as handle:
-                handle.write(encoded)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-            if path.read_bytes() != encoded:
+            ledger.seek(0)
+            raw = ledger.read()
+            payload = _empty_budget(cap) if not raw else json.loads(raw)
+            if not isinstance(payload, dict):
+                raise E1Error("worker budget ledger is malformed")
+            _parse_budget(payload, cap)
+            replacement, result = update(payload)
+            _parse_budget(replacement, cap)
+            encoded = canonical_bytes(replacement) + b"\n"
+            ledger.seek(0)
+            ledger.truncate()
+            ledger.write(encoded)
+            ledger.flush()
+            os.fsync(ledger.fileno())
+            ledger.seek(0)
+            if ledger.read() != encoded:
                 raise E1Error("worker budget ledger failed readback")
-            return used
+            return result
         finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(ledger.fileno(), fcntl.LOCK_UN)
+
+
+def _budget_snapshot(output: Path, cap: float) -> dict[str, object]:
+    path = _budget_path(output)
+    if not path.exists():
+        return _empty_budget(cap)
+    with path.open("rb") as ledger:
+        fcntl.flock(ledger.fileno(), fcntl.LOCK_SH)
+        try:
+            payload = json.load(ledger)
+            if not isinstance(payload, dict):
+                raise E1Error("worker budget ledger is malformed")
+            _parse_budget(payload, cap)
+            return payload
+        finally:
+            fcntl.flock(ledger.fileno(), fcntl.LOCK_UN)
+
+
+def _read_budget(output: Path, cap: float) -> float:
+    payload = _budget_snapshot(output, cap)
+    charged, _count, _unit_charged, _reservations = _parse_budget(payload, cap)
+    return charged
+
+
+@dataclass(frozen=True)
+class BudgetReservation:
+    token: str
+    reserved_worker_seconds: float
+
+
+def _reserve_budget(
+    output: Path, cap: float, *, scope: str, key: UnitKey | None = None,
+    declared_default: float = DEFAULT_BUDGET_RESERVATION_WORKER_SECONDS,
+) -> BudgetReservation:
+    if scope not in {"unit", "merge"} or not math.isfinite(declared_default) or declared_default <= 0.0:
+        raise E1Error("worker budget reservation request is malformed")
+    token = f"{scope}:{'none' if key is None else key.slug}:{os.getpid()}:{time.time_ns()}"
+
+    def update(payload: dict[str, object]) -> tuple[dict[str, object], BudgetReservation]:
+        charged, count, unit_charged, reservations = _parse_budget(payload, cap)
+        # The declared default is a conservative floor; a measured unit mean
+        # may raise it, but short fixture/verification calls cannot collapse
+        # later reservations to an unsafe near-zero timer.
+        estimate = max(declared_default, unit_charged / count) if count else declared_default
+        reserved_total = math.fsum(
+            float.fromhex(str(row["reserved_worker_seconds_hex"])) for row in reservations
+        )
+        available = cap - charged - reserved_total
+        if estimate > available:
+            raise E1Incomplete("declared worker-second budget cannot reserve another operation")
+        row = {
+            "token": token,
+            "scope": scope,
+            "unit": None if key is None else key.slug,
+            "reserved_worker_seconds_hex": estimate.hex(),
+        }
+        replacement = dict(payload)
+        replacement["reservations"] = [*reservations, row]
+        return replacement, BudgetReservation(token, estimate)
+
+    return _locked_budget_update(output, cap, update)
+
+
+def _finish_budget(
+    output: Path, cap: float, *, reservation: BudgetReservation, elapsed: float,
+) -> float:
+    charge = min(max(0.0, elapsed), reservation.reserved_worker_seconds)
+
+    def update(payload: dict[str, object]) -> tuple[dict[str, object], float]:
+        charged, count, unit_charged, reservations = _parse_budget(payload, cap)
+        matches = [row for row in reservations if row["token"] == reservation.token]
+        if len(matches) != 1:
+            raise E1Error("worker budget reservation was already charged or is missing")
+        row = matches[0]
+        charged_after = charged + charge
+        replacement = dict(payload)
+        replacement["charged_worker_seconds_hex"] = charged_after.hex()
+        replacement["reservations"] = [
+            candidate for candidate in reservations if candidate["token"] != reservation.token
+        ]
+        if row["scope"] == "unit":
+            replacement["unit_charge_count"] = count + 1
+            replacement["unit_charged_worker_seconds_hex"] = (unit_charged + charge).hex()
+        return replacement, charged_after
+
+    return _locked_budget_update(output, cap, update)
+
+
+def _record_budget(output: Path, cap: float, elapsed: float) -> float:
+    """Compatibility helper for direct, locked setup charges in tests."""
+
+    charge = max(0.0, elapsed)
+
+    def update(payload: dict[str, object]) -> tuple[dict[str, object], float]:
+        charged, _count, _unit_charged, reservations = _parse_budget(payload, cap)
+        available = cap - math.fsum(
+            float.fromhex(str(row["reserved_worker_seconds_hex"])) for row in reservations
+        )
+        charged_after = min(available, charged + charge)
+        replacement = dict(payload)
+        replacement["charged_worker_seconds_hex"] = charged_after.hex()
+        return replacement, charged_after
+
+    return _locked_budget_update(output, cap, update)
 
 
 def _write_invalid_unit(output: Path, *, key: UnitKey, preflight_sha256: str, error: BaseException) -> Path:
@@ -1308,11 +1589,25 @@ def _write_invalid_unit(output: Path, *, key: UnitKey, preflight_sha256: str, er
     if final.exists() or final.is_symlink():
         raise E1Error(f"refusing to overwrite write-once unit {key.slug}")
     stage = Path(tempfile.mkdtemp(prefix=f".stage-invalid-{key.slug}-", dir=units_root))
-    receipt = stage / DEFAULT_UNIT_RECEIPT_NAME
-    _write_once(receipt, invalid_unit_receipt(key=key, preflight_sha256=preflight_sha256, error=error))
-    stage.chmod(0o555)
-    os.rename(stage, final)
-    return final / DEFAULT_UNIT_RECEIPT_NAME
+    try:
+        receipt = stage / DEFAULT_UNIT_RECEIPT_NAME
+        payload = invalid_unit_receipt(
+            key=key, preflight_sha256=preflight_sha256, error=error
+        )
+        digest = _write_once(receipt, payload)
+        _verify_published(receipt, payload, digest)
+        stage.chmod(0o555)
+        with _interruption_safe_publication():
+            if final.exists() or final.is_symlink():
+                raise E1Error(f"refusing to overwrite write-once unit {key.slug}")
+            os.rename(stage, final)
+        _verify_published(final / DEFAULT_UNIT_RECEIPT_NAME, payload, digest)
+        return final / DEFAULT_UNIT_RECEIPT_NAME
+    finally:
+        if stage.exists() or stage.is_symlink():
+            if stage.is_dir() and not stage.is_symlink():
+                stage.chmod(0o755)
+            shutil.rmtree(stage)
 
 
 def _validate_invalid_unit_receipt(
@@ -1483,14 +1778,49 @@ def execute_unit(
     *, key: UnitKey, output: Path, tle_root: Path, preflight_sha256: str,
     generator: Callable[..., dict[str, object]] = _generate_unit_tape,
     budget_worker_seconds: float = DEFAULT_BUDGET_WORKER_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
 ) -> tuple[Path, bool, bool]:
+    marker = _existing_global_invalidation(output, preflight_sha256=preflight_sha256)
+    if marker is not None:
+        path, digest = marker
+        raise E1Error(f"global invalidation marker refuses unit: {path} sha256={digest}")
     if Path(tle_root) != CANONICAL_TLE_ROOT or Path(tle_root).is_symlink():
         raise E1Error("unit execution requires the canonical frozen TLE root")
     if not math.isfinite(budget_worker_seconds) or budget_worker_seconds <= 0.0:
         raise E1Error("worker-second budget must be finite and positive")
     final = _unit_dir(output, key)
-    if final.exists() or final.is_symlink():
+    existed_at_start = final.exists() or final.is_symlink()
+    try:
+        reservation = _reserve_budget(
+            output, budget_worker_seconds, scope="unit", key=key
+        )
+    except E1Incomplete as error:
+        used = _read_budget(output, budget_worker_seconds)
+        return _write_incomplete(
+            output, scope="unit", preflight_sha256=preflight_sha256,
+            error=error, key=key, worker_seconds=used,
+        ), False, False
+    started = clock()
+    old_handler: Any = None
+    old_timer: tuple[float, float] | None = None
+    timer_installed = False
+    if hasattr(signal, "setitimer"):
         try:
+            def _budget_alarm(_signum: int, _frame: object) -> None:
+                raise E1Incomplete("declared worker-second reservation exhausted during unit")
+
+            old_handler = signal.getsignal(signal.SIGALRM)
+            signal.signal(signal.SIGALRM, _budget_alarm)
+            old_timer = signal.setitimer(
+                signal.ITIMER_REAL, reservation.reserved_worker_seconds
+            )
+            timer_installed = True
+        except (ValueError, OSError):
+            timer_installed = False
+    result: tuple[Path, bool, bool] | None = None
+    caught: BaseException | None = None
+    try:
+        if existed_at_start:
             receipt = _load_json(final / DEFAULT_UNIT_RECEIPT_NAME, field="existing unit receipt")
             if receipt.get("status") == "INVALID_RUN":
                 if (final / DEFAULT_UNIT_RECEIPT_NAME).stat().st_mode & 0o222:
@@ -1498,62 +1828,51 @@ def execute_unit(
                 _validate_invalid_unit_receipt(
                     receipt, key=key, preflight_sha256=preflight_sha256
                 )
-                return final / DEFAULT_UNIT_RECEIPT_NAME, True, False
-            authenticate_unit_bundle(output, key=key, preflight_sha256=preflight_sha256)
-            return final / DEFAULT_UNIT_RECEIPT_NAME, True, True
-        except Exception as error:
-            invalidation = _publish_global_invalidation(
-                output, preflight_sha256=preflight_sha256, error=error
+                result = (final / DEFAULT_UNIT_RECEIPT_NAME, True, False)
+            else:
+                authenticate_unit_bundle(output, key=key, preflight_sha256=preflight_sha256)
+                result = (final / DEFAULT_UNIT_RECEIPT_NAME, True, True)
+        else:
+            tape = generator(
+                key=key, tle_root=Path(tle_root), preflight_sha256=preflight_sha256
             )
-            return invalidation, False, False
-    used = _read_budget(output, budget_worker_seconds)
-    remaining = budget_worker_seconds - used
-    if remaining <= 0.0:
-        error = E1Incomplete("declared worker-second budget exhausted before unit start")
-        return _write_incomplete(
-            output, scope="unit", preflight_sha256=preflight_sha256,
-            error=error, key=key, worker_seconds=used,
-        ), False, False
-    started = time.monotonic()
-    old_handler: Any = None
-    old_timer: tuple[float, float] | None = None
-    timer_installed = False
-    if hasattr(signal, "setitimer"):
-        try:
-            def _budget_alarm(_signum: int, _frame: object) -> None:
-                raise E1Incomplete("declared worker-second budget exhausted during unit")
-
-            old_handler = signal.getsignal(signal.SIGALRM)
-            signal.signal(signal.SIGALRM, _budget_alarm)
-            old_timer = signal.setitimer(signal.ITIMER_REAL, remaining)
-            timer_installed = True
-        except (ValueError, OSError):
-            timer_installed = False
-    try:
-        tape = generator(key=key, tle_root=Path(tle_root), preflight_sha256=preflight_sha256)
-        _tape, _manifest, receipt = write_unit_bundle(output, key=key, tape=tape)
-        return receipt, False, True
-    except (E1Incomplete, KeyboardInterrupt) as error:
-        elapsed = time.monotonic() - started
-        used_after = _record_budget(output, budget_worker_seconds, elapsed)
-        return _write_incomplete(
-            output, scope="unit", preflight_sha256=preflight_sha256,
-            error=error, key=key, worker_seconds=used_after,
-        ), False, False
-    except Exception as error:
-        receipt = _write_invalid_unit(
-            output, key=key, preflight_sha256=preflight_sha256, error=error
-        )
-        return receipt, False, False
+            _tape, _manifest, receipt = write_unit_bundle(output, key=key, tape=tape)
+            result = (receipt, False, True)
+    except (Exception, KeyboardInterrupt) as error:
+        caught = error
     finally:
         if timer_installed:
             signal.setitimer(signal.ITIMER_REAL, 0.0)
             signal.signal(signal.SIGALRM, old_handler)
             if old_timer is not None and old_timer[0] > 0.0:
                 signal.setitimer(signal.ITIMER_REAL, *old_timer)
-        # The interruption path already charged before publishing its receipt.
-        if sys.exc_info()[0] not in (E1Incomplete, KeyboardInterrupt):
-            _record_budget(output, budget_worker_seconds, time.monotonic() - started)
+    with _interruption_safe_publication():
+        used_after = _finish_budget(
+            output, budget_worker_seconds, reservation=reservation,
+            elapsed=clock() - started,
+        )
+    if caught is None:
+        assert result is not None
+        return result
+    if not existed_at_start and (final.exists() or final.is_symlink()):
+        invalidation = _publish_global_invalidation(
+            output, preflight_sha256=preflight_sha256, error=caught
+        )
+        return invalidation, False, False
+    if isinstance(caught, (E1Incomplete, KeyboardInterrupt, estimands.E1ResourceIncomplete)):
+        return _write_incomplete(
+            output, scope="unit", preflight_sha256=preflight_sha256,
+            error=caught, key=key, worker_seconds=used_after,
+        ), False, False
+    if existed_at_start:
+        invalidation = _publish_global_invalidation(
+            output, preflight_sha256=preflight_sha256, error=caught
+        )
+        return invalidation, False, False
+    receipt = _write_invalid_unit(
+        output, key=key, preflight_sha256=preflight_sha256, error=caught
+    )
+    return receipt, False, False
 
 
 def _anchor_panels(tapes: Sequence[Mapping[str, object]]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -1658,38 +1977,94 @@ def _publish_global_invalidation(
     root.mkdir(parents=True, exist_ok=True)
     path = root / DEFAULT_GLOBAL_INVALIDATION_NAME
     if path.exists() or path.is_symlink():
-        receipt = _load_json(path, field="existing global invalidation")
-        if (
-            path.is_symlink()
-            or path.stat().st_mode & 0o777 != 0o444
-            or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
-            or receipt.get("status") != "INVALID_RUN"
-            or receipt.get("integrity") is not False
-            or receipt.get("preflight_manifest_sha256") != preflight_sha256
-        ):
-            raise E1Error("existing global invalidation record is corrupted")
+        _existing_global_invalidation(root, preflight_sha256=preflight_sha256)
         return path
     payload = invalid_terminal_receipt(preflight_sha256=preflight_sha256, error=error)
-    digest = _write_once(path, payload)
+    digest = _publish_write_once(path, payload)
     _verify_published(path, payload, digest)
     return path
 
 
-def execute_merge(*, output: Path, preflight_sha256: str) -> tuple[Path, bool, bool]:
+def _existing_global_invalidation(
+    output: Path, *, preflight_sha256: str,
+) -> tuple[Path, str] | None:
+    path = Path(output) / DEFAULT_GLOBAL_INVALIDATION_NAME
+    if not path.exists() and not path.is_symlink():
+        return None
+    if path.is_symlink() or not path.is_file():
+        raise E1Error("existing global invalidation record is corrupted")
+    receipt = _load_json(path, field="existing global invalidation")
+    expected_keys = {
+        "schema", "status", "outcome", "claim_ceiling", "panel_bindings",
+        "lineage_authorities", "formula_digests", "preflight_manifest_sha256",
+        "unit_receipts", "U1", "J1", "integrity", "error_type",
+        "error_sha256", "test_split_opened", "episode_training",
+        "learner_update", "efficacy_claim",
+    }
+    if (
+        path.stat().st_mode & 0o777 != 0o444
+        or set(receipt) != expected_keys
+        or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
+        or receipt.get("status") != "INVALID_RUN"
+        or receipt.get("outcome") != "INVALID_RUN"
+        or receipt.get("claim_ceiling") != CLAIM_CEILING
+        or receipt.get("integrity") is not False
+        or receipt.get("preflight_manifest_sha256") != preflight_sha256
+        or any(receipt.get(field) is not False for field in (
+            "test_split_opened", "episode_training", "learner_update", "efficacy_claim"
+        ))
+    ):
+        raise E1Error("existing global invalidation record is corrupted")
+    _digest(receipt.get("error_sha256"), field="global invalidation error_sha256")
+    return path, file_sha256(path)
+
+
+def execute_merge(
+    *, output: Path, preflight_sha256: str,
+    budget_worker_seconds: float = DEFAULT_BUDGET_WORKER_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
+) -> tuple[Path, bool, bool]:
     root = Path(output)
+    marker = _existing_global_invalidation(root, preflight_sha256=preflight_sha256)
+    if marker is not None:
+        path, digest = marker
+        raise E1Error(f"global invalidation marker refuses merge: {path} sha256={digest}")
     if root.is_symlink():
         raise E1Error("output directory must not be a symlink")
+    if not math.isfinite(budget_worker_seconds) or budget_worker_seconds <= 0.0:
+        raise E1Error("worker-second budget must be finite and positive")
     root.mkdir(parents=True, exist_ok=True)
-    invalidation = root / DEFAULT_GLOBAL_INVALIDATION_NAME
-    if invalidation.exists() or invalidation.is_symlink():
-        _publish_global_invalidation(
-            root, preflight_sha256=preflight_sha256,
-            error=E1Error("existing global invalidation"),
-        )
-        return invalidation, True, False
-    terminal = root / DEFAULT_TERMINAL_RECEIPT_NAME
-    if terminal.exists() or terminal.is_symlink():
+    try:
+        reservation = _reserve_budget(root, budget_worker_seconds, scope="merge")
+    except E1Incomplete as error:
+        return _write_incomplete(
+            root, scope="merge", preflight_sha256=preflight_sha256,
+            error=error, worker_seconds=_read_budget(root, budget_worker_seconds),
+        ), False, False
+    started = clock()
+    old_handler: Any = None
+    old_timer: tuple[float, float] | None = None
+    timer_installed = False
+    if hasattr(signal, "setitimer"):
         try:
+            def _budget_alarm(_signum: int, _frame: object) -> None:
+                raise E1Incomplete("declared worker-second reservation exhausted during merge")
+
+            old_handler = signal.getsignal(signal.SIGALRM)
+            signal.signal(signal.SIGALRM, _budget_alarm)
+            old_timer = signal.setitimer(
+                signal.ITIMER_REAL, reservation.reserved_worker_seconds
+            )
+            timer_installed = True
+        except (ValueError, OSError):
+            timer_installed = False
+    terminal = root / DEFAULT_TERMINAL_RECEIPT_NAME
+    existed_at_start = terminal.exists() or terminal.is_symlink()
+    result: tuple[Path, bool, bool] | None = None
+    payload: dict[str, object] | None = None
+    caught: BaseException | None = None
+    try:
+        if existed_at_start:
             receipt = _load_json(terminal, field="existing terminal receipt")
             if terminal.stat().st_mode & 0o777 != 0o444:
                 raise E1Error("terminal receipt remains writable")
@@ -1710,64 +2085,89 @@ def execute_merge(*, output: Path, preflight_sha256: str) -> tuple[Path, bool, b
                 )
                 if receipt != expected:
                     raise E1Error("existing terminal receipt disagrees with its units")
-                return terminal, True, True
-            expected_keys = set(invalid_terminal_receipt(
-                preflight_sha256=preflight_sha256, error=E1Error("placeholder")
-            ))
-            if (
-                set(receipt) != expected_keys
-                or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
-                or receipt.get("status") != "INVALID_RUN"
-                or receipt.get("outcome") != "INVALID_RUN"
-                or receipt.get("claim_ceiling") != CLAIM_CEILING
-                or receipt.get("panel_bindings") != panel_bindings()
-                or receipt.get("lineage_authorities") != f2.lineage_authority_bindings()
-                or receipt.get("formula_digests") != formula_digests()
-                or receipt.get("preflight_manifest_sha256") != preflight_sha256
-                or receipt.get("integrity") is not False
-            ):
-                raise E1Error("existing INVALID_RUN terminal receipt drifted")
-            _digest(receipt.get("error_sha256"), field="terminal error_sha256")
-            return terminal, True, False
-        except Exception as error:
-            path = _publish_global_invalidation(
-                root, preflight_sha256=preflight_sha256, error=error
+                result = (terminal, True, True)
+            else:
+                expected_keys = set(invalid_terminal_receipt(
+                    preflight_sha256=preflight_sha256, error=E1Error("placeholder")
+                ))
+                if (
+                    set(receipt) != expected_keys
+                    or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
+                    or receipt.get("status") != "INVALID_RUN"
+                    or receipt.get("outcome") != "INVALID_RUN"
+                    or receipt.get("claim_ceiling") != CLAIM_CEILING
+                    or receipt.get("panel_bindings") != panel_bindings()
+                    or receipt.get("lineage_authorities") != f2.lineage_authority_bindings()
+                    or receipt.get("formula_digests") != formula_digests()
+                    or receipt.get("preflight_manifest_sha256") != preflight_sha256
+                    or receipt.get("integrity") is not False
+                ):
+                    raise E1Error("existing INVALID_RUN terminal receipt drifted")
+                _digest(receipt.get("error_sha256"), field="terminal error_sha256")
+                result = (terminal, True, False)
+        else:
+            missing = sum(not _unit_dir(root, key).is_dir() for key in ALL_UNITS)
+            if missing:
+                raise E1MergeWaiting(missing)
+            receipts = []
+            digests = []
+            tapes = []
+            for key in ALL_UNITS:
+                receipt, digest, tape = authenticate_unit_bundle(
+                    root, key=key, preflight_sha256=preflight_sha256
+                )
+                receipts.append(receipt)
+                digests.append((key, digest))
+                tapes.append(tape)
+            payload = build_terminal_receipt(
+                receipts=receipts, receipt_digests=digests, tapes=tapes,
+                preflight_sha256=preflight_sha256,
             )
-            return path, False, False
-    missing = sum(not _unit_dir(root, key).is_dir() for key in ALL_UNITS)
-    if missing:
-        raise E1MergeWaiting(missing)
-    try:
-        receipts = []
-        digests = []
-        tapes = []
-        for key in ALL_UNITS:
-            receipt, digest, tape = authenticate_unit_bundle(
-                root, key=key, preflight_sha256=preflight_sha256
-            )
-            receipts.append(receipt)
-            digests.append((key, digest))
-            tapes.append(tape)
-        payload = build_terminal_receipt(
-            receipts=receipts, receipt_digests=digests, tapes=tapes,
-            preflight_sha256=preflight_sha256,
+    except (Exception, KeyboardInterrupt) as error:
+        caught = error
+    finally:
+        if timer_installed:
+            signal.setitimer(signal.ITIMER_REAL, 0.0)
+            signal.signal(signal.SIGALRM, old_handler)
+            if old_timer is not None and old_timer[0] > 0.0:
+                signal.setitimer(signal.ITIMER_REAL, *old_timer)
+    with _interruption_safe_publication():
+        used_after = _finish_budget(
+            root, budget_worker_seconds, reservation=reservation,
+            elapsed=clock() - started,
         )
-        valid = True
-    except estimands.E1ResourceIncomplete as error:
+    if caught is None and result is not None:
+        return result
+    if isinstance(caught, E1MergeWaiting):
+        raise caught
+    if isinstance(caught, (estimands.E1ResourceIncomplete, E1Incomplete, KeyboardInterrupt)):
         path = _write_incomplete(
-            root, scope="merge", preflight_sha256=preflight_sha256, error=error
+            root, scope="merge", preflight_sha256=preflight_sha256,
+            error=caught, worker_seconds=used_after,
         )
         return path, False, False
+    if caught is not None and existed_at_start:
+        path = _publish_global_invalidation(
+            root, preflight_sha256=preflight_sha256, error=caught
+        )
+        return path, False, False
+    if caught is not None:
+        payload = invalid_terminal_receipt(
+            preflight_sha256=preflight_sha256, error=caught
+        )
+        valid = False
+    else:
+        assert payload is not None
+        valid = True
+    try:
+        digest = _publish_write_once(terminal, payload)
+        _verify_published(terminal, payload, digest)
     except (E1Incomplete, KeyboardInterrupt) as error:
         path = _write_incomplete(
-            root, scope="merge", preflight_sha256=preflight_sha256, error=error
+            root, scope="merge", preflight_sha256=preflight_sha256,
+            error=error, worker_seconds=used_after,
         )
         return path, False, False
-    except Exception as error:
-        payload = invalid_terminal_receipt(preflight_sha256=preflight_sha256, error=error)
-        valid = False
-    digest = _write_once(terminal, payload)
-    _verify_published(terminal, payload, digest)
     return terminal, False, valid
 
 
@@ -1785,7 +2185,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             result["authority"] = validate_launch_authority(
                 Path(args.launch_authority), preflight_path=Path(args.preflight_manifest),
                 preflight_sha256=preflight_sha,
-                launch_arguments=getattr(args, "raw_launch_arguments", None),
+                launch_arguments=None,
             )
         return result
     if args.launch_authority is None or args.output is None:
@@ -1808,7 +2208,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         )
         return {"receipt": receipt, "skipped": skipped, "valid": valid, "mode": "unit"}
     terminal, skipped, valid = execute_merge(
-        output=Path(args.output), preflight_sha256=preflight_sha
+        output=Path(args.output), preflight_sha256=preflight_sha,
+        budget_worker_seconds=float(args.budget_worker_seconds),
     )
     return {"receipt": terminal, "skipped": skipped, "valid": valid, "mode": "merge"}
 
@@ -1826,7 +2227,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--budget-worker-seconds", type=float,
         default=DEFAULT_BUDGET_WORKER_SECONDS,
-        help="write-once INCOMPLETE cap across unit worker-seconds (default: 57600)",
+        help="one shared unit/verification/merge worker-second pool (default: 57600)",
     )
     return parser
 

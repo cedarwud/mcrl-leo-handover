@@ -140,6 +140,37 @@ def test_same_served_dominance_survivor_changes_with_q() -> None:
     assert high["final_q_survivors_by_served"] == {"1000": "BASE"}
 
 
+def test_same_served_dominance_survivor_changes_across_real_solver_iterations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    panel = _panel([
+        (_option("BASE", 10.0, 10.0, 1000), [
+            _option("crossing", 20.0, 15.0, 1000),
+        ]),
+        (_option("BASE", 10.0, 10.0, 1000), [
+            _option("driver", 100.0, 10.0, 1000),
+        ]),
+    ])
+    original = e1._inner_exact
+    observed: list[tuple[Fraction, str]] = []
+
+    def observe(anchors: object, *, q: Fraction, required_served: int, trace: object = None) -> object:
+        first = anchors[0]
+        survivor = max(
+            enumerate(first.profiles),
+            key=lambda row: (row[1].bits_exact - q * row[1].energy_exact, -row[0]),
+        )[1].profile_id
+        observed.append((q, survivor))
+        return original(anchors, q=q, required_served=required_served, trace=trace)
+
+    monkeypatch.setattr(e1, "_inner_exact", observe)
+    result = e1.solve_u1(panel)
+    iteration_survivors = [survivor for _q, survivor in observed[:result["certificate"]["iterations"]]]
+    assert iteration_survivors[0] == "crossing"
+    assert iteration_survivors[-1] == "BASE"
+    assert result["certificate"]["iterations"] >= 3
+
+
 def test_j1_matches_bruteforce() -> None:
     panel = _panel([
         (_option("BASE", 10.0, 10.0, 1000), [_option("joint-a", 25.0, 10.0, 1000)]),
