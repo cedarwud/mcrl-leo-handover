@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from pathlib import Path
 import stat
@@ -14,6 +15,7 @@ import pytest
 from mcrl.env.link_budget import fixed_power_w, pa_efficiency, supply_power_w, system_power_w
 
 import build_e1_preflight_manifest as preflight
+import build_e1_launch_authority as authority_builder
 import run_v023_c3_existence_e1 as e1
 
 
@@ -379,6 +381,45 @@ def test_exhausted_worker_budget_is_incomplete(
     assert e1._load_json(receipt, field="budget incomplete")["status"] == "INCOMPLETE"
 
 
+def test_concurrent_budget_reservations_are_visible_and_charged_once(
+    tmp_path: Path,
+) -> None:
+    cap = 20.0
+    first = e1._reserve_budget(
+        tmp_path, cap, scope="unit", key=e1.ALL_UNITS[0], declared_default=6.0
+    )
+    second = e1._reserve_budget(
+        tmp_path, cap, scope="unit", key=e1.ALL_UNITS[1], declared_default=6.0
+    )
+    during = e1._budget_snapshot(tmp_path, cap)
+    assert [row["token"] for row in during["reservations"]] == [first.token, second.token]
+    assert [float.fromhex(row["reserved_worker_seconds_hex"]) for row in during["reservations"]] == [6.0, 6.0]
+    assert e1._finish_budget(tmp_path, cap, reservation=first, elapsed=2.25) == 2.25
+    assert e1._finish_budget(tmp_path, cap, reservation=second, elapsed=3.5) == 5.75
+    after = e1._budget_snapshot(tmp_path, cap)
+    assert after["reservations"] == []
+    assert float.fromhex(after["charged_worker_seconds_hex"]) == 5.75
+    assert after["unit_charge_count"] == 2
+    with pytest.raises(e1.E1Error, match="already charged"):
+        e1._finish_budget(tmp_path, cap, reservation=first, elapsed=2.25)
+
+
+def test_interruption_charges_exact_mocked_elapsed_once(tmp_path: Path) -> None:
+    ticks = iter((10.0, 13.5))
+    receipt, skipped, valid = e1.execute_unit(
+        key=e1.ALL_UNITS[0], output=tmp_path, tle_root=e1.CANONICAL_TLE_ROOT,
+        preflight_sha256="a" * 64, clock=lambda: next(ticks),
+        generator=lambda **_kwargs: (_ for _ in ()).throw(KeyboardInterrupt("stop")),
+    )
+    assert not skipped and not valid
+    payload = e1._load_json(receipt, field="interruption receipt")
+    assert float.fromhex(payload["worker_seconds_hex"]) == 3.5
+    ledger = e1._budget_snapshot(tmp_path, e1.DEFAULT_BUDGET_WORKER_SECONDS)
+    assert float.fromhex(ledger["charged_worker_seconds_hex"]) == 3.5
+    assert ledger["unit_charge_count"] == 1
+    assert ledger["reservations"] == []
+
+
 def test_solver_resource_exhaustion_is_incomplete_not_invalid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -398,6 +439,38 @@ def test_solver_resource_exhaustion_is_incomplete_not_invalid(
     assert not skipped and not valid
     assert e1._load_json(receipt, field="solver incomplete")["status"] == "INCOMPLETE"
     assert not (tmp_path / e1.DEFAULT_TERMINAL_RECEIPT_NAME).exists()
+
+
+@pytest.mark.parametrize(
+    "interruption",
+    [
+        KeyboardInterrupt("fixture terminal revalidation interruption"),
+        e1.estimands.E1ResourceIncomplete("fixture terminal solver exhaustion"),
+    ],
+    ids=["keyboard-interrupt", "solver-exhaustion"],
+)
+def test_complete_terminal_revalidation_interruption_stays_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interruption: BaseException,
+) -> None:
+    preflight_sha = "7" * 64
+    for key in e1.ALL_UNITS:
+        e1.write_unit_bundle(tmp_path, key=key, tape=_synthetic_tape(key, preflight_sha))
+    terminal, _skipped, valid = e1.execute_merge(
+        output=tmp_path, preflight_sha256=preflight_sha
+    )
+    assert valid and e1._load_json(terminal, field="complete terminal")["status"] == "COMPLETE"
+
+    def interrupted(**_kwargs: object) -> dict[str, object]:
+        raise interruption
+
+    monkeypatch.setattr(e1, "build_terminal_receipt", interrupted)
+    receipt, skipped, valid = e1.execute_merge(
+        output=tmp_path, preflight_sha256=preflight_sha
+    )
+    assert not skipped and not valid
+    assert e1._load_json(receipt, field="revalidation incomplete")["status"] == "INCOMPLETE"
+    assert terminal.exists()
+    assert not (tmp_path / e1.DEFAULT_GLOBAL_INVALIDATION_NAME).exists()
 
 
 def test_premature_merge_waits_without_terminal(tmp_path: Path) -> None:
@@ -425,6 +498,63 @@ def test_corrupted_published_unit_creates_global_invalidation(
     assert e1._load_json(path, field="global invalidation")["status"] == "INVALID_RUN"
 
 
+def test_failure_after_unit_rename_publishes_global_invalidation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = e1.ALL_UNITS[0]
+    preflight_sha = "b" * 64
+    monkeypatch.setattr(
+        e1, "authenticate_unit_bundle",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(e1.E1Error("post-rename failure")),
+    )
+    path, skipped, valid = e1.execute_unit(
+        key=key, output=tmp_path, tle_root=e1.CANONICAL_TLE_ROOT,
+        preflight_sha256=preflight_sha,
+        generator=lambda **_kwargs: _synthetic_tape(key, preflight_sha),
+    )
+    assert not skipped and not valid
+    assert path.name == e1.DEFAULT_GLOBAL_INVALIDATION_NAME
+    assert (tmp_path / "units" / key.slug).is_dir()
+
+
+def test_staged_publication_interruption_leaves_clean_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "terminal.json"
+    real_rename = e1.os.rename
+    calls = 0
+
+    def interrupt_once(source: object, destination: object) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise KeyboardInterrupt("between staging and rename")
+        real_rename(source, destination)
+
+    monkeypatch.setattr(e1.os, "rename", interrupt_once)
+    with pytest.raises(KeyboardInterrupt, match="between staging"):
+        e1._publish_write_once(target, {"status": "COMPLETE"})
+    assert not target.exists()
+    assert list(tmp_path.glob(".stage-*")) == []
+    digest = e1._publish_write_once(target, {"status": "COMPLETE"})
+    assert e1.file_sha256(target) == digest
+
+
+def test_global_marker_precedes_unit_and_merge_with_digest(tmp_path: Path) -> None:
+    preflight_sha = "c" * 64
+    marker = e1._publish_global_invalidation(
+        tmp_path, preflight_sha256=preflight_sha, error=e1.E1Error("fixture")
+    )
+    digest = e1.file_sha256(marker)
+    with pytest.raises(e1.E1Error, match=rf"unit: .*sha256={digest}"):
+        e1.execute_unit(
+            key=e1.ALL_UNITS[0], output=tmp_path, tle_root=tmp_path / "wrong-tle",
+            preflight_sha256=preflight_sha,
+        )
+    with pytest.raises(e1.E1Error, match=rf"merge: .*sha256={digest}"):
+        e1.execute_merge(output=tmp_path, preflight_sha256=preflight_sha)
+
+
 def test_preflight_refuses_missing_contract_seal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -447,6 +577,14 @@ def _seal_contract(root: Path) -> dict[str, str]:
     return {"path": str(contract.resolve()), "sha256": digest}
 
 
+def _write_sidecar(path: Path) -> None:
+    path.chmod(0o444)
+    digest = e1.file_sha256(path)
+    sidecar = path.with_suffix(".sha256")
+    sidecar.write_text(f"{digest}  {path.name}\n", encoding="ascii")
+    sidecar.chmod(0o444)
+
+
 def test_preflight_builder_and_dry_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -457,6 +595,7 @@ def test_preflight_builder_and_dry_run(
     }
     monkeypatch.setattr(e1, "sealed_contract_binding", lambda: contract)
     monkeypatch.setattr(e1, "prereg_tle_bindings", lambda: frozen_inputs)
+    monkeypatch.setattr(e1, "process_bindings", lambda: {"mocked": "portable"})
     manifest, sidecar, digest = preflight.write_manifest(tmp_path / "preflight.json")
     payload, observed = e1.validate_preflight_manifest(manifest)
     assert observed == digest
@@ -488,7 +627,9 @@ def test_launch_authority_freezes_roots_and_arguments(
         "schema": e1.LAUNCH_AUTHORITY_SCHEMA,
         "status": "FROZEN_LAUNCH_AUTHORITY",
         "claim_ceiling": e1.CLAIM_CEILING,
-        "preflight_manifest": {"path": str(preflight_path), "sha256": preflight_sha},
+        "preflight_manifest": {
+            "path": e1._preflight_path_record(preflight_path), "sha256": preflight_sha,
+        },
         "contract": contract,
         "bindings": e1.panel_bindings(),
         "checkout_root": str(e1.REPO.resolve()),
@@ -503,6 +644,7 @@ def test_launch_authority_freezes_roots_and_arguments(
     }
     path = tmp_path / "authority.json"
     path.write_text(json.dumps(authority), encoding="ascii")
+    _write_sidecar(path)
     assert e1.validate_launch_authority(
         path, preflight_path=preflight_path, preflight_sha256=preflight_sha,
         output_root=output, tle_root=e1.CANONICAL_TLE_ROOT,
@@ -525,3 +667,93 @@ def test_launch_authority_freezes_roots_and_arguments(
             output_root=output, tle_root=e1.CANONICAL_TLE_ROOT,
             launch_arguments=["--merge", "--changed"],
         )
+
+
+def test_process_bindings_capture_runtime_hardware_threads_and_venv(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "pyvenv.cfg").write_text("home = /portable-fixture\n", encoding="ascii")
+    monkeypatch.setattr(e1, "_assert_server_interpreter", lambda: None)
+    monkeypatch.setattr(e1.sys, "prefix", str(tmp_path))
+    bindings = e1.process_bindings()
+    assert set(bindings["third_party_versions"]) == {"numpy", "torch", "sgp4"}
+    assert bindings["hardware"]["cpu_model"]
+    assert bindings["hardware"]["logical_core_count"] >= 1
+    assert set(bindings["effective_threads"]["environment"]) == {
+        "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"
+    }
+    assert bindings["effective_threads"]["torch_num_threads"] >= 1
+    assert bindings["effective_threads"]["torch_num_interop_threads"] >= 1
+    venv = bindings["virtual_environment"]
+    assert Path(venv["root"]) == Path(e1.sys.prefix).resolve()
+    assert e1.file_sha256(Path(venv["pyvenv_cfg_path"])) == venv["pyvenv_cfg_sha256"]
+
+
+def test_launch_authority_builder_roundtrip_and_every_field_mutation_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(e1, "HERE", tmp_path)
+    contract = _seal_contract(tmp_path)
+    frozen_inputs = {
+        "preregistration": {
+            "path": "artifacts/prereg.json", "sha256": "8" * 64,
+            "record_digest": "7" * 64,
+        },
+        "tle_archive": {
+            "root": str(e1.CANONICAL_TLE_ROOT), "manifest_sha256": "6" * 64,
+            "file_set_sha256": "5" * 64, "file_count": 373,
+        },
+    }
+    static = {"contract": contract, **frozen_inputs, "process_environment": {"mocked": True}}
+    monkeypatch.setattr(e1, "prereg_tle_bindings", lambda: frozen_inputs)
+    monkeypatch.setattr(e1, "validate_static_bindings", lambda: static)
+    monkeypatch.setattr(e1, "expected_code_bindings", lambda: [])
+    preflight_path, _sidecar, preflight_sha = preflight.write_manifest(
+        tmp_path / "preflight.json"
+    )
+    output_root = (tmp_path / "run-output").resolve()
+    authority_path = (tmp_path / "authority.json").resolve()
+    arguments = [
+        "--merge", "--preflight-manifest", str(preflight_path),
+        "--launch-authority", str(authority_path),
+        "--tle-root", str(e1.CANONICAL_TLE_ROOT),
+        "--output", str(output_root),
+    ]
+    built, sidecar, authority_sha = authority_builder.write_authority(
+        preflight_manifest=preflight_path, contract=Path(contract["path"]),
+        output_root=output_root, tle_root=e1.CANONICAL_TLE_ROOT,
+        launch_arguments=arguments, output=authority_path,
+    )
+    payload = e1.validate_launch_authority(
+        built, preflight_path=preflight_path, preflight_sha256=preflight_sha,
+        output_root=output_root, tle_root=e1.CANONICAL_TLE_ROOT,
+        launch_arguments=arguments,
+    )
+    assert e1.file_sha256(built) == authority_sha
+    assert sidecar.read_text(encoding="ascii").split() == [authority_sha, built.name]
+
+    for field in payload:
+        mutated = copy.deepcopy(payload)
+        value = mutated[field]
+        if isinstance(value, bool):
+            mutated[field] = not value
+        elif isinstance(value, str):
+            mutated[field] = value + "-mutated"
+        elif isinstance(value, list):
+            mutated[field] = [*value, "--mutated"]
+        else:
+            assert isinstance(value, dict)
+            mutated[field] = {**value, "mutated": True}
+        candidate = tmp_path / f"authority-mutated-{field}.json"
+        digest = e1._write_once(candidate, mutated)
+        candidate_sidecar = candidate.with_suffix(".sha256")
+        candidate_sidecar.write_text(
+            f"{digest}  {candidate.name}\n", encoding="ascii"
+        )
+        candidate_sidecar.chmod(0o444)
+        with pytest.raises(e1.E1Error):
+            e1.validate_launch_authority(
+                candidate, preflight_path=preflight_path,
+                preflight_sha256=preflight_sha, output_root=output_root,
+                tle_root=e1.CANONICAL_TLE_ROOT, launch_arguments=arguments,
+            )

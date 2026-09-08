@@ -54,6 +54,9 @@ profiles while applying only E1's declared BASE rule.
   `--unit`, `--merge`, `--dry-run`, immutable receipts, `INCOMPLETE`, and
   global `INVALID_RUN` invalidation.
 - `build_e1_preflight_manifest.py`: writes the code/binding manifest once.
+- `build_e1_launch_authority.py`: writes one exact launch authority and digest
+  sidecar once.
+- `CHANGELOG.md`: maps implementation fix passes to review items.
 
 Certificates store every retained DP value and backpointer plus a final
 backtrace. Counts at or above the required-service threshold are represented
@@ -67,11 +70,28 @@ read-only `.md.sha256` sidecar, then its absolute path and SHA-256 must be
 bound in a launch authority. This package deliberately did not create or edit
 that reserved file.
 
-Build and check the preflight after code review:
+The seal order is mandatory: the controller seals the contract mode `0444`
+with its matching sidecar; the operator builds the preflight; the operator
+builds a launch authority for the exact unit or merge argv; the authority-aware
+dry-run passes; only then may units start.
 
 ```bash
 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/build_e1_preflight_manifest.py
-/home/sat/mcrl-leo-handover/.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py --dry-run
+/home/sat/mcrl-leo-handover/.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/build_e1_launch_authority.py \
+  --preflight-manifest .scratch/multi-catfish-v023-c3-existence-e1/E1-PREFLIGHT-MANIFEST.json \
+  --contract /home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md \
+  --output-root /absolute/path/to/e1-output \
+  --tle-root /home/sat/mcrl-runtime/tle-frozen-20260820 \
+  --output /absolute/path/to/authority.json \
+  --launch-arguments --unit 861587764845384088:2026092101 \
+    --preflight-manifest .scratch/multi-catfish-v023-c3-existence-e1/E1-PREFLIGHT-MANIFEST.json \
+    --launch-authority /absolute/path/to/authority.json \
+    --tle-root /home/sat/mcrl-runtime/tle-frozen-20260820 \
+    --output /absolute/path/to/e1-output
+/home/sat/mcrl-leo-handover/.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py \
+  --dry-run \
+  --preflight-manifest .scratch/multi-catfish-v023-c3-existence-e1/E1-PREFLIGHT-MANIFEST.json \
+  --launch-authority /absolute/path/to/authority.json
 ```
 
 Run one authorized unit later (a physical simulator run, not part of this
@@ -80,25 +100,30 @@ implementation handoff):
 ```bash
 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py \
   --unit 861587764845384088:2026092101 \
+  --preflight-manifest .scratch/multi-catfish-v023-c3-existence-e1/E1-PREFLIGHT-MANIFEST.json \
   --launch-authority /absolute/path/to/authority.json \
   --tle-root /home/sat/mcrl-runtime/tle-frozen-20260820 \
   --output /absolute/path/to/e1-output
 ```
 
-The frozen launch authority has an exact key set. It binds the absolute
-checkout/output/TLE roots, PREREG file and semantic digest, the rebuilt TLE
-manifest digest, and the exact command arguments. The runner accepts only the
-bound output root and canonical TLE root.
+The frozen launch authority has an exact key set and matching immutable
+`.sha256` sidecar. It binds the absolute checkout/output/TLE roots, PREREG file
+and semantic digest, the rebuilt TLE manifest digest, and the exact command
+arguments. Build one authority per exact unit or merge invocation. The runner
+accepts only the bound output root and canonical TLE root.
 
 After all twelve units exist, `--merge` authenticates them and writes the
 terminal U1/J1 decision. A premature merge exits with
 `E1_MERGE_WAITING <n> units missing` and writes no terminal. Tapes, manifests,
 and receipts are mode `0444`, write-once, and reopened/hash-verified. SIGINT,
-SIGTERM, the default 57,600 worker-second cross-unit budget, and exact-solver
-iteration exhaustion publish a separate immutable `INCOMPLETE` receipt; these
-receipts do not occupy a unit or terminal path and therefore do not prevent a
-later resume. Integrity/authentication failure publishes global `INVALID_RUN`;
-an invalidation beside an already published COMPLETE supersedes that result.
+SIGTERM, the one shared 57,600 worker-second unit/verification/merge pool, and
+exact-solver iteration exhaustion publish a separate immutable `INCOMPLETE`
+receipt; these receipts do not occupy a unit or terminal path and therefore do
+not prevent a later resume. Concurrent operations reserve from the locked
+ledger before starting and charge exactly once when ending. Integrity or
+authentication failure publishes global `INVALID_RUN`; an invalidation beside
+an already published COMPLETE supersedes that result and is checked before
+unit or merge work.
 
 Implementation tests are unit fixtures only:
 
@@ -126,3 +151,14 @@ Implementation tests are unit fixtures only:
 6. Tests: added exact variable-energy oracles, certificate mutations, Q/BASE
    refusals, canonical profile checks, complete synthetic authentication flow,
    lifecycle/corruption checks, and all declared catalog edge cases.
+
+## E1 fix pass 2 review mapping
+
+- Item 4: runtime/dependency, hardware, effective-thread, and authenticated
+  virtual-environment bindings are frozen in preflight.
+- Item 5: shared reservations, exactly-once charges, merge/verification costs,
+  INCOMPLETE revalidation, staged publication, post-rename invalidation, and
+  global-marker precedence are implemented.
+- Item 6: focused lifecycle, concurrency, real-solver-iteration, seal-mutation,
+  and portable interpreter-boundary tests are included.
+- Item 7: the write-once launch-authority builder and seal order are included.
