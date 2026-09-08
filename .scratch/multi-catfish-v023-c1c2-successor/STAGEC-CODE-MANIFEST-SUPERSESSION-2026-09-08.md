@@ -29,3 +29,6 @@ Successor manifest after fix pass 6: entries 277, file sha256 `ed004025b77a097f5
 
 ## Re-pin after fix pass 6 (2026-09-08T07:02:20Z UTC)
 Successor manifest after fix pass 6: entries 277, file sha256 `e290ef5059bd765a90e813c161fc4b97376aefd33d74ec3c20f23653454f7a67` (commit 2ee8866). The 907bc753… pin was never bound (ultra review FIX_FIRST). Second scoped ultra review requested against this digest.
+
+## Re-pin after fix pass 6 (2026-09-08T10:09:01Z UTC)
+Successor manifest after fix pass 6: entries 277, file sha256 `95182c8da3ef125bac39cb1f47e5cffb87f63ec35f8074ac8919b908c26b5fb4` (commit dc277aa). The 907bc753… pin was never bound (ultra review FIX_FIRST). Second scoped ultra review requested against this digest.
