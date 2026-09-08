@@ -12,3 +12,6 @@ Failure-mechanism grounding (owner requirement): each lever targets one document
 28/60 joint reversals + R7 −0.049 % (V-M); accumulated handover/tracking cost and oscillation named by the global views and round-3 red team
 (V-C, V-H); V0.14 coordination/support events and OPS-3 pricing (V-P); PNFE/C-B one-step myopia (V-L2).
 Execution order: after the v1 screen's 12 units finish (server capacity); estimated 1.5–2 h on 12 workers.
+
+## Seal (controller, 2026-09-08 11:05 UTC)
+Variant-matrix contract sealed as v1: sha256 682ad20647a8b32d79d1918193eedbb3060813be22b93e6204bc64a41b2e6cf8 (fast-iteration principle: run now; outside round-4 feedback, if any, informs a versioned successor or the confirmatory plan).
