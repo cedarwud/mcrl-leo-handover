@@ -144,4 +144,37 @@ Claim ceiling：`TRAIN_DEVELOPMENT_FULL2_C3S_CONFIRMATION_NO_LEARNER_NO_TEST_NO_
 - 唯一 absent output root：`<<BIND_AT_FREEZE:OUTPUT_ROOT_PATH>>`；atomic publication、0444、重開驗 hash、write-once sidecars；外部 manifest 綁契約 digest，禁止 self-hash／循環依賴。
 - 記錄 freeze UTC、reviewer、獨立 execution authority，以及本文明示的 η_ref、horizon、precision、deadline 解讀。所有 placeholders 僅填 paths／digests，不留科學選擇待 outcome 決定。
 
-ASTRA_C3S_PLAN=DRAFTED
+---
+
+## Amendments after outside round 3 (controller, 2026-09-08 10:35 UTC; plan still UNSEALED)
+
+**A0 — Horizon: the confirmatory episodes keep T = 30 canonical steps per episode (the same estimand as the screen); the draft's 10-step reduction is withdrawn.** The astra adjudication's amendment texts below are adopted verbatim as A1–A7 (η_ref choice-stability diagnostic on cached candidates at 4/5, 1, 6/5 — non-decisional; latency reporting relative to the 30.08 s interval with hardware/threads/cache conditions and deadline-exceedance counts; the two framing sentences; world-cluster reporting; the NO_SUPPORT descriptive protocol incl. association reversals and the same-state nominal-vs-realised residual; degraded-estimator experiment deferred to a separate non-decisional protocol; controller compute energy and execution delay excluded from network EE and stated so).
+
+3. **加入 η_ref diagnostic：**
+
+   「Primary η_ref 保持 binary64 `0x1.d94fb72305d6ap+26`。在首個100-episode rung 的全部預定 worlds、lineages、30 steps，對主 C3-S 軌跡既有 nominal candidate cache，以 exact rational 倍率4/5、1、6/5重評；沿用同一 guard、catalog、ties，不新增 seeds 或 physics evaluations。逐值報 selected ID、相對primary的choice agreement、nominal B/E/service及score；全數保留。此為 non-decisional choice-stability diagnostic，不估 closed-loop EE sensitivity，不改 primary、progression 或救援失敗。Rescoring 與輸出成本另記。」
+
+4. **加入 latency 報告：**
+
+   「逐臂報完整 decision latency（state取得至action返回）及phase mean／median／p95／max、latency/30.08、超時次數／分母；附hardware、CPU allocation、threads、worker concurrency、cache scope／cold-warm條件、catalog／unique evaluations與cache hits。Lite與同態memoization可能降低成本，仍須實測；保留全部evacuations及固定開銷，不保證十倍加速或低於30.08 s。跨episode並行只代表throughput。Latency不是gate，不觸發fallback、pruning或改選。」
+
+5. **替換 framing；第一句採原文，第二句修明條件：**
+
+   “C1 and C2 remain training-time Catfish mechanisms producing two learned per-user heads, while C3-S is a newly defined deployment-time model-based set-level coordinator, with no third learned Q-head.”
+
+   “The tested additive C3 target/composition showed no positive oracle-level marginal in G0–G3. Three positive staged contributions require FULL2-versus-DROP_C1, FULL2-versus-DROP_C2, and FULL2+C3-S-versus-FULL2 each to satisfy its declared EE/service criteria; these contrasts do not establish C1/C2’s positive marginal within the final coordinated system.”
+
+6. **加入 reporting／NO_SUPPORT descriptive protocol：**
+
+   「Screen有四physical-world clusters、三條重用lineages及每臂36,000 user-step opportunities；不得作36,000獨立觀測。Confirmatory panel報實際distinct-world數。所有結果均報failure codes、全部world／lineage差異、逐步累積bits／joules／served與opportunities。記錄physical association A→B→A（連續三步、A≠B）reversals及native tracking／handover events，勿以slot變號代替。
+
+   「同態residual診斷固定為首rung第一個預定world、全部lineages、steps 0–29；commit後以隔離的predecision-state clone及相同keyed realised field，比較selected action與該C3-S state的BASE proposal。報nominal／realised ΔB、ΔE、Δserved、Δ(B−η_refE)及其差，不拿另一臂state代替。不得回饋selector、調參或rescue；無可驗證state則報不可得。」
+
+7. **加入 degraded-estimator disposition：**
+
+   「本plan不納入degraded-estimator實驗。未來如執行，須在其outcomes前另封non-decisional協定，固定catalog cross、error magnitudes、bias／correlation、physical-link keying、seeds、coverage及成本；同link跨candidate共用誤差，matched-anchor結果不宣稱closed-loop robustness。」
+
+Confirmatory runner **必須**支援30-step termination、coverage／denominator驗證及上述 reporting／隔離diagnostics。本機 runner 已存逐步B/E/service與unique counts，但action hash不能還原reversals，selected nominal不能替代同態BASE residual。
+
+Running v1 不熱改。Hardened v2須另綁code／schema／authority、保留producer版本；merge只從authenticated資料衍生報表，缺欄位標 unavailable，不回寫receipts或為補報重跑有效結果。Screen不追加η／degraded／counterfactual實驗。
+
