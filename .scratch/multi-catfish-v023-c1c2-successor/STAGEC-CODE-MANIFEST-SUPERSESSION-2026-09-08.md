@@ -23,3 +23,6 @@ Changes and their evidence:
 
 Review status: scoped ultra delta review requested from astra (`REVIEW-STAGEC-SUPERSESSION-DELTA-CODEX-GPT6-ASTRA-ULTRA-2026-09-08.md`); until it returns `ASTRA_STAGEC_CODE_FINAL=YES` for the successor digest above, no stage-A bind and no stage-C bind may use this tree.
 Downstream: the stage-A launch manifest/bindings are regenerated at attempt #3 bind time; the four-arm 200-vs-2×100 acceptance is re-run against this code before any formal chunk.
+
+## Re-pin after fix pass 6 (2026-09-08T05:15:32Z UTC)
+Successor manifest after fix pass 6: entries 277, file sha256 `ed004025b77a097f5fa9e43d0062d12b2f0ff181c12f41ba6cf8ff29f39b00c9` (commit c9d0aba). The 907bc753… pin was never bound (ultra review FIX_FIRST). Second scoped ultra review requested against this digest.
