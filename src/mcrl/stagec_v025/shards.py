@@ -26,7 +26,7 @@ from .state import (
 )
 
 
-SHARD_SCHEMA_VERSION = "mcrl-v025-stagec-source-shard-v1-draft"
+SHARD_SCHEMA_VERSION = "mcrl-v025-stagec-source-shard-v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,14 +52,14 @@ def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
         "schema", "split", "world_id", "world_seed", "learner_seed", "anchor_id",
         "anchor_index", "decision_time_utc", "decision_time_ns", "user_id",
         "action_index", "action", "reference_action", "action_mask", "q1_state",
-        "q2_state", "q1_schema_sha256", "q2_schema_sha256", "setting_id",
+        "q2_state", "incumbent_context_nominal_decoding_margin_db_hex",
+        "q1_schema_sha256", "q2_schema_sha256", "setting_id",
         "code_digest", "physics_digest", "launch_digest", "catalogue_digest",
         "setting_digest", "calibration_digest",
         "provider_digest", "archive_digest",
         "allocation_manifest_digest", "lambda_bits_per_j_hex", "eta_ref_bits_per_j_hex",
         "kappa_normalization_bits_hex", "c1_label_bits_hex", "c1_phi_difference_hex", "c2_label_bits_hex",
-        "c3_label_bits_hex", "c1_label_normalized_hex", "c2_label_normalized_hex",
-        "c3_label_normalized_hex", "terminal", "null_action", "outage",
+        "c1_label_normalized_hex", "c2_label_normalized_hex", "terminal", "null_action", "outage",
     }
     if set(payload) != expected:
         raise StageCContractError("source row schema drifted")
@@ -76,9 +76,10 @@ def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
     if not mask or any(not isinstance(value, bool) for value in mask):
         raise StageCContractError("source row action mask must contain booleans")
     float_fields = (
+        "incumbent_context_nominal_decoding_margin_db_hex",
         "lambda_bits_per_j_hex", "eta_ref_bits_per_j_hex", "kappa_normalization_bits_hex",
-        "c1_label_bits_hex", "c1_phi_difference_hex", "c2_label_bits_hex", "c3_label_bits_hex",
-        "c1_label_normalized_hex", "c2_label_normalized_hex", "c3_label_normalized_hex",
+        "c1_label_bits_hex", "c1_phi_difference_hex", "c2_label_bits_hex",
+        "c1_label_normalized_hex", "c2_label_normalized_hex",
     )
     for field in float_fields:
         parse_float_hex(payload[field], field=field)
@@ -102,6 +103,9 @@ def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
         action_mask=tuple(bool(value) for value in mask),
         q1_state=tuple(parse_float_hex(value, field="q1_state") for value in q1),
         q2_state=tuple(parse_float_hex(value, field="q2_state") for value in q2),
+        incumbent_context_nominal_decoding_margin_db_hex=str(
+            payload["incumbent_context_nominal_decoding_margin_db_hex"]
+        ),
         q1_schema_sha256=str(payload["q1_schema_sha256"]),
         q2_schema_sha256=str(payload["q2_schema_sha256"]),
         setting_id=str(payload["setting_id"]),
@@ -120,10 +124,8 @@ def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
         c1_label_bits_hex=str(payload["c1_label_bits_hex"]),
         c1_phi_difference_hex=str(payload["c1_phi_difference_hex"]),
         c2_label_bits_hex=str(payload["c2_label_bits_hex"]),
-        c3_label_bits_hex=str(payload["c3_label_bits_hex"]),
         c1_label_normalized_hex=str(payload["c1_label_normalized_hex"]),
         c2_label_normalized_hex=str(payload["c2_label_normalized_hex"]),
-        c3_label_normalized_hex=str(payload["c3_label_normalized_hex"]),
         terminal=bool(payload["terminal"]),
         null_action=bool(payload["null_action"]),
         outage=bool(payload["outage"]),
@@ -170,9 +172,6 @@ def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
         ),
         "c2_label_normalized_hex": float.hex(
             parse_float_hex(row.c2_label_bits_hex, field="c2_label_bits_hex") / kappa
-        ),
-        "c3_label_normalized_hex": float.hex(
-            parse_float_hex(row.c3_label_bits_hex, field="c3_label_bits_hex") / kappa
         ),
     }
     for field, expected_value in expected_normalized.items():

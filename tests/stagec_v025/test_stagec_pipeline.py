@@ -25,6 +25,7 @@ from mcrl.stagec_v025.evaluation import (
 )
 from mcrl.stagec_v025.learner import (
     LEARNED_ARMS,
+    LEARNER_SEEDS,
     ROUTES,
     SOURCE_MAP,
     LineageOrchestrator,
@@ -58,35 +59,37 @@ def _training_fixture(tmp_path: Path) -> tuple[LineageOrchestrator, object]:
     return LineageOrchestrator(learner_seed=101, batches=batches), reopened
 
 
-def test_synthetic_end_to_end_five_seeds_six_arms(tmp_path: Path) -> None:
+def test_synthetic_end_to_end_twelve_seeds_six_arms(tmp_path: Path) -> None:
     report = run_synthetic_pipeline(tmp_path, epochs=3, bootstrap_draws=32)
 
-    assert report["schema"] == "mcrl-v025-stagec-terminal-report-v1-draft"
-    assert report["cluster_count"] == 10
-    assert report["world_count"] == 20
-    assert report["synthetic"]["learner_seeds"] == [101, 202, 303, 404, 505]
+    assert report["schema"] == "mcrl-v025-stagec-terminal-report-v1"
+    assert report["cluster_count"] == 24
+    assert report["world_count"] == 48
+    assert report["synthetic"]["learner_seeds"] == sorted(LEARNER_SEEDS)
     assert report["synthetic"]["arms_per_seed"] == 6
     assert report["synthetic"]["learned_arms_per_seed"] == 5
     assert report["synthetic"]["external_baseline_per_seed"] == 1
     assert report["synthetic"]["conformance"]["null_equals_base"] is True
     assert report["synthetic"]["conformance"]["real_step_arms"] == [
-        "FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL", "BASELINE"
+        "FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL", "BASELINE"
     ]
-    assert report["synthetic"]["conformance"]["supportive_comparators"] == ["S_UNI"]
+    assert report["synthetic"]["conformance"]["supportive_comparators"] == ["S0", "S_UNI"]
+    assert report["supportive_comparators"]["S0"]["pooled_joules"] > 0
     assert report["supportive_comparators"]["S_UNI"]["pooled_joules"] > 0
     assert report["claim"]["decision"] in {"CLAIM_PASS", "CLAIM_FAIL"}
-    assert report["physics_admission"]["decision"] == "PHYSICS-GO"
+    assert report["physics_admission"]["decision"] == "HOLD"
     assert report["terminal_adjudication_count"] == 1
     assert report["artifact_digests"]["deployment_capability"]
     assert report["pooled_additive_totals"]["FULL"]["joules_hex"]
-    assert report["attempt_registry"]["record_count"] == 40
+    assert report["attempt_registry"]["record_count"] == 96
     conformance_records = AttemptRegistry(
         tmp_path / "CONFORMANCE-ATTEMPT-REGISTRY-2026-09.jsonl"
     ).records()
     assert [record["status"] for record in conformance_records] == ["STARTED", "DONE"]
-    assert (tmp_path / "conformance" / "d0-s101-w0.conformance.json.sha256").is_file()
+    first_seed = LEARNER_SEEDS[0]
+    assert (tmp_path / "conformance" / f"d0-s{first_seed}-w0.conformance.json.sha256").is_file()
     receipt = read_verified_json(
-        tmp_path / "receipts" / "d0-s101-w0.receipt.json"
+        tmp_path / "receipts" / f"d0-s{first_seed}-w0.receipt.json"
     )
     full_rows = [row for row in receipt["steps"] if row["arm"] == "FULL"]
     assert {event["event_type"] for event in full_rows[0]["events"]} <= {
@@ -146,9 +149,10 @@ def test_golden_tape_to_row_all_q1_q2_fields_and_authorities() -> None:
     assert candidate.decision_time_ns == 0
     assert candidate.learner_seed is None
     assert candidate.q1_state[3] == 0.0  # focal excluded from background occupancy
+    assert candidate.q2_state[0] == (8.0 / 20.0)
+    assert float.fromhex(candidate.incumbent_context_nominal_decoding_margin_db_hex) == 2.0
     assert candidate.c1_label_normalized_hex == 1.2.hex()
     assert candidate.c2_label_normalized_hex == 0.8.hex()
-    assert candidate.c3_label_normalized_hex == 0.6.hex()
     assert (candidate.terminal, candidate.null_action, candidate.outage) == (
         False, False, False
     )

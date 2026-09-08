@@ -8,11 +8,12 @@ import math
 from typing import Protocol, Sequence, runtime_checkable
 
 from .canonical import StageCContractError, canonical_sha256, float_hex
+from mcrl.physics_v025.constants_v025 import DECISION_INTERVAL_S
 
 
-Q1_SCHEMA_VERSION = "mcrl-v025-stagec-q1-action-v1-draft"
-Q2_SCHEMA_VERSION = "mcrl-v025-stagec-q2-action-v1-draft"
-ROW_SCHEMA_VERSION = "mcrl-v025-stagec-source-row-v1-draft"
+Q1_SCHEMA_VERSION = "mcrl-v025-stagec-q1-action-v1"
+Q2_SCHEMA_VERSION = "mcrl-v025-stagec-q2-action-v1"
+ROW_SCHEMA_VERSION = "mcrl-v025-stagec-source-row-v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +46,7 @@ Q1_FEATURES = (
 )
 
 Q2_CURRENT_FEATURES = (
-    FeatureSpec("incumbent_nominal_decoding_margin", "dB", 20.0),
+    FeatureSpec("candidate_current_nominal_decoding_margin", "dB", 20.0),
     FeatureSpec("forecast_se_trend", "bit/s/Hz/s", 0.1),
     FeatureSpec("remaining_d2_time", "s", 120.0),
     FeatureSpec("remaining_visibility_time", "s", 120.0),
@@ -135,6 +136,7 @@ class ActionEvaluation:
     previous_satellite_active_for_action: bool
     previous_beam_max_rf_over_cap: float
     missing_incumbent: bool
+    candidate_current_nominal_decoding_margin_db: float
     incumbent_nominal_decoding_margin_db: float
     forecast_se_trend_bit_s_hz_per_s: float
     required_power_cap_margin_w: float
@@ -142,7 +144,6 @@ class ActionEvaluation:
     c1_label_bits: float
     c1_phi_difference: float
     c2_label_bits: float
-    c3_label_bits: float
     legal: bool = True
     terminal: bool = False
     outage: bool = False
@@ -195,6 +196,7 @@ class SourceRow:
     action_mask: tuple[bool, ...]
     q1_state: tuple[float, ...]
     q2_state: tuple[float, ...]
+    incumbent_context_nominal_decoding_margin_db_hex: str
     q1_schema_sha256: str
     q2_schema_sha256: str
     setting_id: str
@@ -213,10 +215,8 @@ class SourceRow:
     c1_label_bits_hex: str
     c1_phi_difference_hex: str
     c2_label_bits_hex: str
-    c3_label_bits_hex: str
     c1_label_normalized_hex: str
     c2_label_normalized_hex: str
-    c3_label_normalized_hex: str
     terminal: bool
     null_action: bool
     outage: bool
@@ -237,6 +237,15 @@ def _normalize(raw: Sequence[float], specs: Sequence[FeatureSpec]) -> tuple[floa
     if not all(math.isfinite(value) for value in result):
         raise StageCContractError("state values must be finite")
     return result
+
+
+def kappa_normalization_bits(kappa_bits_per_user_s: float) -> float:
+    """Controller-sealed conversion from calibration rate to one user-step."""
+
+    value = float(kappa_bits_per_user_s)
+    if not math.isfinite(value) or value <= 0.0:
+        raise StageCContractError("kappa bits/user-second must be positive and finite")
+    return value * DECISION_INTERVAL_S
 
 
 def _validate_anchor(anchor: PerAnchorEvaluation) -> None:
@@ -331,7 +340,7 @@ def extract_source_rows(anchor: PerAnchorEvaluation) -> tuple[SourceRow, ...]:
             float(item.missing_incumbent),
         )
         q2_raw: list[float] = [
-            item.incumbent_nominal_decoding_margin_db,
+            item.candidate_current_nominal_decoding_margin_db,
             item.forecast_se_trend_bit_s_hz_per_s,
             item.remaining_d2_time_s,
             item.remaining_visibility_time_s,
@@ -352,7 +361,7 @@ def extract_source_rows(anchor: PerAnchorEvaluation) -> tuple[SourceRow, ...]:
                 )
             )
         kappa = float(anchor.kappa_normalization_bits)
-        labels = (item.c1_label_bits, item.c2_label_bits, item.c3_label_bits)
+        labels = (item.c1_label_bits, item.c2_label_bits)
         if not all(math.isfinite(label) for label in (*labels, item.c1_phi_difference)):
             raise StageCContractError("labels must be finite")
         rows.append(
@@ -373,6 +382,9 @@ def extract_source_rows(anchor: PerAnchorEvaluation) -> tuple[SourceRow, ...]:
                 action_mask=legal_mask,
                 q1_state=_normalize(q1_raw, Q1_FEATURES),
                 q2_state=_normalize(q2_raw, Q2_FEATURES),
+                incumbent_context_nominal_decoding_margin_db_hex=float_hex(
+                    item.incumbent_nominal_decoding_margin_db
+                ),
                 q1_schema_sha256=Q1_SCHEMA_SHA256,
                 q2_schema_sha256=Q2_SCHEMA_SHA256,
                 setting_id=anchor.setting_id,
@@ -391,12 +403,10 @@ def extract_source_rows(anchor: PerAnchorEvaluation) -> tuple[SourceRow, ...]:
                 c1_label_bits_hex=float_hex(labels[0]),
                 c1_phi_difference_hex=float_hex(item.c1_phi_difference),
                 c2_label_bits_hex=float_hex(labels[1]),
-                c3_label_bits_hex=float_hex(labels[2]),
                 c1_label_normalized_hex=float_hex(
                     labels[0] / kappa + item.c1_phi_difference
                 ),
                 c2_label_normalized_hex=float_hex(labels[1] / kappa),
-                c3_label_normalized_hex=float_hex(labels[2] / kappa),
                 terminal=item.terminal,
                 null_action=item.action.is_null,
                 outage=item.outage,
@@ -433,5 +443,6 @@ __all__ = [
     "Q2_SCHEMA_SHA256",
     "SourceRow",
     "extract_source_rows",
+    "kappa_normalization_bits",
     "schema_manifest",
 ]

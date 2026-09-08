@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal, Mapping, Sequence
 
 import numpy as np
+from mcrl.physics_v025.tapes import seed_from_domain
 
 from .canonical import (
     StageCContractError,
@@ -18,21 +19,24 @@ from .canonical import (
 )
 from .shards import SourceShard
 from .state import Q1_SCHEMA_SHA256, Q2_SCHEMA_SHA256, SourceRow
+from .coalitions import CoalitionContext, CoalitionShard
 
 
 Route = Literal["C1", "C2", "C3"]
 ROUTES: tuple[Route, ...] = ("C1", "C2", "C3")
-LEARNED_ARMS = ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL")
+LEARNED_ARMS = ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL")
 ARM_ORDER = (*LEARNED_ARMS, "BASELINE")
 SOURCE_MAP: Mapping[str, Mapping[Route, str]] = {
     "FULL": {"C1": "informed", "C2": "informed", "C3": "informed"},
     "DROP_C1": {"C1": "neutral", "C2": "informed", "C3": "informed"},
     "DROP_C2": {"C1": "informed", "C2": "neutral", "C3": "informed"},
     "DROP_C3": {"C1": "informed", "C2": "informed", "C3": "neutral"},
-    "ALL_NEUTRAL": {"C1": "neutral", "C2": "neutral", "C3": "neutral"},
+    "ALL_NEUTRAL_CONTROL": {"C1": "neutral", "C2": "neutral", "C3": "neutral"},
 }
-CHECKPOINT_SCHEMA = "mcrl-v025-stagec-lineage-checkpoint-v1-draft"
+CHECKPOINT_SCHEMA = "mcrl-v025-stagec-lineage-checkpoint-v1"
 CHECKPOINT_EVERY_SOURCE_EPOCHS = 100
+LEARNER_SEED_DOMAINS = tuple(f"V025_LEARNER/seed/{index}" for index in range(1, 13))
+LEARNER_SEEDS = tuple(seed_from_domain(domain) for domain in LEARNER_SEED_DOMAINS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +49,7 @@ class PairwiseBatch:
     target_deltas: np.ndarray
     row_identities: tuple[str, ...]
     source_authority_sha256: str
+    source_identity: str
     digest: str
 
     @classmethod
@@ -56,6 +61,8 @@ class PairwiseBatch:
         target_deltas: Sequence[float],
         row_identities: Sequence[str],
         source_authority_sha256: str,
+        *,
+        source_identity: str = "informed",
     ) -> "PairwiseBatch":
         reference = np.asarray(reference_states, dtype=np.float64)
         candidate = np.asarray(candidate_states, dtype=np.float64)
@@ -80,7 +87,7 @@ class PairwiseBatch:
         ):
             raise StageCContractError("source authority must be a lowercase SHA-256")
         payload = {
-            "schema": "mcrl-v025-stagec-pairwise-batch-v1-draft",
+            "schema": "mcrl-v025-stagec-pairwise-batch-v1",
             "route": route,
             "shape": list(reference.shape),
             "reference": [[float_hex(v) for v in row] for row in reference],
@@ -88,6 +95,7 @@ class PairwiseBatch:
             "targets": [float_hex(v) for v in targets],
             "row_identities": list(identities),
             "source_authority_sha256": source_authority_sha256,
+            "source_identity": source_identity,
             "zero_bootstrap": True,
         }
         return cls(
@@ -97,10 +105,15 @@ class PairwiseBatch:
             targets,
             identities,
             source_authority_sha256,
+            source_identity,
             canonical_sha256(payload),
         )
 
-    def neutral(self) -> "PairwiseBatch":
+    def neutral(
+        self, definition: "NeutralSourceDefinition | None" = None
+    ) -> "PairwiseBatch":
+        if definition is not None and definition.route != self.route:
+            raise StageCContractError("neutral source route disagrees with batch")
         return PairwiseBatch.create(
             self.route,
             self.reference_states,
@@ -108,6 +121,11 @@ class PairwiseBatch:
             np.zeros_like(self.target_deltas),
             self.row_identities,
             self.source_authority_sha256,
+            source_identity=(
+                "neutral:legacy"
+                if definition is None
+                else f"neutral:{definition.digest}"
+            ),
         )
 
 
@@ -120,10 +138,13 @@ def _route_state(row: SourceRow, route: Route) -> tuple[float, ...]:
 
 
 def _route_label(row: SourceRow, route: Route) -> float:
+    if route == "C3":
+        # Compatibility-only build-1 synthetic batch.  Contract-v1 training
+        # uses CoalitionBatch and never consumes a per-action C3 label.
+        return 0.0
     field = {
         "C1": row.c1_label_normalized_hex,
         "C2": row.c2_label_normalized_hex,
-        "C3": row.c3_label_normalized_hex,
     }[route]
     return parse_float_hex(field, field=f"{route}.normalized_label")
 
@@ -132,7 +153,7 @@ def build_pairwise_batches(shards: Sequence[SourceShard]) -> dict[Route, Pairwis
     rows = tuple(row for shard in shards for row in shard.rows)
     source_authority_sha256 = canonical_sha256(
         {
-            "schema": "mcrl-v025-stagec-source-authority-v1-draft",
+            "schema": "mcrl-v025-stagec-source-authority-v1",
             "shards": [shard.file_sha256 for shard in shards],
             "authorities": sorted(
                 {
@@ -423,7 +444,383 @@ class LineageOrchestrator:
         self.route_update_count = updates
 
 
+@dataclass(frozen=True, slots=True)
+class NeutralSourceDefinition:
+    """C5 seal for one named neutral route/source identity."""
+
+    route: Route
+    generator: str
+    labels: str
+    support: str
+    strata: tuple[str, ...]
+    overlap: str
+    row_weights: str
+    optimization_dose: str
+
+    def __post_init__(self) -> None:
+        if self.route not in ROUTES or any(
+            not value
+            for value in (
+                self.generator,
+                self.labels,
+                self.support,
+                self.overlap,
+                self.row_weights,
+                self.optimization_dose,
+            )
+        ) or not self.strata:
+            raise StageCContractError("neutral-source sealing fields must be complete")
+
+    @property
+    def digest(self) -> str:
+        return canonical_sha256(
+            {
+                "schema": "mcrl-v025-stagec-neutral-source-v1",
+                **asdict(self),
+                "strata": list(self.strata),
+            }
+        )
+
+
+def default_synthetic_neutral_sources() -> dict[Route, NeutralSourceDefinition]:
+    """Fully specified synthetic-only C5 sources; not authority for real rows."""
+
+    return {
+        route: NeutralSourceDefinition(
+            route=route,
+            generator="matched_rows_replace_scalar_target_with_zero_v1",
+            labels="exact_zero_normalized_bits_per_kappa",
+            support="identical_context_and_action_or_coalition_support_within_route_identity",
+            strata=("setting_id", "coalition_size" if route == "C3" else "action_count"),
+            overlap="one_to_one_row_identity_overlap_with_informative_source",
+            row_weights="identical_unit_weights_in_stable_row_order",
+            optimization_dose="one_full_batch_update_per_source_epoch",
+        )
+        for route in ROUTES
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionBatch:
+    """Typed C3 scalar batch over complete set-conditioned contexts."""
+
+    contexts: tuple[CoalitionContext, ...]
+    invariant_states: np.ndarray
+    target_psi: np.ndarray
+    row_identities: tuple[str, ...]
+    source_authority_sha256: str
+    source_identity: str
+    member_width: int
+    digest: str
+
+    @classmethod
+    def create(
+        cls,
+        shards: Sequence[CoalitionShard],
+        *,
+        source_identity: str = "informed",
+        target_override: Sequence[float] | None = None,
+    ) -> "CoalitionBatch":
+        rows = tuple(row for shard in shards for row in shard.rows)
+        if not rows:
+            raise StageCContractError("C3 coalition batch cannot be empty")
+        widths = {len(member.invariant_features) for row in rows for member in row.context.members}
+        if len(widths) != 1:
+            raise StageCContractError("C3 coalition member width drifted")
+        member_width = next(iter(widths))
+        contexts = tuple(row.context for row in rows)
+        states = np.stack(
+            [context.invariant_vector(member_width=member_width) for context in contexts]
+        )
+        targets = np.asarray(
+            [
+                parse_float_hex(row.psi_normalized_hex, field="psi_normalized")
+                for row in rows
+            ]
+            if target_override is None
+            else target_override,
+            dtype=np.float64,
+        )
+        if targets.shape != (len(rows),) or not np.isfinite(targets).all():
+            raise StageCContractError("C3 scalar target shape drifted")
+        identities = tuple(
+            f"{row.world_id}|{row.anchor_id}|{','.join(map(str, row.context.changed_users))}"
+            for row in rows
+        )
+        authority = canonical_sha256(
+            {
+                "schema": "mcrl-v025-stagec-c3-source-authority-v1",
+                "shards": [shard.file_sha256 for shard in shards],
+                "row_schemas": sorted({row.schema for row in rows}),
+                "catalogues": sorted({row.catalogue_digest for row in rows}),
+                "physics": sorted({row.physics_digest for row in rows}),
+            }
+        )
+        payload = {
+            "schema": "mcrl-v025-stagec-c3-coalition-batch-v1",
+            "source_identity": source_identity,
+            "shape": list(states.shape),
+            "states": [[float_hex(value) for value in row] for row in states],
+            "targets": [float_hex(value) for value in targets],
+            "row_identities": list(identities),
+            "source_authority_sha256": authority,
+            "anchored_zero_empty_and_singleton": True,
+            "permutation_invariant": True,
+        }
+        return cls(
+            contexts,
+            states,
+            targets,
+            identities,
+            authority,
+            source_identity,
+            member_width,
+            canonical_sha256(payload),
+        )
+
+    def neutral(self, definition: NeutralSourceDefinition) -> "CoalitionBatch":
+        if definition.route != "C3":
+            raise StageCContractError("C3 batch requires the C3 neutral definition")
+        # Preserve support, strata, weights, order, and dose exactly.  The
+        # definition digest makes the source identity explicit in checkpoints.
+        return CoalitionBatch(
+            contexts=self.contexts,
+            invariant_states=self.invariant_states.copy(),
+            target_psi=np.zeros_like(self.target_psi),
+            row_identities=self.row_identities,
+            source_authority_sha256=self.source_authority_sha256,
+            source_identity=f"neutral:{definition.digest}",
+            member_width=self.member_width,
+            digest=canonical_sha256(
+                {
+                    "informed_batch": self.digest,
+                    "neutral_source_sha256": definition.digest,
+                    "targets": [float_hex(0.0) for _ in self.target_psi],
+                }
+            ),
+        )
+
+
+@dataclass(slots=True)
+class SetInteractionHead:
+    """Two-layer permutation-invariant scalar Psi MLP with hard zero anchors."""
+
+    input_weights: np.ndarray
+    input_bias: np.ndarray
+    output_weights: np.ndarray
+    output_bias: float
+    member_width: int
+
+    def clone(self) -> "SetInteractionHead":
+        return SetInteractionHead(
+            self.input_weights.copy(),
+            self.input_bias.copy(),
+            self.output_weights.copy(),
+            float(self.output_bias),
+            self.member_width,
+        )
+
+    def _hidden(self, values: np.ndarray) -> np.ndarray:
+        if values.shape[-1] != self.input_weights.shape[1]:
+            raise StageCContractError("set-interaction state shape drifted")
+        return np.tanh(values @ self.input_weights.T + self.input_bias)
+
+    def score(self, context: CoalitionContext) -> float:
+        if len(context.members) <= 1:
+            return 0.0
+        values = context.invariant_vector(member_width=self.member_width)
+        return float(self._hidden(values) @ self.output_weights + self.output_bias)
+
+    def update(self, batch: CoalitionBatch, *, learning_rate: float) -> float:
+        hidden = self._hidden(batch.invariant_states)
+        predictions = hidden @ self.output_weights + self.output_bias
+        residual = predictions - batch.target_psi
+        count = float(batch.target_psi.size)
+        scale = 2.0 / count
+        output_weights_before = self.output_weights.copy()
+        self.output_weights -= learning_rate * scale * (hidden.T @ residual)
+        self.output_bias -= learning_rate * float(scale * residual.sum())
+        hidden_gradient = residual[:, None] * output_weights_before[None, :] * (1.0 - hidden * hidden)
+        self.input_weights -= learning_rate * scale * (hidden_gradient.T @ batch.invariant_states)
+        self.input_bias -= learning_rate * scale * hidden_gradient.sum(axis=0)
+        loss = float(np.mean(residual * residual))
+        if not all(
+            np.isfinite(value).all()
+            for value in (self.input_weights, self.input_bias, self.output_weights)
+        ) or not np.isfinite(self.output_bias):
+            raise StageCContractError("non-finite C3 learner update")
+        return loss
+
+    def fit_closed_form(self, batch: CoalitionBatch, *, ridge: float = 1e-10) -> float:
+        """Deterministic synthetic/KAT fit of the same scalar squared-error head."""
+
+        hidden = self._hidden(batch.invariant_states)
+        design = np.column_stack((hidden, np.ones(hidden.shape[0])))
+        gram = design.T @ design + ridge * np.eye(design.shape[1])
+        solution = np.linalg.solve(gram, design.T @ batch.target_psi)
+        self.output_weights[:] = solution[:-1]
+        self.output_bias = float(solution[-1])
+        residual = design @ solution - batch.target_psi
+        return float(np.mean(residual * residual))
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "kind": "permutation_invariant_set_conditioned_scalar",
+            "architecture": "two_layer_tanh_mlp_on_sum_max_and_padded_resource_context",
+            "input_weights_hex": [
+                [float_hex(value) for value in row] for row in self.input_weights
+            ],
+            "input_bias_hex": [float_hex(value) for value in self.input_bias],
+            "output_weights_hex": [float_hex(value) for value in self.output_weights],
+            "output_bias_hex": float_hex(self.output_bias),
+            "member_width": self.member_width,
+            "anchors": {"empty": 0.0, "singleton": 0.0},
+        }
+
+
+@dataclass(slots=True)
+class V1ThreeRouteModel:
+    q1: LinearHead
+    q2: LinearHead
+    psi: SetInteractionHead
+
+    def clone(self) -> "V1ThreeRouteModel":
+        return V1ThreeRouteModel(self.q1.clone(), self.q2.clone(), self.psi.clone())
+
+    def score(self, route: Route, state: Sequence[float]) -> float:
+        if route == "C1":
+            return self.q1.score(state)
+        if route == "C2":
+            return self.q2.score(state)
+        raise StageCContractError("C3 requires complete coalition context")
+
+    def interaction(self, context: CoalitionContext) -> float:
+        return self.psi.score(context)
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "C1": {
+                "kind": "pairwise_zero_bootstrap_linear",
+                "weights_hex": [float_hex(value) for value in self.q1.weights],
+                "bias_hex": float_hex(self.q1.bias),
+            },
+            "C2": {
+                "kind": "pairwise_zero_bootstrap_linear",
+                "weights_hex": [float_hex(value) for value in self.q2.weights],
+                "bias_hex": float_hex(self.q2.bias),
+            },
+            "C3": self.psi.payload(),
+        }
+
+
+class V1LineageOrchestrator:
+    """C7 matched five-arm learner with a scalar set-conditioned C3 route."""
+
+    def __init__(
+        self,
+        *,
+        learner_seed: int,
+        q1_batch: PairwiseBatch,
+        q2_batch: PairwiseBatch,
+        c3_batch: CoalitionBatch,
+        neutral_sources: Mapping[Route, NeutralSourceDefinition],
+        learning_rate: float = 0.01,
+        gauge_weight: float = 0.01,
+    ) -> None:
+        if q1_batch.route != "C1" or q2_batch.route != "C2":
+            raise StageCContractError("v1 action batches must be C1 then C2")
+        if set(neutral_sources) != set(ROUTES) or any(
+            neutral_sources[route].route != route for route in ROUTES
+        ):
+            raise StageCContractError("all three sealed neutral-source definitions are required")
+        self.learner_seed = int(learner_seed)
+        self.q1_batch = q1_batch
+        self.q2_batch = q2_batch
+        self.c3_batch = c3_batch
+        self.neutral_sources = dict(neutral_sources)
+        self.learning_rate = float(learning_rate)
+        self.gauge_weight = float(gauge_weight)
+        rng = np.random.default_rng(self.learner_seed)
+        template = V1ThreeRouteModel(
+            LinearHead(rng.normal(0.0, 0.01, q1_batch.reference_states.shape[1]), 0.0),
+            LinearHead(rng.normal(0.0, 0.01, q2_batch.reference_states.shape[1]), 0.0),
+            SetInteractionHead(
+                rng.normal(
+                    0.0,
+                    0.05,
+                    (16, c3_batch.invariant_states.shape[1]),
+                ),
+                np.zeros(16, dtype=np.float64),
+                rng.normal(0.0, 0.01, 16),
+                0.0,
+                c3_batch.member_width,
+            ),
+        )
+        self.initialization_payload = template.payload()
+        self.initialization_sha256 = canonical_sha256(self.initialization_payload)
+        self.models = {arm: template.clone() for arm in LEARNED_ARMS}
+        self.completed_source_epochs = 0
+        self.route_update_count = 0
+
+    def train_epoch(self) -> dict[str, dict[str, float]]:
+        losses: dict[str, dict[str, float]] = {arm: {} for arm in LEARNED_ARMS}
+        for route, informed in (("C1", self.q1_batch), ("C2", self.q2_batch)):
+            definition = self.neutral_sources[route]
+            neutral = informed.neutral(definition)
+            for arm in LEARNED_ARMS:
+                batch = informed if SOURCE_MAP[arm][route] == "informed" else neutral
+                head = self.models[arm].q1 if route == "C1" else self.models[arm].q2
+                losses[arm][route] = head.update(
+                    batch, learning_rate=self.learning_rate, gauge_weight=self.gauge_weight
+                )
+            self.route_update_count += 1
+        neutral_c3 = self.c3_batch.neutral(self.neutral_sources["C3"])
+        for arm in LEARNED_ARMS:
+            batch = self.c3_batch if SOURCE_MAP[arm]["C3"] == "informed" else neutral_c3
+            losses[arm]["C3"] = self.models[arm].psi.update(
+                batch, learning_rate=self.learning_rate
+            )
+        self.route_update_count += 1
+        self.completed_source_epochs += 1
+        return losses
+
+    def train(self, epochs: int) -> None:
+        if isinstance(epochs, bool) or epochs < 0:
+            raise StageCContractError("epochs must be a nonnegative integer")
+        for _ in range(epochs):
+            self.train_epoch()
+
+    def checkpoint_payload(self) -> dict[str, object]:
+        return {
+            "schema": "mcrl-v025-stagec-v1-lineage-checkpoint-v1",
+            "learner_seed": self.learner_seed,
+            "completed_source_epochs": self.completed_source_epochs,
+            "route_update_count": self.route_update_count,
+            "checkpoint_every_source_epochs": CHECKPOINT_EVERY_SOURCE_EPOCHS,
+            "batch_digests": {
+                "C1": self.q1_batch.digest,
+                "C2": self.q2_batch.digest,
+                "C3": self.c3_batch.digest,
+            },
+            "neutral_source_digests": {
+                route: self.neutral_sources[route].digest for route in ROUTES
+            },
+            "initialization": self.initialization_payload,
+            "initialization_sha256": self.initialization_sha256,
+            "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
+            "arms": {arm: self.models[arm].payload() for arm in LEARNED_ARMS},
+            "optimizer": {
+                "kind": "deterministic_full_batch_gradient_descent",
+                "learning_rate_hex": float_hex(self.learning_rate),
+                "gauge_weight_hex": float_hex(self.gauge_weight),
+            },
+            "zero_bootstrap": True,
+        }
+
+
 __all__ = [
     "ARM_ORDER", "CHECKPOINT_EVERY_SOURCE_EPOCHS", "LEARNED_ARMS", "LineageOrchestrator",
-    "PairwiseBatch", "ROUTES", "SOURCE_MAP", "ThreeRouteModel", "build_pairwise_batches",
+    "CoalitionBatch", "LEARNER_SEED_DOMAINS", "LEARNER_SEEDS", "NeutralSourceDefinition", "PairwiseBatch", "ROUTES",
+    "SOURCE_MAP", "SetInteractionHead", "ThreeRouteModel", "V1LineageOrchestrator",
+    "V1ThreeRouteModel", "build_pairwise_batches", "default_synthetic_neutral_sources",
 ]

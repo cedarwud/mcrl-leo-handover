@@ -133,7 +133,31 @@ def network_objective(
     eta_ref: int | float | str | Fraction,
     kappa_bits_per_user_s: int | float | str | Fraction,
 ) -> Fraction:
-    """F = B - eta_ref E for the whole network; Phi stays separate."""
+    """Return the v1 objective ``F = B - eta_ref E - Phi_cost``.
+
+    ``NetworkOutcome.phi`` is the pre-existing dimensionless *signed
+    preference* (handover costs are negative).  Therefore
+    ``Phi_cost = -kappa * outcome.phi`` and the executable form is
+    ``B - eta_ref E + kappa * phi``.  Keeping this conversion here makes Phi
+    part of F exactly once for C1 and every interaction counterfactual.
+    """
+
+    eta, kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_s=kappa_bits_per_user_s,
+    )
+    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
+
+
+def physical_network_objective(
+    outcome: NetworkOutcome,
+    *,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_s: int | float | str | Fraction,
+) -> Fraction:
+    """Return the physical identity objective ``B - eta_ref E`` (no Phi)."""
 
     eta, _kappa = assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
@@ -147,6 +171,7 @@ def network_objective(
 class C1Label:
     difference_surplus_bits: Fraction
     phi_difference: Fraction
+    objective_difference_bits: Fraction
     normalized_total: Fraction
 
 
@@ -167,7 +192,8 @@ def c1_difference_surplus(
     )
     core = (candidate.bits - default.bits) - eta * (candidate.joules - default.joules)
     phi = candidate.phi - default.phi
-    return C1Label(core, phi, core / kappa + phi)
+    objective_difference = core + kappa * phi
+    return C1Label(core, phi, objective_difference, objective_difference / kappa)
 
 
 @dataclass(frozen=True)
@@ -331,8 +357,80 @@ def c3_lcsrs_interaction(
         for outcome in (f00, f10, f01, f11)
     )
     psi = values[3] - values[1] - values[2] + values[0]
-    z3 = tuple((user, exact(externality_e_by_user[user]) + psi / 2) for user in users)
+    # Per-user allocation is reporting-only in v1.  The scalar Psi is the
+    # learner target; no externality e_i is part of that target.
+    z3 = tuple((user, psi / 2) for user in users)
     return C3Interaction(*values, psi, z3)
+
+
+@dataclass(frozen=True)
+class CoalitionIdentity:
+    """Both v1 reconstruction identities for one changed-user coalition."""
+
+    users: tuple[int, ...]
+    c1: Fraction
+    c3: Fraction
+    objective_delta: Fraction
+    physical_c1: Fraction
+    physical_c3: Fraction
+    physical_delta: Fraction
+
+    def assert_exact(self) -> None:
+        if self.c1 + self.c3 != self.objective_delta:
+            raise MCRLContractError("C1+C3 does not reconstruct the Phi-inclusive F delta")
+        if self.physical_c1 + self.physical_c3 != self.physical_delta:
+            raise MCRLContractError("physical C1+C3 does not reconstruct B-etaE")
+
+
+def coalition_identity(
+    *,
+    coalition_users: Sequence[int],
+    reference: NetworkOutcome,
+    unilateral_by_user: Mapping[int, NetworkOutcome],
+    coalition: NetworkOutcome,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_s: int | float | str | Fraction,
+) -> CoalitionIdentity:
+    """Build and verify the B4 Phi-inclusive and physical identities.
+
+    This is the production scalar target builder used by Stage C.  Label
+    computation is intentionally capped at four changed users.
+    """
+
+    users = tuple(sorted(int(user) for user in coalition_users))
+    if not 2 <= len(users) <= 4 or len(set(users)) != len(users):
+        raise MCRLContractError("coalition identity requires 2..4 distinct users")
+    if set(unilateral_by_user) != set(users):
+        raise MCRLContractError("unilateral outcomes must cover the coalition exactly")
+
+    params = {
+        "lambda_bits_per_j": lambda_bits_per_j,
+        "eta_ref": eta_ref,
+        "kappa_bits_per_user_s": kappa_bits_per_user_s,
+    }
+    f0 = network_objective(reference, **params)
+    f_a = network_objective(coalition, **params)
+    unilateral = tuple(
+        network_objective(unilateral_by_user[user], **params) - f0 for user in users
+    )
+    p0 = physical_network_objective(reference, **params)
+    p_a = physical_network_objective(coalition, **params)
+    physical_unilateral = tuple(
+        physical_network_objective(unilateral_by_user[user], **params) - p0
+        for user in users
+    )
+    result = CoalitionIdentity(
+        users=users,
+        c1=sum(unilateral, Fraction()),
+        c3=f_a - f0 - sum(unilateral, Fraction()),
+        objective_delta=f_a - f0,
+        physical_c1=sum(physical_unilateral, Fraction()),
+        physical_c3=p_a - p0 - sum(physical_unilateral, Fraction()),
+        physical_delta=p_a - p0,
+    )
+    result.assert_exact()
+    return result
 
 
 def assert_reward_core_identity(
@@ -361,6 +459,7 @@ __all__ = [
     "C1Label",
     "C2Label",
     "C3Interaction",
+    "CoalitionIdentity",
     "HandoverEvent",
     "NetworkOutcome",
     "OffsetProjection",
@@ -368,8 +467,10 @@ __all__ = [
     "c1_difference_surplus",
     "c2_persistence_forecast",
     "c3_lcsrs_interaction",
+    "coalition_identity",
     "classify_physical_transition",
     "network_objective",
+    "physical_network_objective",
     "phi_qos",
     "project_three_offsets",
 ]

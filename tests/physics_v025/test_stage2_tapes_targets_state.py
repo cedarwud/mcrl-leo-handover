@@ -293,7 +293,7 @@ def test_c3_uses_declared_network_interaction_and_equal_split() -> None:
     )
     # Energy cancels: Psi = 22 - 14 - 13 + 10 = 5.
     assert interaction.psi == 5
-    assert dict(interaction.z3_by_user) == {0: Fraction(9, 2), 1: Fraction(3, 2)}
+    assert dict(interaction.z3_by_user) == {0: Fraction(5, 2), 1: Fraction(5, 2)}
 
 
 def test_reward_core_identity_is_exact() -> None:

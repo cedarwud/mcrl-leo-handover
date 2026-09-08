@@ -10,6 +10,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Sequence
 
+from mcrl.physics_v025.targets import NetworkOutcome
+
 from .canonical import StageCContractError, canonical_sha256, write_once_json
 from .deployment import (
     DeploymentAdapter,
@@ -26,8 +28,23 @@ from .evaluation import (
     InitialTemporalState,
     StepOutcome,
 )
-from .learner import LineageOrchestrator, ThreeRouteModel, build_pairwise_batches
-from .merge import admission_decision, merge_receipts, write_terminal_report
+from .coalitions import (
+    AffectedBeamContext,
+    CoalitionContext,
+    CoalitionMember,
+    CoalitionShard,
+    build_coalition_row,
+    write_coalition_shard,
+)
+from .learner import (
+    LEARNER_SEEDS,
+    CoalitionBatch,
+    V1LineageOrchestrator,
+    V1ThreeRouteModel,
+    build_pairwise_batches,
+    default_synthetic_neutral_sources,
+)
+from .merge import merge_receipts, write_terminal_report
 from .shards import write_source_shard
 from .state import (
     ActionEvaluation,
@@ -35,6 +52,7 @@ from .state import (
     PhysicalAction,
     Q1_FEATURES,
     Q2_FEATURES,
+    SourceRow,
     extract_source_rows,
 )
 
@@ -81,6 +99,7 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
             common = {
                 "refresh_phase": anchor_index,
                 "missing_incumbent": False,
+                "candidate_current_nominal_decoding_margin_db": 2.0,
                 "incumbent_nominal_decoding_margin_db": 2.0,
                 "forecasts": forecasts,
             }
@@ -105,7 +124,6 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
                 c1_label_bits=0.0,
                 c1_phi_difference=0.0,
                 c2_label_bits=0.0,
-                c3_label_bits=0.0,
                 **common,
             )
             candidate = ActionEvaluation(
@@ -129,8 +147,10 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
                 c1_label_bits=120.0 + user_id,
                 c1_phi_difference=0.0,
                 c2_label_bits=80.0 + user_id,
-                c3_label_bits=60.0 + user_id,
-                **common,
+                **{
+                    **common,
+                    "candidate_current_nominal_decoding_margin_db": 8.0 + user_id,
+                },
             )
             null = replace(
                 base,
@@ -148,7 +168,6 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
                 required_power_cap_margin_w=0.0,
                 c1_label_bits=-20.0,
                 c2_label_bits=-20.0,
-                c3_label_bits=-20.0,
             )
             anchors.append(
                 SyntheticAnchor(
@@ -232,7 +251,7 @@ class TinySyntheticEvaluator:
         *,
         unit: AllocationUnit,
         arm: str,
-        model: ThreeRouteModel | None,
+        model: V1ThreeRouteModel | None,
         step_index: int,
         previous_profile: tuple[PhysicalAction, ...] | None,
     ) -> StepOutcome:
@@ -255,6 +274,10 @@ class TinySyntheticEvaluator:
                 raise StageCContractError(
                     "learned synthetic arm requires a model"
                 )
+            contexts = {
+                profile: self.coalition_context(profile, tables)
+                for profile in ((0, 0), (1, 0), (0, 1), (1, 1))
+            }
             decision = self.deployment.select_with_preparation(
                 model=model,
                 prepare=lambda: (
@@ -264,6 +287,11 @@ class TinySyntheticEvaluator:
                 base_profile=base,
                 jointly_legal=lambda candidate: candidate != (1, 1),
                 resolve_profile=lambda candidate: ResolvedProfile(candidate, 2),
+                coordinator=(
+                    (lambda *, profile, tables, model: 2.0 if profile == (1, 1) else 0.0)
+                    if arm == "S0"
+                    else lambda *, profile, tables, model: model.interaction(contexts[profile])
+                ),
             )
             profile = decision.profile
         identities = tuple(
@@ -290,6 +318,109 @@ class TinySyntheticEvaluator:
             jointly_legal=True,
         )
 
+    @staticmethod
+    def coalition_context(
+        profile: tuple[int, ...], tables: Sequence[UserActionTable]
+    ) -> CoalitionContext:
+        members = tuple(
+            CoalitionMember(
+                user_id=table.user_id,
+                reference_action=table.actions[0],
+                selected_action=table.actions[action_index],
+                selected_q1_row=table.q1_states[action_index],
+                incumbent_q1_row=table.q1_states[0],
+                missing_incumbent=False,
+            )
+            for table, action_index in zip(tables, profile, strict=True)
+            if action_index != 0
+        )
+        return CoalitionContext(
+            anchor_id="synthetic-evaluation-anchor",
+            reference_profile=tuple((table.user_id, table.actions[0]) for table in tables),
+            members=members,
+            affected_beams=(
+                AffectedBeamContext(
+                    beam_key="synthetic-beam",
+                    occupancy_before=len(tables),
+                    occupancy_after=len(tables),
+                    active_before=True,
+                    active_after=True,
+                    shared_capacity=1.0,
+                    interference_summary=0.0,
+                    capacity_margin=1.0,
+                ),
+            ),
+            global_resource_features=(0.0, 0.0, 1.0),
+        )
+
+
+def _synthetic_coalition_batch(
+    output: Path, rows: Sequence[SourceRow]
+) -> tuple[CoalitionBatch, CoalitionShard]:
+    by_user = {
+        row.user_id: row
+        for row in rows
+        if row.anchor_index == 0 and row.action_index == 1
+    }
+    reference_by_user = {
+        row.user_id: row
+        for row in rows
+        if row.anchor_index == 0 and row.reference_action
+    }
+    context = CoalitionContext(
+        anchor_id="source-coalition-0",
+        reference_profile=tuple(
+            (user, reference_by_user[user].action) for user in sorted(reference_by_user)
+        ),
+        members=tuple(
+            CoalitionMember(
+                user_id=user,
+                reference_action=reference_by_user[user].action,
+                selected_action=by_user[user].action,
+                selected_q1_row=by_user[user].q1_state,
+                incumbent_q1_row=reference_by_user[user].q1_state,
+                missing_incumbent=False,
+            )
+            for user in sorted(by_user)
+        ),
+        affected_beams=(
+            AffectedBeamContext(
+                "synthetic-beam", 2, 2, True, True, 1.0, 0.0, 1.0
+            ),
+        ),
+        global_resource_features=(1.0, 0.0, 0.0),
+    )
+    outcome = lambda bits: NetworkOutcome.build(
+        bits=bits,
+        joules=100.0,
+        phi=0.0,
+        decoding_availability=1.0,
+        useful_availability=1.0,
+    )
+    coalition_row = build_coalition_row(
+        context=context,
+        reference_outcome=outcome(1000.0),
+        unilateral_outcomes={user: outcome(900.0) for user in by_user},
+        coalition_outcome=outcome(1000.0),
+        world_id="V025_SYNTHETIC/source/coalition/1",
+        world_seed=771,
+        anchor_index=0,
+        decision_time_utc="2026-01-01T00:00:00Z",
+        decision_time_ns=0,
+        setting_id="a-r0",
+        lambda_bits_per_j=10.0,
+        eta_ref_bits_per_j=10.0,
+        kappa_normalization_bits=100.0,
+        code_digest=_digest("stagec-code"),
+        physics_digest=_digest("synthetic-physics"),
+        catalogue_digest=_digest("synthetic-catalogue"),
+        setting_digest=_digest("setting"),
+        calibration_digest=_digest("calibration"),
+        allocation_manifest_digest=_digest("source-allocation"),
+    )
+    shard = write_coalition_shard(output / "synthetic-coalitions.jsonl", (coalition_row,))
+    return CoalitionBatch.create((shard,)), shard
+
 
 def run_synthetic_pipeline(
     root: str | Path,
@@ -306,9 +437,16 @@ def run_synthetic_pipeline(
     )
     shard = write_source_shard(output / "synthetic-source.jsonl", rows)
     batches = build_pairwise_batches((shard,))
+    coalition_batch, coalition_shard = _synthetic_coalition_batch(output, rows)
     orchestrators = {
-        seed: LineageOrchestrator(learner_seed=seed, batches=batches)
-        for seed in (101, 202, 303, 404, 505)
+        seed: V1LineageOrchestrator(
+            learner_seed=seed,
+            q1_batch=batches["C1"],
+            q2_batch=batches["C2"],
+            c3_batch=coalition_batch,
+            neutral_sources=default_synthetic_neutral_sources(),
+        )
+        for seed in LEARNER_SEEDS
     }
     for orchestrator in orchestrators.values():
         orchestrator.train(epochs)
@@ -387,14 +525,10 @@ def run_synthetic_pipeline(
                 conformance=conformance,
             )
         )
-    physics_admission = admission_decision(
-        acceptance_suite_pass=True,
-        oracle_positive_by_route={"C1": True, "C2": True, "C3": True},
-        qos_pass=True,
-        genuine_joint_headroom=True,
-        s0_relative_gain=0.02,
-        zero_bit_disposition_sealed=True,
-    )
+    physics_admission = {
+        "decision": "HOLD",
+        "reason": "synthetic fixtures confer no PHYSICS-GO authority",
+    }
     report = merge_receipts(
         receipt_paths,
         manifest=manifest,
@@ -406,9 +540,17 @@ def run_synthetic_pipeline(
                 {
                     "file_sha256": shard.file_sha256,
                     "rows_sha256": shard.rows_sha256,
-                }
+                },
+                {
+                    "file_sha256": coalition_shard.file_sha256,
+                    "rows_sha256": coalition_shard.rows_sha256,
+                },
             ],
-            "batches": {route: batch.digest for route, batch in batches.items()},
+            "batches": {
+                "C1": batches["C1"].digest,
+                "C2": batches["C2"].digest,
+                "C3": coalition_batch.digest,
+            },
             "source_authority_sha256": next(
                 iter(batches.values())
             ).source_authority_sha256,
@@ -426,20 +568,14 @@ def run_synthetic_pipeline(
             "Synthetic fixtures confer no PHYSICS-GO authority.",
         ),
         controller_decide=(
-            "Q1-SCALES",
-            "Q2-MISSING-PLACEMENT",
-            "Q2-SCHEMA-SEAL",
-            "Q2-INCUMBENT-MARGIN",
-            "KAPPA-BIT-SCALE",
-            "C3-SET-REPRESENTATION",
-            "FORMAL-LEARNER",
-            "LEARNER-SEED-VALUES",
-            "COORDINATOR-MODE",
-            "DEADLINE-CLOCK",
-            "FORMAL-ALLOCATION",
-            "EVENT-QOS",
-            "ZERO-BIT-DISPOSITION",
-            "ZERO-QOS-BASELINE",
+            "FORMAL-LEARNER-LITERALS",
+            "COALITION-FEATURE-SCALES",
+            "LARGER-EVACUATION-CAP",
+            "NEUTRAL-SOURCE-SEALS",
+            "CATALOGUE-CB2",
+            "FORMAL-ALLOCATION-MANIFEST",
+            "OPERATIONAL-CAPABILITY-VALUES",
+            "CAUSAL-OPERATIONAL-VARIANT",
         ),
     )
     report["synthetic"] = {

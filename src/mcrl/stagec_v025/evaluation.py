@@ -20,14 +20,14 @@ from .canonical import (
     read_verified_json,
     write_once_json,
 )
-from .learner import ARM_ORDER, ThreeRouteModel
+from .learner import ARM_ORDER, LEARNER_SEEDS, ThreeRouteModel
 from .state import PhysicalAction
 
 
-ALLOCATION_SCHEMA = "mcrl-v025-stagec-allocation-manifest-v1-draft"
-ATTEMPT_SCHEMA = "mcrl-v025-stagec-attempt-record-v1-draft"
-UNIT_RECEIPT_SCHEMA = "mcrl-v025-stagec-unit-receipt-v1-draft"
-SUPPORTIVE_COMPARATORS = ("S_UNI",)
+ALLOCATION_SCHEMA = "mcrl-v025-stagec-allocation-manifest-v1"
+ATTEMPT_SCHEMA = "mcrl-v025-stagec-attempt-record-v1"
+UNIT_RECEIPT_SCHEMA = "mcrl-v025-stagec-unit-receipt-v1"
+SUPPORTIVE_COMPARATORS = ("S0", "S_UNI")
 POLICY_ORDER = (*ARM_ORDER, *SUPPORTIVE_COMPARATORS)
 
 
@@ -143,10 +143,29 @@ class AllocationManifest:
                 raise StageCContractError("allocation start UTC lacks a timezone")
         claim_dates = {unit.tle_date for unit in material if unit.role == "claim"}
         development_dates = {
-            unit.tle_date for unit in material if unit.role in {"probe", "calibration"}
+            unit.tle_date
+            for unit in material
+            if unit.role in {"probe", "calibration", "rehearsal", "KAT"}
         }
         if claim_dates & development_dates:
-            raise StageCContractError("claim dates overlap probe/calibration dates")
+            raise StageCContractError("claim dates overlap successor development dates")
+        claim_units = tuple(unit for unit in material if unit.role == "claim")
+        if claim_units:
+            if {unit.cell_id for unit in claim_units} != {"a-r0"}:
+                raise StageCContractError("D4 permits only a-r0 as the primary claim cell")
+            claim_seeds = {unit.learner_seed for unit in claim_units}
+            if claim_seeds != set(LEARNER_SEEDS):
+                raise StageCContractError("D1 claim panel requires the 12 sealed learner seeds")
+            if not 150 <= len(claim_dates) <= 170:
+                raise StageCContractError("D1 claim panel requires approximately 160 dates")
+            counts: dict[tuple[str, int], int] = {}
+            for unit in claim_units:
+                counts[(unit.tle_date, unit.learner_seed)] = counts.get(
+                    (unit.tle_date, unit.learner_seed), 0
+                ) + 1
+            expected = {(date, seed) for date in claim_dates for seed in claim_seeds}
+            if set(counts) != expected or any(count != 2 for count in counts.values()):
+                raise StageCContractError("D1 requires two worlds per TRAIN date and learner seed")
         payload = {
             "schema": ALLOCATION_SCHEMA,
             "sealed_pre_outcome": True,
@@ -286,6 +305,7 @@ class StepOutcome:
     opportunity_user_seconds: float
     jointly_legal: bool
     cell_rekey_users: frozenset[int] = frozenset()
+    coordinator_deadline_miss: bool = False
 
     @property
     def joules(self) -> float:
@@ -298,6 +318,7 @@ class StepOutcome:
 class InitialTemporalState:
     profile: tuple[PhysicalAction, ...]
     ever_served_user_ids: frozenset[int]
+    last_served_profile: tuple[PhysicalAction | None, ...] | None = None
 
 
 class InitialTemporalStateProvider(Protocol):
@@ -358,6 +379,7 @@ def _step_payload(
     outcome: StepOutcome,
     previous: tuple[PhysicalAction, ...] | None,
     ever_served: set[int],
+    last_served: dict[int, PhysicalAction] | None = None,
 ) -> dict[str, object]:
     if not outcome.jointly_legal:
         raise StageCContractError("evaluator returned a jointly illegal committed profile")
@@ -371,13 +393,15 @@ def _step_payload(
         )
     if (
         outcome.bits < 0
-        or outcome.joules <= 0
+        or outcome.joules < 0
+        or (outcome.bits > 0 and outcome.joules == 0)
         or outcome.opportunity_user_seconds <= 0
     ):
         raise StageCContractError("invalid additive endpoint totals")
     if previous is not None and len(previous) != len(outcome.profile):
         raise StageCContractError("arm roster changed between steps")
     events: list[dict[str, object]] = []
+    last = {} if last_served is None else last_served
     handovers = 0
     phi_half_units = 0
     for user_index, (user_id, after) in enumerate(
@@ -390,17 +414,28 @@ def _step_payload(
             cell_rekey=user_id in outcome.cell_rekey_users,
             ever_served=user_id in ever_served,
         )
-        if kind in {"beam_change", "satellite_change"}:
+        reentry_reference = last.get(user_id)
+        if kind == "reentry":
+            handovers += 1
+            phi_half_units += (
+                2
+                if reentry_reference is None
+                or reentry_reference.norad_id != after.norad_id
+                else 1
+            )
+        elif kind in {"beam_change", "satellite_change"}:
             handovers += 1
             phi_half_units += 1 if kind == "beam_change" else 2
         if not after.is_null:
             ever_served.add(user_id)
+            last[user_id] = after
         events.append(
             {
                 "user_id": user_id,
                 "prior_physical_identity": _identity_payload(before),
                 "current_physical_identity": _identity_payload(after),
                 "event_type": kind,
+                "reentry_reference_physical_identity": _identity_payload(reentry_reference),
                 "cell_rekey": user_id in outcome.cell_rekey_users,
                 "complete_service": bool(outcome.complete_service[user_index]),
             }
@@ -421,7 +456,7 @@ def _step_payload(
         "+00:00", "Z"
     )
     return {
-        "schema": "mcrl-v025-stagec-step-row-v1-draft",
+        "schema": "mcrl-v025-stagec-step-row-v1",
         "unit_id": unit.unit_id,
         "world_id": unit.world_id,
         "world_seed": unit.world_seed,
@@ -443,6 +478,8 @@ def _step_payload(
         "handover_denominator": len(outcome.profile),
         "phi_cost_numerator_half_units": phi_half_units,
         "phi_cost_denominator_half_user_steps": 2 * len(outcome.profile),
+        "coordinator_deadline_miss_numerator": int(outcome.coordinator_deadline_miss),
+        "coordinator_deadline_miss_denominator": 1,
         "events": events,
         "provider_digest": unit.provider_digest,
         "launch_digest": unit.launch_digest,
@@ -474,6 +511,8 @@ def reaggregate_steps(
     phi_den = sum(
         int(row["phi_cost_denominator_half_user_steps"]) for row in steps
     )
+    miss_num = sum(int(row["coordinator_deadline_miss_numerator"]) for row in steps)
+    miss_den = sum(int(row["coordinator_deadline_miss_denominator"]) for row in steps)
     return {
         "bits_hex": float_hex(bits),
         "joules_hex": float_hex(joules),
@@ -483,6 +522,8 @@ def reaggregate_steps(
         "handover_denominator": handover_den,
         "phi_cost_numerator_half_units": phi_num,
         "phi_cost_denominator_half_user_steps": phi_den,
+        "coordinator_deadline_miss_numerator": miss_num,
+        "coordinator_deadline_miss_denominator": miss_den,
     }
 
 
@@ -530,7 +571,11 @@ class EvaluationRunner:
                 outcomes[arm] = self.evaluator(
                     unit=unit,
                     arm=arm,
-                    model=None if arm in {"BASELINE", "S_UNI"} else models[arm],
+                    model=(
+                        None
+                        if arm in {"BASELINE", "S_UNI"}
+                        else models["FULL"] if arm == "S0" else models[arm]
+                    ),
                     step_index=0,
                     previous_profile=None,
                 )
@@ -549,6 +594,18 @@ class EvaluationRunner:
                 raise StageCContractError("conformance produced a jointly illegal profile")
             for arm, outcome in outcomes.items():
                 temporal_state = self.initial_temporal_state(unit=unit, arm=arm)
+                initial_last = (
+                    temporal_state.last_served_profile
+                    if temporal_state.last_served_profile is not None
+                    else tuple(None if action.is_null else action for action in temporal_state.profile)
+                )
+                if len(initial_last) != len(temporal_state.profile):
+                    raise StageCContractError("initial last-served profile is roster-incomplete")
+                last_served = {
+                    user_id: action
+                    for user_id, action in zip(outcome.user_ids, initial_last, strict=True)
+                    if action is not None
+                }
                 _step_payload(
                     unit=unit,
                     arm=arm,
@@ -556,6 +613,7 @@ class EvaluationRunner:
                     outcome=outcome,
                     previous=temporal_state.profile,
                     ever_served=set(temporal_state.ever_served_user_ids),
+                    last_served=last_served,
                 )
             authority = (
                 unit.code_digest,
@@ -577,7 +635,7 @@ class EvaluationRunner:
                     "conformance authority manifest is incomplete"
                 )
             result: dict[str, object] = {
-                "schema": "mcrl-v025-stagec-harness-conformance-v1-draft",
+                "schema": "mcrl-v025-stagec-harness-conformance-v1",
                 "allocation_manifest_digest": self.manifest.digest,
                 "unit_id": unit.unit_id,
                 "attempt_key": unit.attempt_key,
@@ -644,6 +702,8 @@ class EvaluationRunner:
             raise StageCContractError(
                 "unit is absent from sealed allocation manifest"
             )
+        if unit.role == "claim" and self.steps != 30:
+            raise StageCContractError("D1 claim units require exactly 30 decision steps")
         if not all(
             conformance.get(field) is True
             for field in (
@@ -668,7 +728,7 @@ class EvaluationRunner:
         }
         if (
             conformance.get("schema")
-            != "mcrl-v025-stagec-harness-conformance-v1-draft"
+            != "mcrl-v025-stagec-harness-conformance-v1"
             or conformance_authority != expected_conformance_authority
             or conformance.get("real_step_arms") != list(ARM_ORDER)
             or conformance.get("supportive_comparators")
@@ -716,6 +776,14 @@ class EvaluationRunner:
                     raise StageCContractError("initial temporal profile must be complete")
                 previous = temporal_state.profile
                 ever_served = set(temporal_state.ever_served_user_ids)
+                initial_last = (
+                    temporal_state.last_served_profile
+                    if temporal_state.last_served_profile is not None
+                    else tuple(None if action.is_null else action for action in temporal_state.profile)
+                )
+                if len(initial_last) != len(temporal_state.profile):
+                    raise StageCContractError("initial last-served profile is roster-incomplete")
+                last_served: dict[int, PhysicalAction] = {}
                 initial_states[arm] = {
                     "profile": [action.payload() for action in previous],
                     "ever_served_user_ids": sorted(ever_served),
@@ -724,12 +792,25 @@ class EvaluationRunner:
                     outcome = self.evaluator(
                         unit=unit,
                         arm=arm,
-                        model=None if arm in {"BASELINE", "S_UNI"} else models[arm],
+                        model=(
+                            None
+                            if arm in {"BASELINE", "S_UNI"}
+                            else models["FULL"] if arm == "S0" else models[arm]
+                        ),
                         step_index=step_index,
                         previous_profile=previous,
                     )
                     if step_index == 0:
                         initial_states[arm]["user_ids"] = list(outcome.user_ids)
+                        last_served.update(
+                            {
+                                user_id: action
+                                for user_id, action in zip(
+                                    outcome.user_ids, initial_last, strict=True
+                                )
+                                if action is not None
+                            }
+                        )
                     all_steps.append(
                         _step_payload(
                             unit=unit,
@@ -738,6 +819,7 @@ class EvaluationRunner:
                             outcome=outcome,
                             previous=previous,
                             ever_served=ever_served,
+                            last_served=last_served,
                         )
                     )
                     previous = outcome.profile

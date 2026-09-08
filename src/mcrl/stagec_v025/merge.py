@@ -29,7 +29,7 @@ from .learner import ARM_ORDER
 from .state import Q1_SCHEMA_SHA256, Q2_SCHEMA_SHA256
 
 
-REPORT_SCHEMA = "mcrl-v025-stagec-terminal-report-v1-draft"
+REPORT_SCHEMA = "mcrl-v025-stagec-terminal-report-v1"
 DROP_ARMS = ("DROP_C1", "DROP_C2", "DROP_C3")
 EE_MARGIN_RELATIVE = 0.005
 AVAILABILITY_MARGIN = -0.005
@@ -52,6 +52,8 @@ class AdditiveTotals:
     handover_den: int = 0
     phi_num: int = 0
     phi_den: int = 0
+    deadline_miss_num: int = 0
+    deadline_miss_den: int = 0
 
     def add(self, other: "AdditiveTotals") -> None:
         self.bits += other.bits
@@ -62,6 +64,8 @@ class AdditiveTotals:
         self.handover_den += other.handover_den
         self.phi_num += other.phi_num
         self.phi_den += other.phi_den
+        self.deadline_miss_num += other.deadline_miss_num
+        self.deadline_miss_den += other.deadline_miss_den
 
     def multiplied(self, count: int) -> "AdditiveTotals":
         return AdditiveTotals(
@@ -73,6 +77,8 @@ class AdditiveTotals:
             self.handover_den * count,
             self.phi_num * count,
             self.phi_den * count,
+            self.deadline_miss_num * count,
+            self.deadline_miss_den * count,
         )
 
 
@@ -86,13 +92,17 @@ def _totals(summary: Mapping[str, object]) -> AdditiveTotals:
         handover_den=int(summary["handover_denominator"]),
         phi_num=int(summary["phi_cost_numerator_half_units"]),
         phi_den=int(summary["phi_cost_denominator_half_user_steps"]),
+        deadline_miss_num=int(summary["coordinator_deadline_miss_numerator"]),
+        deadline_miss_den=int(summary["coordinator_deadline_miss_denominator"]),
     )
     if (
         result.bits < 0
-        or result.joules <= 0
+        or result.joules < 0
+        or (result.bits > 0 and result.joules == 0)
         or result.complete_den <= 0
         or result.handover_den <= 0
         or result.phi_den <= 0
+        or result.deadline_miss_den <= 0
     ):
         raise StageCContractError("invalid independently aggregated totals")
     return result
@@ -143,6 +153,11 @@ def _totals_payload(value: AdditiveTotals) -> dict[str, object]:
         "handover_denominator": value.handover_den,
         "phi_cost_numerator_half_units": value.phi_num,
         "phi_cost_denominator_half_user_steps": value.phi_den,
+        "coordinator_deadline_miss_numerator": value.deadline_miss_num,
+        "coordinator_deadline_miss_denominator": value.deadline_miss_den,
+        "coordinator_deadline_miss_rate": _ratio(
+            value.deadline_miss_num, value.deadline_miss_den
+        ),
     }
 
 
@@ -166,16 +181,18 @@ def _metrics(full: AdditiveTotals, drop: AdditiveTotals) -> dict[str, float | No
     full_handover = _ratio(full.handover_num, full.handover_den)
     drop_handover = _ratio(drop.handover_num, drop.handover_den)
     handover_relative = (
-        None
-        if full_handover is None or drop_handover in (None, 0.0)
-        else full_handover / drop_handover - 1.0
+        None if full_handover is None or drop_handover is None
+        else (0.0 if full_handover == 0.0 and drop_handover == 0.0
+              else None if drop_handover == 0.0
+              else full_handover / drop_handover - 1.0)
     )
     full_phi = _ratio(full.phi_num, full.phi_den)
     drop_phi = _ratio(drop.phi_num, drop.phi_den)
     phi_relative = (
-        None
-        if full_phi is None or drop_phi in (None, 0.0)
-        else full_phi / drop_phi - 1.0
+        None if full_phi is None or drop_phi is None
+        else (0.0 if full_phi == 0.0 and drop_phi == 0.0
+              else None if drop_phi == 0.0
+              else full_phi / drop_phi - 1.0)
     )
     return {
         "ee_relative": ee_relative,
@@ -255,29 +272,70 @@ def _two_way_bootstrap(
     if set(clusters) != expected:
         return {"status": "UNDEFINED_INCOMPLETE_DATE_X_SEED_RECTANGLE"}
     rng = np.random.default_rng(seed)
-    values: list[float] = []
-    undefined = 0
+    samples: dict[str, list[float]] = {
+        "ee_relative": [],
+        "availability_difference": [],
+        "handover_relative": [],
+        "phi_cost_relative": [],
+    }
+    undefined = {key: 0 for key in samples}
+    fields = (
+        "bits", "joules", "complete_num", "complete_den",
+        "handover_num", "handover_den", "phi_num", "phi_den",
+        "deadline_miss_num", "deadline_miss_den",
+    )
+    arrays: dict[str, np.ndarray] = {}
+    for arm in ("FULL", drop_arm):
+        arrays[arm] = np.asarray(
+            [
+                [
+                    [getattr(clusters[(date, learner_seed)][arm], field) for field in fields]
+                    for learner_seed in seeds
+                ]
+                for date in dates
+            ],
+            dtype=np.float64,
+        )
     for _ in range(draws):
-        sampled_dates = [dates[int(i)] for i in rng.integers(0, len(dates), len(dates))]
-        sampled_seeds = [seeds[int(i)] for i in rng.integers(0, len(seeds), len(seeds))]
-        selected = [
-            (date, learner_seed)
-            for date in sampled_dates
-            for learner_seed in sampled_seeds
-        ]
-        metric = _metrics(
-            _sum_selected(clusters, selected, "FULL"),
-            _sum_selected(clusters, selected, drop_arm),
-        )["ee_relative"]
-        if metric is None or not np.isfinite(metric):
-            undefined += 1
-        else:
-            values.append(float(metric))
+        date_weights = np.bincount(
+            rng.integers(0, len(dates), len(dates)), minlength=len(dates)
+        )
+        seed_weights = np.bincount(
+            rng.integers(0, len(seeds), len(seeds)), minlength=len(seeds)
+        )
+        product_weights = date_weights[:, None] * seed_weights[None, :]
+        totals: dict[str, AdditiveTotals] = {}
+        for arm in ("FULL", drop_arm):
+            values = np.einsum("ds,dsf->f", product_weights, arrays[arm])
+            totals[arm] = AdditiveTotals(
+                bits=float(values[0]),
+                joules=float(values[1]),
+                complete_num=int(round(values[2])),
+                complete_den=int(round(values[3])),
+                handover_num=int(round(values[4])),
+                handover_den=int(round(values[5])),
+                phi_num=int(round(values[6])),
+                phi_den=int(round(values[7])),
+                deadline_miss_num=int(round(values[8])),
+                deadline_miss_den=int(round(values[9])),
+            )
+        metrics = _metrics(
+            totals["FULL"], totals[drop_arm]
+        )
+        for metric, value in metrics.items():
+            if value is None or not np.isfinite(value):
+                undefined[metric] += 1
+            else:
+                samples[metric].append(float(value))
     return {
         "status": "OK",
-        "central_95_percentile_interval": _interval(values),
+        "central_95_percentile_intervals": {
+            metric: _interval(values) for metric, values in samples.items()
+        },
         "undefined_draws": undefined,
         "draws": draws,
+        "resampling": "independent date and learner-seed level draws with product weights; arms paired",
+        "quantile_method": "numpy.quantile linear",
     }
 
 
@@ -364,8 +422,12 @@ def claim_decision(contrasts: Mapping[str, Mapping[str, object]]) -> dict[str, o
         if result is None:
             per_contrast[arm] = False
             continue
-        intervals = result["bootstrap"]["central_95_percentile_intervals"]
-        undefined = result["bootstrap"]["undefined_draws"]
+        primary = result["bootstrap"]
+        if primary.get("status") != "OK":
+            per_contrast[arm] = False
+            continue
+        intervals = primary["central_95_percentile_intervals"]
+        undefined = primary["undefined_draws"]
         ee = intervals["ee_relative"]
         availability = intervals["availability_difference"]
         handover = intervals["handover_relative"]
@@ -392,6 +454,51 @@ def claim_decision(contrasts: Mapping[str, Mapping[str, object]]) -> dict[str, o
         ),
         "multiplicity": "single prespecified conjunction; no per-contrast inflation",
     }
+
+
+def infer_cluster_totals(
+    clusters: Mapping[tuple[str, int], Mapping[str, AdditiveTotals]],
+    *,
+    bootstrap_draws: int,
+    bootstrap_seed: int,
+    include_supplementary: bool = True,
+) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
+    """Production D2-D4 estimator shared by file merge and synthetic calibration."""
+
+    if bootstrap_draws < 1 or not clusters:
+        raise StageCContractError("inference requires clusters and positive bootstrap draws")
+    required = {"FULL", *DROP_ARMS}
+    if any(not required <= set(arms) for arms in clusters.values()):
+        raise StageCContractError("inference cluster is missing a primary arm")
+    all_keys = sorted(clusters)
+    contrasts: dict[str, dict[str, object]] = {}
+    for index, drop_arm in enumerate(DROP_ARMS):
+        point = _metrics(
+            _sum_selected(clusters, all_keys, "FULL"),
+            _sum_selected(clusters, all_keys, drop_arm),
+        )
+        result: dict[str, object] = {
+            "point_estimates": point,
+            "bootstrap": _two_way_bootstrap(
+                clusters,
+                drop_arm=drop_arm,
+                draws=bootstrap_draws,
+                seed=bootstrap_seed + index,
+            ),
+        }
+        if include_supplementary:
+            result["one_way_cluster_bootstrap"] = _bootstrap(
+                clusters,
+                drop_arm=drop_arm,
+                draws=bootstrap_draws,
+                seed=bootstrap_seed + 100 + index,
+            )
+            result["delta_method_ee"] = _delta_method_ee(clusters, drop_arm)
+        contrasts[drop_arm] = result
+    claim = claim_decision(contrasts)
+    for arm in DROP_ARMS:
+        contrasts[arm]["gate_passed"] = claim["per_contrast"][arm]
+    return contrasts, claim
 
 
 def merge_receipts(
@@ -438,14 +545,14 @@ def merge_receipts(
             raise StageCContractError("receipt allocation authority drifted")
         if (
             receipt.get("arm_order") != list(ARM_ORDER)
-            or receipt.get("supportive_comparators") != ["S_UNI"]
+            or receipt.get("supportive_comparators") != ["S0", "S_UNI"]
         ):
             raise StageCContractError("receipt policy inventory drifted")
         conformance = receipt.get("conformance")
         if (
             not isinstance(conformance, dict)
             or conformance.get("schema")
-            != "mcrl-v025-stagec-harness-conformance-v1-draft"
+            != "mcrl-v025-stagec-harness-conformance-v1"
             or conformance.get("null_equals_base") is not True
             or conformance.get("joint_profile_validation") is not True
             or not isinstance(conformance.get("receipt_sha256"), str)
@@ -577,32 +684,10 @@ def merge_receipts(
     for arms in clusters.values():
         if set(arms) != set(POLICY_ORDER):
             raise StageCContractError("cluster is missing a comparative arm")
-    contrasts: dict[str, dict[str, object]] = {}
     all_keys = sorted(clusters)
-    for index, drop_arm in enumerate(DROP_ARMS):
-        point = _metrics(
-            _sum_selected(clusters, all_keys, "FULL"),
-            _sum_selected(clusters, all_keys, drop_arm),
-        )
-        contrasts[drop_arm] = {
-            "point_estimates": point,
-            "bootstrap": _bootstrap(
-                clusters,
-                drop_arm=drop_arm,
-                draws=draws,
-                seed=seed + index,
-            ),
-            "delta_method_ee": _delta_method_ee(clusters, drop_arm),
-            "two_way_cluster_bootstrap_ee": _two_way_bootstrap(
-                clusters,
-                drop_arm=drop_arm,
-                draws=draws,
-                seed=seed + 100 + index,
-            ),
-        }
-    claim = claim_decision(contrasts)
-    for arm in DROP_ARMS:
-        contrasts[arm]["gate_passed"] = claim["per_contrast"][arm]
+    contrasts, claim = infer_cluster_totals(
+        clusters, bootstrap_draws=draws, bootstrap_seed=seed
+    )
     pooled_totals = {
         arm: _totals_payload(_sum_selected(clusters, all_keys, arm))
         for arm in POLICY_ORDER
@@ -613,6 +698,24 @@ def merge_receipts(
             for arm in POLICY_ORDER
         }
         for date, seed in all_keys
+    }
+    seedwise_paired_effects = {
+        str(learner_seed): {
+            drop_arm: _metrics(
+                _sum_selected(
+                    clusters,
+                    [key for key in all_keys if key[1] == learner_seed],
+                    "FULL",
+                ),
+                _sum_selected(
+                    clusters,
+                    [key for key in all_keys if key[1] == learner_seed],
+                    drop_arm,
+                ),
+            )
+            for drop_arm in DROP_ARMS
+        }
+        for learner_seed in sorted({key[1] for key in all_keys})
     }
     authority_fields = (
         "archive_digest",
@@ -672,23 +775,25 @@ def merge_receipts(
             "dates": sorted({unit.tle_date for unit in manifest.units}),
             "learner_seeds": sorted({unit.learner_seed for unit in manifest.units}),
             "arms": list(ARM_ORDER),
-            "supportive_comparators": ["S_UNI"],
+            "supportive_comparators": ["S0", "S_UNI"],
         },
         "cluster_identity": ["tle_date", "learner_seed"],
         "cluster_count": len(clusters),
         "world_count": len(receipt_paths),
         "arm_order": list(ARM_ORDER),
         "supportive_comparators": {
-            "S_UNI": {
-                "pooled_bits": _sum_selected(clusters, all_keys, "S_UNI").bits,
-                "pooled_joules": _sum_selected(clusters, all_keys, "S_UNI").joules,
+            arm: {
+                "pooled_bits": _sum_selected(clusters, all_keys, arm).bits,
+                "pooled_joules": _sum_selected(clusters, all_keys, arm).joules,
             }
+            for arm in ("S0", "S_UNI")
         },
         "artifact_digests": artifact_inventory,
         "pooled_additive_totals": pooled_totals,
         "cluster_additive_totals": cluster_totals,
+        "seedwise_paired_effects": seedwise_paired_effects,
         "estimator": "pooled sum(bits) / sum(joules)",
-        "bootstrap": "cluster resample; ratio recomputed per draw; central 95% percentile",
+        "bootstrap": "primary two-way pigeonhole over date x learner seed; arms paired; pooled ratio recomputed per draw; central 95% percentile",
         "bootstrap_parameters": {"draws": draws, "seed": seed},
         "zero_bit_disposition": ZERO_BIT_DISPOSITION,
         "margins": {
@@ -734,6 +839,7 @@ __all__ = [
     "ZERO_BIT_DISPOSITION",
     "admission_decision",
     "claim_decision",
+    "infer_cluster_totals",
     "merge_receipts",
     "write_terminal_report",
 ]

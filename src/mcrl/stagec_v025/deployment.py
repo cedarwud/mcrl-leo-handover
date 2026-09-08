@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import time
-from typing import Callable, Mapping, Protocol, Sequence
+from typing import Callable, Literal, Mapping, Protocol, Sequence
 
 from .canonical import StageCContractError, canonical_sha256
-from .learner import ThreeRouteModel
+from .coalitions import CoalitionContext
+from .learner import Route, ThreeRouteModel, V1ThreeRouteModel
 from .state import PhysicalAction
 
 
-DEPLOYMENT_DEADLINE_S = 30.08
+DEPLOYMENT_DEADLINE_S = 10.0
 Profile = tuple[int, ...]
 
 
@@ -51,6 +53,20 @@ class DeploymentDecision:
     elapsed_s: float
     jointly_legal: bool
     service_guard_passed: bool
+
+
+SelectorMode = Literal["S3", "S0", "S_UNI"]
+
+
+@dataclass(frozen=True, slots=True)
+class SelectorDecision:
+    mode: SelectorMode
+    profile: Profile
+    score: float
+    used_fallback: bool
+    fallback_reason: str | None
+    local_optimum_certified: bool | None
+    evaluated_profiles: int
 
 
 class CoordinatorHook(Protocol):
@@ -99,8 +115,47 @@ def independent_two_head_profile(
     return tuple(selected)
 
 
+def construct_reference_proposal(
+    *,
+    model: ThreeRouteModel,
+    tables: Sequence[UserActionTable],
+    catalogue: Sequence[Profile],
+    jointly_legal: Callable[[Profile], bool],
+) -> Profile:
+    """Build A3's Q1+Q2 proposal and deterministically repair joint conflicts."""
+
+    independent = independent_two_head_profile(model, tables)
+    if jointly_legal(independent):
+        return independent
+    best: Profile | None = None
+    best_score = float("-inf")
+    for profile in catalogue:
+        if len(profile) != len(tables) or not jointly_legal(profile):
+            continue
+        score = DeploymentAdapter._profile_q12(model, tables, profile)
+        if score > best_score:
+            best, best_score = profile, score
+    if best is None:
+        raise StageCContractError("joint conflict repair found no legal complete profile")
+    return best
+
+
 def deployment_capability_manifest(
-    *, code_digest: str, physics_digest: str, catalogue_digest: str
+    *,
+    code_digest: str,
+    physics_digest: str,
+    catalogue_digest: str,
+    telemetry_sources_and_ages: Mapping[str, str] | None = None,
+    roster_and_cross_gain_coverage: str = "synthetic_complete_roster_and_beam_specific_cross_gains",
+    model_assumptions: Sequence[str] = ("nominal_no_realised_fading",),
+    calibration_source: str = "synthetic_fixture_only",
+    worker_hardware: str = "sat",
+    worker_count: int = 4,
+    catalogue_bounds: Mapping[str, int] | None = None,
+    solver_limits: Mapping[str, object] | None = None,
+    memory_limit_bytes: int = 1_073_741_824,
+    missing_data_handling: str = "reject_and_execute_prevalidated_base",
+    measured_end_to_end_latency_s: Sequence[float] = (),
 ) -> dict[str, object]:
     for name, digest in (
         ("code_digest", code_digest),
@@ -111,12 +166,19 @@ def deployment_capability_manifest(
             char not in "0123456789abcdef" for char in digest
         ):
             raise StageCContractError(f"{name} must be a lowercase SHA-256")
+    if worker_count < 1 or memory_limit_bytes < 1:
+        raise StageCContractError("capability worker and memory limits must be positive")
+    latency = tuple(float(value) for value in measured_end_to_end_latency_s)
+    if any(value < 0.0 for value in latency):
+        raise StageCContractError("capability latency observations must be nonnegative")
     payload: dict[str, object] = {
-        "schema": "mcrl-v025-stagec-deployment-capability-v1-draft",
+        "schema": "mcrl-v025-stagec-deployment-capability-v1",
         "code_digest": code_digest,
         "physics_digest": physics_digest,
         "catalogue_digest": catalogue_digest,
-        "deadline_s": DEPLOYMENT_DEADLINE_S,
+        "coordinator_compute_budget_wall_s": DEPLOYMENT_DEADLINE_S,
+        "decision_interval_s": 30.08,
+        "reserved_interval_use": "sensing_transport_validation_and_atomic_commit",
         "inputs": [
             "all_users_current_geometry",
             "per_user_legal_physical_actions",
@@ -133,7 +195,29 @@ def deployment_capability_manifest(
             "enforce_no_served_count_decrease_vs_base",
             "atomically_commit_or_base_fallback",
         ],
-        "timer_scope": "proposal+forecasts+catalogue+selection+validation+fallback",
+        "timer_enforcement": "runner_future_timeout_cancel",
+        "base_first": "computed_validated_and_repaired_before_coordinator_timer",
+        "deadline_fallback": "execute_prevalidated_a0",
+        "telemetry_sources_and_ages": dict(
+            telemetry_sources_and_ages
+            or {"synthetic_fixture": "age_0_at_declared_decision_time"}
+        ),
+        "roster_and_cross_gain_coverage": roster_and_cross_gain_coverage,
+        "model_assumptions": list(model_assumptions),
+        "calibration_source": calibration_source,
+        "worker_hardware": worker_hardware,
+        "worker_count": worker_count,
+        "cache_policy": "cold_per_anchor_no_warm_cache",
+        "catalogue_bounds": dict(catalogue_bounds or {"profiles": 64, "coalition_size": 4}),
+        "solver_limits": dict(solver_limits or {"wall_s": DEPLOYMENT_DEADLINE_S}),
+        "memory_limit_bytes": memory_limit_bytes,
+        "missing_data_handling": missing_data_handling,
+        "measured_end_to_end_latency_distribution_s": {
+            "samples": list(latency),
+            "count": len(latency),
+            "p50": None if not latency else float(sorted(latency)[len(latency) // 2]),
+            "max": None if not latency else max(latency),
+        },
     }
     payload["manifest_sha256"] = canonical_sha256(payload)
     return payload
@@ -254,6 +338,55 @@ class DeploymentAdapter:
         except Exception as error:
             return fallback(f"validation_failure:{type(error).__name__}")
 
+    def select_runner_timed(
+        self,
+        *,
+        model: ThreeRouteModel,
+        tables: Sequence[UserActionTable],
+        base_profile: Profile,
+        catalogue: Sequence[Profile],
+        jointly_legal: Callable[[Profile], bool],
+        resolve_profile: Callable[[Profile], ResolvedProfile],
+        coordinator: CoordinatorHook = learned_c3_score,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> DeploymentDecision:
+        """F2 runner-enforced wall timer with prevalidated BASE-first fallback."""
+
+        if len(base_profile) != len(tables) or not jointly_legal(base_profile):
+            raise StageCContractError("BASE must be jointly legal before coordinator start")
+        base_resolution = resolve_profile(base_profile)
+        if base_resolution.profile != base_profile or base_resolution.served_count < 0:
+            raise StageCContractError("BASE must be validated/repaired before coordinator start")
+        started = clock()
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stagec-coordinator")
+        future = executor.submit(
+            self.select,
+            model=model,
+            tables=tables,
+            base_profile=base_profile,
+            catalogue=catalogue,
+            jointly_legal=jointly_legal,
+            resolve_profile=resolve_profile,
+            coordinator=coordinator,
+            clock=clock,
+            _started_at=started,
+        )
+        try:
+            return future.result(timeout=self.deadline_s)
+        except FutureTimeoutError:
+            future.cancel()
+            return DeploymentDecision(
+                profile=base_profile,
+                independent_profile=base_profile,
+                used_fallback=True,
+                fallback_reason="runner_deadline_cancel",
+                elapsed_s=max(0.0, clock() - started),
+                jointly_legal=True,
+                service_guard_passed=True,
+            )
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
     def select_with_preparation(
         self,
         *,
@@ -265,44 +398,56 @@ class DeploymentAdapter:
         coordinator: CoordinatorHook = learned_c3_score,
         clock: Callable[[], float] = time.monotonic,
     ) -> DeploymentDecision:
-        """Start the deadline before host forecast/table/catalogue preparation."""
+        """Runner-time preparation, catalogue search, and validation as one task."""
 
-        started = clock()
         if not jointly_legal(base_profile):
             raise StageCContractError("BASE must be a jointly legal profile")
-        try:
+        base_resolution = resolve_profile(base_profile)
+        if base_resolution.profile != base_profile or base_resolution.served_count < 0:
+            raise StageCContractError("BASE must be validated/repaired before coordinator start")
+        started = clock()
+
+        def run() -> DeploymentDecision:
             tables, catalogue = prepare()
+            return self.select(
+                model=model,
+                tables=tables,
+                base_profile=base_profile,
+                catalogue=catalogue,
+                jointly_legal=jointly_legal,
+                resolve_profile=resolve_profile,
+                coordinator=coordinator,
+                clock=clock,
+                _started_at=started,
+            )
+
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stagec-coordinator")
+        future = executor.submit(run)
+        try:
+            return future.result(timeout=self.deadline_s)
+        except FutureTimeoutError:
+            future.cancel()
+            return DeploymentDecision(
+                base_profile,
+                base_profile,
+                True,
+                "runner_deadline_cancel",
+                max(0.0, clock() - started),
+                True,
+                True,
+            )
         except Exception as error:
             return DeploymentDecision(
                 base_profile,
                 base_profile,
                 True,
-                f"prep_failure:{type(error).__name__}",
+                f"prep_or_validation_failure:{type(error).__name__}",
                 max(0.0, clock() - started),
                 True,
                 True,
             )
-        if clock() - started > self.deadline_s:
-            return DeploymentDecision(
-                base_profile,
-                base_profile,
-                True,
-                "deadline",
-                max(0.0, clock() - started),
-                True,
-                True,
-            )
-        return self.select(
-            model=model,
-            tables=tables,
-            base_profile=base_profile,
-            catalogue=catalogue,
-            jointly_legal=jointly_legal,
-            resolve_profile=resolve_profile,
-            coordinator=coordinator,
-            clock=clock,
-            _started_at=started,
-        )
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     @staticmethod
     def _profile_q12(
@@ -348,8 +493,106 @@ def select_s_uni(
         current = best
 
 
+class ProfileSelector:
+    """One C2 selector class implementing S3, S0, and S_UNI."""
+
+    def __init__(self, mode: SelectorMode) -> None:
+        if mode not in {"S3", "S0", "S_UNI"}:
+            raise StageCContractError("unknown selector mode")
+        self.mode = mode
+
+    @staticmethod
+    def _additive_score(
+        model: V1ThreeRouteModel,
+        tables: Sequence[UserActionTable],
+        profile: Profile,
+        reference: Profile,
+        *,
+        knockout: str | None,
+    ) -> float:
+        total = 0.0
+        for table, selected, baseline in zip(tables, profile, reference, strict=True):
+            if knockout != "C1":
+                total += model.score("C1", table.q1_states[selected]) - model.score(
+                    "C1", table.q1_states[baseline]
+                )
+            if knockout != "C2":
+                total += model.score("C2", table.q2_states[selected]) - model.score(
+                    "C2", table.q2_states[baseline]
+                )
+        return total
+
+    def select(
+        self,
+        *,
+        base_profile: Profile,
+        tables: Sequence[UserActionTable],
+        catalogue: Sequence[Profile],
+        jointly_legal: Callable[[Profile], bool],
+        service_guard: Callable[[Profile], bool],
+        model: V1ThreeRouteModel | None = None,
+        coalition_context: Mapping[Profile, CoalitionContext] | None = None,
+        exact_psi: Callable[[Profile], float] | None = None,
+        exact_nominal_score: Callable[[Profile], float] | None = None,
+        knockout_route: Route | None = None,
+    ) -> SelectorDecision:
+        if not jointly_legal(base_profile) or not service_guard(base_profile):
+            raise StageCContractError("selector requires a prevalidated BASE")
+        if self.mode == "S_UNI":
+            if exact_nominal_score is None:
+                raise StageCContractError("S_UNI requires exact nominal joint physics")
+            current = base_profile
+            evaluated = 0
+            while True:
+                best = current
+                best_score = exact_nominal_score(current)
+                evaluated += 1
+                for user_index, table in enumerate(tables):
+                    for action_index, legal in enumerate(table.action_mask):
+                        if not legal or action_index == current[user_index]:
+                            continue
+                        candidate = (*current[:user_index], action_index, *current[user_index + 1 :])
+                        if not jointly_legal(candidate) or not service_guard(candidate):
+                            continue
+                        score = exact_nominal_score(candidate)
+                        evaluated += 1
+                        if score > best_score:
+                            best, best_score = candidate, score
+                if best == current:
+                    return SelectorDecision("S_UNI", current, best_score, False, None, True, evaluated)
+                current = best
+
+        if model is None or coalition_context is None:
+            raise StageCContractError(f"{self.mode} requires model and coalition contexts")
+        if self.mode == "S0" and exact_psi is None:
+            raise StageCContractError("S0 requires exact Psi")
+        best = base_profile
+        best_score = float("-inf")
+        evaluated = 0
+        for profile in (base_profile, *catalogue):
+            if len(profile) != len(tables) or not jointly_legal(profile) or not service_guard(profile):
+                continue
+            additive = self._additive_score(
+                model, tables, profile, base_profile, knockout=knockout_route
+            )
+            interaction = 0.0
+            if knockout_route != "C3":
+                interaction = (
+                    model.interaction(coalition_context[profile])
+                    if self.mode == "S3"
+                    else float(exact_psi(profile))
+                )
+            score = additive + interaction
+            evaluated += 1
+            if score > best_score:
+                best, best_score = profile, score
+        if evaluated == 0:
+            return SelectorDecision(self.mode, base_profile, 0.0, True, "empty_legal_catalogue", None, 0)
+        return SelectorDecision(self.mode, best, best_score, False, None, None, evaluated)
+
+
 __all__ = [
     "DEPLOYMENT_DEADLINE_S", "DeploymentAdapter", "DeploymentDecision", "Profile",
-    "ResolvedProfile", "UserActionTable", "deployment_capability_manifest",
-    "independent_two_head_profile", "learned_c3_score", "masked_argmax", "select_s_uni",
+    "ProfileSelector", "ResolvedProfile", "SelectorDecision", "SelectorMode", "UserActionTable", "deployment_capability_manifest",
+    "construct_reference_proposal", "independent_two_head_profile", "learned_c3_score", "masked_argmax", "select_s_uni",
 ]
