@@ -26,3 +26,6 @@ Downstream: the stage-A launch manifest/bindings are regenerated at attempt #3 b
 
 ## Re-pin after fix pass 6 (2026-09-08T05:15:32Z UTC)
 Successor manifest after fix pass 6: entries 277, file sha256 `ed004025b77a097f5fa9e43d0062d12b2f0ff181c12f41ba6cf8ff29f39b00c9` (commit c9d0aba). The 907bc753… pin was never bound (ultra review FIX_FIRST). Second scoped ultra review requested against this digest.
+
+## Re-pin after fix pass 6 (2026-09-08T07:02:20Z UTC)
+Successor manifest after fix pass 6: entries 277, file sha256 `e290ef5059bd765a90e813c161fc4b97376aefd33d74ec3c20f23653454f7a67` (commit 2ee8866). The 907bc753… pin was never bound (ultra review FIX_FIRST). Second scoped ultra review requested against this digest.
