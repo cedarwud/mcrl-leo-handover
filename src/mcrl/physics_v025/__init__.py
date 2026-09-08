@@ -18,6 +18,10 @@ from .architectures import (
 )
 from .endpoint import assert_same_energy_price, reward_core
 from .matrix import MATRIX_SETTINGS, PhysicsSetting
+from .calibration import CalibrationValues, nominal_greedy_reference
+from .state_v025 import SCHEMA_SHA256 as C2_STATE_SCHEMA_SHA256
+from .tapes import ExogenousWorldTape, build_world_tape, seed_from_domain
+from .targets import c1_difference_surplus, c2_persistence_forecast, c3_lcsrs_interaction
 
 __all__ = [
     "AngleRateTPC_FDM",
@@ -28,9 +32,18 @@ __all__ = [
     "Geometry",
     "Link",
     "MATRIX_SETTINGS",
+    "CalibrationValues",
+    "C2_STATE_SCHEMA_SHA256",
+    "ExogenousWorldTape",
     "PhysicsSetting",
     "RadiationConfig",
     "architecture_for",
     "assert_same_energy_price",
+    "build_world_tape",
+    "c1_difference_surplus",
+    "c2_persistence_forecast",
+    "c3_lcsrs_interaction",
+    "nominal_greedy_reference",
     "reward_core",
+    "seed_from_domain",
 ]

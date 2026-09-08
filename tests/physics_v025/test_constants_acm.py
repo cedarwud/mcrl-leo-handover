@@ -12,7 +12,9 @@ import pytest
 from mcrl.physics_v025.acm import (
     ACMRate,
     ACM_MODES,
+    CappedACMMarginOffRate,
     UncappedShannonDiagnosticRate,
+    UncappedShannonMarginKeptRate,
     rate_target_mode,
     rate_target_sinr,
     select_mode,
@@ -111,6 +113,23 @@ def test_uncapped_shannon_is_separately_named_margin_off_diagnostic() -> None:
     assert diagnostic.rate_bps(3.0, 8.0) == 16.0
     assert diagnostic.rate_bps(0.0, 8.0) == 0.0
     assert diagnostic.rate_bps(1.0e12, 1.0) > max(m.spectral_efficiency_bit_per_s_hz for m in ACM_MODES)
+
+
+def test_v12_split_u_separates_cap_and_margin() -> None:
+    """U-cap is unbounded but margin-bearing; U-margin is capped and margin-free."""
+
+    cap_removed = UncappedShannonMarginKeptRate()
+    margin_removed = CappedACMMarginOffRate()
+    gamma = 10.0 ** (20.0 / 10.0)
+    margin_linear = 10.0 ** (IMPLEMENTATION_MARGIN_DB / 10.0)
+    assert cap_removed.rate_bps(gamma, 1.0) == pytest.approx(math.log2(1.0 + gamma / margin_linear))
+    assert cap_removed.rate_bps(1.0e12, 1.0) > ACM_MODES[-1].spectral_efficiency_bit_per_s_hz
+    assert margin_removed.rate_bps(1.0e12, 1.0) == pytest.approx(
+        max(mode.spectral_efficiency_bit_per_s_hz for mode in ACM_MODES)
+    )
+    ideal_first = 10.0 ** ((ACM_MODES[0].threshold_db - IMPLEMENTATION_MARGIN_DB) / 10.0)
+    assert margin_removed.served(ideal_first)
+    assert not ACMRate().served(ideal_first)
 
 
 def test_clock_band_noise_and_temperature_arithmetic() -> None:

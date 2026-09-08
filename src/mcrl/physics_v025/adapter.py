@@ -17,7 +17,7 @@ from typing import Iterable, Mapping, Sequence
 from mcrl.errors import MCRLContractError
 
 from .acm import rate_model
-from .architectures import Geometry, RadiationConfig, RadiationResult, architecture_for
+from .architectures import FieldKind, Geometry, RadiationConfig, RadiationResult, architecture_for
 from .energy import (
     HardwareInventory,
     PRIMARY_IDLE_POWER_W,
@@ -29,7 +29,7 @@ from .integration import (
     IntegrationReceipt,
     InterruptionEvent,
     integrate_47_subintervals,
-    snapshot_terminal,
+    snapshot_left,
 )
 from .matrix import PhysicsSetting, shared_computation_plan
 
@@ -58,6 +58,7 @@ class CellScore:
     served_phy: dict[int, bool]
     rate_target_attained: dict[int, bool] | None
     rate_target_feasible: dict[int, bool] | None
+    rate_target_attainment_by_boundary: tuple[dict[int, bool], ...] | None
     rate_target_bps: float | None
     valid: bool
     certificate_residual_w: float
@@ -80,6 +81,7 @@ class CellScore:
                 if self.rate_target_feasible is None
                 else [self.rate_target_feasible[user] for user in users]
             ),
+            "rate_target_attainment_by_boundary": self.rate_target_attainment_by_boundary,
             "rate_target_bps": (
                 None if self.rate_target_bps is None else self.rate_target_bps.hex()
             ),
@@ -95,12 +97,13 @@ def build_shared_tape(
     inventory: HardwareInventory,
     *,
     config: RadiationConfig = RadiationConfig(),
+    field: FieldKind = "realised",
 ) -> SharedArchitectureTape:
     """Build one 48-boundary tape and its separately named terminal snapshot."""
 
     engine = architecture_for(architecture)
     boundaries = tuple(
-        RadiationBoundary(time_s, engine.radiate(config, geometry, "realised"))
+        RadiationBoundary(time_s, engine.radiate(config, geometry, field))
         for time_s, geometry in geometry_samples
     )
     if len(boundaries) != 48:
@@ -109,7 +112,7 @@ def build_shared_tape(
         # Keep the invalid certificate in memory for diagnostics but never
         # synthesize a zero-effect cell from it.
         return SharedArchitectureTape(architecture, inventory, boundaries, boundaries[-1])
-    return SharedArchitectureTape(architecture, inventory, boundaries, boundaries[-1])
+    return SharedArchitectureTape(architecture, inventory, boundaries, boundaries[0])
 
 
 def _rescore_boundary(
@@ -159,11 +162,11 @@ def score_setting(
     residual = max(boundary.radiation.certificate.residual_w for boundary in tape.integrated)
     if any(not boundary.radiation.valid for boundary in tape.integrated):
         return CellScore(
-            setting, {}, math.nan, {}, {}, {}, None, None, None, False, residual
+            setting, {}, math.nan, {}, {}, {}, None, None, None, None, False, residual
         )
     if setting.integration == "T":
         point = _rescore_boundary(tape.snapshot, tape.inventory, setting)
-        receipt = snapshot_terminal(point, start_s=tape.integrated[0].time_s)
+        receipt = snapshot_left(point, end_s=tape.integrated[-1].time_s)
     else:
         points = tuple(_rescore_boundary(boundary, tape.inventory, setting) for boundary in tape.integrated)
         receipt = integrate_47_subintervals(
@@ -209,6 +212,14 @@ def score_setting(
         if is_rate_target
         else None
     )
+    boundary_attainment = (
+        tuple(
+            boundary.radiation.rate_target_attained or {user: False for user in users}
+            for boundary in tape.integrated
+        )
+        if is_rate_target
+        else None
+    )
     return CellScore(
         setting,
         receipt.bits,
@@ -218,6 +229,7 @@ def score_setting(
         served_phy,
         attained,
         feasible,
+        boundary_attainment,
         config_target,
         True,
         residual,

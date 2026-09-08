@@ -1,4 +1,4 @@
-"""Predeclared 20-cell V0.25 physics matrix and shared-tape hooks."""
+"""Predeclared V0.25 v1.2 physics matrix and shared-tape hooks."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ ArchitectureCode = Literal["b", "a-\u03b3", "a\u2032-\u03b3", "a-r", "a\u2032-r"
 IntegrationCode = Literal["0", "T"]
 StandbyCode = Literal["0", "f"]
 InterruptionCode = Literal["off", "on"]
-RateCode = Literal["ACM", "U"]
+RateCode = Literal["ACM", "U-cap", "U-margin"]
 
 
 @dataclass(frozen=True)
@@ -26,15 +26,15 @@ class PhysicsSetting:
 
     def __post_init__(self) -> None:
         if self.architecture not in {"b", "a-\u03b3", "a\u2032-\u03b3", "a-r", "a\u2032-r"}:
-            raise MCRLContractError("architecture is outside the sealed V0.25 v1.1 matrix")
+            raise MCRLContractError("architecture is outside the sealed V0.25 v1.2 matrix")
         if self.integration not in {"0", "T"}:
             raise MCRLContractError("integration must be 0 or T")
         if self.standby not in {"0", "f"}:
             raise MCRLContractError("standby must be 0 or f")
         if self.interruption not in {"off", "on"}:
             raise MCRLContractError("interruption must be off or on")
-        if self.rate not in {"ACM", "U"}:
-            raise MCRLContractError("rate must be ACM or U")
+        if self.rate not in {"ACM", "U-cap", "U-margin"}:
+            raise MCRLContractError("rate must be ACM, U-cap, or U-margin")
 
     @property
     def treatment(self) -> str:
@@ -45,14 +45,15 @@ class PhysicsSetting:
             ("0", "f", "off", "ACM"): "S",
             ("0", "0", "on", "ACM"): "H",
             ("0", "f", "on", "ACM"): "SH",
-            ("0", "0", "off", "U"): "U",
+            ("0", "0", "off", "U-cap"): "U-cap",
+            ("0", "0", "off", "U-margin"): "U-margin",
         }
         try:
             treatment = mapping[signature]
         except KeyError:
             raise MCRLContractError("setting is outside the predeclared fractional matrix") from None
-        if self.architecture in {"a-r", "a\u2032-r"} and treatment != "0":
-            raise MCRLContractError("rate-target architectures are declared only for treatment 0")
+        if treatment.startswith("U") and self.architecture in {"a-r", "a\u2032-r"}:
+            raise MCRLContractError("split-U diagnostics apply only to the original architectures")
         return treatment
 
     @property
@@ -82,24 +83,23 @@ def _setting(architecture: ArchitectureCode, treatment: str) -> PhysicsSetting:
         "S": ("0", "f", "off", "ACM"),
         "H": ("0", "0", "on", "ACM"),
         "SH": ("0", "f", "on", "ACM"),
-        "U": ("0", "0", "off", "U"),
+        "U-cap": ("0", "0", "off", "U-cap"),
+        "U-margin": ("0", "0", "off", "U-margin"),
     }
     integration, standby, interruption, rate = terms[treatment]
     return PhysicsSetting(architecture, integration, standby, interruption, rate)  # type: ignore[arg-type]
 
 
-# Sealed v1.1 priority order.  Only the two added rate-target treatment-0
-# cells are declared; the retained treatments use the relabelled original
-# architectures.  U remains diagnostic-only and cannot become primary.
-MATRIX_SETTINGS = (
-    _setting("a-r", "0"),
-    _setting("a\u2032-r", "0"),
-) + tuple(
+# Sealed v1.2 explicit priority order. Its prose count is arithmetically
+# inconsistent; the listed amendments enumerate 25 eligible settings plus
+# six split-U diagnostics, hence 31 settings until the controller corrects it.
+MATRIX_SETTINGS = tuple(
     _setting(architecture, treatment)
     for treatment in ("0", "S", "H", "SH", "T")
-    for architecture in ("a-\u03b3", "b", "a\u2032-\u03b3")
+    for architecture in ("a-r", "a\u2032-r", "a-\u03b3", "b", "a\u2032-\u03b3")
 ) + tuple(
-    _setting(architecture, "U")
+    _setting(architecture, treatment)
+    for treatment in ("U-cap", "U-margin")
     for architecture in ("a-\u03b3", "b", "a\u2032-\u03b3")
 )
 
@@ -113,14 +113,14 @@ def shared_computation_plan(*, q: float | None = None) -> dict[str, object]:
     equivalents = len(architectures) * (1 + 47)
     core_hours = equivalents * (302.0 * 4.0 / 3600.0)
     return {
-        "schema": "mcrl-v025-physics-shared-computation-plan-v1.1",
+        "schema": "mcrl-v025-physics-shared-computation-plan-v1.2",
         "architectures": architectures,
         "physical_tapes_per_architecture": {"snapshot": 1, "integrated_subintervals": 47},
         "shared_physical_equivalents": equivalents,
         "reference_core_hours": core_hours,
         "q": q,
         "estimated_core_hours": None if q is None else core_hours * q,
-        "rescore_from_integrated_tape": ["S", "H", "SH", "U"],
+        "rescore_from_integrated_tape": ["S", "H", "SH", "U-cap", "U-margin"],
         "settings": [
             {"label": setting.label, "digest": setting.digest, **setting.payload()}
             for setting in MATRIX_SETTINGS

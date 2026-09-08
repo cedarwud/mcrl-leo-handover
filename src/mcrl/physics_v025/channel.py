@@ -22,6 +22,7 @@ from .constants_v025 import (
     RX_ENVELOPE_B,
     RX_GAIN_FLOOR_DBI,
     RX_GAIN_MAX_DBI,
+    RX_S465_THETA_MIN_DEG,
     SPEED_OF_LIGHT_M_S,
     SYSTEM_TEMPERATURE_K,
     SCINTILLATION_ELEVATION_DEG,
@@ -117,20 +118,54 @@ def transmit_gain_linear(theta_deg: np.ndarray | float) -> np.ndarray:
 
 
 def receive_gain_dbi(separation_deg: np.ndarray | float) -> np.ndarray:
-    """Retained clipped near-axis extrapolation, explicitly not ITU-prescribed."""
+    """S.465-6 envelope with the declared near-axis approximation.
+
+    For this terminal ``D/lambda < 50`` and the applicable lower boundary is
+    2.043298703 degrees.  S.465-6 supplies ``32 - 25 log10(theta)`` from that
+    boundary to 48 degrees and the -10 dBi continuation thereafter.  Below
+    the boundary V0.25 deliberately extends the same analytic envelope up to
+    the independently sourced 35 dBi terminal peak.  That last branch is an
+    engineering approximation, not a prescription of S.465-6.
+    """
 
     separation = np.asarray(separation_deg, dtype=np.float64)
     if not np.all(np.isfinite(separation)) or np.any(separation < 0.0):
         raise MCRLContractError("receive separations must be finite and nonnegative")
     with np.errstate(divide="ignore"):
-        envelope = RX_ENVELOPE_A_DBI - RX_ENVELOPE_B * np.log10(
+        near_axis_approximation = RX_ENVELOPE_A_DBI - RX_ENVELOPE_B * np.log10(
             np.maximum(separation, 1.0e-12)
         )
-    return np.clip(envelope, RX_GAIN_FLOOR_DBI, RX_GAIN_MAX_DBI)
+        s465_envelope = RX_ENVELOPE_A_DBI - RX_ENVELOPE_B * np.log10(
+            np.maximum(separation, RX_S465_THETA_MIN_DEG)
+        )
+    result = np.where(
+        separation < RX_S465_THETA_MIN_DEG,
+        near_axis_approximation,
+        s465_envelope,
+    )
+    return np.clip(result, RX_GAIN_FLOOR_DBI, RX_GAIN_MAX_DBI)
 
 
 def receive_gain_linear(separation_deg: np.ndarray | float) -> np.ndarray:
     return 10.0 ** (receive_gain_dbi(separation_deg) / 10.0)
+
+
+def interference_receive_gain_linear(
+    separation_deg: np.ndarray | float,
+    *,
+    same_satellite: np.ndarray | bool,
+) -> np.ndarray:
+    """Receive gain used in the interference sum, including boresight override."""
+
+    separation = np.asarray(separation_deg, dtype=np.float64)
+    same = np.asarray(same_satellite, dtype=np.bool_)
+    try:
+        separation, same = np.broadcast_arrays(separation, same)
+    except ValueError as error:
+        raise MCRLContractError("separation and satellite-identity masks do not broadcast") from error
+    envelope = receive_gain_linear(separation)
+    peak = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+    return np.where(same, peak, envelope)
 
 
 def rician_power_gain(
@@ -176,6 +211,39 @@ def keyed_component_seed(
     return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
 
 
+def keyed_fading_gain(
+    *,
+    world: int,
+    user: int,
+    norad: int,
+    absolute_time_ns: int,
+    elevation_deg: float,
+) -> float:
+    """Return the action-independent realised fading gain at the actual elevation.
+
+    Shadow and Rician components use separate stable keys.  Elevation is not
+    part of either key: two elevations therefore reuse the same standard-
+    normal variate while the elevation-dependent shadow sigma and
+    scintillation table genuinely alter the realised channel.  This is the
+    intended common-random-number comparison and prevents the legacy fixed
+    10-degree shadow fallback from returning.
+    """
+
+    if not math.isfinite(elevation_deg) or not -90.0 <= elevation_deg <= 90.0:
+        raise MCRLContractError("elevation must be finite and in [-90,90] degrees")
+    shadow_rng = np.random.default_rng(
+        keyed_component_seed(world, user, norad, absolute_time_ns, "shadow")
+    )
+    rician_rng = np.random.default_rng(
+        keyed_component_seed(world, user, norad, absolute_time_ns, "rician")
+    )
+    sigma_db = float(shadow_sigma_db(elevation_deg))
+    shadow_db = sigma_db * float(shadow_rng.standard_normal())
+    deterministic_loss_db = float(scintillation_loss_db(elevation_deg))
+    rician = float(rician_power_gain(rician_rng, (1,))[0])
+    return rician * 10.0 ** (-(shadow_db + deterministic_loss_db) / 10.0)
+
+
 def is_visible(elevation_deg: float) -> bool:
     """The live V0.25 visibility contract uses the wired 10-degree floor."""
 
@@ -188,6 +256,8 @@ __all__ = [
     "db_loss_gain",
     "free_space_path_gain",
     "keyed_component_seed",
+    "keyed_fading_gain",
+    "interference_receive_gain_linear",
     "is_visible",
     "noise_power_w",
     "receive_gain_dbi",

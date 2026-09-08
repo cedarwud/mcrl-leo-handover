@@ -13,7 +13,7 @@ import json
 import math
 from types import MappingProxyType
 
-ENGINE_VERSION = "V025-ANGLE-RATE-TPC-TDM-ACM-STAGE1B"  # Provenance: sealed V025 v1.1 amendment, primary architecture.
+ENGINE_VERSION = "V025-ANGLE-RATE-TPC-TDM-ACM-STAGE2"  # Provenance: sealed V025 v1.1 amendment plus stage-2 tape/target contract.
 REFERENCE_ARCHITECTURE = "b"  # Provenance: sealed V025 priority declaration, declared reference model.
 PRIMARY_ARCHITECTURE = "a-r"  # Provenance: sealed V025 v1.1 amendment, primary system model.
 SENSITIVITY_ARCHITECTURE = "a\u2032-r"  # Provenance: sealed V025 v1.1 amendment, architectural sensitivity.

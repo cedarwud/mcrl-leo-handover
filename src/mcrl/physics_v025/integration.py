@@ -197,8 +197,24 @@ def integrate_47_subintervals(
     )
 
 
+def snapshot_left(sample: BoundarySample, *, end_s: float) -> IntegrationReceipt:
+    """Treatment T: decision-time (left) snapshot held for 30.08 seconds."""
+
+    duration = end_s - sample.time_s
+    if not math.isclose(duration, DECISION_INTERVAL_S, rel_tol=0.0, abs_tol=1.0e-12):
+        raise MCRLContractError("left snapshot must be at t for a 30.08-s interval")
+    bits = {user: rate * duration for user, rate in sample.rate_bps.items()}
+    decoding = {user: float(value) * duration for user, value in sample.decoding.items()}
+    return IntegrationReceipt(bits, sample.power_w * duration, decoding, dict(decoding), ())
+
+
 def snapshot_terminal(sample: BoundarySample, *, start_s: float) -> IntegrationReceipt:
-    """Treatment T: terminal decision snapshot held over the 30.08-s interval."""
+    """Compatibility helper for the superseded terminal-snapshot interpretation.
+
+    V0.25 matrix treatment T does not call this helper after the controller's
+    stage-1 decision record; it remains named so older stage-1 imports fail no
+    more broadly than necessary.
+    """
 
     duration = sample.time_s - start_s
     if not math.isclose(duration, DECISION_INTERVAL_S, rel_tol=0.0, abs_tol=1.0e-12):
@@ -214,5 +230,6 @@ __all__ = [
     "InterruptionEvent",
     "integrate_47_subintervals",
     "integrate_trapezoidal",
+    "snapshot_left",
     "snapshot_terminal",
 ]

@@ -353,7 +353,11 @@ def _solve_power(
         if enforce_target_clearance and power.size:
             achieved_sinr = power * direct / (noise + coupling @ power)
             clears_target = bool(
-                np.all(forced | (power == caps) | (achieved_sinr >= targets))
+                np.all(
+                    forced
+                    | (power == caps)
+                    | (achieved_sinr >= np.nextafter(targets, -np.inf))
+                )
             )
         if residual <= config.solver_tolerance_w and clears_target:
             break

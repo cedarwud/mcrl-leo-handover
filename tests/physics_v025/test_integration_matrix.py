@@ -108,45 +108,47 @@ def test_d2_visibility_and_dwell_arithmetic() -> None:
 
 
 def test_matrix_exact_sealed_order_digests_and_no_baseline_relabel() -> None:
-    """The v1.1 order has two rate cells, 15 retained/relabelled cells, and three U diagnostics."""
+    """The explicit v1.2 list has 25 eligible cells plus six split-U diagnostics."""
 
     expected = [
         "a-r0", "a\u2032-r0", "a-\u03b30", "b0", "a\u2032-\u03b30",
-        "a-\u03b3S", "bS", "a\u2032-\u03b3S", "a-\u03b3H", "bH", "a\u2032-\u03b3H",
-        "a-\u03b3SH", "bSH", "a\u2032-\u03b3SH", "a-\u03b3T", "bT", "a\u2032-\u03b3T",
-        "a-\u03b3U", "bU", "a\u2032-\u03b3U",
+        "a-rS", "a\u2032-rS", "a-\u03b3S", "bS", "a\u2032-\u03b3S",
+        "a-rH", "a\u2032-rH", "a-\u03b3H", "bH", "a\u2032-\u03b3H",
+        "a-rSH", "a\u2032-rSH", "a-\u03b3SH", "bSH", "a\u2032-\u03b3SH",
+        "a-rT", "a\u2032-rT", "a-\u03b3T", "bT", "a\u2032-\u03b3T",
+        "a-\u03b3U-cap", "bU-cap", "a\u2032-\u03b3U-cap",
+        "a-\u03b3U-margin", "bU-margin", "a\u2032-\u03b3U-margin",
     ]
     assert [setting.label for setting in MATRIX_SETTINGS] == expected
-    assert len({setting.digest for setting in MATRIX_SETTINGS}) == 20
+    assert len({setting.digest for setting in MATRIX_SETTINGS}) == 31
     plan = shared_computation_plan()
     assert plan["all_neutral_control_label"] == "ALL_NEUTRAL_CONTROL"
     assert "BASELINE" not in json.dumps(plan)
 
 
 def test_matrix_rejects_undeclared_factorial_corner() -> None:
-    """Snapshot+standby is outside the declared fractional 20-cell design."""
+    """Snapshot+standby remains outside the declared fractional design."""
 
     setting = PhysicsSetting("a-\u03b3", "T", "f", "off", "ACM")
     with pytest.raises(MCRLContractError):
         _ = setting.treatment
-    with pytest.raises(MCRLContractError):
-        _ = PhysicsSetting("a-r", "T", "0", "off", "ACM").treatment
+    assert PhysicsSetting("a-r", "T", "0", "off", "ACM").treatment == "T"
 
 
-def test_estimate_exposes_all_20_cells_and_240_equivalent_shared_plan() -> None:
-    """Five architectures*48 boundaries=240 and the estimate enumerates all 20 digested cells."""
+def test_estimate_exposes_v12_cells_and_240_equivalent_shared_plan() -> None:
+    """Five architectures*48 boundaries=240; treatments rescore those tapes."""
 
     plan = shared_computation_plan(q=2.0)
     assert plan["shared_physical_equivalents"] == 5 * (1 + 47) == 240
     assert plan["reference_core_hours"] == pytest.approx(80.53333333333333)
     assert plan["estimated_core_hours"] == pytest.approx(161.06666666666666)
-    assert plan["settings_count"] == len(plan["settings"]) == 20
-    assert len({row["digest"] for row in plan["settings"]}) == 20
-    assert plan["rescore_from_integrated_tape"] == ["S", "H", "SH", "U"]
+    assert plan["settings_count"] == len(plan["settings"]) == 31
+    assert len({row["digest"] for row in plan["settings"]}) == 31
+    assert plan["rescore_from_integrated_tape"] == ["S", "H", "SH", "U-cap", "U-margin"]
 
 
 def test_shared_tape_rescores_standby_handover_and_u_without_reradiation() -> None:
-    """S raises E; H removes 62 ms of bits only; U=log2(1+3) exceeds local ACM rate."""
+    """S raises E; H removes 62 ms of bits; U-cap applies Shannon with margin."""
 
     bandwidth = 8.0
     direct = 3.0 * noise_power_w(bandwidth) / 1.65
@@ -162,11 +164,13 @@ def test_shared_tape_rescores_standby_handover_and_u_without_reradiation() -> No
         by_label["bH"],
         interruptions=(InterruptionEvent(0, 0.0, "same_satellite_beam_change"),),
     )
-    upper = score_setting(tape, by_label["bU"])
+    upper = score_setting(tape, by_label["bU-cap"])
     assert standby.joules > zero.joules
     assert interrupted.joules == pytest.approx(zero.joules)
     assert interrupted.bits[0] == pytest.approx(zero.bits[0] * (30.08 - 0.062) / 30.08)
-    assert upper.bits[0] == pytest.approx(8.0 * 2.0 * 30.08)
+    assert upper.bits[0] == pytest.approx(
+        8.0 * np.log2(1.0 + 3.0 / 10.0 ** (1.7 / 10.0)) * 30.08
+    )
     assert upper.bits[0] > zero.bits[0]
 
 

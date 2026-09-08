@@ -61,6 +61,19 @@ def select_mode(sinr_linear: float) -> ACMMode | None:
     return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
 
 
+def select_mode_margin_off(sinr_linear: float) -> ACMMode | None:
+    """Greatest-efficiency ACM mode with only the common 1.7-dB margin removed."""
+
+    if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+        raise MCRLContractError("SINR must be finite and nonnegative")
+    eligible = [
+        mode
+        for mode in ACM_MODES
+        if sinr_linear >= 10.0 ** ((mode.threshold_db - IMPLEMENTATION_MARGIN_DB) / 10.0)
+    ]
+    return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
+
+
 def rate_target_mode(
     rate_target_bps: float,
     full_bandwidth_hz: float,
@@ -157,11 +170,53 @@ class UncappedShannonDiagnosticRate:
         return bool(allocated and sinr_linear >= SHANNON_MIN)
 
 
+@dataclass(frozen=True)
+class UncappedShannonMarginKeptRate:
+    """U-cap: remove the SE ceiling while retaining the common margin floor."""
+
+    name: str = "U_CAP_UNCAPPED_SHANNON_MARGIN_KEPT"
+
+    def rate_bps(self, sinr_linear: float, bandwidth_hz: float) -> float:
+        if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+            raise MCRLContractError("SINR must be finite and nonnegative")
+        if not math.isfinite(bandwidth_hz) or bandwidth_hz <= 0.0:
+            raise MCRLContractError("bandwidth must be finite and positive")
+        if sinr_linear < SINR_MIN:
+            return 0.0
+        margin_linear = 10.0 ** (IMPLEMENTATION_MARGIN_DB / 10.0)
+        return bandwidth_hz * math.log2(1.0 + sinr_linear / margin_linear)
+
+    def served(self, sinr_linear: float, *, allocated: bool = True) -> bool:
+        if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+            raise MCRLContractError("SINR must be finite and nonnegative")
+        return bool(allocated and sinr_linear >= SINR_MIN)
+
+
+@dataclass(frozen=True)
+class CappedACMMarginOffRate:
+    """U-margin: retain the ACM SE ceiling while removing the common margin."""
+
+    name: str = "U_MARGIN_CAPPED_ACM_MARGIN_OFF"
+
+    def rate_bps(self, sinr_linear: float, bandwidth_hz: float) -> float:
+        if not math.isfinite(bandwidth_hz) or bandwidth_hz <= 0.0:
+            raise MCRLContractError("bandwidth must be finite and positive")
+        mode = select_mode_margin_off(sinr_linear)
+        return 0.0 if mode is None else bandwidth_hz * mode.spectral_efficiency_bit_per_s_hz
+
+    def served(self, sinr_linear: float, *, allocated: bool = True) -> bool:
+        return bool(allocated and select_mode_margin_off(sinr_linear) is not None)
+
+
 def rate_model(name: str) -> RateModel:
     if name == "ACM":
         return ACMRate()
     if name == "U":
         return UncappedShannonDiagnosticRate()
+    if name == "U-cap":
+        return UncappedShannonMarginKeptRate()
+    if name == "U-margin":
+        return CappedACMMarginOffRate()
     raise MCRLContractError(f"unknown V0.25 rate model {name!r}")
 
 
@@ -169,11 +224,14 @@ __all__ = [
     "ACMMode",
     "ACMRate",
     "ACM_MODES",
+    "CappedACMMarginOffRate",
     "RateModel",
     "UncappedShannonDiagnosticRate",
+    "UncappedShannonMarginKeptRate",
     "rate_model",
     "rate_target_mode",
     "rate_target_sinr",
     "select_mode",
+    "select_mode_margin_off",
     "served_phy",
 ]
