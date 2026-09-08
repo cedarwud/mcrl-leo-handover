@@ -5,8 +5,10 @@ sealed acceptance procedure runs `test -d .git`, which fails in a git worktree).
 cd /home/sat/mcrl-leo-handover-stagec
 export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/sat/mcrl-leo-handover-stagec/src TMPDIR=/home/sat/mcrl-leo-handover-stagec/.tmp; mkdir -p "$TMPDIR"
 PY=/home/sat/mcrl-leo-handover/.venv/bin/python
+export V023_STAGEC_PYTHON="$PY"        # the chunk launcher reads V023_STAGEC_PYTHON (else it defaults to <repo>/.venv/bin/python, absent in the clone)
 BUNDLE=/home/sat/mcrl-leo-handover-stagec/.scratch/multi-catfish-v023-c1c2-successor-stagec-launch
-BINDINGS="$BUNDLE/V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json"      # stage-C freeze (bind --write in this clone if absent)
+BINDINGS="$BUNDLE/V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json"      # stage-C freeze: the binder WRITES BY DEFAULT (no --write flag); initial freeze if absent:
+#   $PY $BUNDLE/bind_v023_c1c2_successor_stagec_freeze.py --stage-a-output "$STAGE_A" --plan-output "$RUN_ROOT/V023-C1C2-SUCCESSOR-9000-WORLD-PLAN.json" --stage-b-output "$STAGE_B" --stage-c-output "$STAGE_C"
 STAGE_A=/home/sat/mcrl-v023-c1c2-successor-source-training-20260907-100e-r1
 STAGE_B=/home/sat/mcrl-v023-c1c2-successor-stageb-20260907-r1
 STAGE_C=/home/sat/mcrl-v023-c1c2-successor-stagec-20260907-r1                 # frozen stage_c_output_root; must be ABSENT until the 3000 merge-four
@@ -14,6 +16,7 @@ RUN_ROOT=/home/sat/mcrl-v023-c1c2-successor-stagec-controller-20260907-r1
 CHUNKS_ROOT=${STAGE_C}-chunks
 ACCEPT_ROOT=/home/sat/mcrl-v023-successor-stagec-equivalence-20260908
 ```
+Launcher notes (pre-launch dry run 2026-09-08 10:19 UTC): `launch_stage_c_chunks.sh --help` prints usage but exits 2 at this HEAD — read the usage/source instead; the launcher forces `TMPDIR=<repo>/.tmp` and creates it (git-excluded; acceptable in the plain clone). At barrier 9000 `--merge` additionally needs `--four-arm-roots FULL2_ROOT DROP_C1_ROOT DROP_C2_ROOT BASELINE_ROOT --admission-mapping "$RUN_ROOT/stage-c-admission-mapping.json" --final-output "$STAGE_C"` (continuation only; requires owner authority).
 Thread rule: chunk/acceptance/merge processes need `OMP/OPENBLAS/MKL/NUMEXPR_NUM_THREADS=1`; the non-chunk prep scripts (stage-B wrapper, sync script) use `=2`. `oom_score_adj` 1000 is set by the chunk launcher itself.
 
 | # | step | command | PASS token / artifact | next |
