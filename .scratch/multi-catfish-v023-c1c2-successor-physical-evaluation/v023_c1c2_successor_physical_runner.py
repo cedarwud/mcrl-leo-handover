@@ -1386,6 +1386,19 @@ def _chunk_provenance(context: Mapping[str, object]) -> dict[str, object]:
     for output_name, candidates in aliases.items():
         value = next((raw.get(candidate) for candidate in candidates if raw.get(candidate) is not None), None)
         result[output_name] = _digest(value, field=f"provenance.{output_name}")
+    continuation = context.get("continuation_authority")
+    if continuation is not None:
+        if not isinstance(continuation, Mapping):
+            raise C1C2PhysicalError("chunk continuation provenance is malformed")
+        for name in (
+            "continuation_authority_sha256",
+            "owner_notification_sha256",
+            "result_3000_sha256",
+            "checkpoint_3000_sha256",
+        ):
+            result[name] = _digest(
+                continuation.get(name), field=f"provenance.{name}"
+            )
     return result
 
 
@@ -1526,6 +1539,8 @@ def build_chunk_boundary_states(
     context.setdefault("execution_mode", "arm_decoupled")
     context["formal"] = formal
     context["chunk_alignment"] = alignment
+    if limit > 3000 and not isinstance(context.get("continuation_authority"), Mapping):
+        raise C1C2PhysicalError("episodes above 3000 require continuation authority")
     _chunk_provenance(context)
     payloads: dict[int, Mapping[str, object]] = {}
     initial_state = {"format_version": 1, "age_rng_state": None}
@@ -1674,14 +1689,20 @@ def _parent_checkpoint(
     expected = _digest(raw.get("sha256"), field="parent_checkpoint.sha256")
     if file_sha256(path) != expected:
         raise C1C2PhysicalError("parent checkpoint bytes drifted")
-    checkpoint = _read_chunk_checkpoint(path)
+    raw_checkpoint = _read_json(path, label="parent checkpoint")
+    if raw_checkpoint.get("schema") == f"{CHECKPOINT_SCHEMA}-arm-merge-v1":
+        checkpoint = raw_checkpoint
+        kind = "arm-merge-checkpoint"
+    else:
+        checkpoint = _read_chunk_checkpoint(path)
+        kind = "arm-chunk-checkpoint"
     if (
         checkpoint.get("arm") != arm
         or checkpoint.get("completed_episode") != start
         or checkpoint.get("resume_state") != boundary_payload.get("resume_state")
     ):
         raise C1C2PhysicalError("parent checkpoint state disagrees with chunk boundary")
-    return {"kind": "arm-chunk-checkpoint", "path": str(path.resolve()), "sha256": expected}
+    return {"kind": kind, "path": str(path.resolve()), "sha256": expected}
 
 
 def _run_arm_chunk_locked(
@@ -2091,9 +2112,34 @@ def _merge_arm_chunks_locked(
     policy_binding = all_rows[0].policy_binding
     schedule_values = {receipt["schedule_sha256"] for receipt, _ in chunks}
     plan_values = {receipt["plan_sha256"] for receipt, _ in chunks}
-    provenance_values = {canonical_sha256(receipt.get("provenance")) for receipt, _ in chunks}
+    base_provenance_fields = {
+        "authority_sha256", "code_manifest_sha256", "configuration_sha256",
+        "tle_sha256", "prereg_sha256", "admission_sha256",
+        "stage_ab_supplement_sha256", "acceptance_evidence_sha256",
+        "acceptance_procedure_sha256",
+    }
+    continuation_fields = {
+        "continuation_authority_sha256", "owner_notification_sha256",
+        "result_3000_sha256", "checkpoint_3000_sha256",
+    }
+    base_provenance_values = {
+        canonical_sha256({name: receipt["provenance"].get(name) for name in base_provenance_fields})
+        for receipt, _ in chunks
+    }
+    continuation_provenance_values = {
+        canonical_sha256({name: receipt["provenance"].get(name) for name in continuation_fields})
+        for receipt, _ in chunks if int(receipt["end_boundary"]) > 3000
+    }
+    for receipt, _ in chunks:
+        provenance = receipt.get("provenance")
+        expected_fields = base_provenance_fields | (
+            continuation_fields if int(receipt["end_boundary"]) > 3000 else set()
+        )
+        if not isinstance(provenance, Mapping) or set(provenance) != expected_fields:
+            raise C1C2PhysicalError("arm chunk continuation provenance drifted")
     if (
-        len(schedule_values) != 1 or len(plan_values) != 1 or len(provenance_values) != 1
+        len(schedule_values) != 1 or len(plan_values) != 1
+        or len(base_provenance_values) != 1 or len(continuation_provenance_values) > 1
         or any(row.policy_binding != policy_binding for row in all_rows)
     ):
         raise C1C2PhysicalError("arm chunk provenance changed across merge")
@@ -2169,6 +2215,16 @@ def _merge_arm_chunks_locked(
         "execution_mode": "arm_decoupled",
         "scientific_disposition_emitted": False,
     }
+    if cursor > 3000:
+        if not continuation_provenance_values:
+            raise C1C2PhysicalError("continuation arm merge lacks authority provenance")
+        continuation_provenance = next(
+            receipt["provenance"] for receipt, _ in chunks
+            if int(receipt["end_boundary"]) > 3000
+        )
+        payload["continuation_authority"] = {
+            name: continuation_provenance[name] for name in continuation_fields
+        }
     _write_once(output / "arm-merge.json", payload)
     return payload
 
@@ -2192,6 +2248,7 @@ def _merge_four_arm_locked(
     output_dir: str | Path,
     *,
     admission_mapping: Mapping[str, object],
+    continuation_authority: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Assemble four complete arm merges in frozen arm/episode order."""
 
@@ -2231,12 +2288,13 @@ def _merge_four_arm_locked(
     if len(completed_values) != 1 or len(plan_values) != 1 or len(schedule_values) != 1:
         raise C1C2PhysicalError("four-arm merge identities disagree")
     completed = next(iter(completed_values))
-    if completed > 3000:
-        raise C1C2PhysicalError("four-arm chunk assembly cannot exceed 3000 without continuation authority")
+    if completed not in TERMINAL_BOUNDARIES:
+        raise C1C2PhysicalError("four-arm chunk assembly must end at 3000 or 9000")
+    if completed == 9000 and not isinstance(continuation_authority, Mapping):
+        raise C1C2PhysicalError("four-arm 9000 assembly requires continuation authority")
+    if completed == 3000 and continuation_authority is not None:
+        raise C1C2PhysicalError("continuation authority is valid only for 9000 assembly")
     output = Path(output_dir)
-    if output.exists() or output.is_symlink():
-        raise C1C2PhysicalError("four-arm merge output must be absent")
-    output.mkdir(parents=True, exist_ok=False)
     ordered: list[EpisodeReceipt] = []
     for index in range(completed):
         block = [rows_by_arm[arm][index] for arm in ARMS]
@@ -2244,7 +2302,61 @@ def _merge_four_arm_locked(
         ordered.extend(block)
     plan_sha = next(iter(plan_values))
     policy_bindings = {arm: merges[arm]["policy_binding"] for arm in ARMS}
-    for boundary in range(CHECKPOINT_EVERY, completed + 1, CHECKPOINT_EVERY):
+    preserved_files: dict[str, str] = {}
+    first_boundary = CHECKPOINT_EVERY
+    if completed == 3000:
+        if output.exists() or output.is_symlink():
+            raise C1C2PhysicalError("four-arm merge output must be absent")
+        output.mkdir(parents=True, exist_ok=False)
+    else:
+        if output.is_symlink() or not output.is_dir():
+            raise C1C2PhysicalError("9000 continuation requires the existing 3000 root")
+        if any((output / name).exists() for name in (
+            "ADMINISTRATIVE-CLOSURE.json", "MANIFEST.sha256", "COMPLETE",
+            "continuation-result.json",
+        )):
+            raise C1C2PhysicalError("sealed, closed, or completed root cannot be continued")
+        result_3000 = _read_json(output / "result.json", label="preserved 3000 result")
+        checkpoint_3000 = _read_checkpoint(
+            output / "checkpoints" / "checkpoint-003000.json"
+        )
+        prefix_rows = checkpoint_3000.get("receipts")
+        authority = continuation_authority
+        if (
+            result_3000.get("overall_token") != HELD
+            or result_3000.get("completed_episode") != 3000
+            or result_3000.get("terminal_boundary") != 3000
+            or result_3000.get("scientific_disposition_emitted") is not True
+            or checkpoint_3000.get("completed_episode") != 3000
+            or checkpoint_3000.get("plan_sha256") != plan_sha
+            or checkpoint_3000.get("policy_bindings") != policy_bindings
+            or checkpoint_3000.get("admission_mapping") != dict(admission_mapping)
+            or prefix_rows != [row.as_dict() for row in ordered[: 3000 * len(ARMS)]]
+            or authority.get("result_3000_sha256") != file_sha256(output / "result.json")
+            or authority.get("checkpoint_3000_sha256")
+            != file_sha256(output / "checkpoints" / "checkpoint-003000.json")
+            or authority.get("plan_sha256") != plan_sha
+            or authority.get("policy_bindings_sha256") != canonical_sha256(policy_bindings)
+        ):
+            raise C1C2PhysicalError("9000 merge does not preserve the authenticated 3000 prefix")
+        for arm in ARMS:
+            merge_authority = merges[arm].get("continuation_authority")
+            if (
+                not isinstance(merge_authority, Mapping)
+                or merge_authority.get("continuation_authority_sha256")
+                != authority.get("authority_sha256")
+                or merge_authority.get("result_3000_sha256")
+                != authority.get("result_3000_sha256")
+                or merge_authority.get("checkpoint_3000_sha256")
+                != authority.get("checkpoint_3000_sha256")
+            ):
+                raise C1C2PhysicalError(f"{arm} continuation provenance disagrees with authority")
+        preserved_files = {
+            path.relative_to(output).as_posix(): file_sha256(path)
+            for path in output.rglob("*") if path.is_file() and not path.is_symlink()
+        }
+        first_boundary = 3000 + CHECKPOINT_EVERY
+    for boundary in range(first_boundary, completed + 1, CHECKPOINT_EVERY):
         prefix = ordered[: boundary * len(ARMS)]
         checkpoint_body: dict[str, object] = {
             "schema": CHECKPOINT_SCHEMA,
@@ -2364,6 +2476,50 @@ def _merge_four_arm_locked(
         _write_once(output / "result.json", terminal)
         result.update(disposition)
         result["scientific_disposition_emitted"] = True
+    else:
+        authority = continuation_authority
+        terminal = {
+            "schema": CONTINUATION_RESULT_SCHEMA,
+            "status": STATUS,
+            "split": SPLIT,
+            "completed_episode": 9000,
+            "terminal_boundary": 9000,
+            "plan_sha256": plan_sha,
+            "arms": list(ARMS),
+            "arm_order": list(ARMS),
+            "pooled_by_arm": pooled_final,
+            "admission_mapping": dict(admission_mapping),
+            "authorized_from_3000_token": HELD,
+            "continuation_authority_sha256": authority["authority_sha256"],
+            "continuation_authority": {
+                "path": authority["authority_path"],
+                "sha256": authority["authority_sha256"],
+            },
+            "owner_notification": {
+                "path": authority["owner_notification_path"],
+                "sha256": authority["owner_notification_sha256"],
+            },
+            "result_3000_sha256": authority["result_3000_sha256"],
+            "checkpoint_3000_sha256": authority["checkpoint_3000_sha256"],
+            "scientific_disposition_emitted": False,
+            "q3_evaluated": False,
+            "test_split_opened": False,
+            "episode_training": False,
+            "learner_update": False,
+            "claim_ceiling": CLAIM_CEILING,
+            "execution_mode": "arm_decoupled",
+            "schedule_sha256": next(iter(schedule_values)),
+            "arm_merge_provenance": result["arm_merge_provenance"],
+        }
+        _write_once(output / "continuation-result.json", terminal)
+        for relative, expected in preserved_files.items():
+            if file_sha256(output / relative) != expected:
+                raise C1C2PhysicalError(f"preserved 3000 artifact was rewritten: {relative}")
+        result.update({
+            "authorized_from_3000_token": HELD,
+            "continuation_authority_sha256": authority["authority_sha256"],
+            "scientific_disposition_emitted": False,
+        })
     return result
 
 
@@ -2372,11 +2528,13 @@ def merge_four_arm(
     output_dir: str | Path,
     *,
     admission_mapping: Mapping[str, object],
+    continuation_authority: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     output = Path(output_dir)
     with _exclusive_root_lock(output):
         return _merge_four_arm_locked(
-            arm_roots, output, admission_mapping=admission_mapping
+            arm_roots, output, admission_mapping=admission_mapping,
+            continuation_authority=continuation_authority,
         )
 
 
@@ -2489,6 +2647,70 @@ def _authenticate_continuation_authority(
     result["owner_notification_path"] = str(notification_path.resolve())
     result["owner_notification_sha256"] = notification_sha
     return result
+
+
+def authenticate_continuation_chain(
+    authority_path: str | Path,
+    owner_notification_marker: str | Path,
+    *,
+    root: str | Path,
+    bindings_sha256: str,
+    plan_sha256: str,
+    policy_bindings: Mapping[str, object],
+) -> dict[str, Any]:
+    """Authenticate the complete administrative chain before post-3000 work."""
+
+    output = Path(root)
+    if output.is_symlink() or not output.is_dir():
+        raise C1C2PhysicalError("preserved 3000 root is unavailable")
+    if any((output / name).exists() for name in (
+        "ADMINISTRATIVE-CLOSURE.json", "MANIFEST.sha256", "COMPLETE",
+    )):
+        raise C1C2PhysicalError("sealed or administratively closed root cannot continue")
+    if (output / "continuation-result.json").exists():
+        raise C1C2PhysicalError("continuation result already exists")
+    bindings_digest = _digest(bindings_sha256, field="bindings_sha256")
+    authority_digest = file_sha256(authority_path)
+    authority = _authenticate_continuation_authority(
+        authority_path,
+        expected_sha256=authority_digest,
+        plan_sha256=plan_sha256,
+        policy_bindings=policy_bindings,
+    )
+    marker_path = Path(owner_notification_marker)
+    if marker_path.resolve() != Path(authority["owner_notification_path"]).resolve():
+        raise C1C2PhysicalError("continuation authority does not bind the supplied owner marker")
+    marker_digest = file_sha256(marker_path)
+    marker, _ = _read_sealed_json(
+        marker_path,
+        expected_sha256=marker_digest,
+        label="owner notification marker",
+    )
+    result_path = output / "result.json"
+    checkpoint_path = output / "checkpoints" / "checkpoint-003000.json"
+    result = _read_json(result_path, label="preserved 3000 result")
+    checkpoint = _read_checkpoint(checkpoint_path)
+    if (
+        authority.get("bindings_sha256") != bindings_digest
+        or marker.get("bindings_sha256") != bindings_digest
+        or authority.get("result_3000_sha256") != file_sha256(result_path)
+        or marker.get("result_3000_sha256") != file_sha256(result_path)
+        or authority.get("checkpoint_3000_sha256") != file_sha256(checkpoint_path)
+        or checkpoint.get("completed_episode") != 3000
+        or checkpoint.get("plan_sha256") != plan_sha256
+        or checkpoint.get("policy_bindings") != policy_bindings
+        or result.get("schema") != RESULT_SCHEMA
+        or result.get("overall_token") != HELD
+        or result.get("completed_episode") != 3000
+        or result.get("terminal_boundary") != 3000
+        or result.get("scientific_disposition_emitted") is not True
+    ):
+        raise C1C2PhysicalError("continuation authority does not bind the preserved HELD 3000 root")
+    return {
+        **authority,
+        "continuation_authority_sha256": authority["authority_sha256"],
+        "owner_notification_sha256": marker_digest,
+    }
 
 
 def _authenticate_repair_authority(
@@ -2981,6 +3203,7 @@ __all__ = [
     "WorldBinding",
     "aggregate_last_outcomes",
     "adjudicate_physical_disposition",
+    "authenticate_continuation_chain",
     "authenticate_runtime_admission",
     "build_chunk_boundary_states",
     "canonical_sha256",

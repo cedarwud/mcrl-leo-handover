@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import json
 import math
@@ -26,6 +27,10 @@ RUNG_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-run
 RESULT_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-result"
 STATUS = "FIXED_POLICY_EVALUATION"
 CONTINUATION_RESULT_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-continuation-result"
+ADMINISTRATIVE_CLOSURE_SCHEMA = (
+    "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-"
+    "administrative-closure-v1"
+)
 
 
 def _same(left: float, right: float, tolerance: float = 0.0) -> bool:
@@ -364,10 +369,98 @@ def _verify_arm_merge_provenance(value: object, arm_order: object) -> None:
         for chunk in chunks:
             if not isinstance(chunk, Mapping) or common.file_sha256(str(chunk.get("path", ""))) != chunk.get("sha256"):
                 raise common.StageCError(f"{arm} indexed chunk receipt drifted")
+        completed = merge.get("completed_episode")
+        if completed == 9000:
+            pairs = merge.get("boundary_state_hash_pairs")
+            if not isinstance(pairs, list) or len(pairs) != 90 or len(chunks) != 90:
+                raise common.StageCError(f"{arm} continuation boundary coverage drifted")
+            for index, (chunk, pair) in enumerate(zip(chunks, pairs, strict=True)):
+                receipt_path = Path(str(chunk["path"]))
+                receipt = common.read_json(receipt_path, field=f"{arm} chunk receipt")
+                expected_start = index * 100
+                expected_end = expected_start + 100
+                if (
+                    receipt.get("start_boundary") != expected_start
+                    or receipt.get("end_boundary") != expected_end
+                    or pair != [
+                        receipt.get("start_boundary_state_sha256"),
+                        receipt.get("end_boundary_state_sha256"),
+                    ]
+                    or (index and pairs[index - 1][1] != pair[0])
+                ):
+                    raise common.StageCError(f"{arm} continuation boundary continuity drifted")
+            for offset in (30, 60):
+                before = Path(str(chunks[offset - 1]["path"])).parent / "boundary-end.json"
+                after = Path(str(chunks[offset]["path"])).parent / "boundary-start.json"
+                if before.read_bytes() != after.read_bytes():
+                    raise common.StageCError(
+                        f"{arm} continuation continuity failed at {offset * 100}->{offset * 100 + 1}"
+                    )
+
+
+def _verify_administrative_closure(
+    root: Path,
+    *,
+    bindings_sha256: str,
+    policy_bindings_sha256: str,
+    admission_mapping_sha256: str,
+) -> dict[str, object] | None:
+    path = root / "ADMINISTRATIVE-CLOSURE.json"
+    if not path.exists():
+        return None
+    receipt = common.read_json(path, field="administrative closure receipt")
+    receipt_sha = common.verify_named_sidecar(path)
+    result_sha = common.file_sha256(root / "result.json")
+    checkpoint_sha = common.file_sha256(root / "checkpoints/checkpoint-003000.json")
+    marker_record = receipt.get("decision_marker")
+    addendum_record = receipt.get("addendum_r2")
+    if not isinstance(marker_record, Mapping) or not isinstance(addendum_record, Mapping):
+        raise common.StageCError("administrative closure lacks decision/addendum bindings")
+    marker_path = Path(str(marker_record.get("path", "")))
+    addendum_path = Path(str(addendum_record.get("path", "")))
+    marker_sha = common.verify_named_sidecar(marker_path)
+    addendum_sha = common.verify_named_sidecar(addendum_path)
+    marker = common.read_json(marker_path, field="owner closure decision marker")
+    reply = marker.get("owner_reply_verbatim")
+    decision = receipt.get("decision")
+    if (
+        receipt.get("schema") != ADMINISTRATIVE_CLOSURE_SCHEMA
+        or receipt.get("status") != "ADMINISTRATIVE_CLOSURE_SEALED"
+        or receipt.get("formal") is not True
+        or decision not in {"DECLINE_CONTINUATION", "DEFER_AND_CLOSE_REPORTING_ROOT"}
+        or receipt.get("reason") != decision
+        or receipt.get("continuation_performed") is not False
+        or receipt.get("planned_maximum_episodes") != 9000
+        or receipt.get("completed_boundary") != 3000
+        or receipt.get("bindings_sha256") != bindings_sha256
+        or receipt.get("plan_sha256") != common.PLAN_SHA256
+        or receipt.get("policy_bindings_sha256") != policy_bindings_sha256
+        or receipt.get("admission_mapping_sha256") != admission_mapping_sha256
+        or receipt.get("result_3000_sha256") != result_sha
+        or receipt.get("checkpoint_3000_sha256") != checkpoint_sha
+        or receipt.get("held_terminal_token_sha256")
+        != hashlib.sha256(HELD.encode("ascii")).hexdigest()
+        or marker_record.get("sha256") != marker_sha
+        or addendum_record.get("sha256") != addendum_sha
+        or marker.get("decision") != decision
+        or marker.get("bindings_sha256") != bindings_sha256
+        or marker.get("plan_sha256") != common.PLAN_SHA256
+        or marker.get("policy_bindings_sha256", marker.get("policy_mapping_sha256"))
+        != policy_bindings_sha256
+        or marker.get("result_3000_sha256") != result_sha
+        or marker.get("checkpoint_3000_sha256") != checkpoint_sha
+        or not isinstance(reply, str) or len(reply.strip()) < 20
+        or not str(marker.get("notification_sent_utc", "")).endswith("Z")
+        or not str(marker.get("owner_reply_received_utc", "")).endswith("Z")
+        or receipt.get("controller_identity") != marker.get("recorded_by")
+    ):
+        raise common.StageCError("administrative closure authentication drifted")
+    return {**receipt, "receipt_sha256": receipt_sha}
 
 
 def verify_finished(
-    root: Path, bindings_path: Path, admission_supplement: Path
+    root: Path, bindings_path: Path, admission_supplement: Path, *,
+    require_tree_seal: bool = True,
 ) -> dict[str, object]:
     if root.is_symlink() or not root.is_dir():
         raise common.StageCError("finished Stage-C root is unavailable")
@@ -504,7 +597,24 @@ def verify_finished(
         _verify_arm_merge_provenance(
             result.get("arm_merge_provenance"), result.get("arm_order")
         )
-    if completed == 9000 or result.get("overall_token") == FALSIFIED:
+    closure = _verify_administrative_closure(
+        root,
+        bindings_sha256=bindings_sha,
+        policy_bindings_sha256=common.canonical_sha256(expected_policy_bindings),
+        admission_mapping_sha256=common.canonical_sha256(expected_admission_mapping),
+    )
+    if closure is not None and (completed != 3000 or result.get("overall_token") != HELD):
+        raise common.StageCError("administrative closure is valid only for a HELD 3000 root")
+    if (
+        completed == 3000
+        and result.get("overall_token") == HELD
+        and closure is None
+        and ((root / common.TREE_MANIFEST_NAME).exists() or (root / common.COMPLETE_NAME).exists())
+    ):
+        raise common.StageCError("sealed HELD root lacks administrative closure receipt")
+    if require_tree_seal and (completed == 9000 or result.get("overall_token") == FALSIFIED):
+        common.verify_tree_seal(root)
+    if require_tree_seal and closure is not None:
         common.verify_tree_seal(root)
     if completed == 9000:
         continuation = common.read_json(root / "continuation-result.json", field="9000 continuation receipt")
@@ -550,6 +660,7 @@ def verify_finished(
         "arms": list(common.ARMS),
         "overall_token": result["overall_token"],
         "reasons": result["reasons"],
+        "administrative_closure": closure,
     }
 
 
@@ -598,6 +709,8 @@ def verify_arm_chunk(
     admission_supplement: Path,
     acceptance_bundle: Path,
     runtime_admission: Path,
+    continuation_authority: Path | None = None,
+    owner_notification_marker: Path | None = None,
 ) -> dict[str, object]:
     """Independently recompute one chunk's plan, stream, coverage and pools."""
 
@@ -644,7 +757,7 @@ def verify_arm_chunk(
     end = receipt.get("end_boundary")
     if type(start) is not int or type(end) is not int or start < 0 or end <= start or start % 100 or end % 100:
         raise common.StageCError("chunk range is not contiguous 100-aligned coverage")
-    if end > 3000 or receipt.get("range") != [start + 1, end] or receipt.get("chunk_id") != f"{arm}-{start:06d}-{end:06d}":
+    if end > 9000 or receipt.get("range") != [start + 1, end] or receipt.get("chunk_id") != f"{arm}-{start:06d}-{end:06d}":
         raise common.StageCError("chunk endpoint arithmetic/authority drifted")
     plan = common.read_json(bindings["world_plan"]["path"], field="frozen world plan")
     plan_body = dict(plan)
@@ -665,6 +778,36 @@ def verify_arm_chunk(
         "acceptance_evidence_sha256": acceptance["acceptance_bundle_sha256"],
         "acceptance_procedure_sha256": bindings["acceptance_procedure"]["sha256"],
     }
+    if end > 3000:
+        if continuation_authority is None or owner_notification_marker is None:
+            raise common.StageCError(
+                "post-3000 chunk requires continuation authority and owner-notification marker"
+            )
+        prefix_root = Path(str(bindings.get("stage_c_output_root", "")))
+        prefix_checkpoint = common.read_json(
+            prefix_root / "checkpoints/checkpoint-003000.json",
+            field="preserved 3000 checkpoint",
+        )
+        policy_bindings = prefix_checkpoint.get("policy_bindings")
+        if not isinstance(policy_bindings, Mapping) or policy_bindings.get(arm) != expected_policy:
+            raise common.StageCError("preserved 3000 policy mapping drifted")
+        try:
+            continuation = physical_runner.authenticate_continuation_chain(
+                continuation_authority,
+                owner_notification_marker,
+                root=prefix_root,
+                bindings_sha256=common.file_sha256(bindings_path),
+                plan_sha256=common.PLAN_SHA256,
+                policy_bindings=policy_bindings,
+            )
+        except physical_runner.C1C2PhysicalError as error:
+            raise common.StageCError(str(error)) from error
+        expected_provenance.update({
+            "continuation_authority_sha256": continuation["authority_sha256"],
+            "owner_notification_sha256": continuation["owner_notification_sha256"],
+            "result_3000_sha256": continuation["result_3000_sha256"],
+            "checkpoint_3000_sha256": continuation["checkpoint_3000_sha256"],
+        })
     if receipt.get("provenance") != expected_provenance:
         raise common.StageCError("chunk full provenance drifted")
     if receipt.get("threads") != {name: 1 for name in common.NUMERICAL_THREAD_ENV}:
@@ -784,11 +927,13 @@ def verify_arm_chunk(
             or parent.get("boundary_state_sha256") != start_payload["boundary_state_sha256"]
         ):
             raise common.StageCError("chunk boundary parent checkpoint drifted")
-    elif parent.get("kind") == "arm-chunk-checkpoint":
+    elif parent.get("kind") in {"arm-chunk-checkpoint", "arm-merge-checkpoint"}:
         parent_path = Path(str(parent.get("path", "")))
         if common.file_sha256(parent_path) != parent.get("sha256"):
             raise common.StageCError("chunk parent checkpoint bytes drifted")
-        parent_payload = physical_runner._read_chunk_checkpoint(parent_path)
+        parent_payload = common.read_json(parent_path, field="chunk parent checkpoint")
+        if parent.get("kind") == "arm-chunk-checkpoint":
+            parent_payload = physical_runner._read_chunk_checkpoint(parent_path)
         if parent_payload.get("completed_episode") != start or parent_payload.get("resume_state") != start_payload.get("resume_state"):
             raise common.StageCError("chunk parent checkpoint state drifted")
     else:
@@ -840,6 +985,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--admission-supplement", type=Path, required=True)
     parser.add_argument("--acceptance-bundle", type=Path)
     parser.add_argument("--runtime-admission", type=Path)
+    parser.add_argument("--continuation-authority", type=Path)
+    parser.add_argument("--owner-notification-marker", type=Path)
     args = parser.parse_args(argv)
     try:
         report = (
@@ -848,6 +995,8 @@ def main(argv: list[str] | None = None) -> int:
                 admission_supplement=args.admission_supplement,
                 acceptance_bundle=args.acceptance_bundle,
                 runtime_admission=args.runtime_admission,
+                continuation_authority=args.continuation_authority,
+                owner_notification_marker=args.owner_notification_marker,
             )
             if args.arm is not None
             else verify_finished(args.root, args.bindings, args.admission_supplement)

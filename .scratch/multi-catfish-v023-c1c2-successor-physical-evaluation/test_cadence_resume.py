@@ -290,6 +290,7 @@ def test_held_3000_authority_admits_9000_core_runner_and_forgery_is_refused(
     checkpoint = output / "checkpoints" / "checkpoint-003000.json"
     notification = output / "owner-notification.json"
     reply = "Owner authorizes the unchanged 9000-world continuation."
+    bindings_sha = runner.canonical_sha256({"bindings": "continuation-fixture"})
     _seal_json(
         notification,
         {
@@ -301,6 +302,7 @@ def test_held_3000_authority_admits_9000_core_runner_and_forgery_is_refused(
             "notification_channel": "controller-chat",
             "recorded_by": "controller-test-session",
             "plan_sha256": plan.plan_sha256,
+            "bindings_sha256": bindings_sha,
             "result_3000_sha256": runner.file_sha256(output / "result.json"),
         },
     )
@@ -317,6 +319,7 @@ def test_held_3000_authority_admits_9000_core_runner_and_forgery_is_refused(
         "checkpoint_3000_sha256": runner.file_sha256(checkpoint),
         "owner_reply_sha256": hashlib.sha256(reply.encode("utf-8")).hexdigest(),
         "recorded_by": "controller-test-session",
+        "bindings_sha256": bindings_sha,
         "owner_notification": {
             "status": "OWNER_NOTIFIED",
             "path": str(notification.resolve()),
@@ -324,6 +327,26 @@ def test_held_3000_authority_admits_9000_core_runner_and_forgery_is_refused(
         },
     }
     authority_sha = _seal_json(authority_path, authority)
+    authenticated = runner.authenticate_continuation_chain(
+        authority_path,
+        notification,
+        root=output,
+        bindings_sha256=bindings_sha,
+        plan_sha256=plan.plan_sha256,
+        policy_bindings=adapter.policy_bindings,
+    )
+    assert authenticated["authority_sha256"] == authority_sha
+    wrong_marker = output / "wrong-owner-notification.json"
+    _seal_json(wrong_marker, {"formal": True})
+    with pytest.raises(runner.C1C2PhysicalError, match="supplied owner marker"):
+        runner.authenticate_continuation_chain(
+            authority_path,
+            wrong_marker,
+            root=output,
+            bindings_sha256=bindings_sha,
+            plan_sha256=plan.plan_sha256,
+            policy_bindings=adapter.policy_bindings,
+        )
     continuation_adapter = _FastHeldAdapter()
     evaluation = _evaluation(
         continuation_adapter,
@@ -810,3 +833,72 @@ def test_chunk_refuses_early_baseline_above_3000_and_missing_fourth_arm(
             tmp_path / "four",
             admission_mapping={arm: {} for arm in runner.ARMS},
         )
+
+
+def test_continuation_boundary_replay_is_bitwise_at_3000_and_6000() -> None:
+    plan = _plan()
+    adapter = _ChunkTransportStub("BASELINE")
+    context = _chunk_context(adapter)
+    context.update({
+        "continuation_limit": 9000,
+        "continuation_authority": {
+            name: runner.canonical_sha256({"continuation-fixture": name})
+            for name in (
+                "continuation_authority_sha256",
+                "owner_notification_sha256",
+                "result_3000_sha256",
+                "checkpoint_3000_sha256",
+            )
+        },
+    })
+    table = runner.build_chunk_boundary_states(plan, context, (0, 3000, 6000, 9000))
+    sequence = np.random.SeedSequence(plan.worlds[0].world_seed)
+    environment_rng = np.random.default_rng(sequence.spawn(2)[0])
+    age_rng = environment_rng.spawn(1)[0]
+    sequential_states = {}
+    for episode in range(1, 9001):
+        age_rng.integers(0, runner.STEPS, size=runner.USERS)
+        if episode in {3000, 6000, 9000}:
+            sequential_states[episode] = json.loads(
+                json.dumps(runner._jsonable(age_rng.bit_generator.state))
+            )
+    for boundary in (3000, 6000, 9000):
+        assert table[boundary]["environment_training_state"]["age_rng_state"] == sequential_states[boundary]
+        assert table[boundary]["draw_replay"]["draws_replayed"] == boundary
+    assert table[3000]["resume_state"]["episode_index"] == 3000
+    assert plan.worlds[3000].episode_index == 3001
+
+
+def test_interrupted_3001_continuation_chunk_resumes_without_duplication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in runner.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
+    plan = _plan()
+    adapter = _ChunkTransportStub("BASELINE", interrupt_after=17)
+    context = _chunk_context(adapter)
+    context.update({
+        "continuation_limit": 9000,
+        "continuation_authority": {
+            name: runner.canonical_sha256({"restart-fixture": name})
+            for name in (
+                "continuation_authority_sha256",
+                "owner_notification_sha256",
+                "result_3000_sha256",
+                "checkpoint_3000_sha256",
+            )
+        },
+    })
+    table = runner.build_chunk_boundary_states(plan, context, (0, 3000, 3100))
+    root = tmp_path / "BASELINE-003000-003100"
+    with pytest.raises(KeyboardInterrupt):
+        runner.run_arm_chunk("BASELINE", 3000, 3100, table[3000], root)
+    assert len(list((root / "episodes").glob("episode-*.json"))) == 17
+    adapter.interrupt_after = None
+    receipt = runner.run_arm_chunk("BASELINE", 3000, 3100, table[3000], root)
+    assert receipt["range"] == [3001, 3100]
+    assert len(list((root / "episodes").glob("episode-*.json"))) == 100
+    assert len(receipt["execution_attempts"]) == 2
+    assert receipt["provenance"]["continuation_authority_sha256"] == (
+        context["continuation_authority"]["continuation_authority_sha256"]
+    )

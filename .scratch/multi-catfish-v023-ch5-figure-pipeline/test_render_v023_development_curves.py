@@ -104,7 +104,9 @@ def _finish_producer_root(root: Path, plan, adapter, evaluation, *, formal: bool
     return root
 
 
-def _seal_formal_root(root: Path, plan_sha256: str, policy_bindings) -> None:
+def _seal_formal_root(
+    root: Path, plan_sha256: str, policy_bindings, *, bindings_sha256: str | None = None
+) -> None:
     evidence = root / "evidence"
     evidence.mkdir(exist_ok=True)
     input_records = {}
@@ -145,6 +147,8 @@ def _seal_formal_root(root: Path, plan_sha256: str, policy_bindings) -> None:
         "stage_b_pass_receipt_sha256": input_records["stage_b_pass_receipt"]["sha256"],
         "authenticated_inputs": input_records,
     }
+    if bindings_sha256 is not None:
+        admission["bindings_sha256"] = bindings_sha256
     admission_path = root / figures.FORMAL_ADMISSION_NAME
     runner._write_once(admission_path, admission)
     admission_digest = runner.file_sha256(admission_path)
@@ -174,6 +178,68 @@ def _write_tree_seal(root: Path) -> None:
 def _rewrite_tree_seal(root: Path) -> None:
     (root / figures.TREE_MANIFEST_NAME).unlink()
     (root / figures.COMPLETE_NAME).unlink()
+    _write_tree_seal(root)
+
+
+def _add_administrative_closure(root: Path, admission, bindings_sha256: str) -> None:
+    (root / figures.TREE_MANIFEST_NAME).unlink()
+    (root / figures.COMPLETE_NAME).unlink()
+    result_sha = runner.file_sha256(root / "result.json")
+    checkpoint_sha = runner.file_sha256(root / "checkpoints/checkpoint-003000.json")
+    held_sha = hashlib.sha256(runner.HELD.encode("ascii")).hexdigest()
+    marker = root.parent / "owner-closure-decision.json"
+    runner._write_once(marker, {
+        "formal": True,
+        "decision": "DECLINE_CONTINUATION",
+        "owner_reply_verbatim": "I explicitly decline continuation and request closure.",
+        "notification_sent_utc": "2026-09-08T01:00:00Z",
+        "owner_reply_received_utc": "2026-09-08T01:01:00Z",
+        "notification_channel": "controller-chat",
+        "recorded_by": "controller-test",
+        "bindings_sha256": bindings_sha256,
+        "plan_sha256": admission["plan_sha256"],
+        "policy_bindings_sha256": admission["policy_bindings_sha256"],
+        "admission_mapping_sha256": admission["admission_mapping_sha256"],
+        "result_3000_sha256": result_sha,
+        "held_terminal_token_sha256": held_sha,
+        "checkpoint_3000_sha256": checkpoint_sha,
+    })
+    marker_sha = runner.file_sha256(marker)
+    marker.with_name(marker.name + ".sha256").write_text(
+        f"{marker_sha}  {marker.name}\n", encoding="ascii"
+    )
+    addendum = root.parent / "scheduling-addendum-r2.md"
+    addendum.write_text("# R2\n\nAdministrative closure without continuation.\n", encoding="ascii")
+    addendum_sha = runner.file_sha256(addendum)
+    addendum.with_name(addendum.name + ".sha256").write_text(
+        f"{addendum_sha}  {addendum.name}\n", encoding="ascii"
+    )
+    receipt = root / figures.ADMINISTRATIVE_CLOSURE_NAME
+    runner._write_once(receipt, {
+        "schema": figures.ADMINISTRATIVE_CLOSURE_SCHEMA,
+        "status": "ADMINISTRATIVE_CLOSURE_SEALED",
+        "formal": True,
+        "decision": "DECLINE_CONTINUATION",
+        "reason": "DECLINE_CONTINUATION",
+        "decision_marker": {"path": str(marker.resolve()), "sha256": marker_sha},
+        "addendum_r2": {"path": str(addendum.resolve()), "sha256": addendum_sha},
+        "bindings_sha256": bindings_sha256,
+        "plan_sha256": admission["plan_sha256"],
+        "policy_bindings_sha256": admission["policy_bindings_sha256"],
+        "admission_mapping_sha256": admission["admission_mapping_sha256"],
+        "result_3000_sha256": result_sha,
+        "held_terminal_token_sha256": held_sha,
+        "checkpoint_3000_sha256": checkpoint_sha,
+        "continuation_performed": False,
+        "planned_maximum_episodes": 9000,
+        "completed_boundary": 3000,
+        "closed_utc": "2026-09-08T01:02:00Z",
+        "controller_identity": "controller-test",
+    })
+    receipt_sha = runner.file_sha256(receipt)
+    receipt.with_name(receipt.name + ".sha256").write_text(
+        f"{receipt_sha}  {receipt.name}\n", encoding="ascii"
+    )
     _write_tree_seal(root)
 
 
@@ -297,10 +363,14 @@ def test_runner_written_terminal_passes_full_verifier_before_renderer(
             "admission_mapping_sha256": runner.canonical_sha256(mapping),
         },
     )
-    _seal_formal_root(root, plan.plan_sha256, adapter.policy_bindings)
+    _seal_formal_root(
+        root, plan.plan_sha256, adapter.policy_bindings,
+        bindings_sha256=bindings_sha,
+    )
     admission = json.loads(
         (root / figures.FORMAL_ADMISSION_NAME).read_text(encoding="ascii")
     )
+    _add_administrative_closure(root, admission, bindings_sha)
     monkeypatch.setattr(stagec_common, "verify_bindings", lambda _path: copy.deepcopy(bindings))
     monkeypatch.setattr(
         stagec_common,
@@ -332,6 +402,17 @@ def test_runner_written_terminal_passes_full_verifier_before_renderer(
     output = tmp_path / "full-verifier-figures"
     manifest = figures.render([root], output)
     assert manifest["input_roots"][0]["rung_range"] == [100, 3000]
+    assert manifest["input_roots"][0]["mandatory_caption"] == figures.CLOSURE_CAPTION
+    data = figures.load_root(root)
+    for builder in (
+        figures.build_ee_figure,
+        figures.build_service_figure,
+        figures.build_paired_figure,
+        figures.build_additive_figure,
+    ):
+        fig = builder(data)
+        assert figures.CLOSURE_CAPTION in [text.get_text() for text in fig.texts]
+        figures.plt.close(fig)
 
 
 def test_current_schema_rejects_extra_fifth_arm(tmp_path: Path, plan) -> None:

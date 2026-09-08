@@ -29,6 +29,15 @@ and Stage-B PASS receipts.  Integrity-STOP roots are refused.  Receipt checks
 enforce the declared world id/seed/keyed field and exactly 1000 service
 opportunities per episode; terminal files are checked against runner semantics.
 
+A formally sealed HELD 3,000 root is renderable only when it carries an
+authenticated `ADMINISTRATIVE-CLOSURE.json` and sidecar bound to the owner
+decision marker and the sealed R2 scheduling addendum. Every PNG and PDF then
+shows the exact caption `continuation to 9000 not performed`. The figure
+manifest preserves the original HELD disposition/result digest, 3,000/9,000
+completed/planned boundaries, the non-continuation reason, decision and closure
+hashes, formal identities, actual rung coverage, unchanged claim ceiling, and
+renderer digest. A pending HELD root remains refused.
+
 ## Commands
 
 The project virtual environment does not currently vendor Matplotlib.  On the
