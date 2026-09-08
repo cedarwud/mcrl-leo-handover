@@ -1,0 +1,8 @@
+Read 00-README, 01, 03, 04 and 06 first (files attached). Act as a hostile but fair reviewer of a pre-registration for a constructed experimental regime ("Track B"). The primary result of the paper is Track A (two Catfish + a negative C3 result). Track B asks: in an a-priori constructed regime with finite per-user traffic demand, can (a) the original additive third head and/or (b) a set-level coordinator convert coordination headroom into pooled energy efficiency, with each of C1, C2, C3 contributing positively?
+Answer concisely:
+1. Where would you accuse us of outcome-driven design, and what exact sentence or rule in the pre-registration would defuse it?
+2. Are the probe thresholds (J₁/η_ref − 1 ≥ 5 %; (J₁ − U₁)/η_ref ≥ 1 %; interaction surplus ≥ 0.5 % of reference bits; ≥ 3/4 worlds positive) and the selection rule (first qualifying point in G1→G2→G3, never the best) sensible? Propose changes ONLY if they make the study more conservative or more interpretable.
+3. The owner's criterion is "C1, C2 and C3 each positive" (via DROP arms). Is that the right success criterion, or should the paper's claim be about the coordinator (set-level) vs the additive head? What would you require the paper to say if only the coordinator works?
+4. What is the single most likely failure mode of Track B, and what cheap pre-check would catch it before the expensive campaign?
+5. Given E1 already found ≈ 2 % exact-oracle headroom in the ORIGINAL regime (file 04), should Track B exist at all, or should effort go to a deployable coordinator in the original regime? Give a reasoned recommendation.
+Keep it under 1200 words; no new experiments; quote file names and section numbers when you refer to our documents.
