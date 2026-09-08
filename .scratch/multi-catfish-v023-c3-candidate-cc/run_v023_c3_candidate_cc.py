@@ -26,7 +26,7 @@ if str(E1_DIR) not in sys.path:
     sys.path.insert(0, str(E1_DIR))
 
 import run_v023_c3_existence_e1 as e1  # noqa: E402
-from c3_contingency_f0 import C3F0Error, _assert_close as f0_assert_close  # noqa: E402
+import c3_contingency_f0 as f0  # noqa: E402
 
 
 SCHEMA = "multi-catfish-mcrl-v023-c3-candidate-cc-v1"
@@ -185,6 +185,8 @@ def expected_code_bindings() -> list[dict[str, str]]:
         ("cc_tests", HERE / "test_run_v023_c3_candidate_cc.py"),
         ("cc_readme", HERE / "README.md"),
         ("e1_runner_thread_pin_import", E1_DIR / "run_v023_c3_existence_e1.py"),
+        ("f1_tape_machinery_import", Path(e1.f1.__file__)),
+        ("f0_conservation_verifier_import", Path(f0.__file__)),
         ("jq_tape_extractor", JQ),
     )
     result = []
@@ -512,11 +514,11 @@ def _f0(value: object, *, field: str, network_energy_j: object) -> str:
     try:
         for name, canonical in comparisons:
             residual = _float_hex(value[name], field=f"{field} {name}")
-            f0_assert_close(
+            f0._assert_close(
                 canonical + residual, canonical,
                 field=f"serialized {field} {name}",
             )
-    except C3F0Error as error:
+    except f0.C3F0Error as error:
         raise CCError(f"{field} conservation residual failed F0 verification") from error
     return canonical_sha256(value)
 
