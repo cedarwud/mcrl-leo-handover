@@ -39,8 +39,6 @@ def build_authority(
     destination = cc._candidate_local(destination, field="output root")
 
     arguments = list(launch_arguments)
-    if arguments[:1] == ["--"]:
-        arguments = arguments[1:]
     if not arguments or any(not isinstance(value, str) for value in arguments):
         raise cc.CCError("--launch-arguments must contain one exact runner invocation")
     parsed = cc._parser().parse_args(arguments)
@@ -62,6 +60,21 @@ def build_authority(
         except cc.e1.E1Error as error:
             raise cc.CCError(str(error)) from error
 
+    e1_input = cc.discover_e1_input(source, hash_tapes=True)
+    terminal_binding = e1_input.get("terminal_receipt")
+    if (
+        not isinstance(terminal_binding, dict)
+        or terminal_binding.get("sha256") != cc.E1_TERMINAL_SHA256
+    ):
+        raise cc.CCError("E1 input does not carry the reviewed terminal digest")
+    e1_input = {
+        **e1_input,
+        "terminal_receipt": {
+            **terminal_binding,
+            "sha256": cc.E1_TERMINAL_SHA256,
+        },
+    }
+
     return {
         "schema": cc.LAUNCH_AUTHORITY_SCHEMA,
         "status": "FROZEN_LAUNCH_AUTHORITY",
@@ -71,7 +84,7 @@ def build_authority(
             "sha256": preflight_sha,
         },
         "contract": sealed_contract,
-        "e1_input": cc.discover_e1_input(source, hash_tapes=True),
+        "e1_input": e1_input,
         "code_files": cc.expected_code_bindings(),
         "output_root": str(destination),
         "launch_arguments": arguments,
