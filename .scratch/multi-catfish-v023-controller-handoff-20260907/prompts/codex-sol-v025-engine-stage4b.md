@@ -13,3 +13,5 @@ Deliverables
 ## Addendum — contingency ladder (`V025-CONTINGENCY-LADDER-PREOUTCOME-2026-09-08.md`, binding)
 7. Expose the regime sensitivities R1–R4 as sealed settings with their own digests (r* = 100 Mbit/s; users = 150 via the provider's user-count parameter; circuit power 1.0 W and 0.1 W per active chain) and the C2 horizon sensitivities (offsets {1, 2}) — all `EXPLORATORY_SENSITIVITY`, enumerated after the 31 and queued by the launcher immediately after `AR0-DONE` in the order R1, R2, R3, R4, R5 (= a′-r0), R6 (= a-γ0), then C2-horizon, then the remaining treatments; every receipt names its regime; the admission function evaluates a-r0 first and reports each regime setting's certificates separately, labelled "in regime R_k".
 8. Level-B and Level-A claim fields (Rung 0) in the merge output: FULL vs DROP_C3 (Level B) and FULL vs S_UNI (Level A) with the nonadditivity fraction, always both.
+
+## Addendum — coupled-solve certificate: read `V025-CONTROLLER-DECISIONS-COUPLED-SOLVE-2026-09-08.md` (binding; item 9 of the stage-1 decisions is superseded by it). Implement items 1–3 first if the real-world rehearsal fails closed on a BASE certificate.
