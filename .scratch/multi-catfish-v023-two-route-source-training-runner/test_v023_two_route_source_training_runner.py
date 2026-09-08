@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from argparse import Namespace
 from copy import deepcopy
+import hashlib
 import importlib
 import json
 import multiprocessing
@@ -37,6 +38,10 @@ MODEL_CONFIG_PATH = (
     REPO
     / ".scratch/multi-catfish-v023-c1c2-successor/"
     "V023-C1C2-SUCCESSOR-MODEL-CONFIG.json"
+)
+REAL_R8_RECEIPT_FIXTURE = HERE / "tests/fixtures/r8-receipt.json"
+REAL_R8_RECEIPT_SHA256 = (
+    "e9f8452646a3acc2cc96262501f3894dfc28558b73d191777c46f7c91a6f2376"
 )
 
 
@@ -84,6 +89,95 @@ def authenticated_boundary(tmp_path_factory, monkeypatch_module):
 
 def _provider(authenticated_boundary):
     return FACTORY.make_provider()
+
+
+def _provider_with_identity_payload(payload: dict[str, Any]):
+    class FakeProvider:
+        def provider_identity_payload(self):
+            return payload
+
+        def provider_identity(self):
+            return f"{FACTORY.FACTORY_SCHEMA}:{ORCH._canonical_sha256(payload)}"
+
+    return FakeProvider()
+
+
+def _factory_identity_from_real_r8_receipt(authenticated_boundary):
+    raw = REAL_R8_RECEIPT_FIXTURE.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == REAL_R8_RECEIPT_SHA256
+    receipt = json.loads(raw)
+    synthetic = FACTORY._TARGET.load_completed_target_artifact(
+        authenticated_boundary["target"]
+    )
+    artifact = FACTORY._TARGET.V023TargetArtifact(
+        root=REAL_R8_RECEIPT_FIXTURE.parent,
+        receipt=receipt,
+        modes=synthetic.modes,
+    )
+    target_identity = dict(FACTORY._validate_target_artifact(artifact))
+    payload = deepcopy(_provider(authenticated_boundary).provider_identity_payload)
+    payload["arm_independent_target_identity"] = target_identity
+    payload["arm_independent_target_identity_sha256"] = ORCH._canonical_sha256(
+        target_identity
+    )
+    return payload, receipt
+
+
+def _authenticate_test_identity(payload: dict[str, Any]):
+    return ORCH._authenticate_provider_identity(
+        _provider_with_identity_payload(payload),
+        expected_train_seed=FACTORY.TRAIN_SEED,
+        expected_epoch_budget=FACTORY.EPOCH_BUDGET,
+        expected_model_config_sha256=FACTORY.MODEL_CONFIG_SHA256,
+        required_fields=ORCH.FACTORY_V3_IDENTITY_FIELDS,
+    )
+
+
+def test_real_r8_receipt_provenance_identity_is_accepted(authenticated_boundary):
+    payload, receipt = _factory_identity_from_real_r8_receipt(authenticated_boundary)
+    target = payload["arm_independent_target_identity"]
+    assert target["source"]["source_family"] == (
+        "MCRL_V023_LCSRS_C3_OBSERVABILITY_V1"
+    )
+    assert any("c3" in key.lower() for key in receipt["code_closure"])
+    ORCH._reject_forbidden_identity_fields(
+        {"code_closure": receipt["code_closure"]}
+    )
+    assert _authenticate_test_identity(payload) == payload
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("route", "provider identity contains a forbidden R7/Q3/C3 value"),
+        ("arm", "provider identity contains a forbidden R7/Q3/C3 value"),
+        ("key", "provider identity contains a forbidden R7/Q3/C3 field"),
+        ("split", "provider identity contains the closed TEST split"),
+        ("route_family_claim", "provider identity contains a forbidden R7/Q3/C3 value"),
+    ],
+)
+def test_real_r8_identity_mutations_remain_closed(
+    authenticated_boundary, mutation: str, message: str,
+):
+    payload, _receipt = _factory_identity_from_real_r8_receipt(authenticated_boundary)
+    target = payload["arm_independent_target_identity"]
+    if mutation == "route":
+        payload["routes"] = ["C1", "C3"]
+    elif mutation == "arm":
+        target["arm"] = "C3_FULL"
+    elif mutation == "key":
+        target["q3_head"] = "closed"
+    elif mutation == "split":
+        target["split"] = "TEST"
+    else:
+        # The exemption is suffix-only: route_family_claim does not end in
+        # _family, so it remains a semantic claim field and must reject C3.
+        target["route_family_claim"] = "MCRL_V023_LCSRS_C3_OBSERVABILITY_V1"
+    payload["arm_independent_target_identity_sha256"] = ORCH._canonical_sha256(
+        target
+    )
+    with pytest.raises(ORCH.V023TwoRouteOrchestratorError, match=message):
+        _authenticate_test_identity(payload)
 
 
 def test_real_factory_identity_is_accepted_with_its_declared_field_set(

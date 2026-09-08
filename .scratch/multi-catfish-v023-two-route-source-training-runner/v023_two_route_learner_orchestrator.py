@@ -318,6 +318,20 @@ def _identity_path_or_digest_field(field: str) -> bool:
     )
 
 
+def _provenance_label_field(field: str) -> bool:
+    """Exempt only declared provenance names and names ending in ``_family``."""
+
+    normalized = field.lower()
+    return normalized.endswith("_family") or normalized in {
+        "source_family",
+        "field_component",
+        "keyed_field",
+        "keyed_field_component",
+        "capture_path",
+        "materialization_dir",
+    }
+
+
 def _reject_forbidden_identity_fields(
     value: object, *, field: str = "", closure_context: bool = False
 ) -> None:
@@ -326,6 +340,7 @@ def _reject_forbidden_identity_fields(
             normalized = str(key).lower()
             child_closure = closure_context or normalized in {
                 "learner_runtime", "bindings", "manifest_files", "consumed_files",
+                "code_closure", "closure", "code_closure_files",
             }
             if not child_closure and any(
                 token in {"R7", "Q3", "C3"}
@@ -346,6 +361,7 @@ def _reject_forbidden_identity_fields(
         isinstance(value, str)
         and not closure_context
         and not _identity_path_or_digest_field(field)
+        and not _provenance_label_field(field)
         and _semantic_identity_field(field)
     ):
         tokens = _identity_tokens(value)

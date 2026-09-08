@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 import traceback
 from types import ModuleType
 from typing import Any, Iterable, Mapping, Sequence
@@ -381,6 +382,7 @@ def _result_input_identity(value: Any) -> dict[str, Any]:
 
 
 def _run_step(runtime: ChainRuntime, step: Mapping[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter()
     name = step.get("name")
     if not isinstance(name, str) or not name:
         raise DryRunError("each step needs a nonempty name")
@@ -462,6 +464,7 @@ def _run_step(runtime: ChainRuntime, step: Mapping[str, Any]) -> dict[str, Any]:
                 "traceback": "".join(traceback.format_exception(error))[-12000:],
             },
         )
+    record["wall_s"] = time.perf_counter() - started
     return record
 
 
@@ -489,6 +492,7 @@ def _configure_artifacts(
 
 
 def run_chain(spec_path: Path, repo: Path, output: Path, overrides: Mapping[str, Path]) -> tuple[dict[str, Any], str]:
+    started = time.perf_counter()
     spec = _load_json(spec_path)
     if spec.get("schema") != SPEC_SCHEMA:
         raise DryRunError(f"spec schema must be {SPEC_SCHEMA}")
@@ -523,6 +527,7 @@ def run_chain(spec_path: Path, repo: Path, output: Path, overrides: Mapping[str,
             "status": "FAIL",
             "exception": {"type": "InputArtifactMutation", "text": "an input identity changed"},
             "input_identities": identities_after,
+            "wall_s": 0.0,
         })
     verdict = (
         "FAIL" if any(step["status"] == "FAIL" for step in steps)
@@ -538,6 +543,7 @@ def run_chain(spec_path: Path, repo: Path, output: Path, overrides: Mapping[str,
         "spec": {"path": str(spec_path), "sha256": _sha256_file(spec_path)},
         "repo": str(repo),
         "scratch_output": str(output),
+        "wall_s": time.perf_counter() - started,
         "input_identities": identities_before,
         "input_integrity": integrity,
         "steps": steps,

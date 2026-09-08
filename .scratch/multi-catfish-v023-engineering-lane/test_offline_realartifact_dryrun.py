@@ -38,6 +38,9 @@ def test_complete_chain_passes_and_preserves_exact_input_identity(tmp_path: Path
     assert report["scientific_output"] is False
     assert report["verdict"] == "PASS"
     assert [step["status"] for step in report["steps"]] == ["PASS"] * 11
+    assert report["wall_s"] >= 0.0
+    assert all(step["wall_s"] >= 0.0 for step in report["steps"])
+    assert report["wall_s"] >= sum(step["wall_s"] for step in report["steps"])
     identity = report["input_identities"]["real_root"]
     assert identity["path"] == str(REAL.resolve())
     assert identity["sha256"] == report["input_integrity"]["real_root"]["after"]["sha256"]
