@@ -155,3 +155,92 @@ def test_list_real_artifacts_reports_present_and_missing(tmp_path: Path):
     assert by_name["present"]["status"] == "PRESENT"
     assert by_name["present"]["sha256"]
     assert by_name["missing"]["status"] == "MISSING"
+
+
+def _one_step_load_spec(root: Path) -> dict[str, object]:
+    return {
+        "schema": "multi-catfish-v023-offline-realartifact-chain-spec-v1",
+        "name": "REUSE_CACHE",
+        "artifacts": [{"name": "real_root", "path": str(root)}],
+        "modules": {
+            "fixture": {
+                "path": str(HERE / "fixtures/dryrun_chain.py"),
+                "name": "dryrun_chain",
+            }
+        },
+        "steps": [
+            {
+                "name": "load",
+                "callable": {"module": "fixture", "name": "authenticate"},
+                "args": [{"artifact": "real_root"}],
+                "inputs": ["real_root"],
+            }
+        ],
+    }
+
+
+def test_reuse_from_reuses_only_pass_with_identical_input_digests(tmp_path: Path):
+    real_root = tmp_path / "real"
+    real_root.mkdir()
+    (real_root / "payload.txt").write_text("first", encoding="utf-8")
+    spec = tmp_path / "reuse.json"
+    spec.write_text(json.dumps(_one_step_load_spec(real_root)), encoding="utf-8")
+    previous = tmp_path / "previous"
+    assert _run("--spec", str(spec), "--repo", str(REPO), "--output", str(previous)).returncode == 0
+
+    reused_output = tmp_path / "reused"
+    reused = _run(
+        "--spec", str(spec), "--repo", str(REPO), "--output", str(reused_output),
+        "--reuse-from", str(previous),
+    )
+    assert reused.returncode == 0, reused.stderr + reused.stdout
+    report = json.loads((reused_output / "dryrun-report.json").read_text(encoding="ascii"))
+    assert report["reused_from"] == str(previous.resolve())
+    assert report["steps"][0]["status"] == "PASS"
+    assert report["steps"][0]["reused_from"] == str(previous.resolve())
+
+    (real_root / "payload.txt").write_text("changed", encoding="utf-8")
+    changed_output = tmp_path / "changed"
+    changed = _run(
+        "--spec", str(spec), "--repo", str(REPO), "--output", str(changed_output),
+        "--reuse-from", str(previous),
+    )
+    assert changed.returncode == 0, changed.stderr + changed.stdout
+    changed_report = json.loads(
+        (changed_output / "dryrun-report.json").read_text(encoding="ascii")
+    )
+    assert "reused_from" not in changed_report["steps"][0]
+
+
+def test_reuse_from_never_reuses_non_whitelisted_or_non_pass_steps(tmp_path: Path):
+    source = tmp_path / "previous"
+    source.mkdir()
+    identity = {
+        "path": str(REAL.resolve()),
+        "status": "PRESENT",
+        "kind": "directory",
+        "sha256": "0" * 64,
+        "files": [],
+    }
+    (source / "dryrun-report.json").write_text(
+        json.dumps(
+            {
+                "schema": "multi-catfish-v023-offline-realartifact-dryrun-v1",
+                "steps": [
+                    {"name": "load", "status": "FAIL", "input_identities": {"real_root": identity}},
+                    {"name": "authenticate", "status": "PASS", "input_identities": {"real_root": identity}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+    completed = _run(
+        "--spec", str(HERE / "specs/selftest_dryrun.json"),
+        "--repo", str(REPO), "--output", str(output), "--reuse-from", str(source),
+    )
+    assert completed.returncode == 0, completed.stderr + completed.stdout
+    report = json.loads((output / "dryrun-report.json").read_text(encoding="ascii"))
+    by_name = {step["name"]: step for step in report["steps"]}
+    assert "reused_from" not in by_name["load"]
+    assert "reused_from" not in by_name["authenticate"]

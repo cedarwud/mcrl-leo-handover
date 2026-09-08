@@ -49,6 +49,7 @@ BINDINGS_NAME = "V023-C1C2-SUCCESSOR-EXECUTION-BINDINGS.json"
 LEARNER_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-LEARNER-MANIFEST.json"
 PROVIDER_CONFIG_NAME = "V023-C1C2-SUCCESSOR-PROVIDER-CONFIG.json"
 LAUNCH_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-LAUNCH-MANIFEST.json"
+TARGET_MANIFEST_NAME = "MANIFEST.sha256"
 LAUNCH_MANIFEST_SIDECAR = LAUNCH_MANIFEST_NAME + ".sha256"
 STAGE_C_CODE_MANIFEST_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST.sha256"
 STAGE_C_CODE_PIN_NAME = "V023-C1C2-SUCCESSOR-STAGEC-CODE-MANIFEST-FROZEN.sha256"
@@ -184,6 +185,39 @@ def digest(value: object, *, field: str) -> str:
     if not isinstance(value, str) or DIGEST_RE.fullmatch(value) is None:
         raise SuccessorLaunchError(f"{field} must be a lowercase SHA-256 digest")
     return value
+
+
+def build_run_authority_digests(
+    *, contract_sha256: object, learner_manifest_sha256: object,
+    target_manifest_sha256: object,
+) -> dict[str, str]:
+    """Build the runner's formal authority/code/input cross-binding."""
+
+    return {
+        "authority_sha256": digest(contract_sha256, field="contract_sha256"),
+        "code_sha256": digest(
+            learner_manifest_sha256, field="learner_manifest_sha256"
+        ),
+        "input_sha256": digest(target_manifest_sha256, field="target_manifest_sha256"),
+    }
+
+
+def run_authority_digest_spec_sources() -> dict[str, object]:
+    """Return the declarative gate sources for the formal digest helper."""
+
+    return {
+        "authority_sha256": {"sha256": {"artifact": "successor_contract"}},
+        "code_sha256": {"sha256": {"artifact": "learner_manifest"}},
+        "input_sha256": {
+            "sha256": {
+                "path_join": [{"artifact": "target_root"}, TARGET_MANIFEST_NAME]
+            }
+        },
+    }
+
+
+def run_authority_digest_artifact_names() -> set[str]:
+    return {"successor_contract", "learner_manifest", "target_root"}
 
 
 def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:

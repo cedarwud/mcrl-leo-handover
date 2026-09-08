@@ -31,6 +31,18 @@ def test_runner_config_kwargs_bind_real_frozen_config_signature() -> None:
     }
 
 
+def test_authority_digest_sources_match_formal_producer() -> None:
+    if str(LAUNCH) not in sys.path:
+        sys.path.insert(0, str(LAUNCH))
+    launch_common = importlib.import_module("successor_launch_common")
+    payload = _payload()
+    step = next(item for item in payload["steps"] if item["name"] == "authority_digests")
+
+    expected_sources = launch_common.run_authority_digest_spec_sources()
+    assert step["kwargs"] == expected_sources
+    assert set(step["inputs"]) == launch_common.run_authority_digest_artifact_names()
+
+
 def test_artifact_paths_exist_or_are_documented_binder_outputs() -> None:
     if str(LAUNCH) not in sys.path:
         sys.path.insert(0, str(LAUNCH))
@@ -58,3 +70,16 @@ def test_artifact_paths_exist_or_are_documented_binder_outputs() -> None:
         reason = artifact.get("requires_after", "")
         assert "bind_v023_c1c2_successor_freeze.py --write" in reason
         assert "after bind and before the launcher" in reason
+
+
+def test_resume_probe_uses_orchestrator_continuation_not_unbegun_runner() -> None:
+    payload = _payload()
+    steps = {item["name"]: item for item in payload["steps"]}
+    assert steps["resume"]["callable"] == {
+        "method_of": "resumed_runner",
+        "name": "orchestrator.load_checkpoint_state",
+    }
+    assert steps["resume_one_epoch"]["callable"] == {
+        "module": "dryrun_support",
+        "name": "advance_resumed_two_route_orchestrator_one_epoch",
+    }

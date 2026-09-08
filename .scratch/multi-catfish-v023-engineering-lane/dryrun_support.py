@@ -39,6 +39,19 @@ def reload_torch_mapping(path: Path) -> Mapping[str, Any]:
     return value
 
 
+def advance_resumed_two_route_orchestrator_one_epoch(runner: object) -> Mapping[str, Any]:
+    """Exercise one resumed epoch without bypassing the runner output lifecycle."""
+
+    orchestrator = getattr(runner, "orchestrator")
+    before = orchestrator.update_cursor
+    rounds = tuple(orchestrator.advance() for _ in ("C1", "C2"))
+    if tuple(item.route for item in rounds) != ("C1", "C2"):
+        raise ValueError("resumed orchestrator route order drifted")
+    if orchestrator.update_cursor != before + 2 or orchestrator.next_route != "C1":
+        raise ValueError("resumed orchestrator epoch did not close")
+    return orchestrator.checkpoint_state()
+
+
 def _file_identity(path: Path) -> dict[str, object]:
     source = Path(path)
     return {

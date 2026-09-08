@@ -18,7 +18,8 @@ from successor_launch_common import (
     FACTORY_REL, LAUNCH_MANIFEST_NAME, LEARNER_MANIFEST_NAME,
     MODEL_CONFIG_NAME, PROVIDER_CONFIG_NAME, PROVIDER_CONFIG_SCHEMA,
     ROUTE_ORDER, RUNNER_REL, SUCCESSOR_REL, TARGET_ROOT, TRAIN_SEED,
-    SuccessorLaunchError, canonical_bytes, canonical_sha256, file_sha256,
+    SuccessorLaunchError, build_run_authority_digests, canonical_bytes,
+    canonical_sha256, file_sha256,
     assert_contract_placeholders, assert_predetermined_stage_c_bound,
     assert_sync_coverage, digest, read_canonical_json, reject_forbidden_config,
     required_sync_closure, sidecar_path,
@@ -319,6 +320,11 @@ def run_preflight(
         ),
     }
     requested_output_root = str(output_root.resolve(strict=False))
+    authority_digests = build_run_authority_digests(
+        contract_sha256=provider_config["contract_sha256"],
+        learner_manifest_sha256=learner_sha,
+        target_manifest_sha256=provider_config["target_manifest_sha256"],
+    )
     payload = {
         "schema": SCHEMA,
         "status": STATUS,
@@ -336,10 +342,8 @@ def run_preflight(
         "launch_manifest_sha256": manifest["sha256"],
         "execution_bindings_path": str(bindings_path.resolve(strict=True)),
         "execution_bindings_sha256": bindings_sha,
-        "authority_sha256": provider_config["contract_sha256"],
-        "code_sha256": learner_sha,
+        **authority_digests,
         "input_binding": input_binding,
-        "input_sha256": provider_config["target_manifest_sha256"],
         "preflight_input_bundle_sha256": canonical_sha256(input_binding),
         "closed_split_opened": False,
         "simulator_episode_opened": False,

@@ -22,7 +22,8 @@ from successor_launch_common import (
     ARM_ORDER, BUNDLE_REL, CLAIM_CEILING, EPOCH_BUDGET, FACTORY_REL,
     LEARNER_MANIFEST_NAME, PROVIDER_CONFIG_NAME, ROUTE_ORDER, RUNNER_REL,
     SOURCE_MAP, SUCCESSOR_REL, TARGET_ROOT, TRAIN_SEED, SuccessorLaunchError, canonical_bytes,
-    authenticate_preflight_freeze_authorities, file_sha256, read_canonical_json,
+    authenticate_preflight_freeze_authorities, build_run_authority_digests,
+    file_sha256, read_canonical_json,
     verify_sidecar, write_once,
 )
 
@@ -770,11 +771,11 @@ def verify_output(
     model_config_sha = verify_sidecar(model_config_path)
     input_binding = preflight["input_binding"]
     learner_sha = file_sha256(repo / BUNDLE_REL / LEARNER_MANIFEST_NAME)
-    expected_authorities = {
-        "authority_sha256": provider_config.get("contract_sha256"),
-        "code_sha256": learner_sha,
-        "input_sha256": provider_config.get("target_manifest_sha256"),
-    }
+    expected_authorities = build_run_authority_digests(
+        contract_sha256=provider_config.get("contract_sha256"),
+        learner_manifest_sha256=learner_sha,
+        target_manifest_sha256=provider_config.get("target_manifest_sha256"),
+    )
     if (
         input_binding.get("provider_config_sha256") != provider_config_sha
         or input_binding.get("model_config_sha256") != model_config_sha

@@ -29,6 +29,10 @@ sys.dont_write_bytecode = True
 CLAIM_CEILING = "ENGINEERING_LANE_READ_ONLY_NO_SCIENTIFIC_OUTPUT"
 SPEC_SCHEMA = "multi-catfish-v023-offline-realartifact-chain-spec-v1"
 REPORT_SCHEMA = "multi-catfish-v023-offline-realartifact-dryrun-v1"
+REUSABLE_PASS_STEPS = frozenset({
+    "load", "provider_probe", "provider_next_batch", "provider_for_runner",
+    "provider_for_resume",
+})
 
 
 class DryRunError(RuntimeError):
@@ -37,6 +41,25 @@ class DryRunError(RuntimeError):
 
 class StepBlocked(RuntimeError):
     """A step cannot run because an input or implementation is unavailable."""
+
+
+class _LazyCachedResult:
+    """Materialize a cached PASS result only when a later live step needs it."""
+
+    def __init__(self, callback: Any, record: dict[str, Any]) -> None:
+        self._callback = callback
+        self._record = record
+        self._resolved = False
+        self._value: Any = None
+
+    def materialize(self) -> Any:
+        if not self._resolved:
+            started = time.perf_counter()
+            self._value = self._callback()
+            self._resolved = True
+            self._record["materialized_for_live_consumer"] = True
+            self._record["materialization_wall_s"] = time.perf_counter() - started
+        return self._value
 
 
 def _sha256_file(path: Path) -> str:
@@ -174,12 +197,16 @@ class ChainRuntime:
         spec: Mapping[str, Any],
         artifacts: Mapping[str, Path],
         identities: Mapping[str, Mapping[str, Any]],
+        reuse_steps: Mapping[str, Mapping[str, Any]] | None = None,
+        reuse_from: Path | None = None,
     ) -> None:
         self.repo = repo
         self.output = output
         self.spec = spec
         self.artifacts = dict(artifacts)
         self.identities = identities
+        self.reuse_steps = dict(reuse_steps or {})
+        self.reuse_from = reuse_from
         artifact_defs = spec.get("artifacts", [])
         if not isinstance(artifact_defs, list):
             raise DryRunError("spec artifacts must be a list")
@@ -245,6 +272,15 @@ class ChainRuntime:
         self.modules[key] = module
         return module
 
+    def result(self, name: str) -> Any:
+        if name not in self.results:
+            raise StepBlocked(f"required prior result is unavailable: {name}")
+        value = self.results[name]
+        if isinstance(value, _LazyCachedResult):
+            value = value.materialize()
+            self.results[name] = value
+        return value
+
     @staticmethod
     def _attribute(value: Any, dotted: str) -> Any:
         current = value
@@ -274,9 +310,7 @@ class ChainRuntime:
             return path
         if set(value) == {"result"}:
             name = value["result"]
-            if name not in self.results:
-                raise StepBlocked(f"required prior result is unavailable: {name}")
-            return self.results[name]
+            return self.result(name)
         if "path_join" in value and len(value) == 1:
             pieces = value["path_join"]
             if not isinstance(pieces, list) or not pieces:
@@ -316,9 +350,10 @@ class ChainRuntime:
             target = self.module(str(definition["module"]))
         elif "method_of" in definition:
             name = str(definition["method_of"])
-            if name not in self.results:
-                raise StepBlocked(f"method receiver is unavailable: {name}")
-            target = self.results[name]
+            try:
+                target = self.result(name)
+            except StepBlocked as error:
+                raise StepBlocked(f"method receiver is unavailable: {name}") from error
         else:
             raise DryRunError("callable requires module or method_of")
         name = definition.get("name")
@@ -374,11 +409,45 @@ def _result_summary(value: Any) -> dict[str, Any]:
 
 
 def _result_input_identity(value: Any) -> dict[str, Any]:
+    if isinstance(value, _LazyCachedResult):
+        return {"status": "CACHED_PASS"}
     if isinstance(value, Mapping) and isinstance(value.get("identities"), Mapping):
         return {"status": "PRESENT", "identities": value["identities"]}
     if isinstance(value, Path):
         return _artifact_identity(value)
     return {"status": "PRESENT", "type": f"{type(value).__module__}.{type(value).__qualname__}"}
+
+
+def _execute_callable(runtime: ChainRuntime, step: Mapping[str, Any]) -> Any:
+    name = step["name"]
+    function_spec = step.get("callable")
+    if not isinstance(function_spec, dict):
+        raise DryRunError(f"step {name} callable must be an object")
+    function = runtime.callable(function_spec)
+    args = runtime.resolve(step.get("args", []))
+    kwargs = runtime.resolve(step.get("kwargs", {}))
+    if not isinstance(args, list) or not isinstance(kwargs, dict):
+        raise DryRunError(f"step {name} args/kwargs have invalid types")
+    environment = step.get("env", {})
+    if not isinstance(environment, dict):
+        raise DryRunError(f"step {name} env must be an object")
+    with _environment(runtime, environment):
+        return function(*args, **kwargs)
+
+
+def _identical_input_digests(
+    current: Mapping[str, Any], previous: object,
+) -> bool:
+    if not isinstance(previous, Mapping) or set(previous) != set(current):
+        return False
+    for name, identity in current.items():
+        old = previous.get(name)
+        if not isinstance(identity, Mapping) or not isinstance(old, Mapping):
+            return False
+        current_digest = identity.get("sha256")
+        if not isinstance(current_digest, str) or old.get("sha256") != current_digest:
+            return False
+    return True
 
 
 def _run_step(runtime: ChainRuntime, step: Mapping[str, Any]) -> dict[str, Any]:
@@ -435,19 +504,28 @@ def _run_step(runtime: ChainRuntime, step: Mapping[str, Any]) -> dict[str, Any]:
             raise StepBlocked(
                 "; ".join(runtime.artifact_unavailable_reason(item) for item in unavailable_inputs)
             )
-        function_spec = step.get("callable")
-        if not isinstance(function_spec, dict):
-            raise DryRunError(f"step {name} callable must be an object")
-        function = runtime.callable(function_spec)
-        args = runtime.resolve(step.get("args", []))
-        kwargs = runtime.resolve(step.get("kwargs", {}))
-        if not isinstance(args, list) or not isinstance(kwargs, dict):
-            raise DryRunError(f"step {name} args/kwargs have invalid types")
-        environment = step.get("env", {})
-        if not isinstance(environment, dict):
-            raise DryRunError(f"step {name} env must be an object")
-        with _environment(runtime, environment):
-            result = function(*args, **kwargs)
+        previous = runtime.reuse_steps.get(name)
+        if (
+            name in REUSABLE_PASS_STEPS
+            and runtime.reuse_from is not None
+            and isinstance(previous, Mapping)
+            and previous.get("status") == "PASS"
+            and _identical_input_digests(
+                identities, previous.get("input_identities")
+            )
+        ):
+            record.update(
+                status="PASS",
+                result=previous.get("result", {"type": "cached-pass"}),
+                exception=None,
+                reused_from=str(runtime.reuse_from),
+            )
+            runtime.results[name] = _LazyCachedResult(
+                lambda: _execute_callable(runtime, step), record
+            )
+            record["wall_s"] = time.perf_counter() - started
+            return record
+        result = _execute_callable(runtime, step)
         runtime.results[name] = result
         record.update(status="PASS", result=_result_summary(result), exception=None)
     except StepBlocked as error:
@@ -491,7 +569,10 @@ def _configure_artifacts(
     return result
 
 
-def run_chain(spec_path: Path, repo: Path, output: Path, overrides: Mapping[str, Path]) -> tuple[dict[str, Any], str]:
+def run_chain(
+    spec_path: Path, repo: Path, output: Path, overrides: Mapping[str, Path],
+    *, reuse_from: Path | None = None, reuse_report: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], str]:
     started = time.perf_counter()
     spec = _load_json(spec_path)
     if spec.get("schema") != SPEC_SCHEMA:
@@ -504,8 +585,21 @@ def run_chain(spec_path: Path, repo: Path, output: Path, overrides: Mapping[str,
         if output == artifact or _inside(output, artifact):
             raise DryRunError("scratch output must be outside every input artifact root")
     identities_before = {key: _artifact_identity(path) for key, path in artifacts.items()}
+    prior_steps: dict[str, Mapping[str, Any]] = {}
+    if reuse_report is not None:
+        raw_steps = reuse_report.get("steps")
+        if not isinstance(raw_steps, list):
+            raise DryRunError("reuse report steps must be a list")
+        for item in raw_steps:
+            if not isinstance(item, Mapping) or not isinstance(item.get("name"), str):
+                raise DryRunError("reuse report contains an invalid step")
+            if item["name"] in prior_steps:
+                raise DryRunError(f"reuse report repeats step: {item['name']}")
+            prior_steps[item["name"]] = item
     runtime = ChainRuntime(
-        repo=repo, output=output, spec=spec, artifacts=artifacts, identities=identities_before
+        repo=repo, output=output, spec=spec, artifacts=artifacts,
+        identities=identities_before, reuse_steps=prior_steps,
+        reuse_from=reuse_from,
     )
     sys.addaudithook(_ReadOnlyGuard(artifacts.values()))
     steps_spec = spec.get("steps")
@@ -553,6 +647,8 @@ def run_chain(spec_path: Path, repo: Path, output: Path, overrides: Mapping[str,
             "blocked": sum(step["status"] == "BLOCKED" for step in steps),
         },
     }
+    if reuse_from is not None:
+        report["reused_from"] = str(reuse_from)
     return report, name
 
 
@@ -595,6 +691,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path)
     parser.add_argument("--artifact", action="append", default=[], metavar="NAME=PATH")
+    parser.add_argument("--reuse-from", type=Path, metavar="PREVIOUS_REPORT_DIR")
     parser.add_argument("--list-real-artifacts", type=Path)
     return parser
 
@@ -602,7 +699,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.list_real_artifacts is not None:
-        if args.spec is not None or args.output is not None or args.artifact:
+        if (
+            args.spec is not None or args.output is not None or args.artifact
+            or args.reuse_from is not None
+        ):
             print("--list-real-artifacts cannot be combined with a chain run", file=sys.stderr)
             return 2
         try:
@@ -620,7 +720,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         if output.exists() or output.is_symlink():
             raise DryRunError(f"scratch output already exists: {output}")
         output.mkdir(parents=True)
-        report, name = run_chain(args.spec.resolve(), repo, output, _artifact_overrides(args.artifact))
+        reuse_from = None
+        reuse_report = None
+        if args.reuse_from is not None:
+            reuse_from = args.reuse_from.resolve(strict=False)
+            if reuse_from.is_symlink() or not reuse_from.is_dir():
+                raise DryRunError("--reuse-from must be an existing non-symlink report directory")
+            reuse_report = _load_json(reuse_from / "dryrun-report.json")
+            if reuse_report.get("schema") != REPORT_SCHEMA:
+                raise DryRunError(f"reuse report schema must be {REPORT_SCHEMA}")
+        report, name = run_chain(
+            args.spec.resolve(), repo, output, _artifact_overrides(args.artifact),
+            reuse_from=reuse_from, reuse_report=reuse_report,
+        )
         verdict = report["verdict"]
         _write_report(output, report)
     except Exception as error:
