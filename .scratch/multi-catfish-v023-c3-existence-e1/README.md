@@ -51,10 +51,11 @@ is copied or edited.
   `--unit`, `--merge`, `--dry-run`, immutable receipts, and `INVALID_RUN`.
 - `build_e1_preflight_manifest.py`: writes the code/binding manifest once.
 
-The controller must place
-`V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md` in this directory and bind
-its absolute path and SHA-256 in a launch authority. This package deliberately
-does not create that reserved file.
+The controller-placed draft
+`V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md` must be sealed with a
+read-only `.md.sha256` sidecar, then its absolute path and SHA-256 must be
+bound in a launch authority. This package deliberately did not create or edit
+that reserved file.
 
 Build and check the preflight after code review:
 

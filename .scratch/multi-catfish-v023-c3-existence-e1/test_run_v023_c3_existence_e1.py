@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import stat
 from types import SimpleNamespace
@@ -50,6 +51,9 @@ class _Table:
 
 
 class _Evaluator:
+    def __init__(self) -> None:
+        self.driver = SimpleNamespace(step_index=0)
+
     def evaluate_actions(self, actions: np.ndarray, _rng: np.random.Generator) -> object:
         if int(actions[0]) == 1 and int(actions[1]) == 1:
             keys = [(20, 3), (20, 3), *([(10, 2)] * 98)]
@@ -86,6 +90,7 @@ def test_joint_catalog_uses_only_common_destinations_and_checks_f0() -> None:
         observation=observation,
         reference_actions=np.zeros(100, dtype=np.int64),
         reference_profile=base,
+        reference_link_power_w=np.ones(100, dtype=np.float64),
         step_env=_Evaluator(),
         rng=np.random.default_rng(7),
         interval_s=2.0,
@@ -211,3 +216,42 @@ def test_preflight_builder_and_dry_run(tmp_path: Path) -> None:
     assert result == {"preflight": manifest, "worlds": e1.WORLDS}
     assert payload["claim_ceiling"] == e1.CLAIM_CEILING
 
+
+def test_launch_authority_requires_exact_keys_and_sealed_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(e1, "HERE", tmp_path)
+    contract = tmp_path / e1.CONTRACT_FILENAME
+    contract.write_text("frozen contract\n", encoding="ascii")
+    contract.chmod(0o444)
+    contract_sha = e1.file_sha256(contract)
+    sidecar = Path(f"{contract}.sha256")
+    sidecar.write_text(f"{contract_sha}  {contract.name}\n", encoding="ascii")
+    sidecar.chmod(0o444)
+    preflight_path = tmp_path / "preflight.json"
+    preflight_sha = "a" * 64
+    authority = {
+        "schema": e1.LAUNCH_AUTHORITY_SCHEMA,
+        "status": "FROZEN_LAUNCH_AUTHORITY",
+        "claim_ceiling": e1.CLAIM_CEILING,
+        "preflight_manifest": {"path": str(preflight_path), "sha256": preflight_sha},
+        "contract": {"path": str(contract), "sha256": contract_sha},
+        "bindings": e1.panel_bindings(),
+        "test_split_opened": False,
+        "episode_training": False,
+        "learner_update": False,
+        "efficacy_claim": False,
+    }
+    authority_path = tmp_path / "authority.json"
+    authority_path.write_text(json.dumps(authority), encoding="ascii")
+    assert e1.validate_launch_authority(
+        authority_path, preflight_path=preflight_path,
+        preflight_sha256=preflight_sha,
+    ) == authority
+    authority["unexpected"] = False
+    authority_path.write_text(json.dumps(authority), encoding="ascii")
+    with pytest.raises(e1.E1Error, match="keys"):
+        e1.validate_launch_authority(
+            authority_path, preflight_path=preflight_path,
+            preflight_sha256=preflight_sha,
+        )

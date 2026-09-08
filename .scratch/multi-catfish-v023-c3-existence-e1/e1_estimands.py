@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
+import hashlib
+import json
 import math
 from typing import Any, Mapping, Sequence
 
@@ -211,7 +213,8 @@ def _better(left: _DPState, right: _DPState | None) -> bool:
 
 
 def _inner_exact(
-    anchors: Sequence[AnchorOptions], *, q: Fraction, required_served: int
+    anchors: Sequence[AnchorOptions], *, q: Fraction, required_served: int,
+    trace: list[dict[str, object]] | None = None,
 ) -> _DPState:
     """Maximize exact ``sum(B-qE)`` subject to the pooled service threshold."""
 
@@ -236,6 +239,27 @@ def _inner_exact(
                 if _better(candidate, next_dp.get(capped)):
                     next_dp[capped] = candidate
         dp = next_dp
+        if trace is not None:
+            rows = [
+                [
+                    served,
+                    str(state.score.numerator),
+                    str(state.score.denominator),
+                    list(state.choices),
+                ]
+                for served, state in sorted(dp.items())
+            ]
+            encoded = json.dumps(
+                rows, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+                allow_nan=False,
+            ).encode("ascii")
+            trace.append(
+                {
+                    "anchor_index": len(trace),
+                    "state_count": len(rows),
+                    "states_sha256": hashlib.sha256(encoded).hexdigest(),
+                }
+            )
     result = dp.get(required_served)
     if result is None:
         raise E1EstimandError("the pooled service constraint is infeasible")
@@ -264,6 +288,68 @@ def _fraction_payload(value: Fraction) -> dict[str, object]:
     }
 
 
+def _coefficient_payload(anchors: Sequence[AnchorOptions]) -> list[dict[str, object]]:
+    return [
+        {
+            "anchor_id": anchor.anchor_id,
+            "profiles": [
+                {
+                    "profile_id": profile.profile_id,
+                    "bits": _fraction_payload(profile.bits_exact),
+                    "energy_j": _fraction_payload(profile.energy_exact),
+                    "served": profile.served,
+                    "opportunities": profile.opportunities,
+                }
+                for profile in anchor.profiles
+            ],
+        }
+        for anchor in anchors
+    ]
+
+
+def _canonical_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+        allow_nan=False,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _choice_set_census(
+    anchors: Sequence[AnchorOptions], *, q: Fraction
+) -> dict[str, object]:
+    rows = []
+    for anchor in anchors:
+        by_served: dict[int, tuple[int, Fraction]] = {}
+        for index, profile in enumerate(anchor.profiles):
+            score = profile.bits_exact - q * profile.energy_exact
+            current = by_served.get(profile.served)
+            if current is None or score > current[1] or (
+                score == current[1] and index < current[0]
+            ):
+                by_served[profile.served] = (index, score)
+        rows.append(
+            {
+                "anchor_id": anchor.anchor_id,
+                "profiles_before_reduction": len(anchor.profiles),
+                "profiles_after_final_q_reduction": len(by_served),
+                "profile_ids": [profile.profile_id for profile in anchor.profiles],
+                "final_q_survivors_by_served": {
+                    str(served): anchor.profiles[index].profile_id
+                    for served, (index, _score) in sorted(by_served.items())
+                },
+            }
+        )
+    return {
+        "anchor_count": len(anchors),
+        "profile_count": sum(len(anchor.profiles) for anchor in anchors),
+        "profiles_after_final_q_reduction": sum(
+            int(row["profiles_after_final_q_reduction"]) for row in rows
+        ),
+        "anchors": rows,
+    }
+
+
 def verify_certificate(
     anchors: Sequence[object], result: Mapping[str, object], *, candidate_field: str
 ) -> bool:
@@ -281,7 +367,8 @@ def verify_certificate(
     except (KeyError, TypeError, ValueError, ZeroDivisionError) as error:
         raise E1EstimandError("certificate ratio is malformed") from error
     required, _base_served, _opportunities = _required_served(panel)
-    inner = _inner_exact(panel, q=q, required_served=required)
+    trace: list[dict[str, object]] = []
+    inner = _inner_exact(panel, q=q, required_served=required, trace=trace)
     bits, energy, served = _totals_exact(panel, inner.choices)
     if inner.score != 0 or bits - q * energy != 0 or served < required:
         raise E1EstimandError("certificate does not prove global optimality")
@@ -292,18 +379,30 @@ def verify_certificate(
     )
     base_float_bits = math.fsum(anchor.base.total_bits for anchor in panel)
     base_float_energy = math.fsum(anchor.base.total_energy_j for anchor in panel)
-    if (
-        result.get("value_hex") != float(q).hex()
-        or result.get(estimand) != float(q)
-        or result.get("eta_BASE_hex") != (base_float_bits / base_float_energy).hex()
-        or result.get("eta_BASE_exact") != _fraction_payload(base_ratio)
-    ):
-        raise E1EstimandError("certificate numeric summary disagrees with exact proof")
     chosen = result.get("chosen_profiles")
     expected = {
         anchor.anchor_id: anchor.profiles[index].profile_id
         for anchor, index in zip(panel, inner.choices, strict=True)
     }
+    if (
+        result.get("value_hex") != float(q).hex()
+        or result.get(estimand) != float(q)
+        or result.get("eta_BASE_hex") != (base_float_bits / base_float_energy).hex()
+        or result.get("eta_BASE_exact") != _fraction_payload(base_ratio)
+        or certificate.get("coefficients_sha256")
+        != _canonical_sha256(_coefficient_payload(panel))
+        or certificate.get("choice_set_census") != _choice_set_census(panel, q=q)
+        or certificate.get("dp_trace") != trace
+        or certificate.get("terminal_backpointer_profile_ids") != expected
+        or certificate.get("selected_totals_exact")
+        != {
+            "bits": _fraction_payload(bits),
+            "energy_j": _fraction_payload(energy),
+            "served": served,
+            "ratio": _fraction_payload(bits / energy),
+        }
+    ):
+        raise E1EstimandError("certificate numeric summary disagrees with exact proof")
     if chosen != expected:
         raise E1EstimandError("certificate witness disagrees with chosen profiles")
     return True
@@ -344,6 +443,14 @@ def _solve(values: Sequence[object], *, candidate_field: str, estimand: str) -> 
         anchor.anchor_id: option.profile_id
         for anchor, option in zip(anchors, chosen_options, strict=True)
     }
+    final_trace: list[dict[str, object]] = []
+    certified_inner = _inner_exact(
+        anchors, q=q, required_served=required, trace=final_trace
+    )
+    if certified_inner != inner:
+        raise E1EstimandError("terminal DP replay changed the optimal witness")
+    coefficients = _coefficient_payload(anchors)
+    choice_set_census = _choice_set_census(anchors, q=q)
     result: dict[str, object] = {
         estimand: float(q),
         "value_hex": float(q).hex(),
@@ -363,14 +470,26 @@ def _solve(values: Sequence[object], *, candidate_field: str, estimand: str) -> 
         "certificate": {
             "method": CERTIFICATE_METHOD,
             "iterations": iterations,
+            "choice_set_census": choice_set_census,
+            "coefficients": coefficients,
+            "coefficients_sha256": _canonical_sha256(coefficients),
             "optimal_ratio_exact": _fraction_payload(q),
             "terminal_inner_max_exact": _fraction_payload(inner.score),
             "chosen_residual_exact": _fraction_payload(bits - q * energy),
+            "selected_totals_exact": {
+                "bits": _fraction_payload(bits),
+                "energy_j": _fraction_payload(energy),
+                "served": served,
+                "ratio": _fraction_payload(bits / energy),
+            },
             "service_dimension": "INTEGER_SERVED_COUNT_CAPPED_AT_REQUIRED_THRESHOLD",
             "minimum_served": required,
             "witness_served": served,
             "feasible": served >= required,
             "global_upper_bound_proved": inner.score == 0,
+            "dp_recurrence": "D_i[min(required,c+s)]=max_x(D_i-1[c]+B_ix-qE_ix)",
+            "dp_trace": final_trace,
+            "terminal_backpointer_profile_ids": chosen,
         },
     }
     verify_certificate(values, result, candidate_field=candidate_field)

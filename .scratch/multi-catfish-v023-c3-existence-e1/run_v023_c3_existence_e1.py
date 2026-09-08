@@ -30,15 +30,24 @@ REPO = HERE.parents[1]
 F0_DIR = REPO / ".scratch" / "multi-catfish-v023-c3-contingency"
 F1_DIR = REPO / ".scratch" / "multi-catfish-v023-c3-contingency-f1"
 F2_DIR = REPO / ".scratch" / "multi-catfish-v023-c3-contingency-f2"
-for _path in (HERE, F0_DIR, F1_DIR, F2_DIR):
+STAGEC_PLAN_DIR = REPO / ".scratch" / "multi-catfish-v023-c1c2-successor-physical-evaluation"
+STAGEC_LAUNCH_DIR = REPO / ".scratch" / "multi-catfish-v023-c1c2-successor-stagec-launch"
+for _path in (HERE, F0_DIR, F1_DIR, F2_DIR, STAGEC_PLAN_DIR, STAGEC_LAUNCH_DIR):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
 import e1_estimands as estimands  # noqa: E402
 import run_v023_c3_contingency_f1 as f1  # noqa: E402
 import run_v023_c3_contingency_f2 as f2  # noqa: E402
+import build_v023_c1c2_successor_world_plan as stagec_plan  # noqa: E402
+import stagec_common  # noqa: E402
 from c3_contingency_f0 import compute_cost_shares  # noqa: E402
+from mcrl.env.constants import DECISION_STEP_S  # noqa: E402
 from mcrl.env.keyed_fading import KeyedFadingField  # noqa: E402
+from mcrl.runtime.ee_axis_v04_c3_opening_source import (  # noqa: E402
+    _assert_evaluation_neutral,
+    _evaluation_snapshot,
+)
 
 
 SCHEMA = "multi-catfish-mcrl-v023-c3-existence-e1-v1"
@@ -64,6 +73,7 @@ USERS = f1.USERS
 SPLIT = f1.SPLIT
 FIELD_COMPONENT = f1.FIELD_COMPONENT
 SERVICE_MARGIN = estimands.SERVICE_MARGIN
+INTERVAL_S = DECISION_STEP_S
 DISALLOWED_HISTORICAL_WORLDS = frozenset(f2.WORLDS)
 
 CONTRACT_FILENAME = "V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md"
@@ -211,6 +221,10 @@ def panel_bindings() -> dict[str, object]:
         "service_margin": SERVICE_MARGIN,
         "ee_rule": "POOLED_RATIO_OF_SUMS_STRICTLY_ABOVE_BASE",
         "base_advancement": "COMMIT_BASE_BETWEEN_CANONICAL_ANCHORS",
+        "lambda_bits_per_j_hex": f1.LAMBDA_BITS_PER_J.hex(),
+        "kappa_bits_hex": f1.KAPPA_BITS.hex(),
+        "q1_q2_plus_z_over_kappa_used": False,
+        "stage_c_world_plan_exclusion_sha256": stagec_common.PLAN_SHA256,
     }
 
 
@@ -241,6 +255,10 @@ def expected_code_bindings() -> list[dict[str, str]]:
         ("f0_conservation_import", F0_DIR / "c3_contingency_f0.py"),
         ("joint_profile_evaluator", REPO / "src/mcrl/env/step.py"),
         ("joint_profile_physics", REPO / "src/mcrl/env/link_budget.py"),
+        ("evaluation_neutrality", REPO / "src/mcrl/runtime/ee_axis_v04_c3_opening_source.py"),
+        ("canonical_interval", REPO / "src/mcrl/env/constants.py"),
+        ("stage_c_world_plan_builder", STAGEC_PLAN_DIR / "build_v023_c1c2_successor_world_plan.py"),
+        ("stage_c_plan_authority", STAGEC_LAUNCH_DIR / "stagec_common.py"),
     )
     return [
         {"role": role, "path": _repo_relative(path), "sha256": file_sha256(path)}
@@ -257,6 +275,16 @@ def validate_static_bindings() -> dict[str, object]:
         raise E1Error("imported user/split/service binding drifted")
     if world_seeds() != WORLDS:
         raise E1Error("derived E1 world panel drifted")
+    stage_c_payload = stagec_plan.build_world_plan()
+    if stage_c_payload.get("plan_sha256") != stagec_common.PLAN_SHA256:
+        raise E1Error("stage-C 9000-world plan authority drifted")
+    stage_c_seeds = {
+        int(row["world_seed"])
+        for row in stage_c_payload["worlds"]
+        if isinstance(row, Mapping)
+    }
+    if len(stage_c_seeds) != stagec_plan.EPISODES or stage_c_seeds.intersection(WORLDS):
+        raise E1Error("E1 worlds collide with or cannot authenticate the stage-C plan")
     try:
         f2_static = f2.validate_static_bindings()
     except f2.F2Error as error:
@@ -266,6 +294,11 @@ def validate_static_bindings() -> dict[str, object]:
         "lineage_authorities": f2.lineage_authority_bindings(),
         "formula_digests": formula_digests(),
         "reused_f2_preflight": f2_static["f1_preflight"],
+        "world_exclusion_check": {
+            "stage_c_plan_sha256": stagec_common.PLAN_SHA256,
+            "stage_c_world_count": len(stage_c_seeds),
+            "overlap": [],
+        },
     }
 
 
@@ -313,11 +346,18 @@ def validate_launch_authority(
     if not isinstance(contract_path_text, str):
         raise E1Error("launch authority contract path is malformed")
     contract_path = Path(contract_path_text)
+    contract_sidecar = Path(f"{contract_path}.sha256")
     if (
         not contract_path.is_absolute()
         or contract_path.resolve().parent != HERE.resolve()
         or contract_path.name != CONTRACT_FILENAME
         or file_sha256(contract_path) != _digest(contract.get("sha256"), field="contract sha256")
+        or contract_path.stat().st_mode & 0o222
+        or contract_sidecar.is_symlink()
+        or not contract_sidecar.is_file()
+        or contract_sidecar.stat().st_mode & 0o222
+        or contract_sidecar.read_text(encoding="ascii").split()
+        != [str(contract["sha256"]), contract_path.name]
     ):
         raise E1Error("launch authority does not bind the controller-placed E1 contract")
     expected = {
@@ -383,9 +423,17 @@ class JointWitnessAnchor:
     observation: Any
     reference_actions: np.ndarray
     reference_profile: f1.PhysicalProfile
+    reference_link_power_w: np.ndarray
     step_env: Any
     rng: np.random.Generator
     interval_s: float
+
+
+def _evaluate_actions_neutral(step_env: Any, actions: np.ndarray, rng: np.random.Generator) -> Any:
+    before = _evaluation_snapshot(step_env, rng)
+    evaluation = step_env.evaluate_actions(actions, rng)
+    _assert_evaluation_neutral(step_env, rng, before)
+    return evaluation
 
 
 def _legal_key_actions(observation: Any, user: int) -> dict[tuple[int, int], int]:
@@ -426,6 +474,10 @@ def build_joint_witness_catalog(anchor: JointWitnessAnchor) -> tuple[dict[str, o
             key = (int(base.serving_satellite[user]), int(base.serving_cell[user]))
             origins.setdefault(key, []).append(user)
     rows: list[dict[str, object]] = []
+    base_payload = f1.profile_to_payload(
+        base, link_power_w=anchor.reference_link_power_w
+    )
+    first_profile_by_sha = {canonical_sha256(base_payload): BASE_PROFILE_ID}
     for origin in sorted(origins):
         users = tuple(origins[origin])
         legal_maps = tuple(_legal_key_actions(anchor.observation, user) for user in users)
@@ -437,7 +489,7 @@ def build_joint_witness_catalog(anchor: JointWitnessAnchor) -> tuple[dict[str, o
             actions = np.array(reference, dtype=np.int64, copy=True)
             for user, mapping in zip(users, legal_maps, strict=True):
                 actions[user] = mapping[destination]
-            evaluation = anchor.step_env.evaluate_actions(actions, anchor.rng)
+            evaluation = _evaluate_actions_neutral(anchor.step_env, actions, anchor.rng)
             profile, link_power = f1.profile_from_evaluation(
                 evaluation, interval_s=anchor.interval_s
             )
@@ -446,6 +498,10 @@ def build_joint_witness_catalog(anchor: JointWitnessAnchor) -> tuple[dict[str, o
                 f"{JOINT_PROFILE_PREFIX}:{origin[0]}:{origin[1]}"
                 f"->{destination[0]}:{destination[1]}"
             )
+            physical_payload = f1.profile_to_payload(profile, link_power_w=link_power)
+            profile_sha = canonical_sha256(physical_payload)
+            alias_of = first_profile_by_sha.get(profile_sha)
+            first_profile_by_sha.setdefault(profile_sha, profile_id)
             rows.append(
                 {
                     "profile_id": profile_id,
@@ -455,6 +511,8 @@ def build_joint_witness_catalog(anchor: JointWitnessAnchor) -> tuple[dict[str, o
                     "candidate_joint_actions": [int(value) for value in actions.tolist()],
                     "profile": profile,
                     "link_power_w": link_power,
+                    "physical_profile_sha256": profile_sha,
+                    "alias_of_profile_id": alias_of,
                     "metrics": _profile_metrics(profile),
                     "f0_conservation": conservation,
                 }
@@ -561,6 +619,8 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
     base = f1.profile_from_payload(step.get("reference_profile"))
     if base.users != USERS:
         raise E1Error("BASE profile has the wrong user count")
+    if base.interval_s != INTERVAL_S:
+        raise E1Error("physical profile interval disagrees with canonical 30.08 s")
     _verify_metrics(base, step.get("reference_metrics"))
     _conservation(base)
     try:
@@ -578,7 +638,10 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
         expected_id = f"{UNILATERAL_PROFILE_PREFIX}:{row.get('focal_user')}:{row.get('candidate_action')}"
         if row.get("profile_id") != expected_id:
             raise E1Error("unilateral profile ID drifted")
-        _verify_metrics(f1.profile_from_payload(row.get("profile")), row.get("metrics"))
+        unilateral_profile = f1.profile_from_payload(row.get("profile"))
+        _verify_metrics(unilateral_profile, row.get("metrics"))
+        if row.get("f0_conservation") != _conservation(unilateral_profile):
+            raise E1Error("unilateral F0 conservation receipt disagrees")
     reference = np.asarray(step.get("reference_actions"))
     masks = np.asarray(step.get("action_masks"))
     if reference.dtype.kind not in "iu" or reference.shape != (USERS,):
@@ -589,6 +652,8 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
     expected = _expected_joint_keys(step, base)
     observed: list[tuple[tuple[int, int], tuple[int, int], tuple[int, ...]]] = []
     key_table = step["action_physical_keys"]
+    base_payload_sha = canonical_sha256(step["reference_profile"])
+    first_profile_by_sha = {base_payload_sha: BASE_PROFILE_ID}
     for row in joint:
         if not isinstance(row, Mapping):
             raise E1Error("joint witness row is malformed")
@@ -632,6 +697,12 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
         _verify_metrics(profile, row.get("metrics"))
         if row.get("f0_conservation") != _conservation(profile):
             raise E1Error("joint witness F0 conservation receipt disagrees")
+        profile_sha = canonical_sha256(row.get("profile"))
+        if row.get("physical_profile_sha256") != profile_sha:
+            raise E1Error("joint witness physical profile digest disagrees")
+        if row.get("alias_of_profile_id") != first_profile_by_sha.get(profile_sha):
+            raise E1Error("joint witness alias record disagrees with exact profile bytes")
+        first_profile_by_sha.setdefault(profile_sha, expected_id)
     if observed != expected:
         raise E1Error("joint witness catalog is not exact and exhaustive")
     return {"base": base, "unilateral_count": len(unilateral), "joint_count": len(joint)}
@@ -788,11 +859,45 @@ def _write_invalid_unit(output: Path, *, key: UnitKey, preflight_sha256: str, er
     final = _unit_dir(output, key)
     if final.exists() or final.is_symlink():
         raise E1Error(f"refusing to overwrite write-once unit {key.slug}")
-    final.mkdir()
-    receipt = final / DEFAULT_UNIT_RECEIPT_NAME
+    stage = Path(tempfile.mkdtemp(prefix=f".stage-invalid-{key.slug}-", dir=units_root))
+    receipt = stage / DEFAULT_UNIT_RECEIPT_NAME
     _write_once(receipt, invalid_unit_receipt(key=key, preflight_sha256=preflight_sha256, error=error))
-    final.chmod(0o555)
-    return receipt
+    stage.chmod(0o555)
+    os.rename(stage, final)
+    return final / DEFAULT_UNIT_RECEIPT_NAME
+
+
+def _validate_invalid_unit_receipt(
+    receipt: Mapping[str, object], *, key: UnitKey, preflight_sha256: str
+) -> None:
+    expected_keys = {
+        "schema", "status", "outcome", "claim_ceiling", "unit",
+        "panel_bindings", "lineage_authority", "formula_digests",
+        "preflight_manifest_sha256", "tape_sha256", "counts", "integrity",
+        "error_type", "error_sha256", "test_split_opened", "episode_training",
+        "learner_update", "efficacy_claim",
+    }
+    if (
+        set(receipt) != expected_keys
+        or receipt.get("schema") != UNIT_RECEIPT_SCHEMA
+        or receipt.get("status") != "INVALID_RUN"
+        or receipt.get("outcome") != "INVALID_RUN"
+        or receipt.get("claim_ceiling") != CLAIM_CEILING
+        or receipt.get("unit") != key.as_dict()
+        or receipt.get("panel_bindings") != panel_bindings()
+        or receipt.get("lineage_authority") != f2.lineage_authority_bindings()[LINEAGES.index(key.lineage)]
+        or receipt.get("formula_digests") != formula_digests()
+        or receipt.get("preflight_manifest_sha256") != preflight_sha256
+        or receipt.get("tape_sha256") is not None
+        or receipt.get("counts") is not None
+        or receipt.get("integrity") is not False
+        or not isinstance(receipt.get("error_type"), str)
+        or any(receipt.get(field) is not False for field in (
+            "test_split_opened", "episode_training", "learner_update", "efficacy_claim"
+        ))
+    ):
+        raise E1Error(f"unit {key.slug} INVALID_RUN receipt drifted")
+    _digest(receipt.get("error_sha256"), field="error_sha256")
 
 
 def authenticate_unit_bundle(output: Path, *, key: UnitKey, preflight_sha256: str) -> tuple[dict[str, Any], str, dict[str, Any]]:
@@ -802,6 +907,9 @@ def authenticate_unit_bundle(output: Path, *, key: UnitKey, preflight_sha256: st
     if receipt_path.stat().st_mode & 0o222:
         raise E1Error(f"unit {key.slug} receipt remains writable")
     if receipt.get("status") == "INVALID_RUN":
+        _validate_invalid_unit_receipt(
+            receipt, key=key, preflight_sha256=preflight_sha256
+        )
         raise E1Error(f"unit {key.slug} is sealed INVALID_RUN")
     tape_path = root / DEFAULT_TAPE_NAME
     manifest_path = root / DEFAULT_TAPE_MANIFEST_NAME
@@ -854,22 +962,22 @@ def _generate_unit_tape(*, key: UnitKey, tle_root: Path, preflight_sha256: str) 
             raise E1Error("canonical RNG factory lacks environment/mobility streams")
         _states, _masks, observation = environment.reset(rngs[0], rngs[1])
         interval_s = float(step_env.driver.config.ephemeris.time_step_s)
-        if not math.isfinite(interval_s) or interval_s <= 0.0:
-            raise E1Error("canonical decision interval is invalid")
+        if not math.isfinite(interval_s) or interval_s != INTERVAL_S:
+            raise E1Error("runtime decision interval disagrees with canonical 30.08 s")
         steps = []
         for step_index in CANONICAL_STEP_INDICES:
             if int(observation.step_index) != step_index:
                 raise E1Error("canonical replay reached the wrong step")
             native, _q12, reference = f1._q12_surface(physical, frozen, step_env, observation)
             masks = np.asarray(native.action_masks, dtype=np.bool_)
-            reference_evaluation = step_env.evaluate_actions(reference, rngs[0])
+            reference_evaluation = _evaluate_actions_neutral(step_env, reference, rngs[0])
             reference_profile, reference_link_power = f1.profile_from_evaluation(
                 reference_evaluation, interval_s=interval_s
             )
             unilateral_rows = []
             for skeleton in f1.enumerate_unilateral_candidates(observation, reference):
                 actions = np.asarray(skeleton["candidate_joint_actions"], dtype=np.int64)
-                evaluation = step_env.evaluate_actions(actions, rngs[0])
+                evaluation = _evaluate_actions_neutral(step_env, actions, rngs[0])
                 profile, link_power = f1.profile_from_evaluation(evaluation, interval_s=interval_s)
                 unilateral_rows.append({
                     **skeleton,
@@ -877,11 +985,13 @@ def _generate_unit_tape(*, key: UnitKey, tle_root: Path, preflight_sha256: str) 
                     "profile": profile,
                     "link_power_w": link_power,
                     "metrics": _profile_metrics(profile),
+                    "f0_conservation": _conservation(profile),
                 })
             joint_rows = build_joint_witness_catalog(JointWitnessAnchor(
                 observation=observation,
                 reference_actions=np.asarray(reference, dtype=np.int64),
                 reference_profile=reference_profile,
+                reference_link_power_w=reference_link_power,
                 step_env=step_env,
                 rng=rngs[0],
                 interval_s=interval_s,
@@ -926,6 +1036,11 @@ def execute_unit(
     if final.exists() or final.is_symlink():
         receipt = _load_json(final / DEFAULT_UNIT_RECEIPT_NAME, field="existing unit receipt")
         if receipt.get("status") == "INVALID_RUN":
+            if (final / DEFAULT_UNIT_RECEIPT_NAME).stat().st_mode & 0o222:
+                raise E1Error("existing INVALID_RUN unit receipt remains writable")
+            _validate_invalid_unit_receipt(
+                receipt, key=key, preflight_sha256=preflight_sha256
+            )
             return final / DEFAULT_UNIT_RECEIPT_NAME, True, False
         authenticate_unit_bundle(output, key=key, preflight_sha256=preflight_sha256)
         return final / DEFAULT_UNIT_RECEIPT_NAME, True, True
@@ -1045,7 +1160,42 @@ def execute_merge(*, output: Path, preflight_sha256: str) -> tuple[Path, bool, b
         receipt = _load_json(terminal, field="existing terminal receipt")
         if terminal.stat().st_mode & 0o222:
             raise E1Error("terminal receipt remains writable")
-        return terminal, True, receipt.get("status") == "COMPLETE"
+        if receipt.get("status") == "COMPLETE":
+            receipts = []
+            digests = []
+            tapes = []
+            for key in ALL_UNITS:
+                unit_receipt, digest, tape = authenticate_unit_bundle(
+                    root, key=key, preflight_sha256=preflight_sha256
+                )
+                receipts.append(unit_receipt)
+                digests.append((key, digest))
+                tapes.append(tape)
+            expected = build_terminal_receipt(
+                receipts=receipts, receipt_digests=digests, tapes=tapes,
+                preflight_sha256=preflight_sha256,
+            )
+            if receipt != expected:
+                raise E1Error("existing terminal receipt disagrees with its units")
+            return terminal, True, True
+        expected_keys = set(invalid_terminal_receipt(
+            preflight_sha256=preflight_sha256, error=E1Error("placeholder")
+        ))
+        if (
+            set(receipt) != expected_keys
+            or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
+            or receipt.get("status") != "INVALID_RUN"
+            or receipt.get("outcome") != "INVALID_RUN"
+            or receipt.get("claim_ceiling") != CLAIM_CEILING
+            or receipt.get("panel_bindings") != panel_bindings()
+            or receipt.get("lineage_authorities") != f2.lineage_authority_bindings()
+            or receipt.get("formula_digests") != formula_digests()
+            or receipt.get("preflight_manifest_sha256") != preflight_sha256
+            or receipt.get("integrity") is not False
+        ):
+            raise E1Error("existing INVALID_RUN terminal receipt drifted")
+        _digest(receipt.get("error_sha256"), field="terminal error_sha256")
+        return terminal, True, False
     try:
         receipts = []
         digests = []
