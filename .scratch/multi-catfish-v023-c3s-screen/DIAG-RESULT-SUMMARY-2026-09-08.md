@@ -37,3 +37,10 @@ C3-S v1 (+2.88 % FULL / +2.92 % LITE, TRAIN panel, development evidence) is now 
 | `LITE_UNILATERAL_ONLY` (BASE + one Q-ranked alternative per user) | **+2.100 %** (12/12) | +0.46 % | −1.60 % | 1.00 | 0.72 |
 Phase slopes: evacuation-only 0:+1.32 → 3:+10.05 % (same as LITE); unilateral-only 0:+1.20 → 3:+5.87 %. Harness: diag3 BASE ≡ diag2 BASE, 360/360 steps bit-exact.
 **Reading (sufficiency, not mechanism):** the evacuation catalogue alone is sufficient for the whole LITE gain; exact rescoring of a single Q-ranked alternative per user already retains ≈ 72 % of it with one changed user per step. Because evacuation rows include broader single-user search, the ≈ 28 % remainder is an upper bound on what multi-user moves could add in this catalogue, not a measured coordination share. Consistent with astra's priors (exact-rescoring-dominant or mixed); the successor's matched-anchor singleton/interaction decomposition is the instrument that separates them.
+
+## diag3 final (24/24 units; both physics; 20:34 UTC) — catalogue sufficiency
+| arm | `none` pooled EE vs BASE (share of LITE's +2.922 %) | `ablate_anchor` (share of +2.894 %) |
+|---|---|---|
+| `LITE_EVACUATION_ONLY` | +2.950 % (1.01), 12/12 | +2.873 % (0.99), 12/12 |
+| `LITE_UNILATERAL_ONLY` | +2.100 % (0.72), 12/12 | +2.046 % (0.71), 12/12 |
+Phase slopes unchanged in shape (evacuation-only ≈ LITE's; unilateral-only about half the phase-3 gain). Harness: diag3 BASE ≡ diag2 BASE 360/360 steps in both physics. Reading: the evacuation catalogue is sufficient for the whole LITE gain in both physics; one exactly re-scored alternative per user retains ≈ 71–72 %; no mechanism share is claimed (see the diag3 declaration addendum). Legacy diagnostics end here.
