@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from copy import deepcopy
+import datetime as dt
 from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,73 @@ def metric(bits: float, energy: float, served: int, opportunities: int = 2) -> d
         "total_bits": bits, "total_energy_j": energy,
         "served": served, "opportunities": opportunities,
     }
+
+
+def readonly(value, dtype=None):
+    result = np.asarray(value, dtype=dtype).copy()
+    result.setflags(write=False)
+    return result
+
+
+def frozen_candidates(tables) -> c3s_policy.FrozenCandidates:
+    users = len(tables)
+    return c3s_policy.FrozenCandidates(
+        slot_tables=tuple(tables),
+        off_axis_deg=readonly(np.zeros((users, 4, 7)), np.float64),
+        elevation_deg=readonly(np.ones((users, 4)), np.float64),
+        window_satellite_ecef_km=readonly(np.ones((users, 4, 3)), np.float64),
+        window_norad_ids=readonly(np.ones((users, 4)), np.int64),
+    )
+
+
+def decision_snapshot(tables, *, catalog="full", q12=None, base=None):
+    candidates = frozen_candidates(tables)
+    users = len(tables)
+    masks = np.stack([table.mask for table in tables])
+    keys = np.stack([
+        np.stack((table.norad_ids, table.cell_ids), axis=1) for table in tables
+    ])
+    return c3s_policy.DecisionSnapshot(
+        native_state_matrix=readonly(np.zeros((users, 1)), np.float32),
+        legal_masks=readonly(masks, np.bool_),
+        slot_physical_keys=readonly(keys, np.int64),
+        q12_proposal=readonly(
+            np.zeros((users, 28), dtype=np.float32) if q12 is None else q12,
+            np.float32,
+        ),
+        base_actions=readonly(
+            np.zeros(users, dtype=np.int64) if base is None else base, np.int64
+        ),
+        candidates=candidates,
+        committed_association=tuple(None for _ in range(users)),
+        committed_segments=tuple(None for _ in range(users)),
+        committed_radiating=None,
+        tracking_state=((), ()), interval_s=30.08, catalog=catalog,
+        eta_ref=Fraction(1), q_inference_seconds=0.01,
+    )
+
+
+class FakeEvaluator:
+    def __init__(self):
+        self.calls = []
+
+    def evaluate(self, actions):
+        self.calls.append(tuple(np.asarray(actions).tolist()))
+        return object()
+
+
+def slot_table(keys, legal):
+    from mcrl.env.action_contract import SlotTable
+
+    norads = np.full(28, -1, dtype=np.int64)
+    cells = np.full(28, -1, dtype=np.int64)
+    mask = np.zeros(28, dtype=np.bool_)
+    for action, key in enumerate(keys):
+        if key is not None:
+            norads[action], cells[action] = key
+        if action in legal:
+            mask[action] = True
+    return SlotTable(readonly(norads), readonly(cells), readonly(mask))
 
 
 def test_default_eta_ref_is_the_bound_binary64_constant() -> None:
@@ -41,14 +109,28 @@ class NeutralStepEnv:
         self._fading_field = object()
 
 
-def test_adapter_neutrality_preserves_state_rng_and_field() -> None:
+def test_adapter_inputs_are_capability_free_and_live_state_is_neutral(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     environment = NeutralStepEnv()
     rng = np.random.default_rng(71)
     before_rng = deepcopy(rng.bit_generator.state)
     before = c3s_policy.e1._evaluation_snapshot(environment, rng)
     field = environment._fading_field
 
-    def decision(_adapter, _env, _observation, _rng):
+    tables = (
+        slot_table([(1, 1), (2, 2)], {0, 1}),
+        slot_table([(1, 1), (2, 2)], {0, 1}),
+    )
+    snapshot = decision_snapshot(tables)
+    evaluator = FakeEvaluator()
+    monkeypatch.setattr(c3s_policy, "_snapshot_inputs", lambda *_args: (snapshot, evaluator))
+
+    def decision(supplied_snapshot, supplied_evaluator):
+        c3s_policy._assert_no_prohibited_capabilities(
+            (supplied_snapshot, supplied_evaluator)
+        )
+        assert supplied_snapshot is snapshot
         return c3s_policy.DecisionResult(
             actions=np.asarray([1, 0]), base_actions=np.asarray([0, 0]),
             profile_id="U:0:1", catalog_size=2,
@@ -65,6 +147,32 @@ def test_adapter_neutrality_preserves_state_rng_and_field() -> None:
     assert rng.bit_generator.state == before_rng
     assert environment._fading_field is field
     assert adapter.decision_records[0]["catalog_size"] == 2
+
+
+def test_full_neutrality_guard_detects_nested_mobility_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment = NeutralStepEnv()
+    environment._mobility_rng = np.random.default_rng(9)
+    rng = np.random.default_rng(71)
+    tables = (slot_table([(1, 1)], {0}), slot_table([(1, 1)], {0}))
+    snapshot = decision_snapshot(tables)
+
+    def malicious_snapshot(*_args):
+        environment._mobility_rng.random()
+        return snapshot, FakeEvaluator()
+
+    monkeypatch.setattr(c3s_policy, "_snapshot_inputs", malicious_snapshot)
+    adapter = c3s_policy.C3SPolicyAdapter(
+        physical=object(), frozen=object(), eta_ref=Fraction(1),
+        decision_function=lambda *_args: c3s_policy.DecisionResult(
+            actions=np.asarray([0, 0]), base_actions=np.asarray([0, 0]),
+            profile_id="BASE", catalog_size=1,
+            counts={"base": 1, "unilateral": 0, "joint": 0},
+        ),
+    )
+    with pytest.raises(c3s_policy.C3SPolicyError, match="tracking state"):
+        adapter.select_actions(environment, object(), rng)
 
 
 def test_candidate_catalog_order_is_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,10 +199,11 @@ def test_candidate_catalog_order_is_deterministic(monkeypatch: pytest.MonkeyPatc
             "actions": np.asarray([4, 4]), "tie_key": (2, 1, 2, 3, 4),
         },),
     )
-    kwargs = dict(
-        step_env=object(), observation=object(), base_actions=np.asarray([0, 0]),
-        rng=np.random.default_rng(9), interval_s=c3s_policy.e1.INTERVAL_S,
+    tables = (
+        slot_table([(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)], set(range(5))),
+        slot_table([(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)], set(range(5))),
     )
+    kwargs = dict(snapshot=decision_snapshot(tables), evaluator=FakeEvaluator())
     first = c3s_policy.build_s0_catalog(**kwargs)
     second = c3s_policy.build_s0_catalog(**kwargs)
     expected = ["BASE", "U:0:2", "U:1:3", "J:1:2->3:4"]
@@ -107,10 +216,9 @@ def test_lite_catalog_order_top2_ties_base_equivalence_and_all_evacuations(
 ) -> None:
     profile = SimpleNamespace()
     tables = tuple(
-        SimpleNamespace(mask=np.asarray([True, True, True, True] + [False] * 24))
+        slot_table([(1, 1), (2, 2), (1, 1), (3, 3)], {0, 1, 2, 3})
         for _ in range(2)
     )
-    observation = SimpleNamespace(candidates=SimpleNamespace(slot_tables=tables))
     monkeypatch.setattr(c3s_policy.s0, "nominal_no_fading", lambda _env: nullcontext())
     monkeypatch.setattr(c3s_policy.e1, "_evaluate_actions_neutral", lambda *_args: object())
     monkeypatch.setattr(c3s_policy.f1, "profile_from_evaluation", lambda *_args, **_kw: (profile, np.zeros(1)))
@@ -144,9 +252,8 @@ def test_lite_catalog_order_top2_ties_base_equivalence_and_all_evacuations(
     # The runner-up tie is resolved by lowest slot index: slot 1 before slot 2.
     q12[1, :4] = [9.0, 8.0, 8.0, 7.0]
     rows = c3s_policy.build_s0_catalog(
-        step_env=object(), observation=observation,
-        base_actions=np.asarray([0, 0]), q12=q12, catalog="lite",
-        rng=np.random.default_rng(9), interval_s=c3s_policy.e1.INTERVAL_S,
+        snapshot=decision_snapshot(tables, q12=q12, catalog="lite"),
+        evaluator=FakeEvaluator(),
     )
     assert [row["profile_id"] for row in rows] == [
         "BASE", "U:0:3", "U:1:1", "J:1:2->3:4",
@@ -324,7 +431,8 @@ def test_merge_reports_two_decisions_fixed_progression_and_comparison(
     monkeypatch.setattr(screen, "descriptive_breakdowns", lambda _receipts: {})
     terminal, valid = screen.execute_merge(
         output=tmp_path / "run", horizon=1, preflight_sha256="1" * 64,
-        authority_sha256="2" * 64, producer_common_binding={"common": True},
+        authority_sha256="2" * 64, authority_path=tmp_path / "merge-authority.json",
+        producer_common_binding={"common": True},
     )
     payload = screen.load_json(terminal, field="terminal")
     assert valid is True
@@ -350,14 +458,19 @@ def test_timing_summaries_are_separate_for_all_arms() -> None:
     phases = {
         name: 0.1.hex() for name in (
             "q_inference", "base_nominal_evaluation", "enumeration",
-            "remaining_nominal_evaluations", "catalog_total", "selection",
+            "remaining_nominal_evaluations", "nominal_evaluation",
+            "catalog_total", "selection",
         )
     }
 
     def decision(catalog: str, wall: float) -> dict[str, object]:
         return {
             "catalog": catalog, "wall_seconds_hex": wall.hex(), "catalog_size": 3,
-            "unique_nominal_evaluations": 3, "peak_rss_kib": 10,
+            "unique_nominal_evaluations": 3, "process_lifetime_peak_rss_kib": 10,
+            "rss_measurement_scope": (
+                "PROCESS_LIFETIME_HIGH_WATER_MARK_NOT_ISOLATED_PER_ARM;"
+                "FULL_EXECUTES_BEFORE_LITE"
+            ),
             "phase_wall_seconds_hex": phases,
             "profile_counts": {"base": 1, "unilateral": 1, "joint": 1},
         }
@@ -372,7 +485,11 @@ def test_timing_summaries_are_separate_for_all_arms() -> None:
             "LITE": {"decision_wall_seconds_hex": [1.0.hex()]},
         },
     }
-    assert screen.coordinator_timing_summary([receipt], arm="FULL")["decisions"] == 1
+    summary = screen.coordinator_timing_summary([receipt], arm="FULL")
+    assert summary["decisions"] == 1
+    assert set(summary["phase_wall_seconds"]) == {
+        "q_inference", "enumeration", "nominal_evaluation",
+    }
     timing = screen.per_arm_wall_timing([receipt])
     assert float.fromhex(timing["BASE"]["maximum_hex"]) == 0.5
     assert float.fromhex(timing["FULL"]["maximum_hex"]) == 3.0
@@ -421,9 +538,372 @@ def test_missing_units_publish_sequenced_incomplete_receipt(
     with pytest.raises(screen.MergeWaiting) as caught:
         screen.execute_merge(
             output=output, horizon=30, preflight_sha256="1" * 64,
-            authority_sha256="2" * 64, producer_common_binding={"common": True},
+            authority_sha256="2" * 64, authority_path=tmp_path / "merge-authority.json",
+            producer_common_binding={"common": True},
         )
     receipt = caught.value.receipt
     assert receipt == output / "incomplete" / "merge-000001.json"
     assert screen.load_json(receipt, field="incomplete")["status"] == "INCOMPLETE"
     assert receipt.stat().st_mode & 0o777 == 0o444
+
+
+def test_detached_evaluator_matches_native_nominal_physics_and_is_pure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcrl.env.action_contract import NO_OP_ACTION
+    from mcrl.env.constants import TLE_ROOT_DEFAULT
+    from mcrl.env.keyed_fading import KeyedFadingField
+    from mcrl.env.mobility import MobilityConfig
+    from mcrl.env.scenario import ScenarioConfig, ScenarioDriver
+    from mcrl.env.step import StepEnvironment
+    from mcrl.env.tle import TleArchive
+
+    archive = Path(TLE_ROOT_DEFAULT).expanduser()
+    if not archive.is_dir():
+        pytest.skip("canonical TLE archive is unavailable")
+    environment = StepEnvironment(
+        ScenarioDriver(
+            TleArchive(archive),
+            ScenarioConfig(mobility=MobilityConfig(num_users=4)),
+        ),
+        fading_field=KeyedFadingField.from_components("c3s-detached-test", 1, 4),
+    )
+    rng = np.random.default_rng(2026090801)
+    mobility_rng = np.random.default_rng(2026090802)
+    observation = environment.reset(
+        dt.datetime(2026, 8, 20, 6, 0, tzinfo=dt.timezone.utc),
+        rng,
+        mobility_rng=mobility_rng,
+    )
+    base = np.full(4, NO_OP_ACTION, dtype=np.int64)
+    for user, mask in enumerate(observation.masks):
+        legal = np.flatnonzero(mask)
+        if legal.size:
+            base[user] = int(legal[0])
+    native = SimpleNamespace(
+        state_matrix=readonly(observation.state_matrix, np.float32),
+        action_masks=readonly(observation.masks, np.bool_),
+        verify=lambda: "verified",
+    )
+    q12 = np.zeros((4, 28), dtype=np.float32)
+    monkeypatch.setattr(
+        c3s_policy.e1, "_q12_surface_base_only",
+        lambda *_args: (native, q12, base),
+    )
+    adapter = c3s_policy.C3SPolicyAdapter(
+        physical=object(), frozen=object(), eta_ref=Fraction(1),
+    )
+    snapshot, evaluator = c3s_policy._snapshot_inputs(
+        adapter, environment, observation
+    )
+    c3s_policy._assert_no_prohibited_capabilities((snapshot, evaluator))
+    live_before = c3s_policy._live_neutrality_fingerprint(environment, rng)
+    with c3s_policy.s0.nominal_no_fading(environment):
+        live = c3s_policy.e1._evaluate_actions_neutral(environment, base, rng)
+    detached_first = evaluator.evaluate(base)
+    detached_second = evaluator.evaluate(base)
+    assert np.array_equal(detached_first.link_rate_bps, live.link_rate_bps)
+    assert np.array_equal(detached_first.link_power_w, live.link_power_w)
+    assert detached_first.system_power_w == live.system_power_w
+    assert np.array_equal(detached_first.link_rate_bps, detached_second.link_rate_bps)
+    assert c3s_policy._live_neutrality_fingerprint(environment, rng) == live_before
+
+
+def test_actual_evacuation_membership_common_destinations_and_order() -> None:
+    tables = (
+        slot_table([(10, 1), (20, 2), (30, 3)], {0, 1, 2}),
+        slot_table([(10, 1), (20, 2)], {0, 1}),
+        slot_table([(5, 4), (20, 2)], {0, 1}),
+    )
+    observation = SimpleNamespace(
+        candidates=SimpleNamespace(slot_tables=tables)
+    )
+    profile = SimpleNamespace(
+        users=3,
+        served=np.asarray([True, True, True]),
+        serving_satellite=np.asarray([10, 10, 5]),
+        serving_cell=np.asarray([1, 1, 4]),
+    )
+    rows = c3s_policy._evacuation_skeletons(
+        observation, np.asarray([0, 0, 0]), profile
+    )
+    assert [row["profile_id"] for row in rows] == [
+        "J:5:4->20:2", "J:10:1->20:2",
+    ]
+    assert rows[0]["actions"].tolist() == [0, 0, 1]
+    assert rows[1]["actions"].tolist() == [1, 1, 0]
+
+
+def test_actual_catalog_retains_aliases_and_memoizes_identical_vectors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = slot_table([(10, 1), (20, 2)], {0, 1})
+    snapshot = decision_snapshot((table,))
+    profile = SimpleNamespace(
+        users=1, served=np.asarray([True]),
+        serving_satellite=np.asarray([10]), serving_cell=np.asarray([1]),
+    )
+    evaluator = FakeEvaluator()
+    monkeypatch.setattr(
+        c3s_policy.f1, "profile_from_evaluation",
+        lambda *_args, **_kwargs: (profile, np.zeros(1)),
+    )
+    monkeypatch.setattr(
+        c3s_policy.e1, "_profile_metrics",
+        lambda *_args: {
+            "total_bits": 10.0.hex(), "total_energy_j": 2.0.hex(),
+            "served": 1, "opportunities": 1,
+        },
+    )
+    rows = c3s_policy.build_s0_catalog(snapshot=snapshot, evaluator=evaluator)
+    assert [row["profile_id"] for row in rows] == [
+        "BASE", "U:0:1", "J:10:1->20:2",
+    ]
+    assert rows[1]["actions"].tolist() == rows[2]["actions"].tolist() == [1]
+    assert evaluator.calls == [(0,), (1,)]
+
+
+def test_real_selection_is_repeatable_from_one_frozen_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = slot_table([(10, 1), (20, 2)], {0, 1})
+    snapshot = decision_snapshot((table,))
+    profile = SimpleNamespace(
+        users=1, served=np.asarray([True]),
+        serving_satellite=np.asarray([10]), serving_cell=np.asarray([1]),
+    )
+    monkeypatch.setattr(
+        c3s_policy.f1, "profile_from_evaluation",
+        lambda *_args, **_kwargs: (profile, np.zeros(1)),
+    )
+    monkeypatch.setattr(
+        c3s_policy.e1, "_profile_metrics",
+        lambda *_args: {
+            "total_bits": 10.0.hex(), "total_energy_j": 2.0.hex(),
+            "served": 1, "opportunities": 1,
+        },
+    )
+    before = snapshot.verify()
+    first = c3s_policy._real_decision(snapshot, FakeEvaluator())
+    second = c3s_policy._real_decision(snapshot, FakeEvaluator())
+    assert (
+        first.profile_id, first.actions.tolist(), first.nominal,
+        first.catalog_size, first.counts, first.unique_nominal_evaluations,
+    ) == (
+        second.profile_id, second.actions.tolist(), second.nominal,
+        second.catalog_size, second.counts, second.unique_nominal_evaluations,
+    )
+    assert snapshot.verify() == before
+
+
+def test_actual_catalog_rejects_duplicate_physical_keys_and_accepts_empty_noop() -> None:
+    duplicate = slot_table([(10, 1), (20, 2), (20, 2)], {0, 1, 2})
+    observation = SimpleNamespace(candidates=SimpleNamespace(slot_tables=(duplicate,)))
+    with pytest.raises(Exception, match="alias one candidate physical configuration"):
+        c3s_policy.f1.enumerate_unilateral_candidates(observation, np.asarray([0]))
+
+    empty = slot_table([], set())
+    empty_observation = SimpleNamespace(candidates=SimpleNamespace(slot_tables=(empty,)))
+    assert c3s_policy.f1.enumerate_unilateral_candidates(
+        empty_observation, np.asarray([c3s_policy.f1.NO_OP_ACTION])
+    ) == ()
+    assert c3s_policy._lite_unilateral_skeletons(
+        empty_observation,
+        np.asarray([c3s_policy.f1.NO_OP_ACTION]),
+        np.zeros((1, 28), dtype=np.float32),
+    ) == ()
+
+
+def test_completed_unit_is_authenticated_and_reused_before_physics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(screen, "HERE", tmp_path)
+    key = screen.ALL_UNITS[0]
+    output = tmp_path / "run"
+    existing = screen._unit_path(output, key)
+    existing.parent.mkdir(parents=True)
+    existing.write_text("already complete", encoding="ascii")
+    validated = {"status": "COMPLETE"}
+    monkeypatch.setattr(
+        screen, "_validate_complete_unit",
+        lambda *_args, **_kwargs: (validated, "a" * 64),
+    )
+    monkeypatch.setattr(
+        screen, "execute_physical_unit",
+        lambda *_args, **_kwargs: pytest.fail("completed unit was recomputed"),
+    )
+    path, valid = screen.execute_unit(
+        key=key, output=output, horizon=30,
+        preflight_sha256="1" * 64, authority_sha256="2" * 64,
+        authority_path=tmp_path / "authority.json",
+        producer_common_binding={"common": True},
+    )
+    assert (path, valid) == (existing, True)
+
+
+@pytest.mark.parametrize("failure", [KeyboardInterrupt(), MemoryError()])
+def test_interruption_and_resource_failure_publish_retryable_attempts(
+    failure: BaseException, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(screen, "HERE", tmp_path)
+    key = screen.ALL_UNITS[0]
+    output = tmp_path / "run"
+    monkeypatch.setattr(
+        screen, "execute_physical_unit",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(failure),
+    )
+    attempt, valid = screen.execute_unit(
+        key=key, output=output, horizon=30,
+        preflight_sha256="1" * 64, authority_sha256="2" * 64,
+        authority_path=tmp_path / "authority.json",
+        producer_common_binding={"common": True},
+    )
+    assert valid is False
+    assert screen.load_json(attempt, field="attempt")["status"] == "INCOMPLETE"
+    assert not screen._unit_path(output, key).exists()
+
+    monkeypatch.setattr(
+        screen, "execute_physical_unit",
+        lambda *_args, **_kwargs: {"schema": screen.UNIT_RECEIPT_SCHEMA},
+    )
+    canonical, retried = screen.execute_unit(
+        key=key, output=output, horizon=30,
+        preflight_sha256="1" * 64, authority_sha256="2" * 64,
+        authority_path=tmp_path / "authority.json",
+        producer_common_binding={"common": True},
+    )
+    assert retried is True
+    assert canonical == screen._unit_path(output, key)
+
+
+def test_bogus_producer_authority_digest_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(screen, "HERE", tmp_path)
+    authority = tmp_path / "authority.json"
+    authority.write_text("{}\n", encoding="ascii")
+    receipt = {
+        "launch_authority": {"path": str(authority), "sha256": "0" * 64},
+    }
+    with pytest.raises(screen.C3SScreenError, match="authority digest is invalid"):
+        screen._producer_authority(
+            receipt, key=screen.ALL_UNITS[0], root=tmp_path / "run", horizon=30,
+            preflight_sha256="1" * 64,
+            producer_common_binding={"preflight_manifest": {}},
+        )
+
+
+def test_atomic_terminal_publication_recovers_after_interrupted_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(screen, "HERE", tmp_path)
+    original_rename = screen.os.rename
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(screen.os, "rename", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        screen._publish_directory_artifact(
+            tmp_path / "run", directory_name=screen.TERMINAL_DIRECTORY_NAME,
+            filename=screen.TERMINAL_RECEIPT_NAME, payload={"status": "COMPLETE"},
+        )
+    terminal = (
+        tmp_path / "run" / screen.TERMINAL_DIRECTORY_NAME
+        / screen.TERMINAL_RECEIPT_NAME
+    )
+    assert not terminal.exists()
+
+    monkeypatch.setattr(screen.os, "rename", original_rename)
+    published = screen._publish_directory_artifact(
+        tmp_path / "run", directory_name=screen.TERMINAL_DIRECTORY_NAME,
+        filename=screen.TERMINAL_RECEIPT_NAME, payload={"status": "COMPLETE"},
+    )
+    assert published == terminal
+
+
+def test_terminal_and_global_invalidation_reentry_do_not_execute_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(screen, "HERE", tmp_path)
+    common = {"common": True}
+    terminal_payload = {
+        "schema": screen.TERMINAL_RECEIPT_SCHEMA,
+        "status": "COMPLETE", "outcome": "C3S_THREE_ARM_SCREEN_COMPLETE",
+        "preflight_manifest_sha256": "1" * 64,
+        "launch_authority_sha256": "2" * 64,
+        "launch_authority": {
+            "path": str((tmp_path / "merge-authority.json").resolve()),
+            "sha256": "2" * 64,
+        },
+        "producer_common_binding": common, "integrity": True,
+    }
+    terminal = screen._publish_directory_artifact(
+        tmp_path / "complete-run", directory_name=screen.TERMINAL_DIRECTORY_NAME,
+        filename=screen.TERMINAL_RECEIPT_NAME, payload=terminal_payload,
+    )
+    monkeypatch.setattr(
+        screen, "_load_complete_units",
+        lambda *_args, **_kwargs: pytest.fail("terminal reentry executed merge"),
+    )
+    assert screen.execute_merge(
+        output=tmp_path / "complete-run", horizon=30,
+        preflight_sha256="1" * 64, authority_sha256="2" * 64,
+        authority_path=tmp_path / "merge-authority.json",
+        producer_common_binding=common,
+    ) == (terminal, True)
+
+    invalid_payload = {
+        "schema": screen.TERMINAL_RECEIPT_SCHEMA,
+        "status": "INVALID_RUN", "outcome": "INVALID_RUN", "scope": "merge",
+        "preflight_manifest_sha256": "1" * 64,
+        "launch_authority_sha256": "2" * 64,
+        "launch_authority": {
+            "path": str((tmp_path / "merge-authority.json").resolve()),
+            "sha256": "2" * 64,
+        },
+        "producer_common_binding": common, "integrity": False,
+    }
+    invalidation = screen._publish_directory_artifact(
+        tmp_path / "invalid-run",
+        directory_name=screen.GLOBAL_INVALIDATION_DIRECTORY_NAME,
+        filename=screen.GLOBAL_INVALIDATION_NAME, payload=invalid_payload,
+    )
+    assert screen.execute_merge(
+        output=tmp_path / "invalid-run", horizon=30,
+        preflight_sha256="1" * 64, authority_sha256="2" * 64,
+        authority_path=tmp_path / "merge-authority.json",
+        producer_common_binding=common,
+    ) == (invalidation, False)
+
+
+def test_freeze_binds_ops3_native_state_f0_and_all_physics_sources() -> None:
+    paths = {Path(row["path"]).name for row in screen.expected_code_bindings()}
+    assert {
+        "ee_axis_ops3_live.py", "ee_axis_state.py", "c3_contingency_f0.py",
+        "step.py", "energy_efficiency.py", "interference.py", "link_budget.py",
+    }.issubset(paths)
+
+
+def test_complete_world_census_rejects_any_used_or_allocated_collision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "inventory.json"
+    source.write_text("{}\n", encoding="ascii")
+    payload = {
+        "schema": screen.WORLD_CENSUS_SCHEMA,
+        "status": "FROZEN_COMPLETE_USED_ALLOCATED_CENSUS",
+        "inventory_complete": True,
+        "inventory_scope": "all project used and allocated world authorities",
+        "source_artifacts": [{
+            "path": str(source.resolve()), "sha256": screen.file_sha256(source),
+        }],
+        "used_worlds": [screen.WORLDS[0]], "allocated_worlds": [],
+        "c3s_worlds": list(screen.WORLDS), "collisions": [],
+    }
+    monkeypatch.setattr(
+        screen, "_sealed_json_binding",
+        lambda *_args, **_kwargs: (payload, {"path": "x", "sha256": "1" * 64}),
+    )
+    with pytest.raises(screen.C3SScreenError, match="collide"):
+        screen.validate_world_census({})

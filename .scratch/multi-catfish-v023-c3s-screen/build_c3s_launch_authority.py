@@ -16,7 +16,7 @@ def build_authority(
     launch_arguments: Sequence[str], authority_path: Path,
 ) -> dict[str, object]:
     preflight_path = Path(preflight_manifest)
-    _manifest, preflight_sha = screen.validate_preflight_manifest(preflight_path)
+    manifest, preflight_sha = screen.validate_preflight_manifest(preflight_path)
     sealed_contract = screen.sealed_contract_binding()
     if not Path(contract).is_absolute() or str(Path(contract).resolve()) != sealed_contract["path"]:
         raise screen.C3SScreenError("--contract must be the absolute controller-sealed C3S contract")
@@ -49,6 +49,11 @@ def build_authority(
         "preregistration": static["preregistration"],
         "tle_archive": static["tle_archive"],
         "code_files": screen.expected_code_bindings(),
+        "freeze_provenance": {
+            "evidence_manifest": manifest["evidence_manifest"],
+            "world_census": manifest["world_census"],
+            "freeze": manifest["freeze"],
+        },
         "execution": {
             "mode": "unit" if target is not None else "merge",
             "unit": None if target is None else target.as_dict(),
