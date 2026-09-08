@@ -4,7 +4,11 @@ from contextlib import nullcontext
 from copy import deepcopy
 import datetime as dt
 from fractions import Fraction
+import hashlib
+import json
+import os
 from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 
 import numpy as np
@@ -72,6 +76,9 @@ class FakeEvaluator:
     def evaluate(self, actions):
         self.calls.append(tuple(np.asarray(actions).tolist()))
         return object()
+
+    def evaluate_many(self, actions):
+        return tuple(self.evaluate(action) for action in actions)
 
     def verify(self):
         return "authenticated-test-evaluator"
@@ -176,6 +183,23 @@ def test_full_neutrality_guard_detects_nested_mobility_mutation(
     )
     with pytest.raises(c3s_policy.C3SPolicyError, match="tracking state"):
         adapter.select_actions(environment, object(), rng)
+
+
+def test_live_neutrality_guard_does_not_walk_immutable_archive() -> None:
+    class ArchiveMustNotBeTraversed:
+        @property
+        def __dict__(self):
+            raise AssertionError("immutable archive was recursively traversed")
+
+    environment = NeutralStepEnv()
+    environment.driver.archive = ArchiveMustNotBeTraversed()
+    first = c3s_policy._live_neutrality_fingerprint(
+        environment, np.random.default_rng(7)
+    )
+    second = c3s_policy._live_neutrality_fingerprint(
+        environment, np.random.default_rng(7)
+    )
+    assert first == second
 
 
 def test_candidate_catalog_order_is_deterministic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -727,6 +751,34 @@ def test_real_selection_is_repeatable_from_one_frozen_snapshot(
     assert evaluator.verify() == evaluator_before
 
 
+def test_process_pool_reduces_in_canonical_order_and_matches_serial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _environment, _observation, snapshot, evaluator, _base, _rng = (
+        native_four_user_snapshot(monkeypatch)
+    )
+    serial = c3s_policy._real_decision(snapshot, evaluator)
+    with c3s_policy.ProcessPoolExecutor(
+        max_workers=2,
+        mp_context=c3s_policy.multiprocessing.get_context("fork"),
+    ) as executor:
+        parallel = c3s_policy._real_decision(
+            snapshot, evaluator, executor=executor, evaluation_workers=2
+        )
+    assert (
+        parallel.profile_id, parallel.actions.tolist(), parallel.nominal,
+        parallel.catalog_size, parallel.counts, parallel.unique_nominal_evaluations,
+    ) == (
+        serial.profile_id, serial.actions.tolist(), serial.nominal,
+        serial.catalog_size, serial.counts, serial.unique_nominal_evaluations,
+    )
+
+
+def test_lite_worker_cli_defaults_to_sealed_single_process_path() -> None:
+    assert screen._parser().parse_args([]).lite_workers == 1
+    assert screen._parser().parse_args(["--lite-workers", "8"]).lite_workers == 8
+
+
 def test_adapter_refuses_reviewer_reproduced_evaluator_geometry_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1188,3 +1240,97 @@ def test_complete_world_census_rejects_incomplete_or_unrelated_inventory(
     payload["used_worlds"] = [*expected["used_worlds"], screen.WORLDS[0]]
     with pytest.raises(screen.C3SScreenError, match="malformed"):
         screen.validate_world_census({})
+
+
+@pytest.mark.skipif(
+    os.environ.get("C3S_RUN_ARCHIVED_EQUIVALENCE") != "1",
+    reason="set C3S_RUN_ARCHIVED_EQUIVALENCE=1 for the physical archived replay",
+)
+def test_archived_lite_replay_equivalence_and_receipt_determinism() -> None:
+    """Replay two v1 units through serial and pooled LITE for five steps."""
+
+    from mcrl.env.keyed_fading import KeyedFadingField
+    from mcrl.runtime.prereg import read_prereg
+    from mcrl.runtime.training_pipeline import _evaluation_rngs
+
+    receipt_root = Path(os.environ.get(
+        "C3S_ARCHIVED_RECEIPTS",
+        "/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/"
+        "runs/c3s-20260908-r1/units",
+    ))
+    units = (
+        screen.UnitKey(8464287092499831892, 2026092101),
+        screen.UnitKey(7305539127129390835, 2026092102),
+    )
+    record = read_prereg(screen.f1.PREREG_PATH)
+    physical, server = screen.f1._runtime_modules()
+
+    def run_variant(archive, frozen, key, *, workers: int):
+        environment = screen._make_environment(archive, horizon=30)
+        environment.environment._fading_field = KeyedFadingField.from_components(
+            screen.FIELD_COMPONENT, key.world
+        )
+        rngs = tuple(_evaluation_rngs(key.world))
+        _states, _masks, observation = environment.reset(rngs[0], rngs[1])
+        adapter = c3s_policy.C3SPolicyAdapter(
+            physical=physical, frozen=frozen, catalog="lite",
+            evaluation_workers=workers,
+        )
+        rows = []
+        try:
+            for step_index in range(5):
+                actions = adapter.select_actions(
+                    environment.environment, observation, rngs[0]
+                )
+                environment.step(actions, rngs[0])
+                outcome = environment.last_outcome
+                decision = adapter.decision_records[-1]
+                realised = screen._step_metric(
+                    outcome,
+                    float(environment.environment.driver.config.ephemeris.time_step_s),
+                )
+                rows.append({
+                    "step_index": step_index,
+                    "profile_id": decision["selected_profile_id"],
+                    "actions": actions.tolist(),
+                    "nominal": decision["selected_nominal"],
+                    "realised": realised,
+                })
+                observation = outcome.observation
+        finally:
+            adapter.close()
+        digest = hashlib.sha256(screen.canonical_bytes(rows)).hexdigest()
+        return rows, digest
+
+    for key in units:
+        archived = json.loads(
+            (receipt_root / key.slug / screen.UNIT_RECEIPT_NAME).read_text(
+                encoding="ascii"
+            )
+        )
+        frozen = screen.f2._load_frozen_heads(key.lineage)
+        with tempfile.TemporaryDirectory(prefix=f"c3s-equivalence-{key.slug}-") as tmp:
+            archive = server._freeze_archive(
+                record, screen.CANONICAL_TLE_ROOT, Path(tmp) / "frozen", physical
+            )
+            serial, _serial_digest = run_variant(
+                archive, frozen, key, workers=1
+            )
+            pooled_first, first_digest = run_variant(
+                archive, frozen, key, workers=8
+            )
+            pooled_second, second_digest = run_variant(
+                archive, frozen, key, workers=8
+            )
+        assert pooled_first == serial
+        assert pooled_second == pooled_first
+        assert second_digest == first_digest
+        for index, row in enumerate(pooled_first):
+            archived_decision = archived["decisions_by_arm"]["LITE"][index]
+            archived_outcome = archived["arms"]["LITE"]["steps"][index]
+            assert row["profile_id"] == archived_decision["selected_profile_id"]
+            assert row["nominal"] == archived_decision["selected_nominal"]
+            assert row["realised"] == {
+                name: value for name, value in archived_outcome.items()
+                if name != "step_index"
+            }

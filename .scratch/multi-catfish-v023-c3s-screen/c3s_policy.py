@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field, fields, is_dataclass, replace
 from fractions import Fraction
 import json
 import math
+import multiprocessing
+import os
 from pathlib import Path
 import resource
 import sys
@@ -165,9 +168,43 @@ def _assert_no_prohibited_capabilities(value: object) -> None:
 
 
 def _live_neutrality_fingerprint(step_env: Any, rng: np.random.Generator) -> str:
-    """Bind all live state, including RNG SeedSequence spawning counters."""
+    """Bind mutable live state without rehashing the immutable TLE archive.
 
-    return _structural_sha256((step_env, rng))
+    The former whole-object traversal visited the multi-day frozen orbit
+    archive twice per decision.  Selection can only reach ``step_env`` while
+    constructing its detached snapshot, so authenticate every mutable field
+    that construction reads or could advance, plus all environment RNGs and
+    driver tracking state.  Large immutable capabilities remain identity
+    bound; they are never handed to the coordinator.
+    """
+
+    driver = getattr(step_env, "driver", None)
+    environment_state = {
+        name: getattr(step_env, name, None)
+        for name in (
+            "_previous_served_rate_bps", "_previous_association",
+            "_previous_demand", "_previous_link_power_w",
+            "_previous_radiating", "_segments", "_ledgers",
+            "_pending_segment_age", "_step_index", "_started",
+            "_mobility_rng", "_age_rng",
+        )
+    }
+    driver_state = None if driver is None else {
+        name: getattr(driver, name, None)
+        for name in (
+            "_users", "_dwell", "_tracker", "_start_utc", "_step_index",
+            "_frozen_window_norad_ids",
+        )
+    }
+    identities = {
+        "candidates": id(getattr(step_env, "_candidates", None)),
+        "fading_field": id(getattr(step_env, "_fading_field", None)),
+        "driver": id(driver),
+        "driver_archive": id(getattr(driver, "archive", None)),
+        "driver_grid": id(getattr(driver, "grid", None)),
+        "driver_satellites": id(getattr(driver, "_satellites", None)),
+    }
+    return _structural_sha256((environment_state, driver_state, identities, rng))
 
 
 def fraction_payload(value: Fraction) -> dict[str, str]:
@@ -527,19 +564,60 @@ class NominalSnapshotEvaluator:
         return self.snapshot.verify()
 
     def evaluate(self, actions: np.ndarray) -> Any:
+        return self.evaluate_many((actions,))[0]
+
+    def evaluate_many(self, action_vectors: Sequence[np.ndarray]) -> tuple[Any, ...]:
+        """Evaluate a canonical batch while reusing detached invariants."""
+
         from mcrl.env.action_contract import assert_selected_actions_valid
         from mcrl.env.step import StepEnvironment
 
         context = _DetachedNominalContext(self.snapshot)
-        selected = assert_selected_actions_valid(actions, self.snapshot.candidates.slot_tables)
-        physics = StepEnvironment._resolve_physics(
-            context, self.snapshot.candidates, selected, None
+        initial_segments = tuple(self.snapshot.segments)
+        results: list[Any] = []
+        for actions in action_vectors:
+            # ``_resolve_physics`` advances only this detached segment list.
+            # Reset it for each counterfactual; driver geometry, physical
+            # constants and committed association are decision invariants.
+            context._segments = list(initial_segments)
+            selected = assert_selected_actions_valid(
+                actions, self.snapshot.candidates.slot_tables
+            )
+            physics = StepEnvironment._resolve_physics(
+                context, self.snapshot.candidates, selected, None
+            )
+            results.append(SimpleNamespace(
+                resolution=physics["resolution"], radiating=physics["radiating"],
+                link_power_w=physics["link_power_w"], link_rate_bps=physics["rate"],
+                fixed_power_w=physics["fixed_power_w"],
+                system_power_w=physics["system_power_w"],
+            ))
+        return tuple(results)
+
+
+def _evaluate_nominal_chunk(
+    evaluator: NominalSnapshotEvaluator,
+    interval_s: float,
+    work: tuple[tuple[tuple[int, ...], str, np.ndarray], ...],
+) -> tuple[tuple[tuple[int, ...], dict[str, object]], ...]:
+    """Pure worker entry point; inputs and canonical result keys are explicit."""
+
+    for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ[name] = "1"
+    evaluations = evaluator.evaluate_many(tuple(row[2] for row in work))
+    result: list[tuple[tuple[int, ...], dict[str, object]]] = []
+    for (key, profile_id, _actions), evaluation in zip(work, evaluations, strict=True):
+        profile, _link_power = f1.profile_from_evaluation(
+            evaluation, interval_s=interval_s
         )
-        return SimpleNamespace(
-            resolution=physics["resolution"], radiating=physics["radiating"],
-            link_power_w=physics["link_power_w"], link_rate_bps=physics["rate"],
-            fixed_power_w=physics["fixed_power_w"], system_power_w=physics["system_power_w"],
-        )
+        result.append((
+            key,
+            _metric_from_e1_payload(
+                e1._profile_metrics(profile),
+                label=f"{profile_id} nominal evaluation",
+            ),
+        ))
+    return tuple(result)
 
 
 @dataclass(frozen=True)
@@ -716,6 +794,8 @@ def _snapshot_inputs(
 def build_s0_catalog(
     *, snapshot: DecisionSnapshot, evaluator: NominalSnapshotEvaluator,
     timing_out: dict[str, float] | None = None,
+    executor: ProcessPoolExecutor | None = None,
+    evaluation_workers: int = 1,
 ) -> tuple[dict[str, object], ...]:
     """Build the declared full or Q12-pruned-lite catalog in fixed order."""
 
@@ -726,6 +806,10 @@ def build_s0_catalog(
         raise C3SPolicyError("BASE action vector is malformed")
     if snapshot.catalog not in ("full", "lite"):
         raise C3SPolicyError("catalog must be 'full' or 'lite'")
+    if type(evaluation_workers) is not int or not 1 <= evaluation_workers <= 8:
+        raise C3SPolicyError("nominal evaluation workers must be in 1..8")
+    if (executor is None) != (evaluation_workers == 1):
+        raise C3SPolicyError("a process pool is required exactly when workers exceed one")
     try:
         evaluation_started = time.perf_counter()
         # Origin membership comes from BASE's nominal/native service result.
@@ -766,17 +850,51 @@ def build_s0_catalog(
         # but share the first nominal result by complete action-vector key.
         nominal_started = time.perf_counter()
         cache = {tuple(int(value) for value in reference.tolist()): base_nominal}
+        pending: list[tuple[tuple[int, ...], str, np.ndarray]] = []
+        pending_keys: set[tuple[int, ...]] = set()
         for row in rows[1:]:
             actions = np.asarray(row["actions"], dtype=np.int64)
             key = tuple(int(value) for value in actions.tolist())
-            if key not in cache:
+            if key not in cache and key not in pending_keys:
+                pending_keys.add(key)
+                pending.append((key, str(row["profile_id"]), actions.copy()))
+        if evaluation_workers == 1:
+            serial_results: list[tuple[tuple[int, ...], dict[str, object]]] = []
+            for key, profile_id, actions in pending:
                 evaluation = evaluator.evaluate(actions)
                 profile, _link_power = f1.profile_from_evaluation(
                     evaluation, interval_s=snapshot.interval_s
                 )
-                cache[key] = _metric_from_e1_payload(
-                    e1._profile_metrics(profile), label=f"{row['profile_id']} nominal evaluation"
+                serial_results.append((
+                    key,
+                    _metric_from_e1_payload(
+                        e1._profile_metrics(profile),
+                        label=f"{profile_id} nominal evaluation",
+                    ),
+                ))
+            evaluated_chunks = (tuple(serial_results),)
+        else:
+            assert executor is not None
+            chunk_size = max(1, math.ceil(len(pending) / evaluation_workers))
+            chunks = tuple(
+                tuple(pending[start:start + chunk_size])
+                for start in range(0, len(pending), chunk_size)
+            )
+            # Futures are reduced in submission order, and rows within each
+            # fixed contiguous chunk retain catalog order.
+            futures = tuple(
+                executor.submit(
+                    _evaluate_nominal_chunk, evaluator, snapshot.interval_s, chunk
                 )
+                for chunk in chunks
+            )
+            evaluated_chunks = tuple(future.result() for future in futures)
+        for chunk in evaluated_chunks:
+            for key, metric in chunk:
+                cache[key] = metric
+        for row in rows[1:]:
+            actions = np.asarray(row["actions"], dtype=np.int64)
+            key = tuple(int(value) for value in actions.tolist())
             row["nominal"] = cache[key]
         nominal_seconds = time.perf_counter() - nominal_started
         if timing_out is not None:
@@ -816,6 +934,7 @@ class C3SPolicyAdapter:
         self, *, physical: Any, frozen: Any, eta_ref: Fraction | None = None,
         eta_config: Path = CONFIG_PATH, catalog: Catalog = "full",
         decision_function: DecisionFunction | None = None,
+        evaluation_workers: int = 1,
     ) -> None:
         self.physical = physical
         self.frozen = frozen
@@ -825,38 +944,80 @@ class C3SPolicyAdapter:
         if catalog not in ("full", "lite"):
             raise C3SPolicyError("catalog must be 'full' or 'lite'")
         self.catalog: Catalog = catalog
+        if type(evaluation_workers) is not int or not 1 <= evaluation_workers <= 8:
+            raise C3SPolicyError("evaluation_workers must be in 1..8")
+        self.evaluation_workers = evaluation_workers
+        self._executor: ProcessPoolExecutor | None = None
         self._decision_function = decision_function or _real_decision
         self.decision_records: list[dict[str, object]] = []
+
+    def close(self) -> None:
+        if self._executor is not None:
+            self._executor.shutdown(wait=True, cancel_futures=False)
+            self._executor = None
+
+    def _process_pool(self) -> ProcessPoolExecutor | None:
+        if self.evaluation_workers == 1:
+            return None
+        if self._executor is None:
+            self._executor = ProcessPoolExecutor(
+                max_workers=self.evaluation_workers,
+                mp_context=multiprocessing.get_context("fork"),
+            )
+        return self._executor
 
     def select_actions(
         self, step_env: Any, observation: Any, rng: np.random.Generator,
     ) -> np.ndarray:
         if not isinstance(rng, np.random.Generator):
             raise C3SPolicyError("policy RNG must be numpy.random.Generator")
+        selector_started = time.perf_counter()
+        stage_seconds: dict[str, float] = {}
         try:
+            stage_started = time.perf_counter()
             before = _live_neutrality_fingerprint(step_env, rng)
+            stage_seconds["live_pre_authentication"] = time.perf_counter() - stage_started
         except Exception as error:
             raise C3SPolicyError("cannot snapshot the pre-decision environment") from error
         started = time.perf_counter()
         result: DecisionResult | None = None
         decision_error: BaseException | None = None
         try:
+            stage_started = time.perf_counter()
             snapshot, evaluator = _snapshot_inputs(self, step_env, observation)
+            stage_seconds["snapshot_construction"] = time.perf_counter() - stage_started
+            stage_started = time.perf_counter()
             snapshot_digest = snapshot.verify()
             evaluator_digest = evaluator.verify()
             _assert_no_prohibited_capabilities((snapshot, evaluator))
-            result = self._decision_function(snapshot, evaluator)
+            stage_seconds["input_authentication"] = time.perf_counter() - stage_started
+            stage_started = time.perf_counter()
+            if self._decision_function is _real_decision:
+                result = _real_decision(
+                    snapshot, evaluator,
+                    executor=self._process_pool(),
+                    evaluation_workers=self.evaluation_workers,
+                )
+            else:
+                result = self._decision_function(snapshot, evaluator)
+            stage_seconds["decision_core"] = time.perf_counter() - stage_started
+            stage_started = time.perf_counter()
             if snapshot.verify() != snapshot_digest:
                 raise C3SPolicyError("coordinator mutated its frozen input snapshot")
             if evaluator.verify() != evaluator_digest:
                 raise C3SPolicyError(
                     "coordinator mutated its authenticated nominal geometry/physics"
                 )
+            stage_seconds["post_decision_input_authentication"] = (
+                time.perf_counter() - stage_started
+            )
         except BaseException as error:
             decision_error = error
         elapsed = time.perf_counter() - started
         try:
+            stage_started = time.perf_counter()
             after = _live_neutrality_fingerprint(step_env, rng)
+            stage_seconds["live_post_authentication"] = time.perf_counter() - stage_started
         except Exception as error:
             raise C3SPolicyError("cannot authenticate the post-decision environment") from error
         if after != before:
@@ -889,6 +1050,11 @@ class C3SPolicyAdapter:
             "phase_wall_seconds_hex": {
                 name: float(value).hex() for name, value in result.phase_wall_seconds.items()
             },
+            "stage_wall_seconds_hex": {
+                **{name: float(value).hex() for name, value in stage_seconds.items()},
+                "adapter_inner": elapsed.hex(),
+                "selector_total": (time.perf_counter() - selector_started).hex(),
+            },
             "process_lifetime_peak_rss_kib": int(
                 resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             ),
@@ -902,11 +1068,13 @@ class C3SPolicyAdapter:
 
 def _real_decision(
     snapshot: DecisionSnapshot, evaluator: NominalSnapshotEvaluator,
+    *, executor: ProcessPoolExecutor | None = None, evaluation_workers: int = 1,
 ) -> DecisionResult:
     phases: dict[str, float] = {"q_inference": snapshot.q_inference_seconds}
     catalog_started = time.perf_counter()
     catalog = build_s0_catalog(
         snapshot=snapshot, evaluator=evaluator, timing_out=phases,
+        executor=executor, evaluation_workers=evaluation_workers,
     )
     phases["catalog_total"] = time.perf_counter() - catalog_started
     unique_nominal_evaluations = int(phases.pop("unique_nominal_evaluations"))

@@ -825,18 +825,25 @@ def run_arm_trajectory(
 ) -> dict[str, object]:
     """Run one arm in its own environment; useful as the synthetic test seam."""
 
+    reset_started = time.perf_counter()
     _states, _masks, observation = environment.reset(env_rng, mobility_rng)
+    reset_seconds = time.perf_counter() - reset_started
     step_env = environment.environment
     try:
+        initial_auth_started = time.perf_counter()
         native = __import__(
             "mcrl.runtime.ee_axis_state", fromlist=["encode_ee_axis_state"]
         ).encode_ee_axis_state(step_env, observation)
         initial_sha = native.state_sha256
         interval_s = float(step_env.driver.config.ephemeris.time_step_s)
+        initial_auth_seconds = time.perf_counter() - initial_auth_started
     except (AttributeError, TypeError, ValueError) as error:
         raise C3SScreenError("initial environment state cannot be authenticated") from error
     steps: list[dict[str, object]] = []
     decision_wall: list[str] = []
+    validation_wall: list[str] = []
+    physical_step_wall: list[str] = []
+    metric_wall: list[str] = []
     action_trace = hashlib.sha256()
     for step_index in range(horizon):
         if int(observation.step_index) != step_index:
@@ -844,6 +851,7 @@ def run_arm_trajectory(
         decision_started = time.perf_counter()
         actions = np.asarray(selector(step_env, observation, env_rng))
         decision_wall.append((time.perf_counter() - decision_started).hex())
+        validation_started = time.perf_counter()
         masks = np.asarray(observation.masks)
         if actions.dtype.kind not in "iu" or actions.shape != (USERS,):
             raise C3SScreenError("selector did not return a complete 100-user action vector")
@@ -860,8 +868,12 @@ def run_arm_trajectory(
             raise C3SScreenError("selector returned an illegal action")
         selected = actions.astype(np.int64, copy=True)
         action_trace.update(selected.tobytes(order="C"))
+        validation_wall.append((time.perf_counter() - validation_started).hex())
+        physical_started = time.perf_counter()
         result = environment.step(selected, env_rng)
+        physical_step_wall.append((time.perf_counter() - physical_started).hex())
         outcome = environment.last_outcome
+        metric_started = time.perf_counter()
         metric = _step_metric(outcome, interval_s)
         steps.append({"step_index": step_index, **metric})
         done = bool(getattr(outcome, "done", getattr(result, "done", False)))
@@ -870,10 +882,16 @@ def run_arm_trajectory(
         if step_index == horizon - 1 and not done:
             raise C3SScreenError("arm trajectory did not end at the declared horizon")
         observation = outcome.observation
+        metric_wall.append((time.perf_counter() - metric_started).hex())
     return {
         "initial_state_sha256": initial_sha,
         "action_trace_sha256": action_trace.hexdigest(),
+        "reset_wall_seconds_hex": reset_seconds.hex(),
+        "initial_authentication_wall_seconds_hex": initial_auth_seconds.hex(),
         "decision_wall_seconds_hex": decision_wall,
+        "action_validation_wall_seconds_hex": validation_wall,
+        "physical_step_wall_seconds_hex": physical_step_wall,
+        "metric_and_transition_wall_seconds_hex": metric_wall,
         "steps": steps,
     }
 
@@ -894,7 +912,9 @@ def _make_environment(archive: Any, *, horizon: int) -> Any:
     return TrainerEnvironment(StepEnvironment(driver), sampler)
 
 
-def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
+def execute_physical_unit(
+    key: UnitKey, *, horizon: int, lite_workers: int = 1,
+) -> dict[str, object]:
     """Execute BASE, full, and lite from fresh matched initial environments."""
 
     from mcrl.env.keyed_fading import KeyedFadingField
@@ -949,14 +969,19 @@ def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
                     return actions
             else:
                 adapter = c3s_policy.C3SPolicyAdapter(
-                    physical=physical, frozen=frozen, catalog=arm.lower()
+                    physical=physical, frozen=frozen, catalog=arm.lower(),
+                    evaluation_workers=(lite_workers if arm == "LITE" else 1),
                 )
                 adapters[arm] = adapter
                 selector = adapter.select_actions
-            trajectories[arm] = run_arm_trajectory(
-                environment=environment, env_rng=rngs[0], mobility_rng=rngs[1],
-                horizon=horizon, selector=selector,
-            )
+            try:
+                trajectories[arm] = run_arm_trajectory(
+                    environment=environment, env_rng=rngs[0], mobility_rng=rngs[1],
+                    horizon=horizon, selector=selector,
+                )
+            finally:
+                if arm != "BASE":
+                    adapters[arm].close()
         if len({trajectories[arm]["initial_state_sha256"] for arm in ARMS}) != 1:
             raise C3SScreenError("matched arms do not share the same initial state")
         q_after = (physical._parameter_sha256(frozen.q1), physical._parameter_sha256(frozen.q2))
@@ -1290,6 +1315,7 @@ def execute_unit(
     *, key: UnitKey, output: Path, horizon: int,
     preflight_sha256: str, authority_sha256: str,
     authority_path: Path, producer_common_binding: Mapping[str, object],
+    lite_workers: int = 1,
 ) -> tuple[Path, bool]:
     root = _local(output, field="output root")
     terminal_state = _existing_terminal_state(
@@ -1310,7 +1336,9 @@ def execute_unit(
         )
         return existing, True
     try:
-        payload = execute_physical_unit(key, horizon=horizon)
+        payload = execute_physical_unit(
+            key, horizon=horizon, lite_workers=lite_workers
+        )
         payload["preflight_manifest_sha256"] = preflight_sha256
         payload["launch_authority_sha256"] = authority_sha256
         payload["launch_authority"] = {
@@ -1823,6 +1851,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--estimate", action="store_true")
     parser.add_argument("--estimate-units", type=int, default=12)
+    parser.add_argument(
+        "--lite-workers", type=int, choices=range(1, 9), default=1,
+        help="deterministic LITE nominal-evaluation processes (default: 1)",
+    )
     return parser
 
 
@@ -1848,6 +1880,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             preflight_sha256=preflight_sha, authority_sha256=authority_sha,
             authority_path=args.launch_authority,
             producer_common_binding=authority_common_binding(authority),
+            lite_workers=args.lite_workers,
         )
         return {"mode": "unit", "receipt": str(receipt), "valid": valid, "worlds": list(WORLDS)}
     receipt, valid = execute_merge(
