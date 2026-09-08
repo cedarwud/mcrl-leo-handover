@@ -81,6 +81,12 @@ def _structural_sha256(value: object) -> str:
         if isinstance(item, np.random.Generator):
             digest.update(b"numpy.random.Generator")
             visit(item.bit_generator.state)
+            # ``Generator.spawn`` advances only the SeedSequence child census;
+            # the BitGenerator state itself is unchanged.  Bind both so even
+            # unused child-stream allocation is forbidden during selection.
+            seed_sequence = getattr(item.bit_generator, "seed_seq", None)
+            if seed_sequence is not None:
+                visit(seed_sequence.state)
             return
         identity = id(item)
         if identity in active:
@@ -159,7 +165,7 @@ def _assert_no_prohibited_capabilities(value: object) -> None:
 
 
 def _live_neutrality_fingerprint(step_env: Any, rng: np.random.Generator) -> str:
-    """Bind all live environment state, including nested mobility/tracking RNGs."""
+    """Bind all live state, including RNG SeedSequence spawning counters."""
 
     return _structural_sha256((step_env, rng))
 
@@ -406,6 +412,59 @@ class NominalPhysicsSnapshot:
     pending_segment_age: np.ndarray | None
     step_index: int
 
+    def verify(self) -> str:
+        """Authenticate every detached geometry/physics input used by evaluation."""
+
+        arrays: list[np.ndarray] = []
+        seen: set[int] = set()
+
+        def collect(value: object) -> None:
+            if isinstance(value, np.ndarray):
+                arrays.append(value)
+                return
+            if value is None or isinstance(value, (bool, int, float, str, bytes, np.generic)):
+                return
+            identity = id(value)
+            if identity in seen:
+                return
+            seen.add(identity)
+            if isinstance(value, Mapping):
+                children = tuple(value.items())
+            elif isinstance(value, (tuple, list, set, frozenset)):
+                children = tuple(enumerate(value))
+            elif is_dataclass(value):
+                children = tuple(
+                    (definition.name, getattr(value, definition.name))
+                    for definition in fields(value)
+                )
+            elif hasattr(value, "__dict__"):
+                children = tuple(vars(value).items())
+            else:
+                children = ()
+            for _name, child in children:
+                collect(child)
+
+        collect(self)
+        users = len(self.candidates.slot_tables)
+        if (
+            users < 1
+            or self.user_ecef_km.shape != (users, 3)
+            or self.candidates.off_axis_deg.shape[0] != users
+            or self.candidates.elevation_deg.shape[0] != users
+            or self.candidates.window_satellite_ecef_km.shape[0] != users
+            or self.candidates.window_norad_ids.shape[0] != users
+            or self.pending_segment_age is not None
+            and self.pending_segment_age.shape != (users,)
+            or any(array.flags.writeable for array in arrays)
+            or any(
+                np.issubdtype(array.dtype, np.number) and not np.all(np.isfinite(array))
+                for array in arrays
+            )
+        ):
+            raise C3SPolicyError("detached nominal geometry/physics is malformed or mutable")
+        _assert_no_prohibited_capabilities(self)
+        return _structural_sha256(self)
+
 
 class _DetachedDriver:
     def __init__(self, snapshot: NominalPhysicsSnapshot) -> None:
@@ -463,6 +522,9 @@ class NominalSnapshotEvaluator:
     """Pure nominal evaluator constructed only from a detached snapshot."""
 
     snapshot: NominalPhysicsSnapshot
+
+    def verify(self) -> str:
+        return self.snapshot.verify()
 
     def evaluate(self, actions: np.ndarray) -> Any:
         from mcrl.env.action_contract import assert_selected_actions_valid
@@ -531,6 +593,40 @@ def _copy_grid(grid: Any) -> Any:
         if isinstance(value, np.ndarray):
             value.setflags(write=False)
     return copied
+
+
+def _freeze_nested_arrays(value: object) -> None:
+    """Make every copied ndarray in a capability-free snapshot read-only."""
+
+    seen: set[int] = set()
+
+    def visit(item: object) -> None:
+        if isinstance(item, np.ndarray):
+            item.setflags(write=False)
+            return
+        if item is None or isinstance(item, (bool, int, float, str, bytes, np.generic)):
+            return
+        identity = id(item)
+        if identity in seen:
+            return
+        seen.add(identity)
+        if isinstance(item, Mapping):
+            children = tuple(item.items())
+        elif isinstance(item, (tuple, list, set, frozenset)):
+            children = tuple(enumerate(item))
+        elif is_dataclass(item):
+            children = tuple(
+                (definition.name, getattr(item, definition.name))
+                for definition in fields(item)
+            )
+        elif hasattr(item, "__dict__"):
+            children = tuple(vars(item).items())
+        else:
+            children = ()
+        for _name, child in children:
+            visit(child)
+
+    visit(value)
 
 
 def _snapshot_inputs(
@@ -611,8 +707,9 @@ def _snapshot_inputs(
         q_inference_seconds=q_seconds,
     )
     evaluator = NominalSnapshotEvaluator(nominal_physics)
+    _freeze_nested_arrays((snapshot, evaluator))
     snapshot.verify()
-    _assert_no_prohibited_capabilities(evaluator)
+    evaluator.verify()
     return snapshot, evaluator
 
 
@@ -746,10 +843,15 @@ class C3SPolicyAdapter:
         try:
             snapshot, evaluator = _snapshot_inputs(self, step_env, observation)
             snapshot_digest = snapshot.verify()
+            evaluator_digest = evaluator.verify()
             _assert_no_prohibited_capabilities((snapshot, evaluator))
             result = self._decision_function(snapshot, evaluator)
             if snapshot.verify() != snapshot_digest:
                 raise C3SPolicyError("coordinator mutated its frozen input snapshot")
+            if evaluator.verify() != evaluator_digest:
+                raise C3SPolicyError(
+                    "coordinator mutated its authenticated nominal geometry/physics"
+                )
         except BaseException as error:
             decision_error = error
         elapsed = time.perf_counter() - started
