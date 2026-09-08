@@ -30,6 +30,7 @@ for path in (
 
 import bind_v023_c1c2_successor_stagec_freeze as binder
 import accept_stage_c_chunk_equivalence as chunk_acceptance
+import build_stage_c_admission_mapping as admission_mapping_builder
 import build_stage_c_chunk_acceptance_bundle as acceptance_bundle_builder
 import build_v023_c1c2_successor_stagec_manifest as manifest_builder
 import build_v023_c1c2_successor_world_plan as plan_builder
@@ -381,6 +382,178 @@ def test_acceptance_end_to_end_formal_mutation_rehearsal_and_launch_gate(
         chunk_controller.authenticate_launch(
             argparse.Namespace(**{**vars(launch_args), "acceptance_bundle": rehearsal_bundle})
         )
+
+
+def _configure_admission_mapping_builder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[list[str], dict[str, object], SimpleNamespace, Path, Path]:
+    bindings_path = tmp_path / "bindings.json"
+    _write_json(bindings_path, {"fixture": "admission-mapping-builder"})
+
+    stage_a_root = tmp_path / "stage-a"
+    stage_a_root.mkdir()
+    exports = []
+    policy_bindings = {}
+    for arm in common.LEARNED_ARMS:
+        checkpoint = stage_a_root / f"{arm}.pt"
+        checkpoint.write_bytes(arm.encode("ascii"))
+        checkpoint_sha = common.file_sha256(checkpoint)
+        exports.append({"arm": arm, "path": checkpoint.name, "sha256": checkpoint_sha})
+        policy_bindings[arm] = {
+            "arm": arm,
+            "routes": ["C1", "C2"],
+            "checkpoint_sha256": checkpoint_sha,
+            "fixed_policy": True,
+        }
+
+    baseline_checkpoint = tmp_path / "baseline.pt"
+    baseline_status = tmp_path / "baseline-status.json"
+    baseline_checkpoint.write_bytes(b"baseline")
+    _write_json(baseline_status, {"status": "complete"})
+    baseline_checkpoint_sha = common.file_sha256(baseline_checkpoint)
+    baseline_status_sha = common.file_sha256(baseline_status)
+    policy_bindings["BASELINE"] = {
+        "arm": "BASELINE",
+        "routes": [],
+        "checkpoint_sha256": baseline_checkpoint_sha,
+        "authentication_sha256": baseline_status_sha,
+        "fixed_policy": True,
+    }
+    prospective = {
+        "baseline": {
+            "checkpoint_path": str(baseline_checkpoint),
+            "checkpoint_sha256": baseline_checkpoint_sha,
+            "status_path": str(baseline_status),
+            "status_sha256": baseline_status_sha,
+            "adapter_closure_sha256": "a" * 64,
+        },
+        "code": {"external_manifest_sha256": "b" * 64},
+    }
+    stage_a = {
+        "root": str(stage_a_root),
+        "exports": exports,
+        "manifest_sha256": "c" * 64,
+    }
+    supplement = {
+        "stage_a": stage_a,
+        "supplement_path": str(tmp_path / "supplement.json"),
+        "supplement_sha256": "d" * 64,
+    }
+    materialized = {**prospective, "stage_a": stage_a}
+
+    procedure_sha = common.file_sha256(common.ACCEPTANCE_PROCEDURE)
+    receipt_records = []
+    for arm in common.ARMS:
+        receipt_path = tmp_path / f"acceptance-{arm}.json"
+        _write_json(
+            receipt_path,
+            {
+                "status": "PASS_BITWISE_CHUNK_EQUIVALENCE",
+                "formal": True,
+                "arm": arm,
+                "episodes": 200,
+                "chunks": [[1, 100], [101, 200]],
+                "rehearsal_chunk": None,
+                "bindings_sha256": common.file_sha256(bindings_path),
+                "code_manifest_sha256": "b" * 64,
+                "acceptance_procedure_sha256": procedure_sha,
+                "receipt_comparison_excluded_provenance_fields": list(
+                    common.CHUNK_EQUIVALENCE_PROVENANCE_ONLY_FIELDS
+                ),
+                "merged_artifacts_compared": list(common.CHUNK_EQUIVALENCE_ARTIFACTS),
+            },
+        )
+        common.write_digest_sidecar(receipt_path)
+        receipt_records.append(
+            {
+                "arm": arm,
+                "path": str(receipt_path),
+                "sha256": common.file_sha256(receipt_path),
+                "status": "PASS_BITWISE_CHUNK_EQUIVALENCE",
+            }
+        )
+    acceptance_path = tmp_path / "acceptance-bundle.json"
+    _write_json(
+        acceptance_path,
+        {
+            "schema": common.SCHEMA_ACCEPTANCE_BUNDLE,
+            "status": "PASS_ALL_FOUR_ARM_CHUNK_EQUIVALENCE",
+            "formal": True,
+            "arms": list(common.ARMS),
+            "bindings_sha256": common.file_sha256(bindings_path),
+            "code_manifest_sha256": "b" * 64,
+            "acceptance_procedure_sha256": procedure_sha,
+            "receipts": receipt_records,
+        },
+    )
+    common.write_digest_sidecar(acceptance_path)
+
+    runtime_path = tmp_path / "runtime-admission.json"
+    _write_json(runtime_path, {"fixture": "authenticated-runtime-admission"})
+    common.write_digest_sidecar(runtime_path)
+    adapter = SimpleNamespace(policy_bindings=policy_bindings)
+    fake_runner = SimpleNamespace(
+        authenticate_runtime_admission=lambda *_args, **_kwargs: {
+            "admission_sha256": common.file_sha256(runtime_path)
+        }
+    )
+    monkeypatch.setattr(common, "verify_bindings", lambda _path: copy.deepcopy(prospective))
+    monkeypatch.setattr(
+        common,
+        "verify_stage_ab_supplement",
+        lambda *_args, **_kwargs: copy.deepcopy(supplement),
+    )
+    monkeypatch.setattr(
+        common,
+        "verify_runtime_identity",
+        lambda _bindings, *, chunk_mode=False: None
+        if chunk_mode
+        else pytest.fail("admission mapping builder did not use chunk runtime identity"),
+    )
+    monkeypatch.setattr(controller, "_authenticate_stage_b", lambda *_args: None)
+    monkeypatch.setattr(controller, "_module", lambda _path: fake_runner)
+    monkeypatch.setattr(controller, "_policies", lambda *_args: tuple(policy_bindings))
+    monkeypatch.setattr(
+        controller, "_adapter_and_plan", lambda *_args, **_kwargs: (adapter, object())
+    )
+    output = tmp_path / "admission-mapping.json"
+    argv = [
+        "--bindings", str(bindings_path),
+        "--admission-supplement", str(tmp_path / "supplement.json"),
+        "--acceptance-bundle", str(acceptance_path),
+        "--runtime-admission", str(runtime_path),
+        "--stage-b-root", str(tmp_path / "stage-b"),
+        "--output", str(output),
+    ]
+    return argv, materialized, adapter, acceptance_path, output
+
+
+def test_admission_mapping_builder_is_byte_identical_to_sequential_mapping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv, bindings, adapter, _acceptance, output = _configure_admission_mapping_builder(
+        tmp_path, monkeypatch
+    )
+    expected = {"admission_mapping": controller._admission_mapping(bindings, adapter)}
+    assert admission_mapping_builder.main(argv) == 0
+    assert output.read_bytes() == common.canonical_bytes(expected) + b"\n"
+    assert common.verify_named_sidecar(output) == common.file_sha256(output)
+    assert capsys.readouterr().out == (
+        f"STAGEC_ADMISSION_MAPPING_WRITTEN path={output} "
+        f"sha256={common.file_sha256(output)}\n"
+    )
+
+
+def test_admission_mapping_builder_refuses_drifted_acceptance_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv, _bindings, _adapter, acceptance, output = _configure_admission_mapping_builder(
+        tmp_path, monkeypatch
+    )
+    acceptance.write_bytes(acceptance.read_bytes() + b"\n")
+    assert admission_mapping_builder.main(argv) == 2
+    assert not output.exists()
+    assert capsys.readouterr().err.startswith("STAGEC_ADMISSION_MAPPING_ERROR: ")
 
 
 class _ProducerFixtureAdapter:
@@ -933,6 +1106,19 @@ def test_chunk_launcher_enforces_worker_cap_and_has_merge_step() -> None:
     assert "--barrier" in source
     assert "chunk-receipt.json" in source
     assert "merge-arm" in source
+    help_result = subprocess.run(
+        [
+            sys.executable,
+            str(HERE / "run_v023_c1c2_successor_stage_c_chunks.py"),
+            "merge-four",
+            "--help",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert help_result.returncode == 0
+    assert "build_stage_c_admission_mapping.py" in help_result.stdout
     assert chunk_controller._parser().parse_args(
         [
             "run-chunk", "--bindings", "bindings.json",

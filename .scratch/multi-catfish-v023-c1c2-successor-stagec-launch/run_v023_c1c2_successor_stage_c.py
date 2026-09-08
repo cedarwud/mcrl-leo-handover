@@ -145,6 +145,14 @@ def _adapter_and_plan(
     return adapter, plan
 
 
+def _admission_mapping(
+    bindings: Mapping[str, object], adapter: Any
+) -> dict[str, dict[str, object]]:
+    return common.verified_stage_c_admission_mapping(
+        bindings, adapter.policy_bindings
+    )
+
+
 def _formal_marker(
     output: Path,
     bindings_sha: str,
@@ -361,8 +369,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     adapter, plan = _adapter_and_plan(
         bindings, runner, policies=policies, runtime_admission=runtime_admission
     )
-    admission_mapping = common.stage_c_admission_mapping(bindings, adapter.policy_bindings)
-    common.verify_stage_c_admission_mapping(admission_mapping)
+    admission_mapping = _admission_mapping(bindings, adapter)
     if (args.output / common.COMPLETE_NAME).exists() or (args.output / common.TREE_MANIFEST_NAME).exists():
         raise common.StageCError("sealed Stage-C result root cannot be resumed")
     if args.pause_at == 9000:

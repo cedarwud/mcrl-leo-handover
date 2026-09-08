@@ -378,7 +378,12 @@ def _parser() -> argparse.ArgumentParser:
     four = sub.add_parser("merge-four")
     four.add_argument("--bindings", type=Path, required=True)
     four.add_argument("--arm-roots", type=Path, nargs=4, required=True)
-    four.add_argument("--admission-mapping", type=Path, required=True)
+    four.add_argument(
+        "--admission-mapping",
+        type=Path,
+        required=True,
+        help="wrapped JSON produced by build_stage_c_admission_mapping.py",
+    )
     four.add_argument("--admission-supplement", type=Path, required=True)
     four.add_argument("--acceptance-bundle", type=Path, required=True)
     four.add_argument("--output", type=Path, required=True)

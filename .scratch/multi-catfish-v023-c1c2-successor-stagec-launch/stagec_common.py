@@ -430,6 +430,15 @@ def verify_stage_c_admission_mapping(mapping: object) -> dict[str, dict[str, obj
     return result
 
 
+def verified_stage_c_admission_mapping(
+    bindings: Mapping[str, object], policy_bindings: Mapping[str, object]
+) -> dict[str, dict[str, object]]:
+    """Build and authenticate the exact four-arm Stage-C policy mapping."""
+    return verify_stage_c_admission_mapping(
+        stage_c_admission_mapping(bindings, policy_bindings)
+    )
+
+
 def publish_sealed_json(path: Path, payload: Mapping[str, object], *, field: str) -> str:
     if path.exists() or path.is_symlink():
         if read_json(path, field=field) != dict(payload):

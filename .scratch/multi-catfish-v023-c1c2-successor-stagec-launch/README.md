@@ -170,6 +170,12 @@ episode totals, and emits four-arm checkpoints/rungs only from complete arm
 coverage. No boundary below 3,000 emits a scientific disposition; early
 BASELINE cannot continue above 3,000.
 
+Before the first `merge-four`, run `build_stage_c_admission_mapping.py` once
+per ladder with the bindings, Stage-A/B supplement, all-four-arm acceptance
+bundle, runtime admission, and Stage-B root, then pass its write-once output to
+every `merge-four` as `--admission-mapping`. This mapping records arm-policy
+identity; it is not a scientific choice.
+
 The independent verifier accepts `--arm ARM` for a chunk root and recomputes
 the plan identity, persisted age stream, exact boundary states, episode
 coverage, ordered file digest, provenance, and binary64 pool values. Formal use
