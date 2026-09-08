@@ -32,3 +32,9 @@ Successor manifest after fix pass 6: entries 277, file sha256 `e290ef5059bd765a9
 
 ## Re-pin after fix pass 6 (2026-09-08T10:09:01Z UTC)
 Successor manifest after fix pass 6: entries 277, file sha256 `95182c8da3ef125bac39cb1f47e5cffb87f63ec35f8074ac8919b908c26b5fb4` (commit dc277aa). The 907bc753… pin was never bound (ultra review FIX_FIRST). Second scoped ultra review requested against this digest.
+
+## Member inventory after fix pass 8 (authoritative; supersedes the earlier 2/12 figures)
+Successor manifest `95182c8da3ef125bac39cb1f47e5cffb87f63ec35f8074ac8919b908c26b5fb4` (277 entries) versus the predecessor at 5adf898 (270 entries):
+- added (7): `build_stage_c_admission_mapping.py`, `seal_stage_c_declined_continuation.py`, `V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-08-R2.md`, `V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-08-R2.md.sha256`, `README.md`, `render_v023_development_curves.py`, `test_render_v023_development_curves.py`
+- changed (15): `README.md`, `test_cadence_resume.py`, `v023_c1c2_successor_physical_runner.py`, `README.md`, `bind_v023_c1c2_successor_stagec_freeze.py`, `build_v023_c1c2_successor_stagec_manifest.py`, `launch_stage_c_chunks.sh`, `run_v023_c1c2_successor_stage_c.py`, `run_v023_c1c2_successor_stage_c_chunks.py`, `stagec_common.py`, `sync_launch_v023_c1c2_successor_stagec_server.sh`, `test_v023_c1c2_successor_stagec_launch.py`, `verify_v023_c1c2_successor_stagec.py`, `test_v023_two_route_source_training_runner.py`, `v023_two_route_learner_orchestrator.py`
+- deleted (0): none
