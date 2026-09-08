@@ -124,3 +124,6 @@ Per-world marginal EE deltas (bit/J):
 - TEST opened: no
 - Learner/training/update: no
 - Admission or efficacy authority: no
+
+## CAVEAT appended 2026-09-08 (controller, after the fresh-context astra adjudication `ADJUDICATION-C3-CORE-PROBLEM-FRESH-CODEX-GPT6-ASTRA-ULTRA-2026-09-08.md`)
+The negative C3 marginals reported above are **not a valid verdict on the declared set-coordination target**: (1) the probe's C3 quantity is the non-focal *unilateral* bit change without the LC-SRS interaction Ψ (a fixture with energies 10/10/10/8 and λ = 1 gives executed C3 = 0 while the declared Ψ = 2, z₃ = (1,1)); (2) the G0 branch calls `build_ops3_live_surfaces` without λ and inherits the stale default 84 994 621.126 while capped branches pass 118 424 222.855 (a non-binding cap changed C2 from −1.637204 to −2.281140 with no rate change); (3) the J choice optimised for G0 was reused for G1–G3. The C1-positive finding stands as computed; the C3 ≤ 0 finding is superseded pending a declared-C3 oracle with explicit λ and per-regime re-optimisation (bug-hunt lane, Part 4).
