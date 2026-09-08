@@ -70,6 +70,8 @@ def test_unit_receipt_is_complete_and_write_once(tmp_path: Path) -> None:
     assert receipt["steps"][0]["s0_certificate"]["nominal_information_only"] is True
     assert set(receipt["failure_analysis"]["marginals"]) == {"C1", "C2", "C3"}
     by_arm = {row["arm"]: row for row in arms}
+    assert all(row["power_certificate_counts"] for row in arms)
+    assert all(0.0 <= row["converged_slow_share"] <= 1.0 for row in arms)
     assert by_arm["NULL"]["configuration_id"] == by_arm["ALL_NEUTRAL_CONTROL"]["configuration_id"]
     assert by_arm["NULL"]["bits"] == by_arm["ALL_NEUTRAL_CONTROL"]["bits"]
     assert by_arm["NULL"]["joules"] == by_arm["ALL_NEUTRAL_CONTROL"]["joules"]

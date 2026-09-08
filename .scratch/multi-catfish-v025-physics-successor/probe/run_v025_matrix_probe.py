@@ -721,6 +721,8 @@ def _arm_row(
         "rate_target_attained": profile.score.rate_target_attained,
         "rate_target_feasible": profile.score.rate_target_feasible,
         "rate_target_attainment_by_boundary": profile.score.rate_target_attainment_by_boundary,
+        "power_certificate_counts": dict(profile.score.certificate_status_counts),
+        "converged_slow_share": profile.score.converged_slow_share,
         "changed_users": profile.config.changed_users,
         "handovers": {
             kind: sum(event.kind == kind for event in events)

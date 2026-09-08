@@ -17,6 +17,8 @@ from mcrl.physics_v025.architectures import (
     Geometry,
     Link,
     RadiationConfig,
+    _solve_power,
+    _target_feasibility,
 )
 from mcrl.physics_v025.channel import noise_power_w
 from mcrl.physics_v025.constants_v025 import (
@@ -153,8 +155,8 @@ def test_memoryless_isolated_power_halves_when_gain_doubles() -> None:
     assert two.slots[0].transmissions[0].rf_power_w == pytest.approx(0.25, abs=1e-10)
 
 
-def test_coupled_power_convergence_saturation_and_failure_certificate() -> None:
-    """For p=.5+.1p_peer, p*=5/9; weak h caps at 1.65; one iteration remains INVALID."""
+def test_coupled_power_convergence_and_saturation_certificate() -> None:
+    """For p=.5+.1p_peer, p*=5/9; a weak isolated link caps at 1.65 W."""
 
     config = RadiationConfig(bandwidth_hz=1.0)
     noise = noise_power_w(1.0)
@@ -164,21 +166,67 @@ def test_coupled_power_convergence_saturation_and_failure_certificate() -> None:
     links = (Link(0, (1, 1), 0, direct), Link(1, (2, 1), 0, direct))
     converged = AngleTPC_TDM().radiate(config, geometry(links, cross), "nominal")
     assert converged.certificate.status == "CONVERGED"
-    assert converged.certificate.residual_w <= 1e-10
-    assert [tx.rf_power_w for tx in converged.slots[0].transmissions] == pytest.approx([5 / 9, 5 / 9], abs=2e-10)
+    assert converged.certificate.residual_w <= 1e-9 * (5 / 9)
+    assert [tx.rf_power_w for tx in converged.slots[0].transmissions] == pytest.approx([5 / 9, 5 / 9], abs=1e-9)
 
     weak = POWER_CONTROL_TARGET_LINEAR * noise / 10.0
     saturated = AngleTPC_TDM().radiate(config, geometry((Link(0, (1, 1), 0, weak),)), "nominal")
     assert saturated.slots[0].transmissions[0].rf_power_w == 1.65
     assert saturated.certificate.saturated_users == (0,)
 
-    invalid = AngleTPC_TDM().radiate(
-        RadiationConfig(bandwidth_hz=1.0, solver_iteration_cap=1),
-        geometry((Link(0, (1, 1), 0, direct),)),
-        "nominal",
+
+
+def test_three_user_spectral_radius_point_999_reaches_analytic_fixed_point() -> None:
+    coefficient = 0.999 / 2.0
+    coupling = np.full((3, 3), coefficient)
+    np.fill_diagonal(coupling, 0.0)
+    noise = np.full(3, 1.0e-6)
+    expected = np.linalg.solve(np.eye(3) - coupling, noise)
+    power, certificate = _solve_power(
+        np.ones(3),
+        coupling,
+        noise,
+        np.full(3, 2.0),
+        (0, 1, 2),
+        RadiationConfig(target_sinr=1.0),
+        target_sinr=np.ones(3),
     )
-    assert invalid.certificate.status == "INVALID"
-    assert not invalid.valid
+    assert certificate.status == "CONVERGED"
+    assert certificate.iterations < 65_536
+    # The allowed 1e-10-W update tolerance implies error <= delta/(1-rho).
+    assert power == pytest.approx(expected, abs=1.1e-7)
+
+
+def test_jointly_unattainable_targets_converge_at_cap_and_are_flagged() -> None:
+    direct = np.ones(2)
+    coupling = np.asarray([[0.0, 1.0], [1.0, 0.0]])
+    noise = np.ones(2)
+    caps = np.full(2, 0.5)
+    targets = (1.0, 1.0)
+    power, certificate = _solve_power(
+        direct,
+        coupling,
+        noise,
+        caps,
+        (0, 1),
+        RadiationConfig(target_sinr=1.0),
+        target_sinr=np.asarray(targets),
+    )
+    assert certificate.status == "CONVERGED"
+    assert power.tolist() == [0.5, 0.5]
+    assert _target_feasibility(power, direct, coupling, noise, targets) == (False, False)
+
+
+def test_nonfinite_coupled_power_input_is_invalid() -> None:
+    _power, certificate = _solve_power(
+        np.asarray([math.nan]),
+        np.zeros((1, 1)),
+        np.ones(1),
+        np.ones(1),
+        (0,),
+        RadiationConfig(target_sinr=1.0),
+    )
+    assert certificate.status == "INVALID"
 
 
 def test_fdm_per_user_and_sum_caps() -> None:
@@ -349,7 +397,6 @@ def test_rate_target_coupled_solve_clears_discrete_threshold() -> None:
     )
     assert [tx.rf_power_w for tx in result.slots[0].transmissions] == pytest.approx([5 / 9, 5 / 9])
     assert result.per_user_rate_target_feasible == {0: True, 1: True}
-    assert all(
-        ACMRate().rate_bps(tx.sinr, tx.bandwidth_hz) >= RATE_TARGET_BPS
-        for tx in result.slots[0].transmissions
+    assert [tx.sinr for tx in result.slots[0].transmissions] == pytest.approx(
+        [gamma, gamma], rel=1e-9
     )

@@ -18,6 +18,9 @@ from .constants_v025 import (
     POWER_CONTROL_TARGET_LINEAR,
     RATE_TARGET_BPS,
     POWER_SOLVER_ITERATION_CAP,
+    POWER_SOLVER_RELATIVE_TOLERANCE,
+    POWER_SOLVER_SLOW_CHANGE_W,
+    POWER_SOLVER_SLOW_WINDOW,
     POWER_SOLVER_TOLERANCE_W,
 )
 
@@ -131,7 +134,7 @@ class RadiationConfig:
 
 @dataclass(frozen=True)
 class PowerCertificate:
-    status: Literal["FIXED", "CONVERGED", "INVALID"]
+    status: Literal["FIXED", "CONVERGED", "CONVERGED_SLOW", "INVALID"]
     iterations: int
     residual_w: float
     tolerance_w: float
@@ -326,7 +329,6 @@ def _solve_power(
     *,
     target_sinr: np.ndarray | None = None,
     force_cap: np.ndarray | None = None,
-    enforce_target_clearance: bool = False,
 ) -> tuple[np.ndarray, PowerCertificate]:
     """Capped standard-interference fixed point, always initialised at zero."""
 
@@ -344,42 +346,71 @@ def _solve_power(
         raise MCRLContractError("power target, forced-cap mask, and caps must share shape")
     power = np.zeros(len(active_user_ids), dtype=np.float64)
     residual = math.inf
+    recent_changes: list[float] = []
+    finite_inputs = all(
+        np.all(np.isfinite(value))
+        for value in (direct, coupling, noise, caps, targets)
+    )
+    valid_inputs = (
+        finite_inputs
+        and np.all(direct > 0.0)
+        and np.all(coupling >= 0.0)
+        and np.all(noise >= 0.0)
+        and np.all(caps >= 0.0)
+        and np.all(targets >= 0.0)
+    )
+    if not valid_inputs:
+        return power, PowerCertificate(
+            "INVALID", 0, math.inf, config.solver_tolerance_w
+        )
     for iteration in range(1, config.solver_iteration_cap + 1):
         updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
         updated[forced] = caps[forced]
+        if not np.all(np.isfinite(updated)) or np.any(updated < power):
+            return power, PowerCertificate(
+                "INVALID",
+                iteration,
+                math.inf,
+                config.solver_tolerance_w,
+                tuple(active_user_ids[index] for index in np.flatnonzero(power >= caps)),
+            )
         residual = float(np.max(np.abs(updated - power))) if power.size else 0.0
-        power = updated
-        clears_target = True
-        if enforce_target_clearance and power.size:
-            achieved_sinr = power * direct / (noise + coupling @ power)
-            clears_target = bool(
-                np.all(
-                    forced
-                    | (power == caps)
-                    | (achieved_sinr >= np.nextafter(targets, -np.inf))
+        relative = (
+            float(
+                np.max(
+                    np.abs(updated - power)
+                    / np.maximum(np.abs(updated), np.finfo(np.float64).tiny)
                 )
             )
-        if residual <= config.solver_tolerance_w and clears_target:
+            if power.size
+            else 0.0
+        )
+        recent_changes.append(residual)
+        if len(recent_changes) > POWER_SOLVER_SLOW_WINDOW:
+            recent_changes.pop(0)
+        power = updated
+        if residual <= config.solver_tolerance_w or relative <= POWER_SOLVER_RELATIVE_TOLERANCE:
+            status: Literal["CONVERGED", "CONVERGED_SLOW"] = "CONVERGED"
             break
     else:
-        certificate = PowerCertificate(
-            "INVALID",
-            config.solver_iteration_cap,
-            residual,
-            config.solver_tolerance_w,
-            tuple(active_user_ids[index] for index in np.flatnonzero(power >= caps)),
-        )
-        return power, certificate
-    final = np.minimum(caps, targets * (noise + coupling @ power) / direct)
-    final[forced] = caps[forced]
-    final_residual = float(np.max(np.abs(final - power))) if power.size else 0.0
-    status: Literal["CONVERGED", "INVALID"] = (
-        "CONVERGED" if final_residual <= config.solver_tolerance_w else "INVALID"
-    )
+        if (
+            len(recent_changes) == POWER_SOLVER_SLOW_WINDOW
+            and max(recent_changes) < POWER_SOLVER_SLOW_CHANGE_W
+        ):
+            status = "CONVERGED_SLOW"
+            iteration = config.solver_iteration_cap
+        else:
+            return power, PowerCertificate(
+                "INVALID",
+                config.solver_iteration_cap,
+                residual,
+                config.solver_tolerance_w,
+                tuple(active_user_ids[index] for index in np.flatnonzero(power >= caps)),
+            )
     return power, PowerCertificate(
         status,
         iteration,
-        final_residual,
+        residual,
         config.solver_tolerance_w,
         tuple(active_user_ids[index] for index in np.flatnonzero(power >= caps - config.solver_tolerance_w)),
     )
@@ -438,8 +469,14 @@ def _aggregate_certificates(certificates: list[PowerCertificate]) -> PowerCertif
         return PowerCertificate("FIXED", 0, 0.0, POWER_SOLVER_TOLERANCE_W)
     invalid = any(c.status == "INVALID" for c in certificates)
     statuses = {c.status for c in certificates}
-    status: Literal["FIXED", "CONVERGED", "INVALID"] = (
-        "INVALID" if invalid else "FIXED" if statuses == {"FIXED"} else "CONVERGED"
+    status: Literal["FIXED", "CONVERGED", "CONVERGED_SLOW", "INVALID"] = (
+        "INVALID"
+        if invalid
+        else "FIXED"
+        if statuses == {"FIXED"}
+        else "CONVERGED_SLOW"
+        if "CONVERGED_SLOW" in statuses
+        else "CONVERGED"
     )
     return PowerCertificate(
         status,
@@ -636,7 +673,8 @@ def _target_feasibility(
     denominators = noise + coupling @ power
     actual = power * direct / denominators
     return tuple(
-        gamma is not None and value >= gamma
+        gamma is not None
+        and value >= gamma * (1.0 - POWER_SOLVER_RELATIVE_TOLERANCE)
         for value, gamma in zip(actual, target_sinr_values)
     )
 
@@ -671,7 +709,6 @@ class AngleRateTPC_TDM:
                 config,
                 target_sinr=targets,
                 force_cap=forced,
-                enforce_target_clearance=True,
             )
             certificates.append(certificate)
             field_coupling = _masked_coupling(geometry, active, nominal_or_realised)
@@ -760,7 +797,6 @@ class AngleRateTPC_FDM:
             config,
             target_sinr=targets,
             force_cap=forced,
-            enforce_target_clearance=True,
         )
         beam_power: dict[BeamIdentity, float] = {}
         for row, index in enumerate(active):

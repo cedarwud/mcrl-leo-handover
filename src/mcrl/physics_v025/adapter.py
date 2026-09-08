@@ -9,6 +9,7 @@ geometry tapes.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from dataclasses import dataclass
 import json
 import math
@@ -62,6 +63,8 @@ class CellScore:
     rate_target_bps: float | None
     valid: bool
     certificate_residual_w: float
+    certificate_status_counts: tuple[tuple[str, int], ...]
+    converged_slow_share: float
 
     def as_profile(self) -> dict[str, object]:
         users = sorted(self.bits)
@@ -88,6 +91,8 @@ class CellScore:
             "users": users,
             "valid": self.valid,
             "solver_residual_w": self.certificate_residual_w.hex(),
+            "certificate_status_counts": dict(self.certificate_status_counts),
+            "converged_slow_share": self.converged_slow_share.hex(),
         }
 
 
@@ -160,9 +165,27 @@ def score_setting(
     if setting.architecture != tape.architecture:
         raise MCRLContractError("setting architecture does not match shared tape")
     residual = max(boundary.radiation.certificate.residual_w for boundary in tape.integrated)
+    statuses = Counter(
+        boundary.radiation.certificate.status for boundary in tape.integrated
+    )
+    status_rows = tuple(sorted(statuses.items()))
+    slow_share = statuses.get("CONVERGED_SLOW", 0) / len(tape.integrated)
     if any(not boundary.radiation.valid for boundary in tape.integrated):
         return CellScore(
-            setting, {}, math.nan, {}, {}, {}, None, None, None, None, False, residual
+            setting,
+            {},
+            math.nan,
+            {},
+            {},
+            {},
+            None,
+            None,
+            None,
+            None,
+            False,
+            residual,
+            status_rows,
+            slow_share,
         )
     if setting.integration == "T":
         point = _rescore_boundary(tape.snapshot, tape.inventory, setting)
@@ -233,6 +256,8 @@ def score_setting(
         config_target,
         True,
         residual,
+        status_rows,
+        slow_share,
     )
 
 

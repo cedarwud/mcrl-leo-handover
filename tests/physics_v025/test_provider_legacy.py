@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import fields, replace
 import hashlib
 import inspect
 import json
@@ -37,13 +38,26 @@ from mcrl.physics_v025.constants_v025 import (
     CARRIER_FREQUENCY_HZ,
     D2_HYSTERESIS_KM,
     D2_THRESHOLD_KM,
+    IDENTITY_REFRESH_DECISIONS,
+    MINIMUM_ELEVATION_DEG,
     RX_GAIN_MAX_DBI,
     SPEED_OF_LIGHT_M_S,
     ZENITH_GASEOUS_LOSS_DB,
 )
 from mcrl.physics_v025.energy import SENSITIVITY_IDLE_POWER_W, EnergyInterval, HardwareInventory, interval_energy
-from mcrl.physics_v025.provider_legacy import CANONICAL_STEPS, DEFAULT_TLE_ROOT, LegacyWorldProvider
-from mcrl.physics_v025.tapes import build_world_tape, seed_from_domain
+from mcrl.physics_v025.provider_legacy import (
+    CANONICAL_STEPS,
+    DEFAULT_TLE_ROOT,
+    LegacyWorldProvider,
+)
+from mcrl.physics_v025.tapes import (
+    PrimitiveStepArrays,
+    TinySyntheticProvider,
+    build_world_tape,
+    canonical_bytes,
+    provider_allocation_manifest,
+    seed_from_domain,
+)
 from mcrl.runtime.training_pipeline import _evaluation_rngs
 
 
@@ -93,6 +107,38 @@ def _row_lookup(arrays):
 def _hex_distance(grid, first: int, second: int) -> int:
     dq, dr = (grid.axial[first] - grid.axial[second]).tolist()
     return int((abs(dq) + abs(dr) + abs(dq + dr)) // 2)
+
+
+def _minimal_step_arrays() -> PrimitiveStepArrays:
+    boundaries = 48
+    return PrimitiveStepArrays(
+        absolute_time_s=np.arange(boundaries, dtype=np.float64) * 0.640,
+        users=np.asarray([0], dtype=np.int64),
+        row_user_column=np.asarray([0], dtype=np.int64),
+        legacy_action_index=np.asarray([0], dtype=np.int64),
+        identities=np.asarray([[1, 1]], dtype=np.int64),
+        colors=np.asarray([0], dtype=np.int64),
+        elevations_deg=np.full((boundaries, 1), 30.0),
+        d2_entry_elevations_deg=np.full((boundaries, 1), 20.0),
+        slants_km=np.full((boundaries, 1), 1_000.0),
+        d2_distances_km=np.full((boundaries, 1), 1_000.0),
+        visible=np.ones((boundaries, 1), dtype=bool),
+        d2_eligible=np.ones((boundaries, 1), dtype=bool),
+        cell_reachable=np.ones((boundaries, 1), dtype=bool),
+        nominal_gain=np.ones((boundaries, 1)),
+        realised_gain=np.ones((boundaries, 1)),
+        remaining_visibility_s=np.zeros((boundaries, 1)),
+        remaining_d2_s=np.zeros((boundaries, 1)),
+        visibility_right_censored=np.zeros((boundaries, 1), dtype=bool),
+        d2_right_censored=np.zeros((boundaries, 1), dtype=bool),
+        aggressor_identities=np.asarray([[1, 1]], dtype=np.int64),
+        aggressor_colors=np.asarray([0], dtype=np.int64),
+        aggressor_satellite_column=np.asarray([0], dtype=np.int64),
+        row_wanted_slot=np.asarray([0], dtype=np.int64),
+        cross_base_nominal=np.ones((boundaries, 1, 1)),
+        fading_by_satellite=np.ones((boundaries, 1, 1)),
+        receive_gain_by_wanted_slot=np.ones((boundaries, 1, 1, 1)),
+    )
 
 
 def test_decision_geometry_and_scintillation_free_nominal_match_legacy(real_world, step0) -> None:
@@ -157,29 +203,77 @@ def test_forward_boundary_ecef_matches_direct_sgp4(real_world, boundary_index: i
 
 
 def test_mask_is_nonvacuous_and_matches_legacy_at_decision(real_world, step0) -> None:
-    _provider, _driver, decisions, _users, _start = real_world
+    provider, _driver, decisions, users, _start = real_world
     oracle = decisions[0]
-    assert np.any(step0.d2_eligible) and np.any(~step0.d2_eligible)
-    assert np.any(step0.visible) and np.any(~step0.visible)
+    arrays = step0
+    present = np.repeat(oracle.slot_occupied, NUM_BEAM_SLOTS, axis=1)
+    legacy_false = {
+        (int(user), int(action))
+        for user, action in zip(*np.nonzero(present & ~oracle.masks), strict=True)
+    }
     legacy_legal_below_ten = sum(
         int(candidate.masks[user, action] and candidate.elevation_deg[user, action // NUM_BEAM_SLOTS] < 10.0)
         for candidate in decisions
         for user in range(candidate.masks.shape[0])
         for action in range(candidate.masks.shape[1])
     )
-    for row in np.flatnonzero(step0.legacy_action_index >= 0).tolist():
-        user = int(step0.users[int(step0.row_user_column[row])])
-        action = int(step0.legacy_action_index[row])
+    matched_false = set()
+    for row in np.flatnonzero(arrays.legacy_action_index >= 0).tolist():
+        user = int(arrays.users[int(arrays.row_user_column[row])])
+        action = int(arrays.legacy_action_index[row])
         expected_mask = bool(oracle.masks[user, action])
-        assert bool(step0.d2_eligible[0, row] and step0.cell_reachable[0, row]) == expected_mask
-        expected_legal = expected_mask and bool(step0.visible[0, row])
-        actual_legal = bool(step0.visible[0, row] and step0.d2_eligible[0, row] and step0.cell_reachable[0, row])
+        assert bool(arrays.d2_eligible[0, row] and arrays.cell_reachable[0, row]) == expected_mask
+        if not expected_mask:
+            matched_false.add((user, action))
+        expected_legal = expected_mask and bool(arrays.visible[0, row])
+        actual_legal = bool(
+            arrays.visible[0, row]
+            and arrays.d2_eligible[0, row]
+            and arrays.cell_reachable[0, row]
+        )
         assert actual_legal == expected_legal
+    assert matched_false == legacy_false
+    positions = dict(
+        provider.satellite_ecef_km(
+            world_seed=WORLD_SEED, step_index=0, boundary_index=0
+        )
+    )
+    extra_rows = np.flatnonzero(arrays.legacy_action_index < 0).tolist()
+    assert len(extra_rows) == len(users[0])
+    for row in extra_rows[:3]:
+        user = int(arrays.row_user_column[row])
+        satellite = np.asarray(positions[int(arrays.identities[row, 0])])
+        delta = satellite - users[0][user]
+        slant = float(np.linalg.norm(delta))
+        elevation = math.degrees(
+            math.asin(
+                float(
+                    np.dot(delta, users[0][user] / np.linalg.norm(users[0][user]))
+                    / slant
+                )
+            )
+        )
+        assert elevation < MINIMUM_ELEVATION_DEG
+        assert slant - D2_HYSTERESIS_KM > D2_THRESHOLD_KM
+        assert not arrays.visible[0, row]
+        assert not arrays.d2_eligible[0, row]
     assert legacy_legal_below_ten == 0
 
 
-def test_entry_elevation_and_d2_distance_use_legacy_slant_definition(step0) -> None:
-    assert np.array_equal(step0.d2_distances_km, step0.slants_km)
+def test_entry_elevation_and_d2_distance_use_legacy_slant_definition(real_world, step0) -> None:
+    provider, _driver, _decisions, users, _start = real_world
+    for boundary, row in ((0, 0), (17, 137), (47, 999)):
+        user = int(step0.row_user_column[row])
+        norad = int(step0.identities[row, 0])
+        satellite = dict(
+            provider.satellite_ecef_km(
+                world_seed=WORLD_SEED,
+                step_index=0,
+                boundary_index=boundary,
+            )
+        )[norad]
+        hand_slant = float(np.linalg.norm(np.asarray(satellite) - users[0][user]))
+        assert step0.d2_distances_km[boundary, row] == pytest.approx(hand_slant, rel=1e-12)
     measured = tuple(
         elevation_for_slant_range(D2_THRESHOLD_KM - D2_HYSTERESIS_KM, altitude)
         for altitude in (426.0, 485.0, 550.0)
@@ -242,51 +336,105 @@ def test_aggressor_uses_own_cell_boresight_at_one_and_two_rings(real_world, step
     assert found[2] > found[1] + 10.0
 
 
-def test_per_chain_colour_filter_and_same_satellite_p10_match_legacy(real_world, step0) -> None:
+def test_per_victim_total_interference_matches_legacy_for_three_victims(real_world, step0) -> None:
     provider, driver, _decisions, users, _start = real_world
     normal = np.flatnonzero(step0.legacy_action_index >= 0).tolist()
     chosen = None
-    for victim in normal:
-        vu = int(step0.row_user_column[victim]); vn, vc = map(int, step0.identities[victim]); color = int(step0.colors[victim])
-        same = next((row for row in normal if int(step0.row_user_column[row]) != vu and int(step0.identities[row, 0]) == vn and int(step0.identities[row, 1]) != vc and int(step0.colors[row]) == color), None)
-        used = {vu, -1 if same is None else int(step0.row_user_column[same])}
-        inter = next((row for row in normal if int(step0.row_user_column[row]) not in used and int(step0.identities[row, 0]) != vn and int(step0.colors[row]) == color), None)
-        if same is not None and inter is not None:
-            chosen = (victim, same, inter); break
+    for color in range(3):
+        by_satellite: dict[int, list[int]] = {}
+        for row in normal:
+            if int(step0.colors[row]) == color:
+                by_satellite.setdefault(int(step0.identities[row, 0]), []).append(row)
+        for norad, rows in by_satellite.items():
+            same_rows = []
+            used_users = set()
+            used_cells = set()
+            for row in rows:
+                user = int(step0.row_user_column[row])
+                cell = int(step0.identities[row, 1])
+                if user not in used_users and cell not in used_cells:
+                    same_rows.append(row); used_users.add(user); used_cells.add(cell)
+                if len(same_rows) == 4:
+                    break
+            cross = next(
+                (
+                    row
+                    for other, other_rows in by_satellite.items()
+                    if other != norad
+                    for row in other_rows
+                    if int(step0.row_user_column[row]) not in used_users
+                ),
+                None,
+            )
+            if len(same_rows) >= 4 and cross is not None:
+                chosen = same_rows + [cross]
+                break
+        if chosen is not None:
+            break
     assert chosen is not None
-    victim, same, inter = chosen
-    assignments = {int(step0.row_user_column[row]): tuple(map(int, step0.identities[row])) for row in chosen}
+    assignments = {
+        int(step0.users[int(step0.row_user_column[row])]): tuple(map(int, step0.identities[row]))
+        for row in chosen
+    }
     geometry = step0.geometry_at(boundary_index=0, assignments=assignments)
-    assert geometry.nominal_cross_gain[0, 1] > 0.0
-    assert geometry.nominal_cross_gain[0, 2] > 0.0
-    different = next(row for row in normal if int(step0.row_user_column[row]) != int(step0.row_user_column[victim]) and int(step0.colors[row]) != int(step0.colors[victim]))
-    assert step0._cross(0, victim, tuple(map(int, step0.identities[different]))) == (0.0, 0.0)
-
     positions = dict(provider.satellite_ecef_km(world_seed=WORLD_SEED, step_index=0, boundary_index=0))
-    victim_user = int(step0.row_user_column[victim]); victim_identity = tuple(map(int, step0.identities[victim]))
-    aggressor_rows = (same, inter)
-    aggressor_identities = [tuple(map(int, step0.identities[row])) for row in aggressor_rows]
+    ordered = list(geometry.links)
+    aggressor_identities = [link.beam for link in ordered]
     radiating = build_radiating_beams(
         beam_norad_ids=np.asarray([identity[0] for identity in aggressor_identities]),
-        beam_cell_ids=np.asarray([identity[1] for identity in aggressor_identities]), beam_power_w=np.ones(2),
+        beam_cell_ids=np.asarray([identity[1] for identity in aggressor_identities]),
+        beam_power_w=np.ones(len(ordered)),
         satellite_ecef_by_norad=positions, grid=driver.grid,
     )
+    victim_users = np.asarray([link.user_id for link in ordered], dtype=np.int64)
+    victim_norads = np.asarray([link.beam[0] for link in ordered], dtype=np.int64)
+    victim_cells = np.asarray([link.beam[1] for link in ordered], dtype=np.int64)
     terms = received_power_terms(
-        beam_field_at_users(user_ecef_km=users[0][victim_user : victim_user + 1], radiating=radiating), radiating,
-        user_ecef_km=users[0][victim_user : victim_user + 1], boresight_satellite_ecef_km=np.asarray([positions[victim_identity[0]]]),
-        boresight_norad_ids=np.asarray([victim_identity[0]]),
+        beam_field_at_users(user_ecef_km=users[0][victim_users], radiating=radiating),
+        radiating,
+        user_ecef_km=users[0][victim_users],
+        boresight_satellite_ecef_km=np.asarray([positions[norad] for norad in victim_norads]),
+        boresight_norad_ids=victim_norads,
     )
-    expected = co_channel_interference(
-        terms, radiating, wanted_norad_ids=np.asarray([victim_identity[0]]),
-        wanted_cell_ids=np.asarray([victim_identity[1]]), wanted_colors=np.asarray([int(step0.colors[victim])]),
-    ).total_w[0]
-    corrected = 0.0
-    for term, row in zip(terms[0], aggressor_rows, strict=True):
-        sat = positions[int(step0.identities[row, 0])]; delta = sat - users[0][victim_user]
-        elevation = math.degrees(math.asin(float(np.dot(delta, users[0][victim_user] / np.linalg.norm(users[0][victim_user])) / np.linalg.norm(delta))))
-        corrected += float(term) * 10.0 ** (float(scintillation_loss_db(elevation)) / 10.0)
-    assert geometry.nominal_cross_gain[0, 1:].sum() == pytest.approx(corrected, rel=1e-9)
-    assert expected > 0.0
+    legacy_total = co_channel_interference(
+        terms,
+        radiating,
+        wanted_norad_ids=victim_norads,
+        wanted_cell_ids=victim_cells,
+        wanted_colors=np.asarray([link.color for link in ordered]),
+    ).total_w
+    provider_legacy_equivalent = np.zeros(len(ordered))
+    mixed_victims = []
+    for victim_index, victim in enumerate(ordered):
+        for aggressor_index, aggressor in enumerate(ordered):
+            if victim_index == aggressor_index or victim.color != aggressor.color:
+                continue
+            delta = positions[aggressor.beam[0]] - users[0][victim.user_id]
+            elevation = math.degrees(
+                math.asin(
+                    float(
+                        np.dot(delta, users[0][victim.user_id] / np.linalg.norm(users[0][victim.user_id]))
+                        / np.linalg.norm(delta)
+                    )
+                )
+            )
+            provider_legacy_equivalent[victim_index] += (
+                geometry.nominal_cross_gain[victim_index, aggressor_index]
+                * 10.0 ** (-float(scintillation_loss_db(elevation)) / 10.0)
+            )
+        same = any(
+            other != victim_index
+            and ordered[other].beam[0] == victim.beam[0]
+            and ordered[other].beam != victim.beam
+            for other in range(len(ordered))
+        )
+        cross = any(ordered[other].beam[0] != victim.beam[0] for other in range(len(ordered)))
+        if same and cross:
+            mixed_victims.append(victim_index)
+    assert len(mixed_victims) >= 3
+    assert provider_legacy_equivalent[mixed_victims] == pytest.approx(
+        legacy_total[mixed_victims], rel=1e-9
+    )
 
 
 def test_inventory_is_exact_realisable_union_and_standby_energy(real_world) -> None:
@@ -307,15 +455,44 @@ def test_inventory_is_exact_realisable_union_and_standby_energy(real_world) -> N
     assert receipt.joules == pytest.approx(len(inventory) * SENSITIVITY_IDLE_POWER_W * duration, rel=1e-12)
 
 
-def test_fixed_forward_horizon_has_explicit_right_censoring(step0) -> None:
+def test_fixed_forward_horizon_matches_direct_sgp4_crossings(real_world, step0) -> None:
+    provider, driver, _decisions, users, start = real_world
+    arrays = provider.step_arrays(world_seed=WORLD_SEED, step_index=29)
+    decision_start = start + dt.timedelta(seconds=29 * 30.08)
     cap = math.ceil(900.0 / 0.640) * 0.640
-    assert np.all(step0.remaining_visibility_s <= cap)
-    assert np.all(step0.remaining_d2_s <= cap)
-    mask = np.ones((48 + math.ceil(900.0 / 0.640), 1, 1), dtype=bool)
-    active = np.ones((48, 1, 1), dtype=bool)
-    durations, censored = LegacyWorldProvider._durations_from_mask(mask, active)
-    assert np.all(censored)
-    assert np.all(durations == cap)
+    assert np.all(arrays.remaining_visibility_s <= cap)
+    assert np.all(arrays.remaining_d2_s <= cap)
+    samples = 48 + math.ceil(900.0 / 0.640)
+    jd, fr = step_times(decision_start, samples, time_step_s=0.640)
+    direct = driver._satellites.propagate_ecef(jd, fr, require_all_healthy=True)
+    column = {int(norad): index for index, norad in enumerate(driver.tracked_norad_ids)}
+    saw_visibility_crossing = saw_d2_crossing = False
+    for row in np.flatnonzero(arrays.legacy_action_index >= 0).tolist():
+        user = int(arrays.row_user_column[row])
+        norad = int(arrays.identities[row, 0])
+        delta = direct[column[norad]] - users[29][user]
+        slant = np.linalg.norm(delta, axis=1)
+        up = users[29][user] / np.linalg.norm(users[29][user])
+        elevation = np.degrees(np.arcsin(np.clip((delta @ up) / slant, -1.0, 1.0)))
+        if bool(arrays.visible[0, row]):
+            failures = np.flatnonzero(elevation < MINIMUM_ELEVATION_DEG)
+            expected = cap if failures.size == 0 else int(failures[0]) * 0.640
+            assert arrays.remaining_visibility_s[0, row] == pytest.approx(expected)
+            assert bool(arrays.visibility_right_censored[0, row]) == (failures.size == 0)
+            saw_visibility_crossing |= bool(failures.size)
+        if bool(arrays.d2_eligible[0, row]):
+            failures = np.flatnonzero(
+                slant - D2_HYSTERESIS_KM > D2_THRESHOLD_KM
+            )
+            expected = cap if failures.size == 0 else int(failures[0]) * 0.640
+            assert arrays.remaining_d2_s[0, row] == pytest.approx(expected)
+            assert bool(arrays.d2_right_censored[0, row]) == (failures.size == 0)
+            saw_d2_crossing |= bool(failures.size)
+        if saw_visibility_crossing and saw_d2_crossing:
+            break
+    assert saw_visibility_crossing and saw_d2_crossing
+    assert not np.any(arrays.visibility_right_censored)
+    assert not np.any(arrays.d2_right_censored)
 
 
 def test_user_motion_is_recorded_per_step_and_user_count_is_sourced(real_world) -> None:
@@ -329,10 +506,10 @@ def test_user_motion_is_recorded_per_step_and_user_count_is_sourced(real_world) 
 def test_exact_train_timestamp_and_test_date_rejection(real_world) -> None:
     provider, _driver, _decisions, _users, start = real_world
     archive = TleArchive(DEFAULT_TLE_ROOT); split = BlockAlternatingSplit.for_archive(archive)
-    independently_drawn = EpisodeStartSampler.for_archive(
-        archive, split, TRAIN, time_step_s=30.08
-    ).draw(_evaluation_rngs(WORLD_SEED)[0])
-    assert provider.start_utc(world_seed=WORLD_SEED) == independently_drawn == start
+    frozen_known_answer = dt.datetime(
+        2026, 1, 7, 9, 3, 56, 800_000, tzinfo=dt.timezone.utc
+    )
+    assert provider.start_utc(world_seed=WORLD_SEED) == start == frozen_known_answer
     assert split.part_for(start.date()) == TRAIN
     with pytest.raises(MCRLContractError, match="TRAIN-only"):
         LegacyWorldProvider(start_utc=split.available_dates(archive, TEST)[0])
@@ -345,12 +522,56 @@ def test_unhealthy_propagation_fails_closed() -> None:
         LegacyWorldProvider._validate_propagation(np.asarray([[[4_600.0, 0.0, 0.0]]]))
 
 
-def test_nonzero_origin_and_forward_prime_seam_have_no_backward_jump(real_world) -> None:
+def test_every_float_primitive_array_rejects_nan_and_infinity() -> None:
+    valid = _minimal_step_arrays()
+    float_fields = [
+        field.name
+        for field in fields(valid)
+        if np.issubdtype(np.asarray(getattr(valid, field.name)).dtype, np.floating)
+    ]
+    assert set(float_fields) == {
+        "absolute_time_s",
+        "elevations_deg",
+        "d2_entry_elevations_deg",
+        "slants_km",
+        "d2_distances_km",
+        "nominal_gain",
+        "realised_gain",
+        "remaining_visibility_s",
+        "remaining_d2_s",
+        "cross_base_nominal",
+        "fading_by_satellite",
+        "receive_gain_by_wanted_slot",
+    }
+    for name in float_fields:
+        for nonfinite in (math.nan, math.inf):
+            corrupted = np.array(getattr(valid, name), copy=True)
+            corrupted.flat[0] = nonfinite
+            with pytest.raises(MCRLContractError, match=name):
+                replace(valid, **{name: corrupted})
+
+
+def test_nonzero_origin_is_bound_across_steps_and_rejects_drift(real_world) -> None:
     provider, _driver, _decisions, _users, _start = real_world
-    shifted = provider.step_arrays(world_seed=WORLD_SEED, step_index=0, start_time_s=123.0).absolute_time_s
-    assert shifted[0] == 123.0
-    assert np.all(np.diff(shifted) > 0.0)
-    assert shifted[-1] == pytest.approx(123.0 + 47 * 0.640)
+    first = provider.boundary(
+        world_seed=WORLD_SEED, step_index=0, boundary_index=0, absolute_time_s=123.0
+    )
+    later_time = 123.0 + 30.08 + 17 * 0.640
+    later = provider.boundary(
+        world_seed=WORLD_SEED,
+        step_index=1,
+        boundary_index=17,
+        absolute_time_s=later_time,
+    )
+    assert first.absolute_time_s == 123.0
+    assert later.absolute_time_s == pytest.approx(later_time)
+    with pytest.raises(MCRLContractError, match="origin"):
+        provider.boundary(
+            world_seed=WORLD_SEED,
+            step_index=2,
+            boundary_index=0,
+            absolute_time_s=999.0,
+        )
 
 
 def test_canonical_horizon_is_invariant_to_requested_rehearsal_length(real_world) -> None:
@@ -358,20 +579,25 @@ def test_canonical_horizon_is_invariant_to_requested_rehearsal_length(real_world
     short = LegacyWorldProvider(steps=3); long = LegacyWorldProvider(steps=31)
     expected = tuple(provider.inventory(world_seed=WORLD_SEED))
     assert tuple(short.inventory(world_seed=WORLD_SEED)) == expected == tuple(long.inventory(world_seed=WORLD_SEED))
-    assert short.manifest_input_digest(world_seed=WORLD_SEED) == long.manifest_input_digest(world_seed=WORLD_SEED)
+    for step_index in (0, 2):
+        first = short.step_arrays(world_seed=WORLD_SEED, step_index=step_index)
+        second = long.step_arrays(world_seed=WORLD_SEED, step_index=step_index)
+        for field in fields(first):
+            assert np.array_equal(getattr(first, field.name), getattr(second, field.name))
 
 
 def test_manifest_and_boundary_arrays_are_deterministic_across_processes() -> None:
     script = """
 import hashlib, json
 from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
-from mcrl.physics_v025.tapes import seed_from_domain
+from mcrl.physics_v025.tapes import build_world_tape, seed_from_domain
 p=LegacyWorldProvider(steps=3); s=seed_from_domain('V025_PROBE/world/1')
-a=p.step_arrays(world_seed=s, step_index=5, start_time_s=17.0); h=hashlib.sha256()
+t=build_world_tape(domain='V025_PROBE/world/1', provider=p, steps=6, start_time_s=17.0)
+a=t.steps[5].arrays; h=hashlib.sha256()
 for k in (17,47):
     for value in (a.identities, a.elevations_deg[k], a.slants_km[k], a.nominal_gain[k], a.realised_gain[k], a.visible[k], a.d2_eligible[k]):
         h.update(value.tobytes(order='C'))
-print(json.dumps({'manifest': p.manifest_input_digest(world_seed=s), 'arrays': h.hexdigest()}))
+print(json.dumps({'manifest': t.tape_digest, 'arrays': h.hexdigest()}))
 """
     env = dict(os.environ); env["PYTHONPATH"] = "src"; command = [sys.executable, "-c", script]
     first = json.loads(subprocess.check_output(command, cwd=Path.cwd(), env=env, text=True))
@@ -379,22 +605,145 @@ print(json.dumps({'manifest': p.manifest_input_digest(world_seed=s), 'arrays': h
     assert first == second
 
 
-def test_build_world_tape_uses_array_storage_and_input_digest(real_world) -> None:
+def test_manifest_digest_covers_k0_outputs_not_unused_generator_fields(real_world) -> None:
     provider, _driver, _decisions, _users, _start = real_world
     tape = build_world_tape(domain=WORLD_DOMAIN, provider=provider, steps=1, start_time_s=41.0)
     assert tape.steps[0].arrays is not None and tape.steps[0].boundaries == ()
     assert tape.steps[0].arrays.absolute_time_s[0] == 41.0
-    assert tape.tape_digest == provider.manifest_input_digest(world_seed=WORLD_SEED)
+    original_digest = tape.tape_digest
+    arrays = tape.steps[0].arrays
+    changed = np.array(arrays.nominal_gain, copy=True)
+    changed.view(np.uint64).flat[0] ^= np.uint64(1)
+    changed_arrays = replace(arrays, nominal_gain=changed)
+    changed_tape = replace(
+        tape,
+        steps=(replace(tape.steps[0], arrays=changed_arrays),),
+    )
+    assert changed_tape.tape_digest != original_digest
+
+    first_provider = TinySyntheticProvider()
+    second_provider = TinySyntheticProvider()
+    first_provider.unused_generator_field = "first"
+    second_provider.unused_generator_field = "second"
+    first = build_world_tape(
+        domain=WORLD_DOMAIN, provider=first_provider, steps=1, start_time_s=0.0
+    )
+    second = build_world_tape(
+        domain=WORLD_DOMAIN, provider=second_provider, steps=1, start_time_s=0.0
+    )
+    assert first.tape_digest == second.tape_digest
     assert tape.manifest()["cross_gain_key"] == "(NORAD,cell_id)"
     assert tape.manifest()["boundary_storage"] == "numpy-float64"
     assert tape.tle_files == provider.tle_binding(world_seed=WORLD_SEED)
 
 
-def test_tle_split_and_provider_source_hashes_are_recorded(real_world) -> None:
+def test_complete_provider_attestation_and_split_mismatch_guard(real_world) -> None:
     provider, _driver, _decisions, _users, _start = real_world
-    files = provider.tle_binding(world_seed=WORLD_SEED)
-    assert files and all(name and len(digest) == 64 for name, digest in files)
-    split_name, split_hash = provider.split_binding()
-    assert split_name == "ephemeris.py" and len(split_hash) == 64
+    with pytest.raises(MCRLContractError, match="learner-free physics matrix"):
+        LegacyWorldProvider(role="physics-matrix", learner_seed=1)
+    attestation = provider.attestation(world_seed=WORLD_SEED, steps=33)
+    payload = attestation.payload()
+    assert payload["start_utc"] == "2026-01-07T09:03:56.800000+00:00"
+    assert payload["tle_files"] == [list(row) for row in provider.tle_binding(world_seed=WORLD_SEED)]
+    assert payload["split"] == TRAIN
+    assert payload["split_rule"]["file"] == "ephemeris.py"
+    assert payload["role"] == "physics-matrix"
+    assert payload["learner_seed"] is None
+    assert payload["world_seed"] == WORLD_SEED
+    assert payload["candidate_refresh_period_n"] == 4
+    assert payload["step_partition"] == {"executed": 30, "forecast": 3}
+    assert payload["streams"]["mobility"].endswith("spawn(4)[1]:mobility")
+    assert "absolute_time_ns" in payload["streams"]["fading"]
+    assert payload["inference"] == {
+        "date_panel_policy": (
+            "allocation manifest must assert role-wise date disjointness before units open"
+        ),
+        "primary_resampling": "one-way bootstrap over TLE dates",
+        "world_pooling": "pool worlds within each TLE-date x learner-seed cell",
+    }
+    assert payload["opened_tle_splits"] == [
+        [file_date, provider._split.part_for(dt.date.fromisoformat(file_date))]
+        for file_date in payload["opened_tle_dates"]
+    ]
+    assert all(part != TEST for _file_date, part in payload["opened_tle_splits"])
+    independent_archive_index = hashlib.sha256(
+        canonical_bytes(
+            [
+                [file_date.isoformat(), path.name]
+                for file_date, path in sorted(provider._archive._paths.items())
+            ]
+        )
+    ).hexdigest()
+    assert payload["archive_sha256"] == independent_archive_index
+    with pytest.raises(MCRLContractError, match="split mismatch"):
+        replace(attestation, split=TEST)
+
     source = Path(inspect.getsourcefile(LegacyWorldProvider) or "")
     assert provider.provider_source_sha256() == hashlib.sha256(source.read_bytes()).hexdigest()
+
+    # Reuse only the already-frozen primitive world so this KAT tests the
+    # provider's learner-role attestation policy without opening another TLE
+    # world or consuming a second rehearsal-scale propagation.
+    learner_provider = LegacyWorldProvider(role="learner-evaluation", learner_seed=73)
+    learner_provider._archive = provider._archive
+    learner_provider._split = provider._split
+    learner_provider._world_seed = WORLD_SEED
+    learner_provider._world = provider._world
+    learner = learner_provider.attestation(world_seed=WORLD_SEED, steps=33).payload()
+    assert learner["learner_seed"] == 73
+    assert learner["world_seed"] == WORLD_SEED
+    assert learner["inference"]["primary_resampling"] == (
+        "two-way pigeonhole bootstrap over TLE dates x learner seeds"
+    )
+    assert learner["inference"]["world_pooling"] == (
+        "pool worlds within each TLE-date x learner-seed cell"
+    )
+
+
+def test_claim_panel_allocation_rejects_role_date_reuse(real_world) -> None:
+    provider, _driver, _decisions, _users, _start = real_world
+    physics = provider.attestation(world_seed=WORLD_SEED, steps=33)
+    distinct_claim = replace(
+        physics,
+        role="claim",
+        world_seed=WORLD_SEED + 1,
+        start_utc="2026-01-09T09:03:56.800000+00:00",
+    )
+    allocation = provider_allocation_manifest((physics, distinct_claim))
+    assert allocation["claim_dates_disjoint"] is True
+    assert len(allocation["sha256"]) == 64
+
+    reused_claim = replace(distinct_claim, start_utc=physics.start_utc)
+    with pytest.raises(MCRLContractError, match="claim-panel UTC dates overlap"):
+        provider_allocation_manifest((physics, reused_claim))
+
+
+def test_identity_rows_refresh_only_at_phase_zero(real_world, step0) -> None:
+    provider, _driver, _decisions, _users, _start = real_world
+
+    def snapshot(arrays: PrimitiveStepArrays) -> tuple[tuple[int, int, int, int], ...]:
+        return tuple(
+            sorted(
+                (
+                    int(arrays.users[int(arrays.row_user_column[row])]),
+                    int(arrays.legacy_action_index[row]),
+                    int(arrays.identities[row, 0]),
+                    int(arrays.identities[row, 1]),
+                )
+                for row in np.flatnonzero(arrays.legacy_action_index >= 0)
+            )
+        )
+
+    previous = snapshot(step0)
+    changed_at = []
+    for step_index in range(1, 9):
+        current = snapshot(
+            provider.step_arrays(world_seed=WORLD_SEED, step_index=step_index)
+        )
+        if current != previous:
+            changed_at.append(step_index)
+            assert step_index % IDENTITY_REFRESH_DECISIONS == 0
+        else:
+            assert step_index % IDENTITY_REFRESH_DECISIONS != 0
+        previous = current
+    assert changed_at == [4, 8]

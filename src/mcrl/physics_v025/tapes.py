@@ -10,9 +10,11 @@ the same detached tape.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import datetime as dt
 import hashlib
 import json
 import math
+from pathlib import Path
 from typing import Callable, Iterable, Mapping, Protocol, Sequence
 
 import numpy as np
@@ -29,6 +31,7 @@ from .constants_v025 import (
     MINIMUM_ELEVATION_DEG,
     RX_GAIN_MAX_DBI,
     SINR_MIN,
+    constant_manifest,
 )
 from .energy import HardwareInventory
 
@@ -66,14 +69,18 @@ def digest_payload(value: object) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
-def _step_array_digest(step: "PrimitiveStepArrays", *, boundary_zero_only: bool = False) -> str:
+def _step_array_digest(
+    step: "PrimitiveStepArrays", *, boundary_index: int | None = None
+) -> str:
     """Canonical digest for an array snapshot without multi-gigabyte JSON."""
 
+    if boundary_index is not None and not 0 <= boundary_index < D2_SUBINTERVALS + 1:
+        raise MCRLContractError("array digest boundary index must be in 0..47")
     digest = hashlib.sha256()
     for name in step.__dataclass_fields__:
         value = np.asarray(getattr(step, name))
-        if boundary_zero_only and value.ndim > 0 and value.shape[0] == 48:
-            value = value[:1]
+        if boundary_index is not None and value.ndim > 0 and value.shape[0] == 48:
+            value = value[boundary_index : boundary_index + 1]
         contiguous = np.ascontiguousarray(value)
         header = canonical_bytes(
             {"name": name, "dtype": contiguous.dtype.str, "shape": list(contiguous.shape)}
@@ -84,6 +91,44 @@ def _step_array_digest(step: "PrimitiveStepArrays", *, boundary_zero_only: bool 
         digest.update(len(payload).to_bytes(8, "big"))
         digest.update(payload)
     return digest.hexdigest()
+
+
+def tape_boundary_array_digest(
+    steps: Sequence["StepTape"], *, boundary_index: int
+) -> str:
+    """Digest one canonical boundary across all compact steps in tape order."""
+
+    rows = []
+    for step in steps:
+        if step.arrays is None:
+            raise MCRLContractError("boundary-array digest requires compact array steps")
+        rows.append(
+            [
+                step.step_index,
+                _step_array_digest(step.arrays, boundary_index=boundary_index),
+            ]
+        )
+    return digest_payload(
+        {"boundary_index": boundary_index, "step_array_sha256": rows}
+    )
+
+
+def step_array_storage_bytes(step: "PrimitiveStepArrays") -> dict[str, int]:
+    """Exact retained/static/per-boundary bytes for one compact array step."""
+
+    static = 0
+    per_boundary = 0
+    for name in step.__dataclass_fields__:
+        value = np.asarray(getattr(step, name))
+        if value.ndim > 0 and value.shape[0] == D2_SUBINTERVALS + 1:
+            per_boundary += int(value[0].nbytes)
+        else:
+            static += int(value.nbytes)
+    return {
+        "static_bytes": static,
+        "per_boundary_bytes": per_boundary,
+        "total_bytes": static + (D2_SUBINTERVALS + 1) * per_boundary,
+    }
 
 
 def reference_policy_manifest() -> dict[str, object]:
@@ -106,6 +151,10 @@ def _f(value: float) -> str:
     return float(value).hex()
 
 
+def _is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
 @dataclass(frozen=True)
 class UserLayout:
     user_id: int
@@ -118,6 +167,171 @@ class UserLayout:
             "latitude_deg": _f(self.latitude_deg),
             "longitude_deg": _f(self.longitude_deg),
         }
+
+
+@dataclass(frozen=True)
+class ProviderAttestation:
+    """Provider-issued world identity checked before a tape can be opened.
+
+    Stage 4b consumes this object rather than inferring a split or seed role
+    inside the generic tape builder.  ``expected_split`` is issued by the
+    provider from its own split authority; keeping it separate makes a stale
+    or mismatched realised split fail closed without hard-coding TRAIN here.
+    """
+
+    split: str
+    expected_split: str
+    split_identity: tuple[tuple[str, object], ...]
+    split_rule_file: str
+    split_rule_sha256: str
+    start_utc: str
+    tle_files: tuple[tuple[str, str], ...]
+    opened_tle_dates: tuple[str, ...]
+    opened_tle_splits: tuple[tuple[str, str], ...]
+    archive_sha256: str
+    provider_source_file: str
+    provider_source_sha256: str
+    role: str
+    learner_seed: int | None
+    world_seed: int
+    mobility_stream_identity: str
+    fading_stream_identity: str
+    candidate_refresh_period_n: int
+    executed_steps: int
+    forecast_steps: int
+    production_factory: str
+    date_panel_policy: str
+    primary_resampling: str
+    world_pooling: str
+
+    def __post_init__(self) -> None:
+        if not self.split or self.split != self.expected_split:
+            raise MCRLContractError("provider attestation split mismatch")
+        try:
+            start = dt.datetime.fromisoformat(self.start_utc.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise MCRLContractError("provider attestation start UTC is invalid") from error
+        if start.tzinfo is None or start.utcoffset() != dt.timedelta(0):
+            raise MCRLContractError("provider attestation start must be exact UTC")
+        for label, value in (
+            ("split rule", self.split_rule_sha256),
+            ("archive", self.archive_sha256),
+            ("provider source", self.provider_source_sha256),
+        ):
+            if not _is_sha256(value):
+                raise MCRLContractError(f"provider attestation {label} digest is invalid")
+        if not self.tle_files or any(
+            not name or not _is_sha256(digest) for name, digest in self.tle_files
+        ):
+            raise MCRLContractError("provider attestation needs exact TLE names and hashes")
+        if not self.opened_tle_dates or len(set(self.opened_tle_dates)) != len(
+            self.opened_tle_dates
+        ):
+            raise MCRLContractError("provider attestation opened TLE dates are invalid")
+        if tuple(date for date, _part in self.opened_tle_splits) != self.opened_tle_dates:
+            raise MCRLContractError("provider attestation must classify every opened TLE date")
+        if any(part == "test" for _date, part in self.opened_tle_splits):
+            raise MCRLContractError("provider attestation contains an opened TEST TLE")
+        if type(self.world_seed) is not int or self.world_seed < 0:
+            raise MCRLContractError("provider attestation world_seed is invalid")
+        if self.learner_seed is not None and (
+            type(self.learner_seed) is not int or self.learner_seed < 0
+        ):
+            raise MCRLContractError("provider attestation learner_seed is invalid")
+        if not self.role or not self.mobility_stream_identity or not self.fading_stream_identity:
+            raise MCRLContractError("provider attestation role and stream identities are required")
+        if self.candidate_refresh_period_n != IDENTITY_REFRESH_DECISIONS:
+            raise MCRLContractError("provider attestation refresh period disagrees with the engine")
+        if self.executed_steps < 1 or self.forecast_steps < 0:
+            raise MCRLContractError("provider attestation step partition is invalid")
+        if not self.production_factory:
+            raise MCRLContractError("provider attestation must identify the production factory")
+
+    @property
+    def retained_steps(self) -> int:
+        return self.executed_steps + self.forecast_steps
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "schema": "mcrl-v025-provider-attestation-v1",
+            "split": self.split,
+            "expected_split": self.expected_split,
+            "split_identity": dict(self.split_identity),
+            "split_rule": {
+                "file": self.split_rule_file,
+                "sha256": self.split_rule_sha256,
+            },
+            "start_utc": self.start_utc,
+            "tle_files": [[name, digest] for name, digest in self.tle_files],
+            "opened_tle_dates": list(self.opened_tle_dates),
+            "opened_tle_splits": [list(row) for row in self.opened_tle_splits],
+            "archive_sha256": self.archive_sha256,
+            "provider_source": {
+                "file": self.provider_source_file,
+                "sha256": self.provider_source_sha256,
+            },
+            "role": self.role,
+            "learner_seed": self.learner_seed,
+            "world_seed": self.world_seed,
+            "streams": {
+                "mobility": self.mobility_stream_identity,
+                "fading": self.fading_stream_identity,
+            },
+            "candidate_refresh_period_n": self.candidate_refresh_period_n,
+            "step_partition": {
+                "executed": self.executed_steps,
+                "forecast": self.forecast_steps,
+            },
+            "production_factory": self.production_factory,
+            "inference": {
+                "date_panel_policy": self.date_panel_policy,
+                "primary_resampling": self.primary_resampling,
+                "world_pooling": self.world_pooling,
+            },
+        }
+
+
+def provider_allocation_manifest(
+    attestations: Sequence[ProviderAttestation],
+) -> dict[str, object]:
+    """Seal a role/date allocation and reject claim-panel date reuse.
+
+    This is the provider-side Stage 4b check: the claim panel may not reuse a
+    UTC date allocated to calibration, probing, rehearsal, or the physics
+    matrix.  The returned digest also lets the engine bind that allocation to
+    its run manifest without learning provider internals.
+    """
+
+    if not attestations:
+        raise MCRLContractError("provider allocation needs at least one world")
+    rows: list[tuple[str, str, int, str]] = []
+    seen_worlds: set[tuple[str, int]] = set()
+    for attestation in attestations:
+        world = (attestation.role, attestation.world_seed)
+        if world in seen_worlds:
+            raise MCRLContractError("duplicate provider role/world allocation")
+        seen_worlds.add(world)
+        date = dt.datetime.fromisoformat(
+            attestation.start_utc.replace("Z", "+00:00")
+        ).date().isoformat()
+        rows.append((attestation.role, date, attestation.world_seed, attestation.split))
+    claim_dates = {date for role, date, _seed, _split in rows if role == "claim"}
+    nonclaim_dates = {date for role, date, _seed, _split in rows if role != "claim"}
+    overlap = sorted(claim_dates & nonclaim_dates)
+    if overlap:
+        raise MCRLContractError(
+            f"claim-panel UTC dates overlap provider development roles: {overlap}"
+        )
+    ordered = sorted(rows)
+    body: dict[str, object] = {
+        "schema": "mcrl-v025-provider-allocation-v1",
+        "worlds": [
+            {"role": role, "utc_date": date, "world_seed": seed, "split": split}
+            for role, date, seed, split in ordered
+        ],
+        "claim_dates_disjoint": True,
+    }
+    return {**body, "sha256": digest_payload(body)}
 
 
 @dataclass(frozen=True)
@@ -334,8 +548,9 @@ class PrimitiveStepArrays:
             arrays["aggressor_satellite_column"] >= satellites
         ):
             raise MCRLContractError("aggressor satellite column is invalid")
-        if not np.all(np.isfinite(times)):
-            raise MCRLContractError("step boundary times must be finite")
+        for name, value in arrays.items():
+            if np.issubdtype(value.dtype, np.floating) and not np.all(np.isfinite(value)):
+                raise MCRLContractError(f"{name} must contain only finite values")
         for name, value in arrays.items():
             frozen = np.array(value, copy=True)
             frozen.setflags(write=False)
@@ -585,17 +800,23 @@ class ExogenousWorldTape:
     inventory: HardwareInventory
     steps: tuple[StepTape, ...]
     carriers: tuple[CarrierAction, ...]
-    generating_input_digest: str | None = None
+    attestation: ProviderAttestation
     tle_files: tuple[tuple[str, str], ...] = ()
     step_user_layouts: tuple[tuple[UserLayout, ...], ...] = ()
 
     def __post_init__(self) -> None:
-        if self.seed != seed_from_domain(self.domain) or self.split != "TRAIN":
-            raise MCRLContractError("world identity does not match the fresh TRAIN domain rule")
+        if self.seed != seed_from_domain(self.domain):
+            raise MCRLContractError("world identity does not match the domain seed rule")
+        if self.attestation.world_seed != self.seed or self.attestation.split != self.split:
+            raise MCRLContractError("world identity disagrees with provider attestation")
+        if len(self.steps) != self.attestation.retained_steps:
+            raise MCRLContractError("tape length disagrees with provider step attestation")
+        if self.tle_files != self.attestation.tle_files:
+            raise MCRLContractError("tape TLE binding disagrees with provider attestation")
         if not self.tle_date or type(self.training_seed) is not int or self.training_seed < 0:
             raise MCRLContractError("world needs a TLE-date x training-seed cluster identity")
         inventory = set(self.inventory.chains)
-        for step in self.steps:
+        for step in self.steps[: self.attestation.executed_steps]:
             if step.arrays is not None:
                 legal = (
                     step.arrays.visible
@@ -619,9 +840,37 @@ class ExogenousWorldTape:
 
     @property
     def tape_digest(self) -> str:
-        if self.generating_input_digest is not None:
-            return self.generating_input_digest
-        return digest_payload([step.payload() for step in self.steps])
+        boundary_zero = []
+        for step in self.steps:
+            if step.arrays is not None:
+                output_digest = _step_array_digest(step.arrays, boundary_index=0)
+            else:
+                output_digest = digest_payload(step.boundaries[0].payload())
+            boundary_zero.append(
+                {"step_index": step.step_index, "k0_output_sha256": output_digest}
+            )
+        return digest_payload(
+            {
+                "schema": "mcrl-v025-tape-generating-inputs-plus-k0-v1",
+                "generating_inputs": {
+                    "provider_attestation": self.attestation.payload(),
+                    "inventory_sha256": self.inventory_digest,
+                    "layout_sha256": self.layout_digest,
+                    "step_user_layout_sha256": (
+                        None
+                        if not self.step_user_layouts
+                        else digest_payload(
+                            [
+                                [row.payload() for row in layout]
+                                for layout in self.step_user_layouts
+                            ]
+                        )
+                    ),
+                    "rule_constants": constant_manifest()["values"],
+                },
+                "canonical_k0_outputs": boundary_zero,
+            }
+        )
 
     @property
     def layout_digest(self) -> str:
@@ -637,11 +886,14 @@ class ExogenousWorldTape:
 
     def manifest(self) -> dict[str, object]:
         return {
-            "schema": "mcrl-v025-exogenous-world-tape-v1",
+            "schema": "mcrl-v025-exogenous-world-tape-v2",
             "domain": self.domain,
             "seed": self.seed,
             "split": self.split,
             "cluster": {"tle_date": self.tle_date, "training_seed": self.training_seed},
+            "attestation": self.attestation.payload(),
+            "executed_steps": self.attestation.executed_steps,
+            "forecast_steps": self.attestation.forecast_steps,
             "steps": len(self.steps),
             "samples_per_interval": D2_SUBINTERVALS + 1,
             "subintervals_per_interval": D2_SUBINTERVALS,
@@ -751,6 +1003,8 @@ class PrimitiveWorldProvider(Protocol):
 
     def cluster_identity(self, *, world_seed: int) -> tuple[str, int]: ...
 
+    def attestation(self, *, world_seed: int, steps: int) -> ProviderAttestation: ...
+
     def user_layout(self, *, world_seed: int) -> Iterable[UserLayout]: ...
 
     def boundary(
@@ -844,6 +1098,12 @@ def build_world_tape(
     if type(steps) is not int or steps < 1 or not math.isfinite(start_time_s):
         raise MCRLContractError("steps and start time are invalid")
     seed = seed_from_domain(domain)
+    attestation_builder = getattr(provider, "attestation", None)
+    if not callable(attestation_builder):
+        raise MCRLContractError("primitive provider does not issue a stage-4b attestation")
+    attestation = attestation_builder(world_seed=seed, steps=steps)
+    if attestation.world_seed != seed or attestation.retained_steps != steps:
+        raise MCRLContractError("provider attestation does not identify the requested world")
     # This call is deliberately first: hardware exists before candidates/actions.
     inventory = HardwareInventory.fixed(provider.inventory(world_seed=seed))
     tle_date, training_seed = provider.cluster_identity(world_seed=seed)
@@ -881,15 +1141,17 @@ def build_world_tape(
                 StepTape(step_index, step_index % IDENTITY_REFRESH_DECISIONS, boundaries)
             )
     users = tuple(row.user_id for row in layout)
-    carriers = fixed_carrier_actions(domain=domain, steps=step_rows, users=users)
-    manifest_digest_builder = getattr(provider, "manifest_input_digest", None)
-    generating_input_digest = (
-        manifest_digest_builder(world_seed=seed)
-        if callable(manifest_digest_builder)
-        else None
+    carriers = fixed_carrier_actions(
+        domain=domain,
+        steps=step_rows[: attestation.executed_steps],
+        users=users,
     )
     tle_binding = getattr(provider, "tle_binding", None)
-    tle_files = tuple(tle_binding(world_seed=seed)) if callable(tle_binding) else ()
+    tle_files = (
+        tuple(tle_binding(world_seed=seed))
+        if callable(tle_binding)
+        else attestation.tle_files
+    )
     layout_at_step = getattr(provider, "user_layout_at_step", None)
     step_user_layouts = (
         tuple(layout_at_step(world_seed=seed, step_index=index) for index in range(steps))
@@ -897,18 +1159,18 @@ def build_world_tape(
         else ()
     )
     return ExogenousWorldTape(
-        domain,
-        seed,
-        "TRAIN",
-        tle_date,
-        training_seed,
-        layout,
-        inventory,
-        tuple(step_rows),
-        carriers,
-        generating_input_digest,
-        tle_files,
-        step_user_layouts,
+        domain=domain,
+        seed=seed,
+        split=attestation.split,
+        tle_date=tle_date,
+        training_seed=training_seed,
+        user_layout=layout,
+        inventory=inventory,
+        steps=tuple(step_rows),
+        carriers=carriers,
+        attestation=attestation,
+        tle_files=tle_files,
+        step_user_layouts=step_user_layouts,
     )
 
 
@@ -927,6 +1189,36 @@ class TinySyntheticProvider:
 
     def cluster_identity(self, *, world_seed: int) -> tuple[str, int]:
         return ("synthetic-tle", world_seed)
+
+    def attestation(self, *, world_seed: int, steps: int) -> ProviderAttestation:
+        source = Path(__file__)
+        tle_digest = digest_payload({"synthetic_tle": world_seed})
+        return ProviderAttestation(
+            split="synthetic-train",
+            expected_split="synthetic-train",
+            split_identity=(("scheme", "synthetic-train"),),
+            split_rule_file=source.name,
+            split_rule_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            start_utc="1970-01-01T00:00:00+00:00",
+            tle_files=(("synthetic.tle", tle_digest),),
+            opened_tle_dates=("1970-01-01",),
+            opened_tle_splits=(("1970-01-01", "synthetic-train"),),
+            archive_sha256=digest_payload({"synthetic_archive": 1}),
+            provider_source_file=source.name,
+            provider_source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            role="KAT",
+            learner_seed=None,
+            world_seed=world_seed,
+            mobility_stream_identity=f"numpy.default_rng({world_seed})",
+            fading_stream_identity="sha256-keyed(world,user,norad,time,component)",
+            candidate_refresh_period_n=IDENTITY_REFRESH_DECISIONS,
+            executed_steps=steps,
+            forecast_steps=0,
+            production_factory="mcrl.physics_v025.tapes.TinySyntheticProvider",
+            date_panel_policy="synthetic KAT; no claim panel",
+            primary_resampling="not applicable",
+            world_pooling="not applicable",
+        )
 
     def user_layout(self, *, world_seed: int) -> Iterable[UserLayout]:
         rng = np.random.default_rng(world_seed)
@@ -1021,6 +1313,7 @@ __all__ = [
     "PrimitiveCandidate",
     "PrimitiveStepArrays",
     "PrimitiveWorldProvider",
+    "ProviderAttestation",
     "PROBE_WORLD_DOMAINS",
     "REFERENCE_CARRIERS",
     "StepTape",
@@ -1031,6 +1324,9 @@ __all__ = [
     "corrected_boundary_rekey_rate",
     "digest_payload",
     "fixed_carrier_actions",
+    "provider_allocation_manifest",
     "reference_policy_manifest",
     "seed_from_domain",
+    "step_array_storage_bytes",
+    "tape_boundary_array_digest",
 ]

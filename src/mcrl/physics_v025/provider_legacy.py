@@ -68,6 +68,7 @@ from .constants_v025 import (
     D2_THRESHOLD_KM,
     D2_TTT_S,
     DECISION_INTERVAL_S,
+    IDENTITY_REFRESH_DECISIONS,
     MINIMUM_ALTITUDE_KM,
     MINIMUM_ELEVATION_DEG,
     RX_GAIN_MAX_DBI,
@@ -76,6 +77,7 @@ from .constants_v025 import (
 from .tapes import (
     PrimitiveBoundary,
     PrimitiveStepArrays,
+    ProviderAttestation,
     UserLayout,
     canonical_bytes,
 )
@@ -83,6 +85,8 @@ from .tapes import (
 
 DEFAULT_TLE_ROOT = Path("~/demo/tle_data/starlink/tle")
 CANONICAL_STEPS = 30
+FORECAST_STEPS = 3
+CANONICAL_TAPE_STEPS = CANONICAL_STEPS + FORECAST_STEPS
 _FUTURE_SECONDS = 900.0
 _FUTURE_INTERVALS = int(math.ceil(_FUTURE_SECONDS / D2_MEASUREMENT_STEP_S))
 _TIME_TOLERANCE_S = 2.0e-10
@@ -143,13 +147,32 @@ class _TrainOnlyArchive(TleArchive):
         super().__init__(root)
         split = BlockAlternatingSplit.for_archive(self)
         self._test_dates = frozenset(split.available_dates(self, TEST))
+        self._opened_dates: set[dt.date] = set()
 
     def load(self, file_date: dt.date):
         if file_date in self._test_dates:
             raise MCRLContractError(
                 f"refusing to read TEST TLE date {file_date} through TRAIN provider"
             )
-        return super().load(file_date)
+        daily = super().load(file_date)
+        self._opened_dates.add(file_date)
+        return daily
+
+    @property
+    def opened_dates(self) -> tuple[dt.date, ...]:
+        return tuple(sorted(self._opened_dates))
+
+    def index_sha256(self) -> str:
+        """Bind the frozen archive index without reading TEST file contents."""
+
+        return hashlib.sha256(
+            canonical_bytes(
+                [
+                    [file_date.isoformat(), path.name]
+                    for file_date, path in sorted(self._paths.items())
+                ]
+            )
+        ).hexdigest()
 
 
 class LegacyWorldProvider:
@@ -166,11 +189,21 @@ class LegacyWorldProvider:
         tle_root: str | Path = DEFAULT_TLE_ROOT,
         start_utc: dt.datetime | dt.date | str | None = None,
         steps: int = CANONICAL_STEPS,
+        role: str = "physics-matrix",
+        learner_seed: int | None = None,
     ) -> None:
         if type(steps) is not int or steps < 1:
             raise ValueError("steps must be a positive exact integer")
         self.tle_root = Path(tle_root).expanduser()
         self.requested_steps = steps
+        if not role:
+            raise ValueError("role must be nonempty")
+        if learner_seed is not None and (type(learner_seed) is not int or learner_seed < 0):
+            raise ValueError("learner_seed must be None or a nonnegative exact integer")
+        if role == "physics-matrix" and learner_seed is not None:
+            raise MCRLContractError("the learner-free physics matrix must attest learner_seed=None")
+        self.role = role
+        self.learner_seed = learner_seed
         # Controller T6: a shortened rehearsal truncates a canonical world;
         # it must never change the 30-step shortlist/inventory universe.
         self.steps = CANONICAL_STEPS
@@ -186,7 +219,6 @@ class LegacyWorldProvider:
         self._world_seed: int | None = None
         self._world: _WorldState | None = None
         self._time_origin_s: float | None = None
-        self._manifest_input_digest: str | None = None
 
     def _start_for(self, world_seed: int) -> dt.datetime:
         if self._forced_start is not None:
@@ -236,7 +268,7 @@ class LegacyWorldProvider:
             )
             for file_date in selection.source_dates
         )
-        for index in range(self.steps):
+        for index in range(CANONICAL_TAPE_STEPS):
             if index:
                 candidate = driver.step(mobility_rng)
             flat_norads = np.repeat(
@@ -282,7 +314,9 @@ class LegacyWorldProvider:
         if satellites is None:  # pragma: no cover - guarded by reset
             raise RuntimeError("legacy scenario did not install a satellite set")
         tracked = satellites.norad_ids
-        tape_samples = (self.steps - 1) * D2_SUBINTERVALS + D2_SUBINTERVALS + 1
+        tape_samples = (
+            (CANONICAL_TAPE_STEPS - 1) * D2_SUBINTERVALS + D2_SUBINTERVALS + 1
+        )
         jd, fr = step_times(
             start,
             tape_samples + _FUTURE_INTERVALS,
@@ -298,7 +332,7 @@ class LegacyWorldProvider:
             sorted(
                 {
                     (int(norad), int(cell))
-                    for state in decisions
+                    for state in decisions[:CANONICAL_STEPS]
                     for norad, cell, legal in zip(
                         state.norad_ids.ravel().tolist(),
                         state.cell_ids.ravel().tolist(),
@@ -371,11 +405,65 @@ class LegacyWorldProvider:
         path = Path(ephemeris.__file__).resolve()
         return path.name, hashlib.sha256(path.read_bytes()).hexdigest()
 
+    def attestation(self, *, world_seed: int, steps: int) -> ProviderAttestation:
+        """Issue the complete stage-4b identity for one retained tape prefix."""
+
+        if type(steps) is not int or not 1 <= steps <= CANONICAL_TAPE_STEPS:
+            raise MCRLContractError("attested steps are outside the 30+3 canonical tape")
+        world = self._ensure(world_seed)
+        realised_split = self._split.part_for(world.start_utc.date())
+        opened_dates = self._archive.opened_dates
+        if realised_split != TRAIN or any(
+            self._split.part_for(file_date) == TEST for file_date in opened_dates
+        ):
+            raise MCRLContractError("provider attestation split mismatch")
+        split_file, split_digest = self.split_binding()
+        executed = min(steps, CANONICAL_STEPS)
+        forecast = steps - executed
+        return ProviderAttestation(
+            split=realised_split,
+            expected_split=TRAIN,
+            split_identity=tuple(sorted(self._split.as_dict().items())),
+            split_rule_file=split_file,
+            split_rule_sha256=split_digest,
+            start_utc=world.start_utc.isoformat(),
+            tle_files=world.tle_files,
+            opened_tle_dates=tuple(date.isoformat() for date in opened_dates),
+            opened_tle_splits=tuple(
+                (date.isoformat(), self._split.part_for(date)) for date in opened_dates
+            ),
+            archive_sha256=self._archive.index_sha256(),
+            provider_source_file=Path(__file__).name,
+            provider_source_sha256=self.provider_source_sha256(),
+            role=self.role,
+            learner_seed=self.learner_seed,
+            world_seed=int(world_seed),
+            mobility_stream_identity=(
+                f"numpy.SeedSequence({int(world_seed)}).spawn(4)[1]:mobility"
+            ),
+            fading_stream_identity=(
+                f"sha256-keyed:{int(world_seed)}|user|norad|absolute_time_ns|component"
+            ),
+            candidate_refresh_period_n=IDENTITY_REFRESH_DECISIONS,
+            executed_steps=executed,
+            forecast_steps=forecast,
+            production_factory="mcrl.physics_v025.provider_legacy.factory",
+            date_panel_policy=(
+                "allocation manifest must assert role-wise date disjointness before units open"
+            ),
+            primary_resampling=(
+                "one-way bootstrap over TLE dates"
+                if self.learner_seed is None
+                else "two-way pigeonhole bootstrap over TLE dates x learner seeds"
+            ),
+            world_pooling="pool worlds within each TLE-date x learner-seed cell",
+        )
+
     def step_user_layouts(
         self, *, world_seed: int, steps: int
     ) -> tuple[tuple[UserLayout, ...], ...]:
         world = self._ensure(world_seed)
-        if type(steps) is not int or not 1 <= steps <= CANONICAL_STEPS:
+        if type(steps) is not int or not 1 <= steps <= CANONICAL_TAPE_STEPS:
             raise MCRLContractError("step layout count is outside the canonical world")
         return tuple(
             self.user_layout_at_step(world_seed=world_seed, step_index=index)
@@ -865,61 +953,6 @@ class LegacyWorldProvider:
     def provider_source_sha256(self) -> str:
         return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
-    def manifest_input_digest(self, *, world_seed: int) -> str:
-        """Bind generating inputs and every canonical k=0 primitive input.
-
-        Full forward arrays are deliberately excluded: they are regenerated
-        inside a unit and never serialized into a gigabyte-scale JSON tape.
-        """
-
-        world = self._ensure(world_seed)
-        if self._manifest_input_digest is not None:
-            return self._manifest_input_digest
-        split_path = Path(__import__("mcrl.env.ephemeris", fromlist=["x"]).__file__)
-        header = {
-            "schema": "mcrl-v025-provider-input-v2",
-            "world_seed": int(world_seed),
-            "start_utc": world.start_utc.isoformat(),
-            "tle_files": [list(row) for row in world.tle_files],
-            "provider_source_sha256": self.provider_source_sha256(),
-            "split_source": [
-                split_path.name,
-                hashlib.sha256(split_path.read_bytes()).hexdigest(),
-            ],
-            "constants": constant_manifest()["values"],
-            "inventory": [list(identity) for identity in world.inventory],
-        }
-        digest = hashlib.sha256(canonical_bytes(header))
-        for step_index, state in enumerate(world.steps):
-            position_index = step_index * D2_SUBINTERVALS
-            for name, value in (
-                ("user_ecef_km", state.user_ecef_km),
-                ("user_xy_km", state.user_xy_km),
-                ("norad_ids", state.norad_ids),
-                ("cell_ids", state.cell_ids),
-                ("occupied", state.occupied),
-                ("ttt_elapsed", state.ttt_elapsed),
-                ("reachable", state.reachable),
-                ("legacy_mask", state.legacy_mask),
-                ("satellite_ecef_km", world.positions_ecef_km[:, position_index, :]),
-            ):
-                array = np.ascontiguousarray(value)
-                descriptor = canonical_bytes(
-                    {
-                        "step": step_index,
-                        "name": name,
-                        "dtype": array.dtype.str,
-                        "shape": list(array.shape),
-                    }
-                )
-                digest.update(len(descriptor).to_bytes(8, "big"))
-                digest.update(descriptor)
-                payload = array.tobytes(order="C")
-                digest.update(len(payload).to_bytes(8, "big"))
-                digest.update(payload)
-        self._manifest_input_digest = digest.hexdigest()
-        return self._manifest_input_digest
-
     def boundary(
         self,
         *,
@@ -959,4 +992,11 @@ def factory() -> LegacyWorldProvider:
     return LegacyWorldProvider()
 
 
-__all__ = ["CANONICAL_STEPS", "DEFAULT_TLE_ROOT", "LegacyWorldProvider", "factory"]
+__all__ = [
+    "CANONICAL_STEPS",
+    "CANONICAL_TAPE_STEPS",
+    "DEFAULT_TLE_ROOT",
+    "FORECAST_STEPS",
+    "LegacyWorldProvider",
+    "factory",
+]
