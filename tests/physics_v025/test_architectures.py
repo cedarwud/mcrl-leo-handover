@@ -21,6 +21,7 @@ from mcrl.physics_v025.architectures import (
 from mcrl.physics_v025.channel import noise_power_w
 from mcrl.physics_v025.constants_v025 import (
     BEAM_BANDWIDTH_HZ,
+    BEAM_RF_CAP_W,
     POWER_CONTROL_TARGET_LINEAR,
     RATE_TARGET_BPS,
 )
@@ -286,6 +287,52 @@ def test_rate_target_no_mode_forces_cap_without_invalidating_solver() -> None:
         for slot in result.slots
         for tx in slot.transmissions
     )
+
+
+def test_no_mode_cap_attempt_still_interferes_costs_pa_and_is_not_served() -> None:
+    """A no-mode user is a radiating failed attempt, not a pruned assignment."""
+
+    links = tuple(Link(user, (1, 1), 0, 1.0) for user in range(13)) + (
+        Link(13, (2, 1), 0, 1.0),
+    )
+    cross = np.zeros((14, 14), dtype=np.float64)
+    cross[:13, 13] = 0.01
+    cross[13, :13] = 0.01
+    result = AngleRateTPC_TDM().radiate(RadiationConfig(), geometry(links, cross), "nominal")
+    assert result.per_user_rate_target_feasible is not None
+    assert all(not result.per_user_rate_target_feasible[user] for user in range(13))
+    assert result.rate_target_attained is not None
+    assert all(not result.rate_target_attained[user] for user in range(13))
+    no_mode = [tx for slot in result.slots for tx in slot.transmissions if tx.user_id < 13]
+    assert all(tx.rf_power_w == BEAM_RF_CAP_W for tx in no_mode)
+    served_with_aggressors = next(
+        tx for slot in result.slots for tx in slot.transmissions if tx.user_id == 13
+    )
+    assert served_with_aggressors.inter_interference_w > 0
+    without_cross = cross.copy()
+    without_cross[13, :13] = 0.0
+    isolated = AngleRateTPC_TDM().radiate(
+        RadiationConfig(), geometry(links, without_cross), "nominal"
+    )
+    served_without_aggressors = next(
+        tx for slot in isolated.slots for tx in slot.transmissions if tx.user_id == 13
+    )
+    assert served_with_aggressors.rf_power_w > served_without_aggressors.rf_power_w
+    assert served_with_aggressors.sinr == pytest.approx(served_without_aggressors.sinr)
+    energy = schedule_energy(
+        HardwareInventory.fixed(((1, 1), (2, 1))),
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in result.slots),
+        duration_s=1.0,
+    )
+    victim_only = AngleRateTPC_TDM().radiate(
+        RadiationConfig(), geometry((links[13],)), "nominal"
+    )
+    victim_only_energy = schedule_energy(
+        HardwareInventory.fixed(((1, 1), (2, 1))),
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in victim_only.slots),
+        duration_s=1.0,
+    )
+    assert energy.pa_j > victim_only_energy.pa_j
 
 
 def test_rate_target_tdm_slot_pa_and_fdm_summed_rf_fixture() -> None:

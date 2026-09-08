@@ -107,6 +107,7 @@ class PrimitiveCandidate:
     user_id: int
     identity: BeamIdentity
     color: int
+    coarse_shortlisted: bool
     elevation_deg: float
     d2_entry_elevation_deg: float
     slant_km: float
@@ -122,6 +123,8 @@ class PrimitiveCandidate:
     remaining_d2_s: float
 
     def __post_init__(self) -> None:
+        if type(self.coarse_shortlisted) is not bool:
+            raise MCRLContractError("coarse-shortlist membership must be explicit Boolean")
         if self.visible != (self.elevation_deg >= MINIMUM_ELEVATION_DEG):
             raise MCRLContractError("candidate visibility disagrees with live 10-degree floor")
         if len(self.identity) != 2:
@@ -153,6 +156,7 @@ class PrimitiveCandidate:
             "user_id": self.user_id,
             "identity": list(self.identity),
             "color": self.color,
+            "coarse_shortlisted": self.coarse_shortlisted,
             "elevation_deg": _f(self.elevation_deg),
             "d2_entry_elevation_deg": _f(self.d2_entry_elevation_deg),
             "slant_km": _f(self.slant_km),
@@ -176,16 +180,24 @@ class PrimitiveCandidate:
 class PrimitiveBoundary:
     absolute_time_s: float
     candidates: tuple[PrimitiveCandidate, ...]
+    cell_rekeyed_users: tuple[int, ...]
 
     def __post_init__(self) -> None:
         keys = [(row.user_id, row.identity) for row in self.candidates]
         if len(keys) != len(set(keys)):
             raise MCRLContractError("boundary has duplicate user/physical candidates")
+        if (
+            tuple(sorted(self.cell_rekeyed_users)) != self.cell_rekeyed_users
+            or len(set(self.cell_rekeyed_users)) != len(self.cell_rekeyed_users)
+            or any(type(user) is not int or user < 0 for user in self.cell_rekeyed_users)
+        ):
+            raise MCRLContractError("cell re-key users must be unique sorted physical user IDs")
 
     def payload(self) -> dict[str, object]:
         return {
             "absolute_time_s": _f(self.absolute_time_s),
             "candidates": [row.payload() for row in self.candidates],
+            "cell_rekeyed_users": list(self.cell_rekeyed_users),
         }
 
 
@@ -203,8 +215,12 @@ class StepTape:
             expected = start + index * D2_MEASUREMENT_STEP_S
             if not math.isclose(boundary.absolute_time_s, expected, abs_tol=1e-12):
                 raise MCRLContractError("D2 samples are not aligned to t + k*0.640, k=0..47")
+            if index > 0 and boundary.cell_rekeyed_users:
+                raise MCRLContractError("cell re-key flags belong only on the decision boundary")
         if not 0 <= self.refresh_phase < IDENTITY_REFRESH_DECISIONS:
             raise MCRLContractError("refresh phase is outside the frozen four-decision cadence")
+        if self.refresh_phase != 0 and self.boundaries[0].cell_rekeyed_users:
+            raise MCRLContractError("cell re-key flags require a declared refresh boundary")
 
     def payload(self) -> dict[str, object]:
         return {
@@ -529,6 +545,7 @@ class TinySyntheticProvider:
                         user,
                         identity,
                         (option + user) % 3,
+                        True,
                         elevation,
                         d2_entry,
                         slant,
@@ -543,16 +560,23 @@ class TinySyntheticProvider:
                         max(0.0, (elevation - d2_entry) * 10.0),
                     )
                 )
-        return PrimitiveBoundary(absolute_time_s, tuple(candidates))
+        cell_rekeyed_users = (
+            (0,)
+            if boundary_index == 0 and step_index > 0 and step_index % IDENTITY_REFRESH_DECISIONS == 0
+            else ()
+        )
+        return PrimitiveBoundary(absolute_time_s, tuple(candidates), cell_rekeyed_users)
 
 
-def corrected_boundary_rekey_rate(*, rekeys: int, eligible_boundaries: int) -> float:
+def corrected_boundary_rekey_rate(*, rekeys: int, eligible_boundaries: int) -> float | None:
     """Report rekeys conditional on boundaries that can re-key (never step 0)."""
 
     if type(rekeys) is not int or type(eligible_boundaries) is not int:
         raise MCRLContractError("rekey counts must be exact integers")
-    if rekeys < 0 or eligible_boundaries <= 0 or rekeys > eligible_boundaries:
+    if rekeys < 0 or eligible_boundaries < 0 or rekeys > eligible_boundaries:
         raise MCRLContractError("invalid boundary-conditional rekey counts")
+    if eligible_boundaries == 0:
+        return None
     return rekeys / eligible_boundaries
 
 

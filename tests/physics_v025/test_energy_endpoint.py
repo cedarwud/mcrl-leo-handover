@@ -5,9 +5,11 @@ from __future__ import annotations
 from fractions import Fraction
 import math
 
+import numpy as np
 import pytest
 
 from mcrl.errors import MCRLContractError
+from mcrl.physics_v025.architectures import FixedRF, Geometry, Link, RadiationConfig
 from mcrl.physics_v025.energy import (
     EnergyInterval,
     HardwareInventory,
@@ -136,6 +138,45 @@ def test_tdm_pa_averaging_precedes_nonlinearity() -> None:
     assert receipt.pa_j == pytest.approx(7.155608836, abs=5e-10)
     assert pa_supply_power_w((0.825 + 1.65) / 2) == pytest.approx(7.260165679, abs=5e-10)
     assert receipt.pa_j < pa_supply_power_w(1.2375)
+
+
+def test_declared_tdm_pa_identity_at_point_one_and_one_point_six_watts() -> None:
+    """TDM PA is .5*PA(.1)+.5*PA(1.6), neither PA(max) nor PA(mean)."""
+
+    inventory = HardwareInventory.fixed(((1, 1),))
+    receipt = schedule_energy(
+        inventory,
+        ((0.5, {(1, 1): 0.1}), (0.5, {(1, 1): 1.6})),
+        duration_s=1.0,
+    )
+    hand = 0.5 * pa_supply_power_w(0.1) + 0.5 * pa_supply_power_w(1.6)
+    assert receipt.pa_j == pytest.approx(hand)
+    assert receipt.pa_j != pytest.approx(pa_supply_power_w(1.6))
+    assert receipt.pa_j != pytest.approx(pa_supply_power_w(0.85))
+
+
+def test_circuit_and_baseband_are_per_chain_and_satellite_not_per_user() -> None:
+    inventory = HardwareInventory.fixed(((1, 1),))
+    one_geometry = Geometry((Link(0, (1, 1), 0, 1.0),), np.zeros((1, 1)))
+    three_geometry = Geometry(
+        tuple(Link(user, (1, 1), 0, 1.0) for user in range(3)),
+        np.zeros((3, 3)),
+    )
+    one_radiation = FixedRF().radiate(RadiationConfig(), one_geometry, "nominal")
+    three_radiation = FixedRF().radiate(RadiationConfig(), three_geometry, "nominal")
+    one_user = schedule_energy(
+        inventory,
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in one_radiation.slots),
+        duration_s=1.0,
+    )
+    three_users_same_beam = schedule_energy(
+        inventory,
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in three_radiation.slots),
+        duration_s=1.0,
+    )
+    assert len(one_radiation.slots) == 1 and len(three_radiation.slots) == 3
+    assert three_users_same_beam.circuit_j == one_user.circuit_j == pytest.approx(0.338)
+    assert three_users_same_beam.baseband_j == one_user.baseband_j == pytest.approx(0.200)
 
 
 def endpoint(bits: int, joules: int) -> StepEndpoint:

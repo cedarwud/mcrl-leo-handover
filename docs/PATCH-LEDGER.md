@@ -374,6 +374,19 @@ B13 把 `r3` 從正規化差距換成原始人數,繼承來的尺度對它沒有
 
 ---
 
+## V0.25 parity-suite integration
+
+### P-24 — V0.23 differential-audit parity oracle adapted to V0.25 exact endpoints
+
+| 欄位 | 內容 |
+|---|---|
+| 來源行 | `/home/sat/mcrl-v023-codex-ws-bughunt/.scratch/multi-catfish-v023-differential-audit/target_parity_suite/declared_c3_oracle.py`、`ops3_parity.py`、`physics_extractor.py` (來源 SHA-256 見 `src/mcrl/physics_v025/parity/README.md`) |
+| 補丁內容 | 移除 V0.23/NumPy runtime 依賴，改用 V0.25 exact `Fraction` endpoints；所有 target/endpoint producer 強制顯式 λ/η/κ；宣告 oracle 與 production C3 交叉驗證；additive 與 atomic decoder 都一路執行至 bits/joules/service endpoints；whole-network C1 已承載單邊 bits/energy，因此 C3 僅保留 Ψ 的等分，不移植 `t3_energy` 或歷史 e_i。 |
+| 理由 | V0.25 stage-3 round-6 addendum 與 controller stage-2 decision 5 要求可由 probe `--dry-run` 執行的 DeclaredTarget × Decoder parity，並禁止單邊網路能量重複計價。 |
+| 對應測試 | `tests/physics_v025/test_stage3_parity_uncertainty.py::test_declared_target_decoder_cross_product_reaches_physical_endpoints`、`::test_whole_network_c1_leaves_no_unilateral_externality_in_c3`、`::test_probe_dry_run_wires_formula_decoder_and_reward_endpoint_parity`、`::test_common_action_bootstrap_never_builds_unattainable_headwise_action` |
+
+---
+
 ## SDD §4A.5a(3) 的解讀 —— **作者已裁決(2026-08-22):採用**
 
 §4A.5a 定案第 3 點原寫:

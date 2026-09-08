@@ -356,3 +356,4 @@ def test_transition_ledger_uses_norad_and_chain_not_cell_slot() -> None:
         user_id=0, before=(10, 1), after=(10, 1), cell_rekey=True, was_previously_served=True
     ).kind == "cell_rekey"
     assert corrected_boundary_rekey_rate(rekeys=2, eligible_boundaries=4) == 0.5
+    assert corrected_boundary_rekey_rate(rekeys=0, eligible_boundaries=0) is None

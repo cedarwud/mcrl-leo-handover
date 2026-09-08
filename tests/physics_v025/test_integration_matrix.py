@@ -23,9 +23,15 @@ from mcrl.physics_v025.integration import (
     InterruptionEvent,
     integrate_47_subintervals,
     integrate_trapezoidal,
+    snapshot_left,
     snapshot_terminal,
 )
-from mcrl.physics_v025.matrix import MATRIX_SETTINGS, PhysicsSetting, shared_computation_plan
+from mcrl.physics_v025.matrix import (
+    MATRIX_SETTINGS,
+    SEALED_CELL_LIST_UTF8,
+    PhysicsSetting,
+    shared_computation_plan,
+)
 
 
 def sample(time_s: float, rate: float, power: float = 1.0, served: bool = True) -> BoundarySample:
@@ -47,7 +53,8 @@ def test_round1_two_second_time_fixture() -> None:
 
     receipt = integrate_trapezoidal((sample(0.0, 2.0), sample(2.0, 4.0)))
     assert receipt.bits[0] == 6.0
-    assert 2.0 * 2.0 == 4.0
+    left = snapshot_left(sample(0.0, 2.0), end_s=2.0)
+    assert left.bits[0] == 4.0
 
 
 def test_explicit_duplicate_time_discontinuity_avoids_cross_jump_area() -> None:
@@ -120,6 +127,7 @@ def test_matrix_exact_sealed_order_digests_and_no_baseline_relabel() -> None:
         "a-\u03b3U-margin", "bU-margin", "a\u2032-\u03b3U-margin",
     ]
     assert [setting.label for setting in MATRIX_SETTINGS] == expected
+    assert "\n".join(expected).encode("utf-8") == SEALED_CELL_LIST_UTF8
     assert len({setting.digest for setting in MATRIX_SETTINGS}) == 31
     plan = shared_computation_plan()
     assert plan["all_neutral_control_label"] == "ALL_NEUTRAL_CONTROL"
@@ -144,7 +152,7 @@ def test_estimate_exposes_v12_cells_and_240_equivalent_shared_plan() -> None:
     assert plan["estimated_core_hours"] == pytest.approx(161.06666666666666)
     assert plan["settings_count"] == len(plan["settings"]) == 31
     assert len({row["digest"] for row in plan["settings"]}) == 31
-    assert plan["rescore_from_integrated_tape"] == ["S", "H", "SH", "U-cap", "U-margin"]
+    assert plan["rescore_from_integrated_tape"] == ["T", "S", "H", "SH", "U-cap", "U-margin"]
 
 
 def test_shared_tape_rescores_standby_handover_and_u_without_reradiation() -> None:

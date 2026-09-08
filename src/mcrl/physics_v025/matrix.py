@@ -103,6 +103,19 @@ MATRIX_SETTINGS = tuple(
     for architecture in ("a-\u03b3", "b", "a\u2032-\u03b3")
 )
 
+# Canonical UTF-8 rendering of the v1.2 amendment's explicit order.  The
+# launcher, receipts, and KAT all bind these exact Unicode labels; no ASCII
+# alias is allowed to become a scientific cell identity.
+SEALED_CELL_LIST_UTF8 = (
+    "a-r0\na′-r0\na-γ0\nb0\na′-γ0\n"
+    "a-rS\na′-rS\na-γS\nbS\na′-γS\n"
+    "a-rH\na′-rH\na-γH\nbH\na′-γH\n"
+    "a-rSH\na′-rSH\na-γSH\nbSH\na′-γSH\n"
+    "a-rT\na′-rT\na-γT\nbT\na′-γT\n"
+    "a-γU-cap\nbU-cap\na′-γU-cap\n"
+    "a-γU-margin\nbU-margin\na′-γU-margin"
+).encode("utf-8")
+
 
 def shared_computation_plan(*, q: float | None = None) -> dict[str, object]:
     """The simulator-inert ``--estimate`` plan consumed by Track B."""
@@ -120,16 +133,24 @@ def shared_computation_plan(*, q: float | None = None) -> dict[str, object]:
         "reference_core_hours": core_hours,
         "q": q,
         "estimated_core_hours": None if q is None else core_hours * q,
-        "rescore_from_integrated_tape": ["S", "H", "SH", "U-cap", "U-margin"],
+        "rescore_from_integrated_tape": ["T", "S", "H", "SH", "U-cap", "U-margin"],
         "settings": [
             {"label": setting.label, "digest": setting.digest, **setting.payload()}
             for setting in MATRIX_SETTINGS
         ],
         "settings_count": len(MATRIX_SETTINGS),
+        "cell_list_utf8_sha256": hashlib.sha256(SEALED_CELL_LIST_UTF8).hexdigest(),
+        "primary_eligible_settings_count_from_explicit_list": 25,
+        "diagnostic_settings_count": 6,
         "test_split_opened": False,
         "training": False,
         "all_neutral_control_label": "ALL_NEUTRAL_CONTROL",
     }
 
 
-__all__ = ["MATRIX_SETTINGS", "PhysicsSetting", "shared_computation_plan"]
+__all__ = [
+    "MATRIX_SETTINGS",
+    "SEALED_CELL_LIST_UTF8",
+    "PhysicsSetting",
+    "shared_computation_plan",
+]
