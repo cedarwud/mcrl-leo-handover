@@ -17,3 +17,5 @@ Then: run the full physics_v025 suite plus the provider suite, redo the ≤ 10-c
 ## Addendum — controller decisions on the traps (binding): read `.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PROVIDER-2026-09-08.md` in this workspace. Item 1 changes the protocol: emit cross gains keyed by aggressor (NORAD, beam-chain) — add the field alongside the existing NORAD-keyed one if `tapes.py` cannot be changed in this workspace, and state it in the report so the engine's stage 4 consumes it.
 
 ## Addendum 2 — decisions 9–11 (tape scale as numpy arrays + input digest, 30-step universe always, same-satellite P-10 term) are binding; read the updated decisions file.
+
+## Addendum 3 — prepare 33 steps per world (30 executed + 3 forecast offsets); the world manifest digest covers all 33; formal worlds move to `V025_PROBE_R2/world/{1..4}` and `V025_CAL_R2/world/{1..2}` (world 1 of the old namespace was opened by your rehearsal and is quarantined for development); every world identity includes provider source, archive, split and allocation-manifest digests.
