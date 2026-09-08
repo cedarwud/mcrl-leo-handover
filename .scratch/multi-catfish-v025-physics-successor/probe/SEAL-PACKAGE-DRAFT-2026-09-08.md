@@ -1,4 +1,4 @@
-# V0.25 probe seal package — stage-4b HOLD package (2026-09-08)
+# V0.25 probe seal package — stage-4c HOLD package (2026-09-08)
 
 Status: **HOLD — not launchable and not signed.** This package is outcome-blind.
 The real provider is integrated, but the measured exact catalogue path misses
@@ -6,6 +6,21 @@ the binding compute targets. Formal R2 manifests, allocation, calibration,
 rehearsal, and smoke were therefore not opened; `PENDING_NOT_RUN` is a blocker,
 not a wildcard. Stage 4b changes the executable package and its prospective
 digests only; it does not convert this HOLD into a launch signature.
+
+Stage-4c stop note: the first quarantined real `a-r0` anchor reached
+59.698283185 s in selection through partial validation (10 s limit), then
+failed closed because FULL changed all 100 users and exact v1.5 Shapley would
+require a 2^100 coalition game. Stage 1 was 36.475540816 s and batched
+three-offset forecasts were 17.759278750 s. No complete anchor or receipt was
+produced. Consequently this draft preserves every formal manifest,
+calibration, rehearsal, q, stride, and smoke field as `PENDING_NOT_RUN`.
+`V025-ENGINE-STAGE4C-REPORT-2026-09-08.md` is the timing authority. A new
+controller decision is required before any further selection approximation.
+
+The prospective implementation schema is
+`multi-catfish-mcrl-v025-matrix-probe-v1.6-stage4c`; it is not sealed by this
+HOLD draft. The controller-owned hash-chained attempt registry is fixed at
+`/home/sat/mcrl-records/ATTEMPT-REGISTRY-2026-09.jsonl`.
 
 ## Governing identities
 
@@ -72,11 +87,13 @@ a′-γU-margin
 The sealed v1.3 erratum resolves v1.2's “28” typo: 25 + 6 = 31 and no
 additional labels are inferred.
 
-The stage-4b launcher executes `a-r0` alone, waits for all four successful
+The stage-4c prospective launcher executes `a-r0` alone, waits for all four successful
 receipts, and only then creates `AR0-DONE`. It next queues
-`R1,R2,R3,R4,R5=a′-r0,R6=a-γ0,C2-H1,C2-H2`, followed by the remaining
+`R1,R2,R3,R4,R5=a′-r0,R6=a-γ0,R7,C2-H1,C2-H2`, followed by the remaining
 inherited treatments. R1–R4 and the two C2 horizons are additional sealed run
-settings, so the executable inventory is 37 settings / 148 world units; R5 and
+settings. R7 is the exploratory 25 Mbit/s contingency-ladder amendment and is
+ordered after R6; R1 remains the exploratory 100 Mbit/s regime. The prospective
+executable inventory is 38 settings / 152 world units; R5 and
 R6 alias existing cells and are not duplicated. Their prospective digests are:
 
 ```text
@@ -87,6 +104,7 @@ R3     ca99b6536e3d1c93751c064411f13d533f4eba2343eb838c0f59cc2e8ac91264
 R4     90a1585df9a475e0b3be8fed8a6ecc577e0e5d752a952e2d6954fdfa766fe0cb
 R5     9fc69c513998b9cf92bd7c200885a3d3d14f43e5979195887778af76e8e35065
 R6     6904b7fcaab49bb093f06d409d79831664194ad88f23afa0aa7e7a26734c443f
+R7     PENDING_CODE_AUTHORITY_RESEAL
 C2-H1  e30a31b998a065d67cb6f9288256000604372deefdd7ce330694c148091721a0
 C2-H2  8e3e490793382677d91a034f080caa34bcf2a9d27871d32fa0d458d5b4b385d2
 ```
@@ -191,6 +209,14 @@ a′-γU-margin η=PENDING λ=PENDING κ=PENDING
   any catalogue input before launch.
 
 ## Stage-4 compute disposition
+
+Stage-4c measurement supersedes the stage-4 lower-bound row below for the new
+selection path, but does not clear the HOLD: catalogue 3.045519408 s, stage 1
+36.475540816 s, stage-2 forecasts 17.759278750 s, argmax 0.011712220 s, and
+partial validation 2.405937545 s, totaling 59.698283185 s before the exact
+100-user Shapley expansion. The 10 s coordinator gate fails. A complete-anchor
+total and 33-step provider amortisation are unavailable because the run stopped
+at this mandatory gate.
 
 The engine now rolls 30 steps under all three carriers (90 anchors/world) and
 records `--anchor-stride` (default 1); merge rejects mixed strides. The arm list

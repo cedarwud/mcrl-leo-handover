@@ -28,6 +28,7 @@ from .constants_v025 import (
     POWER_SOLVER_ITERATION_CAP,
     POWER_SOLVER_TOLERANCE_W,
     RATE_TARGET_BPS,
+    SINR_MIN_DB,
 )
 from .tapes import PrimitiveStepArrays
 
@@ -48,6 +49,11 @@ class BatchARResult:
     transmissions: np.ndarray
     cap_hits: np.ndarray
     valid: np.ndarray
+    certificate_status: np.ndarray
+    certificate_iterations: np.ndarray
+    max_rf_power_w: np.ndarray
+    min_decoding_margin_db: np.ndarray
+    mean_acm_se_bit_s_hz: np.ndarray
 
 
 def _readonly(value: np.ndarray) -> np.ndarray:
@@ -72,6 +78,7 @@ def evaluate_ar_tdm_catalogue(
     chunk_size: int = 256,
     rate_target_bps: float = RATE_TARGET_BPS,
     circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+    boundary_indices: tuple[int, ...] = tuple(range(48)),
 ) -> BatchARResult:
     """Evaluate ``C x U`` selected candidate-row indices without row objects.
 
@@ -85,6 +92,13 @@ def evaluate_ar_tdm_catalogue(
         raise MCRLContractError("selected_rows must have shape (configurations, users)")
     if field not in {"nominal", "realised"}:
         raise MCRLContractError("batch field must be nominal or realised")
+    if (
+        not boundary_indices
+        or tuple(sorted(set(boundary_indices))) != boundary_indices
+        or boundary_indices[0] < 0
+        or boundary_indices[-1] >= 48
+    ):
+        raise MCRLContractError("boundary indices must be unique, ordered, and in 0..47")
     configurations, users = rows_all.shape
     modes = ACM_MODES
     thresholds = np.asarray([row.threshold_linear for row in modes])
@@ -110,6 +124,14 @@ def evaluate_ar_tdm_catalogue(
     transmissions = np.zeros(configurations, dtype=np.int64)
     cap_hits = np.zeros(configurations, dtype=np.int64)
     valid_result = np.ones(configurations, dtype=np.bool_)
+    # 0=INVALID, 1=CONVERGED, 2=CONVERGED_SLOW.  A configuration receives
+    # the worst certificate observed over its slots and selected boundaries.
+    certificate_status = np.ones(configurations, dtype=np.int8)
+    certificate_iterations = np.zeros(configurations, dtype=np.int64)
+    max_rf_power_w = np.zeros(configurations, dtype=np.float64)
+    min_decoding_margin_db = np.full(configurations, np.inf, dtype=np.float64)
+    acm_se_sum = np.zeros(configurations, dtype=np.float64)
+    acm_se_count = np.zeros(configurations, dtype=np.int64)
     row_to_aggressor = {
         (int(identity[0]), int(identity[1])): index
         for index, identity in enumerate(arrays.aggressor_identities)
@@ -178,7 +200,8 @@ def evaluate_ar_tdm_catalogue(
         aggressor_norad = arrays.identities[safe_rows, 0]
         previous_rate = previous_decode = previous_energy = None
 
-        for boundary in range(48):
+        previous_boundary = None
+        for boundary in boundary_indices:
             live = valid_assignment & arrays.visible[boundary, safe_rows] \
                 & arrays.d2_eligible[boundary, safe_rows] \
                 & arrays.cell_reachable[boundary, safe_rows]
@@ -230,7 +253,10 @@ def evaluate_ar_tdm_catalogue(
                 targets = np.nan_to_num(targets, nan=1.0)
                 power = np.zeros((count, users), dtype=np.float64)
                 residual = np.full(count, math.inf, dtype=np.float64)
-                for _iteration in range(POWER_SOLVER_ITERATION_CAP):
+                done = np.zeros(count, dtype=np.bool_)
+                invalid = np.zeros(count, dtype=np.bool_)
+                recent_changes: list[np.ndarray] = []
+                for iteration in range(1, POWER_SOLVER_ITERATION_CAP + 1):
                     interference = np.matmul(coupling, power[..., None])[..., 0]
                     updated = np.minimum(
                         BEAM_RF_CAP_W,
@@ -238,27 +264,54 @@ def evaluate_ar_tdm_catalogue(
                     )
                     updated = np.where(active, updated, 0.0)
                     updated[forced] = BEAM_RF_CAP_W
-                    residual = np.max(np.abs(updated - power), axis=1)
-                    power = updated
-                    if bool(np.all(residual <= POWER_SOLVER_TOLERANCE_W)):
-                        break
-                final = np.minimum(
-                    BEAM_RF_CAP_W,
-                    targets
-                    * (
-                        noise
-                        + np.matmul(coupling, power[..., None])[..., 0]
+                    bad = ~np.all(np.isfinite(updated), axis=1) | np.any(
+                        updated + POWER_SOLVER_TOLERANCE_W < power, axis=1
                     )
-                    / direct_nominal,
+                    invalid |= bad
+                    change = np.abs(updated - power)
+                    next_residual = np.max(change, axis=1)
+                    relative = np.max(
+                        change
+                        / np.maximum(np.abs(updated), np.finfo(float).tiny),
+                        axis=1,
+                    )
+                    newly_done = (~invalid) & (
+                        (next_residual <= POWER_SOLVER_TOLERANCE_W)
+                        | (relative <= 1.0e-9)
+                    )
+                    active_solver = ~(done | invalid)
+                    power = np.where(active_solver[:, None], updated, power)
+                    residual = np.where(active_solver, next_residual, residual)
+                    done |= newly_done
+                    recent_changes.append(next_residual.copy())
+                    if len(recent_changes) > 1_000:
+                        recent_changes.pop(0)
+                    if bool(np.all(done | invalid)):
+                        break
+                slow = np.zeros(count, dtype=np.bool_)
+                unfinished = ~(done | invalid)
+                if np.any(unfinished) and len(recent_changes) == 1_000:
+                    history = np.stack(recent_changes, axis=0)
+                    monotone = np.all(
+                        history[1:] <= history[:-1] + np.finfo(float).eps,
+                        axis=0,
+                    )
+                    slow = unfinished & (np.max(history, axis=0) < 1.0e-6) & monotone
+                    done |= slow
+                invalid |= ~done
+                slot_status = np.where(invalid, 0, np.where(slow, 2, 1)).astype(np.int8)
+                destination = slice(low, high)
+                certificate_status[destination] = np.where(
+                    (certificate_status[destination] == 0) | (slot_status == 0),
+                    0,
+                    np.maximum(certificate_status[destination], slot_status),
                 )
-                final = np.where(active, final, 0.0)
-                final[forced] = BEAM_RF_CAP_W
-                residual = np.max(np.abs(final - power), axis=1)
+                certificate_iterations[destination] += iteration
                 residual_max[low:high] = np.maximum(residual_max[low:high], residual)
-                valid_result[low:high] &= residual <= POWER_SOLVER_TOLERANCE_W
+                valid_result[low:high] &= ~invalid
                 power = np.minimum(
                     BEAM_RF_CAP_W,
-                    np.nextafter(final * (1.0 + 2.0e-9), np.inf),
+                    np.nextafter(power * (1.0 + 2.0e-9), np.inf),
                 )
                 power = np.where(active, power, 0.0)
                 power[forced] = BEAM_RF_CAP_W
@@ -270,6 +323,19 @@ def evaluate_ar_tdm_catalogue(
                     power * direct_field / (noise + realised_interference),
                     0.0,
                 )
+                safe_sinr = np.maximum(sinr, np.finfo(float).tiny)
+                active_margin = np.where(
+                    active,
+                    10.0 * np.log10(safe_sinr) - SINR_MIN_DB,
+                    np.inf,
+                )
+                min_decoding_margin_db[low:high] = np.minimum(
+                    min_decoding_margin_db[low:high],
+                    np.min(active_margin, axis=1),
+                )
+                max_rf_power_w[low:high] = np.maximum(
+                    max_rf_power_w[low:high], np.max(power, axis=1)
+                )
                 eligible_modes = sinr[:, :, None] >= thresholds[None, None, :]
                 mode_index = np.argmax(
                     np.where(eligible_modes, efficiencies[None, None, :], -1.0),
@@ -278,6 +344,10 @@ def evaluate_ar_tdm_catalogue(
                 served = active & np.any(eligible_modes, axis=2)
                 chosen_efficiency = efficiencies[mode_index]
                 slot_rate = np.where(served, chosen_efficiency * BEAM_BANDWIDTH_HZ, 0.0)
+                acm_se_sum[low:high] += np.sum(
+                    np.where(active & served, chosen_efficiency, 0.0), axis=1
+                )
+                acm_se_count[low:high] += np.sum(active, axis=1)
                 boundary_rate += fraction * slot_rate
                 boundary_decode |= served
                 nominal_sinr = np.where(
@@ -331,15 +401,25 @@ def evaluate_ar_tdm_catalogue(
             # The scalar roster path records a missing in-step transmission as
             # infeasible, rather than silently dropping that user.
             feasible_all[low:high] &= boundary_feasible
-            if previous_rate is not None:
-                bits[low:high] += 0.5 * (previous_rate + boundary_rate) * D2_MEASUREMENT_STEP_S
+            if previous_rate is not None and previous_boundary is not None:
+                elapsed_s = (boundary - previous_boundary) * D2_MEASUREMENT_STEP_S
+                bits[low:high] += 0.5 * (previous_rate + boundary_rate) * elapsed_s
                 decoding[low:high] += 0.5 * (
                     previous_decode.astype(np.float64) + boundary_decode.astype(np.float64)
-                ) * D2_MEASUREMENT_STEP_S
-                components[low:high] += 0.5 * (previous_energy + boundary_energy) * D2_MEASUREMENT_STEP_S
+                ) * elapsed_s
+                components[low:high] += 0.5 * (previous_energy + boundary_energy) * elapsed_s
             previous_rate = boundary_rate
             previous_decode = boundary_decode
             previous_energy = boundary_energy
+            previous_boundary = boundary
+
+        # A one-boundary nominal snapshot is a decision-instant score held
+        # over the decision interval.  Multi-boundary grids use trapezoids.
+        if len(boundary_indices) == 1 and previous_rate is not None:
+            duration_s = 47 * D2_MEASUREMENT_STEP_S
+            bits[low:high] += previous_rate * duration_s
+            decoding[low:high] += previous_decode.astype(np.float64) * duration_s
+            components[low:high] += previous_energy * duration_s
 
     joules = np.sum(components, axis=1)
     attained = bits >= rate_target_bps * (47 * D2_MEASUREMENT_STEP_S)
@@ -361,6 +441,20 @@ def evaluate_ar_tdm_catalogue(
                 transmissions[inverse_order],
                 cap_hits[inverse_order],
                 valid_result[inverse_order],
+                certificate_status[inverse_order],
+                certificate_iterations[inverse_order],
+                max_rf_power_w[inverse_order],
+                np.where(
+                    np.isfinite(min_decoding_margin_db[inverse_order]),
+                    min_decoding_margin_db[inverse_order],
+                    -100.0,
+                ),
+                np.divide(
+                    acm_se_sum[inverse_order],
+                    acm_se_count[inverse_order],
+                    out=np.zeros(configurations, dtype=np.float64),
+                    where=acm_se_count[inverse_order] > 0,
+                ),
             )
         )
     )

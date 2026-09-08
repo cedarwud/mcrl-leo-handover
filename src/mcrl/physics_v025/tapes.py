@@ -37,6 +37,11 @@ from .energy import HardwareInventory
 PROBE_WORLD_DOMAINS = tuple(f"V025_PROBE_R2/world/{index}" for index in range(1, 5))
 CALIBRATION_WORLD_DOMAINS = tuple(f"V025_CAL_R2/world/{index}" for index in range(1, 3))
 DEVELOPMENT_WORLD_DOMAINS = tuple(f"V025_PROBE/world/{index}" for index in range(1, 5))
+KAT_WORLD_DOMAINS = tuple(f"V025_KAT/world/{index}" for index in range(1, 5))
+SYNTHETIC_WORLD_DOMAINS = tuple(
+    f"V025_SYNTHETIC_REAL/world/{index}" for index in range(1, 5)
+)
+SMOKE_WORLD_DOMAINS = ("V025_SMOKE/world/1",)
 REFERENCE_CARRIERS = ("nearest-eligible", "stay-if-possible", "random-masked")
 CANDIDATE_REFRESH_N = 4
 
@@ -946,7 +951,14 @@ def build_world_tape(
 ) -> ExogenousWorldTape:
     """Detach a provider into one immutable common-random-number TRAIN tape."""
 
-    if domain not in PROBE_WORLD_DOMAINS + CALIBRATION_WORLD_DOMAINS + DEVELOPMENT_WORLD_DOMAINS:
+    if domain not in (
+        PROBE_WORLD_DOMAINS
+        + CALIBRATION_WORLD_DOMAINS
+        + DEVELOPMENT_WORLD_DOMAINS
+        + KAT_WORLD_DOMAINS
+        + SYNTHETIC_WORLD_DOMAINS
+        + SMOKE_WORLD_DOMAINS
+    ):
         raise MCRLContractError("world domain is outside the declared V025 TRAIN inventories")
     if type(steps) is not int or steps < 1 or not math.isfinite(start_time_s):
         raise MCRLContractError("steps and start time are invalid")
@@ -1148,6 +1160,9 @@ __all__ = [
     "CarrierAction",
     "CANDIDATE_REFRESH_N",
     "DEVELOPMENT_WORLD_DOMAINS",
+    "KAT_WORLD_DOMAINS",
+    "SYNTHETIC_WORLD_DOMAINS",
+    "SMOKE_WORLD_DOMAINS",
     "ExogenousWorldTape",
     "PrimitiveBoundary",
     "PrimitiveCandidate",

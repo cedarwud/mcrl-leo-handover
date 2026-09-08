@@ -66,6 +66,7 @@ class CalibrationObservation:
     users: int
     time_s: Fraction
     selected_configuration_id: str
+    decision_steps: int = 1
 
     @classmethod
     def build(
@@ -77,6 +78,7 @@ class CalibrationObservation:
         users: int,
         time_s: int | float | str | Fraction,
         selected_configuration_id: str,
+        decision_steps: int = 1,
     ) -> "CalibrationObservation":
         if world_domain not in CALIBRATION_WORLD_DOMAINS:
             raise MCRLContractError("calibration observation is not from a declared V025_CAL world")
@@ -87,8 +89,16 @@ class CalibrationObservation:
             users,
             exact(time_s),
             selected_configuration_id,
+            decision_steps,
         )
-        if result.bits < 0 or result.joules < 0 or users <= 0 or result.time_s <= 0:
+        if (
+            result.bits < 0
+            or result.joules < 0
+            or users <= 0
+            or result.time_s <= 0
+            or type(decision_steps) is not int
+            or decision_steps <= 0
+        ):
             raise MCRLContractError("invalid calibration observation totals")
         if not selected_configuration_id:
             raise MCRLContractError("calibration selection identity is required")
@@ -231,7 +241,7 @@ def freeze_setting_calibration(
     joules = sum((row.joules for row in rows), Fraction())
     time_s = sum((row.time_s for row in rows), Fraction())
     user_count = next(iter(users))
-    decision_steps = len(rows)
+    decision_steps = sum(row.decision_steps for row in rows)
     eta_ref, kappa = calibration(
         bits,
         joules,

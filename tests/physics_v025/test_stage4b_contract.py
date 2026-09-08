@@ -90,13 +90,14 @@ def test_regimes_are_sealed_after_31_and_launch_order_is_binding() -> None:
     assert [row.run_id for row in ALL_SEALED_RUN_SETTINGS[:31]] == [
         row.label for row in MATRIX_SETTINGS
     ]
-    assert [row.run_id for row in REGIME_RUN_SETTINGS] == ["R1", "R2", "R3", "R4"]
+    assert [row.run_id for row in REGIME_RUN_SETTINGS] == ["R1", "R2", "R3", "R4", "R7"]
     assert len({row.digest for row in ALL_SEALED_RUN_SETTINGS}) == len(ALL_SEALED_RUN_SETTINGS)
-    assert [row.run_id for row in LAUNCH_RUN_ORDER[:9]] == [
-        "a-r0", "R1", "R2", "R3", "R4", "a′-r0", "a-γ0", "C2-H1", "C2-H2"
+    assert [row.run_id for row in LAUNCH_RUN_ORDER[:10]] == [
+        "a-r0", "R1", "R2", "R3", "R4", "a′-r0", "a-γ0", "R7", "C2-H1", "C2-H2"
     ]
     assert run_setting_for("R1").rate_target_bps == 100_000_000.0
     assert run_setting_for("R2").user_count == 150
+    assert run_setting_for("R7").rate_target_bps == 25_000_000.0
     assert [run_setting_for(name).circuit_power_per_active_chain_w for name in ("R3", "R4")] == [1.0, 0.1]
     plan = shared_computation_plan()
     assert plan["only_primary_run_id"] == "a-r0"

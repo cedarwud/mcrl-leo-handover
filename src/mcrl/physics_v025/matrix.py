@@ -157,6 +157,7 @@ REGIME_RUN_SETTINGS = (
     SealedRunSetting("R2", "a-r0", "EXPLORATORY_SENSITIVITY", "R2", user_count=150),
     SealedRunSetting("R3", "a-r0", "EXPLORATORY_SENSITIVITY", "R3", circuit_power_per_active_chain_w=1.0),
     SealedRunSetting("R4", "a-r0", "EXPLORATORY_SENSITIVITY", "R4", circuit_power_per_active_chain_w=0.1),
+    SealedRunSetting("R7", "a-r0", "EXPLORATORY_SENSITIVITY", "R7", rate_target_bps=25_000_000.0),
 )
 C2_HORIZON_RUN_SETTINGS = (
     SealedRunSetting("C2-H1", "a-r0", "EXPLORATORY_SENSITIVITY", "C2-H1", c2_horizon_offsets=1),
@@ -192,9 +193,10 @@ ALL_SEALED_RUN_SETTINGS = tuple(run_setting_for(row.label) for row in MATRIX_SET
 )
 LAUNCH_RUN_ORDER = (
     PRIMARY_RUN_SETTING,
-    *REGIME_RUN_SETTINGS,
+    *REGIME_RUN_SETTINGS[:4],
     run_setting_for("a′-r0"),
     run_setting_for("a-γ0"),
+    run_setting_for("R7"),
     *C2_HORIZON_RUN_SETTINGS,
     *tuple(
         run_setting_for(row.label)
