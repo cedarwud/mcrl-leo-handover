@@ -522,6 +522,7 @@ class NominalSnapshotEvaluator:
     """Pure nominal evaluator constructed only from a detached snapshot."""
 
     snapshot: NominalPhysicsSnapshot
+    physics_override: object | None = None
 
     def verify(self) -> str:
         return self.snapshot.verify()
@@ -532,9 +533,12 @@ class NominalSnapshotEvaluator:
 
         context = _DetachedNominalContext(self.snapshot)
         selected = assert_selected_actions_valid(actions, self.snapshot.candidates.slot_tables)
-        physics = StepEnvironment._resolve_physics(
-            context, self.snapshot.candidates, selected, None
+        resolver = (
+            StepEnvironment._resolve_physics
+            if self.physics_override is None
+            else getattr(self.physics_override, "resolve_physics")
         )
+        physics = resolver(context, self.snapshot.candidates, selected, None)
         return SimpleNamespace(
             resolution=physics["resolution"], radiating=physics["radiating"],
             link_power_w=physics["link_power_w"], link_rate_bps=physics["rate"],
@@ -706,7 +710,10 @@ def _snapshot_inputs(
         eta_ref=adapter.eta_ref,
         q_inference_seconds=q_seconds,
     )
-    evaluator = NominalSnapshotEvaluator(nominal_physics)
+    evaluator = NominalSnapshotEvaluator(
+        nominal_physics,
+        physics_override=getattr(step_env, "diagnostic_physics_override", None),
+    )
     _freeze_nested_arrays((snapshot, evaluator))
     snapshot.verify()
     evaluator.verify()
@@ -870,6 +877,17 @@ class C3SPolicyAdapter:
         base = np.asarray(result.base_actions)
         if actions.dtype.kind not in "iu" or actions.ndim != 1 or actions.shape != base.shape:
             raise C3SPolicyError("selected complete action vector is malformed")
+        changed_users = 0
+        for uid, (action, base_action) in enumerate(zip(actions, base, strict=True)):
+            selected_key = (
+                (-1, -1) if int(action) == f1.NO_OP_ACTION
+                else tuple(int(value) for value in snapshot.slot_physical_keys[uid, int(action)])
+            )
+            base_key = (
+                (-1, -1) if int(base_action) == f1.NO_OP_ACTION
+                else tuple(int(value) for value in snapshot.slot_physical_keys[uid, int(base_action)])
+            )
+            changed_users += selected_key != base_key
         self.decision_records.append({
             "decision_index": len(self.decision_records),
             "catalog": self.catalog,
@@ -885,6 +903,14 @@ class C3SPolicyAdapter:
                 "opportunities": int(result.nominal["opportunities"]),
             } if result.nominal else None,
             "action_changed": not np.array_equal(actions, base),
+            "users_changed_vs_base": int(changed_users),
+            "explicit_renewal_users": [],
+            "executed_configuration_type": (
+                "BASE" if result.profile_id == "BASE"
+                else "UNILATERAL" if result.profile_id.startswith("U:")
+                else "EVACUATION" if result.profile_id.startswith("J:")
+                else "DECLARED_PROFILE"
+            ),
             "nominal_convention": NOMINAL_CONVENTION,
             "phase_wall_seconds_hex": {
                 name: float(value).hex() for name, value in result.phase_wall_seconds.items()
