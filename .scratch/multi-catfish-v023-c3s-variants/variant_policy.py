@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -35,6 +36,13 @@ from mcrl.runtime.ee_axis_ops3_live import (  # noqa: E402
 CONFIG_PATH = HERE / "variants_config.json"
 CONFIG_SCHEMA = "multi-catfish-mcrl-v023-c3s-variant-matrix-config-v1"
 VARIANT_ARMS = ("LITE", "V-J", "V-U", "V-M", "V-C", "V-H", "V-P", "V-L2")
+VE_ARM = "V-E"
+SUPPORTED_COORDINATOR_ARMS = (*VARIANT_ARMS, VE_ARM)
+SEALED_NINE_ARM_CONFIG_SHA256 = "1aec5e842244913a97760a139d2e7d382c20b03156b5234a752224ec8b06b551"
+# Provenance: the repository world-seed rule consumes the first eight SHA-256 bytes.
+_SEED_DIGEST_BYTES = 8
+# Provenance: the repository world-seed rule masks derived seeds to signed-int63 range.
+_SEED_MASK_BITS = 63
 
 
 class VariantPolicyError(v1.C3SPolicyError):
@@ -59,7 +67,7 @@ def load_constants(path: Path = CONFIG_PATH) -> dict[str, object]:
         payload = json.loads(Path(path).read_text(encoding="ascii"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise VariantPolicyError("variant config is absent or malformed") from error
-    if not isinstance(payload, dict) or set(payload) != {"schema", "constants", "imports"}:
+    if not isinstance(payload, dict) or set(payload) != {"schema", "constants", "imports", "optional_arms"}:
         raise VariantPolicyError("variant config top-level schema drifted")
     constants = payload.get("constants")
     if payload.get("schema") != CONFIG_SCHEMA or not isinstance(constants, dict):
@@ -108,6 +116,103 @@ def load_constants(path: Path = CONFIG_PATH) -> dict[str, object]:
     return dict(constants)
 
 
+def sealed_nine_arm_config_sha256(path: Path = CONFIG_PATH) -> str:
+    """Digest the byte-independent original config projection."""
+
+    try:
+        payload = json.loads(Path(path).read_text(encoding="ascii"))
+        projection = {
+            "schema": payload["schema"],
+            "constants": payload["constants"],
+            "imports": payload["imports"],
+        }
+        encoded = json.dumps(
+            projection, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        raise VariantPolicyError("sealed nine-arm config projection is malformed") from error
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def load_ve_config(path: Path = CONFIG_PATH) -> dict[str, object]:
+    """Load the declared but disabled V-E definition without changing default arms."""
+
+    try:
+        payload = json.loads(Path(path).read_text(encoding="ascii"))
+        optional = payload["optional_arms"]
+        config = optional[VE_ARM]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise VariantPolicyError("V-E optional-arm config is absent or malformed") from error
+    expected = {
+        "enabled", "catalog", "scenario_count", "scenario_count_provenance",
+        "scenario_domain_template", "scenario_seed_derivation", "channel_distribution",
+        "realised_execution",
+    }
+    # Provenance: Deliverable B prospectively fixes K=4 as the smallest even two-sided sample under its cost cap.
+    declared_scenario_count = 4
+    if (
+        not isinstance(optional, dict) or not isinstance(config, dict)
+        or set(optional) != {VE_ARM} or set(config) != expected
+        or config["enabled"] is not False
+        or config["catalog"] != "LITE"
+        or config["scenario_count"] != declared_scenario_count
+        or config["scenario_domain_template"] != "C3S_VE/scenario/{index}"
+        or config["scenario_seed_derivation"] != "SHA256_ASCII_FIRST_8_BYTES_BIG_ENDIAN_MASK_INT63"
+        or config["channel_distribution"] != "CANONICAL_RICIAN_K_FACTOR_AND_ELEVATION_DEPENDENT_SHADOWING"
+        or config["realised_execution"] != "UNCHANGED_KEYED_WORLD_FIELD"
+        or not isinstance(config["scenario_count_provenance"], str)
+        or not config["scenario_count_provenance"]
+    ):
+        raise VariantPolicyError("V-E optional-arm declaration drifted")
+    if sealed_nine_arm_config_sha256(path) != SEALED_NINE_ARM_CONFIG_SHA256:
+        raise VariantPolicyError("sealed nine-arm config projection digest drifted")
+    return dict(config)
+
+
+def derive_ve_scenario_seed(domain: str) -> int:
+    """Apply the repository world-seed rule to one declared V-E domain."""
+
+    config = load_ve_config()
+    # Provenance: domain indices are the contract-specified inclusive sequence 1..K.
+    domains = tuple(
+        str(config["scenario_domain_template"]).format(index=index)
+        for index in range(1, int(config["scenario_count"]) + 1)
+    )
+    if domain not in domains:
+        raise VariantPolicyError("V-E scenario domain is outside C3S_VE/scenario/{1..K}")
+    digest = hashlib.sha256(domain.encode("ascii")).digest()
+    return int.from_bytes(digest[:_SEED_DIGEST_BYTES], "big") & ((1 << _SEED_MASK_BITS) - 1)
+
+
+def ve_scenario_seeds(path: Path = CONFIG_PATH) -> tuple[int, ...]:
+    config = load_ve_config(path)
+    # Provenance: domain indices are the contract-specified inclusive sequence 1..K.
+    domains = tuple(
+        str(config["scenario_domain_template"]).format(index=index)
+        for index in range(1, int(config["scenario_count"]) + 1)
+    )
+    if Path(path) == CONFIG_PATH:
+        return tuple(derive_ve_scenario_seed(domain) for domain in domains)
+    return tuple(
+        int.from_bytes(
+            hashlib.sha256(domain.encode("ascii")).digest()[:_SEED_DIGEST_BYTES], "big"
+        ) & ((1 << _SEED_MASK_BITS) - 1)
+        for domain in domains
+    )
+
+
+def ve_fading_field(scenario_seed: int) -> Any:
+    """Construct the canonical path-keyed field for one declared V-E scenario."""
+
+    from mcrl.env.keyed_fading import KeyedFadingField
+
+    # Provenance: scenario seeds use the repository's declared nonnegative int63 range.
+    if type(scenario_seed) is not int or not 0 <= scenario_seed <= (1 << _SEED_MASK_BITS) - 1:
+        raise VariantPolicyError("V-E fading field seed is outside the declared int63 range")
+    return KeyedFadingField(root_key=str(scenario_seed))
+
+
 def persistence_objective(
     metric: Mapping[str, object], *, eta_ref: Fraction,
     persistence: Sequence[float], kappa_bits: Fraction,
@@ -128,6 +233,103 @@ def lookahead_objective(
     current: Mapping[str, object], future_base: Mapping[str, object], *, eta_ref: Fraction,
 ) -> Fraction:
     return v1.nominal_score(current, eta_ref) + v1.nominal_score(future_base, eta_ref)
+
+
+def expected_score(
+    scenario_metrics: Sequence[Mapping[str, object]], *, eta_ref: Fraction,
+) -> Fraction:
+    """Arithmetic conditional expectation of scenario surplus in exact rationals."""
+
+    if not scenario_metrics:
+        raise VariantPolicyError("V-E expected score requires at least one scenario")
+    return sum(
+        (v1.nominal_score(metric, eta_ref) for metric in scenario_metrics),
+        start=Fraction(0),
+    ) / len(scenario_metrics)
+
+
+class _DetachedScenarioContext(v1._DetachedNominalContext):
+    """Detached current-slot context using one declared simulator scenario."""
+
+    def __init__(self, snapshot: Any, scenario_seed: int) -> None:
+        super().__init__(snapshot)
+        self.physics = replace(snapshot.physics, fading_enabled=True)
+        self._fading_field = ve_fading_field(int(scenario_seed))
+
+    def _draw_fading(
+        self, satellite_ecef: Mapping[int, np.ndarray], rng: np.random.Generator,
+        elevation_by_norad: Mapping[int, np.ndarray] | None = None, *, event: str = "direct",
+    ) -> tuple[dict[int, np.ndarray], dict[int, np.ndarray]]:
+        from mcrl.env.step import StepEnvironment
+
+        return StepEnvironment._draw_fading(
+            self, dict(satellite_ecef), rng,
+            None if elevation_by_norad is None else dict(elevation_by_norad), event=event,
+        )
+
+
+@dataclass(frozen=True)
+class ScenarioSnapshotEvaluator:
+    """Pure scenario evaluator; every call resets the declared scenario stream."""
+
+    snapshot: Any
+    scenario_seed: int
+
+    def evaluate(self, actions: np.ndarray) -> Any:
+        from mcrl.env.action_contract import assert_selected_actions_valid
+        from mcrl.env.step import StepEnvironment
+
+        context = _DetachedScenarioContext(self.snapshot, self.scenario_seed)
+        selected = assert_selected_actions_valid(actions, self.snapshot.candidates.slot_tables)
+        physics = StepEnvironment._resolve_physics(
+            context, self.snapshot.candidates, selected,
+            np.random.default_rng(self.scenario_seed),
+        )
+        return SimpleNamespace(
+            resolution=physics["resolution"], radiating=physics["radiating"],
+            link_power_w=physics["link_power_w"], link_rate_bps=physics["rate"],
+            fixed_power_w=physics["fixed_power_w"], system_power_w=physics["system_power_w"],
+        )
+
+
+def attach_expected_metrics(
+    catalog: Sequence[Mapping[str, object]], *, interval_s: float,
+    scenario_seeds: Sequence[int], evaluator_factory: Callable[[int], Any],
+) -> tuple[dict[str, object], ...]:
+    """Evaluate each distinct candidate under the same reset scenario streams."""
+
+    if not catalog or not scenario_seeds or len(set(scenario_seeds)) != len(scenario_seeds):
+        raise VariantPolicyError("V-E catalog and distinct scenario seeds are required")
+    rows = [dict(row) for row in catalog]
+    by_profile: dict[str, list[Mapping[str, object]]] = {
+        str(row["profile_id"]): [] for row in rows
+    }
+    for seed in scenario_seeds:
+        cache: dict[tuple[int, ...], Mapping[str, object]] = {}
+        for row in rows:
+            actions = np.asarray(row["actions"], dtype=np.int64)
+            key = tuple(int(value) for value in actions.tolist())
+            if key not in cache:
+                # A fresh evaluator resets this scenario before every distinct candidate: CRN by construction.
+                evaluation = evaluator_factory(int(seed)).evaluate(actions)
+                cache[key] = _metric_from_outcome(evaluation, interval_s)
+            by_profile[str(row["profile_id"])].append(cache[key])
+    for row in rows:
+        metrics = tuple(by_profile[str(row["profile_id"])])
+        service_pairs = {
+            (int(metric["served"]), int(metric["opportunities"])) for metric in metrics
+        }
+        if len(service_pairs) != 1:
+            raise VariantPolicyError("V-E service resolution changed across fading scenarios")
+        nominal = row.get("nominal")
+        if isinstance(nominal, Mapping) and (
+            int(nominal["served"]), int(nominal["opportunities"])
+        ) not in service_pairs:
+            raise VariantPolicyError("V-E scenario service differs from nominal service guard")
+        row["scenario_metrics"] = metrics
+        # Service feasibility is resolved before fading in native physics, so this is the nominal guard metric.
+        row["service_guard_metric"] = metrics[0]
+    return tuple(rows)
 
 
 def association_reversals(trace: Sequence[Sequence[tuple[int, int] | None]], *, window: int = 3) -> int:
@@ -209,6 +411,13 @@ def _nominal_objective(row: Mapping[str, object], _context: DecisionContext, ada
     return v1.nominal_score(row["nominal"], adapter.eta_ref)  # type: ignore[arg-type]
 
 
+def _expected_objective(row: Mapping[str, object], _context: DecisionContext, adapter: "VariantPolicyAdapter") -> Fraction:
+    metrics = row.get("scenario_metrics")
+    if not isinstance(metrics, (tuple, list)):
+        raise VariantPolicyError("V-E candidate lacks scenario metrics")
+    return expected_score(metrics, eta_ref=adapter.eta_ref)  # type: ignore[arg-type]
+
+
 def _persistence_objective(row: Mapping[str, object], context: DecisionContext, adapter: "VariantPolicyAdapter") -> Fraction:
     surfaces = context.ops3_surfaces
     if surfaces is None:
@@ -287,7 +496,7 @@ def _hysteresis_post(selected: Mapping[str, object], base: Mapping[str, object],
 
 
 def hooks_for(arm: str) -> VariantHooks:
-    if arm not in VARIANT_ARMS:
+    if arm not in SUPPORTED_COORDINATOR_ARMS:
         raise VariantPolicyError(f"unknown coordinator arm: {arm}")
     catalog = _identity_catalog
     objective = _nominal_objective
@@ -307,6 +516,8 @@ def hooks_for(arm: str) -> VariantHooks:
         objective = _persistence_objective
     elif arm == "V-L2":
         objective = _lookahead_objective
+    elif arm == VE_ARM:
+        objective = _expected_objective
     return VariantHooks(catalog, objective, gate, post)
 
 
@@ -317,11 +528,17 @@ def select_with_hooks(
     if not catalog or catalog[0].get("profile_id") != "BASE":
         raise VariantPolicyError("variant catalog must begin with BASE")
     base = catalog[0]
-    base_metric = v1._metric(base["nominal"], label="BASE nominal")  # type: ignore[arg-type]
+    base_guard = base.get("service_guard_metric", base.get("nominal"))
+    if not isinstance(base_guard, Mapping):
+        raise VariantPolicyError("BASE service-guard metric is absent")
+    base_metric = v1._metric(base_guard, label="BASE nominal")
     scores: dict[str, Fraction] = {}
     eligible: list[Mapping[str, object]] = []
     for row in catalog:
-        metric = v1._metric(row["nominal"], label=str(row["profile_id"]))  # type: ignore[arg-type]
+        guard = row.get("service_guard_metric", row.get("nominal"))
+        if not isinstance(guard, Mapping):
+            raise VariantPolicyError(f"{row['profile_id']} service-guard metric is absent")
+        metric = v1._metric(guard, label=str(row["profile_id"]))
         if metric["opportunities"] != base_metric["opportunities"]:
             raise VariantPolicyError("variant opportunity count differs from BASE")
         if int(metric["served"]) >= int(base_metric["served"]):
@@ -366,6 +583,51 @@ def _base_only_catalog(
     },)
 
 
+def _ve_catalog_skeletons(
+    snapshot: Any, evaluator: Any, timing_out: dict[str, float],
+) -> tuple[dict[str, object], ...]:
+    """Build the exact LITE action catalog without a redundant nominal candidate pass."""
+
+    reference = np.asarray(snapshot.base_actions, dtype=np.int64)
+    base_started = time.perf_counter()
+    base_evaluation = evaluator.evaluate(reference)
+    base_profile, _link_power = v1.f1.profile_from_evaluation(
+        base_evaluation, interval_s=snapshot.interval_s,
+    )
+    base_nominal = v1._metric_from_e1_payload(
+        v1.e1._profile_metrics(base_profile), label="BASE nominal evaluation",
+    )
+    base_seconds = time.perf_counter() - base_started
+    enumeration_started = time.perf_counter()
+    observation = SimpleNamespace(candidates=snapshot.candidates)
+    # Provenance: BASE tag 0 and unilateral tag 1 are inherited from the sealed LITE tie order.
+    rows: list[dict[str, object]] = [{
+        "profile_id": "BASE", "kind": "base", "tie_key": (0,),
+        "actions": reference.copy(), "nominal": base_nominal,
+    }]
+    for skeleton in v1._lite_unilateral_skeletons(
+        observation, reference, snapshot.q12_proposal,
+    ):
+        actions = np.asarray(skeleton["candidate_joint_actions"], dtype=np.int64)
+        rows.append({
+            "profile_id": f"U:{skeleton['focal_user']}:{skeleton['candidate_action']}",
+            "kind": "unilateral", "actions": actions.copy(),
+            "tie_key": (
+                1, int(skeleton["focal_user"]), int(skeleton["candidate_action"]),
+            ),
+        })
+    rows.extend(v1._evacuation_skeletons(observation, reference, base_profile))
+    enumeration_seconds = time.perf_counter() - enumeration_started
+    timing_out.update({
+        "base_nominal_evaluation": base_seconds,
+        "enumeration": enumeration_seconds,
+        "remaining_nominal_evaluations": 0.0,
+        "nominal_evaluation": base_seconds,
+        "unique_nominal_evaluations": 1.0,
+    })
+    return tuple(rows)
+
+
 class VariantPolicyAdapter:
     """Generic variant adapter with catalog/objective/gate/post-state hooks."""
 
@@ -387,6 +649,8 @@ class VariantPolicyAdapter:
         self.cadence_steps = int(self.constants["V-C.cadence_steps"])
         self.cadence_residue = int(self.constants["V-C.cadence_residue"])
         self.hysteresis_steps = int(self.constants["V-H.exclusion_steps"])
+        self.ve_config = load_ve_config(constants_path) if arm == VE_ARM else None
+        self.ve_seeds = ve_scenario_seeds(constants_path) if arm == VE_ARM else ()
         self.blocked_through: dict[int, int] = {}
         self.decision_index = 0
         self.decision_records: list[dict[str, object]] = []
@@ -416,6 +680,7 @@ class VariantPolicyAdapter:
         context = self._context(step_env, observation, snapshot)
         phases: dict[str, float] = {"q_inference": snapshot.q_inference_seconds}
         catalog_started = time.perf_counter()
+        scenario_unique = 0
         cadence_off = (
             self.arm == "V-C"
             and context.step_index % self.cadence_steps != self.cadence_residue
@@ -423,9 +688,24 @@ class VariantPolicyAdapter:
         base_catalog = (
             _base_only_catalog(snapshot, evaluator, phases)
             if cadence_off
+            else _ve_catalog_skeletons(snapshot, evaluator, phases)
+            if self.arm == VE_ARM
             else v1.build_s0_catalog(snapshot=snapshot, evaluator=evaluator, timing_out=phases)
         )
         catalog = self.hooks.catalog_builder(base_catalog, snapshot, self)
+        if self.arm == VE_ARM:
+            scenario_started = time.perf_counter()
+            catalog = attach_expected_metrics(
+                catalog, interval_s=snapshot.interval_s, scenario_seeds=self.ve_seeds,
+                evaluator_factory=lambda seed: ScenarioSnapshotEvaluator(
+                    evaluator.snapshot, seed,
+                ),
+            )
+            scenario_unique = len({
+                tuple(int(value) for value in np.asarray(row["actions"]).tolist())
+                for row in catalog
+            })
+            phases["scenario_evaluation"] = time.perf_counter() - scenario_started
         phases["catalog_total"] = time.perf_counter() - catalog_started
         unique = int(phases.pop("unique_nominal_evaluations"))
         selection_started = time.perf_counter()
@@ -438,7 +718,7 @@ class VariantPolicyAdapter:
         actions = np.asarray(selected["actions"], dtype=np.int64)
         base_actions = np.asarray(base["actions"], dtype=np.int64)
         counts = {kind: sum(row["kind"] == kind for row in catalog) for kind in ("base", "unilateral", "joint")}
-        self.decision_records.append({
+        record = {
             "decision_index": self.decision_index,
             "arm": self.arm,
             "wall_seconds_hex": elapsed.hex(),
@@ -451,14 +731,23 @@ class VariantPolicyAdapter:
             "action_changed": not np.array_equal(actions, base_actions),
             "phase_wall_seconds_hex": {name: float(value).hex() for name, value in phases.items()},
             "process_lifetime_peak_rss_kib": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
-        })
+        }
+        if self.arm == VE_ARM:
+            record["synthetic_scenario_evaluations"] = scenario_unique * len(self.ve_seeds)
+            record["scenario_seeds"] = list(self.ve_seeds)
+            record["objective_convention"] = "MEAN_SCENARIO_BITS_MINUS_ETA_REF_ENERGY"
+            record["service_guard_convention"] = "UNCHANGED_DETERMINISTIC_NOMINAL_SERVED_COUNT"
+        self.decision_records.append(record)
         self.decision_index += 1
         return actions.copy()
 
 
 __all__ = [
-    "CONFIG_PATH", "VARIANT_ARMS", "DecisionContext", "VariantHooks",
+    "CONFIG_PATH", "SEALED_NINE_ARM_CONFIG_SHA256", "VARIANT_ARMS", "VE_ARM",
+    "DecisionContext", "ScenarioSnapshotEvaluator", "VariantHooks",
     "VariantPolicyAdapter", "VariantPolicyError", "association_reversals",
-    "hooks_for", "load_constants", "lookahead_objective",
-    "persistence_objective", "select_with_hooks",
+    "attach_expected_metrics", "derive_ve_scenario_seed", "expected_score",
+    "hooks_for", "load_constants", "load_ve_config", "lookahead_objective",
+    "persistence_objective", "sealed_nine_arm_config_sha256", "select_with_hooks",
+    "ve_fading_field", "ve_scenario_seeds",
 ]

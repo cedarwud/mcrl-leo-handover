@@ -43,6 +43,7 @@ THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUM
 CONSTANTS = variant_policy.load_constants(CONFIG_PATH)
 ARMS = tuple(CONSTANTS["arms"])
 COORDINATOR_ARMS = ARMS[1:]
+VE_ARM = variant_policy.VE_ARM
 WORLDS = tuple(int(value) for value in CONSTANTS["worlds"])
 LINEAGES = tuple(int(value) for value in CONSTANTS["lineages"])
 HORIZON = int(CONSTANTS["horizon_steps"])
@@ -167,16 +168,34 @@ def expected_code_bindings() -> list[dict[str, str]]:
     return sorted(rows, key=lambda row: (row["path"], row["role"]))
 
 
-def panel_bindings(horizon: int = HORIZON) -> dict[str, object]:
+def active_arms(*, enable_ve: bool = False) -> tuple[str, ...]:
+    """Return the sealed nine arms unless the tenth arm is explicitly enabled."""
+
+    return (*ARMS, VE_ARM) if enable_ve else ARMS
+
+
+def panel_bindings(horizon: int = HORIZON, *, enable_ve: bool = False) -> dict[str, object]:
     if horizon != HORIZON:
         raise VariantRunnerError("variant matrix horizon differs from configured horizon")
-    return {
+    arms = active_arms(enable_ve=enable_ve)
+    result = {
         "worlds": list(WORLDS), "lineages": list(LINEAGES), "units": len(ALL_UNITS),
-        "episodes": len(ALL_UNITS) * len(ARMS), "users": USERS, "horizon": horizon,
-        "arms": list(ARMS), "split": "TRAIN", "trajectory_rule": "NINE_INDEPENDENT_MATCHED_INITIAL_STATES",
+        "episodes": len(ALL_UNITS) * len(arms), "users": USERS, "horizon": horizon,
+        "arms": list(arms), "split": "TRAIN", "trajectory_rule": (
+            "TEN_INDEPENDENT_MATCHED_INITIAL_STATES" if enable_ve
+            else "NINE_INDEPENDENT_MATCHED_INITIAL_STATES"
+        ),
         "kill_rule": {"ee": "STRICTLY_ABOVE_BASE", "service_floor": "BASE_MINUS_SERVICE_MARGIN",
                       "service_margin": fraction_payload(SERVICE_MARGIN)},
     }
+    if enable_ve:
+        ve = variant_policy.load_ve_config(CONFIG_PATH)
+        result["ve_opt_in"] = {
+            "enabled_by_cli": True,
+            "arm_config": ve,
+            "scenario_seeds": list(variant_policy.ve_scenario_seeds(CONFIG_PATH)),
+        }
+    return result
 
 
 def pin_single_thread_runtime() -> None:
@@ -263,7 +282,7 @@ def build_authority(
         "schema": AUTHORITY_SCHEMA, "status": "FROZEN_LAUNCH_AUTHORITY", "claim_ceiling": CLAIM_CEILING,
         "contract": contract_binding,
         "preflight_manifest": {"path": str(Path(preflight).resolve()), "sha256": preflight_sha},
-        "code_files": expected_code_bindings(), "panel": panel_bindings(),
+        "code_files": expected_code_bindings(), "panel": panel_bindings(enable_ve=parsed.enable_ve),
         "freeze_provenance": {key: manifest[key] for key in ("evidence_manifest", "world_census", "freeze")},
         "execution": {"mode": "unit" if target else "merge", "unit": None if target is None else target.as_dict()},
         "output_root": str(destination), "launch_arguments": list(launch_arguments),
@@ -329,7 +348,9 @@ def _trace_selector(
     return wrapped
 
 
-def execute_physical_unit(key: Any, *, horizon: int) -> dict[str, object]:
+def execute_physical_unit(
+    key: Any, *, horizon: int, arms: Sequence[str] = ARMS,
+) -> dict[str, object]:
     from mcrl.env.keyed_fading import KeyedFadingField
     from mcrl.runtime.prereg import read_prereg
     from mcrl.runtime.training_pipeline import _evaluation_rngs
@@ -347,7 +368,7 @@ def execute_physical_unit(key: Any, *, horizon: int) -> dict[str, object]:
         archive = server._freeze_archive(
             record, v1runner.CANONICAL_TLE_ROOT, Path(temporary) / "frozen", physical
         )
-        for arm in ARMS:
+        for arm in arms:
             environment = v1runner._make_environment(archive, horizon=horizon)
             environment.environment._fading_field = KeyedFadingField.from_components(v1runner.FIELD_COMPONENT, key.world)
             rngs = tuple(_evaluation_rngs(key.world))
@@ -373,19 +394,20 @@ def execute_physical_unit(key: Any, *, horizon: int) -> dict[str, object]:
                 else [int(row["catalog_size"]) for row in adapters[arm].decision_records]
             )
             trajectories[arm] = trajectory
+    coordinator_arms = tuple(arms[1:])
     if len({trajectory["initial_state_sha256"] for trajectory in trajectories.values()}) != 1:
-        raise VariantRunnerError("nine matched arms do not share the same authenticated initial state")
-    if len({id(adapter) for adapter in adapters.values()}) != len(COORDINATOR_ARMS):
+        raise VariantRunnerError("matched arms do not share the same authenticated initial state")
+    if len({id(adapter) for adapter in adapters.values()}) != len(coordinator_arms):
         raise VariantRunnerError("coordinator arms are not independent adapter instances")
     q_after = (physical._parameter_sha256(frozen.q1), physical._parameter_sha256(frozen.q2))
     if q_before != q_after:
         raise VariantRunnerError("authenticated Q heads changed during inference")
-    decisions = {arm: adapters[arm].decision_records for arm in COORDINATOR_ARMS}
+    decisions = {arm: adapters[arm].decision_records for arm in coordinator_arms}
     return {
         "schema": UNIT_SCHEMA, "status": "COMPLETE", "outcome": "C3S_VARIANT_MATRIX_UNIT_COMPLETE",
         "claim_ceiling": CLAIM_CEILING, "unit": key.as_dict(), "horizon": horizon, "users": USERS,
         "arms": trajectories, "decisions_by_arm": decisions,
-        "action_changes_by_arm": {arm: sum(bool(row["action_changed"]) for row in decisions[arm]) for arm in COORDINATOR_ARMS},
+        "action_changes_by_arm": {arm: sum(bool(row["action_changed"]) for row in decisions[arm]) for arm in coordinator_arms},
         "integrity": True, "test_split_opened": False, "episode_training": False,
         "learner_update": False, "efficacy_claim": False,
     }
@@ -405,22 +427,25 @@ def _latency(values: Sequence[float]) -> dict[str, object]:
     }
 
 
-def pool_unit_receipts(receipts: Sequence[Mapping[str, object]]) -> dict[str, object]:
-    totals = {arm: {"bits": Fraction(0), "energy": Fraction(0), "served": 0, "opportunities": 0} for arm in ARMS}
-    changes = {arm: 0 for arm in COORDINATOR_ARMS}
-    reversals = {arm: 0 for arm in ARMS}
-    wall = {arm: [] for arm in ARMS}
-    catalog = {arm: [] for arm in ARMS}
-    curve_steps: dict[str, list[list[Mapping[str, object]]]] = {arm: [] for arm in ARMS}
+def pool_unit_receipts(
+    receipts: Sequence[Mapping[str, object]], *, arms: Sequence[str] = ARMS,
+) -> dict[str, object]:
+    coordinator_arms = tuple(arms[1:])
+    totals = {arm: {"bits": Fraction(0), "energy": Fraction(0), "served": 0, "opportunities": 0} for arm in arms}
+    changes = {arm: 0 for arm in coordinator_arms}
+    reversals = {arm: 0 for arm in arms}
+    wall = {arm: [] for arm in arms}
+    catalog = {arm: [] for arm in arms}
+    curve_steps: dict[str, list[list[Mapping[str, object]]]] = {arm: [] for arm in arms}
     for receipt in receipts:
-        arms = receipt.get("arms")
+        receipt_arms = receipt.get("arms")
         decisions = receipt.get("decisions_by_arm")
-        if not isinstance(arms, Mapping) or set(arms) != set(ARMS):
+        if not isinstance(receipt_arms, Mapping) or set(receipt_arms) != set(totals):
             raise VariantRunnerError("unit arm coverage is malformed")
-        if not isinstance(decisions, Mapping) or set(decisions) != set(COORDINATOR_ARMS):
+        if not isinstance(decisions, Mapping) or set(decisions) != set(coordinator_arms):
             raise VariantRunnerError("unit decision coverage is malformed")
-        for arm in ARMS:
-            trajectory = arms[arm]
+        for arm in totals:
+            trajectory = receipt_arms[arm]
             curve_steps[arm].append(trajectory["steps"])
             reversals[arm] += int(trajectory["association_reversals_within_3_steps"])
             wall[arm].extend(float.fromhex(str(value)) for value in trajectory["decision_wall_seconds_hex"])
@@ -433,7 +458,7 @@ def pool_unit_receipts(receipts: Sequence[Mapping[str, object]]) -> dict[str, ob
                 totals[arm]["energy"] += v1runner._exact_hex(step["energy_j_hex"], field="energy", positive=True)
                 totals[arm]["served"] += int(step["served"])
                 totals[arm]["opportunities"] += int(step["opportunities"])
-        for arm in COORDINATOR_ARMS:
+        for arm in coordinator_arms:
             changes[arm] += sum(bool(row["action_changed"]) for row in decisions[arm])
     exact: dict[str, dict[str, object]] = {}
     for arm, row in totals.items():
@@ -445,7 +470,7 @@ def pool_unit_receipts(receipts: Sequence[Mapping[str, object]]) -> dict[str, ob
     base_eta = _from_payload(exact["BASE"]["eta"])
     base_service = _from_payload(exact["BASE"]["service"])
     dispositions = {}
-    for arm in COORDINATOR_ARMS:
+    for arm in coordinator_arms:
         reasons = []
         if _from_payload(exact[arm]["eta"]) <= base_eta:
             reasons.append("EE_NOT_STRICTLY_ABOVE_BASE")
@@ -478,11 +503,15 @@ def pool_unit_receipts(receipts: Sequence[Mapping[str, object]]) -> dict[str, ob
     }
 
 
-def descriptive_breakdowns(receipts: Sequence[Mapping[str, object]]) -> dict[str, object]:
+def descriptive_breakdowns(
+    receipts: Sequence[Mapping[str, object]], *, arms: Sequence[str] = ARMS,
+) -> dict[str, object]:
     result = {}
     for label, field_name, values in (("per_world", "world", WORLDS), ("per_lineage", "lineage", LINEAGES)):
         result[label] = {
-            str(value): pool_unit_receipts([row for row in receipts if row["unit"][field_name] == value])
+            str(value): pool_unit_receipts(
+                [row for row in receipts if row["unit"][field_name] == value], arms=arms,
+            )
             for value in values
         }
     return result
@@ -494,7 +523,7 @@ def _unit_path(root: Path, key: Any) -> Path:
 
 def execute_unit(
     *, key: Any, output: Path, authority: Mapping[str, object], authority_sha: str,
-    preflight_sha: str,
+    preflight_sha: str, enable_ve: bool = False,
 ) -> Path:
     root = _local(output, field_name="output root")
     path = _unit_path(root, key)
@@ -511,7 +540,9 @@ def execute_unit(
         ):
             raise VariantRunnerError("existing unit receipt is not reusable")
         return path
-    payload = execute_physical_unit(key, horizon=HORIZON)
+    payload = execute_physical_unit(
+        key, horizon=HORIZON, arms=active_arms(enable_ve=enable_ve),
+    )
     payload.update({"preflight_manifest_sha256": preflight_sha, "launch_authority_sha256": authority_sha,
                     "launch_authority": {"path": str(Path(authority["__path__"])), "sha256": authority_sha},
                     "producer_common_binding": authority_common_binding(authority)})
@@ -520,7 +551,7 @@ def execute_unit(
 
 def execute_merge(
     *, output: Path, authority: Mapping[str, object], authority_sha: str,
-    preflight_sha: str,
+    preflight_sha: str, enable_ve: bool = False,
 ) -> Path:
     root = _local(output, field_name="output root")
     terminal = root / "terminal-receipt.json"
@@ -564,11 +595,12 @@ def execute_merge(
         receipts.append(receipt); bindings.append({"unit": key.as_dict(), "path": str(path), "sha256": digest})
     if len(receipts) != len(ALL_UNITS):
         raise MergeWaiting(len(ALL_UNITS) - len(receipts))
-    pooled = pool_unit_receipts(receipts)
+    arms = active_arms(enable_ve=enable_ve)
+    pooled = pool_unit_receipts(receipts, arms=arms)
     payload = {
         "schema": TERMINAL_SCHEMA, "status": "COMPLETE", "outcome": "C3S_VARIANT_MATRIX_COMPLETE",
-        "claim_ceiling": CLAIM_CEILING, "panel": panel_bindings(), "pooled": pooled,
-        **descriptive_breakdowns(receipts), "unit_receipts": bindings,
+        "claim_ceiling": CLAIM_CEILING, "panel": panel_bindings(enable_ve=enable_ve), "pooled": pooled,
+        **descriptive_breakdowns(receipts, arms=arms), "unit_receipts": bindings,
         "preflight_manifest_sha256": preflight_sha, "launch_authority_sha256": authority_sha,
         "integrity": True, "test_split_opened": False, "episode_training": False,
         "learner_update": False, "efficacy_claim": False,
@@ -576,7 +608,7 @@ def execute_merge(
     return write_once_with_sidecar(terminal, payload)[0]
 
 
-def estimate(*, units: int) -> dict[str, object]:
+def estimate(*, units: int, enable_ve: bool = False) -> dict[str, object]:
     if type(units) is not int or units < 1:
         raise VariantRunnerError("estimate units must be a positive integer")
     source = v1runner.estimate(units=units)
@@ -593,8 +625,29 @@ def estimate(*, units: int) -> dict[str, object]:
                      "worker_hours": full_hours * float(ratio), "relative_to_v1_full": fraction_payload(ratio)}
     arms["V-P"]["additional_cost"] = "OPS3_TLE_D2_PROJECTION_NOT_INCLUDED_IN_NOMINAL_EVALUATION_BASIS"
     arms["V-L2"]["basis_note"] = "LITE_CURRENT_PLUS_ONE_PROJECTED_BASE_EVALUATION"
-    return {"schema": f"{SCHEMA}-estimate", "units": units, "episodes": units * len(ARMS),
-            "horizon": HORIZON, "arms": arms, "source_v1_estimate": source["basis"]}
+    ve_config = variant_policy.load_ve_config(CONFIG_PATH)
+    ve_ratio = ratios["LITE"] * int(ve_config["scenario_count"])
+    base_nominal_evaluations = Fraction(units * HORIZON)
+    total_ve_evaluations = full_evaluations * ve_ratio + base_nominal_evaluations
+    total_ve_ratio = total_ve_evaluations / full_evaluations
+    ve_estimate = {
+        "enabled": enable_ve,
+        "projected_scenario_evaluations_exact": fraction_payload(full_evaluations * ve_ratio),
+        "projected_base_nominal_evaluations_exact": fraction_payload(base_nominal_evaluations),
+        "projected_total_physics_evaluations_exact": fraction_payload(total_ve_evaluations),
+        "worker_hours": full_hours * float(total_ve_ratio),
+        "relative_to_v1_full": fraction_payload(total_ve_ratio),
+        "basis_note": (
+            "K_RESET_COMMON_RANDOM_SCENARIOS_PER_DISTINCT_LITE_CANDIDATE_PLUS_"
+            "ONE_BASE_NOMINAL_EVALUATION_PER_DECISION_FOR_ORIGIN_MEMBERSHIP"
+        ),
+    }
+    if enable_ve:
+        arms[VE_ARM] = ve_estimate
+    return {"schema": f"{SCHEMA}-estimate", "units": units,
+            "episodes": units * len(active_arms(enable_ve=enable_ve)),
+            "horizon": HORIZON, "arms": arms, "optional_arms": {VE_ARM: ve_estimate},
+            "source_v1_estimate": source["basis"]}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -608,6 +661,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--estimate", action="store_true")
     parser.add_argument("--estimate-units", type=int, default=12)
+    parser.add_argument(
+        "--enable-ve", action="store_true",
+        help="explicitly add the disabled-by-default V-E tenth arm",
+    )
     return parser
 
 
@@ -617,10 +674,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         pin_single_thread_runtime()
         if args.estimate:
-            print(json.dumps(estimate(units=args.estimate_units), sort_keys=True, indent=2)); return 0
+            print(json.dumps(estimate(units=args.estimate_units, enable_ve=args.enable_ve), sort_keys=True, indent=2)); return 0
         if args.dry_run:
             contract_state = "SEALED" if CONTRACT_PATH.is_file() else "AWAITING_CONTROLLER_PLACEHOLDER"
-            print(f"C3S_VARIANTS_DRY_RUN_PASS arms={','.join(ARMS)} units={len(ALL_UNITS)} contract={contract_state}")
+            print(f"C3S_VARIANTS_DRY_RUN_PASS arms={','.join(active_arms(enable_ve=args.enable_ve))} units={len(ALL_UNITS)} contract={contract_state}")
             return 0
         if (args.unit is None) == (not args.merge) or args.launch_authority is None:
             raise VariantRunnerError("formal invocation needs exactly one of --unit/--merge and --launch-authority")
@@ -632,9 +689,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         authority["__path__"] = str(Path(args.launch_authority).resolve())
         receipt = execute_unit(key=key, output=args.output, authority=authority,
-                               authority_sha=authority_sha, preflight_sha=preflight_sha) if key else execute_merge(
+                               authority_sha=authority_sha, preflight_sha=preflight_sha,
+                               enable_ve=args.enable_ve) if key else execute_merge(
                                    output=args.output, authority=authority,
-                                   authority_sha=authority_sha, preflight_sha=preflight_sha)
+                                   authority_sha=authority_sha, preflight_sha=preflight_sha,
+                                   enable_ve=args.enable_ve)
         print(f"C3S_VARIANTS_{'UNIT' if key else 'MERGE'}_PASS receipt={receipt}"); return 0
     except MergeWaiting as error:
         print(f"C3S_VARIANTS_MERGE_INCOMPLETE missing_units={error.missing}"); return 3
