@@ -429,6 +429,8 @@ def _configure_admission_mapping_builder(
             "adapter_closure_sha256": "a" * 64,
         },
         "code": {"external_manifest_sha256": "b" * 64},
+        "git": {"commit": "1" * 40, "tree": "2" * 40},
+        "acceptance_procedure": {"sha256": common.file_sha256(common.ACCEPTANCE_PROCEDURE)},
     }
     stage_a = {
         "root": str(stage_a_root),
@@ -493,10 +495,31 @@ def _configure_admission_mapping_builder(
     _write_json(runtime_path, {"fixture": "authenticated-runtime-admission"})
     common.write_digest_sidecar(runtime_path)
     adapter = SimpleNamespace(policy_bindings=policy_bindings)
-    fake_runner = SimpleNamespace(
-        authenticate_runtime_admission=lambda *_args, **_kwargs: {
-            "admission_sha256": common.file_sha256(runtime_path)
+    evidence_records = {}
+    for name in ("prereg", "tle", "execution", "stage-a", "stage-b"):
+        evidence = (
+            stage_a_root / "stage-a-pass.json"
+            if name == "stage-a"
+            else tmp_path / f"{name}.json"
+        )
+        _write_json(evidence, {"evidence": name})
+        evidence_records[name] = {
+            "path": str(evidence.resolve()), "sha256": common.file_sha256(evidence),
         }
+        if name in {"tle", "execution", "stage-b"}:
+            common.write_digest_sidecar(evidence)
+    runtime_admission = {
+        "admission_path": str(runtime_path.resolve()),
+        "admission_sha256": common.file_sha256(runtime_path),
+        "prereg": evidence_records["prereg"],
+        "tle_manifest": evidence_records["tle"],
+        "execution_configuration": evidence_records["execution"],
+        "predecessor_pass_receipts": [
+            evidence_records["stage-a"], evidence_records["stage-b"],
+        ],
+    }
+    fake_runner = SimpleNamespace(
+        authenticate_runtime_admission=lambda *_args, **_kwargs: copy.deepcopy(runtime_admission)
     )
     monkeypatch.setattr(common, "verify_bindings", lambda _path: copy.deepcopy(prospective))
     monkeypatch.setattr(
@@ -535,7 +558,9 @@ def test_admission_mapping_builder_is_byte_identical_to_sequential_mapping(
     argv, bindings, adapter, _acceptance, output = _configure_admission_mapping_builder(
         tmp_path, monkeypatch
     )
-    expected = {"admission_mapping": controller._admission_mapping(bindings, adapter)}
+    expected = admission_mapping_builder.build(
+        admission_mapping_builder._parser().parse_args(argv)
+    )
     assert admission_mapping_builder.main(argv) == 0
     assert output.read_bytes() == common.canonical_bytes(expected) + b"\n"
     assert common.verify_named_sidecar(output) == common.file_sha256(output)
@@ -543,6 +568,55 @@ def test_admission_mapping_builder_is_byte_identical_to_sequential_mapping(
         f"STAGEC_ADMISSION_MAPPING_WRITTEN path={output} "
         f"sha256={common.file_sha256(output)}\n"
     )
+
+
+def test_builder_output_published_by_merge_satisfies_formal_admission_verifier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    argv, bindings, adapter, _acceptance, output = _configure_admission_mapping_builder(
+        tmp_path, monkeypatch
+    )
+    assert admission_mapping_builder.main(argv) == 0
+    built = common.read_json(output, field="builder formal admission")
+    merged_root = tmp_path / "synthetic-merge-four"
+    merged_root.mkdir()
+    common.publish_sealed_json(
+        merged_root / common.FORMAL_ADMISSION_NAME,
+        built,
+        field="synthetic merge-four formal admission",
+    )
+    inputs = built["authenticated_inputs"]
+    stage_a_path = Path(str(inputs["stage_a_pass_receipt"]["path"]))
+    supplement = {
+        "supplement_sha256": "d" * 64,
+        "stage_a": {
+            "root": str(stage_a_path.parent),
+            "pass_receipt": {
+                "path": stage_a_path.name,
+                "sha256": inputs["stage_a_pass_receipt"]["sha256"],
+            },
+        },
+        "stage_b_pass_receipt": inputs["stage_b_pass_receipt"],
+    }
+    monkeypatch.setattr(
+        verifier,
+        "_physical_runner",
+        lambda: SimpleNamespace(
+            SCHEMA="multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1"
+        ),
+    )
+    accepted = verifier._verify_formal_admission(
+        merged_root,
+        bindings,
+        adapter.policy_bindings,
+        common.file_sha256(Path(argv[1])),
+        supplement,
+    )
+    assert accepted == built
+    assert set(accepted["authenticated_inputs"]) == {
+        "prereg", "tle_manifest", "execution_configuration",
+        "stage_a_pass_receipt", "stage_b_pass_receipt", "runtime_admission",
+    }
 
 
 def test_admission_mapping_builder_refuses_drifted_acceptance_bundle(
@@ -1022,6 +1096,7 @@ def test_administrative_decision_marker_authenticates_explicit_closure(
     }
     marker = tmp_path / "owner-decision.json"
     _write_json(marker, {
+        "schema": common.SCHEMA_OWNER_CLOSURE_DECISION,
         "formal": True,
         "decision": decision,
         "owner_reply_verbatim": "I explicitly request closure of this reporting root.",
@@ -1057,6 +1132,7 @@ def test_administrative_decision_marker_refuses_silence_or_plain_deferral(
     marker = tmp_path / "silent-decision.json"
     digest = "a" * 64
     _write_json(marker, {
+        "schema": common.SCHEMA_OWNER_CLOSURE_DECISION,
         "formal": True,
         "decision": "DEFER_CONTINUATION",
         "owner_reply_verbatim": "I will decide whether to continue at a later time.",
@@ -1096,11 +1172,46 @@ def test_manifest_requires_closure_list_and_syncs_every_closure_path(tmp_path: P
     assert len(closure_paths) == 246
     assert closure_paths <= sync_paths
     stage_c_members = set(manifest_builder.closure(REPO))
-    addendum = (
+    predecessor = (
         ".scratch/multi-catfish-v023-c1c2-successor/"
         "V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md"
     )
-    assert {addendum, f"{addendum}.sha256"} <= stage_c_members
+    addendum = (
+        ".scratch/multi-catfish-v023-c1c2-successor/"
+        "V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-08-R2.md"
+    )
+    assert {
+        predecessor, f"{predecessor}.sha256", addendum, f"{addendum}.sha256",
+        ".scratch/multi-catfish-v023-ch5-figure-pipeline/render_v023_development_curves.py",
+        ".scratch/multi-catfish-v023-ch5-figure-pipeline/test_render_v023_development_curves.py",
+        ".scratch/multi-catfish-v023-ch5-figure-pipeline/README.md",
+    } <= stage_c_members
+
+
+def test_runtime_and_closure_bind_only_r2_while_recording_predecessor(
+    tmp_path: Path,
+) -> None:
+    r2_sha = common.verify_named_sidecar(common.SCHEDULING_ADDENDUM)
+    predecessor_sha = common.verify_named_sidecar(
+        common.PREDECESSOR_SCHEDULING_ADDENDUM
+    )
+    bindings = {
+        "scheduling_addendum": {
+            "path": str(common.SCHEDULING_ADDENDUM.resolve()), "sha256": r2_sha,
+        },
+        "predecessor_addendum": {
+            "path": str(common.PREDECESSOR_SCHEDULING_ADDENDUM.resolve()),
+            "sha256": predecessor_sha,
+        },
+    }
+    assert closure_sealer._verify_bound_r2_addendum(
+        common.SCHEDULING_ADDENDUM, bindings
+    ) == r2_sha
+    supplied = tmp_path / "supplied-addendum.md"
+    supplied.write_bytes(common.SCHEDULING_ADDENDUM.read_bytes())
+    common.write_digest_sidecar(supplied)
+    with pytest.raises(common.StageCError, match="R2 path bound"):
+        closure_sealer._verify_bound_r2_addendum(supplied, bindings)
 
 
 def test_circular_execution_binding_digest_is_rejected() -> None:
@@ -1185,6 +1296,11 @@ def test_chunk_launcher_enforces_worker_cap_and_has_merge_step() -> None:
     assert "9000) previous=6000" in source
     assert "--continuation-authority" in source
     assert "--owner-notification-marker" in source
+    assert "register-continuation" in source
+    assert "--continuation-activity" in source
+    assert "--resume-continuation" in source
+    assert "final_args=(merge-four" in source
+    assert "OMP_NUM_THREADS=2" in source
     help_result = subprocess.run(
         [
             sys.executable,
@@ -1232,3 +1348,365 @@ def test_chunk_continuation_refuses_missing_authority_before_boundary_work() -> 
             NoSchedulingRunner,
         )
     assert called is False
+
+
+def test_continuation_policy_membership_accepts_producer_sorted_json_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "reporting"
+    checkpoint = root / "checkpoints/checkpoint-003000.json"
+    _write_json(
+        checkpoint,
+        {"policy_bindings": {arm: {"arm": arm} for arm in sorted(common.ARMS)}},
+    )
+    bindings_path = tmp_path / "bindings.json"
+    _write_json(bindings_path, {"fixture": "sorted-policy-membership"})
+    monkeypatch.setattr(
+        chunk_controller, "_verify_continuation_activity", lambda *_args: {
+            "continuation_authority_sha256": "a" * 64,
+            "owner_notification_sha256": "b" * 64,
+        },
+    )
+
+    class SortedOrderRunner:
+        class C1C2PhysicalError(RuntimeError):
+            pass
+
+        @staticmethod
+        def authenticate_continuation_chain(*_args, **kwargs):
+            assert set(kwargs["policy_bindings"]) == set(common.ARMS)
+            return {
+                "authority_sha256": "a" * 64,
+                "owner_notification_sha256": "b" * 64,
+            }
+
+    result = chunk_controller._authenticate_continuation(
+        argparse.Namespace(
+            continuation_authority=tmp_path / "authority.json",
+            owner_notification_marker=tmp_path / "owner.json",
+            continuation_activity=tmp_path / "activity.json",
+            bindings=bindings_path,
+            resume_continuation=False,
+        ),
+        {"stage_c_output_root": str(root)},
+        SortedOrderRunner,
+    )
+    assert result["authority_sha256"] == "a" * 64
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema", None),
+        ("notification_sent_utc", "2026-09-08garbageZ"),
+        ("recorded_by", None),
+    ],
+)
+def test_complete_q1_marker_contract_refuses_schema_time_and_controller(
+    tmp_path: Path, field: str, value: object,
+) -> None:
+    digest = "a" * 64
+    marker_payload = {
+        "schema": common.SCHEMA_OWNER_CLOSURE_DECISION,
+        "formal": True,
+        "decision": "DECLINE_CONTINUATION",
+        "owner_reply_verbatim": "I explicitly decline continuation and request closure.",
+        "notification_sent_utc": "2026-09-08T01:00:00Z",
+        "owner_reply_received_utc": "2026-09-08T01:01:00Z",
+        "notification_channel": "controller-chat",
+        "recorded_by": "controller-test",
+        "bindings_sha256": digest,
+        "plan_sha256": common.PLAN_SHA256,
+        "policy_bindings_sha256": digest,
+        "admission_mapping_sha256": digest,
+        "result_3000_sha256": digest,
+        "held_terminal_token_sha256": closure_sealer.HELD_TOKEN_SHA256,
+        "checkpoint_3000_sha256": digest,
+    }
+    if value is None:
+        marker_payload.pop(field)
+    else:
+        marker_payload[field] = value
+    marker = tmp_path / "owner-decision.json"
+    _write_json(marker, marker_payload)
+    common.write_digest_sidecar(marker)
+    with pytest.raises(common.StageCError, match="marker|RFC-3339"):
+        closure_sealer._authenticate_decision_marker(
+            marker,
+            bindings_sha256=digest,
+            plan_sha256=common.PLAN_SHA256,
+            policy_bindings_sha256=digest,
+            admission_mapping_sha256=digest,
+            result_sha256=digest,
+            checkpoint_sha256=digest,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("overall_token", verifier.HELD),
+        ("reasons", []),
+        ("terminal_boundary", 8999),
+        ("q3_evaluated", True),
+        ("test_split_opened", True),
+        ("episode_training", True),
+        ("learner_update", True),
+        ("claim_ceiling", "C3_EFFICACY"),
+    ],
+)
+def test_9000_continuation_semantic_mutations_are_refused(
+    field: str, value: object,
+) -> None:
+    continuation = {
+        "schema": verifier.CONTINUATION_RESULT_SCHEMA,
+        "completed_episode": 9000,
+        "terminal_boundary": 9000,
+        "scientific_disposition_emitted": False,
+        "q3_evaluated": False,
+        "test_split_opened": False,
+        "episode_training": False,
+        "learner_update": False,
+        "claim_ceiling": common.FORMAL_CLAIM,
+    }
+    continuation[field] = value
+    with pytest.raises(common.StageCError, match="forbidden semantics"):
+        verifier._verify_continuation_result_semantics(continuation)
+
+
+def test_finished_continuation_in_external_chunk_root_blocks_closure(
+    tmp_path: Path,
+) -> None:
+    reporting = tmp_path / "reporting"
+    activity = reporting / "continuation/ACTIVITY-BASELINE-006000.json"
+    external_chunk = tmp_path / "chunks/BASELINE-003000-003100"
+    _write_json(external_chunk / "chunk-receipt.json", {"status": "COMPLETE_CHUNK"})
+    _write_json(
+        activity,
+        {
+            "schema": common.SCHEMA_CONTINUATION_ACTIVITY,
+            "formal": True,
+            "registered_chunk_roots": [str(external_chunk.resolve())],
+        },
+    )
+    common.write_digest_sidecar(activity)
+    with pytest.raises(common.StageCError, match="continuation activity marker|registry"):
+        closure_sealer._refuse_continuation_evidence(
+            reporting, tmp_path / "bindings.json"
+        )
+
+
+def test_stop_bearing_prefix_is_refused_before_continuation_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reporting = tmp_path / "reporting"
+    reporting.mkdir()
+    bindings_path = tmp_path / "bindings.json"
+    _write_json(bindings_path, {"fixture": "stop-prefix"})
+    bindings = {"stage_c_output_root": str(reporting.resolve())}
+    monkeypatch.setattr(common, "verify_bindings", lambda _path: dict(bindings))
+    monkeypatch.setattr(
+        common, "verify_stage_ab_supplement", lambda *_args: {"supplement_sha256": "a" * 64}
+    )
+    monkeypatch.setattr(common, "verify_acceptance_bundle", lambda *_args: {})
+    monkeypatch.setattr(common, "materialize_stage_ab", lambda value, _supplement: value)
+    monkeypatch.setattr(common, "verify_runtime_identity", lambda _bindings: None)
+
+    class StopVerifier:
+        HELD = verifier.HELD
+
+        @staticmethod
+        def verify_finished(*_args, **_kwargs):
+            raise common.StageCError("root carrying a STOP token is not a scientific result")
+
+    monkeypatch.setattr(controller, "_module", lambda _path: StopVerifier)
+    with pytest.raises(common.StageCError, match="STOP token"):
+        chunk_controller.register_continuation_activity(
+            argparse.Namespace(
+                bindings=bindings_path,
+                admission_supplement=tmp_path / "supplement.json",
+                acceptance_bundle=tmp_path / "acceptance.json",
+                arm="BASELINE",
+                barrier=6000,
+                chunk_roots=[tmp_path / "chunks/BASELINE-003000-003100"],
+                continuation_authority=tmp_path / "authority.json",
+                owner_notification_marker=tmp_path / "owner.json",
+            )
+        )
+    assert not (reporting / "continuation").exists()
+
+
+def test_continuation_registration_binds_verified_prefix_and_external_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reporting = tmp_path / "reporting"
+    _write_json(reporting / "result.json", {"overall_token": verifier.HELD})
+    _write_json(
+        reporting / "checkpoints/checkpoint-003000.json", {"completed_episode": 3000}
+    )
+    bindings_path = tmp_path / "bindings.json"
+    _write_json(bindings_path, {"fixture": "activity"})
+    bindings = {"stage_c_output_root": str(reporting.resolve())}
+    monkeypatch.setattr(common, "verify_bindings", lambda _path: dict(bindings))
+    monkeypatch.setattr(
+        common, "verify_stage_ab_supplement", lambda *_args: {"supplement_sha256": "a" * 64}
+    )
+    monkeypatch.setattr(common, "verify_acceptance_bundle", lambda *_args: {})
+    monkeypatch.setattr(common, "materialize_stage_ab", lambda value, _supplement: value)
+    monkeypatch.setattr(common, "verify_runtime_identity", lambda _bindings: None)
+
+    class HeldVerifier:
+        HELD = verifier.HELD
+
+        @staticmethod
+        def verify_finished(*_args, **_kwargs):
+            return {"completed_episode": 3000, "overall_token": verifier.HELD}
+
+    monkeypatch.setattr(controller, "_module", lambda _path: HeldVerifier)
+    monkeypatch.setattr(
+        chunk_controller,
+        "_authenticate_continuation_without_activity",
+        lambda *_args: {
+            "authority_sha256": "b" * 64,
+            "owner_notification_sha256": "c" * 64,
+        },
+    )
+    chunk_roots = [
+        tmp_path / "chunks/BASELINE-003000-003100",
+        tmp_path / "chunks/BASELINE-003100-003200",
+    ]
+    registered = chunk_controller.register_continuation_activity(
+        argparse.Namespace(
+            bindings=bindings_path,
+            admission_supplement=tmp_path / "supplement.json",
+            acceptance_bundle=tmp_path / "acceptance.json",
+            arm="BASELINE",
+            barrier=6000,
+            chunk_roots=chunk_roots,
+            continuation_authority=tmp_path / "authority.json",
+            owner_notification_marker=tmp_path / "owner.json",
+        )
+    )
+    activity_path = Path(str(registered["activity_path"]))
+    assert common.verify_named_sidecar(activity_path) == registered["activity_sha256"]
+    prefix = registered["prefix_verification"]
+    assert common.verify_named_sidecar(prefix["path"]) == prefix["sha256"]
+    assert registered["registered_chunk_roots"] == [
+        str(path.resolve()) for path in chunk_roots
+    ]
+
+
+def test_tree_seal_finalises_interruption_after_manifest_publication(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "partial-finalisation"
+    _write_json(root / "continuation-result.json", {"completed_episode": 9000})
+    relative = "continuation-result.json"
+    manifest_raw = (
+        f"{common.file_sha256(root / relative)}  {relative}\n".encode("ascii")
+    )
+    (root / common.TREE_MANIFEST_NAME).write_bytes(manifest_raw)
+    manifest_before = (root / common.TREE_MANIFEST_NAME).read_bytes()
+    manifest_sha = common.write_tree_seal(root)
+    assert (root / common.TREE_MANIFEST_NAME).read_bytes() == manifest_before
+    assert (root / common.COMPLETE_NAME).read_text(encoding="ascii") == (
+        f"{manifest_sha}  {common.TREE_MANIFEST_NAME}\n"
+    )
+    assert common.verify_tree_seal(root) == manifest_sha
+
+
+@pytest.mark.parametrize("interruption", ["after-checkpoint", "after-continuation-result"])
+def test_merge_four_resume_continuation_recovers_both_publication_interruptions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interruption: str,
+) -> None:
+    output = tmp_path / "reporting"
+    policy_bindings = {arm: {"arm": arm} for arm in sorted(common.ARMS)}
+    _write_json(
+        output / "checkpoints/checkpoint-003000.json",
+        {"policy_bindings": policy_bindings},
+    )
+    _write_json(output / "result.json", {"overall_token": verifier.HELD})
+    interrupted_path = (
+        output / "checkpoints/checkpoint-003100.json"
+        if interruption == "after-checkpoint"
+        else output / "continuation-result.json"
+    )
+    _write_json(interrupted_path, {"interruption": interruption})
+    interrupted_bytes = interrupted_path.read_bytes()
+    bindings_path = tmp_path / "bindings.json"
+    _write_json(bindings_path, {"fixture": "resume-continuation"})
+    bindings = {"stage_c_output_root": str(output.resolve())}
+    mapping = {arm: {"policy_binding": {"arm": arm}} for arm in common.ARMS}
+    mapping_path = tmp_path / "formal-admission.json"
+    _write_json(mapping_path, {"admission_mapping": mapping})
+    acceptance_path = tmp_path / "acceptance.json"
+    _write_json(acceptance_path, {"fixture": "acceptance"})
+    arm_roots = []
+    for arm in common.ARMS:
+        root = tmp_path / f"merged-{arm}"
+        _write_json(root / "arm-merge.json", {"completed_episode": 9000})
+        arm_roots.append(root)
+    monkeypatch.setattr(common, "verify_bindings", lambda _path: dict(bindings))
+    monkeypatch.setattr(
+        common, "verify_stage_ab_supplement", lambda *_args: {"supplement_sha256": "a" * 64}
+    )
+    monkeypatch.setattr(common, "verify_acceptance_bundle", lambda *_args: {})
+    monkeypatch.setattr(common, "materialize_stage_ab", lambda value, _supplement: value)
+    monkeypatch.setattr(common, "verify_runtime_identity", lambda _bindings: None)
+    monkeypatch.setattr(
+        common, "verify_stage_c_admission_mapping", lambda value: dict(value)
+    )
+    monkeypatch.setattr(
+        chunk_controller, "_verify_continuation_activity", lambda *_args: {
+            "continuation_authority_sha256": "b" * 64,
+            "owner_notification_sha256": "c" * 64,
+        },
+    )
+
+    class RecoveryRunner:
+        HELD = verifier.HELD
+
+        class C1C2PhysicalError(RuntimeError):
+            pass
+
+        @staticmethod
+        def authenticate_continuation_chain(*_args, **kwargs):
+            assert kwargs["allow_published_continuation"] is True
+            return {
+                "authority_sha256": "b" * 64,
+                "owner_notification_sha256": "c" * 64,
+            }
+
+        @staticmethod
+        def merge_four_arm(*_args, **kwargs):
+            assert kwargs["resume_continuation"] is True
+            assert interrupted_path.read_bytes() == interrupted_bytes
+            if interruption == "after-checkpoint":
+                _write_json(output / "continuation-result.json", {"completed_episode": 9000})
+            return {"completed_episode": 9000}
+
+    class RecoveryVerifier:
+        @staticmethod
+        def verify_finished(*_args, **_kwargs):
+            assert (output / "continuation-result.json").is_file()
+            return {"completed_episode": 9000, "overall_token": verifier.HELD}
+
+    monkeypatch.setattr(chunk_controller, "_runner", lambda: RecoveryRunner)
+    monkeypatch.setattr(controller, "_module", lambda _path: RecoveryVerifier)
+    result = chunk_controller.merge_four(
+        argparse.Namespace(
+            bindings=bindings_path,
+            admission_supplement=tmp_path / "supplement.json",
+            acceptance_bundle=acceptance_path,
+            arm_roots=arm_roots,
+            admission_mapping=mapping_path,
+            output=output,
+            continuation_authority=tmp_path / "authority.json",
+            owner_notification_marker=tmp_path / "owner.json",
+            continuation_activity=tmp_path / "activity.json",
+            resume_continuation=True,
+        )
+    )
+    assert result["completed_episode"] == 9000
+    assert interrupted_path.read_bytes() == interrupted_bytes
+    assert (output / common.COMPLETE_NAME).is_file()

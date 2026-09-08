@@ -16,7 +16,7 @@ def build(args: argparse.Namespace) -> dict[str, object]:
     supplement = common.verify_stage_ab_supplement(
         args.admission_supplement, args.bindings, bindings
     )
-    common.verify_acceptance_bundle(
+    acceptance = common.verify_acceptance_bundle(
         args.acceptance_bundle,
         {**bindings, "bindings_sha256": common.file_sha256(args.bindings)},
     )
@@ -43,7 +43,16 @@ def build(args: argparse.Namespace) -> dict[str, object]:
         policies=policies,
         runtime_admission=runtime_admission,
     )
-    return {"admission_mapping": sequential_controller._admission_mapping(bindings, adapter)}
+    admission_mapping = sequential_controller._admission_mapping(bindings, adapter)
+    return sequential_controller._formal_admission_payload(
+        bindings=bindings,
+        bindings_sha=bindings_sha,
+        runtime_admission=runtime_admission,
+        admission_mapping=admission_mapping,
+        policy_bindings=adapter.policy_bindings,
+        stage_ab_supplement_sha256=supplement["supplement_sha256"],
+        acceptance_evidence_sha256=acceptance["acceptance_bundle_sha256"],
+    )
 
 
 def _parser() -> argparse.ArgumentParser:

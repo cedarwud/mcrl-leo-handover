@@ -153,6 +153,28 @@ def _admission_mapping(
     )
 
 
+def _replay_arm_prefix_for_equivalence(
+    adapter: Any, plan: Any, *, arm: str, completed: int
+) -> tuple[list[object], dict[int, object]]:
+    """Run the sequential controller's exact per-arm episode transition loop."""
+
+    if arm not in common.ARMS or not 0 <= completed <= len(plan.worlds):
+        raise common.StageCError("invalid sequential equivalence replay boundary")
+    rows: list[object] = []
+    states: dict[int, object] = {0: adapter.resume_state_for(arm)}
+    for world in plan.worlds[:completed]:
+        rows.append(
+            adapter.run_episode(
+                arm=arm,
+                world=world,
+                plan_sha256=plan.plan_sha256,
+                resume_state=adapter.resume_state_for(arm),
+            )
+        )
+        states[world.episode_index] = adapter.resume_state_for(arm)
+    return rows, states
+
+
 def _formal_marker(
     output: Path,
     bindings_sha: str,

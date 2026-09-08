@@ -24,12 +24,17 @@ EXCLUDED = {
 SYNC_LIST_NAME = "V023-C1C2-SUCCESSOR-STAGEC-SYNC-LIST.txt"
 EXCLUDED.add(SYNC_LIST_NAME)
 def closure(repo: Path = REPO) -> list[str]:
-    owned = [path for path in HERE.iterdir() if path.is_file() and path.name not in EXCLUDED and not path.name.endswith(".pyc")]
-    physical = [path for path in PHYSICAL.iterdir() if path.is_file() and not path.name.endswith(".pyc")]
-    paths = owned + physical
     closure_list = repo / ".scratch/multi-catfish-v023-controller-handoff-20260907/SHADOW-CLOSURE-LIST-2026-09-07.txt"
     if not closure_list.is_file() or closure_list.is_symlink():
         raise SystemExit(f"required closure list missing or symlinked: {closure_list}")
+    owned = [path for path in HERE.iterdir() if path.is_file() and path.name not in EXCLUDED and not path.name.endswith(".pyc")]
+    physical = [path for path in PHYSICAL.iterdir() if path.is_file() and not path.name.endswith(".pyc")]
+    figure = repo / ".scratch/multi-catfish-v023-ch5-figure-pipeline"
+    figure_files = [
+        path for path in figure.iterdir()
+        if path.is_file() and not path.name.endswith(".pyc")
+    ]
+    paths = owned + physical + figure_files
     for line in closure_list.read_text(encoding="ascii").splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
@@ -47,6 +52,8 @@ def closure(repo: Path = REPO) -> list[str]:
         ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md.sha256",
         ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md",
         ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md.sha256",
+        ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-08-R2.md",
+        ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-08-R2.md.sha256",
         ".scratch/multi-catfish-v023-controller-handoff-20260907/ADJUDICATION-STAGEC-BASELINE-DECOUPLING-AND-EPISODE-CHUNKING-CODEX-GPT6-ASTRA-2026-09-07.md",
         ".scratch/multi-catfish-v023-controller-handoff-20260907/SHADOW-CLOSURE-LIST-2026-09-07.txt",
         "artifacts/PREREG-FROZEN-2026-08-25-R2.json",

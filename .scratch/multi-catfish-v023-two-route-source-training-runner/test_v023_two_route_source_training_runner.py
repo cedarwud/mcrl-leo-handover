@@ -154,6 +154,10 @@ def test_real_r8_receipt_provenance_identity_is_accepted(authenticated_boundary)
         ("key", "provider identity contains a forbidden R7/Q3/C3 field"),
         ("split", "provider identity contains the closed TEST split"),
         ("route_family_claim", "provider identity contains a forbidden R7/Q3/C3 value"),
+        ("split_family", "provider identity contains the closed TEST split"),
+        ("claim_family", "provider identity contains a forbidden R7/Q3/C3 value"),
+        ("closure", "provider identity contains the closed TEST split"),
+        ("malformed_code_closure", "provider identity contains a forbidden R7/Q3/C3 value"),
     ],
 )
 def test_real_r8_identity_mutations_remain_closed(
@@ -169,10 +173,18 @@ def test_real_r8_identity_mutations_remain_closed(
         target["q3_head"] = "closed"
     elif mutation == "split":
         target["split"] = "TEST"
-    else:
-        # The exemption is suffix-only: route_family_claim does not end in
-        # _family, so it remains a semantic claim field and must reject C3.
+    elif mutation == "route_family_claim":
+        # Only the six named provenance values are exempt; semantic family
+        # claims remain closed.
         target["route_family_claim"] = "MCRL_V023_LCSRS_C3_OBSERVABILITY_V1"
+    elif mutation == "split_family":
+        target["split_family"] = "TEST"
+    elif mutation == "claim_family":
+        target["claim_family"] = "C3_EFFICACY"
+    elif mutation == "closure":
+        target["closure"] = {"split": "TEST"}
+    else:
+        target["code_closure"] = {"route": "C3"}
     payload["arm_independent_target_identity_sha256"] = ORCH._canonical_sha256(
         target
     )

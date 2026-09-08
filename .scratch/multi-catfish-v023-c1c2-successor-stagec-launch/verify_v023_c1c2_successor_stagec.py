@@ -404,6 +404,8 @@ def _verify_administrative_closure(
     bindings_sha256: str,
     policy_bindings_sha256: str,
     admission_mapping_sha256: str,
+    scheduling_addendum_path: str,
+    scheduling_addendum_sha256: str,
 ) -> dict[str, object] | None:
     path = root / "ADMINISTRATIVE-CLOSURE.json"
     if not path.exists():
@@ -421,8 +423,17 @@ def _verify_administrative_closure(
     marker_sha = common.verify_named_sidecar(marker_path)
     addendum_sha = common.verify_named_sidecar(addendum_path)
     marker = common.read_json(marker_path, field="owner closure decision marker")
-    reply = marker.get("owner_reply_verbatim")
     decision = receipt.get("decision")
+    common.validate_owner_closure_decision_marker(
+        marker,
+        bindings_sha256=bindings_sha256,
+        plan_sha256=common.PLAN_SHA256,
+        policy_bindings_sha256=policy_bindings_sha256,
+        admission_mapping_sha256=admission_mapping_sha256,
+        result_3000_sha256=result_sha,
+        held_terminal_token_sha256=hashlib.sha256(HELD.encode("ascii")).hexdigest(),
+        checkpoint_3000_sha256=checkpoint_sha,
+    )
     if (
         receipt.get("schema") != ADMINISTRATIVE_CLOSURE_SCHEMA
         or receipt.get("status") != "ADMINISTRATIVE_CLOSURE_SEALED"
@@ -442,20 +453,32 @@ def _verify_administrative_closure(
         != hashlib.sha256(HELD.encode("ascii")).hexdigest()
         or marker_record.get("sha256") != marker_sha
         or addendum_record.get("sha256") != addendum_sha
+        or addendum_path.resolve() != Path(scheduling_addendum_path).resolve()
+        or addendum_sha != scheduling_addendum_sha256
         or marker.get("decision") != decision
-        or marker.get("bindings_sha256") != bindings_sha256
-        or marker.get("plan_sha256") != common.PLAN_SHA256
-        or marker.get("policy_bindings_sha256", marker.get("policy_mapping_sha256"))
-        != policy_bindings_sha256
-        or marker.get("result_3000_sha256") != result_sha
-        or marker.get("checkpoint_3000_sha256") != checkpoint_sha
-        or not isinstance(reply, str) or len(reply.strip()) < 20
-        or not str(marker.get("notification_sent_utc", "")).endswith("Z")
-        or not str(marker.get("owner_reply_received_utc", "")).endswith("Z")
         or receipt.get("controller_identity") != marker.get("recorded_by")
     ):
         raise common.StageCError("administrative closure authentication drifted")
     return {**receipt, "receipt_sha256": receipt_sha}
+
+
+def _verify_continuation_result_semantics(continuation: Mapping[str, object]) -> None:
+    """Reject a second disposition or any boundary opened by continuation."""
+
+    if (
+        continuation.get("schema") != CONTINUATION_RESULT_SCHEMA
+        or continuation.get("completed_episode") != 9000
+        or continuation.get("terminal_boundary") != 9000
+        or continuation.get("scientific_disposition_emitted") is not False
+        or "overall_token" in continuation
+        or "reasons" in continuation
+        or continuation.get("q3_evaluated") is not False
+        or continuation.get("test_split_opened") is not False
+        or continuation.get("episode_training") is not False
+        or continuation.get("learner_update") is not False
+        or continuation.get("claim_ceiling") != common.FORMAL_CLAIM
+    ):
+        raise common.StageCError("9000 continuation result contains forbidden semantics")
 
 
 def verify_finished(
@@ -602,6 +625,8 @@ def verify_finished(
         bindings_sha256=bindings_sha,
         policy_bindings_sha256=common.canonical_sha256(expected_policy_bindings),
         admission_mapping_sha256=common.canonical_sha256(expected_admission_mapping),
+        scheduling_addendum_path=str(bindings["scheduling_addendum"]["path"]),
+        scheduling_addendum_sha256=str(bindings["scheduling_addendum"]["sha256"]),
     )
     if closure is not None and (completed != 3000 or result.get("overall_token") != HELD):
         raise common.StageCError("administrative closure is valid only for a HELD 3000 root")
@@ -618,6 +643,7 @@ def verify_finished(
         common.verify_tree_seal(root)
     if completed == 9000:
         continuation = common.read_json(root / "continuation-result.json", field="9000 continuation receipt")
+        _verify_continuation_result_semantics(continuation)
         authority_record = continuation.get("continuation_authority")
         if not isinstance(authority_record, Mapping):
             raise common.StageCError("9000 continuation lacks authority file binding")
@@ -630,9 +656,6 @@ def verify_finished(
         )
         if (
             result.get("overall_token") != HELD
-            or continuation.get("schema") != CONTINUATION_RESULT_SCHEMA
-            or continuation.get("completed_episode") != 9000
-            or continuation.get("scientific_disposition_emitted") is not False
             or continuation.get("plan_sha256") != common.PLAN_SHA256 or continuation.get("arms") != list(common.ARMS)
             or continuation.get("admission_mapping") != expected_admission_mapping
             or continuation.get("continuation_authority_sha256") != authority["authority_sha256"]

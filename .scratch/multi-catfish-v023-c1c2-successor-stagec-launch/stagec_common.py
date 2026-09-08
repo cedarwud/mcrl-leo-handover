@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import math
@@ -24,7 +27,8 @@ BASELINE = REPO / ".scratch/multi-catfish-v023-baseline-adapter"
 SOURCE_RUNNER = REPO / ".scratch/multi-catfish-v023-two-route-source-training-runner"
 CONTRACT = REPO / ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md"
 DECLARATION = REPO / ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md"
-SCHEDULING_ADDENDUM = REPO / ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md"
+PREDECESSOR_SCHEDULING_ADDENDUM = REPO / ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md"
+SCHEDULING_ADDENDUM = REPO / ".scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-08-R2.md"
 PREREG = REPO / "artifacts/PREREG-FROZEN-2026-08-25-R2.json"
 TLE_ROOT = Path("/home/sat/mcrl-runtime/tle-frozen-20260820")
 BASELINE_CHECKPOINT = REPO / "artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt"
@@ -47,6 +51,19 @@ ACCEPTANCE_BUNDLE_NAME = "STAGEC-CHUNK-ACCEPTANCE-BUNDLE.json"
 ACCEPTANCE_PROCEDURE = HERE / "ACCEPTANCE-SERVER-EQUIVALENCE.md"
 SCHEMA_STAGE_AB_SUPPLEMENT = "multi-catfish-mcrl-v023-c1c2-successor-stage-ab-admission-supplement-v1"
 SCHEMA_ACCEPTANCE_BUNDLE = "multi-catfish-mcrl-v023-c1c2-successor-stagec-chunk-acceptance-bundle-v1"
+SCHEMA_OWNER_CLOSURE_DECISION = (
+    "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-"
+    "owner-closure-decision-v1"
+)
+SCHEMA_CONTINUATION_PREFIX_VERIFICATION = (
+    "multi-catfish-mcrl-v023-c1c2-successor-stagec-continuation-prefix-verification-v1"
+)
+SCHEMA_CONTINUATION_ACTIVITY = (
+    "multi-catfish-mcrl-v023-c1c2-successor-stagec-continuation-activity-v1"
+)
+OWNER_CLOSURE_DECISIONS = frozenset({
+    "DECLINE_CONTINUATION", "DEFER_AND_CLOSE_REPORTING_ROOT",
+})
 TREE_MANIFEST_NAME = "MANIFEST.sha256"
 COMPLETE_NAME = "COMPLETE"
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
@@ -180,6 +197,108 @@ def write_once(path: str | Path, payload: object, *, newline: bool = True) -> No
         Path(temporary).unlink(missing_ok=True)
 
 
+@contextmanager
+def root_lock(root: str | Path) -> Any:
+    """Serialize continuation launch and administrative closure for one root."""
+
+    target = Path(root)
+    lock = target.parent / f".{target.name}.writer.lock"
+    descriptor = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise StageCError("Stage-C root has an active continuation writer") from error
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def strict_rfc3339_utc(value: object, *, field: str) -> datetime:
+    """Parse the marker's deliberately narrow RFC-3339 UTC representation."""
+
+    if not isinstance(value, str) or re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z", value
+    ) is None:
+        raise StageCError(f"{field} must be a strict RFC-3339 UTC timestamp ending in Z")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise StageCError(f"{field} is not a valid UTC timestamp") from error
+    if parsed.tzinfo != timezone.utc:
+        raise StageCError(f"{field} is not UTC")
+    return parsed
+
+
+def validate_owner_closure_decision_marker(
+    marker: object,
+    *,
+    bindings_sha256: str,
+    plan_sha256: str,
+    policy_bindings_sha256: str,
+    admission_mapping_sha256: str,
+    result_3000_sha256: str,
+    held_terminal_token_sha256: str,
+    checkpoint_3000_sha256: str,
+) -> dict[str, object]:
+    """Apply the complete Q1 marker contract at every consuming boundary."""
+
+    if not isinstance(marker, Mapping):
+        raise StageCError("owner closure decision marker must be an object")
+    sent = strict_rfc3339_utc(
+        marker.get("notification_sent_utc"), field="notification_sent_utc"
+    )
+    received = strict_rfc3339_utc(
+        marker.get("owner_reply_received_utc"), field="owner_reply_received_utc"
+    )
+    reply = marker.get("owner_reply_verbatim")
+    expected_digests = {
+        "bindings_sha256": digest(bindings_sha256, field="bound bindings digest"),
+        "plan_sha256": digest(plan_sha256, field="bound plan digest"),
+        "policy_bindings_sha256": digest(
+            policy_bindings_sha256, field="bound policy bindings digest"
+        ),
+        "admission_mapping_sha256": digest(
+            admission_mapping_sha256, field="bound admission mapping digest"
+        ),
+        "result_3000_sha256": digest(
+            result_3000_sha256, field="bound 3000 result digest"
+        ),
+        "held_terminal_token_sha256": digest(
+            held_terminal_token_sha256, field="bound HELD token digest"
+        ),
+        "checkpoint_3000_sha256": digest(
+            checkpoint_3000_sha256, field="bound 3000 checkpoint digest"
+        ),
+    }
+    observed_policy = marker.get(
+        "policy_bindings_sha256", marker.get("policy_mapping_sha256")
+    )
+    if (
+        marker.get("schema") != SCHEMA_OWNER_CLOSURE_DECISION
+        or marker.get("formal") is not True
+        or marker.get("decision") not in OWNER_CLOSURE_DECISIONS
+        or not isinstance(reply, str)
+        or len(reply.strip()) < 20
+        or not isinstance(marker.get("notification_channel"), str)
+        or not marker["notification_channel"].strip()
+        or not isinstance(marker.get("recorded_by"), str)
+        or not marker["recorded_by"].strip()
+        or received < sent
+        or observed_policy != expected_digests["policy_bindings_sha256"]
+        or any(
+            marker.get(name) != expected
+            for name, expected in expected_digests.items()
+            if name != "policy_bindings_sha256"
+        )
+    ):
+        raise StageCError(
+            "owner closure decision marker is incomplete, silent, unanswered, or violates the complete authenticated contract"
+        )
+    return dict(marker)
+
+
 def write_digest_sidecar(path: str | Path) -> Path:
     source = regular_file(path, field="sidecar source")
     sidecar = source.with_name(source.name + ".sha256")
@@ -274,6 +393,11 @@ def process_environment(*, expected_threads: int = 2) -> dict[str, object]:
     }
     for key, value in expected.items():
         if os.environ.get(key) != value:
+            if key in NUMERICAL_THREAD_ENV and expected_threads == 2:
+                raise StageCError(
+                    f"controller environment requires {key}=2 for final merge/verification; "
+                    f"observed {os.environ.get(key)!r} (chunk-worker thread settings are invalid here)"
+                )
             raise StageCError(f"deterministic process environment drifted: {key}")
     try:
         oom_score_adj = int(Path("/proc/self/oom_score_adj").read_text(encoding="ascii").strip())
@@ -656,35 +780,44 @@ def ensure_runtime_admission(
 def write_tree_seal(root: Path) -> str:
     if root.is_symlink() or not root.is_dir():
         raise StageCError("cannot seal a missing or symlinked result root")
-    if (root / TREE_MANIFEST_NAME).exists() or (root / COMPLETE_NAME).exists():
-        raise StageCError("result root is already sealed")
     files: dict[str, str] = {}
     for path in root.rglob("*"):
         if path.is_symlink():
             raise StageCError(f"result root contains a symlink: {path}")
-        if path.is_file():
-            files[path.relative_to(root).as_posix()] = file_sha256(path)
+        relative = path.relative_to(root).as_posix()
+        if path.is_file() and relative not in {TREE_MANIFEST_NAME, COMPLETE_NAME}:
+            files[relative] = file_sha256(path)
     manifest = "".join(f"{sha}  {name}\n" for name, sha in sorted(files.items()))
     manifest_path = root / TREE_MANIFEST_NAME
-    descriptor = -1
-    try:
-        descriptor = os.open(manifest_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "wb") as stream:
-            descriptor = -1
-            stream.write(manifest.encode("ascii"))
-            stream.flush()
-            os.fsync(stream.fileno())
-    finally:
-        if descriptor != -1:
-            os.close(descriptor)
+    manifest_raw = manifest.encode("ascii")
+    if manifest_path.exists() or manifest_path.is_symlink():
+        if regular_file(manifest_path, field="existing result tree manifest").read_bytes() != manifest_raw:
+            raise StageCError("existing result tree manifest drifted during finalisation")
+    else:
+        descriptor = -1
+        try:
+            descriptor = os.open(manifest_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as stream:
+                descriptor = -1
+                stream.write(manifest_raw)
+                stream.flush()
+                os.fsync(stream.fileno())
+        finally:
+            if descriptor != -1:
+                os.close(descriptor)
     manifest_sha = file_sha256(manifest_path)
     complete_path = root / COMPLETE_NAME
+    complete_raw = f"{manifest_sha}  {TREE_MANIFEST_NAME}\n".encode("ascii")
+    if complete_path.exists() or complete_path.is_symlink():
+        if regular_file(complete_path, field="existing result tree COMPLETE").read_bytes() != complete_raw:
+            raise StageCError("existing result tree COMPLETE drifted during finalisation")
+        return manifest_sha
     descriptor = -1
     try:
         descriptor = os.open(complete_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(descriptor, "wb") as stream:
             descriptor = -1
-            stream.write(f"{manifest_sha}  {TREE_MANIFEST_NAME}\n".encode("ascii"))
+            stream.write(complete_raw)
             stream.flush()
             os.fsync(stream.fileno())
     finally:
@@ -728,6 +861,7 @@ def verify_bindings(path: str | Path) -> dict[str, Any]:
     if value.get("world_plan", {}).get("plan_sha256") != PLAN_SHA256:
         raise StageCError("execution bindings plan digest drifted")
     schedule = value.get("scheduling_addendum")
+    predecessor = value.get("predecessor_addendum")
     if (
         not isinstance(schedule, Mapping)
         or schedule.get("path") != str(SCHEDULING_ADDENDUM.resolve())
@@ -735,6 +869,16 @@ def verify_bindings(path: str | Path) -> dict[str, Any]:
         or verify_named_sidecar(SCHEDULING_ADDENDUM) != schedule.get("sha256")
     ):
         raise StageCError("execution bindings scheduling addendum drifted")
+    if (
+        not isinstance(predecessor, Mapping)
+        or predecessor.get("path") != str(PREDECESSOR_SCHEDULING_ADDENDUM.resolve())
+        or file_sha256(
+            PREDECESSOR_SCHEDULING_ADDENDUM, field="predecessor scheduling addendum"
+        ) != predecessor.get("sha256")
+        or verify_named_sidecar(PREDECESSOR_SCHEDULING_ADDENDUM)
+        != predecessor.get("sha256")
+    ):
+        raise StageCError("execution bindings predecessor addendum drifted")
     procedure = value.get("acceptance_procedure")
     if (
         not isinstance(procedure, Mapping)

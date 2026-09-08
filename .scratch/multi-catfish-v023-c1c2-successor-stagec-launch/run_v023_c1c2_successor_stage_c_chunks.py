@@ -56,14 +56,185 @@ def _authenticate_continuation(
         root / "checkpoints/checkpoint-003000.json", field="preserved 3000 checkpoint"
     )
     policy_bindings = checkpoint.get("policy_bindings")
-    if not isinstance(policy_bindings, Mapping) or tuple(policy_bindings) != common.ARMS:
+    if not isinstance(policy_bindings, Mapping) or set(policy_bindings) != set(common.ARMS):
         raise common.StageCError("preserved 3000 checkpoint policy mapping drifted")
+    activity = _verify_continuation_activity(args, bindings)
     try:
-        return runner.authenticate_continuation_chain(
+        authenticated = runner.authenticate_continuation_chain(
             authority_path,
             marker_path,
             root=root,
             bindings_sha256=common.file_sha256(args.bindings),
+            plan_sha256=common.PLAN_SHA256,
+            policy_bindings=policy_bindings,
+            allow_published_continuation=bool(
+                getattr(args, "resume_continuation", False)
+            ),
+        )
+    except runner.C1C2PhysicalError as error:
+        raise common.StageCError(str(error)) from error
+    if (
+        activity.get("continuation_authority_sha256")
+        != authenticated.get("authority_sha256")
+        or activity.get("owner_notification_sha256")
+        != authenticated.get("owner_notification_sha256")
+    ):
+        raise common.StageCError("continuation activity authority binding drifted")
+    return authenticated
+
+
+def _verify_continuation_activity(
+    args: argparse.Namespace,
+    bindings: Mapping[str, object],
+) -> dict[str, object]:
+    activity_path = getattr(args, "continuation_activity", None)
+    if activity_path is None:
+        raise common.StageCError("post-3000 work requires a continuation activity marker")
+    activity = common.read_json(activity_path, field="continuation activity marker")
+    activity_sha = common.verify_named_sidecar(activity_path)
+    receipt_record = activity.get("prefix_verification")
+    roots = activity.get("registered_chunk_roots")
+    if not isinstance(receipt_record, Mapping) or not isinstance(roots, list) or not roots:
+        raise common.StageCError("continuation activity registry is malformed")
+    receipt_path = Path(str(receipt_record.get("path", "")))
+    receipt = common.read_json(receipt_path, field="continuation prefix verification receipt")
+    receipt_sha = common.verify_named_sidecar(receipt_path)
+    expected_root = Path(str(bindings.get("stage_c_output_root", ""))).resolve()
+    expected_activity_root = expected_root / "continuation"
+    if (
+        Path(activity_path).resolve().parent != expected_activity_root
+        or receipt_path.resolve() != expected_activity_root / "PREFIX-VERIFICATION.json"
+        or activity.get("schema") != common.SCHEMA_CONTINUATION_ACTIVITY
+        or activity.get("status") != "CONTINUATION_ACTIVITY_REGISTERED"
+        or activity.get("formal") is not True
+        or Path(str(activity.get("reporting_root", ""))).resolve() != expected_root
+        or activity.get("bindings_sha256") != common.file_sha256(args.bindings)
+        or receipt_record.get("sha256") != receipt_sha
+        or receipt.get("schema") != common.SCHEMA_CONTINUATION_PREFIX_VERIFICATION
+        or receipt.get("status") != "VERIFIED_HELD_3000_PREFIX"
+        or receipt.get("formal") is not True
+        or receipt.get("overall_token") != verifier_token()
+        or receipt.get("completed_episode") != 3000
+        or receipt.get("bindings_sha256") != common.file_sha256(args.bindings)
+    ):
+        raise common.StageCError("continuation activity marker authentication drifted")
+    chunk_root = getattr(args, "chunk_root", None)
+    if chunk_root is not None and str(Path(chunk_root).resolve()) not in roots:
+        raise common.StageCError("continuation chunk root is absent from the reporting registry")
+    return {**activity, "activity_sha256": activity_sha}
+
+
+def verifier_token() -> str:
+    verifier = sequential_controller._module(
+        common.HERE / "verify_v023_c1c2_successor_stagec.py"
+    )
+    return str(verifier.HELD)
+
+
+def register_continuation_activity(args: argparse.Namespace) -> dict[str, object]:
+    """Verify the complete 3000 prefix and durably register scheduled roots."""
+
+    prospective = common.verify_bindings(args.bindings)
+    supplement = common.verify_stage_ab_supplement(
+        args.admission_supplement, args.bindings, prospective
+    )
+    common.verify_acceptance_bundle(
+        args.acceptance_bundle,
+        {**prospective, "bindings_sha256": common.file_sha256(args.bindings)},
+    )
+    bindings = common.materialize_stage_ab(prospective, supplement)
+    common.verify_runtime_identity(bindings)
+    reporting_root = Path(str(bindings["stage_c_output_root"])).resolve()
+    registered = [str(path.resolve()) for path in args.chunk_roots]
+    if len(registered) != len(set(registered)) or not registered:
+        raise common.StageCError("continuation activity requires unique chunk roots")
+    with common.root_lock(reporting_root):
+        verifier = sequential_controller._module(
+            common.HERE / "verify_v023_c1c2_successor_stagec.py"
+        )
+        report = verifier.verify_finished(
+            reporting_root,
+            args.bindings,
+            args.admission_supplement,
+            require_tree_seal=False,
+        )
+        if report.get("completed_episode") != 3000 or report.get("overall_token") != verifier.HELD:
+            raise common.StageCError(
+                "continuation scheduling requires a fully verified HELD 3000 prefix"
+            )
+        authority = _authenticate_continuation_without_activity(
+            args, bindings, _runner()
+        )
+        continuation_dir = reporting_root / "continuation"
+        receipt_path = continuation_dir / "PREFIX-VERIFICATION.json"
+        receipt = {
+            "schema": common.SCHEMA_CONTINUATION_PREFIX_VERIFICATION,
+            "status": "VERIFIED_HELD_3000_PREFIX",
+            "formal": True,
+            "reporting_root": str(reporting_root),
+            "completed_episode": 3000,
+            "overall_token": verifier.HELD,
+            "bindings_sha256": common.file_sha256(args.bindings),
+            "plan_sha256": common.PLAN_SHA256,
+            "result_3000_sha256": common.file_sha256(reporting_root / "result.json"),
+            "checkpoint_3000_sha256": common.file_sha256(
+                reporting_root / "checkpoints/checkpoint-003000.json"
+            ),
+        }
+        receipt_sha = common.publish_sealed_json(
+            receipt_path, receipt, field="continuation prefix verification receipt"
+        )
+        activity_path = continuation_dir / (
+            f"ACTIVITY-{args.arm}-{args.barrier:06d}.json"
+        )
+        activity = {
+            "schema": common.SCHEMA_CONTINUATION_ACTIVITY,
+            "status": "CONTINUATION_ACTIVITY_REGISTERED",
+            "formal": True,
+            "reporting_root": str(reporting_root),
+            "arm": args.arm,
+            "barrier": args.barrier,
+            "bindings_sha256": common.file_sha256(args.bindings),
+            "continuation_authority_sha256": authority["authority_sha256"],
+            "owner_notification_sha256": authority["owner_notification_sha256"],
+            "prefix_verification": {
+                "path": str(receipt_path.resolve()), "sha256": receipt_sha,
+            },
+            "registered_chunk_roots": registered,
+            "published_before_chunk_execution": True,
+        }
+        activity_sha = common.publish_sealed_json(
+            activity_path, activity, field="continuation activity marker"
+        )
+    return {
+        **activity,
+        "activity_path": str(activity_path.resolve()),
+        "activity_sha256": activity_sha,
+    }
+
+
+def _authenticate_continuation_without_activity(
+    args: argparse.Namespace,
+    bindings: Mapping[str, object],
+    runner: Any,
+) -> dict[str, object]:
+    """Authenticate authority while the activity marker is being created."""
+
+    shadow = argparse.Namespace(**vars(args))
+    shadow.continuation_activity = None
+    root = Path(str(bindings.get("stage_c_output_root", "")))
+    checkpoint = common.read_json(
+        root / "checkpoints/checkpoint-003000.json", field="preserved 3000 checkpoint"
+    )
+    policy_bindings = checkpoint.get("policy_bindings")
+    if not isinstance(policy_bindings, Mapping) or set(policy_bindings) != set(common.ARMS):
+        raise common.StageCError("preserved 3000 checkpoint policy mapping drifted")
+    try:
+        return runner.authenticate_continuation_chain(
+            shadow.continuation_authority,
+            shadow.owner_notification_marker,
+            root=root,
+            bindings_sha256=common.file_sha256(shadow.bindings),
             plan_sha256=common.PLAN_SHA256,
             policy_bindings=policy_bindings,
         )
@@ -133,6 +304,9 @@ def run_chunk(args: argparse.Namespace) -> dict[str, object]:
     bindings = common.materialize_stage_ab(bindings, supplement)
     common.verify_runtime_identity(bindings, chunk_mode=True)
     runner = _runner()
+    continuation = (
+        _authenticate_continuation(args, bindings, runner) if args.end > 3000 else None
+    )
     policy = _policy(bindings, runner, args.arm)
     admission = runner.authenticate_runtime_admission(
         args.runtime_admission,
@@ -154,9 +328,6 @@ def run_chunk(args: argparse.Namespace) -> dict[str, object]:
         runtime_admission=admission,
     )
     plan = runner.EvaluationPlan.from_file(bindings["world_plan"]["path"])
-    continuation = (
-        _authenticate_continuation(args, bindings, runner) if args.end > 3000 else None
-    )
     schedule_sha = str(bindings["scheduling_addendum"]["sha256"])
     context = {
         "arm": args.arm,
@@ -385,6 +556,7 @@ def merge_four(args: argparse.Namespace) -> dict[str, object]:
         {**bindings, "bindings_sha256": common.file_sha256(args.bindings)},
     )
     bindings = common.materialize_stage_ab(bindings, supplement)
+    common.verify_runtime_identity(bindings)
     roots = {arm: root for arm, root in zip(common.ARMS, args.arm_roots, strict=True)}
     mappings = common.read_json(args.admission_mapping, field="four-arm admission mapping")
     mapping = common.verify_stage_c_admission_mapping(mappings.get("admission_mapping"))
@@ -403,17 +575,19 @@ def merge_four(args: argparse.Namespace) -> dict[str, object]:
     )
     if boundary == 9000:
         continuation = _authenticate_continuation(args, bindings, runner)
-        prefix = verifier.verify_finished(
-            args.output, args.bindings, args.admission_supplement,
-            require_tree_seal=False,
-        )
-        if prefix.get("completed_episode") != 3000 or prefix.get("overall_token") != runner.HELD:
-            raise common.StageCError("continuation requires an independently verified HELD 3000 root")
+        if not args.resume_continuation:
+            prefix = verifier.verify_finished(
+                args.output, args.bindings, args.admission_supplement,
+                require_tree_seal=False,
+            )
+            if prefix.get("completed_episode") != 3000 or prefix.get("overall_token") != runner.HELD:
+                raise common.StageCError("continuation requires an independently verified HELD 3000 root")
     elif boundary != 3000:
         raise common.StageCError("four-arm merge must publish boundary 3000 or 9000")
     result = runner.merge_four_arm(
         roots, args.output, admission_mapping=mapping,
         continuation_authority=continuation,
+        resume_continuation=bool(args.resume_continuation),
     )
     policy_bindings = {
         arm: mapping[arm]["policy_binding"] for arm in common.ARMS
@@ -450,6 +624,7 @@ def _parser() -> argparse.ArgumentParser:
     def continuation_options(command: argparse.ArgumentParser) -> None:
         command.add_argument("--continuation-authority", type=Path)
         command.add_argument("--owner-notification-marker", type=Path)
+        command.add_argument("--continuation-activity", type=Path)
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -502,7 +677,20 @@ def _parser() -> argparse.ArgumentParser:
     four.add_argument("--admission-supplement", type=Path, required=True)
     four.add_argument("--acceptance-bundle", type=Path, required=True)
     four.add_argument("--output", type=Path, required=True)
+    four.add_argument(
+        "--resume-continuation", action="store_true",
+        help="authenticate and finish an interrupted append-only 9000 publication",
+    )
     continuation_options(four)
+    register = sub.add_parser("register-continuation")
+    register.add_argument("--bindings", type=Path, required=True)
+    register.add_argument("--admission-supplement", type=Path, required=True)
+    register.add_argument("--acceptance-bundle", type=Path, required=True)
+    register.add_argument("--arm", choices=common.ARMS, required=True)
+    register.add_argument("--barrier", type=int, choices=(6000, 9000), required=True)
+    register.add_argument("--chunk-roots", type=Path, nargs="+", required=True)
+    register.add_argument("--continuation-authority", type=Path, required=True)
+    register.add_argument("--owner-notification-marker", type=Path, required=True)
     return parser
 
 
@@ -517,6 +705,8 @@ def main(argv: list[str] | None = None) -> int:
             result = run_chunk(args)
         elif args.command == "merge-arm":
             result = merge_arm(args)
+        elif args.command == "register-continuation":
+            result = register_continuation_activity(args)
         else:
             result = merge_four(args)
     except Exception as error:

@@ -4,15 +4,13 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 from datetime import datetime, timezone
-import fcntl
 import hashlib
 import os
 from pathlib import Path
 import re
 import sys
-from typing import Iterator, Mapping
+from typing import Mapping
 
 import stagec_common as common
 import verify_v023_c1c2_successor_stagec as verifier
@@ -22,35 +20,7 @@ SCHEMA = (
     "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-"
     "administrative-closure-v1"
 )
-DECISIONS = {"DECLINE_CONTINUATION", "DEFER_AND_CLOSE_REPORTING_ROOT"}
 HELD_TOKEN_SHA256 = hashlib.sha256(verifier.HELD.encode("ascii")).hexdigest()
-
-
-def _utc(value: object, *, field: str) -> datetime:
-    if not isinstance(value, str) or not value.endswith("Z"):
-        raise common.StageCError(f"{field} must be an ISO-8601 UTC timestamp ending in Z")
-    try:
-        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
-    except ValueError as error:
-        raise common.StageCError(f"{field} is not a valid UTC timestamp") from error
-    if parsed.tzinfo != timezone.utc:
-        raise common.StageCError(f"{field} is not UTC")
-    return parsed
-
-
-@contextmanager
-def _root_lock(root: Path) -> Iterator[None]:
-    lock = root.parent / f".{root.name}.writer.lock"
-    descriptor = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
-    try:
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise common.StageCError("Stage-C root has an active continuation writer") from error
-        yield
-    finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
 
 
 def _authenticate_decision_marker(
@@ -65,37 +35,25 @@ def _authenticate_decision_marker(
 ) -> tuple[dict[str, object], str]:
     marker = common.read_json(path, field="owner closure decision marker")
     marker_sha = common.verify_named_sidecar(path)
-    reply = marker.get("owner_reply_verbatim")
-    required_strings = ("notification_channel", "recorded_by")
-    sent = _utc(marker.get("notification_sent_utc"), field="notification_sent_utc")
-    received = _utc(marker.get("owner_reply_received_utc"), field="owner_reply_received_utc")
-    policy_digest = marker.get("policy_bindings_sha256", marker.get("policy_mapping_sha256"))
-    if (
-        marker.get("formal") is not True
-        or marker.get("decision") not in DECISIONS
-        or not isinstance(reply, str)
-        or len(reply.strip()) < 20
-        or any(not isinstance(marker.get(name), str) or not marker[name].strip() for name in required_strings)
-        or received < sent
-        or marker.get("bindings_sha256") != bindings_sha256
-        or marker.get("plan_sha256") != plan_sha256
-        or policy_digest != policy_bindings_sha256
-        or marker.get("result_3000_sha256") != result_sha256
-        or marker.get("held_terminal_token_sha256") != HELD_TOKEN_SHA256
-        or marker.get("checkpoint_3000_sha256") != checkpoint_sha256
-    ):
-        raise common.StageCError(
-            "decision marker is incomplete, silent, unanswered, or does not bind the HELD 3000 root"
-        )
-    if (
-        marker.get("admission_mapping_sha256") is not None
-        and marker.get("admission_mapping_sha256") != admission_mapping_sha256
-    ):
-        raise common.StageCError("decision marker admission/policy mapping digest drifted")
-    return marker, marker_sha
+    validated = common.validate_owner_closure_decision_marker(
+        marker,
+        bindings_sha256=bindings_sha256,
+        plan_sha256=plan_sha256,
+        policy_bindings_sha256=policy_bindings_sha256,
+        admission_mapping_sha256=admission_mapping_sha256,
+        result_3000_sha256=result_sha256,
+        held_terminal_token_sha256=HELD_TOKEN_SHA256,
+        checkpoint_3000_sha256=checkpoint_sha256,
+    )
+    return validated, marker_sha
 
 
 def _refuse_continuation_evidence(root: Path, bindings_path: Path) -> None:
+    continuation_root = root / "continuation"
+    if continuation_root.exists() or continuation_root.is_symlink():
+        raise common.StageCError(
+            "reporting root contains a continuation activity marker or registry"
+        )
     if any((root / name).exists() for name in (
         "continuation-result.json", "MANIFEST.sha256", "COMPLETE",
         "ADMINISTRATIVE-CLOSURE.json", "ADMINISTRATIVE-CLOSURE.json.sha256",
@@ -136,11 +94,26 @@ def _refuse_continuation_evidence(root: Path, bindings_path: Path) -> None:
             raise common.StageCError("an active continuation session targets this root")
 
 
+def _verify_bound_r2_addendum(
+    path: Path, bindings: Mapping[str, object]
+) -> str:
+    schedule = bindings.get("scheduling_addendum")
+    if (
+        not isinstance(schedule, Mapping)
+        or path.resolve() != Path(str(schedule.get("path", ""))).resolve()
+    ):
+        raise common.StageCError("closure addendum must be the R2 path bound by execution bindings")
+    addendum_sha = common.verify_named_sidecar(path)
+    if addendum_sha != schedule.get("sha256"):
+        raise common.StageCError("closure addendum must be the R2 digest bound by execution bindings")
+    return addendum_sha
+
+
 def seal(args: argparse.Namespace) -> dict[str, object]:
     root = args.root.resolve()
     if args.output_receipt.resolve(strict=False) != (root / "ADMINISTRATIVE-CLOSURE.json"):
         raise common.StageCError("closure receipt must be ROOT/ADMINISTRATIVE-CLOSURE.json")
-    with _root_lock(root):
+    with common.root_lock(root):
         prospective = common.verify_bindings(args.bindings)
         supplement = common.verify_stage_ab_supplement(
             args.admission_supplement, args.bindings, prospective
@@ -176,7 +149,7 @@ def seal(args: argparse.Namespace) -> dict[str, object]:
             result_sha256=result_sha,
             checkpoint_sha256=checkpoint_sha,
         )
-        addendum_sha = common.verify_named_sidecar(args.addendum_r2)
+        addendum_sha = _verify_bound_r2_addendum(args.addendum_r2, prospective)
         preserved = {
             path.relative_to(root).as_posix(): common.file_sha256(path)
             for path in root.rglob("*") if path.is_file() and not path.is_symlink()

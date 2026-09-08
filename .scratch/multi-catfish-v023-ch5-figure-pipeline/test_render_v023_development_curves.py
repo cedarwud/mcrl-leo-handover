@@ -17,6 +17,7 @@ for path in (HERE, PRODUCER_DIR, STAGEC_DIR):
         sys.path.insert(0, str(path))
 
 import render_v023_development_curves as figures
+import seal_stage_c_declined_continuation as closure_sealer
 import stagec_common
 import test_cadence_resume as producer_fixture
 import verify_v023_c1c2_successor_stagec as independent_verifier
@@ -189,6 +190,7 @@ def _add_administrative_closure(root: Path, admission, bindings_sha256: str) -> 
     held_sha = hashlib.sha256(runner.HELD.encode("ascii")).hexdigest()
     marker = root.parent / "owner-closure-decision.json"
     runner._write_once(marker, {
+        "schema": stagec_common.SCHEMA_OWNER_CLOSURE_DECISION,
         "formal": True,
         "decision": "DECLINE_CONTINUATION",
         "owner_reply_verbatim": "I explicitly decline continuation and request closure.",
@@ -208,8 +210,7 @@ def _add_administrative_closure(root: Path, admission, bindings_sha256: str) -> 
     marker.with_name(marker.name + ".sha256").write_text(
         f"{marker_sha}  {marker.name}\n", encoding="ascii"
     )
-    addendum = root.parent / "scheduling-addendum-r2.md"
-    addendum.write_text("# R2\n\nAdministrative closure without continuation.\n", encoding="ascii")
+    addendum = stagec_common.SCHEDULING_ADDENDUM
     addendum_sha = runner.file_sha256(addendum)
     addendum.with_name(addendum.name + ".sha256").write_text(
         f"{addendum_sha}  {addendum.name}\n", encoding="ascii"
@@ -285,6 +286,78 @@ def _write_five_arm_variant(source: Path, target: Path) -> Path:
     return target
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema", None),
+        ("notification_sent_utc", "2026-09-08garbageZ"),
+        ("recorded_by", None),
+    ],
+)
+def test_q1_marker_mutations_are_refused_by_all_three_consumers(
+    tmp_path: Path, field: str, value: object,
+) -> None:
+    root = tmp_path / "root"
+    (root / "checkpoints").mkdir(parents=True)
+    runner._write_once(root / "result.json", {"overall_token": runner.HELD})
+    runner._write_once(root / "checkpoints/checkpoint-003000.json", {"fixture": True})
+    digest = "a" * 64
+    admission = {
+        "bindings_sha256": digest,
+        "plan_sha256": figures.FROZEN_PLAN_SHA256,
+        "policy_bindings_sha256": digest,
+        "admission_mapping_sha256": digest,
+    }
+    _write_tree_seal(root)
+    _add_administrative_closure(root, admission, digest)
+    marker_path = root.parent / "owner-closure-decision.json"
+    marker = json.loads(marker_path.read_text(encoding="ascii"))
+    if value is None:
+        marker.pop(field)
+    else:
+        marker[field] = value
+    marker_path.write_bytes(runner._canonical_bytes(marker))
+    marker_sha = runner.file_sha256(marker_path)
+    marker_path.with_name(marker_path.name + ".sha256").write_text(
+        f"{marker_sha}  {marker_path.name}\n", encoding="ascii"
+    )
+    closure_path = root / figures.ADMINISTRATIVE_CLOSURE_NAME
+    closure = json.loads(closure_path.read_text(encoding="ascii"))
+    closure["decision_marker"]["sha256"] = marker_sha
+    closure_path.write_bytes(runner._canonical_bytes(closure))
+    closure_sha = runner.file_sha256(closure_path)
+    closure_path.with_name(closure_path.name + ".sha256").write_text(
+        f"{closure_sha}  {closure_path.name}\n", encoding="ascii"
+    )
+    result_sha = runner.file_sha256(root / "result.json")
+    checkpoint_sha = runner.file_sha256(root / "checkpoints/checkpoint-003000.json")
+    with pytest.raises(stagec_common.StageCError):
+        closure_sealer._authenticate_decision_marker(
+            marker_path,
+            bindings_sha256=digest,
+            plan_sha256=figures.FROZEN_PLAN_SHA256,
+            policy_bindings_sha256=digest,
+            admission_mapping_sha256=digest,
+            result_sha256=result_sha,
+            checkpoint_sha256=checkpoint_sha,
+        )
+    with pytest.raises(stagec_common.StageCError):
+        independent_verifier._verify_administrative_closure(
+            root,
+            bindings_sha256=digest,
+            policy_bindings_sha256=digest,
+            admission_mapping_sha256=digest,
+            scheduling_addendum_path=str(stagec_common.SCHEDULING_ADDENDUM),
+            scheduling_addendum_sha256=stagec_common.file_sha256(
+                stagec_common.SCHEDULING_ADDENDUM
+            ),
+        )
+    with pytest.raises(figures.FigurePipelineError):
+        figures._authenticate_administrative_closure(
+            root, admission, {"overall_token": runner.HELD}, tracked=[]
+        )
+
+
 def _semantic_labels(fig) -> list[str]:
     return figures._axis_labels(fig)
 
@@ -346,6 +419,10 @@ def test_runner_written_terminal_passes_full_verifier_before_renderer(
         "world_plan": {
             "path": str(plan_path.resolve()),
             "file_sha256": runner.file_sha256(plan_path),
+        },
+        "scheduling_addendum": {
+            "path": str(stagec_common.SCHEDULING_ADDENDUM.resolve()),
+            "sha256": stagec_common.file_sha256(stagec_common.SCHEDULING_ADDENDUM),
         },
     }
     supplement_path = tmp_path / "stage-ab-supplement.json"
