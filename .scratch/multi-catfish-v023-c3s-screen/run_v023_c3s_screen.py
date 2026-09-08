@@ -8,10 +8,11 @@ partial-arm execution is intentionally unsupported so one receipt is matched.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import dataclass
 import datetime as dt
-import datetime as dt
 import errno
+import fcntl
 from fractions import Fraction
 import hashlib
 import json
@@ -22,6 +23,7 @@ import shutil
 import sys
 import tempfile
 import time
+from types import ModuleType
 from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
@@ -43,6 +45,7 @@ import run_probe_s0 as s0  # noqa: E402
 import run_v023_c3_contingency_f1 as f1  # noqa: E402
 import run_v023_c3_contingency_f2 as f2  # noqa: E402
 import run_v023_c3_existence_e1 as e1  # noqa: E402
+import build_v023_c1c2_successor_world_plan as stagec_plan  # noqa: E402
 
 
 SCHEMA = "multi-catfish-mcrl-v023-c3s-screen-v2"
@@ -87,6 +90,11 @@ TERMINAL_DIRECTORY_NAME = "terminal"
 GLOBAL_INVALIDATION_DIRECTORY_NAME = "global-invalidation"
 EVIDENCE_MANIFEST_SCHEMA = f"{SCHEMA}-evidence-manifest"
 WORLD_CENSUS_SCHEMA = f"{SCHEMA}-world-census"
+E1_WORLD_DERIVATION = E1_DIR / "E1-WORLD-DERIVATION-2026-09-08.json"
+C3S_WORLD_DERIVATION = HERE / "C3S-WORLD-DERIVATION-2026-09-08.json"
+V024_WORLD_DERIVATION = (
+    REPO / ".scratch/multi-catfish-v024-regime-b-design/V024-WORLD-DERIVATION-2026-09-08.json"
+)
 
 EVIDENCE_FILES = (
     ("e1_result", E1_DIR / "E1-RESULT-RECORD-2026-09-08.md"),
@@ -265,6 +273,71 @@ def _local(path: Path, *, field: str) -> Path:
     return target
 
 
+def _module_source_path(module: ModuleType) -> Path | None:
+    raw = getattr(module, "__file__", None)
+    if not isinstance(raw, str):
+        return None
+    path = Path(raw)
+    if path.suffix in {".pyc", ".pyo"}:
+        path = path.with_suffix(".py")
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return None
+    return resolved if resolved.suffix == ".py" and resolved.is_relative_to(REPO.resolve()) else None
+
+
+def actual_import_graph_paths() -> tuple[Path, ...]:
+    """Derive the loaded repository-module closure used by BASE/C3S inference."""
+
+    try:
+        physical, server = f1._runtime_modules()
+    except f1.F1Error as error:
+        raise C3SScreenError(f"cannot derive the inference import graph: {error}") from error
+    roots = (sys.modules[__name__], c3s_policy, s0, e1, f1, f2, stagec_plan, physical, server)
+    queue = list(roots)
+    seen_modules: set[int] = set()
+    paths: set[Path] = set()
+    while queue:
+        module = queue.pop()
+        if id(module) in seen_modules:
+            continue
+        seen_modules.add(id(module))
+        source = _module_source_path(module)
+        if source is None:
+            continue
+        paths.add(source)
+        for value in vars(module).values():
+            candidate: ModuleType | None = value if isinstance(value, ModuleType) else None
+            if candidate is None:
+                owner = getattr(value, "__module__", None)
+                if isinstance(owner, str):
+                    possible = sys.modules.get(owner)
+                    candidate = possible if isinstance(possible, ModuleType) else None
+            if candidate is not None and _module_source_path(candidate) is not None:
+                queue.append(candidate)
+    return tuple(sorted(paths, key=str))
+
+
+def _inference_hand_list() -> tuple[Path, ...]:
+    """Reviewer-facing minimum; the derived graph must cover every entry."""
+
+    return (
+        Path(__file__).resolve(), Path(c3s_policy.__file__).resolve(),
+        Path(e1.__file__).resolve(), Path(f1.__file__).resolve(), Path(f2.__file__).resolve(),
+        Path(f2.v020_loader.__file__).resolve(),
+        (REPO / ".scratch/multi-catfish-v023-physical/v023_physical_episode_runner.py").resolve(),
+        (REPO / ".scratch/multi-catfish-v023-physical/run_v023_dropc3_evaluation_server.py").resolve(),
+        (REPO / ".scratch/multi-catfish-v023-c3-contingency/c3_contingency_f0.py").resolve(),
+        (REPO / "src/mcrl/runtime/ee_axis_ops3_live.py").resolve(),
+        (REPO / "src/mcrl/runtime/ee_axis_state.py").resolve(),
+        (REPO / "src/mcrl/env/step.py").resolve(),
+        (REPO / "src/mcrl/runtime/energy_efficiency.py").resolve(),
+        (REPO / "src/mcrl/env/interference.py").resolve(),
+        (REPO / "src/mcrl/env/link_budget.py").resolve(),
+    )
+
+
 def expected_code_bindings() -> list[dict[str, str]]:
     paths: list[tuple[str, Path]] = [("eta_ref_config", CONFIG_PATH)]
     roots = (
@@ -278,6 +351,12 @@ def expected_code_bindings() -> list[dict[str, str]]:
         for path in sorted(root.rglob("*.py")):
             if "__pycache__" not in path.parts:
                 paths.append((f"{prefix}:{path.relative_to(root).as_posix()}", path))
+    graph = set(actual_import_graph_paths())
+    missing = set(_inference_hand_list()) - graph
+    if missing:
+        detail = ", ".join(str(path) for path in sorted(missing, key=str))
+        raise C3SScreenError(f"actual inference import graph omits hand-listed modules: {detail}")
+    paths.extend(("inference_import_graph", path) for path in graph)
     unique: dict[Path, str] = {}
     for role, path in paths:
         unique.setdefault(path.resolve(), role)
@@ -369,6 +448,65 @@ def validate_evidence_manifest(value: object) -> dict[str, str]:
     return binding
 
 
+def derive_world_inventory() -> dict[str, object]:
+    """Derive the complete used/allocated census from authenticated authorities."""
+
+    e1_derivation = load_json(E1_WORLD_DERIVATION, field="E1 world derivation")
+    c3s_derivation = load_json(C3S_WORLD_DERIVATION, field="C3S world derivation")
+    v024_derivation = load_json(V024_WORLD_DERIVATION, field="V024 world derivation")
+    expected_e1 = {
+        domain: seed for domain, seed in zip(e1.WORLD_DOMAINS, e1.WORLDS, strict=True)
+    }
+    expected_c3s = {
+        domain: seed for domain, seed in zip(WORLD_DOMAINS, WORLDS, strict=True)
+    }
+    v024_values = v024_derivation.get("domains_and_seeds")
+    if (
+        e1_derivation.get("world_seeds") != expected_e1
+        or e1_derivation.get("domains") != list(e1.WORLD_DOMAINS)
+        or c3s_derivation.get("worlds") != expected_c3s
+        or not isinstance(v024_values, Mapping)
+        or not v024_values
+        or any(
+            type(seed) is not int
+            or derive_world_seed_for_inventory(str(domain)) != seed
+            for domain, seed in v024_values.items()
+        )
+        or tuple(f2.WORLDS) != tuple(range(2026121721, 2026121725))
+    ):
+        raise C3SScreenError("authenticated world derivation authority drifted")
+    try:
+        stagec = stagec_plan.build_world_plan()
+        stagec_plan.verify_world_plan(stagec)
+        stagec_worlds = [int(row["world_seed"]) for row in stagec["worlds"]]
+    except (KeyError, TypeError, ValueError, stagec_plan.WorldPlanError) as error:
+        raise C3SScreenError("authenticated Stage-C world plan cannot be derived") from error
+    if not stagec_worlds or len(stagec_worlds) != stagec_plan.EPISODES:
+        raise C3SScreenError("authenticated Stage-C world inventory is incomplete")
+    used = sorted(set(int(seed) for seed in e1.WORLDS) | set(int(seed) for seed in f2.WORLDS))
+    allocated = sorted(set(stagec_worlds) | {int(seed) for seed in v024_values.values()})
+    if not used or not allocated or set(used).intersection(allocated):
+        raise C3SScreenError("used/allocated world authorities are empty or overlapping")
+    source_paths = (
+        E1_WORLD_DERIVATION.resolve(), Path(f2.__file__).resolve(),
+        C3S_WORLD_DERIVATION.resolve(), V024_WORLD_DERIVATION.resolve(),
+        Path(stagec_plan.__file__).resolve(), Path(e1.stagec_common.__file__).resolve(),
+    )
+    return {
+        "source_artifacts": [
+            {"path": str(path), "sha256": file_sha256(path)} for path in source_paths
+        ],
+        "used_worlds": used,
+        "allocated_worlds": allocated,
+    }
+
+
+def derive_world_seed_for_inventory(domain: str) -> int:
+    """Apply the project-wide domain rule without restricting to C3S domains."""
+
+    return int.from_bytes(hashlib.sha256(domain.encode("ascii")).digest()[:8], "big") & WORLD_MASK
+
+
 def validate_world_census(value: object) -> dict[str, str]:
     payload, binding = _sealed_json_binding(value, field="C3S world census")
     if set(payload) != {
@@ -391,6 +529,9 @@ def validate_world_census(value: object) -> dict[str, str]:
         seen_paths.add(str(source_path))
         if file_sha256(source_path) != source_digest:
             raise C3SScreenError("C3S world census source digest changed")
+    expected_inventory = derive_world_inventory()
+    if sources != expected_inventory["source_artifacts"]:
+        raise C3SScreenError("C3S world census does not cover the authenticated inventories")
     used = payload.get("used_worlds")
     allocated = payload.get("allocated_worlds")
     if (
@@ -401,7 +542,10 @@ def validate_world_census(value: object) -> dict[str, str]:
         or not payload["inventory_scope"].strip()
         or not isinstance(used, list) or any(type(item) is not int for item in used)
         or not isinstance(allocated, list) or any(type(item) is not int for item in allocated)
+        or not used or not allocated
         or len(used) != len(set(used)) or len(allocated) != len(set(allocated))
+        or used != expected_inventory["used_worlds"]
+        or allocated != expected_inventory["allocated_worlds"]
         or payload.get("c3s_worlds") != list(WORLDS)
     ):
         raise C3SScreenError("C3S world census contents are malformed")
@@ -578,6 +722,82 @@ def _publish_directory_artifact(
     return target
 
 
+@contextmanager
+def _terminal_publish_lock(root: Path):
+    """Serialize terminal publication and make arbitration race-free."""
+
+    output = _local(root, field="output root")
+    output.mkdir(parents=True, exist_ok=True)
+    lock_path = output / ".terminal-publish.lock"
+    if lock_path.is_symlink():
+        raise C3SScreenError("terminal publication lock is symlinked")
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(lock_path, flags, 0o600)
+    with os.fdopen(descriptor, "a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _existing_terminal_state(
+    root: Path, *, preflight_sha256: str, producer_common_binding: Mapping[str, object],
+    authority_sha256: str | None = None, authority_path: Path | None = None,
+) -> tuple[Path, bool] | None:
+    """Authenticate and reuse a published terminal, with COMPLETE precedence."""
+
+    output = _local(root, field="output root")
+    terminal = output / TERMINAL_DIRECTORY_NAME / TERMINAL_RECEIPT_NAME
+    invalidation = output / GLOBAL_INVALIDATION_DIRECTORY_NAME / GLOBAL_INVALIDATION_NAME
+    if terminal.exists() or terminal.is_symlink():
+        digest = file_sha256(terminal)
+        _validate_sealed(terminal, digest=digest, field="terminal receipt")
+        existing = load_json(terminal, field="terminal receipt")
+        expected_authority = None if authority_path is None else {
+            "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
+        }
+        if (
+            existing.get("schema") != TERMINAL_RECEIPT_SCHEMA
+            or existing.get("status") != "COMPLETE"
+            or existing.get("outcome") != "C3S_THREE_ARM_SCREEN_COMPLETE"
+            or existing.get("preflight_manifest_sha256") != preflight_sha256
+            or existing.get("producer_common_binding") != dict(producer_common_binding)
+            or existing.get("integrity") is not True
+            or authority_sha256 is not None
+            and (
+                existing.get("launch_authority_sha256") != authority_sha256
+                or existing.get("launch_authority") != expected_authority
+            )
+        ):
+            raise C3SScreenError("existing terminal receipt is not reusable")
+        return terminal, True
+    if invalidation.exists() or invalidation.is_symlink():
+        digest = file_sha256(invalidation)
+        _validate_sealed(invalidation, digest=digest, field="global invalidation")
+        existing = load_json(invalidation, field="global invalidation")
+        expected_authority = None if authority_path is None else {
+            "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
+        }
+        if (
+            existing.get("schema") != TERMINAL_RECEIPT_SCHEMA
+            or existing.get("status") != "INVALID_RUN"
+            or existing.get("outcome") != "INVALID_RUN"
+            or existing.get("scope") != "merge"
+            or existing.get("preflight_manifest_sha256") != preflight_sha256
+            or existing.get("producer_common_binding") != dict(producer_common_binding)
+            or existing.get("integrity") is not False
+            or authority_sha256 is not None
+            and (
+                existing.get("launch_authority_sha256") != authority_sha256
+                or existing.get("launch_authority") != expected_authority
+            )
+        ):
+            raise C3SScreenError("existing global invalidation is malformed")
+        return invalidation, False
+    return None
+
+
 def _step_metric(outcome: Any, interval_s: float) -> dict[str, object]:
     try:
         rates = np.asarray(outcome.link_rate_bps, dtype=np.float64)
@@ -694,6 +914,7 @@ def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
         )
         trajectories: dict[str, dict[str, object]] = {}
         adapters: dict[str, c3s_policy.C3SPolicyAdapter] = {}
+        base_decisions: list[dict[str, object]] = []
         for arm in ARMS:
             environment = _make_environment(archive, horizon=horizon)
             field = KeyedFadingField.from_components(FIELD_COMPONENT, key.world)
@@ -703,9 +924,29 @@ def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
                 raise C3SScreenError("canonical RNG factory lacks two streams")
             if arm == "BASE":
                 def selector(step_env: Any, observation: Any, _rng: np.random.Generator) -> np.ndarray:
-                    return e1._q12_surface_base_only(
+                    q_started = time.perf_counter()
+                    actions = e1._q12_surface_base_only(
                         physical, frozen, step_env, observation
                     )[2]
+                    q_seconds = time.perf_counter() - q_started
+                    base_decisions.append({
+                        "decision_index": len(base_decisions),
+                        "wall_seconds_hex": q_seconds.hex(),
+                        "phase_wall_seconds_hex": {
+                            "q_inference": q_seconds.hex(),
+                            "enumeration": 0.0.hex(),
+                            "nominal_evaluation": 0.0.hex(),
+                        },
+                        "phase_applicability": {
+                            "q_inference": "MEASURED",
+                            "enumeration": "NOT_APPLICABLE_BASE_HAS_NO_CATALOG",
+                            "nominal_evaluation": "NOT_APPLICABLE_BASE_HAS_NO_NOMINAL_PASS",
+                        },
+                        "enumerated_profiles": 0,
+                        "unique_nominal_evaluations": 0,
+                        "selected_nominal": None,
+                    })
+                    return actions
             else:
                 adapter = c3s_policy.C3SPolicyAdapter(
                     physical=physical, frozen=frozen, catalog=arm.lower()
@@ -737,6 +978,7 @@ def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
             "lineage_authority": f2.lineage_authority_bindings()[LINEAGES.index(key.lineage)],
             "eta_ref_exact": fraction_payload(adapters["FULL"].eta_ref),
             "arms": trajectories,
+            "base_decisions": base_decisions,
             "decisions_by_arm": decisions,
             "action_changes_by_arm": changes,
             "integrity": True, "test_split_opened": False,
@@ -954,6 +1196,7 @@ def _validate_complete_unit(
     )
     arms = receipt.get("arms")
     decisions = receipt.get("decisions_by_arm")
+    base_decisions = receipt.get("base_decisions")
     changes = receipt.get("action_changes_by_arm")
     expected_root = e1.KeyedFadingField.from_components(
         FIELD_COMPONENT, key.world
@@ -994,6 +1237,8 @@ def _validate_complete_unit(
         or set(changes) != set(COORDINATOR_ARMS)
         or any(not isinstance(decisions[arm], list) or len(decisions[arm]) != horizon
                for arm in COORDINATOR_ARMS)
+        or not isinstance(base_decisions, list)
+        or len(base_decisions) != horizon
         or any(
             changes[arm] != sum(
                 bool(row.get("action_changed"))
@@ -1014,6 +1259,9 @@ def _validate_complete_unit(
         or receipt.get("integrity") is not True
     ):
         raise C3SScreenError(f"unit {key.slug} is invalid or incomplete")
+    base_summary = base_q_timing_summary([receipt])
+    if base_summary.get("decisions") != horizon:
+        raise C3SScreenError(f"unit {key.slug} BASE Q timing coverage is incomplete")
     return receipt, digest
 
 
@@ -1044,6 +1292,15 @@ def execute_unit(
     authority_path: Path, producer_common_binding: Mapping[str, object],
 ) -> tuple[Path, bool]:
     root = _local(output, field="output root")
+    terminal_state = _existing_terminal_state(
+        root, preflight_sha256=preflight_sha256,
+        producer_common_binding=producer_common_binding,
+    )
+    if terminal_state is not None:
+        # A global invalidation is terminal for every unit and must win before
+        # completed-unit reuse or any physics.  A valid COMPLETE terminal also
+        # makes further unit work unnecessary.
+        return terminal_state
     existing = _unit_path(root, key)
     if existing.exists() or existing.is_symlink():
         _validate_complete_unit(
@@ -1109,6 +1366,75 @@ def _load_complete_units(
     return receipts, bindings
 
 
+def _timing_statistics(values: Sequence[float]) -> dict[str, str]:
+    if not values or any(not math.isfinite(value) or value < 0 for value in values):
+        raise C3SScreenError("timing summary is empty or invalid")
+    ordered = sorted(values)
+    return {
+        "mean_hex": (math.fsum(values) / len(values)).hex(),
+        "median_hex": (
+            (ordered[(len(ordered) - 1) // 2] + ordered[len(ordered) // 2]) / 2
+        ).hex(),
+        "p95_nearest_rank_hex": ordered[math.ceil(0.95 * len(ordered)) - 1].hex(),
+        "maximum_hex": max(values).hex(),
+    }
+
+
+def base_q_timing_summary(
+    receipts: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """Summarize BASE Q inference and explicitly enumerate its N/A phases."""
+
+    values: dict[str, list[float]] = {
+        "q_inference": [], "enumeration": [], "nominal_evaluation": [],
+    }
+    expected_applicability = {
+        "q_inference": "MEASURED",
+        "enumeration": "NOT_APPLICABLE_BASE_HAS_NO_CATALOG",
+        "nominal_evaluation": "NOT_APPLICABLE_BASE_HAS_NO_NOMINAL_PASS",
+    }
+    for receipt in receipts:
+        rows = receipt.get("base_decisions")
+        if not isinstance(rows, list):
+            raise C3SScreenError("unit receipt lacks BASE Q-inference timing")
+        for row in rows:
+            try:
+                if (
+                    not isinstance(row, Mapping)
+                    or row.get("phase_applicability") != expected_applicability
+                    or row.get("enumerated_profiles") != 0
+                    or row.get("unique_nominal_evaluations") != 0
+                    or row.get("selected_nominal") is not None
+                ):
+                    raise ValueError("BASE applicability drifted")
+                phases = row["phase_wall_seconds_hex"]
+                if not isinstance(phases, Mapping) or set(phases) != set(values):
+                    raise ValueError("BASE phase keys drifted")
+                parsed = {name: float.fromhex(str(phases[name])) for name in values}
+                wall = float.fromhex(str(row["wall_seconds_hex"]))
+            except (KeyError, TypeError, ValueError, OverflowError) as error:
+                raise C3SScreenError("BASE Q-inference timing row is malformed") from error
+            if (
+                not math.isfinite(wall) or wall < 0
+                or parsed["q_inference"] != wall
+                or parsed["enumeration"] != 0.0
+                or parsed["nominal_evaluation"] != 0.0
+            ):
+                raise C3SScreenError("BASE Q-inference timing row is invalid")
+            for name, seconds in parsed.items():
+                values[name].append(seconds)
+    return {
+        "decisions": len(values["q_inference"]),
+        "phase_wall_seconds": {
+            name: _timing_statistics(seconds) for name, seconds in values.items()
+        },
+        "phase_applicability": expected_applicability,
+        "enumerated_profiles": 0,
+        "unique_nominal_evaluations": 0,
+        "selected_nominal": None,
+    }
+
+
 def coordinator_timing_summary(
     receipts: Sequence[Mapping[str, object]], *, arm: str,
 ) -> dict[str, object]:
@@ -1169,21 +1495,11 @@ def coordinator_timing_summary(
                 profile_counts[name] += int(counts[name])
     if not wall:
         raise C3SScreenError("C3S decision timing summary is empty")
-    def summary(values: Sequence[float]) -> dict[str, str]:
-        ordered = sorted(values)
-        return {
-            "mean_hex": (math.fsum(values) / len(values)).hex(),
-            "median_hex": (
-                (ordered[(len(ordered) - 1) // 2] + ordered[len(ordered) // 2]) / 2
-            ).hex(),
-            "p95_nearest_rank_hex": ordered[math.ceil(0.95 * len(ordered)) - 1].hex(),
-            "maximum_hex": max(values).hex(),
-        }
     return {
         "decisions": len(wall),
-        "wall_seconds": summary(wall),
+        "wall_seconds": _timing_statistics(wall),
         "phase_wall_seconds": {
-            name: summary(values) for name, values in phase_values.items()
+            name: _timing_statistics(values) for name, values in phase_values.items()
         },
         "catalog_size": {
             "minimum": min(catalogs), "maximum": max(catalogs),
@@ -1223,15 +1539,9 @@ def per_arm_wall_timing(
                 raise C3SScreenError("unit arm timing is malformed") from error
         if not wall or any(not math.isfinite(value) or value < 0 for value in wall):
             raise C3SScreenError("unit arm timing is empty or invalid")
-        ordered = sorted(wall)
         result[arm] = {
             "decisions": len(wall),
-            "mean_hex": (math.fsum(wall) / len(wall)).hex(),
-            "median_hex": (
-                (ordered[(len(ordered) - 1) // 2] + ordered[len(ordered) // 2]) / 2
-            ).hex(),
-            "p95_nearest_rank_hex": ordered[math.ceil(0.95 * len(ordered)) - 1].hex(),
-            "maximum_hex": max(wall).hex(),
+            **_timing_statistics(wall),
         }
     return result
 
@@ -1293,46 +1603,13 @@ def execute_merge(
     authority_path: Path, producer_common_binding: Mapping[str, object],
 ) -> tuple[Path, bool]:
     root = _local(output, field="output root")
-    expected_authority = {
-        "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
-    }
-    terminal = root / TERMINAL_DIRECTORY_NAME / TERMINAL_RECEIPT_NAME
-    invalidation = (
-        root / GLOBAL_INVALIDATION_DIRECTORY_NAME / GLOBAL_INVALIDATION_NAME
+    existing_state = _existing_terminal_state(
+        root, preflight_sha256=preflight_sha256,
+        producer_common_binding=producer_common_binding,
+        authority_sha256=authority_sha256, authority_path=authority_path,
     )
-    if terminal.exists() or terminal.is_symlink():
-        digest = file_sha256(terminal)
-        _validate_sealed(terminal, digest=digest, field="terminal receipt")
-        existing = load_json(terminal, field="terminal receipt")
-        if (
-            existing.get("schema") != TERMINAL_RECEIPT_SCHEMA
-            or existing.get("status") != "COMPLETE"
-            or existing.get("outcome") != "C3S_THREE_ARM_SCREEN_COMPLETE"
-            or existing.get("preflight_manifest_sha256") != preflight_sha256
-            or existing.get("launch_authority_sha256") != authority_sha256
-            or existing.get("launch_authority") != expected_authority
-            or existing.get("producer_common_binding") != dict(producer_common_binding)
-            or existing.get("integrity") is not True
-        ):
-            raise C3SScreenError("existing terminal receipt is not reusable")
-        return terminal, True
-    if invalidation.exists() or invalidation.is_symlink():
-        digest = file_sha256(invalidation)
-        _validate_sealed(invalidation, digest=digest, field="global invalidation")
-        existing = load_json(invalidation, field="global invalidation")
-        if (
-            existing.get("schema") != TERMINAL_RECEIPT_SCHEMA
-            or existing.get("status") != "INVALID_RUN"
-            or existing.get("outcome") != "INVALID_RUN"
-            or existing.get("scope") != "merge"
-            or existing.get("preflight_manifest_sha256") != preflight_sha256
-            or existing.get("launch_authority_sha256") != authority_sha256
-            or existing.get("launch_authority") != expected_authority
-            or existing.get("producer_common_binding") != dict(producer_common_binding)
-            or existing.get("integrity") is not False
-        ):
-            raise C3SScreenError("existing global invalidation is malformed")
-        return invalidation, False
+    if existing_state is not None:
+        return existing_state
     try:
         receipts, bindings = _load_complete_units(
             root, horizon=horizon, preflight_sha256=preflight_sha256,
@@ -1344,6 +1621,7 @@ def execute_merge(
             arm: coordinator_timing_summary(receipts, arm=arm)
             for arm in COORDINATOR_ARMS
         }
+        coordinator_timing["BASE"] = base_q_timing_summary(receipts)
         expected_opportunities = len(ALL_UNITS) * horizon * USERS
         if (
             pooled["counts"]["units"] != 12
@@ -1380,10 +1658,18 @@ def execute_merge(
             "integrity": True, "test_split_opened": False,
             "episode_training": False, "learner_update": False, "efficacy_claim": False,
         }
-        return _publish_directory_artifact(
-            root, directory_name=TERMINAL_DIRECTORY_NAME,
-            filename=TERMINAL_RECEIPT_NAME, payload=payload,
-        ), True
+        with _terminal_publish_lock(root):
+            existing_state = _existing_terminal_state(
+                root, preflight_sha256=preflight_sha256,
+                producer_common_binding=producer_common_binding,
+                authority_sha256=authority_sha256, authority_path=authority_path,
+            )
+            if existing_state is not None:
+                return existing_state
+            return _publish_directory_artifact(
+                root, directory_name=TERMINAL_DIRECTORY_NAME,
+                filename=TERMINAL_RECEIPT_NAME, payload=payload,
+            ), True
     except MergeWaiting as error:
         payload = incomplete_receipt(
             scope="merge", error=error, key=None,
@@ -1433,10 +1719,21 @@ def execute_merge(
         payload["launch_authority"] = {
             "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
         }
-        return _publish_directory_artifact(
-            root, directory_name=GLOBAL_INVALIDATION_DIRECTORY_NAME,
-            filename=GLOBAL_INVALIDATION_NAME, payload=payload,
-        ), False
+        with _terminal_publish_lock(root):
+            # A competing merge may have published while this merge computed or
+            # while its first publication attempt collided.  Reuse that state;
+            # never convert a valid COMPLETE into a spurious global invalidation.
+            existing_state = _existing_terminal_state(
+                root, preflight_sha256=preflight_sha256,
+                producer_common_binding=producer_common_binding,
+                authority_sha256=authority_sha256, authority_path=authority_path,
+            )
+            if existing_state is not None:
+                return existing_state
+            return _publish_directory_artifact(
+                root, directory_name=GLOBAL_INVALIDATION_DIRECTORY_NAME,
+                filename=GLOBAL_INVALIDATION_NAME, payload=payload,
+            ), False
 
 
 def estimate(*, units: int) -> dict[str, object]:
