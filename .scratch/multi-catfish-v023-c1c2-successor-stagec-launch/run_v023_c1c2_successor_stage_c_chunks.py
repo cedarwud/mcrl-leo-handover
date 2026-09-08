@@ -481,6 +481,9 @@ def merge_arm(args: argparse.Namespace) -> dict[str, object]:
             runtime_admission=args.runtime_admission,
             continuation_authority=getattr(args, "continuation_authority", None),
             owner_notification_marker=getattr(args, "owner_notification_marker", None),
+            allow_published_continuation=bool(
+                getattr(args, "resume_continuation", False)
+            ),
         )
     return runner.merge_arm_chunks(args.arm, args.chunk_roots, args.output)
 
@@ -542,6 +545,9 @@ def check_barrier(args: argparse.Namespace) -> dict[str, object]:
             runtime_admission=args.runtime_admission,
             continuation_authority=getattr(args, "continuation_authority", None),
             owner_notification_marker=getattr(args, "owner_notification_marker", None),
+            allow_published_continuation=bool(
+                getattr(args, "resume_continuation", False)
+            ),
         )
         for episode in range(start + 1, end + 1):
             row, _state = runner._read_episode_record(

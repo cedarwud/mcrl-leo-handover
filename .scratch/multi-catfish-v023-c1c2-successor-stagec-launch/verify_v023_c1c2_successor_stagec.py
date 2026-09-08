@@ -759,6 +759,7 @@ def verify_arm_chunk(
     runtime_admission: Path,
     continuation_authority: Path | None = None,
     owner_notification_marker: Path | None = None,
+    allow_published_continuation: bool = False,
 ) -> dict[str, object]:
     """Independently recompute one chunk's plan, stream, coverage and pools."""
 
@@ -847,6 +848,7 @@ def verify_arm_chunk(
                 bindings_sha256=common.file_sha256(bindings_path),
                 plan_sha256=common.PLAN_SHA256,
                 policy_bindings=policy_bindings,
+                allow_published_continuation=allow_published_continuation,
             )
         except physical_runner.C1C2PhysicalError as error:
             raise common.StageCError(str(error)) from error

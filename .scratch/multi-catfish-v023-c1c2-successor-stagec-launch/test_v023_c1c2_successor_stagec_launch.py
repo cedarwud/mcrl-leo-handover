@@ -776,6 +776,9 @@ def _barrier_args(root: Path) -> argparse.Namespace:
         admission_supplement=Path("supplement.json"),
         acceptance_bundle=Path("acceptance.json"),
         runtime_admission=Path("runtime.json"),
+        continuation_authority=None,
+        owner_notification_marker=None,
+        resume_continuation=False,
     )
 
 
@@ -794,6 +797,42 @@ def test_barrier_authenticates_exact_runner_written_cumulative_contents(
     _stub_chunk_verifier(monkeypatch)
     result = chunk_controller.check_barrier(_barrier_args(runner_written_arm_barrier))
     assert result["status"] == "AUTHENTICATED_CUMULATIVE_BARRIER"
+
+
+def test_resume_recovery_reaches_every_independent_chunk_precheck(
+    runner_written_arm_barrier: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed = []
+
+    class RecoveryVerifier:
+        @staticmethod
+        def verify_arm_chunk(*_args, **kwargs):
+            observed.append(kwargs["allow_published_continuation"])
+            return {}
+
+    monkeypatch.setattr(controller, "_module", lambda _path: RecoveryVerifier)
+    monkeypatch.setattr(chunk_controller, "_runner", lambda: runner)
+    barrier_args = _barrier_args(runner_written_arm_barrier)
+    barrier_args.resume_continuation = True
+    chunk_controller.check_barrier(barrier_args)
+    merge = common.read_json(
+        runner_written_arm_barrier / "arm-merge.json", field="recovery fixture merge"
+    )
+    chunk_roots = [Path(record["path"]).parent for record in merge["chunk_receipts"]]
+    monkeypatch.setattr(runner, "merge_arm_chunks", lambda *_args: {"status": "MERGED"})
+    chunk_controller.merge_arm(argparse.Namespace(
+        bindings=Path("bindings.json"),
+        admission_supplement=Path("supplement.json"),
+        acceptance_bundle=Path("acceptance.json"),
+        runtime_admission=Path("runtime.json"),
+        continuation_authority=None,
+        owner_notification_marker=None,
+        resume_continuation=True,
+        arm="BASELINE",
+        chunk_roots=chunk_roots,
+        output=runner_written_arm_barrier.parent / "recovery-merge",
+    ))
+    assert observed == [True, True, True, True]
 
 
 @pytest.mark.parametrize("mutation", ["empty", "missing", "wrong-count", "tampered-rung"])
@@ -1364,6 +1403,12 @@ def test_real_wrapper_resume_reaches_merge_four_and_skips_authenticated_arm_merg
     controller_path.write_text(
         "import json,os,sys\n"
         "args=sys.argv[1:]\n"
+        "sys.path.insert(0,os.environ['STAGEC_CONTROLLER_PACKAGE'])\n"
+        "import run_v023_c1c2_successor_stage_c_chunks as actual\n"
+        "parsed=actual._parser().parse_args(args)\n"
+        "if args[0] in {'check-launch','check-barrier','merge-four'} and not "
+        "getattr(parsed,'resume_continuation',False):\n"
+        " print('missing recovery intent',file=sys.stderr); raise SystemExit(2)\n"
         "with open(os.environ['WRAPPER_COMMAND_LOG'],'a',encoding='ascii') as f:\n"
         " f.write(json.dumps(args,separators=(',',':'))+'\\n')\n"
         "print(json.dumps({'status':'SYNTHETIC_WRAPPER_COMMAND'}))\n",
@@ -1383,6 +1428,7 @@ def test_real_wrapper_resume_reaches_merge_four_and_skips_authenticated_arm_merg
         "V023_STAGEC_PYTHON": sys.executable,
         "V023_STAGEC_CONTROLLER": str(controller_path),
         "WRAPPER_COMMAND_LOG": str(command_log),
+        "STAGEC_CONTROLLER_PACKAGE": str(HERE),
         "PYTHONPATH": str(REPO / "src"),
         "TMPDIR": str(REPO / ".tmp"),
     })
@@ -1445,8 +1491,11 @@ def test_chunk_continuation_refuses_missing_authority_before_boundary_work() -> 
     assert called is False
 
 
+@pytest.mark.parametrize("resume_continuation", [False, True])
 def test_continuation_policy_membership_accepts_producer_sorted_json_order(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    resume_continuation: bool,
 ) -> None:
     root = tmp_path / "reporting"
     checkpoint = root / "checkpoints/checkpoint-003000.json"
@@ -1470,6 +1519,7 @@ def test_continuation_policy_membership_accepts_producer_sorted_json_order(
         @staticmethod
         def authenticate_continuation_chain(*_args, **kwargs):
             assert set(kwargs["policy_bindings"]) == set(common.ARMS)
+            assert kwargs["allow_published_continuation"] is resume_continuation
             return {
                 "authority_sha256": "a" * 64,
                 "owner_notification_sha256": "b" * 64,
@@ -1481,7 +1531,7 @@ def test_continuation_policy_membership_accepts_producer_sorted_json_order(
             owner_notification_marker=tmp_path / "owner.json",
             continuation_activity=tmp_path / "activity.json",
             bindings=bindings_path,
-            resume_continuation=False,
+            resume_continuation=resume_continuation,
         ),
         {"stage_c_output_root": str(root)},
         SortedOrderRunner,
