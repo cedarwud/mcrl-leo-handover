@@ -101,6 +101,10 @@ class ProbeIncomplete(ProbeError):
     """The declared panel is not complete enough for a scientific result."""
 
 
+class ProbeWaiting(ProbeError):
+    """The declared panel still has units that have not published receipts."""
+
+
 def canonical_bytes(value: object) -> bytes:
     try:
         return json.dumps(
@@ -487,7 +491,7 @@ def generate_raw_tape(*, key: UnitKey, tle_root: Path, preflight_sha256: str) ->
         if step_index < STEPS - 1:
             if bool(committed.done):
                 raise ProbeError("unit episode ended before step 9")
-            observation = committed.observation
+            observation = environment.last_outcome.observation
     return {
         "schema": RAW_TAPE_SCHEMA,
         "status": "COMPLETE_IMMUTABLE_TAPE",
@@ -673,6 +677,7 @@ def execute_unit(
         "preflight_sha256": preflight_sha256,
         "integrity": False,
         "error_type": type(caught).__name__,
+        "error_text": str(caught),
         "error_sha256": hashlib.sha256(str(caught).encode("utf-8")).hexdigest(),
         "test_split_opened": False,
         "episode_training": False,
@@ -687,21 +692,48 @@ def _anchor_panels(output: Path, grid: str) -> tuple[list[dict[str, object]], li
     unilateral_panel: list[dict[str, object]] = []
     joint_panel: list[dict[str, object]] = []
     metadata: dict[str, dict[str, object]] = {}
+    receipts: dict[str, dict[str, object]] = {}
+    missing: list[str] = []
+    interrupted: list[tuple[UnitKey, dict[str, object]]] = []
+    invalid: list[tuple[UnitKey, dict[str, object]]] = []
+    for key in ALL_UNITS:
+        receipt_path = _grid_path(output, grid, key).with_name("receipt.json")
+        if not receipt_path.is_file():
+            missing.append(key.slug)
+            continue
+        receipt = _load_json(receipt_path, label="unit receipt")
+        if receipt_path.stat().st_mode & 0o222 or receipt.get("grid") != grid or receipt.get("unit") != key.as_dict():
+            raise ProbeError("unit receipt binding drifted")
+        status = receipt.get("status")
+        if status == "INCOMPLETE":
+            interrupted.append((key, receipt))
+        elif status == "INVALID_RUN":
+            invalid.append((key, receipt))
+        elif status == "COMPLETE":
+            receipts[key.slug] = receipt
+        else:
+            raise ProbeError(f"unit receipt {key.slug} has an unknown status")
+    if invalid:
+        key, receipt = invalid[0]
+        raise ProbeError(
+            f"unit {key.slug} finished INVALID_RUN: "
+            f"{receipt.get('error_text', receipt.get('error_type', 'unknown error'))}"
+        )
+    if interrupted:
+        key, receipt = interrupted[0]
+        raise ProbeIncomplete(
+            f"unit {key.slug} acquisition was interrupted: "
+            f"{receipt.get('error_text', receipt.get('error_type', 'unknown error'))}"
+        )
+    if missing:
+        raise ProbeWaiting(f"waiting for {len(missing)} unit receipt(s): {', '.join(missing)}")
     for key in ALL_UNITS:
         path = _grid_path(output, grid, key)
         if not path.is_file():
-            raise ProbeIncomplete(f"missing grid unit {key.slug}")
-        receipt_path = path.with_name("receipt.json")
-        if not receipt_path.is_file():
-            raise ProbeIncomplete(f"missing grid unit receipt {key.slug}")
-        receipt = _load_json(receipt_path, label="unit receipt")
-        if (
-            receipt_path.stat().st_mode & 0o222
-            or receipt.get("status") != "COMPLETE"
-            or receipt.get("grid") != grid
-            or receipt.get("unit") != key.as_dict()
-            or receipt.get("grid_tape", {}).get("sha256") != file_sha256(path)
-        ):
+            raise ProbeError(f"COMPLETE unit receipt lacks grid tape {key.slug}")
+        receipt = receipts[key.slug]
+        grid_tape = receipt.get("grid_tape")
+        if not isinstance(grid_tape, Mapping) or grid_tape.get("sha256") != file_sha256(path):
             raise ProbeError("unit receipt/grid tape binding drifted")
         tape = _load_json(path, label="grid tape")
         if tape.get("grid") != grid or tape.get("unit") != key.as_dict():
@@ -825,7 +857,7 @@ def qualification(
     }
 
 
-def execute_merge(*, output: Path, grid: str, preflight_sha256: str) -> Path:
+def execute_merge(*, output: Path, grid: str, preflight_sha256: str) -> Path | None:
     terminal = Path(output) / "grids" / grid / "terminal-receipt.json"
     if terminal.exists() or terminal.is_symlink():
         raise ProbeError("refusing to overwrite write-once terminal receipt")
@@ -862,6 +894,8 @@ def execute_merge(*, output: Path, grid: str, preflight_sha256: str) -> Path:
             "learner_update": False,
             "efficacy_claim": False,
         }
+    except ProbeWaiting:
+        return None
     except ProbeIncomplete as error:
         payload = _terminal_failure(grid, preflight_sha256, "INCOMPLETE", error)
     except e1_estimands.E1ResourceIncomplete as error:
@@ -888,6 +922,7 @@ def _terminal_failure(grid: str, preflight_sha256: str, status: str, error: Base
         "selection_rule": "FIRST_QUALIFYING_G1_THEN_G2_THEN_G3_G0_NEVER_SELECTED",
         "integrity": False,
         "error_type": type(error).__name__,
+        "error_text": str(error),
         "error_sha256": hashlib.sha256(str(error).encode("utf-8")).hexdigest(),
         "test_split_opened": False,
         "episode_training": False,
@@ -988,6 +1023,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             "status": _load_json(receipt, label="unit receipt")["status"],
         }
     receipt = execute_merge(output=args.output, grid=args.grid, preflight_sha256=preflight_sha)
+    if receipt is None:
+        return {"mode": "merge", "receipt": None, "status": "V024_PROBE_MERGE_WAITING"}
     return {"mode": "merge", "receipt": str(receipt)}
 
 
@@ -1007,10 +1044,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result["estimate"], sort_keys=True, indent=2))
     elif result["mode"] == "dry-run":
         print(f"V024_PROBE_DRY_RUN_PASS grid={result['grid']} preflight={result['preflight_sha256']}")
+    elif result.get("status") == "V024_PROBE_MERGE_WAITING":
+        print("V024_PROBE_MERGE_WAITING")
     else:
         print(f"V024_PROBE_{str(result['mode']).upper()} receipt={result['receipt']}")
     status = result.get("status")
-    return 3 if status == "INCOMPLETE" else 2 if status == "INVALID_RUN" else 0
+    return 3 if status in ("INCOMPLETE", "V024_PROBE_MERGE_WAITING") else 2 if status == "INVALID_RUN" else 0
 
 
 if __name__ == "__main__":

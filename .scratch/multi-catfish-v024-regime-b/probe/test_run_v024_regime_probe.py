@@ -179,8 +179,8 @@ def test_write_once(tmp_path: Path) -> None:
         probe._write_once(path, {"status": "COMPLETE"})
 
 
-def test_invalid_unit_and_incomplete_merge_are_non_scientific_receipts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+def test_invalid_unit_receipt_includes_exception_text_and_absent_merge_waits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
     def broken(**kwargs: object) -> dict[str, object]:
         raise probe.ProbeError("synthetic physical failure")
@@ -194,13 +194,101 @@ def test_invalid_unit_and_incomplete_merge_are_non_scientific_receipts(
     payload = json.loads(receipt.read_text(encoding="ascii"))
     assert payload["status"] == payload["outcome"] == "INVALID_RUN"
     assert payload["integrity"] is False
+    assert payload["error_text"] == "synthetic physical failure"
 
     terminal = probe.execute_merge(
         output=tmp_path / "merge", grid="G0", preflight_sha256="a" * 64
     )
+    assert terminal is None
+    assert not (tmp_path / "merge/grids/G0/terminal-receipt.json").exists()
+    monkeypatch.setattr(probe, "validate_preflight", lambda path: ({}, "a" * 64))
+    monkeypatch.setattr(probe, "validate_launch_authority", lambda *args, **kwargs: {})
+    assert probe.main([
+        "--grid", "G0", "--merge", "--preflight", str(tmp_path / "preflight"),
+        "--launch-authority", str(tmp_path / "authority"),
+        "--output", str(tmp_path / "merge"),
+    ]) == 3
+    assert capsys.readouterr().out.strip() == "V024_PROBE_MERGE_WAITING"
+
+
+def test_interrupted_unit_makes_merge_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = probe.ALL_UNITS[0]
+
+    def interrupted(**kwargs: object) -> dict[str, object]:
+        raise probe.e1_estimands.E1ResourceIncomplete("synthetic interruption")
+
+    monkeypatch.setattr(probe, "generate_raw_tape", interrupted)
+    receipt, written = probe.execute_unit(
+        key=key, grid="G0", output=tmp_path,
+        tle_root=tmp_path, preflight_sha256="a" * 64,
+    )
+    assert written is True
+    assert json.loads(receipt.read_text(encoding="ascii"))["status"] == "INCOMPLETE"
+    terminal = probe.execute_merge(
+        output=tmp_path, grid="G0", preflight_sha256="a" * 64
+    )
+    assert terminal is not None
     merged = json.loads(terminal.read_text(encoding="ascii"))
     assert merged["status"] == merged["outcome"] == "INCOMPLETE"
-    assert merged["qualification"] is None
+    assert merged["error_text"].endswith(": synthetic interruption")
+
+
+def test_generate_raw_tape_advances_from_full_last_outcome(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "USERS", 2)
+    monkeypatch.setattr(probe, "STEPS", 2)
+    observations = [
+        SimpleNamespace(
+            step_index=index,
+            candidates=candidates(),
+            masks=candidates().masks,
+            observation_provenance=SimpleNamespace(content_digest=str(index) * 64),
+        )
+        for index in range(2)
+    ]
+    evaluation = SimpleNamespace(link_rate_bps=np.array([300e6, 20e6]))
+    step_env = SimpleNamespace(
+        driver=SimpleNamespace(config=SimpleNamespace(ephemeris=SimpleNamespace(time_step_s=probe.INTERVAL_S))),
+        num_users=2,
+    )
+
+    class Environment:
+        def __init__(self) -> None:
+            self.environment = step_env
+            self.last_outcome = SimpleNamespace(observation=observations[0], done=False)
+            self.index = 0
+
+        def reset(self, env_rng: object, mobility_rng: object) -> tuple[list[object], list[object], object]:
+            return [], [], observations[0]
+
+        def step(self, actions: object, rng: object) -> object:
+            self.last_outcome = SimpleNamespace(
+                observation=observations[min(self.index + 1, 1)],
+                done=self.index == 1,
+            )
+            self.index += 1
+            return SimpleNamespace(done=self.last_outcome.done)
+
+    profile = raw_profile([probe.INTERVAL_S * 300e6, probe.INTERVAL_S * 20e6])
+    monkeypatch.setattr(
+        probe, "ENVIRONMENT_FACTORY",
+        lambda key, tle_root: (Environment(), (np.random.default_rng(1), np.random.default_rng(2))),
+    )
+    monkeypatch.setattr(probe, "_evaluate", lambda env, actions, rng: evaluation)
+    monkeypatch.setattr(
+        probe, "_physical_profile",
+        lambda value, interval_s: (profile, SimpleNamespace(users=2), np.zeros(2)),
+    )
+    monkeypatch.setattr(probe.e1_runner.f1, "enumerate_unilateral_candidates", lambda *args: ())
+    monkeypatch.setattr(probe, "JOINT_BUILDER", lambda **kwargs: ())
+
+    raw = probe.generate_raw_tape(
+        key=probe.ALL_UNITS[0], tle_root=tmp_path, preflight_sha256="a" * 64
+    )
+    assert [step["step_index"] for step in raw["steps"]] == [0, 1]
 
 
 def test_tiny_synthetic_unit_cli_reuses_raw_tape_across_grids(
