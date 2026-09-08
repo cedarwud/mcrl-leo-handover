@@ -1,0 +1,15 @@
+# Task (gpt-5.6-sol): bring the C3-S LITE coordinator's decision latency under the 30.08 s control interval WITHOUT changing any decision
+
+Workspace: `/home/sat/mcrl-v023-codex-ws-c3s-latency` (clone of the E1 checkout at the hardened C3-S v2 runner commit), branch `c3s/latency`. Do not touch other worktrees, sealed/read-only files or `*.sha256`. Commit at the end.
+
+Context: the C3-S closed-loop kill screen v1 (4 worlds × 3 lineages × 30 steps, 12 single-threaded units run 12-way parallel on a 20-core box) returned SUPPORT for both FULL and LITE (pooled EE +2.88 % / +2.92 %, service identical). Measured per-decision wall (under that contention): BASE ≈ 1.9 s, LITE mean ≈ 49 s (p95 ≈ 57 s, max ≈ 254 s), FULL mean ≈ 67 s. LITE phase means: nominal_evaluation ≈ 12.9 s, q_inference ≈ 1.9 s, enumeration ≈ 0.01 s; so most of the LITE decision wall is outside those three phases (execution/physical step, snapshotting, catalog assembly, or the realised evaluation). The receipts are at `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/runs/c3s-20260908-r1/` (read-only: terminal + 12 unit receipts with per-step rows).
+
+Goal (engineering only, no scientific change): LITE mean decision wall < 30.08 s on ≤ 8 cores per decision, with **bit-identical decisions** (same selected profile_id / actions at every step) and identical realised outcomes to the v1 LITE arm.
+
+Steps
+1. Profile one LITE decision end-to-end (cProfile + wall timers around every stage of `run_arm_trajectory` / `C3SPolicyAdapter.decide` in `.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py` and `run_v023_c3s_screen.py`). Report where the missing ≈ 35 s goes. Use world 8464287092499831892, lineage 2026092101, the first 3 steps, single process, no contention.
+2. Optimise in this order, keeping determinism: (a) remove redundant work (repeated snapshot/restore, repeated mask rebuilds, repeated field lookups, per-candidate Python overhead → vectorise across candidates); (b) evaluate candidates in a deterministic process pool (fixed chunking, results reduced in canonical order; seeds/keys passed explicitly; no shared mutable state); (c) cache per-decision invariants. No change to the catalog, the score, the guard, tie-breaking or η_ref.
+3. Prove equivalence: a test that replays the first ≥ 5 steps of two v1 LITE units from the archived receipts and asserts identical `profile_id`, actions, nominal (B̂, Ê, Ĉ) and realised (B, E, served) per step, old code vs new code; plus a determinism test (two runs → identical receipts digest).
+4. Report `.scratch/multi-catfish-v023-c3s-screen/LATENCY-ENGINEERING-REPORT-2026-09-08.md`: profile table, what changed, measured before/after wall per decision (mean/median/p95/max over ≥ 10 decisions, 1 worker vs 8 workers, uncontended), equivalence test summary, any residual nondeterminism risk, and the exact CLI flags to enable the pool (default must remain the old single-process path so sealed digests stay valid until the controller rebinds).
+
+Constraints: no `sys.modules` aliasing; OMP/BLAS thread vars stay 1 inside workers; no TEST split; do not edit the sealed contract or any receipt.

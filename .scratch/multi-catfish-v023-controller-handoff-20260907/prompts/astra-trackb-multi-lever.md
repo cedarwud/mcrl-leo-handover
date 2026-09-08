@@ -1,0 +1,21 @@
+# Read-only co-design (gpt-6-astra, ultra): Track B iteration 2 as a PARALLEL lever matrix — declaration skeletons for every lever
+
+Owner's directive (2026-09-08 11:50 UTC, binding): "不要每次只試一個，同時試好幾個去跑，快速迭代；試完要整理找出為什麼失敗，逐步找到真的能讓 C3 發揮作用的地方；一直失敗就表示更源頭的地方可能搞錯，要用 fresh context 檢視。" So iteration 2 is not one lever: it is a matrix of physics levers probed simultaneously on the same tapes, each with its own pre-outcome declaration, all reported.
+
+You are the read-only co-designer. Do not modify files. Output one Markdown document to stdout. Workspace `/home/sat/mcrl-v024-codex-iter2` (clone of `/home/sat/mcrl-v024-regime-b`). A parallel single-lever adjudication of yours may already exist at `.tmp-prompts-trackb/astra-trackb-next-final.md`; if it does, stay consistent with it and put its lever first.
+
+Read: `.scratch/multi-catfish-v024-regime-b-design/V024-REGIME-B-DESIGN-CODEX-GPT6-ASTRA-ULTRA-2026-09-08.md` (your lever table), `TRACK-B-PROTOCOL-2026-09-08.md`, `ADJUDICATION-OUTSIDE-ROUND2-TRACK-B-CODEX-GPT6-ASTRA-2026-09-08.md`, the probe package `.scratch/multi-catfish-v024-regime-b/probe/` (runner + finite-demand override pattern + receipts), `.scratch/multi-catfish-v023-c3-existence-e1/e1_estimands.py`, `.scratch/multi-catfish-v023-c3-probe-results-20260908/ORACLE-MARGINALS-2026-09-08.md` and `PROBE-S0-2026-09-08.md`, and the r2 G0 receipt `/home/sat/mcrl-v024-regime-probe-20260908-r2/grids/G0/terminal-receipt.json` (J₁ +6.55 %, U₁ +6.43 %, interaction −1.58 % vs the weak fixed carriers → not coordination-relevant).
+
+Physics facts: per-beam RF power = max over served users; legal cap 1.65 W ≪ PA saturation 5.218 W; PA ≈ 94.8 % of energy; 166.667 MHz per beam shared equally; no occupancy ceiling; Δt = 30.08 s.
+
+## Produce, for EACH lever below (≤ 35 lines each), a pre-outcome declaration skeleton
+Levers: **L1** per-user allocation with target-SINR power control and p_b = Σ_u p_u (independent sub-channels); **L2** PA operating-point / back-off efficiency curve bound to a cited device model (state the curve, its constants, and what must still be verified against the original source); **L12** = L1 + L2 (the coherent load → power → PA-efficiency chain); **L4** explicit per-handover / reconfiguration energy (tracking, beam re-steering, signalling) with a cited magnitude; **L3** load-dependent bandwidth or per-user control overhead (include only if you judge it non-trivial); **L5** finite-demand v2 grid (∞/50/10/5 Mbit/s) — include only as a disclosed low-prior control if at all.
+For each: (a) physics override equations and what stays fixed; (b) every constant with provenance (local references index `.scratch/chinese-word-v023-lcsrs-20260905-r2/REFERENCES.md` if present, otherwise well-known device/standards numbers flagged `VERIFY_SOURCE`); (c) whether the r2 raw tapes (`/home/sat/mcrl-v024-regime-probe-20260908-r2/raw-units`) remain valid inputs or regeneration is needed, and why; (d) the arms: reference carriers, exact one-step +C1, +C1+C2, +C1+C2+C3 additive, set-decoder with privileged oracle, DROP arms; the three oracle marginals; U₁/J₁/interaction; (e) qualification thresholds (reuse memo §4 unless you state why not); (f) expected direction for C1 and C2 marginals under this lever, with reasoning (the owner needs all three positive); (g) cost relative to the finite-demand oracle probe; (h) the exposure-disclosure sentence (finite-demand oracle results, r2 G0, and possibly Track A closed-loop results are known before sealing).
+
+## Then
+1. Rank the levers by prior that ALL THREE oracle marginals come out positive; give a one-line reason each.
+2. Say which levers can be probed in the same runner with a `--lever` switch (shared code, separate units, separate receipts) and which need their own acquisition path.
+3. Multiplicity/disclosure text for a parallel lever matrix (all levers reported; first qualifying lever in the declared priority order proceeds; no lever may be chosen after seeing results).
+4. The failure-analysis obligation per lever: what to record so that a NO_SUPPORT lever explains itself (which marginal failed, by how much, per world; whether energy or bits moved).
+
+End with exactly one line: `ASTRA_TRACKB_MULTI: LEVERS=<comma-separated in priority order> | SHARED_RUNNER=<comma list> | REGEN_NEEDED=<comma list or NONE>`.
