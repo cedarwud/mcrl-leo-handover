@@ -169,8 +169,9 @@ class RewardComponents:
       Additive by construction: summing it over users recovers the system
       EE exactly, which is what makes it a decomposition of a global
       objective rather than a per-user proxy for one.
-    - ``r1_throughput``: bit/s, ``R_u`` — the numerator, reported beside it
-      because G-8 forbids quoting an EE without the service it bought.
+    - ``r1_throughput``: bit/s, delivered goodput — the numerator, reported
+      beside it because G-8 forbids quoting an EE without the service it
+      bought. It equals ``R_u`` in the default G0 full-buffer regime.
       **Not r1.**
     - ``r2_handover``: dimensionless penalty (0, −φ1, or −φ2).
     - ``r3_load_balance``: PATCH P-13 (B13) — the count-based ``−U_{b_u}``,

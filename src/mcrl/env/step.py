@@ -15,7 +15,8 @@ classic way to build an environment that looks right and is not::
       -> beam power p_{s,v} = max over served users   (3.12a preamble)
       -> interference I^intra + I^inter               (3.12a)/(3.12b)
       -> SINR gamma                                   (3.13)
-      -> rate R = (B^w/U)·log2(1+gamma)               (3.14)
+      -> capacity R = (B^w/U)·log2(1+gamma)           (3.14)
+      -> delivered B = min(dt·R, dt·d)                (V0.24 regime B)
       -> supply power P^p = p/xi, fixed P^f, total P^N (3.15)-(3.16a)
       -> r1 = R/P^N, r2 = -Psi, r3 = -U_{b_u}         (3.25)/(3.27)/(3.28)
 
@@ -73,6 +74,7 @@ from .action_contract import (
 from .antenna import RX_GAIN_MAX_DBI, transmit_gain_linear
 from .geometry import angle_between_deg
 from .candidates import StepCandidates
+from .demand import DemandModel
 from .interference import (
     CANDIDATE_SINR_PROVENANCE,
     boresight_separation_deg,
@@ -294,11 +296,23 @@ class StepOutcome:
     link_sinr: np.ndarray
     """``(U,)`` — the realised (3.13), 0 when unserved."""
     link_rate_bps: np.ndarray
-    """``(U,)`` — the realised (3.14), 0 when unserved."""
+    """``(U,)`` — delivered goodput rate, 0 when unserved.
+
+    It equals the realised (3.14) capacity in the default G0 full-buffer
+    regime. ``capacity_bits`` retains the uncapped interval numerator.
+    """
     handovers: tuple[HandoverClass, ...]
     system_power_w: float
     fixed_power_w: float
     diagnostics: dict[str, object] = field(default_factory=dict)
+    capacity_bits: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    """``(U,)`` uncapped Shannon capacity delivered by the interval."""
+    delivered_bits: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    """``(U,)`` demand-capped goodput delivered by the interval."""
 
     @property
     def reward_matrix(self) -> np.ndarray:
@@ -321,7 +335,7 @@ class StepOutcome:
 
     @property
     def throughput_bps(self) -> np.ndarray:
-        """``(U,)`` of ``R_u`` — r1's numerator, which G-8 needs beside it."""
+        """``(U,)`` delivered-goodput rate — r1's G-8 numerator."""
         return np.array(
             [reward.r1_throughput for reward in self.rewards], dtype=np.float64
         )
@@ -345,10 +359,19 @@ class ActionEvaluation:
     link_power_w: np.ndarray
     link_sinr: np.ndarray
     link_rate_bps: np.ndarray
+    """Delivered-goodput rate; equal to capacity rate in default G0."""
     handovers: tuple[HandoverClass, ...]
     system_power_w: float
     fixed_power_w: float
     diagnostics: dict[str, object] = field(default_factory=dict)
+    capacity_bits: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    """``(U,)`` uncapped Shannon capacity delivered by the interval."""
+    delivered_bits: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64)
+    )
+    """``(U,)`` demand-capped goodput delivered by the interval."""
 
     @property
     def reward_matrix(self) -> np.ndarray:
@@ -382,11 +405,13 @@ class StepEnvironment:
         physics: PhysicsConfig | None = None,
         trainer: TrainerConfig | None = None,
         fading_field: KeyedFadingField | None = None,
+        demand: DemandModel | None = None,
     ) -> None:
         self.driver = driver
         self.physics = physics or PhysicsConfig()
         self.trainer = trainer or TrainerConfig()
         self._fading_field = fading_field
+        self.demand = demand or DemandModel()
         self.num_users = driver.config.mobility.num_users
         self._ledgers: list[HandoverLedger] = [
             HandoverLedger() for _ in range(self.num_users)
@@ -638,6 +663,8 @@ class StepEnvironment:
             system_power_w=physics["system_power_w"],
             fixed_power_w=physics["fixed_power_w"],
             diagnostics=self._diagnostics(physics),
+            capacity_bits=physics["capacity_bits"],
+            delivered_bits=physics["delivered_bits"],
         )
 
     def evaluate_actions(
@@ -720,6 +747,8 @@ class StepEnvironment:
             system_power_w=float(physics["system_power_w"]),
             fixed_power_w=float(physics["fixed_power_w"]),
             diagnostics=self._diagnostics(physics),
+            capacity_bits=physics["capacity_bits"],  # type: ignore[arg-type]
+            delivered_bits=physics["delivered_bits"],  # type: ignore[arg-type]
         )
 
     # -- physics ----------------------------------------------------------
@@ -962,12 +991,25 @@ class StepEnvironment:
         )
 
         load = resolution.user_beam_load()
-        rate = np.where(
+        capacity_rate = np.where(
             resolution.served,
             shannon_rate_bps(
                 sinr, beam_load=load, bandwidth_hz=physics.beam_bandwidth_hz
             ),
             0.0,
+        )
+        interval_s = float(self.driver.config.ephemeris.time_step_s)
+        capacity_bits = capacity_rate * interval_s
+        delivered_bits = self.demand.delivered_bits(
+            capacity_rate, interval_s=interval_s
+        )
+        # Existing downstream seams consume a rate. Under finite demand it is
+        # delivered goodput per second; under the default G0 it is byte-equal
+        # to the pre-change Shannon-rate vector.
+        rate = (
+            capacity_rate
+            if np.isinf(self.demand.demand_bits_per_s)
+            else delivered_bits / interval_s
         )
 
         # (3.15)-(3.16a): consumed power, PER BEAM (ruling F-2).
@@ -1037,6 +1079,8 @@ class StepEnvironment:
             "transmit_gain": transmit_gain,
             "sinr": sinr,
             "rate": rate,
+            "capacity_bits": capacity_bits,
+            "delivered_bits": delivered_bits,
             "supply_power_w": supply,
             "system_power_w": total_power,
             "fixed_power_w": fixed,
