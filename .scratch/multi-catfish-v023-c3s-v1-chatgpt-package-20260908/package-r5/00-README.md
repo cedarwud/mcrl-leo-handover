@@ -1,0 +1,7 @@
+# Round 5 review package — physics successor for the MCRL LEO handover EE simulator (2026-09-08)
+
+Read order: 01 (controller's first-principles reference design), 02 (controller position + response to astra round 1), 03 (astra round 1: 28-item inventory of the energy/bits/service/EE model), 04 (astra round 2: peer discussion; two successor candidates), 05 (astra round 3: consolidated 25 HIGH assumptions, sealable spec `V025-FIXED-EIRP-ACM`, known-answer suite, 18-cell physics-settings matrix with pre-declared priority, stop rules, decision memo), 06–09 (fresh-context Opus audits: red-team of the C3-S v1 SUPPORT, harness audit, segment-anchored power audit, full EE-formula audit), 10 (v1 result record with the post-audit correction), 11 (assumptions-audit brief), 12-* (six codex gpt-5.6-sol read-only registers), 13–14 (Opus registers D service/actions and E reward/training), 15–16 (Gemini red-team and physics review).
+
+Status of the project when this package was cut: development kill screen C3-S v1 returned SUPPORT (+2.9 % pooled EE) but is treated as mechanism-unattributed; a decisive diagnostic set (NULL ≡ BASE, random renewal, forced renewal, anchor ablation) is running; formal source training is on HOLD pending the owner's ratification of the successor physics; nothing here is a paper claim.
+
+The two prompts (`PROMPT-CHATGPT-QA.md`, `PROMPT-CHATGPT-DEEP-RESEARCH.md`) reference these file numbers.
