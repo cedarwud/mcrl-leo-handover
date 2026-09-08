@@ -99,15 +99,45 @@ def _verify_continuation_activity(
     receipt_path = Path(str(receipt_record.get("path", "")))
     receipt = common.read_json(receipt_path, field="continuation prefix verification receipt")
     receipt_sha = common.verify_named_sidecar(receipt_path)
+    sequence = activity.get("history_sequence", 1)
+    recorded_arm = activity.get("arm")
+    recorded_barrier = activity.get("barrier")
     expected_root = Path(str(bindings.get("stage_c_output_root", ""))).resolve()
     expected_activity_root = expected_root / "continuation"
+    identity_shape_ok = (
+        recorded_arm in common.ARMS
+        and type(recorded_barrier) is int
+        and recorded_barrier in (6000, 9000)
+    )
+    base_name = (
+        f"ACTIVITY-{recorded_arm}-{recorded_barrier:06d}"
+        if identity_shape_ok else "INVALID-ACTIVITY"
+    )
+    expected_activity_name = (
+        f"{base_name}.json" if sequence == 1 else
+        f"{base_name}-REVERIFY-{sequence:06d}.json"
+        if type(sequence) is int else "INVALID-ACTIVITY.json"
+    )
+    expected_receipt_names = {
+        f"PREFIX-VERIFICATION-{recorded_arm}-{recorded_barrier:06d}-{sequence:06d}.json"
+        if identity_shape_ok and type(sequence) is int else "INVALID-RECEIPT"
+    }
+    if sequence == 1:
+        expected_receipt_names.add("PREFIX-VERIFICATION.json")
     if (
         Path(activity_path).resolve().parent != expected_activity_root
-        or receipt_path.resolve() != expected_activity_root / "PREFIX-VERIFICATION.json"
+        or not identity_shape_ok
+        or Path(activity_path).name != expected_activity_name
+        or receipt_path.resolve().parent != expected_activity_root
+        or receipt_path.name not in expected_receipt_names
+        or type(sequence) is not int
+        or sequence < 1
         or activity.get("schema") != common.SCHEMA_CONTINUATION_ACTIVITY
         or activity.get("status") != "CONTINUATION_ACTIVITY_REGISTERED"
         or activity.get("formal") is not True
         or Path(str(activity.get("reporting_root", ""))).resolve() != expected_root
+        or activity.get("arm") != getattr(args, "arm", activity.get("arm"))
+        or activity.get("barrier") != getattr(args, "barrier", activity.get("barrier"))
         or activity.get("bindings_sha256") != common.file_sha256(args.bindings)
         or receipt_record.get("sha256") != receipt_sha
         or receipt.get("schema") != common.SCHEMA_CONTINUATION_PREFIX_VERIFICATION
@@ -116,8 +146,30 @@ def _verify_continuation_activity(
         or receipt.get("overall_token") != verifier_token()
         or receipt.get("completed_episode") != 3000
         or receipt.get("bindings_sha256") != common.file_sha256(args.bindings)
+        or receipt.get("history_sequence", 1) != sequence
     ):
         raise common.StageCError("continuation activity marker authentication drifted")
+    predecessor = activity.get("previous_activity")
+    if sequence == 1:
+        if predecessor is not None:
+            raise common.StageCError("initial continuation activity has a predecessor")
+    else:
+        expected_previous = expected_activity_root / (
+            f"{base_name}.json" if sequence == 2
+            else f"{base_name}-REVERIFY-{sequence - 1:06d}.json"
+        )
+        if (
+            not isinstance(predecessor, Mapping)
+            or Path(str(predecessor.get("path", ""))).resolve()
+            != expected_previous.resolve()
+            or predecessor.get("sha256") != common.verify_named_sidecar(expected_previous)
+        ):
+            raise common.StageCError("continuation activity history link drifted")
+        shadow = argparse.Namespace(**vars(args))
+        shadow.continuation_activity = expected_previous
+        prior = _verify_continuation_activity(shadow, bindings)
+        if prior.get("registered_chunk_roots") != roots:
+            raise common.StageCError("continuation activity registry changed across history")
     chunk_root = getattr(args, "chunk_root", None)
     if chunk_root is not None and str(Path(chunk_root).resolve()) not in roots:
         raise common.StageCError("continuation chunk root is absent from the reporting registry")
@@ -166,11 +218,44 @@ def register_continuation_activity(args: argparse.Namespace) -> dict[str, object
             args, bindings, _runner()
         )
         continuation_dir = reporting_root / "continuation"
-        receipt_path = continuation_dir / "PREFIX-VERIFICATION.json"
+        base_name = f"ACTIVITY-{args.arm}-{args.barrier:06d}"
+        base_path = continuation_dir / f"{base_name}.json"
+        history_paths = ([base_path] if base_path.is_file() else []) + sorted(
+            continuation_dir.glob(f"{base_name}-REVERIFY-*.json")
+        )
+        previous: dict[str, object] | None = None
+        for expected_sequence, path in enumerate(history_paths, start=1):
+            shadow = argparse.Namespace(**vars(args))
+            shadow.continuation_activity = path
+            recorded = _verify_continuation_activity(shadow, bindings)
+            sequence = recorded.get("history_sequence", 1)
+            predecessor = recorded.get("previous_activity")
+            if sequence != expected_sequence:
+                raise common.StageCError("continuation activity history is not contiguous")
+            if expected_sequence == 1:
+                if predecessor is not None:
+                    raise common.StageCError("initial continuation activity has a predecessor")
+            elif (
+                not isinstance(predecessor, Mapping)
+                or previous is None
+                or Path(str(predecessor.get("path", ""))).resolve()
+                != Path(str(previous["path"])).resolve()
+                or predecessor.get("sha256") != previous["sha256"]
+            ):
+                raise common.StageCError("continuation activity history link drifted")
+            previous = {
+                "path": str(path.resolve()),
+                "sha256": recorded["activity_sha256"],
+            }
+        sequence = len(history_paths) + 1
+        receipt_path = continuation_dir / (
+            f"PREFIX-VERIFICATION-{args.arm}-{args.barrier:06d}-{sequence:06d}.json"
+        )
         receipt = {
             "schema": common.SCHEMA_CONTINUATION_PREFIX_VERIFICATION,
             "status": "VERIFIED_HELD_3000_PREFIX",
             "formal": True,
+            "history_sequence": sequence,
             "reporting_root": str(reporting_root),
             "completed_episode": 3000,
             "overall_token": verifier.HELD,
@@ -185,12 +270,15 @@ def register_continuation_activity(args: argparse.Namespace) -> dict[str, object
             receipt_path, receipt, field="continuation prefix verification receipt"
         )
         activity_path = continuation_dir / (
-            f"ACTIVITY-{args.arm}-{args.barrier:06d}.json"
+            f"{base_name}.json" if sequence == 1
+            else f"{base_name}-REVERIFY-{sequence:06d}.json"
         )
         activity = {
             "schema": common.SCHEMA_CONTINUATION_ACTIVITY,
             "status": "CONTINUATION_ACTIVITY_REGISTERED",
             "formal": True,
+            "history_sequence": sequence,
+            "previous_activity": previous,
             "reporting_root": str(reporting_root),
             "arm": args.arm,
             "barrier": args.barrier,
@@ -607,6 +695,12 @@ def merge_four(args: argparse.Namespace) -> dict[str, object]:
         if result.get("overall_token") == runner.FALSIFIED:
             common.write_tree_seal(args.output)
     else:
+        verifier._verify_continuation_result_semantics(
+            common.read_json(
+                args.output / "continuation-result.json",
+                field="producer 9000 continuation receipt",
+            )
+        )
         verifier.verify_finished(
             args.output, args.bindings, args.admission_supplement,
             require_tree_seal=False,
@@ -621,10 +715,14 @@ def merge_four(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    def continuation_options(command: argparse.ArgumentParser) -> None:
+    def continuation_options(
+        command: argparse.ArgumentParser, *, resume: bool = False
+    ) -> None:
         command.add_argument("--continuation-authority", type=Path)
         command.add_argument("--owner-notification-marker", type=Path)
         command.add_argument("--continuation-activity", type=Path)
+        if resume:
+            command.add_argument("--resume-continuation", action="store_true")
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -634,7 +732,7 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--acceptance-bundle", type=Path, required=True)
     check.add_argument("--runtime-admission", type=Path, required=True)
     check.add_argument("--arm", choices=common.ARMS, required=True)
-    continuation_options(check)
+    continuation_options(check, resume=True)
     barrier = sub.add_parser("check-barrier")
     barrier.add_argument("--bindings", type=Path, required=True)
     barrier.add_argument("--admission-supplement", type=Path, required=True)
@@ -643,7 +741,7 @@ def _parser() -> argparse.ArgumentParser:
     barrier.add_argument("--arm", choices=common.ARMS, required=True)
     barrier.add_argument("--completed", type=int, choices=common.CHUNK_BARRIERS, required=True)
     barrier.add_argument("--arm-merge-root", type=Path, required=True)
-    continuation_options(barrier)
+    continuation_options(barrier, resume=True)
     chunk = sub.add_parser("run-chunk")
     chunk.add_argument("--bindings", type=Path, required=True)
     chunk.add_argument("--arm", choices=common.ARMS, required=True)
@@ -664,7 +762,7 @@ def _parser() -> argparse.ArgumentParser:
     arm.add_argument("--admission-supplement", type=Path, required=True)
     arm.add_argument("--acceptance-bundle", type=Path, required=True)
     arm.add_argument("--runtime-admission", type=Path, required=True)
-    continuation_options(arm)
+    continuation_options(arm, resume=True)
     four = sub.add_parser("merge-four")
     four.add_argument("--bindings", type=Path, required=True)
     four.add_argument("--arm-roots", type=Path, nargs=4, required=True)
@@ -677,11 +775,7 @@ def _parser() -> argparse.ArgumentParser:
     four.add_argument("--admission-supplement", type=Path, required=True)
     four.add_argument("--acceptance-bundle", type=Path, required=True)
     four.add_argument("--output", type=Path, required=True)
-    four.add_argument(
-        "--resume-continuation", action="store_true",
-        help="authenticate and finish an interrupted append-only 9000 publication",
-    )
-    continuation_options(four)
+    continuation_options(four, resume=True)
     register = sub.add_parser("register-continuation")
     register.add_argument("--bindings", type=Path, required=True)
     register.add_argument("--admission-supplement", type=Path, required=True)

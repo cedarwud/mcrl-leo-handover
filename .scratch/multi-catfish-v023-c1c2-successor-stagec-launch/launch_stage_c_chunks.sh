@@ -53,7 +53,7 @@ fi
 here=$(cd "$(dirname "$0")" && pwd -P)
 repo=$(cd "$here/../.." && pwd -P)
 python=${V023_STAGEC_PYTHON:-$repo/.venv/bin/python}
-controller=$here/run_v023_c1c2_successor_stage_c_chunks.py
+controller=${V023_STAGEC_CONTROLLER:-$here/run_v023_c1c2_successor_stage_c_chunks.py}
 common_args=(--bindings "$bindings" --admission-supplement "$supplement" --acceptance-bundle "$acceptance" --runtime-admission "$runtime_admission")
 export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repo/src" TMPDIR="$repo/.tmp"
 mkdir -p "$TMPDIR"
@@ -66,16 +66,20 @@ done
 if ((barrier > 3000)); then
   reporting_root=$("$python" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="ascii"))["stage_c_output_root"])' "$bindings")
   continuation_activity="$reporting_root/continuation/$(printf 'ACTIVITY-%s-%06d.json' "$arm" "$barrier")"
-  if [[ ! -f "$continuation_activity" ]]; then
-    env OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 NUMEXPR_NUM_THREADS=2 \
+  if ((resume_continuation && merge_only && barrier == 9000)); then
+    [[ -f "$continuation_activity" ]] || { echo "resume requires the registered continuation activity" >&2; exit 2; }
+  else
+    continuation_activity=$(env OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 NUMEXPR_NUM_THREADS=2 \
       "$python" "$controller" register-continuation \
-      --bindings "$bindings" --admission-supplement "$supplement" \
-      --acceptance-bundle "$acceptance" --arm "$arm" --barrier "$barrier" \
-      --chunk-roots "${cumulative_roots[@]}" \
-      --continuation-authority "$continuation_authority" \
-      --owner-notification-marker "$owner_notification_marker" >/dev/null
+        --bindings "$bindings" --admission-supplement "$supplement" \
+        --acceptance-bundle "$acceptance" --arm "$arm" --barrier "$barrier" \
+        --chunk-roots "${cumulative_roots[@]}" \
+        --continuation-authority "$continuation_authority" \
+        --owner-notification-marker "$owner_notification_marker" | \
+      "$python" -c 'import json,sys; print(json.load(sys.stdin)["activity_path"])')
   fi
   common_args+=(--continuation-authority "$continuation_authority" --owner-notification-marker "$owner_notification_marker" --continuation-activity "$continuation_activity")
+  if ((resume_continuation)); then common_args+=(--resume-continuation); fi
 fi
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 "$python" "$controller" check-launch "${common_args[@]}" --arm "$arm" >/dev/null
@@ -88,7 +92,11 @@ if ((merge_only)); then
   for root in "${cumulative_roots[@]}"; do
     [[ -f "$root/chunk-receipt.json" ]] || { echo "missing complete chunk: $root" >&2; exit 2; }
   done
-  "$python" "$controller" merge-arm "${common_args[@]}" --arm "$arm" --chunk-roots "${cumulative_roots[@]}" --output "$arm_merge_root"
+  if [[ -e "$arm_merge_root" || -L "$arm_merge_root" ]]; then
+    "$python" "$controller" check-barrier "${common_args[@]}" --arm "$arm" --completed "$barrier" --arm-merge-root "$arm_merge_root" >/dev/null
+  else
+    "$python" "$controller" merge-arm "${common_args[@]}" --arm "$arm" --chunk-roots "${cumulative_roots[@]}" --output "$arm_merge_root"
+  fi
   if ((barrier == 9000)); then
     ((${#four_arm_roots[@]} == 4)) && [[ -n "$admission_mapping" && -n "$final_output" ]] || { echo "9000 --merge requires --four-arm-roots, --admission-mapping, and --final-output" >&2; exit 2; }
     final_args=(merge-four --bindings "$bindings" --admission-supplement "$supplement" --acceptance-bundle "$acceptance" --arm-roots "${four_arm_roots[@]}" --admission-mapping "$admission_mapping" --output "$final_output" --continuation-authority "$continuation_authority" --owner-notification-marker "$owner_notification_marker" --continuation-activity "$continuation_activity")

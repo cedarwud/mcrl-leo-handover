@@ -182,9 +182,16 @@ def _rewrite_tree_seal(root: Path) -> None:
     _write_tree_seal(root)
 
 
-def _add_administrative_closure(root: Path, admission, bindings_sha256: str) -> None:
+def _add_administrative_closure(
+    root: Path, admission, bindings_path: Path
+) -> None:
     (root / figures.TREE_MANIFEST_NAME).unlink()
     (root / figures.COMPLETE_NAME).unlink()
+    bindings_sha256 = runner.file_sha256(bindings_path)
+    bindings = stagec_common.read_json(
+        bindings_path, field="fixture execution bindings"
+    )
+    stagec_common.write_digest_sidecar(bindings_path)
     result_sha = runner.file_sha256(root / "result.json")
     checkpoint_sha = runner.file_sha256(root / "checkpoints/checkpoint-003000.json")
     held_sha = hashlib.sha256(runner.HELD.encode("ascii")).hexdigest()
@@ -210,11 +217,10 @@ def _add_administrative_closure(root: Path, admission, bindings_sha256: str) -> 
     marker.with_name(marker.name + ".sha256").write_text(
         f"{marker_sha}  {marker.name}\n", encoding="ascii"
     )
-    addendum = stagec_common.SCHEDULING_ADDENDUM
+    schedule = bindings["scheduling_addendum"]
+    addendum = Path(str(schedule["path"]))
     addendum_sha = runner.file_sha256(addendum)
-    addendum.with_name(addendum.name + ".sha256").write_text(
-        f"{addendum_sha}  {addendum.name}\n", encoding="ascii"
-    )
+    assert schedule["sha256"] == addendum_sha
     receipt = root / figures.ADMINISTRATIVE_CLOSURE_NAME
     runner._write_once(receipt, {
         "schema": figures.ADMINISTRATIVE_CLOSURE_SCHEMA,
@@ -224,6 +230,9 @@ def _add_administrative_closure(root: Path, admission, bindings_sha256: str) -> 
         "reason": "DECLINE_CONTINUATION",
         "decision_marker": {"path": str(marker.resolve()), "sha256": marker_sha},
         "addendum_r2": {"path": str(addendum.resolve()), "sha256": addendum_sha},
+        "execution_bindings": {
+            "path": str(bindings_path.resolve()), "sha256": bindings_sha256,
+        },
         "bindings_sha256": bindings_sha256,
         "plan_sha256": admission["plan_sha256"],
         "policy_bindings_sha256": admission["policy_bindings_sha256"],
@@ -301,7 +310,17 @@ def test_q1_marker_mutations_are_refused_by_all_three_consumers(
     (root / "checkpoints").mkdir(parents=True)
     runner._write_once(root / "result.json", {"overall_token": runner.HELD})
     runner._write_once(root / "checkpoints/checkpoint-003000.json", {"fixture": True})
-    digest = "a" * 64
+    addendum = tmp_path / "R2.md"
+    addendum.write_text("synthetic bound R2 addendum\n", encoding="ascii")
+    stagec_common.write_digest_sidecar(addendum)
+    bindings_path = tmp_path / "execution-bindings.json"
+    runner._write_once(bindings_path, {
+        "scheduling_addendum": {
+            "path": str(addendum.resolve()),
+            "sha256": runner.file_sha256(addendum),
+        },
+    })
+    digest = runner.file_sha256(bindings_path)
     admission = {
         "bindings_sha256": digest,
         "plan_sha256": figures.FROZEN_PLAN_SHA256,
@@ -309,7 +328,7 @@ def test_q1_marker_mutations_are_refused_by_all_three_consumers(
         "admission_mapping_sha256": digest,
     }
     _write_tree_seal(root)
-    _add_administrative_closure(root, admission, digest)
+    _add_administrative_closure(root, admission, bindings_path)
     marker_path = root.parent / "owner-closure-decision.json"
     marker = json.loads(marker_path.read_text(encoding="ascii"))
     if value is None:
@@ -347,12 +366,55 @@ def test_q1_marker_mutations_are_refused_by_all_three_consumers(
             bindings_sha256=digest,
             policy_bindings_sha256=digest,
             admission_mapping_sha256=digest,
-            scheduling_addendum_path=str(stagec_common.SCHEDULING_ADDENDUM),
-            scheduling_addendum_sha256=stagec_common.file_sha256(
-                stagec_common.SCHEDULING_ADDENDUM
-            ),
+            scheduling_addendum_path=str(addendum),
+            scheduling_addendum_sha256=stagec_common.file_sha256(addendum),
         )
     with pytest.raises(figures.FigurePipelineError):
+        figures._authenticate_administrative_closure(
+            root, admission, {"overall_token": runner.HELD}, tracked=[]
+        )
+
+
+def test_renderer_refuses_sidecar_valid_addendum_not_bound_by_execution_bindings(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+    (root / "checkpoints").mkdir(parents=True)
+    runner._write_once(root / "result.json", {"overall_token": runner.HELD})
+    runner._write_once(root / "checkpoints/checkpoint-003000.json", {"fixture": True})
+    bound = tmp_path / "bound-R2.md"
+    bound.write_text("bound scheduling addendum\n", encoding="ascii")
+    stagec_common.write_digest_sidecar(bound)
+    bindings_path = tmp_path / "execution-bindings.json"
+    runner._write_once(bindings_path, {
+        "scheduling_addendum": {
+            "path": str(bound.resolve()), "sha256": runner.file_sha256(bound),
+        },
+    })
+    bindings_sha = runner.file_sha256(bindings_path)
+    admission = {
+        "bindings_sha256": bindings_sha,
+        "plan_sha256": figures.FROZEN_PLAN_SHA256,
+        "policy_bindings_sha256": "a" * 64,
+        "admission_mapping_sha256": "b" * 64,
+    }
+    _write_tree_seal(root)
+    _add_administrative_closure(root, admission, bindings_path)
+    unrelated = tmp_path / "unrelated.md"
+    unrelated.write_text("unrelated addendum text\n", encoding="ascii")
+    stagec_common.write_digest_sidecar(unrelated)
+    closure_path = root / figures.ADMINISTRATIVE_CLOSURE_NAME
+    closure = json.loads(closure_path.read_text(encoding="ascii"))
+    closure["addendum_r2"] = {
+        "path": str(unrelated.resolve()), "sha256": runner.file_sha256(unrelated),
+    }
+    closure_path.write_bytes(runner._canonical_bytes(closure))
+    closure_sha = runner.file_sha256(closure_path)
+    closure_path.with_name(closure_path.name + ".sha256").write_text(
+        f"{closure_sha}  {closure_path.name}\n", encoding="ascii"
+    )
+    _rewrite_tree_seal(root)
+    with pytest.raises(figures.FigurePipelineError, match="R2 path bound"):
         figures._authenticate_administrative_closure(
             root, admission, {"overall_token": runner.HELD}, tracked=[]
         )
@@ -408,9 +470,10 @@ def test_runner_written_terminal_passes_full_verifier_before_renderer(
     assert summary["overall_token"] == runner.HELD
     plan_path = tmp_path / "world-plan.json"
     runner._write_once(plan_path, figures.PLAN_BUILDER.build_world_plan())
+    addendum = tmp_path / "R2.md"
+    addendum.write_text("synthetic bound R2 addendum\n", encoding="ascii")
+    stagec_common.write_digest_sidecar(addendum)
     bindings_path = tmp_path / "bindings.json"
-    runner._write_once(bindings_path, {"fixture": "full-finished-verifier"})
-    bindings_sha = runner.file_sha256(bindings_path)
     frozen_git = {"commit": "a" * 40, "tree": "b" * 40}
     bindings = {
         "stage_c_output_root": str(root.resolve()),
@@ -421,10 +484,12 @@ def test_runner_written_terminal_passes_full_verifier_before_renderer(
             "file_sha256": runner.file_sha256(plan_path),
         },
         "scheduling_addendum": {
-            "path": str(stagec_common.SCHEDULING_ADDENDUM.resolve()),
-            "sha256": stagec_common.file_sha256(stagec_common.SCHEDULING_ADDENDUM),
+            "path": str(addendum.resolve()),
+            "sha256": stagec_common.file_sha256(addendum),
         },
     }
+    runner._write_once(bindings_path, bindings)
+    bindings_sha = runner.file_sha256(bindings_path)
     supplement_path = tmp_path / "stage-ab-supplement.json"
     runner._write_once(supplement_path, {"fixture": "authenticated-by-focused-E4-test"})
     supplement = {
@@ -447,7 +512,7 @@ def test_runner_written_terminal_passes_full_verifier_before_renderer(
     admission = json.loads(
         (root / figures.FORMAL_ADMISSION_NAME).read_text(encoding="ascii")
     )
-    _add_administrative_closure(root, admission, bindings_sha)
+    _add_administrative_closure(root, admission, bindings_path)
     monkeypatch.setattr(stagec_common, "verify_bindings", lambda _path: copy.deepcopy(bindings))
     monkeypatch.setattr(
         stagec_common,

@@ -476,14 +476,35 @@ def _authenticate_administrative_closure(
         raise FigurePipelineError("administrative closure lacks its digest sidecar")
     marker_record = receipt.get("decision_marker")
     addendum_record = receipt.get("addendum_r2")
-    if not isinstance(marker_record, Mapping) or not isinstance(addendum_record, Mapping):
-        raise FigurePipelineError("administrative closure lacks decision/addendum bindings")
+    bindings_record = receipt.get("execution_bindings")
+    if (
+        not isinstance(marker_record, Mapping)
+        or not isinstance(addendum_record, Mapping)
+        or not isinstance(bindings_record, Mapping)
+    ):
+        raise FigurePipelineError(
+            "administrative closure lacks decision/addendum/execution-bindings bindings"
+        )
     marker_path = Path(str(marker_record.get("path", "")))
-    addendum_path = Path(str(addendum_record.get("path", "")))
     marker_sha = file_sha256(marker_path)
-    addendum_sha = file_sha256(addendum_path)
-    if not _authenticate_sidecars(marker_path, marker_sha) or not _authenticate_sidecars(addendum_path, addendum_sha):
+    bindings_path = Path(str(bindings_record.get("path", "")))
+    bindings_sha = file_sha256(bindings_path)
+    if (
+        not _authenticate_sidecars(marker_path, marker_sha)
+        or not _authenticate_sidecars(bindings_path, bindings_sha)
+        or bindings_record.get("sha256") != bindings_sha
+        or bindings_sha != admission.get("bindings_sha256")
+    ):
         raise FigurePipelineError("administrative closure external binding lacks a valid sidecar")
+    try:
+        bound_bindings = STAGEC_COMMON.read_json(
+            bindings_path, field="administrative closure execution bindings"
+        )
+        addendum_path, addendum_sha = STAGEC_COMMON.verify_bound_scheduling_addendum(
+            addendum_record, bound_bindings
+        )
+    except STAGEC_COMMON.StageCError as error:
+        raise FigurePipelineError(str(error)) from error
     marker = _read_json(marker_path)
     result_sha = file_sha256(root / "result.json")
     checkpoint_sha = file_sha256(root / "checkpoints/checkpoint-003000.json")
@@ -520,6 +541,7 @@ def _authenticate_administrative_closure(
         or receipt.get("held_terminal_token_sha256") != expected_held_sha
         or marker_record.get("sha256") != marker_sha
         or addendum_record.get("sha256") != addendum_sha
+        or bindings_record.get("sha256") != bindings_sha
         or marker.get("decision") != decision
         or receipt.get("controller_identity") != marker.get("recorded_by")
         or result.get("overall_token") != PRODUCER.HELD

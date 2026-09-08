@@ -22,7 +22,6 @@ stage_c=${V023_STAGEC_OUTPUT_ROOT:-/home/sat/mcrl-v023-c1c2-successor-stagec-202
 run_root=${V023_STAGEC_RUN_ROOT:-/home/sat/mcrl-v023-c1c2-successor-stagec-controller-20260907-r1}
 python_bin=${V023_STAGEC_PYTHON:-/home/sat/mcrl-leo-handover/.venv/bin/python}
 check_python=$python_bin
-if [[ "$dry_run" == 1 && -z "${V023_STAGEC_PYTHON:-}" ]]; then check_python="$repo_root/.venv/bin/python"; fi
 tle_root=${V023_STAGEC_TLE_ROOT:-/home/sat/mcrl-runtime/tle-frozen-20260820}
 sync_list="$package/V023-C1C2-SUCCESSOR-STAGEC-SYNC-LIST.txt"
 

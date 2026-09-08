@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
+import shutil
 import sys
 from types import SimpleNamespace
 
@@ -19,6 +21,8 @@ for path in (HERE, STAGEC):
 
 import build_v023_c1c2_successor_world_plan as builder
 import run_v023_c1c2_successor_stage_c as sequential_controller
+import stagec_common
+import verify_v023_c1c2_successor_stagec as independent_verifier
 import v023_c1c2_successor_physical_runner as runner
 from mcrl.runtime.trainer_env import TrainerEnvironment
 
@@ -848,17 +852,129 @@ def test_chunk_refuses_early_baseline_above_3000_and_missing_fourth_arm(
         )
 
 
-def test_continuation_boundary_replay_matches_sequential_controller_at_3001(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("boundary", [3000, 6000])
+def test_continuation_boundary_state_matches_real_sequential_controller_bitwise(
+    boundary: int, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Compare assembled state with two real StepEnvironment transitions."""
+
+    from mcrl.env.constants import TLE_ROOT_DEFAULT
+    from mcrl.env.ephemeris import TRAIN, BlockAlternatingSplit, EpisodeStartSampler
+    from mcrl.env.mobility import MobilityConfig
+    from mcrl.env.scenario import ScenarioConfig, ScenarioDriver
+    from mcrl.env.step import StepEnvironment
+    from mcrl.env.tle import TleArchive
+
     for name in runner.NUMERICAL_THREAD_ENV:
         monkeypatch.setenv(name, "1")
+    monkeypatch.setattr(runner, "USERS", 2)
+    monkeypatch.setattr(runner, "STEPS", 2)
     plan = _plan()
-    sequential_adapter = _ChunkTransportStub("BASELINE")
-    direct_rows, direct_states = sequential_controller._replay_arm_prefix_for_equivalence(
-        sequential_adapter, plan, arm="BASELINE", completed=3001
+    archive = TleArchive(Path(TLE_ROOT_DEFAULT).expanduser())
+
+    def environment_factory(bound_archive, users):
+        driver = ScenarioDriver(
+            bound_archive,
+            ScenarioConfig(
+                mobility=MobilityConfig(num_users=users),
+                steps_per_episode=2,
+            ),
+        )
+        split = BlockAlternatingSplit.for_archive(bound_archive)
+        sampler = EpisodeStartSampler.for_archive(bound_archive, split, TRAIN)
+        return TrainerEnvironment(StepEnvironment(driver), sampler)
+
+    class RealBoundaryAdapter:
+        arm = "BASELINE"
+        rng_factory = staticmethod(_rngs)
+
+        def __init__(self, initial_state):
+            self.archive = archive
+            self.environment_factory = environment_factory
+            self._state = initial_state
+            self._binding = {
+                "arm": self.arm,
+                "routes": [],
+                "checkpoint_sha256": runner.canonical_sha256(
+                    {"fixture": "real-boundary-controller"}
+                ),
+                "fixed_policy": True,
+            }
+
+        @property
+        def policy_bindings(self):
+            return {self.arm: self._binding}
+
+        def resume_state_for(self, arm):
+            assert arm == self.arm
+            return self._state
+
+        def run_episode(self, *, arm, world, plan_sha256, resume_state=None):
+            assert arm == self.arm
+            environment = environment_factory(archive, 2)
+            environment.load_training_state_dict(
+                resume_state["environment_training_state"]
+            )
+            env_rng, mobility_rng = _rngs(world.world_seed)
+            states, masks, _observation = environment.reset(env_rng, mobility_rng)
+            state_arrays = [
+                [
+                    state.access_vector.copy(),
+                    state.channel_quality.copy(),
+                    state.beam_offsets.copy(),
+                    state.beam_loads.copy(),
+                ]
+                for state in states
+            ]
+            mask_arrays = [mask.mask.copy() for mask in masks]
+            for _step in range(2):
+                actions = np.asarray(
+                    [int(np.flatnonzero(mask.mask)[0]) for mask in masks],
+                    dtype=np.int64,
+                )
+                step = environment.step(actions, env_rng)
+                masks = list(step.action_masks)
+            training_state = environment.training_state_dict()
+            self._state = {
+                "schema": f"{runner.SCHEMA}-resume-state",
+                "arm": arm,
+                "episode_index": world.episode_index,
+                "world_id": world.world_id,
+                "world_seed": world.world_seed,
+                "field_root_digest": world.field_root_digest,
+                "plan_sha256": plan_sha256,
+                "policy_binding": self._binding,
+                "environment_training_state": training_state,
+            }
+            return {"states": state_arrays, "masks": mask_arrays}
+
+    independent_environment = environment_factory(archive, 2)
+    seed_rng = _rngs(plan.worlds[0].world_seed)[0]
+    independent_environment.environment._age_rng = seed_rng.spawn(1)[0]
+    for _episode in range(boundary):
+        independent_environment.environment._draw_segment_ages(
+            independent_environment.environment._age_rng
+        )
+    direct_initial = {
+        "schema": f"{runner.SCHEMA}-resume-state",
+        "arm": "BASELINE",
+        "episode_index": boundary,
+        "world_id": plan.worlds[boundary - 1].world_id,
+        "world_seed": plan.worlds[boundary - 1].world_seed,
+        "field_root_digest": plan.worlds[boundary - 1].field_root_digest,
+        "plan_sha256": plan.plan_sha256,
+        "policy_binding": RealBoundaryAdapter(None).policy_bindings["BASELINE"],
+        "environment_training_state": independent_environment.training_state_dict(),
+    }
+    sequential_adapter = RealBoundaryAdapter(direct_initial)
+    window = SimpleNamespace(
+        worlds=plan.worlds[boundary : boundary + 2],
+        plan_sha256=plan.plan_sha256,
     )
-    chunk_adapter = _ChunkTransportStub("BASELINE")
+    direct_rows, direct_states = sequential_controller._replay_arm_prefix_for_equivalence(
+        sequential_adapter, window, arm="BASELINE", completed=2
+    )
+    chunk_adapter = RealBoundaryAdapter(None)
     context = _chunk_context(chunk_adapter)
     context.update({
         "continuation_limit": 9000,
@@ -872,17 +988,37 @@ def test_continuation_boundary_replay_matches_sequential_controller_at_3001(
             )
         },
     })
-    table = runner.build_chunk_boundary_states(plan, context, (0, 3000, 3100))
-    root = tmp_path / "BASELINE-003000-003100"
-    runner.run_arm_chunk("BASELINE", 3000, 3100, table[3000], root)
-    chunk_row, _state = runner._read_episode_record(
-        root / "episodes/episode-003001.json"
+    table = runner.build_chunk_boundary_states(plan, context, (0, boundary))
+    assembled = table[boundary]["resume_state"]
+    chunk_adapter._state = assembled
+    chunk_rows, chunk_states = sequential_controller._replay_arm_prefix_for_equivalence(
+        chunk_adapter, window, arm="BASELINE", completed=2
     )
-    assert chunk_row.as_dict() == direct_rows[3000].as_dict()
-    assert table[3000]["resume_state"] == direct_states[3000]
-    assert table[3000]["draw_replay"]["draws_replayed"] == 3000
-    assert table[3000]["resume_state"]["episode_index"] == 3000
-    assert plan.worlds[3000].episode_index == 3001
+
+    direct_rng = runner._canonical_bytes(
+        runner._jsonable(direct_initial["environment_training_state"]["age_rng_state"])
+    )
+    assembled_rng = runner._canonical_bytes(
+        runner._jsonable(assembled["environment_training_state"]["age_rng_state"])
+    )
+    assert direct_rng == assembled_rng
+    for direct_row, chunk_row in zip(direct_rows, chunk_rows, strict=True):
+        for direct_user, chunk_user in zip(
+            direct_row["states"], chunk_row["states"], strict=True
+        ):
+            for direct_array, chunk_array in zip(
+                direct_user, chunk_user, strict=True
+            ):
+                assert np.array_equal(direct_array, chunk_array)
+        for direct_mask, chunk_mask in zip(
+            direct_row["masks"], chunk_row["masks"], strict=True
+        ):
+            assert np.array_equal(direct_mask, chunk_mask)
+    assert runner._canonical_bytes(runner._jsonable(direct_states[boundary + 2])) == (
+        runner._canonical_bytes(runner._jsonable(chunk_states[boundary + 2]))
+    )
+    assert table[boundary]["draw_replay"]["draws_replayed"] == boundary
+    assert plan.worlds[boundary].episode_index == boundary + 1
 
 
 def test_interrupted_3001_continuation_chunk_resumes_without_duplication(
@@ -929,3 +1065,298 @@ def test_write_once_accepts_identical_recovery_and_rejects_drift(tmp_path: Path)
     assert path.read_bytes() == original
     with pytest.raises(runner.C1C2PhysicalError, match="refusing to overwrite"):
         runner._write_once(path, {**payload, "preserved": False})
+
+
+def _fixture_write(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(runner._canonical_bytes(payload))
+
+
+@pytest.fixture(scope="module")
+def real_publication_inputs(tmp_path_factory: pytest.TempPathFactory):
+    """Build shared synthetic bytes for the real four-arm merger."""
+
+    root = tmp_path_factory.mktemp("real-publication")
+    plan = _plan()
+    adapter = _FastHeldAdapter()
+    mapping = _admission_mapping(adapter)
+    prefix = root / "prefix"
+    runner.FixedPolicyEvaluationRunner(
+        adapter=adapter,
+        plan=plan,
+        terminal_boundary=3000,
+        admission_mapping=mapping,
+    ).run(output_dir=prefix, pause_at=3000)
+    producer_roots = {}
+    adapter = _FastHeldAdapter()
+    for arm in runner.ARMS:
+        arm_root = root / f"producer-{arm}"
+        rows = []
+        for world in plan.worlds:
+            row = adapter.run_episode(
+                arm=arm,
+                world=world,
+                plan_sha256=plan.plan_sha256,
+                resume_state=adapter.resume_state_for(arm),
+            )
+            rows.append(row)
+            _fixture_write(
+                arm_root / "episodes" / f"episode-{world.episode_index:06d}.json",
+                row.as_dict(),
+            )
+            if world.episode_index % 100 == 0:
+                _fixture_write(
+                    arm_root / "resume-states" / f"state-{world.episode_index:06d}.json",
+                    adapter.resume_state_for(arm),
+                )
+        producer_roots[arm] = (arm_root, rows)
+    return root, plan, mapping, prefix, producer_roots
+
+
+def _publication_arm_roots(
+    tmp_path: Path,
+    inputs,
+    authority: dict[str, object],
+) -> dict[str, Path]:
+    _shared, plan, mapping, _prefix, producer_roots = inputs
+    roots = {}
+    continuation = {
+        "continuation_authority_sha256": authority["authority_sha256"],
+        "owner_notification_sha256": authority["owner_notification_sha256"],
+        "result_3000_sha256": authority["result_3000_sha256"],
+        "checkpoint_3000_sha256": authority["checkpoint_3000_sha256"],
+    }
+    for arm in runner.ARMS:
+        producer_root, rows = producer_roots[arm]
+        root = tmp_path / f"arm-{arm}"
+        root.mkdir()
+        (root / "episodes").symlink_to(producer_root / "episodes", target_is_directory=True)
+        (root / "resume-states").symlink_to(
+            producer_root / "resume-states", target_is_directory=True
+        )
+        chunks = []
+        pairs = []
+        previous = runner.canonical_sha256({"arm": arm, "boundary": 0})
+        for start in range(0, 9000, 100):
+            end = start + 100
+            current = runner.canonical_sha256({"arm": arm, "boundary": end})
+            chunk_root = root / "synthetic-chunks" / f"{start:06d}-{end:06d}"
+            receipt_path = chunk_root / "chunk-receipt.json"
+            _fixture_write(chunk_root / "boundary-start.json", {"state": previous})
+            _fixture_write(chunk_root / "boundary-end.json", {"state": current})
+            _fixture_write(
+                receipt_path,
+                {
+                    "start_boundary": start,
+                    "end_boundary": end,
+                    "start_boundary_state_sha256": previous,
+                    "end_boundary_state_sha256": current,
+                },
+            )
+            chunks.append({
+                "path": str(receipt_path.resolve()),
+                "sha256": runner.file_sha256(receipt_path),
+            })
+            pairs.append([previous, current])
+            previous = current
+        merge = {
+            "schema": runner.ARM_MERGE_SCHEMA,
+            "status": "COMPLETE_ARM_MERGE",
+            "formal": True,
+            "arm": arm,
+            "completed_episode": 9000,
+            "plan_sha256": plan.plan_sha256,
+            "schedule_sha256": "a" * 64,
+            "policy_binding": mapping[arm]["policy_binding"],
+            "ordered_episode_digest": runner.canonical_sha256(
+                [row.as_dict() for row in rows]
+            ),
+            "pooled": runner.pool_receipts(rows, arm=arm),
+            "chunk_receipts": chunks,
+            "boundary_state_hash_pairs": pairs,
+            "continuation_authority": continuation,
+        }
+        _fixture_write(root / "arm-merge.json", merge)
+        roots[arm] = root
+    return roots
+
+
+@pytest.mark.parametrize("interruption", ["checkpoint-only", "continuation-result"])
+def test_real_merger_and_independent_verifier_recover_publication_interruptions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    real_publication_inputs,
+    interruption: str,
+) -> None:
+    _shared, plan, mapping, prefix, _producer_roots = real_publication_inputs
+    output = tmp_path / "reporting"
+    shutil.copytree(prefix, output, copy_function=os.link)
+    plan_path = tmp_path / "world-plan.json"
+    _fixture_write(plan_path, builder.build_world_plan())
+    bindings_path = tmp_path / "bindings.json"
+    _fixture_write(bindings_path, {"fixture": "real-publication-recovery"})
+    bindings_sha = runner.file_sha256(bindings_path)
+    bindings = {
+        "stage_c_output_root": str(output.resolve()),
+        "code": {"external_manifest_sha256": "c" * 64},
+        "git": {"commit": "d" * 40, "tree": "e" * 40},
+        "world_plan": {
+            "path": str(plan_path.resolve()),
+            "file_sha256": runner.file_sha256(plan_path),
+        },
+        "scheduling_addendum": {"path": str(tmp_path / "R2.md"), "sha256": "f" * 64},
+    }
+    supplement_path = tmp_path / "supplement.json"
+    _fixture_write(supplement_path, {"fixture": "supplement"})
+    supplement = {
+        "supplement_sha256": runner.file_sha256(supplement_path),
+        "stage_a": {"fixture": "materialized"},
+    }
+    admission = {
+        "admission_mapping": mapping,
+        "admission_mapping_sha256": runner.canonical_sha256(mapping),
+        "policy_bindings_sha256": runner.canonical_sha256(
+            {arm: mapping[arm]["policy_binding"] for arm in runner.ARMS}
+        ),
+    }
+    _fixture_write(output / stagec_common.FORMAL_ADMISSION_NAME, admission)
+    stagec_common.write_digest_sidecar(output / stagec_common.FORMAL_ADMISSION_NAME)
+    _fixture_write(
+        output / "FORMAL-RUN.json",
+        {
+            "formal": True,
+            "arms": list(runner.ARMS),
+            "bindings_sha256": bindings_sha,
+            "admission_mapping_sha256": runner.canonical_sha256(mapping),
+        },
+    )
+    result_sha = runner.file_sha256(output / "result.json")
+    checkpoint_sha = runner.file_sha256(
+        output / "checkpoints/checkpoint-003000.json"
+    )
+    notification = tmp_path / "owner-notification.json"
+    reply = "I authorize the unchanged synthetic continuation recovery test."
+    _fixture_write(
+        notification,
+        {
+            "formal": True,
+            "status": "OWNER_NOTIFIED_FOR_9000_CONTINUATION",
+            "owner_reply_verbatim": reply,
+            "notification_sent_utc": "2026-09-08T01:00:00Z",
+            "owner_reply_received_utc": "2026-09-08T01:01:00Z",
+            "notification_channel": "controller-test",
+            "recorded_by": "controller-test",
+            "bindings_sha256": bindings_sha,
+            "plan_sha256": plan.plan_sha256,
+            "result_3000_sha256": result_sha,
+        },
+    )
+    notification_sha = _seal_json(notification, runner._read_json(
+        notification, label="synthetic owner notification"
+    ))
+    authority_path = tmp_path / "authority.json"
+    authority_sha = _seal_json(
+        authority_path,
+        {
+            "schema": runner.CONTINUATION_AUTHORITY_SCHEMA,
+            "status": "AUTHORIZED_CONTINUATION_TO_9000",
+            "continuation_from_episode": 3000,
+            "continuation_to_episode": 9000,
+            "owner_notification": {
+                "status": "OWNER_NOTIFIED",
+                "path": str(notification.resolve()),
+                "sha256": notification_sha,
+            },
+            "owner_reply_sha256": hashlib.sha256(reply.encode("utf-8")).hexdigest(),
+            "recorded_by": "controller-test",
+            "bindings_sha256": bindings_sha,
+            "plan_sha256": plan.plan_sha256,
+            "policy_bindings_sha256": admission["policy_bindings_sha256"],
+            "held_terminal_token_sha256": runner.HELD_TOKEN_SHA256,
+            "result_3000_sha256": result_sha,
+            "checkpoint_3000_sha256": checkpoint_sha,
+        },
+    )
+    authority = runner.authenticate_continuation_chain(
+        authority_path,
+        notification,
+        root=output,
+        bindings_sha256=bindings_sha,
+        plan_sha256=plan.plan_sha256,
+        policy_bindings={
+            arm: mapping[arm]["policy_binding"] for arm in runner.ARMS
+        },
+    )
+    arm_roots = _publication_arm_roots(tmp_path, real_publication_inputs, authority)
+    preserved = {
+        path.relative_to(output).as_posix(): runner.file_sha256(path)
+        for path in output.rglob("*") if path.is_file()
+    }
+    original_write = runner._write_once
+
+    def interrupt_after_publication(path, payload):
+        original_write(path, payload)
+        target = Path(path)
+        if (
+            interruption == "checkpoint-only"
+            and target.name == "checkpoint-003100.json"
+        ) or (
+            interruption == "continuation-result"
+            and target.name == "continuation-result.json"
+        ):
+            raise KeyboardInterrupt(f"fixture interruption after {interruption}")
+
+    monkeypatch.setattr(runner, "_write_once", interrupt_after_publication)
+    with pytest.raises(KeyboardInterrupt, match="fixture interruption"):
+        runner.merge_four_arm(
+            arm_roots,
+            output,
+            admission_mapping=mapping,
+            continuation_authority=authority,
+        )
+    monkeypatch.setattr(runner, "_write_once", original_write)
+    result = runner.merge_four_arm(
+        arm_roots,
+        output,
+        admission_mapping=mapping,
+        continuation_authority=authority,
+        resume_continuation=True,
+    )
+    assert result["completed_episode"] == 9000
+    for relative, expected in preserved.items():
+        assert runner.file_sha256(output / relative) == expected
+    assert len(list(output.glob("result.json"))) == 1
+
+    monkeypatch.setattr(stagec_common, "verify_bindings", lambda _path: dict(bindings))
+    monkeypatch.setattr(
+        stagec_common,
+        "verify_stage_ab_supplement",
+        lambda *_args: dict(supplement),
+    )
+    monkeypatch.setattr(stagec_common, "materialize_stage_ab", lambda value, _supplement: value)
+    monkeypatch.setattr(stagec_common, "verify_runtime_identity", lambda _bindings: None)
+    monkeypatch.setattr(stagec_common, "verify_code_manifest", lambda: ("c" * 64, {}))
+    monkeypatch.setattr(
+        stagec_common,
+        "stage_c_admission_mapping",
+        lambda _bindings, _policies: dict(mapping),
+    )
+    monkeypatch.setattr(
+        independent_verifier,
+        "_expected_policy_bindings",
+        lambda _bindings: {
+            arm: mapping[arm]["policy_binding"] for arm in runner.ARMS
+        },
+    )
+    monkeypatch.setattr(
+        independent_verifier,
+        "_verify_formal_admission",
+        lambda *_args: dict(admission),
+    )
+    assert independent_verifier.verify_finished(
+        output, bindings_path, supplement_path, require_tree_seal=False
+    )["completed_episode"] == 9000
+    stagec_common.write_tree_seal(output)
+    assert independent_verifier.verify_finished(
+        output, bindings_path, supplement_path
+    )["completed_episode"] == 9000

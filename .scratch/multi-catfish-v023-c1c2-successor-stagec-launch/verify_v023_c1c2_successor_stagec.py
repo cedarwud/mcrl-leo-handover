@@ -26,6 +26,7 @@ CHECKPOINT_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-
 RUNG_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-rung-receipt"
 RESULT_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-result"
 STATUS = "FIXED_POLICY_EVALUATION"
+CONTINUATION_STATUSES = frozenset({STATUS})
 CONTINUATION_RESULT_SCHEMA = "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-continuation-result"
 ADMINISTRATIVE_CLOSURE_SCHEMA = (
     "multi-catfish-mcrl-v023-c1c2-successor-physical-evaluation-v1-"
@@ -416,12 +417,30 @@ def _verify_administrative_closure(
     checkpoint_sha = common.file_sha256(root / "checkpoints/checkpoint-003000.json")
     marker_record = receipt.get("decision_marker")
     addendum_record = receipt.get("addendum_r2")
-    if not isinstance(marker_record, Mapping) or not isinstance(addendum_record, Mapping):
-        raise common.StageCError("administrative closure lacks decision/addendum bindings")
+    bindings_record = receipt.get("execution_bindings")
+    if (
+        not isinstance(marker_record, Mapping)
+        or not isinstance(addendum_record, Mapping)
+        or not isinstance(bindings_record, Mapping)
+    ):
+        raise common.StageCError(
+            "administrative closure lacks decision/addendum/execution-bindings bindings"
+        )
     marker_path = Path(str(marker_record.get("path", "")))
-    addendum_path = Path(str(addendum_record.get("path", "")))
     marker_sha = common.verify_named_sidecar(marker_path)
-    addendum_sha = common.verify_named_sidecar(addendum_path)
+    bound_bindings_path = Path(str(bindings_record.get("path", "")))
+    bound_bindings_sha = common.verify_named_sidecar(bound_bindings_path)
+    if (
+        bindings_record.get("sha256") != bound_bindings_sha
+        or bound_bindings_sha != bindings_sha256
+    ):
+        raise common.StageCError("administrative closure execution bindings drifted")
+    bound_bindings = common.read_json(
+        bound_bindings_path, field="administrative closure execution bindings"
+    )
+    addendum_path, addendum_sha = common.verify_bound_scheduling_addendum(
+        addendum_record, bound_bindings
+    )
     marker = common.read_json(marker_path, field="owner closure decision marker")
     decision = receipt.get("decision")
     common.validate_owner_closure_decision_marker(
@@ -453,6 +472,7 @@ def _verify_administrative_closure(
         != hashlib.sha256(HELD.encode("ascii")).hexdigest()
         or marker_record.get("sha256") != marker_sha
         or addendum_record.get("sha256") != addendum_sha
+        or bindings_record.get("sha256") != bound_bindings_sha
         or addendum_path.resolve() != Path(scheduling_addendum_path).resolve()
         or addendum_sha != scheduling_addendum_sha256
         or marker.get("decision") != decision
@@ -467,8 +487,13 @@ def _verify_continuation_result_semantics(continuation: Mapping[str, object]) ->
 
     if (
         continuation.get("schema") != CONTINUATION_RESULT_SCHEMA
+        or continuation.get("status") not in CONTINUATION_STATUSES
+        or continuation.get("split") != "TRAIN"
         or continuation.get("completed_episode") != 9000
         or continuation.get("terminal_boundary") != 9000
+        or continuation.get("plan_sha256") != common.PLAN_SHA256
+        or continuation.get("arms") != list(common.ARMS)
+        or continuation.get("authorized_from_3000_token") != HELD
         or continuation.get("scientific_disposition_emitted") is not False
         or "overall_token" in continuation
         or "reasons" in continuation

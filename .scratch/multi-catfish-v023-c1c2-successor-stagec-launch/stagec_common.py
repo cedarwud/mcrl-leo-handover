@@ -177,6 +177,28 @@ def read_json(path: str | Path, *, field: str) -> dict[str, Any]:
     return value
 
 
+def verify_bound_scheduling_addendum(
+    addendum_record: object,
+    bindings: Mapping[str, object],
+) -> tuple[Path, str]:
+    """Authenticate a closure addendum against execution bindings and its sidecar."""
+
+    schedule = bindings.get("scheduling_addendum")
+    if not isinstance(addendum_record, Mapping) or not isinstance(schedule, Mapping):
+        raise StageCError("closure addendum/execution scheduling binding is missing")
+    addendum_path = Path(str(addendum_record.get("path", "")))
+    bound_path = Path(str(schedule.get("path", "")))
+    if addendum_path.resolve() != bound_path.resolve():
+        raise StageCError("closure addendum must be the R2 path bound by execution bindings")
+    addendum_sha = verify_named_sidecar(addendum_path)
+    if (
+        addendum_record.get("sha256") != addendum_sha
+        or schedule.get("sha256") != addendum_sha
+    ):
+        raise StageCError("closure addendum must be the R2 digest bound by execution bindings")
+    return addendum_path, addendum_sha
+
+
 def write_once(path: str | Path, payload: object, *, newline: bool = True) -> None:
     target = Path(path)
     if target.exists() or target.is_symlink():
