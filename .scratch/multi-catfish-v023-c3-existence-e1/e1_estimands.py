@@ -38,6 +38,10 @@ class E1EstimandError(RuntimeError):
     """An E1 panel or exact optimization certificate is invalid."""
 
 
+class E1ResourceIncomplete(E1EstimandError):
+    """Exact solution stopped only because its declared resource cap expired."""
+
+
 @dataclass(frozen=True)
 class ProfileOption:
     """One complete physical profile available at an anchor."""
@@ -219,7 +223,7 @@ def _inner_exact(
     """Maximize exact ``sum(B-qE)`` subject to the pooled service threshold."""
 
     dp: dict[int, _DPState] = {0: _DPState(Fraction(0), ())}
-    for anchor in anchors:
+    for anchor_index, anchor in enumerate(anchors):
         # For a fixed served count only the best linear-score profile matters.
         by_served: dict[int, tuple[int, Fraction]] = {}
         for index, profile in enumerate(anchor.profiles):
@@ -230,6 +234,7 @@ def _inner_exact(
             ):
                 by_served[profile.served] = (index, score)
         next_dp: dict[int, _DPState] = {}
+        backpointers: dict[int, tuple[int, int]] = {}
         for prior_served in sorted(dp):
             prior = dp[prior_served]
             for served in sorted(by_served):
@@ -238,26 +243,26 @@ def _inner_exact(
                 candidate = _DPState(prior.score + score, prior.choices + (index,))
                 if _better(candidate, next_dp.get(capped)):
                     next_dp[capped] = candidate
+                    backpointers[capped] = (prior_served, index)
         dp = next_dp
         if trace is not None:
-            rows = [
-                [
-                    served,
-                    str(state.score.numerator),
-                    str(state.score.denominator),
-                    list(state.choices),
-                ]
-                for served, state in sorted(dp.items())
-            ]
-            encoded = json.dumps(
-                rows, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
-                allow_nan=False,
-            ).encode("ascii")
             trace.append(
                 {
-                    "anchor_index": len(trace),
-                    "state_count": len(rows),
-                    "states_sha256": hashlib.sha256(encoded).hexdigest(),
+                    "anchor_index": anchor_index,
+                    "anchor_id": anchor.anchor_id,
+                    "retained_states": [
+                        {
+                            "served_count": served,
+                            "best_value_exact": _fraction_payload(state.score),
+                            "backpointer": {
+                                "prior_served_count": backpointers[served][0],
+                                "chosen_profile_id": anchor.profiles[
+                                    backpointers[served][1]
+                                ].profile_id,
+                            },
+                        }
+                        for served, state in sorted(dp.items())
+                    ],
                 }
             )
     result = dp.get(required_served)
@@ -315,6 +320,195 @@ def _canonical_sha256(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _parse_fraction_payload(value: object, *, field: str) -> Fraction:
+    """Strictly parse one canonical exact-rational proof field."""
+
+    if not isinstance(value, Mapping) or set(value) != {
+        "numerator", "denominator", "float_hex"
+    }:
+        raise E1EstimandError(f"{field} exact rational is malformed")
+    numerator = value.get("numerator")
+    denominator = value.get("denominator")
+    float_hex = value.get("float_hex")
+    if not isinstance(numerator, str) or not isinstance(denominator, str) or not isinstance(float_hex, str):
+        raise E1EstimandError(f"{field} exact rational is malformed")
+    try:
+        parsed = Fraction(int(numerator), int(denominator))
+        parsed_float = float.fromhex(float_hex)
+    except (ValueError, OverflowError, ZeroDivisionError) as error:
+        raise E1EstimandError(f"{field} exact rational is malformed") from error
+    if (
+        numerator != str(parsed.numerator)
+        or denominator != str(parsed.denominator)
+        or float_hex != float(parsed).hex()
+        or not math.isfinite(parsed_float)
+        or Fraction.from_float(parsed_float) != Fraction.from_float(float(parsed))
+    ):
+        raise E1EstimandError(f"{field} exact rational is not canonical")
+    return parsed
+
+
+def _independent_serialized_witness_check(
+    certificate: Mapping[str, object], chosen: object
+) -> dict[str, object]:
+    """Validate the stored DP and witness without solver recurrence helpers.
+
+    This checker consumes only serialized coefficients, q, DP rows and the
+    selected profile IDs.  In particular it does not call ``_inner_exact`` or
+    ``_totals_exact`` and therefore supplies the certificate's independent
+    arithmetic path.
+    """
+
+    coefficients = certificate.get("coefficients")
+    if not isinstance(coefficients, list) or not coefficients:
+        raise E1EstimandError("certificate coefficients are malformed")
+    if not isinstance(chosen, Mapping):
+        raise E1EstimandError("certificate witness is malformed")
+    q = _parse_fraction_payload(
+        certificate.get("optimal_ratio_exact"), field="certificate optimal_ratio_exact"
+    )
+    minimum = certificate.get("minimum_served")
+    if type(minimum) is not int or minimum < 0:
+        raise E1EstimandError("certificate minimum service is malformed")
+
+    parsed: list[tuple[str, list[tuple[str, Fraction, Fraction, int, int]]]] = []
+    for anchor in coefficients:
+        if not isinstance(anchor, Mapping) or set(anchor) != {"anchor_id", "profiles"}:
+            raise E1EstimandError("certificate coefficient anchor is malformed")
+        anchor_id = anchor.get("anchor_id")
+        profiles = anchor.get("profiles")
+        if not isinstance(anchor_id, str) or not isinstance(profiles, list) or not profiles:
+            raise E1EstimandError("certificate coefficient anchor is malformed")
+        rows: list[tuple[str, Fraction, Fraction, int, int]] = []
+        for profile in profiles:
+            if not isinstance(profile, Mapping) or set(profile) != {
+                "profile_id", "bits", "energy_j", "served", "opportunities"
+            }:
+                raise E1EstimandError("certificate coefficient profile is malformed")
+            profile_id = profile.get("profile_id")
+            served = profile.get("served")
+            opportunities = profile.get("opportunities")
+            if (
+                not isinstance(profile_id, str)
+                or type(served) is not int
+                or type(opportunities) is not int
+                or not 0 <= served <= opportunities
+                or opportunities <= 0
+            ):
+                raise E1EstimandError("certificate coefficient profile is malformed")
+            bits = _parse_fraction_payload(profile.get("bits"), field="coefficient bits")
+            energy = _parse_fraction_payload(profile.get("energy_j"), field="coefficient energy")
+            if bits < 0 or energy <= 0:
+                raise E1EstimandError("certificate coefficients violate profile domains")
+            rows.append((profile_id, bits, energy, served, opportunities))
+        if len({row[0] for row in rows}) != len(rows):
+            raise E1EstimandError("certificate coefficient profile IDs are not unique")
+        parsed.append((anchor_id, rows))
+    if len({row[0] for row in parsed}) != len(parsed) or set(chosen) != {row[0] for row in parsed}:
+        raise E1EstimandError("certificate witness anchor coverage is malformed")
+
+    # Rebuild every retained DP row from the serialized coefficients.  A
+    # served count at or above the service threshold is saturated to the
+    # threshold; this is exact because future feasibility depends only on
+    # whether the threshold has already been reached.
+    trace = certificate.get("dp_trace")
+    if not isinstance(trace, list) or len(trace) != len(parsed):
+        raise E1EstimandError("certificate DP trace is malformed")
+    prior: dict[int, tuple[Fraction, tuple[int, ...]]] = {0: (Fraction(0), ())}
+    observed_backpointers: list[dict[int, tuple[int, str]]] = []
+    for anchor_index, ((anchor_id, profiles), trace_anchor) in enumerate(zip(parsed, trace, strict=True)):
+        if not isinstance(trace_anchor, Mapping) or set(trace_anchor) != {
+            "anchor_index", "anchor_id", "retained_states"
+        }:
+            raise E1EstimandError("certificate DP trace anchor is malformed")
+        if trace_anchor.get("anchor_index") != anchor_index or trace_anchor.get("anchor_id") != anchor_id:
+            raise E1EstimandError("certificate DP trace anchor identity drifted")
+        # Same-served dominance is recomputed at final q, BASE-first because
+        # coefficients preserve the canonical BASE-then-profile order.
+        by_served: dict[int, tuple[int, Fraction]] = {}
+        for index, (_profile_id, bits, energy, served, _opportunities) in enumerate(profiles):
+            score = bits - q * energy
+            current = by_served.get(served)
+            if current is None or score > current[1] or (score == current[1] and index < current[0]):
+                by_served[served] = (index, score)
+        current_states: dict[int, tuple[Fraction, tuple[int, ...]]] = {}
+        current_backpointers: dict[int, tuple[int, str]] = {}
+        for prior_served in sorted(prior):
+            prior_score, prior_choices = prior[prior_served]
+            for served in sorted(by_served):
+                index, score = by_served[served]
+                capped = min(minimum, prior_served + served)
+                candidate = (prior_score + score, prior_choices + (index,))
+                existing = current_states.get(capped)
+                if existing is None or candidate[0] > existing[0] or (
+                    candidate[0] == existing[0] and candidate[1] < existing[1]
+                ):
+                    current_states[capped] = candidate
+                    current_backpointers[capped] = (prior_served, profiles[index][0])
+        expected_rows = [
+            {
+                "served_count": served,
+                "best_value_exact": _fraction_payload(state[0]),
+                "backpointer": {
+                    "prior_served_count": current_backpointers[served][0],
+                    "chosen_profile_id": current_backpointers[served][1],
+                },
+            }
+            for served, state in sorted(current_states.items())
+        ]
+        if trace_anchor.get("retained_states") != expected_rows:
+            raise E1EstimandError("certificate DP recurrence/backpointers disagree")
+        prior = current_states
+        observed_backpointers.append(current_backpointers)
+    terminal = prior.get(minimum)
+    if terminal is None:
+        raise E1EstimandError("certificate DP has no feasible terminal")
+
+    backtrace_reversed: list[dict[str, object]] = []
+    served_cursor = minimum
+    for index in range(len(parsed) - 1, -1, -1):
+        previous_served, profile_id = observed_backpointers[index][served_cursor]
+        backtrace_reversed.append({
+            "anchor_id": parsed[index][0],
+            "served_count": served_cursor,
+            "prior_served_count": previous_served,
+            "profile_id": profile_id,
+        })
+        served_cursor = previous_served
+    backtrace = list(reversed(backtrace_reversed))
+    if certificate.get("final_backtrace") != backtrace or served_cursor != 0:
+        raise E1EstimandError("certificate final backtrace disagrees")
+
+    bits_total = Fraction(0)
+    energy_total = Fraction(0)
+    served_total = 0
+    opportunities_total = 0
+    expected_witness: dict[str, str] = {}
+    for anchor_id, profiles in parsed:
+        selected_id = chosen.get(anchor_id)
+        match = next((row for row in profiles if row[0] == selected_id), None)
+        if match is None:
+            raise E1EstimandError("certificate witness selects an unknown profile")
+        expected_witness[anchor_id] = match[0]
+        bits_total += match[1]
+        energy_total += match[2]
+        served_total += match[3]
+        opportunities_total += match[4]
+    residual = bits_total - q * energy_total
+    if tuple(row["profile_id"] for row in backtrace) != tuple(expected_witness.values()):
+        raise E1EstimandError("certificate DP backtrace and witness disagree")
+    return {
+        "q": q,
+        "terminal_max": terminal[0],
+        "bits": bits_total,
+        "energy": energy_total,
+        "served": served_total,
+        "opportunities": opportunities_total,
+        "residual": residual,
+        "witness": expected_witness,
+    }
+
+
 def _choice_set_census(
     anchors: Sequence[AnchorOptions], *, q: Fraction
 ) -> dict[str, object]:
@@ -362,11 +556,17 @@ def verify_certificate(
     ratio = certificate.get("optimal_ratio_exact")
     if not isinstance(ratio, Mapping):
         raise E1EstimandError("certificate lacks optimal_ratio_exact")
-    try:
-        q = Fraction(int(ratio["numerator"]), int(ratio["denominator"]))
-    except (KeyError, TypeError, ValueError, ZeroDivisionError) as error:
-        raise E1EstimandError("certificate ratio is malformed") from error
-    required, _base_served, _opportunities = _required_served(panel)
+    q = _parse_fraction_payload(ratio, field="certificate optimal_ratio_exact")
+    required, base_served, opportunities = _required_served(panel)
+    coefficients = certificate.get("coefficients")
+    stored_coefficient_sha = certificate.get("coefficients_sha256")
+    if _canonical_sha256(coefficients) != stored_coefficient_sha:
+        raise E1EstimandError("stored coefficient hash disagrees with stored coefficients")
+    if coefficients != _coefficient_payload(panel):
+        raise E1EstimandError("stored coefficients disagree with the input panel")
+    independent = _independent_serialized_witness_check(
+        certificate, result.get("chosen_profiles")
+    )
     trace: list[dict[str, object]] = []
     inner = _inner_exact(panel, q=q, required_served=required, trace=trace)
     bits, energy, served = _totals_exact(panel, inner.choices)
@@ -379,27 +579,91 @@ def verify_certificate(
     )
     base_float_bits = math.fsum(anchor.base.total_bits for anchor in panel)
     base_float_energy = math.fsum(anchor.base.total_energy_j for anchor in panel)
+    replay_q = base_ratio
+    replay_iterations = 0
+    while True:
+        replay_iterations += 1
+        if replay_iterations > MAX_DINKELBACH_ITERATIONS:
+            raise E1ResourceIncomplete("certificate iteration replay exhausted")
+        replay_inner = _inner_exact(panel, q=replay_q, required_served=required)
+        replay_bits, replay_energy, _replay_served = _totals_exact(
+            panel, replay_inner.choices
+        )
+        replay_residual = replay_bits - replay_q * replay_energy
+        if replay_residual == 0:
+            break
+        if replay_residual < 0:
+            raise E1EstimandError("certificate iteration replay became negative")
+        replay_q = replay_bits / replay_energy
     chosen = result.get("chosen_profiles")
     expected = {
         anchor.anchor_id: anchor.profiles[index].profile_id
         for anchor, index in zip(panel, inner.choices, strict=True)
     }
+    certificate_keys = {
+        "method", "iterations", "choice_set_census", "coefficients",
+        "coefficients_sha256", "optimal_ratio_exact", "terminal_inner_max_exact",
+        "chosen_residual_exact", "selected_totals_exact", "service_dimension",
+        "minimum_served", "witness_served", "feasible",
+        "global_upper_bound_proved", "dp_recurrence", "dp_trace",
+        "final_backtrace", "terminal_backpointer_profile_ids",
+    }
+    pooled_expected = {
+        "total_bits_hex": math.fsum(
+            panel[index].profiles[choice].total_bits
+            for index, choice in enumerate(inner.choices)
+        ).hex(),
+        "total_energy_j_hex": math.fsum(
+            panel[index].profiles[choice].total_energy_j
+            for index, choice in enumerate(inner.choices)
+        ).hex(),
+        "served": served,
+        "opportunities": opportunities,
+        "service_fraction_hex": (served / opportunities).hex(),
+        "minimum_served": required,
+        "base_served": base_served,
+    }
+    selected_totals = {
+        "bits": _fraction_payload(bits),
+        "energy_j": _fraction_payload(energy),
+        "served": served,
+        "ratio": _fraction_payload(bits / energy),
+    }
+    expected_result_keys = {
+        estimand, "value_hex", "eta_BASE", "eta_BASE_hex", "eta_BASE_exact",
+        "chosen_profiles", "pooled", "certificate",
+    }
     if (
-        result.get("value_hex") != float(q).hex()
+        set(result) != expected_result_keys
+        or replay_q != q
+        or certificate.get("iterations") != replay_iterations
+        or
+        set(certificate) != certificate_keys
+        or result.get("value_hex") != float(q).hex()
         or result.get(estimand) != float(q)
+        or result.get("eta_BASE") != base_float_bits / base_float_energy
         or result.get("eta_BASE_hex") != (base_float_bits / base_float_energy).hex()
         or result.get("eta_BASE_exact") != _fraction_payload(base_ratio)
-        or certificate.get("coefficients_sha256")
-        != _canonical_sha256(_coefficient_payload(panel))
+        or result.get("pooled") != pooled_expected
+        or certificate.get("method") != CERTIFICATE_METHOD
+        or type(certificate.get("iterations")) is not int
+        or not 1 <= int(certificate["iterations"]) <= MAX_DINKELBACH_ITERATIONS
         or certificate.get("choice_set_census") != _choice_set_census(panel, q=q)
         or certificate.get("dp_trace") != trace
         or certificate.get("terminal_backpointer_profile_ids") != expected
-        or certificate.get("selected_totals_exact")
-        != {
-            "bits": _fraction_payload(bits),
-            "energy_j": _fraction_payload(energy),
-            "served": served,
-            "ratio": _fraction_payload(bits / energy),
+        or certificate.get("selected_totals_exact") != selected_totals
+        or certificate.get("terminal_inner_max_exact") != _fraction_payload(Fraction(0))
+        or certificate.get("chosen_residual_exact") != _fraction_payload(Fraction(0))
+        or certificate.get("service_dimension") != "INTEGER_SERVED_COUNT_CAPPED_AT_REQUIRED_THRESHOLD"
+        or certificate.get("minimum_served") != required
+        or certificate.get("witness_served") != served
+        or certificate.get("feasible") is not True
+        or certificate.get("global_upper_bound_proved") is not True
+        or certificate.get("dp_recurrence") != "D_i[min(required,c+s)]=max_x(D_i-1[c]+B_ix-qE_ix)"
+        or independent != {
+            "q": q, "terminal_max": inner.score, "bits": bits, "energy": energy,
+            "served": served, "opportunities": opportunities,
+            "residual": bits - q * energy, "witness": expected,
         }
     ):
         raise E1EstimandError("certificate numeric summary disagrees with exact proof")
@@ -418,7 +682,7 @@ def _solve(values: Sequence[object], *, candidate_field: str, estimand: str) -> 
     while True:
         iterations += 1
         if iterations > MAX_DINKELBACH_ITERATIONS:
-            raise E1EstimandError("exact Dinkelbach iteration limit exceeded")
+            raise E1ResourceIncomplete("exact Dinkelbach iteration limit exceeded")
         inner = _inner_exact(anchors, q=q, required_served=required)
         bits, energy, served = _totals_exact(anchors, inner.choices)
         residual = bits - q * energy
@@ -451,6 +715,22 @@ def _solve(values: Sequence[object], *, candidate_field: str, estimand: str) -> 
         raise E1EstimandError("terminal DP replay changed the optimal witness")
     coefficients = _coefficient_payload(anchors)
     choice_set_census = _choice_set_census(anchors, q=q)
+    served_cursor = required
+    backtrace_reversed: list[dict[str, object]] = []
+    for trace_anchor in reversed(final_trace):
+        retained = trace_anchor["retained_states"]
+        assert isinstance(retained, list)
+        state = next(row for row in retained if row["served_count"] == served_cursor)
+        backpointer = state["backpointer"]
+        assert isinstance(backpointer, Mapping)
+        backtrace_reversed.append({
+            "anchor_id": trace_anchor["anchor_id"],
+            "served_count": served_cursor,
+            "prior_served_count": backpointer["prior_served_count"],
+            "profile_id": backpointer["chosen_profile_id"],
+        })
+        served_cursor = int(backpointer["prior_served_count"])
+    final_backtrace = list(reversed(backtrace_reversed))
     result: dict[str, object] = {
         estimand: float(q),
         "value_hex": float(q).hex(),
@@ -489,6 +769,7 @@ def _solve(values: Sequence[object], *, candidate_field: str, estimand: str) -> 
             "global_upper_bound_proved": inner.score == 0,
             "dp_recurrence": "D_i[min(required,c+s)]=max_x(D_i-1[c]+B_ix-qE_ix)",
             "dp_trace": final_trace,
+            "final_backtrace": final_backtrace,
             "terminal_backpointer_profile_ids": chosen,
         },
     }
@@ -513,6 +794,7 @@ __all__ = [
     "BASE_PROFILE_ID",
     "CERTIFICATE_METHOD",
     "E1EstimandError",
+    "E1ResourceIncomplete",
     "J1_ESTIMAND",
     "ProfileOption",
     "SERVICE_MARGIN",

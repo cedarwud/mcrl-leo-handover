@@ -38,18 +38,28 @@ to positive int63:
 3. `5747196377242098234`
 4. `4004348767321774260`
 
-The package imports F1 profile conversion, candidate enumeration,
-mask/tie/NOOP validation, physical profile capture, and write-once machinery;
+The package imports F1 profile conversion, candidate enumeration, and physical
+profile capture;
 F0 conservation; F2 lineage authentication and world-by-lineage conventions;
 and the native `StepEnvironment.evaluate_actions` physics path. No predecessor
-is copied or edited.
+is copied or edited. E1 provides thin local validation-only and BASE-only
+wrappers because F1 has no entry points that avoid legacy D/F target evaluation
+and `Q + z/kappa` composition. The wrappers use donor physical identities and
+profiles while applying only E1's declared BASE rule.
 
 ## Files and use
 
 - `e1_estimands.py`: exact `solve_u1`, `solve_j1`, and certificate verifier.
 - `run_v023_c3_existence_e1.py`: joint catalog builder, E1 tape verifier,
-  `--unit`, `--merge`, `--dry-run`, immutable receipts, and `INVALID_RUN`.
+  `--unit`, `--merge`, `--dry-run`, immutable receipts, `INCOMPLETE`, and
+  global `INVALID_RUN` invalidation.
 - `build_e1_preflight_manifest.py`: writes the code/binding manifest once.
+
+Certificates store every retained DP value and backpointer plus a final
+backtrace. Counts at or above the required-service threshold are represented
+by the threshold state. This is an exact compression because all such states
+have identical future feasibility, so only their best score under the declared
+tie rule can affect later steps.
 
 The controller-placed draft
 `V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md` must be sealed with a
@@ -60,27 +70,59 @@ that reserved file.
 Build and check the preflight after code review:
 
 ```bash
-./.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/build_e1_preflight_manifest.py
-./.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py --dry-run
+/home/sat/mcrl-leo-handover/.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/build_e1_preflight_manifest.py
+/home/sat/mcrl-leo-handover/.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py --dry-run
 ```
 
 Run one authorized unit later (a physical simulator run, not part of this
 implementation handoff):
 
 ```bash
-./.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py \
+/home/sat/mcrl-leo-handover/.venv/bin/python .scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py \
   --unit 861587764845384088:2026092101 \
   --launch-authority /absolute/path/to/authority.json \
-  --tle-root /absolute/path/to/tle-root \
+  --tle-root /home/sat/mcrl-runtime/tle-frozen-20260820 \
   --output /absolute/path/to/e1-output
 ```
 
+The frozen launch authority has an exact key set. It binds the absolute
+checkout/output/TLE roots, PREREG file and semantic digest, the rebuilt TLE
+manifest digest, and the exact command arguments. The runner accepts only the
+bound output root and canonical TLE root.
+
 After all twelve units exist, `--merge` authenticates them and writes the
-terminal U1/J1 decision. All tapes, manifests, and receipts are write-once and
-read-only. Any unit or merge integrity failure seals an `INVALID_RUN` receipt.
+terminal U1/J1 decision. A premature merge exits with
+`E1_MERGE_WAITING <n> units missing` and writes no terminal. Tapes, manifests,
+and receipts are mode `0444`, write-once, and reopened/hash-verified. SIGINT,
+SIGTERM, the default 57,600 worker-second cross-unit budget, and exact-solver
+iteration exhaustion publish a separate immutable `INCOMPLETE` receipt; these
+receipts do not occupy a unit or terminal path and therefore do not prevent a
+later resume. Integrity/authentication failure publishes global `INVALID_RUN`;
+an invalidation beside an already published COMPLETE supersedes that result.
 
 Implementation tests are unit fixtures only:
 
 ```bash
-./.venv/bin/python -m pytest -q .scratch/multi-catfish-v023-c3-existence-e1
+/home/sat/mcrl-leo-handover/.venv/bin/python -m pytest -q .scratch/multi-catfish-v023-c3-existence-e1
 ```
+
+## E1 fix pass 1 changelog
+
+1. Certificate: serialized exact DP values/backpointers and final backtrace;
+   added strict proof-field validation, stored-coefficient rehashing, and an
+   independent rational witness/recurrence checker.
+2. Tape: added lossless little-endian float32 Q1+Q2 bytes, strict dtype/shape
+   decoding, direct masked first-index BASE authentication, and BASE F0 record.
+3. Profile boundary: enforced 100 users and the canonical interval on BASE,
+   unilateral, and joint profiles; routed E1 through local validation/BASE-only
+   wrappers with no legacy D/F or residual-composition call.
+4. Preflight/authority: contract seal is now the first write gate; E1 tests,
+   every F2 binding including the multi-lineage loader, RNG/keyed-field code,
+   PREREG, rebuilt TLE manifest, roots, interpreter/environment, and exact
+   arguments are frozen.
+5. Publication/lifecycle: added immutable readback, a worker-budget ledger,
+   resumable INCOMPLETE receipts, merge WAITING, solver-resource classification,
+   and global invalidation for corrupted existing evidence.
+6. Tests: added exact variable-energy oracles, certificate mutations, Q/BASE
+   refusals, canonical profile checks, complete synthetic authentication flow,
+   lifecycle/corruption checks, and all declared catalog edge cases.

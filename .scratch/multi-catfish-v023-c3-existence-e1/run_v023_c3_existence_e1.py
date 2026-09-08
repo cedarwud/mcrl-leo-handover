@@ -11,14 +11,17 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import fcntl
 from fractions import Fraction
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
+import signal
 import sys
 import tempfile
+import time
 import traceback
 from typing import Any, Callable, Mapping, Sequence
 
@@ -82,6 +85,11 @@ DEFAULT_TAPE_NAME = "e1-physical-tape.json"
 DEFAULT_TAPE_MANIFEST_NAME = "e1-physical-tape.manifest.json"
 DEFAULT_UNIT_RECEIPT_NAME = "receipt.json"
 DEFAULT_TERMINAL_RECEIPT_NAME = "terminal-receipt.json"
+DEFAULT_GLOBAL_INVALIDATION_NAME = "GLOBAL-INVALIDATION.json"
+DEFAULT_BUDGET_LEDGER_NAME = "budget-ledger.json"
+DEFAULT_BUDGET_WORKER_SECONDS = 57_600.0
+CANONICAL_TLE_ROOT = Path("/home/sat/mcrl-runtime/tle-frozen-20260820")
+CANONICAL_INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
 
 UNILATERAL_PROFILE_PREFIX = "U"
 JOINT_PROFILE_PREFIX = "J"
@@ -92,6 +100,18 @@ JOINT_OUTCOMES = ("E1_JOINT_HEADROOM", "E1_JOINT_CLOSED")
 
 class E1Error(RuntimeError):
     """An E1 binding, tape, physical catalog, or receipt failed closed."""
+
+
+class E1Incomplete(E1Error):
+    """E1 stopped for interruption or a declared resource limit."""
+
+
+class E1MergeWaiting(E1Incomplete):
+    """Merge cannot begin until every immutable unit is present."""
+
+    def __init__(self, missing: int) -> None:
+        self.missing = missing
+        super().__init__(f"{missing} units missing")
 
 
 def canonical_bytes(value: object) -> bytes:
@@ -246,10 +266,13 @@ def formula_digests() -> dict[str, object]:
 
 
 def expected_code_bindings() -> list[dict[str, str]]:
-    paths = (
+    paths: list[tuple[str, Path]] = [
         ("e1_runner", HERE / "run_v023_c3_existence_e1.py"),
         ("e1_estimands", HERE / "e1_estimands.py"),
         ("e1_preflight_builder", HERE / "build_e1_preflight_manifest.py"),
+        ("e1_estimand_tests", HERE / "test_e1_estimands.py"),
+        ("e1_runner_tests", HERE / "test_run_v023_c3_existence_e1.py"),
+        ("e1_readme", HERE / "README.md"),
         ("f1_tape_machinery_import", F1_DIR / "run_v023_c3_contingency_f1.py"),
         ("f2_unit_merge_conventions_import", F2_DIR / "run_v023_c3_contingency_f2.py"),
         ("f0_conservation_import", F0_DIR / "c3_contingency_f0.py"),
@@ -259,14 +282,95 @@ def expected_code_bindings() -> list[dict[str, str]]:
         ("canonical_interval", REPO / "src/mcrl/env/constants.py"),
         ("stage_c_world_plan_builder", STAGEC_PLAN_DIR / "build_v023_c1c2_successor_world_plan.py"),
         ("stage_c_plan_authority", STAGEC_LAUNCH_DIR / "stagec_common.py"),
-    )
+        ("rng_construction", REPO / "src/mcrl/runtime/training_pipeline.py"),
+        ("keyed_field_construction", REPO / "src/mcrl/env/keyed_fading.py"),
+        ("rng_state_authentication", REPO / "src/mcrl/env/observation_provenance.py"),
+    ]
+    seen = {path.resolve() for _role, path in paths}
+    for row in f2.expected_code_bindings():
+        path = REPO / row["path"]
+        if path.resolve() not in seen:
+            paths.append((f"f2_import_{row['role']}", path))
+            seen.add(path.resolve())
     return [
         {"role": role, "path": _repo_relative(path), "sha256": file_sha256(path)}
         for role, path in paths
     ]
 
 
+def sealed_contract_binding() -> dict[str, str]:
+    """Authenticate the controller-owned contract without modifying it."""
+
+    contract = HERE / CONTRACT_FILENAME
+    sidecar = Path(f"{contract}.sha256")
+    message = "E1 contract is not sealed read-only with matching .sha256 sidecar"
+    if (
+        contract.is_symlink()
+        or not contract.is_file()
+        or contract.stat().st_mode & 0o222
+        or sidecar.is_symlink()
+        or not sidecar.is_file()
+        or sidecar.stat().st_mode & 0o222
+    ):
+        raise E1Error(message)
+    digest = file_sha256(contract)
+    if sidecar.read_text(encoding="ascii").split() != [digest, contract.name]:
+        raise E1Error(message)
+    return {"path": str(contract.resolve()), "sha256": digest}
+
+
+def prereg_tle_bindings() -> dict[str, object]:
+    """Rebuild the imported PREREG/TLE manifest at the one permitted root."""
+
+    from mcrl.env.tle import TleArchive
+    from mcrl.runtime.prereg import read_prereg
+    from mcrl.runtime.training_pipeline import assert_ephemeris_matches_record
+
+    if file_sha256(f1.PREREG_PATH) != f1.PREREG_SHA256:
+        raise E1Error("TRAIN PREREG bytes changed")
+    record = read_prereg(f1.PREREG_PATH)
+    if record.digest != f1.PREREG_RECORD_DIGEST:
+        raise E1Error("TRAIN PREREG semantic digest changed")
+    if CANONICAL_TLE_ROOT.is_symlink() or not CANONICAL_TLE_ROOT.is_dir():
+        raise E1Error("canonical TLE root is missing or symlinked")
+    try:
+        manifest = assert_ephemeris_matches_record(
+            record, archive=TleArchive(CANONICAL_TLE_ROOT)
+        )
+    except Exception as error:
+        raise E1Error("canonical TLE archive disagrees with imported PREREG machinery") from error
+    return {
+        "preregistration": {
+            "path": _repo_relative(f1.PREREG_PATH),
+            "sha256": f1.PREREG_SHA256,
+            "record_digest": f1.PREREG_RECORD_DIGEST,
+        },
+        "tle_archive": {
+            "root": str(CANONICAL_TLE_ROOT),
+            "manifest_sha256": canonical_sha256(manifest),
+            "file_set_sha256": manifest["file_set_sha256"],
+            "file_count": len(manifest["frozen_files"]),
+        },
+    }
+
+
+def process_bindings() -> dict[str, object]:
+    if Path(sys.executable).resolve() != CANONICAL_INTERPRETER.resolve():
+        raise E1Error(f"E1 requires interpreter {CANONICAL_INTERPRETER}")
+    return {
+        "checkout_root": str(REPO.resolve()),
+        "interpreter": str(CANONICAL_INTERPRETER),
+        "python_version": sys.version,
+        "numpy_version": np.__version__,
+        "thread_environment": {
+            name: os.environ.get(name)
+            for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+        },
+    }
+
+
 def validate_static_bindings() -> dict[str, object]:
+    contract_binding = sealed_contract_binding()
     if LINEAGES != tuple(range(2026092101, 2026092104)):
         raise E1Error("lineage panel drifted")
     if CANONICAL_STEP_INDICES != tuple(range(STEP_COUNT)) or STEP_COUNT != 10:
@@ -291,7 +395,11 @@ def validate_static_bindings() -> dict[str, object]:
         raise E1Error(f"F1/F2 reusable machinery failed authentication: {error}") from error
     return {
         "bindings": panel_bindings(),
+        "contract": contract_binding,
+        **prereg_tle_bindings(),
+        "process_environment": process_bindings(),
         "lineage_authorities": f2.lineage_authority_bindings(),
+        "reused_f2_code_files": f2.expected_code_bindings(),
         "formula_digests": formula_digests(),
         "reused_f2_preflight": f2_static["f1_preflight"],
         "world_exclusion_check": {
@@ -329,37 +437,38 @@ def _preflight_path_record(path: Path) -> str:
 
 
 def validate_launch_authority(
-    path: Path, *, preflight_path: Path, preflight_sha256: str
+    path: Path, *, preflight_path: Path, preflight_sha256: str,
+    output_root: Path | None = None, tle_root: Path | None = None,
+    launch_arguments: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     payload = _load_json(path, field="E1 launch authority")
     expected_keys = {
         "schema", "status", "claim_ceiling", "preflight_manifest", "contract",
-        "bindings", "test_split_opened", "episode_training", "learner_update",
-        "efficacy_claim",
+        "bindings", "checkout_root", "output_root", "tle_root", "preregistration",
+        "tle_archive", "launch_arguments", "test_split_opened", "episode_training",
+        "learner_update", "efficacy_claim",
     }
     if set(payload) != expected_keys:
         raise E1Error("launch authority keys differ from the exact E1 contract")
     contract = payload.get("contract")
     if not isinstance(contract, Mapping) or set(contract) != {"path", "sha256"}:
         raise E1Error("launch authority contract binding needs exact path/sha256 keys")
-    contract_path_text = contract.get("path")
-    if not isinstance(contract_path_text, str):
-        raise E1Error("launch authority contract path is malformed")
-    contract_path = Path(contract_path_text)
-    contract_sidecar = Path(f"{contract_path}.sha256")
-    if (
-        not contract_path.is_absolute()
-        or contract_path.resolve().parent != HERE.resolve()
-        or contract_path.name != CONTRACT_FILENAME
-        or file_sha256(contract_path) != _digest(contract.get("sha256"), field="contract sha256")
-        or contract_path.stat().st_mode & 0o222
-        or contract_sidecar.is_symlink()
-        or not contract_sidecar.is_file()
-        or contract_sidecar.stat().st_mode & 0o222
-        or contract_sidecar.read_text(encoding="ascii").split()
-        != [str(contract["sha256"]), contract_path.name]
-    ):
+    if dict(contract) != sealed_contract_binding():
         raise E1Error("launch authority does not bind the controller-placed E1 contract")
+    bound_output = payload.get("output_root")
+    if not isinstance(bound_output, str) or not Path(bound_output).is_absolute():
+        raise E1Error("launch authority output root must be absolute")
+    if output_root is not None and (
+        not Path(output_root).is_absolute()
+        or str(Path(output_root)) != str(Path(bound_output))
+        or Path(output_root).is_symlink()
+    ):
+        raise E1Error("runtime output root differs from launch authority")
+    if tle_root is not None and (
+        Path(tle_root) != CANONICAL_TLE_ROOT or Path(tle_root).is_symlink()
+    ):
+        raise E1Error("runtime TLE root differs from the canonical frozen root")
+    frozen_inputs = prereg_tle_bindings()
     expected = {
         "schema": LAUNCH_AUTHORITY_SCHEMA,
         "status": "FROZEN_LAUNCH_AUTHORITY",
@@ -370,6 +479,12 @@ def validate_launch_authority(
         },
         "contract": dict(contract),
         "bindings": panel_bindings(),
+        "checkout_root": str(REPO.resolve()),
+        "output_root": str(Path(bound_output).resolve()),
+        "tle_root": str(CANONICAL_TLE_ROOT),
+        "preregistration": frozen_inputs["preregistration"],
+        "tle_archive": frozen_inputs["tle_archive"],
+        "launch_arguments": list(payload.get("launch_arguments", [])),
         "test_split_opened": False,
         "episode_training": False,
         "learner_update": False,
@@ -377,10 +492,20 @@ def validate_launch_authority(
     }
     if payload != expected:
         raise E1Error("launch authority does not pin the exact E1 bindings")
+    arguments = payload.get("launch_arguments")
+    if (
+        not isinstance(arguments, list)
+        or any(not isinstance(value, str) for value in arguments)
+        or launch_arguments is not None
+        and list(launch_arguments) != arguments
+    ):
+        raise E1Error("runtime launch arguments differ from launch authority")
     return payload
 
 
 def _profile_metrics(profile: f1.PhysicalProfile) -> dict[str, object]:
+    if profile.users != USERS or profile.interval_s != INTERVAL_S:
+        raise E1Error("every physical profile must match BASE users and canonical interval")
     total_bits = profile.interval_s * math.fsum(float(value) for value in profile.link_rate_bps)
     total_energy = profile.network_energy_j
     served = int(np.count_nonzero(profile.served))
@@ -464,6 +589,8 @@ def build_joint_witness_catalog(anchor: JointWitnessAnchor) -> tuple[dict[str, o
 
     reference = np.asarray(anchor.reference_actions)
     base = anchor.reference_profile
+    if base.users != USERS or base.interval_s != INTERVAL_S or anchor.interval_s != INTERVAL_S:
+        raise E1Error("joint catalog BASE must have 100 users and canonical interval")
     if reference.dtype.kind not in "iu" or reference.shape != (base.users,):
         raise E1Error("joint catalog reference action vector is malformed")
     if base.users != len(tuple(anchor.observation.candidates.slot_tables)):
@@ -493,6 +620,8 @@ def build_joint_witness_catalog(anchor: JointWitnessAnchor) -> tuple[dict[str, o
             profile, link_power = f1.profile_from_evaluation(
                 evaluation, interval_s=anchor.interval_s
             )
+            if profile.users != base.users or profile.interval_s != INTERVAL_S:
+                raise E1Error("joint witness profile must match BASE users and interval")
             conservation = _conservation(profile)
             profile_id = (
                 f"{JOINT_PROFILE_PREFIX}:{origin[0]}:{origin[1]}"
@@ -530,9 +659,193 @@ def _serialize_profile_row(row: Mapping[str, object]) -> dict[str, object]:
     return result
 
 
+def _encode_q12_surface(value: object) -> dict[str, object]:
+    array = np.asarray(value)
+    if array.dtype != np.dtype(np.float32) or array.shape != (USERS, f1.NUM_ACTIONS):
+        raise E1Error("Q1+Q2 surface must have exact float32 dtype and shape (100,28)")
+    if not np.all(np.isfinite(array)):
+        raise E1Error("Q1+Q2 surface contains non-finite values")
+    little = np.ascontiguousarray(array, dtype=np.dtype("<f4"))
+    return {
+        "encoding": "base16-little-endian-c-order",
+        "dtype": "<f4",
+        "shape": [USERS, f1.NUM_ACTIONS],
+        "data_hex": little.tobytes(order="C").hex(),
+    }
+
+
+def _decode_q12_surface(value: object) -> np.ndarray:
+    if not isinstance(value, Mapping) or set(value) != {
+        "encoding", "dtype", "shape", "data_hex"
+    }:
+        raise E1Error("serialized Q1+Q2 surface is missing or malformed")
+    if (
+        value.get("encoding") != "base16-little-endian-c-order"
+        or value.get("dtype") != "<f4"
+        or value.get("shape") != [USERS, f1.NUM_ACTIONS]
+        or not isinstance(value.get("data_hex"), str)
+    ):
+        raise E1Error("serialized Q1+Q2 surface dtype/shape is malformed")
+    text = value["data_hex"]
+    try:
+        raw = bytes.fromhex(text)
+    except ValueError as error:
+        raise E1Error("serialized Q1+Q2 surface base16 is malformed") from error
+    expected_bytes = USERS * f1.NUM_ACTIONS * np.dtype("<f4").itemsize
+    if len(raw) != expected_bytes or text != raw.hex():
+        raise E1Error("serialized Q1+Q2 surface byte length/canonical base16 is malformed")
+    result = np.frombuffer(raw, dtype=np.dtype("<f4")).reshape(USERS, f1.NUM_ACTIONS).copy()
+    if result.dtype != np.dtype(np.float32) or not np.all(np.isfinite(result)):
+        raise E1Error("serialized Q1+Q2 surface values are malformed")
+    return result
+
+
+def _masked_first_argmax(values: object, masks: object) -> np.ndarray:
+    """Direct BASE selector with NumPy ties and no residual composition."""
+
+    surface = np.asarray(values)
+    legal = np.asarray(masks)
+    if surface.shape != (USERS, f1.NUM_ACTIONS) or not np.issubdtype(surface.dtype, np.floating):
+        raise E1Error("BASE Q surface is malformed")
+    if legal.dtype != np.bool_ or legal.shape != surface.shape:
+        raise E1Error("BASE legality mask is malformed")
+    if not np.all(np.isfinite(surface)):
+        raise E1Error("BASE Q surface is non-finite")
+    selected = np.full(USERS, f1.NO_OP_ACTION, dtype=np.int64)
+    eligible = np.any(legal, axis=1)
+    selected[eligible] = np.argmax(
+        np.where(legal[eligible], surface[eligible], -np.inf), axis=1
+    )
+    return selected
+
+
+def _base_argmax(q12: np.ndarray, masks: np.ndarray) -> np.ndarray:
+    """Stored-Q12 BASE selector with exact float32 input authentication."""
+
+    if q12.dtype != np.dtype(np.float32):
+        raise E1Error("BASE Q1+Q2 surface is not float32")
+    return _masked_first_argmax(q12, masks)
+
+
+def _q12_surface_base_only(
+    physical: Any, frozen: Any, step_env: Any, observation: Any
+) -> tuple[Any, np.ndarray, np.ndarray]:
+    """Thin BASE-only counterpart to F1's combined surface/deployment helper."""
+
+    from mcrl.runtime.ee_axis_ops3_live import (
+        build_ops3_live_surfaces,
+        project_ops3_anchor,
+        snapshot_ops3_anchor,
+    )
+    from mcrl.runtime.ee_axis_state import encode_ee_axis_state
+    from mcrl.runtime.ee_axis_v014_q2_state import encode_ee_axis_v014_q2_states
+
+    native = encode_ee_axis_state(step_env, observation)
+    native.verify()
+    masks = np.asarray(native.action_masks, dtype=np.bool_)
+    eligible = np.any(masks, axis=1)
+    q1 = f1._network_surface_allow_empty(
+        physical, frozen.q1, native.state_matrix, masks, field="Q1"
+    )
+    q1_reference = _masked_first_argmax(q1, masks)
+    anchor = snapshot_ops3_anchor(step_env, observation)
+    projection = project_ops3_anchor(anchor)
+    surfaces = build_ops3_live_surfaces(anchor, projection, q1_reference)
+    q2 = np.zeros(masks.shape, dtype=np.float64)
+    if np.any(eligible):
+        q2_state = encode_ee_axis_v014_q2_states(
+            tuple(surface for index, surface in enumerate(surfaces) if bool(eligible[index]))
+        )
+        q2_state.verify()
+        if not np.array_equal(q2_state.action_masks, masks[eligible]):
+            raise E1Error("Q2 carrier mask differs from native mask")
+        q2[eligible] = physical._surface(
+            frozen.q2, q2_state.state_matrix, q2_state.action_masks, field="Q2"
+        )
+    q12 = np.asarray(
+        np.asarray(q1, dtype=np.float32) + np.asarray(q2, dtype=np.float32),
+        dtype=np.float32,
+    )
+    return native, q12, _base_argmax(q12, masks)
+
+
+def _validate_unilateral_catalog_only(step: Mapping[str, object], base: f1.PhysicalProfile) -> None:
+    """Thin E1 validation-only wrapper around donor profile/physical identities."""
+
+    masks = np.asarray(step.get("action_masks"))
+    reference = np.asarray(step.get("reference_actions"))
+    physical_keys = step.get("action_physical_keys")
+    candidates = step.get("unilateral_candidates")
+    if masks.dtype != np.bool_ or masks.shape != (USERS, f1.NUM_ACTIONS):
+        raise E1Error("step action masks are malformed")
+    if reference.dtype.kind not in "iu" or reference.shape != (USERS,):
+        raise E1Error("step reference actions are malformed")
+    if (
+        not isinstance(physical_keys, list)
+        or len(physical_keys) != USERS
+        or any(not isinstance(row, list) or len(row) != f1.NUM_ACTIONS for row in physical_keys)
+        or not isinstance(candidates, list)
+    ):
+        raise E1Error("unilateral tape physical-key/candidate surface is malformed")
+    eligible = np.any(masks, axis=1)
+    covered = {(user, int(reference[user])) for user in range(USERS)}
+    for user, action in enumerate(reference.tolist()):
+        if bool(eligible[user]):
+            if not 0 <= action < f1.NUM_ACTIONS or not bool(masks[user, action]):
+                raise E1Error("BASE selected an illegal action")
+        elif action != f1.NO_OP_ACTION:
+            raise E1Error("empty-mask user requires the NOOP BASE action")
+    for row in candidates:
+        if not isinstance(row, Mapping):
+            raise E1Error("unilateral candidate row is malformed")
+        focal = row.get("focal_user")
+        action = row.get("candidate_action")
+        if type(focal) is not int or type(action) is not int:
+            raise E1Error("unilateral candidate indices are malformed")
+        key = (focal, action)
+        if (
+            key in covered or not 0 <= focal < USERS or not 0 <= action < f1.NUM_ACTIONS
+            or not bool(masks[focal, action])
+        ):
+            raise E1Error("unilateral candidate is duplicate, out of range, or illegal")
+        candidate_joint = np.asarray(row.get("candidate_joint_actions"))
+        if (
+            candidate_joint.dtype.kind not in "iu"
+            or candidate_joint.shape != reference.shape
+            or np.flatnonzero(candidate_joint != reference).tolist() != [focal]
+            or int(candidate_joint[focal]) != action
+            or row.get("candidate_physical_key") != physical_keys[focal][action]
+            or row.get("reference_physical_key") != physical_keys[focal][int(reference[focal])]
+        ):
+            raise E1Error("unilateral candidate physical mutation is malformed")
+        profile = f1.profile_from_payload(row.get("profile"))
+        if profile.users != base.users or profile.interval_s != INTERVAL_S:
+            raise E1Error("unilateral profile must match BASE users and interval")
+        covered.add(key)
+    expected = {(user, int(reference[user])) for user in range(USERS)}
+    for user in range(USERS):
+        reference_key = physical_keys[user][int(reference[user])] if bool(eligible[user]) else None
+        seen: set[tuple[int, int]] = set()
+        for raw_action in np.flatnonzero(masks[user]).tolist():
+            action = int(raw_action)
+            raw_key = physical_keys[user][action]
+            if raw_key is None or raw_key == reference_key:
+                continue
+            if not isinstance(raw_key, list) or len(raw_key) != 2 or any(type(item) is not int for item in raw_key):
+                raise E1Error("unilateral physical key is malformed")
+            key_tuple = (raw_key[0], raw_key[1])
+            if key_tuple in seen:
+                raise E1Error("two legal slots alias one unilateral physical candidate")
+            seen.add(key_tuple)
+            expected.add((user, action))
+    if covered != expected:
+        raise E1Error("unilateral tape does not cover every legal physical action exactly once")
+
+
 def build_step_payload(
     *,
     step_index: int,
+    q12: object,
     reference_actions: object,
     action_masks: object,
     reference_profile: f1.PhysicalProfile,
@@ -554,6 +867,7 @@ def build_step_payload(
     return {
         "step_index": step_index,
         "state_sha256": state_sha256,
+        "q1_q2_float32": _encode_q12_surface(q12),
         "action_masks": [[bool(value) for value in row] for row in masks.tolist()],
         "action_physical_keys": [list(row) for row in action_physical_key_table],
         "reference_actions": [int(value) for value in actions.tolist()],
@@ -561,6 +875,7 @@ def build_step_payload(
             reference_profile, link_power_w=reference_link_power_w
         ),
         "reference_metrics": _profile_metrics(reference_profile),
+        "reference_f0_conservation": _conservation(reference_profile),
         "unilateral_candidates": [
             _serialize_profile_row(row) for row in unilateral_candidates
         ],
@@ -622,13 +937,14 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
     if base.interval_s != INTERVAL_S:
         raise E1Error("physical profile interval disagrees with canonical 30.08 s")
     _verify_metrics(base, step.get("reference_metrics"))
-    _conservation(base)
-    try:
-        # The imported F1 reader recomputes F0 and proves exact unilateral
-        # mask/tie/NOOP/physical-key coverage from this shared tape surface.
-        f1.target_surfaces_from_step(step)
-    except f1.F1Error as error:
-        raise E1Error(f"unilateral tape verification failed: {error}") from error
+    if step.get("reference_f0_conservation") != _conservation(base):
+        raise E1Error("serialized BASE F0 conservation receipt disagrees")
+    q12 = _decode_q12_surface(step.get("q1_q2_float32"))
+    masks = np.asarray(step.get("action_masks"))
+    reference = np.asarray(step.get("reference_actions"))
+    if not np.array_equal(_base_argmax(q12, masks), reference):
+        raise E1Error("BASE is not the masked first-index Q1+Q2 argmax")
+    _validate_unilateral_catalog_only(step, base)
     unilateral = step.get("unilateral_candidates")
     if not isinstance(unilateral, list):
         raise E1Error("unilateral candidate tape must be a list")
@@ -639,11 +955,11 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
         if row.get("profile_id") != expected_id:
             raise E1Error("unilateral profile ID drifted")
         unilateral_profile = f1.profile_from_payload(row.get("profile"))
+        if unilateral_profile.users != USERS or unilateral_profile.interval_s != INTERVAL_S:
+            raise E1Error("unilateral profile must have 100 users and canonical interval")
         _verify_metrics(unilateral_profile, row.get("metrics"))
         if row.get("f0_conservation") != _conservation(unilateral_profile):
             raise E1Error("unilateral F0 conservation receipt disagrees")
-    reference = np.asarray(step.get("reference_actions"))
-    masks = np.asarray(step.get("action_masks"))
     if reference.dtype.kind not in "iu" or reference.shape != (USERS,):
         raise E1Error("serialized BASE actions are malformed")
     joint = step.get("joint_witness_catalog")
@@ -694,6 +1010,8 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
             ) != origin:
                 raise E1Error("joint witness origin group disagrees with BASE service")
         profile = f1.profile_from_payload(row.get("profile"))
+        if profile.users != USERS or profile.interval_s != INTERVAL_S:
+            raise E1Error("joint witness profile must have 100 users and canonical interval")
         _verify_metrics(profile, row.get("metrics"))
         if row.get("f0_conservation") != _conservation(profile):
             raise E1Error("joint witness F0 conservation receipt disagrees")
@@ -768,10 +1086,36 @@ def verify_unit_tape(tape: Mapping[str, object], *, key: UnitKey) -> dict[str, i
 
 
 def _write_once(path: Path, payload: Mapping[str, object]) -> str:
-    try:
-        return f1._write_once(path, payload)
-    except f1.F1Error as error:
-        raise E1Error(str(error)) from error
+    target = Path(path)
+    if target.exists() or target.is_symlink():
+        raise E1Error(f"refusing to overwrite write-once artifact: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    encoded = canonical_bytes(payload) + b"\n"
+    with target.open("xb") as handle:
+        handle.write(encoded)
+        handle.flush()
+        os.fsync(handle.fileno())
+    target.chmod(0o444)
+    # Publication succeeds only after reopening the actual immutable bytes.
+    observed = target.read_bytes()
+    digest = hashlib.sha256(observed).hexdigest()
+    if observed != encoded or target.stat().st_mode & 0o777 != 0o444:
+        raise E1Error(f"published artifact failed readback: {target}")
+    loaded = _load_json(target, field=f"published artifact {target.name}")
+    if loaded != payload:
+        raise E1Error(f"published artifact payload changed on readback: {target}")
+    return digest
+
+
+def _verify_published(path: Path, payload: Mapping[str, object], digest: str) -> None:
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or path.stat().st_mode & 0o777 != 0o444
+        or file_sha256(path) != digest
+        or _load_json(path, field=f"published {path.name}") != payload
+    ):
+        raise E1Error(f"published artifact failed immutable hash readback: {path}")
 
 
 def _unit_dir(output: Path, key: UnitKey) -> Path:
@@ -847,10 +1191,114 @@ def write_unit_bundle(output: Path, *, key: UnitKey, tape: Mapping[str, object])
         "formula_digests": formula_digests(),
         "preflight_manifest_sha256": tape["preflight_manifest_sha256"],
     }
-    _write_once(manifest_path, manifest)
-    _write_once(receipt_path, _unit_receipt(tape, key=key, tape_sha256=tape_sha))
+    manifest_sha = _write_once(manifest_path, manifest)
+    receipt_payload = _unit_receipt(tape, key=key, tape_sha256=tape_sha)
+    receipt_sha = _write_once(receipt_path, receipt_payload)
+    _verify_published(tape_path, tape, tape_sha)
+    _verify_published(manifest_path, manifest, manifest_sha)
+    _verify_published(receipt_path, receipt_payload, receipt_sha)
     os.rename(stage, final)
+    authenticate_unit_bundle(root, key=key, preflight_sha256=str(tape["preflight_manifest_sha256"]))
     return final / DEFAULT_TAPE_NAME, final / DEFAULT_TAPE_MANIFEST_NAME, final / DEFAULT_UNIT_RECEIPT_NAME
+
+
+def incomplete_receipt(
+    *, scope: str, preflight_sha256: str, error: BaseException,
+    key: UnitKey | None = None, worker_seconds: float | None = None,
+) -> dict[str, object]:
+    return {
+        "schema": TERMINAL_RECEIPT_SCHEMA if key is None else UNIT_RECEIPT_SCHEMA,
+        "status": "INCOMPLETE",
+        "outcome": "INCOMPLETE",
+        "scope": scope,
+        "claim_ceiling": CLAIM_CEILING,
+        "unit": None if key is None else key.as_dict(),
+        "preflight_manifest_sha256": _digest(preflight_sha256, field="preflight sha256"),
+        "worker_seconds_hex": None if worker_seconds is None else float(worker_seconds).hex(),
+        "error_type": type(error).__name__,
+        "error_sha256": hashlib.sha256(str(error).encode("utf-8")).hexdigest(),
+        "integrity": None,
+        "U1": None,
+        "J1": None,
+        "test_split_opened": False,
+        "episode_training": False,
+        "learner_update": False,
+        "efficacy_claim": False,
+    }
+
+
+def _write_incomplete(
+    output: Path, *, scope: str, preflight_sha256: str, error: BaseException,
+    key: UnitKey | None = None, worker_seconds: float | None = None,
+) -> Path:
+    root = Path(output) / "incomplete"
+    root.mkdir(parents=True, exist_ok=True)
+    stem = key.slug if key is not None else scope
+    payload = incomplete_receipt(
+        scope=scope, preflight_sha256=preflight_sha256, error=error,
+        key=key, worker_seconds=worker_seconds,
+    )
+    for sequence in range(1, 1_000_000):
+        path = root / f"{stem}-{sequence:06d}.json"
+        try:
+            digest = _write_once(path, payload)
+        except E1Error as collision:
+            if "refusing to overwrite" in str(collision):
+                continue
+            raise
+        _verify_published(path, payload, digest)
+        return path
+    raise E1Error("INCOMPLETE receipt sequence exhausted")
+
+
+def _budget_path(output: Path) -> Path:
+    return Path(output) / DEFAULT_BUDGET_LEDGER_NAME
+
+
+def _read_budget(output: Path, cap: float) -> float:
+    path = _budget_path(output)
+    if not path.exists():
+        return 0.0
+    payload = _load_json(path, field="worker budget ledger")
+    if payload.get("schema") != f"{SCHEMA}-worker-budget-ledger" or payload.get("cap_worker_seconds_hex") != cap.hex():
+        raise E1Error("worker budget ledger binding drifted")
+    try:
+        used = float.fromhex(str(payload["used_worker_seconds_hex"]))
+    except (KeyError, ValueError) as error:
+        raise E1Error("worker budget ledger is malformed") from error
+    if not math.isfinite(used) or used < 0.0:
+        raise E1Error("worker budget ledger usage is malformed")
+    return used
+
+
+def _record_budget(output: Path, cap: float, elapsed: float) -> float:
+    root = Path(output)
+    root.mkdir(parents=True, exist_ok=True)
+    path = _budget_path(root)
+    lock_path = root / f".{DEFAULT_BUDGET_LEDGER_NAME}.lock"
+    with lock_path.open("a+b") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            used = _read_budget(root, cap) + max(0.0, elapsed)
+            payload = {
+                "schema": f"{SCHEMA}-worker-budget-ledger",
+                "cap_worker_seconds_hex": cap.hex(),
+                "used_worker_seconds_hex": used.hex(),
+            }
+            temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+            if temporary.exists() or temporary.is_symlink():
+                raise E1Error("worker budget ledger staging path already exists")
+            encoded = canonical_bytes(payload) + b"\n"
+            with temporary.open("xb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+            if path.read_bytes() != encoded:
+                raise E1Error("worker budget ledger failed readback")
+            return used
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def _write_invalid_unit(output: Path, *, key: UnitKey, preflight_sha256: str, error: BaseException) -> Path:
@@ -968,7 +1416,9 @@ def _generate_unit_tape(*, key: UnitKey, tle_root: Path, preflight_sha256: str) 
         for step_index in CANONICAL_STEP_INDICES:
             if int(observation.step_index) != step_index:
                 raise E1Error("canonical replay reached the wrong step")
-            native, _q12, reference = f1._q12_surface(physical, frozen, step_env, observation)
+            native, q12, reference = _q12_surface_base_only(
+                physical, frozen, step_env, observation
+            )
             masks = np.asarray(native.action_masks, dtype=np.bool_)
             reference_evaluation = _evaluate_actions_neutral(step_env, reference, rngs[0])
             reference_profile, reference_link_power = f1.profile_from_evaluation(
@@ -998,6 +1448,7 @@ def _generate_unit_tape(*, key: UnitKey, tle_root: Path, preflight_sha256: str) 
             ))
             step_payload = build_step_payload(
                 step_index=step_index,
+                q12=q12,
                 reference_actions=reference,
                 action_masks=masks,
                 reference_profile=reference_profile,
@@ -1031,28 +1482,78 @@ def _generate_unit_tape(*, key: UnitKey, tle_root: Path, preflight_sha256: str) 
 def execute_unit(
     *, key: UnitKey, output: Path, tle_root: Path, preflight_sha256: str,
     generator: Callable[..., dict[str, object]] = _generate_unit_tape,
+    budget_worker_seconds: float = DEFAULT_BUDGET_WORKER_SECONDS,
 ) -> tuple[Path, bool, bool]:
+    if Path(tle_root) != CANONICAL_TLE_ROOT or Path(tle_root).is_symlink():
+        raise E1Error("unit execution requires the canonical frozen TLE root")
+    if not math.isfinite(budget_worker_seconds) or budget_worker_seconds <= 0.0:
+        raise E1Error("worker-second budget must be finite and positive")
     final = _unit_dir(output, key)
     if final.exists() or final.is_symlink():
-        receipt = _load_json(final / DEFAULT_UNIT_RECEIPT_NAME, field="existing unit receipt")
-        if receipt.get("status") == "INVALID_RUN":
-            if (final / DEFAULT_UNIT_RECEIPT_NAME).stat().st_mode & 0o222:
-                raise E1Error("existing INVALID_RUN unit receipt remains writable")
-            _validate_invalid_unit_receipt(
-                receipt, key=key, preflight_sha256=preflight_sha256
+        try:
+            receipt = _load_json(final / DEFAULT_UNIT_RECEIPT_NAME, field="existing unit receipt")
+            if receipt.get("status") == "INVALID_RUN":
+                if (final / DEFAULT_UNIT_RECEIPT_NAME).stat().st_mode & 0o222:
+                    raise E1Error("existing INVALID_RUN unit receipt remains writable")
+                _validate_invalid_unit_receipt(
+                    receipt, key=key, preflight_sha256=preflight_sha256
+                )
+                return final / DEFAULT_UNIT_RECEIPT_NAME, True, False
+            authenticate_unit_bundle(output, key=key, preflight_sha256=preflight_sha256)
+            return final / DEFAULT_UNIT_RECEIPT_NAME, True, True
+        except Exception as error:
+            invalidation = _publish_global_invalidation(
+                output, preflight_sha256=preflight_sha256, error=error
             )
-            return final / DEFAULT_UNIT_RECEIPT_NAME, True, False
-        authenticate_unit_bundle(output, key=key, preflight_sha256=preflight_sha256)
-        return final / DEFAULT_UNIT_RECEIPT_NAME, True, True
+            return invalidation, False, False
+    used = _read_budget(output, budget_worker_seconds)
+    remaining = budget_worker_seconds - used
+    if remaining <= 0.0:
+        error = E1Incomplete("declared worker-second budget exhausted before unit start")
+        return _write_incomplete(
+            output, scope="unit", preflight_sha256=preflight_sha256,
+            error=error, key=key, worker_seconds=used,
+        ), False, False
+    started = time.monotonic()
+    old_handler: Any = None
+    old_timer: tuple[float, float] | None = None
+    timer_installed = False
+    if hasattr(signal, "setitimer"):
+        try:
+            def _budget_alarm(_signum: int, _frame: object) -> None:
+                raise E1Incomplete("declared worker-second budget exhausted during unit")
+
+            old_handler = signal.getsignal(signal.SIGALRM)
+            signal.signal(signal.SIGALRM, _budget_alarm)
+            old_timer = signal.setitimer(signal.ITIMER_REAL, remaining)
+            timer_installed = True
+        except (ValueError, OSError):
+            timer_installed = False
     try:
         tape = generator(key=key, tle_root=Path(tle_root), preflight_sha256=preflight_sha256)
         _tape, _manifest, receipt = write_unit_bundle(output, key=key, tape=tape)
         return receipt, False, True
+    except (E1Incomplete, KeyboardInterrupt) as error:
+        elapsed = time.monotonic() - started
+        used_after = _record_budget(output, budget_worker_seconds, elapsed)
+        return _write_incomplete(
+            output, scope="unit", preflight_sha256=preflight_sha256,
+            error=error, key=key, worker_seconds=used_after,
+        ), False, False
     except Exception as error:
         receipt = _write_invalid_unit(
             output, key=key, preflight_sha256=preflight_sha256, error=error
         )
         return receipt, False, False
+    finally:
+        if timer_installed:
+            signal.setitimer(signal.ITIMER_REAL, 0.0)
+            signal.signal(signal.SIGALRM, old_handler)
+            if old_timer is not None and old_timer[0] > 0.0:
+                signal.setitimer(signal.ITIMER_REAL, *old_timer)
+        # The interruption path already charged before publishing its receipt.
+        if sys.exc_info()[0] not in (E1Incomplete, KeyboardInterrupt):
+            _record_budget(output, budget_worker_seconds, time.monotonic() - started)
 
 
 def _anchor_panels(tapes: Sequence[Mapping[str, object]]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -1150,52 +1651,92 @@ def invalid_terminal_receipt(*, preflight_sha256: str, error: BaseException) -> 
     }
 
 
+def _publish_global_invalidation(
+    output: Path, *, preflight_sha256: str, error: BaseException
+) -> Path:
+    root = Path(output)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / DEFAULT_GLOBAL_INVALIDATION_NAME
+    if path.exists() or path.is_symlink():
+        receipt = _load_json(path, field="existing global invalidation")
+        if (
+            path.is_symlink()
+            or path.stat().st_mode & 0o777 != 0o444
+            or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
+            or receipt.get("status") != "INVALID_RUN"
+            or receipt.get("integrity") is not False
+            or receipt.get("preflight_manifest_sha256") != preflight_sha256
+        ):
+            raise E1Error("existing global invalidation record is corrupted")
+        return path
+    payload = invalid_terminal_receipt(preflight_sha256=preflight_sha256, error=error)
+    digest = _write_once(path, payload)
+    _verify_published(path, payload, digest)
+    return path
+
+
 def execute_merge(*, output: Path, preflight_sha256: str) -> tuple[Path, bool, bool]:
     root = Path(output)
     if root.is_symlink():
         raise E1Error("output directory must not be a symlink")
     root.mkdir(parents=True, exist_ok=True)
+    invalidation = root / DEFAULT_GLOBAL_INVALIDATION_NAME
+    if invalidation.exists() or invalidation.is_symlink():
+        _publish_global_invalidation(
+            root, preflight_sha256=preflight_sha256,
+            error=E1Error("existing global invalidation"),
+        )
+        return invalidation, True, False
     terminal = root / DEFAULT_TERMINAL_RECEIPT_NAME
     if terminal.exists() or terminal.is_symlink():
-        receipt = _load_json(terminal, field="existing terminal receipt")
-        if terminal.stat().st_mode & 0o222:
-            raise E1Error("terminal receipt remains writable")
-        if receipt.get("status") == "COMPLETE":
-            receipts = []
-            digests = []
-            tapes = []
-            for key in ALL_UNITS:
-                unit_receipt, digest, tape = authenticate_unit_bundle(
-                    root, key=key, preflight_sha256=preflight_sha256
+        try:
+            receipt = _load_json(terminal, field="existing terminal receipt")
+            if terminal.stat().st_mode & 0o777 != 0o444:
+                raise E1Error("terminal receipt remains writable")
+            if receipt.get("status") == "COMPLETE":
+                receipts = []
+                digests = []
+                tapes = []
+                for key in ALL_UNITS:
+                    unit_receipt, digest, tape = authenticate_unit_bundle(
+                        root, key=key, preflight_sha256=preflight_sha256
+                    )
+                    receipts.append(unit_receipt)
+                    digests.append((key, digest))
+                    tapes.append(tape)
+                expected = build_terminal_receipt(
+                    receipts=receipts, receipt_digests=digests, tapes=tapes,
+                    preflight_sha256=preflight_sha256,
                 )
-                receipts.append(unit_receipt)
-                digests.append((key, digest))
-                tapes.append(tape)
-            expected = build_terminal_receipt(
-                receipts=receipts, receipt_digests=digests, tapes=tapes,
-                preflight_sha256=preflight_sha256,
+                if receipt != expected:
+                    raise E1Error("existing terminal receipt disagrees with its units")
+                return terminal, True, True
+            expected_keys = set(invalid_terminal_receipt(
+                preflight_sha256=preflight_sha256, error=E1Error("placeholder")
+            ))
+            if (
+                set(receipt) != expected_keys
+                or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
+                or receipt.get("status") != "INVALID_RUN"
+                or receipt.get("outcome") != "INVALID_RUN"
+                or receipt.get("claim_ceiling") != CLAIM_CEILING
+                or receipt.get("panel_bindings") != panel_bindings()
+                or receipt.get("lineage_authorities") != f2.lineage_authority_bindings()
+                or receipt.get("formula_digests") != formula_digests()
+                or receipt.get("preflight_manifest_sha256") != preflight_sha256
+                or receipt.get("integrity") is not False
+            ):
+                raise E1Error("existing INVALID_RUN terminal receipt drifted")
+            _digest(receipt.get("error_sha256"), field="terminal error_sha256")
+            return terminal, True, False
+        except Exception as error:
+            path = _publish_global_invalidation(
+                root, preflight_sha256=preflight_sha256, error=error
             )
-            if receipt != expected:
-                raise E1Error("existing terminal receipt disagrees with its units")
-            return terminal, True, True
-        expected_keys = set(invalid_terminal_receipt(
-            preflight_sha256=preflight_sha256, error=E1Error("placeholder")
-        ))
-        if (
-            set(receipt) != expected_keys
-            or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
-            or receipt.get("status") != "INVALID_RUN"
-            or receipt.get("outcome") != "INVALID_RUN"
-            or receipt.get("claim_ceiling") != CLAIM_CEILING
-            or receipt.get("panel_bindings") != panel_bindings()
-            or receipt.get("lineage_authorities") != f2.lineage_authority_bindings()
-            or receipt.get("formula_digests") != formula_digests()
-            or receipt.get("preflight_manifest_sha256") != preflight_sha256
-            or receipt.get("integrity") is not False
-        ):
-            raise E1Error("existing INVALID_RUN terminal receipt drifted")
-        _digest(receipt.get("error_sha256"), field="terminal error_sha256")
-        return terminal, True, False
+            return path, False, False
+    missing = sum(not _unit_dir(root, key).is_dir() for key in ALL_UNITS)
+    if missing:
+        raise E1MergeWaiting(missing)
     try:
         receipts = []
         digests = []
@@ -1212,14 +1753,28 @@ def execute_merge(*, output: Path, preflight_sha256: str) -> tuple[Path, bool, b
             preflight_sha256=preflight_sha256,
         )
         valid = True
+    except estimands.E1ResourceIncomplete as error:
+        path = _write_incomplete(
+            root, scope="merge", preflight_sha256=preflight_sha256, error=error
+        )
+        return path, False, False
+    except (E1Incomplete, KeyboardInterrupt) as error:
+        path = _write_incomplete(
+            root, scope="merge", preflight_sha256=preflight_sha256, error=error
+        )
+        return path, False, False
     except Exception as error:
         payload = invalid_terminal_receipt(preflight_sha256=preflight_sha256, error=error)
         valid = False
-    _write_once(terminal, payload)
+    digest = _write_once(terminal, payload)
+    _verify_published(terminal, payload, digest)
     return terminal, False, valid
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:
+    # Dry-run must report the unsealed contract, not a downstream missing
+    # preflight, so the controller receives the true launch gate first.
+    sealed_contract_binding()
     _manifest, preflight_sha = validate_preflight_manifest(Path(args.preflight_manifest))
     if args.dry_run:
         result: dict[str, object] = {
@@ -1230,13 +1785,18 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             result["authority"] = validate_launch_authority(
                 Path(args.launch_authority), preflight_path=Path(args.preflight_manifest),
                 preflight_sha256=preflight_sha,
+                launch_arguments=getattr(args, "raw_launch_arguments", None),
             )
         return result
     if args.launch_authority is None or args.output is None:
         raise E1Error("E1 execution requires --launch-authority and --output")
+    if not Path(args.output).is_absolute():
+        raise E1Error("E1 execution requires an absolute --output root")
     validate_launch_authority(
         Path(args.launch_authority), preflight_path=Path(args.preflight_manifest),
         preflight_sha256=preflight_sha,
+        output_root=Path(args.output), tle_root=Path(args.tle_root) if args.tle_root is not None else None,
+        launch_arguments=getattr(args, "raw_launch_arguments", None),
     )
     if args.unit is not None:
         if args.tle_root is None:
@@ -1244,6 +1804,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         receipt, skipped, valid = execute_unit(
             key=UnitKey.parse(args.unit), output=Path(args.output),
             tle_root=Path(args.tle_root), preflight_sha256=preflight_sha,
+            budget_worker_seconds=float(args.budget_worker_seconds),
         )
         return {"receipt": receipt, "skipped": skipped, "valid": valid, "mode": "unit"}
     terminal, skipped, valid = execute_merge(
@@ -1262,24 +1823,43 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--launch-authority", type=Path)
     parser.add_argument("--tle-root", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--budget-worker-seconds", type=float,
+        default=DEFAULT_BUDGET_WORKER_SECONDS,
+        help="write-once INCOMPLETE cap across unit worker-seconds (default: 57600)",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    args = _parser().parse_args(raw)
+    args.raw_launch_arguments = raw
     if not args.dry_run and args.unit is None and not args.merge:
         print("E1_ERROR: execution requires exactly one of --unit or --merge", file=sys.stderr)
         return 2
+    old_sigterm = signal.getsignal(signal.SIGTERM)
+    def _interrupt(_signum: int, _frame: object) -> None:
+        raise E1Incomplete("execution interrupted by SIGTERM")
+    signal.signal(signal.SIGTERM, _interrupt)
     try:
         result = run(args)
+    except E1MergeWaiting as error:
+        print(f"E1_MERGE_WAITING {error.missing} units missing")
+        return 3
     except Exception as error:
         print(f"E1_ERROR: {error}", file=sys.stderr)
-        traceback.print_exception(error, file=sys.stderr)
         return 2
+    finally:
+        signal.signal(signal.SIGTERM, old_sigterm)
     if args.dry_run:
         print("E1_WORLD_SEEDS " + " ".join(str(seed) for seed in result["worlds"]))
         print(f"E1_DRY_RUN_PASS preflight={result['preflight']}")
         return 0
+    receipt_payload = _load_json(Path(result["receipt"]), field="published receipt")
+    if receipt_payload.get("status") == "INCOMPLETE":
+        print(f"E1_{str(result['mode']).upper()}_INCOMPLETE receipt={result['receipt']}")
+        return 3
     state = "SKIPPED_COMPLETE" if result["skipped"] else "WRITTEN"
     print(f"E1_{str(result['mode']).upper()}_{state} receipt={result['receipt']}")
     return 0 if result["valid"] else 2

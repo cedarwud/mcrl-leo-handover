@@ -24,15 +24,21 @@ def build_manifest() -> dict[str, object]:
 
 def write_manifest(path: Path) -> tuple[Path, Path, str]:
     target = Path(path)
-    digest = e1._write_once(target, build_manifest())
     sidecar = target.with_suffix(".sha256")
-    if sidecar.exists() or sidecar.is_symlink():
-        raise e1.E1Error(f"refusing to overwrite preflight digest sidecar: {sidecar}")
+    if target.exists() or target.is_symlink() or sidecar.exists() or sidecar.is_symlink():
+        raise e1.E1Error("refusing to overwrite preflight manifest or digest sidecar")
+    digest = e1._write_once(target, build_manifest())
     with sidecar.open("xb") as handle:
         handle.write(f"{digest}  {target.name}\n".encode("ascii"))
         handle.flush()
         os.fsync(handle.fileno())
     sidecar.chmod(0o444)
+    if (
+        sidecar.read_text(encoding="ascii").split() != [digest, target.name]
+        or sidecar.stat().st_mode & 0o777 != 0o444
+        or e1.file_sha256(target) != digest
+    ):
+        raise e1.E1Error("preflight publication failed immutable readback")
     return target, sidecar, digest
 
 
