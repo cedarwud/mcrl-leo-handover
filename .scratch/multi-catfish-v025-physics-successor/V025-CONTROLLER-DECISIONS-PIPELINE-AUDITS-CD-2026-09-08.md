@@ -18,3 +18,5 @@ Sources: `PIPELINE-AUDIT-C-evaluation-statistics-harness-2026-09-08.md` (5 new c
 14. **Acceptance peeks (C10):** acceptance/equivalence runs use disjoint worlds (role `rehearsal`) or blinded hashes; no claim-panel world is executed before the formal root starts.
 
 Carry: items 1, 2, 5, 7–12 → stage 4 addendum 6; items 3, 4, 6 → allocation/seal package; items 3, 7, 13 → stages 6–8 contract.
+
+**Amendment to item 3 (18:45 UTC, from the round-7 Deep Research):** B = 0 with E > 0 is a defined EE of 0; a bootstrap draw is undefined only when a denominator (E, or the comparator's EE in a relative contrast) is 0 — see contract v1 §D3.
