@@ -207,6 +207,62 @@ def test_launch_authority_rejects_nonexact_key_set(
         )
 
 
+def test_all_decision_imports_are_bound_and_f0_drift_refuses_dry_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bindings = cc.expected_code_bindings()
+    bound_paths = {Path(row["path"]) for row in bindings}
+    assert {
+        Path(cc.e1.__file__).resolve(),
+        Path(cc.e1.f1.__file__).resolve(),
+        Path(cc.f0.__file__).resolve(),
+    } <= bound_paths
+
+    f0_source = tmp_path / "c3_contingency_f0.py"
+    f0_source.write_bytes(Path(cc.f0.__file__).read_bytes())
+    monkeypatch.setattr(cc.f0, "__file__", str(f0_source))
+    monkeypatch.setattr(
+        cc, "_candidate_local", lambda path, *, field: Path(path).resolve()
+    )
+    monkeypatch.setattr(cc, "pin_single_thread_runtime", lambda: None)
+    contract = {"path": "/sealed/contract.md", "sha256": "1" * 64}
+    preflight = tmp_path / "preflight.json"
+    preflight_sha = "2" * 64
+    monkeypatch.setattr(cc, "sealed_contract_binding", lambda: contract)
+    monkeypatch.setattr(
+        cc, "validate_preflight_manifest", lambda _path: ({}, preflight_sha)
+    )
+    authority_payload = {
+        "schema": cc.LAUNCH_AUTHORITY_SCHEMA,
+        "status": "FROZEN_LAUNCH_AUTHORITY",
+        "claim_ceiling": cc.CLAIM_CEILING,
+        "preflight_manifest": {
+            "path": str(preflight.resolve()),
+            "sha256": preflight_sha,
+        },
+        "contract": contract,
+        "e1_input": None,
+        "code_files": cc.expected_code_bindings(),
+        "output_root": str((tmp_path / "run-output").resolve()),
+        "launch_arguments": [],
+        "test_split_opened": False,
+        "episode_training": False,
+        "learner_update": False,
+        "efficacy_claim": False,
+    }
+    authority, _sidecar, _digest = cc.write_once_with_sidecar(
+        tmp_path / "authority.json", authority_payload
+    )
+
+    f0_source.write_bytes(f0_source.read_bytes() + b"\n# digest drift\n")
+    assert cc.main([
+        "--preflight-manifest", str(preflight),
+        "--launch-authority", str(authority),
+        "--dry-run",
+    ]) == 2
+    assert "launch authority does not pin exact C-C bindings" in capsys.readouterr().err
+
+
 def test_exact_rational_pooling_uses_binary64_values_losslessly() -> None:
     anchor = {
         "focal_user": 0,
