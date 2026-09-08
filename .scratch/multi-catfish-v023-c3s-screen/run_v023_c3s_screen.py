@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Closed-loop BASE versus C3S kill-screen runner (no implicit formal run)."""
+"""Three-arm closed-loop C3S kill-screen runner (no implicit formal run).
+
+Each ``--unit WORLD:LINEAGE`` invocation always runs BASE, FULL, then LITE;
+partial-arm execution is intentionally unsupported so one receipt is matched.
+"""
 
 from __future__ import annotations
 
@@ -38,7 +42,7 @@ import run_v023_c3_contingency_f2 as f2  # noqa: E402
 import run_v023_c3_existence_e1 as e1  # noqa: E402
 
 
-SCHEMA = "multi-catfish-mcrl-v023-c3s-screen-v1"
+SCHEMA = "multi-catfish-mcrl-v023-c3s-screen-v2"
 PREFLIGHT_SCHEMA = f"{SCHEMA}-preflight-manifest"
 LAUNCH_AUTHORITY_SCHEMA = f"{SCHEMA}-launch-authority"
 UNIT_RECEIPT_SCHEMA = f"{SCHEMA}-unit-receipt"
@@ -62,12 +66,17 @@ WORLD_MASK = (1 << 63) - 1
 LINEAGES = tuple(e1.LINEAGES)
 FIELD_COMPONENT = e1.FIELD_COMPONENT
 USERS = 100
-ARMS = ("BASE", "C3S")
+ARMS = ("BASE", "FULL", "LITE")
+COORDINATOR_ARMS = ("FULL", "LITE")
 SERVICE_MARGIN = Fraction(1, 1000)
 CHECKPOINT_EVERY = 100
 THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
-OUTCOMES = ("C3S_SCREEN_SUPPORT", "C3S_SCREEN_NO_SUPPORT")
-REASON_ORDER = ("EE_NOT_ABOVE_BASE", "SERVICE_NONINFERIORITY_FAILED", "NO_ACTION_CHANGE")
+OUTCOME_PREFIX = {"FULL": "C3S_FULL_SCREEN", "LITE": "C3S_LITE_SCREEN"}
+REASON_ORDER = ("EE_NOT_STRICTLY_ABOVE_BASE", "SERVICE_MARGIN_FAILED")
+PROGRESSION_RULE = (
+    "both SUPPORT -> lite proceeds; exactly one SUPPORT -> that configuration proceeds; "
+    "neither SUPPORT -> progression closed"
+)
 UNIT_RECEIPT_NAME = "receipt.json"
 TERMINAL_RECEIPT_NAME = "terminal-receipt.json"
 GLOBAL_INVALIDATION_NAME = "GLOBAL-INVALIDATION.json"
@@ -200,6 +209,7 @@ def panel_bindings(horizon: int) -> dict[str, object]:
         "units": len(ALL_UNITS), "episodes": len(ALL_UNITS) * len(ARMS),
         "users": USERS, "horizon": horizon,
         "arms": list(ARMS), "split": "TRAIN", "field_component": FIELD_COMPONENT,
+        "unit_execution": "ALL_THREE_ARMS_SEQUENTIALLY_FROM_MATCHED_INITIAL_STATE",
         "field_root_digests": {
             str(world): e1.KeyedFadingField.from_components(FIELD_COMPONENT, world).root_digest
             for world in WORLDS
@@ -460,11 +470,14 @@ def run_arm_trajectory(
     except (AttributeError, TypeError, ValueError) as error:
         raise C3SScreenError("initial environment state cannot be authenticated") from error
     steps: list[dict[str, object]] = []
+    decision_wall: list[str] = []
     action_trace = hashlib.sha256()
     for step_index in range(horizon):
         if int(observation.step_index) != step_index:
             raise C3SScreenError("arm trajectory reached the wrong decision index")
+        decision_started = time.perf_counter()
         actions = np.asarray(selector(step_env, observation, env_rng))
+        decision_wall.append((time.perf_counter() - decision_started).hex())
         masks = np.asarray(observation.masks)
         if actions.dtype.kind not in "iu" or actions.shape != (USERS,):
             raise C3SScreenError("selector did not return a complete 100-user action vector")
@@ -494,6 +507,7 @@ def run_arm_trajectory(
     return {
         "initial_state_sha256": initial_sha,
         "action_trace_sha256": action_trace.hexdigest(),
+        "decision_wall_seconds_hex": decision_wall,
         "steps": steps,
     }
 
@@ -515,7 +529,7 @@ def _make_environment(archive: Any, *, horizon: int) -> Any:
 
 
 def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
-    """Execute two fresh matched arms, then retain their independent traces."""
+    """Execute BASE, full, and lite from fresh matched initial environments."""
 
     from mcrl.env.keyed_fading import KeyedFadingField
     from mcrl.runtime.prereg import read_prereg
@@ -533,7 +547,7 @@ def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
             record, CANONICAL_TLE_ROOT, Path(temporary) / "frozen", physical
         )
         trajectories: dict[str, dict[str, object]] = {}
-        adapter: c3s_policy.C3SPolicyAdapter | None = None
+        adapters: dict[str, c3s_policy.C3SPolicyAdapter] = {}
         for arm in ARMS:
             environment = _make_environment(archive, horizon=horizon)
             field = KeyedFadingField.from_components(FIELD_COMPONENT, key.world)
@@ -547,19 +561,25 @@ def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
                         physical, frozen, step_env, observation
                     )[2]
             else:
-                adapter = c3s_policy.C3SPolicyAdapter(physical=physical, frozen=frozen)
+                adapter = c3s_policy.C3SPolicyAdapter(
+                    physical=physical, frozen=frozen, catalog=arm.lower()
+                )
+                adapters[arm] = adapter
                 selector = adapter.select_actions
             trajectories[arm] = run_arm_trajectory(
                 environment=environment, env_rng=rngs[0], mobility_rng=rngs[1],
                 horizon=horizon, selector=selector,
             )
-        if trajectories["BASE"]["initial_state_sha256"] != trajectories["C3S"]["initial_state_sha256"]:
+        if len({trajectories[arm]["initial_state_sha256"] for arm in ARMS}) != 1:
             raise C3SScreenError("matched arms do not share the same initial state")
         q_after = (physical._parameter_sha256(frozen.q1), physical._parameter_sha256(frozen.q2))
         if q_after != q_before:
             raise C3SScreenError("authenticated Q1/Q2 parameters changed during inference")
-        assert adapter is not None
-        changes = sum(bool(row["action_changed"]) for row in adapter.decision_records)
+        decisions = {arm: adapters[arm].decision_records for arm in COORDINATOR_ARMS}
+        changes = {
+            arm: sum(bool(row["action_changed"]) for row in decisions[arm])
+            for arm in COORDINATOR_ARMS
+        }
         return {
             "schema": UNIT_RECEIPT_SCHEMA, "status": "COMPLETE",
             "outcome": "C3S_SCREEN_UNIT_COMPLETE", "claim_ceiling": CLAIM_CEILING,
@@ -569,10 +589,10 @@ def execute_physical_unit(key: UnitKey, *, horizon: int) -> dict[str, object]:
                 FIELD_COMPONENT, key.world
             ).root_digest,
             "lineage_authority": f2.lineage_authority_bindings()[LINEAGES.index(key.lineage)],
-            "eta_ref_exact": fraction_payload(adapter.eta_ref),
+            "eta_ref_exact": fraction_payload(adapters["FULL"].eta_ref),
             "arms": trajectories,
-            "c3s_decisions": adapter.decision_records,
-            "action_changes": changes,
+            "decisions_by_arm": decisions,
+            "action_changes_by_arm": changes,
             "integrity": True, "test_split_opened": False,
             "episode_training": False, "learner_update": False, "efficacy_claim": False,
         }
@@ -593,16 +613,31 @@ def pool_unit_receipts(receipts: Sequence[Mapping[str, object]]) -> dict[str, ob
         arm: {"bits": Fraction(0), "energy": Fraction(0), "served": 0, "opportunities": 0}
         for arm in ARMS
     }
-    changes = decisions = 0
+    changes = {arm: 0 for arm in COORDINATOR_ARMS}
+    decisions = {arm: 0 for arm in COORDINATOR_ARMS}
     for receipt in receipts:
         arms = receipt.get("arms")
         if not isinstance(arms, Mapping) or set(arms) != set(ARMS):
             raise C3SScreenError("unit receipt arm coverage is malformed")
-        changes += int(receipt.get("action_changes", 0))
-        c3s_decisions = receipt.get("c3s_decisions")
-        if not isinstance(c3s_decisions, list):
-            raise C3SScreenError("unit receipt lacks C3S decision records")
-        decisions += len(c3s_decisions)
+        receipt_changes = receipt.get("action_changes_by_arm")
+        receipt_decisions = receipt.get("decisions_by_arm")
+        if (
+            not isinstance(receipt_changes, Mapping)
+            or set(receipt_changes) != set(COORDINATOR_ARMS)
+            or not isinstance(receipt_decisions, Mapping)
+            or set(receipt_decisions) != set(COORDINATOR_ARMS)
+        ):
+            raise C3SScreenError("unit receipt lacks per-coordinator records")
+        for arm in COORDINATOR_ARMS:
+            arm_decisions = receipt_decisions[arm]
+            arm_changes = receipt_changes[arm]
+            if (
+                not isinstance(arm_decisions, list) or type(arm_changes) is not int
+                or not 0 <= arm_changes <= len(arm_decisions)
+            ):
+                raise C3SScreenError("unit per-coordinator counts are malformed")
+            decisions[arm] += len(arm_decisions)
+            changes[arm] += arm_changes
         for arm in ARMS:
             trajectory = arms[arm]
             if not isinstance(trajectory, Mapping) or not isinstance(trajectory.get("steps"), list):
@@ -638,20 +673,24 @@ def pool_unit_receipts(receipts: Sequence[Mapping[str, object]]) -> dict[str, ob
             "service": fraction_payload(Fraction(served, opportunities)),
         }
     eta_base = _fraction_from_payload(exact["BASE"]["eta"])
-    eta_c3s = _fraction_from_payload(exact["C3S"]["eta"])
     service_base = _fraction_from_payload(exact["BASE"]["service"])
-    service_c3s = _fraction_from_payload(exact["C3S"]["service"])
-    reasons: list[str] = []
-    if eta_c3s <= eta_base:
-        reasons.append("EE_NOT_ABOVE_BASE")
-    if service_c3s < service_base - SERVICE_MARGIN:
-        reasons.append("SERVICE_NONINFERIORITY_FAILED")
-    if changes == 0:
-        reasons.append("NO_ACTION_CHANGE")
+    dispositions: dict[str, dict[str, object]] = {}
+    for arm in COORDINATOR_ARMS:
+        reasons: list[str] = []
+        if _fraction_from_payload(exact[arm]["eta"]) <= eta_base:
+            reasons.append("EE_NOT_STRICTLY_ABOVE_BASE")
+        if _fraction_from_payload(exact[arm]["service"]) < service_base - SERVICE_MARGIN:
+            reasons.append("SERVICE_MARGIN_FAILED")
+        dispositions[arm] = {
+            "outcome": f"{OUTCOME_PREFIX[arm]}_{'SUPPORT' if not reasons else 'NO_SUPPORT'}",
+            "reasons": reasons,
+        }
     return {
-        "outcome": OUTCOMES[0] if not reasons else OUTCOMES[1],
-        "reasons": reasons, "arms": exact,
-        "counts": {"units": len(receipts), "c3s_decisions": decisions, "action_changes": changes},
+        "decisions": dispositions, "arms": exact,
+        "counts": {
+            "units": len(receipts), "decisions_by_arm": decisions,
+            "action_changes_by_arm": changes,
+        },
     }
 
 
@@ -764,7 +803,8 @@ def _load_complete_units(
         _validate_sealed(path, digest=digest, field=f"unit {key.slug}")
         receipt = load_json(path, field=f"unit {key.slug}")
         arms = receipt.get("arms")
-        decisions = receipt.get("c3s_decisions")
+        decisions = receipt.get("decisions_by_arm")
+        changes = receipt.get("action_changes_by_arm")
         expected_root = e1.KeyedFadingField.from_components(
             FIELD_COMPONENT, key.world
         ).root_digest
@@ -776,6 +816,8 @@ def _load_complete_units(
                     isinstance(trajectory, Mapping)
                     and isinstance(trajectory.get("steps"), list)
                     and len(trajectory["steps"]) == horizon
+                    and isinstance(trajectory.get("decision_wall_seconds_hex"), list)
+                    and len(trajectory["decision_wall_seconds_hex"]) == horizon
                     and [
                         row.get("step_index") for row in trajectory["steps"]
                         if isinstance(row, Mapping)
@@ -795,15 +837,27 @@ def _load_complete_units(
             or receipt.get("lineage_authority")
             != f2.lineage_authority_bindings()[LINEAGES.index(key.lineage)]
             or not trajectory_ok
-            or arms["BASE"].get("initial_state_sha256")
-            != arms["C3S"].get("initial_state_sha256")
-            or not isinstance(decisions, list) or len(decisions) != horizon
-            or receipt.get("action_changes")
-            != sum(bool(row.get("action_changed")) for row in decisions if isinstance(row, Mapping))
-            or receipt.get("action_changes") == 0 and (
-                arms["BASE"].get("action_trace_sha256")
-                != arms["C3S"].get("action_trace_sha256")
-                or arms["BASE"].get("steps") != arms["C3S"].get("steps")
+            or len({arms[arm].get("initial_state_sha256") for arm in ARMS}) != 1
+            or not isinstance(decisions, Mapping)
+            or set(decisions) != set(COORDINATOR_ARMS)
+            or not isinstance(changes, Mapping)
+            or set(changes) != set(COORDINATOR_ARMS)
+            or any(not isinstance(decisions[arm], list) or len(decisions[arm]) != horizon
+                   for arm in COORDINATOR_ARMS)
+            or any(
+                changes[arm] != sum(
+                    bool(row.get("action_changed"))
+                    for row in decisions[arm] if isinstance(row, Mapping)
+                )
+                for arm in COORDINATOR_ARMS
+            )
+            or any(
+                changes[arm] == 0 and (
+                    arms["BASE"].get("action_trace_sha256")
+                    != arms[arm].get("action_trace_sha256")
+                    or arms["BASE"].get("steps") != arms[arm].get("steps")
+                )
+                for arm in COORDINATOR_ARMS
             )
             or receipt.get("preflight_manifest_sha256") != preflight_sha256
             or receipt.get("producer_common_binding") != dict(producer_common_binding)
@@ -817,13 +871,20 @@ def _load_complete_units(
     return receipts, bindings
 
 
-def decision_timing_summary(receipts: Sequence[Mapping[str, object]]) -> dict[str, object]:
+def coordinator_timing_summary(
+    receipts: Sequence[Mapping[str, object]], *, arm: str,
+) -> dict[str, object]:
+    if arm not in COORDINATOR_ARMS:
+        raise C3SScreenError("coordinator timing arm must be FULL or LITE")
     wall: list[float] = []
     catalogs: list[int] = []
     unique_evaluations: list[int] = []
     peak_rss = 0
     for receipt in receipts:
-        for row in receipt["c3s_decisions"]:  # type: ignore[index]
+        decisions_by_arm = receipt.get("decisions_by_arm")
+        if not isinstance(decisions_by_arm, Mapping):
+            raise C3SScreenError("unit receipt lacks per-coordinator timing")
+        for row in decisions_by_arm[arm]:
             if not isinstance(row, Mapping):
                 raise C3SScreenError("C3S decision timing row is malformed")
             try:
@@ -841,7 +902,8 @@ def decision_timing_summary(receipts: Sequence[Mapping[str, object]]) -> dict[st
                 phase_seconds = [float.fromhex(str(phases[name])) for name in required_phases]
                 counts = row["profile_counts"]
                 if (
-                    not isinstance(counts, Mapping)
+                    row.get("catalog") != arm.lower()
+                    or not isinstance(counts, Mapping)
                     or set(counts) != {"base", "unilateral", "joint"}
                     or sum(int(counts[name]) for name in counts) != catalog
                 ):
@@ -881,6 +943,40 @@ def decision_timing_summary(receipts: Sequence[Mapping[str, object]]) -> dict[st
     }
 
 
+def per_arm_wall_timing(
+    receipts: Sequence[Mapping[str, object]],
+) -> dict[str, dict[str, object]]:
+    """Summarize like-for-like selector wall time for all three arms."""
+
+    result: dict[str, dict[str, object]] = {}
+    for arm in ARMS:
+        wall: list[float] = []
+        for receipt in receipts:
+            arms = receipt.get("arms")
+            if not isinstance(arms, Mapping) or not isinstance(arms.get(arm), Mapping):
+                raise C3SScreenError("unit receipt lacks arm timing")
+            raw = arms[arm].get("decision_wall_seconds_hex")
+            if not isinstance(raw, list):
+                raise C3SScreenError("unit arm timing is malformed")
+            try:
+                wall.extend(float.fromhex(str(value)) for value in raw)
+            except (TypeError, ValueError, OverflowError) as error:
+                raise C3SScreenError("unit arm timing is malformed") from error
+        if not wall or any(not math.isfinite(value) or value < 0 for value in wall):
+            raise C3SScreenError("unit arm timing is empty or invalid")
+        ordered = sorted(wall)
+        result[arm] = {
+            "decisions": len(wall),
+            "mean_hex": (math.fsum(wall) / len(wall)).hex(),
+            "median_hex": (
+                (ordered[(len(ordered) - 1) // 2] + ordered[len(ordered) // 2]) / 2
+            ).hex(),
+            "p95_nearest_rank_hex": ordered[math.ceil(0.95 * len(ordered)) - 1].hex(),
+            "maximum_hex": max(wall).hex(),
+        }
+    return result
+
+
 def descriptive_breakdowns(
     receipts: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
@@ -893,11 +989,44 @@ def descriptive_breakdowns(
             pooled = pool_unit_receipts(subset)
             rows[str(value)] = {
                 "arms": pooled["arms"],
-                "action_changes": pooled["counts"]["action_changes"],
+                "action_changes_by_arm": pooled["counts"]["action_changes_by_arm"],
                 "units": len(subset),
             }
         result[name] = rows
     return result
+
+
+def full_vs_lite_comparison(
+    pooled: Mapping[str, object], timing: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """Build the declared descriptive, non-decisional comparison table."""
+
+    arms = pooled.get("arms")
+    counts = pooled.get("counts")
+    if not isinstance(arms, Mapping) or not isinstance(counts, Mapping):
+        raise C3SScreenError("pooled full/lite comparison inputs are malformed")
+    changes = counts.get("action_changes_by_arm")
+    if not isinstance(changes, Mapping):
+        raise C3SScreenError("pooled action-change comparison is malformed")
+    rows: list[dict[str, object]] = []
+    for metric in ("eta", "service"):
+        full = _fraction_from_payload(arms["FULL"][metric])
+        lite = _fraction_from_payload(arms["LITE"][metric])
+        rows.append({
+            "metric": metric, "FULL": fraction_payload(full),
+            "LITE": fraction_payload(lite),
+            "full_minus_lite": fraction_payload(full - lite),
+        })
+    rows.append({
+        "metric": "action_changes", "FULL": int(changes["FULL"]),
+        "LITE": int(changes["LITE"]),
+        "full_minus_lite": int(changes["FULL"]) - int(changes["LITE"]),
+    })
+    rows.append({
+        "metric": "selector_wall_seconds", "FULL": timing["FULL"],
+        "LITE": timing["LITE"], "comparison_role": "DESCRIPTIVE_NON_DECISIONAL",
+    })
+    return rows
 
 
 def execute_merge(
@@ -912,10 +1041,18 @@ def execute_merge(
             producer_common_binding=producer_common_binding,
         )
         pooled = pool_unit_receipts(receipts)
+        arm_timing = per_arm_wall_timing(receipts)
+        coordinator_timing = {
+            arm: coordinator_timing_summary(receipts, arm=arm)
+            for arm in COORDINATOR_ARMS
+        }
         expected_opportunities = len(ALL_UNITS) * horizon * USERS
         if (
             pooled["counts"]["units"] != 12
-            or pooled["counts"]["c3s_decisions"] != 12 * horizon
+            or any(
+                pooled["counts"]["decisions_by_arm"][arm] != 12 * horizon
+                for arm in COORDINATOR_ARMS
+            )
             or any(
                 pooled["arms"][arm]["opportunities"] != expected_opportunities
                 for arm in ARMS
@@ -924,12 +1061,17 @@ def execute_merge(
             raise C3SScreenError("merge coverage is incomplete")
         payload = {
             "schema": TERMINAL_RECEIPT_SCHEMA, "status": "COMPLETE",
-            "outcome": pooled["outcome"], "reasons": pooled["reasons"],
+            "outcome": "C3S_THREE_ARM_SCREEN_COMPLETE",
+            "decisions": pooled["decisions"],
+            "progression_rule": PROGRESSION_RULE,
+            "progression_rule_role": "PREDECLARED_REPORTING_ONLY_NO_OUTCOME_SELECTION_LOGIC",
             "claim_ceiling": CLAIM_CEILING, "panel": panel_bindings(horizon),
             "eta_ref_exact": fraction_payload(c3s_policy.load_eta_ref(CONFIG_PATH)),
             "pooled_exact": pooled["arms"], "counts": pooled["counts"],
             **descriptive_breakdowns(receipts),
-            "decision_timing": decision_timing_summary(receipts),
+            "per_arm_decision_wall_timing": arm_timing,
+            "coordinator_timing": coordinator_timing,
+            "full_vs_lite_comparison": full_vs_lite_comparison(pooled, arm_timing),
             "unit_receipts": bindings,
             "preflight_manifest_sha256": preflight_sha256,
             "launch_authority_sha256": authority_sha256,
@@ -968,9 +1110,11 @@ def execute_merge(
         return root / GLOBAL_INVALIDATION_NAME, False
 
 
-def estimate(*, horizon: int, units: int) -> dict[str, object]:
-    if type(horizon) is not int or horizon < 1 or type(units) is not int or units < 1:
-        raise C3SScreenError("estimate horizon and units must be positive exact integers")
+def estimate(*, units: int) -> dict[str, object]:
+    """Estimate all three arms at the two requested planning horizons."""
+
+    if type(units) is not int or units < 1:
+        raise C3SScreenError("estimate units must be a positive exact integer")
     if file_sha256(S0_RESULT) != S0_RESULT_SHA256 or file_sha256(E1_LEDGER) != E1_LEDGER_SHA256:
         raise C3SScreenError("E1/S0 timing basis digest changed")
     result = load_json(S0_RESULT, field="S0 timing result")
@@ -991,23 +1135,44 @@ def estimate(*, horizon: int, units: int) -> dict[str, object]:
     s0_seconds = float(result["timing"]["unit_worker_seconds"])
     e1_seconds = float.fromhex(str(ledger["unit_charged_worker_seconds_hex"]))
     per_decision = Fraction(unique_rows, len(anchors))
-    evaluations = per_decision * horizon * units
-    catalog_rows = Fraction(candidate_rows, len(anchors)) * horizon * units
     s0_rate = s0_seconds / unique_rows
     e1_rate = e1_seconds / candidate_rows
-    s0_hours = float(evaluations) * s0_rate / 3600.0
-    e1_hours = float(catalog_rows) * e1_rate / 3600.0
+    full_seconds_per_decision = float(per_decision) * s0_rate + (
+        candidate_rows / len(anchors)
+    ) * e1_rate
+    lite_ratio = Fraction(1, 10)
+    horizons: dict[str, object] = {}
+    for horizon in (30, 100):
+        full_evaluations = per_decision * horizon * units
+        lite_evaluations = full_evaluations * lite_ratio
+        full_hours = full_seconds_per_decision * horizon * units / 3600.0
+        horizons[str(horizon)] = {
+            "horizon": horizon,
+            "episodes": units * len(ARMS),
+            "planning_cost_ratio_full_to_lite": 10.0,
+            "arms": {
+                "BASE": {
+                    "projected_nominal_evaluations_exact": fraction_payload(Fraction(0)),
+                    "worker_hours": 0.0,
+                    "note": "Q inference and committed execution only; negligible in catalog estimate",
+                },
+                "FULL": {
+                    "projected_nominal_evaluations_exact": fraction_payload(full_evaluations),
+                    "worker_hours": full_hours,
+                },
+                "LITE": {
+                    "projected_nominal_evaluations_exact": fraction_payload(lite_evaluations),
+                    "worker_hours": full_hours * float(lite_ratio),
+                    "planning_cost_relative_to_full": fraction_payload(lite_ratio),
+                },
+            },
+        }
     return {
-        "schema": f"{SCHEMA}-estimate", "horizon": horizon, "units": units,
+        "schema": f"{SCHEMA}-estimate", "units": units,
         "world_domains": list(WORLD_DOMAINS), "worlds": list(WORLDS),
-        "nominal_evaluations_per_decision_exact": fraction_payload(per_decision),
-        "projected_nominal_evaluations_exact": fraction_payload(evaluations),
-        "projected_nominal_evaluations": float(evaluations),
-        "worker_hours": {
-            "s0_nominal_replay_basis": s0_hours,
-            "e1_full_catalog_runner_basis": e1_hours,
-            "sum_of_bases_conservative_upper": s0_hours + e1_hours,
-        },
+        "horizons": horizons,
+        "full_nominal_evaluations_per_decision_exact": fraction_payload(per_decision),
+        "lite_planning_rule": "ONE_TENTH_OF_FULL_PER_ADDENDUM_A_APPROXIMATE_COST_TARGET",
         "basis": {
             "s0_result_sha256": S0_RESULT_SHA256,
             "e1_ledger_sha256": E1_LEDGER_SHA256,
@@ -1024,7 +1189,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--launch-authority", type=Path)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--horizon", type=int, default=DEFAULT_HORIZON)
-    parser.add_argument("--unit", metavar="WORLD:LINEAGE")
+    parser.add_argument(
+        "--unit", metavar="WORLD:LINEAGE",
+        help="run BASE, FULL, then LITE sequentially for one matched unit",
+    )
     parser.add_argument("--merge", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--estimate", action="store_true")
@@ -1034,7 +1202,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace) -> dict[str, object]:
     if args.estimate:
-        return {"mode": "estimate", "estimate": estimate(horizon=args.horizon, units=args.estimate_units)}
+        return {"mode": "estimate", "estimate": estimate(units=args.estimate_units)}
     sealed_contract_binding()  # The prospective contract is always the first launch gate.
     _preflight, preflight_sha = validate_preflight_manifest(args.preflight_manifest)
     if args.dry_run:
@@ -1085,7 +1253,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result["estimate"], sort_keys=True, indent=2))
         return 0
     if result["mode"] == "dry-run":
-        print(f"C3S_SCREEN_DRY_RUN_PASS worlds={','.join(str(value) for value in WORLDS)}")
+        print(
+            f"C3S_SCREEN_DRY_RUN_PASS arms={','.join(ARMS)} "
+            f"worlds={','.join(str(value) for value in WORLDS)}"
+        )
         return 0
     print(
         f"C3S_SCREEN_{str(result['mode']).upper()} worlds="

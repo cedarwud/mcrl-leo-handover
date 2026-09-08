@@ -102,6 +102,57 @@ def test_candidate_catalog_order_is_deterministic(monkeypatch: pytest.MonkeyPatc
     assert [row["profile_id"] for row in second] == expected
 
 
+def test_lite_catalog_order_top2_ties_base_equivalence_and_all_evacuations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = SimpleNamespace()
+    tables = tuple(
+        SimpleNamespace(mask=np.asarray([True, True, True, True] + [False] * 24))
+        for _ in range(2)
+    )
+    observation = SimpleNamespace(candidates=SimpleNamespace(slot_tables=tables))
+    monkeypatch.setattr(c3s_policy.s0, "nominal_no_fading", lambda _env: nullcontext())
+    monkeypatch.setattr(c3s_policy.e1, "_evaluate_actions_neutral", lambda *_args: object())
+    monkeypatch.setattr(c3s_policy.f1, "profile_from_evaluation", lambda *_args, **_kw: (profile, np.zeros(1)))
+    monkeypatch.setattr(
+        c3s_policy.e1, "_profile_metrics",
+        lambda _profile: {
+            "total_bits": 10.0.hex(), "total_energy_j": 2.0.hex(),
+            "served": 2, "opportunities": 2,
+        },
+    )
+    # User 0 slot 2 ranks second but is BASE-equivalent and therefore absent
+    # from the inherited physically-distinct rows; slot 3 is retained instead.
+    monkeypatch.setattr(
+        c3s_policy.f1, "enumerate_unilateral_candidates",
+        lambda *_args: (
+            {"focal_user": 0, "candidate_action": 1, "candidate_joint_actions": [1, 0]},
+            {"focal_user": 0, "candidate_action": 3, "candidate_joint_actions": [3, 0]},
+            {"focal_user": 1, "candidate_action": 1, "candidate_joint_actions": [0, 1]},
+        ),
+    )
+    monkeypatch.setattr(c3s_policy.s0, "_nominal_metric", lambda *_args: metric(10, 2, 2))
+    monkeypatch.setattr(
+        c3s_policy, "_evacuation_skeletons",
+        lambda *_args: ({
+            "profile_id": "J:1:2->3:4", "kind": "joint",
+            "actions": np.asarray([3, 3]), "tie_key": (2, 1, 2, 3, 4),
+        },),
+    )
+    q12 = np.zeros((2, 28), dtype=np.float32)
+    q12[0, :4] = [9.0, 6.0, 8.0, 7.0]
+    # The runner-up tie is resolved by lowest slot index: slot 1 before slot 2.
+    q12[1, :4] = [9.0, 8.0, 8.0, 7.0]
+    rows = c3s_policy.build_s0_catalog(
+        step_env=object(), observation=observation,
+        base_actions=np.asarray([0, 0]), q12=q12, catalog="lite",
+        rng=np.random.default_rng(9), interval_s=c3s_policy.e1.INTERVAL_S,
+    )
+    assert [row["profile_id"] for row in rows] == [
+        "BASE", "U:0:3", "U:1:1", "J:1:2->3:4",
+    ]
+
+
 def test_selection_service_guard_and_base_first_ties() -> None:
     candidates = [
         {"profile_id": "BASE", "actions": np.asarray([0]), "nominal": metric(10, 1, 2)},
@@ -171,25 +222,33 @@ def test_closed_loop_arms_advance_independently(
         lambda _env, _obs: SimpleNamespace(state_sha256="a" * 64),
     )
     base_env = SyntheticEnvironment(3)
-    c3s_env = SyntheticEnvironment(3)
+    full_env = SyntheticEnvironment(3)
+    lite_env = SyntheticEnvironment(3)
     base = screen.run_arm_trajectory(
         environment=base_env, env_rng=np.random.default_rng(1),
         mobility_rng=np.random.default_rng(2), horizon=3,
         selector=lambda *_args: np.zeros(screen.USERS, dtype=np.int64),
     )
-    c3s = screen.run_arm_trajectory(
-        environment=c3s_env, env_rng=np.random.default_rng(1),
+    full = screen.run_arm_trajectory(
+        environment=full_env, env_rng=np.random.default_rng(1),
         mobility_rng=np.random.default_rng(2), horizon=3,
         selector=lambda *_args: np.ones(screen.USERS, dtype=np.int64),
     )
-    assert base["initial_state_sha256"] == c3s["initial_state_sha256"]
+    lite = screen.run_arm_trajectory(
+        environment=lite_env, env_rng=np.random.default_rng(1),
+        mobility_rng=np.random.default_rng(2), horizon=3,
+        selector=lambda *_args: np.full(screen.USERS, 2, dtype=np.int64),
+    )
+    assert len({base["initial_state_sha256"], full["initial_state_sha256"], lite["initial_state_sha256"]}) == 1
     assert base_env.history == [1, 2, 3]
-    assert c3s_env.history == [2, 4, 6]
-    assert base_env.position == 3 and c3s_env.position == 6
+    assert full_env.history == [2, 4, 6]
+    assert lite_env.history == [3, 6, 9]
+    assert (base_env.position, full_env.position, lite_env.position) == (3, 6, 9)
 
 
 def _receipt(
-    *, base: tuple[float, float, int], c3s: tuple[float, float, int], changes: int,
+    *, base: tuple[float, float, int], full: tuple[float, float, int],
+    lite: tuple[float, float, int], full_changes: int, lite_changes: int,
 ) -> dict[str, object]:
     def trajectory(values):
         bits, energy, served = values
@@ -198,25 +257,126 @@ def _receipt(
             "served": served, "opportunities": 100,
         }]}
     return {
-        "arms": {"BASE": trajectory(base), "C3S": trajectory(c3s)},
-        "c3s_decisions": [{}], "action_changes": changes,
+        "arms": {"BASE": trajectory(base), "FULL": trajectory(full), "LITE": trajectory(lite)},
+        "decisions_by_arm": {"FULL": [{}], "LITE": [{}]},
+        "action_changes_by_arm": {"FULL": full_changes, "LITE": lite_changes},
     }
 
 
 def test_exact_pooling_and_disposition_reasons() -> None:
     pooled = screen.pool_unit_receipts([
-        _receipt(base=(0.1, 0.3, 100), c3s=(0.2, 0.3, 100), changes=1),
-        _receipt(base=(0.2, 0.3, 100), c3s=(0.3, 0.3, 100), changes=1),
+        _receipt(
+            base=(0.1, 0.3, 100), full=(0.2, 0.3, 100), lite=(0.05, 0.3, 100),
+            full_changes=1, lite_changes=0,
+        ),
+        _receipt(
+            base=(0.2, 0.3, 100), full=(0.3, 0.3, 100), lite=(0.1, 0.3, 100),
+            full_changes=1, lite_changes=1,
+        ),
     ])
-    assert pooled["outcome"] == "C3S_SCREEN_SUPPORT"
+    assert pooled["decisions"]["FULL"] == {
+        "outcome": "C3S_FULL_SCREEN_SUPPORT", "reasons": [],
+    }
+    assert pooled["decisions"]["LITE"] == {
+        "outcome": "C3S_LITE_SCREEN_NO_SUPPORT",
+        "reasons": ["EE_NOT_STRICTLY_ABOVE_BASE"],
+    }
     base_bits = screen._fraction_from_payload(pooled["arms"]["BASE"]["total_bits"])
     assert base_bits == Fraction.from_float(0.1) + Fraction.from_float(0.2)
     no_support = screen.pool_unit_receipts([
-        _receipt(base=(2.0, 1.0, 100), c3s=(1.0, 1.0, 99), changes=0)
+        _receipt(
+            base=(2.0, 1.0, 100), full=(1.0, 1.0, 99), lite=(3.0, 1.0, 100),
+            full_changes=0, lite_changes=0,
+        )
     ])
-    assert no_support["reasons"] == [
-        "EE_NOT_ABOVE_BASE", "SERVICE_NONINFERIORITY_FAILED", "NO_ACTION_CHANGE",
+    assert no_support["decisions"]["FULL"]["reasons"] == [
+        "EE_NOT_STRICTLY_ABOVE_BASE", "SERVICE_MARGIN_FAILED",
     ]
+    assert no_support["decisions"]["LITE"]["outcome"] == "C3S_LITE_SCREEN_SUPPORT"
+
+
+def test_merge_reports_two_decisions_fixed_progression_and_comparison(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(screen, "HERE", tmp_path)
+    receipts = [
+        _receipt(
+            base=(2.0, 1.0, 100), full=(3.0, 1.0, 100), lite=(1.0, 1.0, 100),
+            full_changes=1, lite_changes=0,
+        )
+        for _ in range(12)
+    ]
+    monkeypatch.setattr(
+        screen, "_load_complete_units", lambda *_args, **_kwargs: (receipts, [])
+    )
+    timing = {
+        arm: {
+            "decisions": 12, "mean_hex": 1.0.hex(), "median_hex": 1.0.hex(),
+            "p95_nearest_rank_hex": 1.0.hex(), "maximum_hex": 1.0.hex(),
+        }
+        for arm in screen.ARMS
+    }
+    monkeypatch.setattr(screen, "per_arm_wall_timing", lambda _receipts: timing)
+    monkeypatch.setattr(
+        screen, "coordinator_timing_summary",
+        lambda _receipts, *, arm: {"arm": arm, "decisions": 12},
+    )
+    monkeypatch.setattr(screen, "descriptive_breakdowns", lambda _receipts: {})
+    terminal, valid = screen.execute_merge(
+        output=tmp_path / "run", horizon=1, preflight_sha256="1" * 64,
+        authority_sha256="2" * 64, producer_common_binding={"common": True},
+    )
+    payload = screen.load_json(terminal, field="terminal")
+    assert valid is True
+    assert payload["decisions"]["FULL"]["outcome"] == "C3S_FULL_SCREEN_SUPPORT"
+    assert payload["decisions"]["LITE"]["outcome"] == "C3S_LITE_SCREEN_NO_SUPPORT"
+    assert payload["progression_rule"] == screen.PROGRESSION_RULE
+    assert [row["metric"] for row in payload["full_vs_lite_comparison"]] == [
+        "eta", "service", "action_changes", "selector_wall_seconds",
+    ]
+
+
+def test_estimate_covers_three_arms_at_t30_and_t100() -> None:
+    result = screen.estimate(units=12)
+    assert set(result["horizons"]) == {"30", "100"}
+    for horizon in result["horizons"].values():
+        assert set(horizon["arms"]) == set(screen.ARMS)
+        assert horizon["arms"]["FULL"]["worker_hours"] == pytest.approx(
+            10 * horizon["arms"]["LITE"]["worker_hours"]
+        )
+
+
+def test_timing_summaries_are_separate_for_all_arms() -> None:
+    phases = {
+        name: 0.1.hex() for name in (
+            "q_inference", "base_nominal_evaluation", "enumeration",
+            "remaining_nominal_evaluations", "catalog_total", "selection",
+        )
+    }
+
+    def decision(catalog: str, wall: float) -> dict[str, object]:
+        return {
+            "catalog": catalog, "wall_seconds_hex": wall.hex(), "catalog_size": 3,
+            "unique_nominal_evaluations": 3, "peak_rss_kib": 10,
+            "phase_wall_seconds_hex": phases,
+            "profile_counts": {"base": 1, "unilateral": 1, "joint": 1},
+        }
+
+    receipt = {
+        "decisions_by_arm": {
+            "FULL": [decision("full", 3.0)], "LITE": [decision("lite", 1.0)],
+        },
+        "arms": {
+            "BASE": {"decision_wall_seconds_hex": [0.5.hex()]},
+            "FULL": {"decision_wall_seconds_hex": [3.0.hex()]},
+            "LITE": {"decision_wall_seconds_hex": [1.0.hex()]},
+        },
+    }
+    assert screen.coordinator_timing_summary([receipt], arm="FULL")["decisions"] == 1
+    timing = screen.per_arm_wall_timing([receipt])
+    assert float.fromhex(timing["BASE"]["maximum_hex"]) == 0.5
+    assert float.fromhex(timing["FULL"]["maximum_hex"]) == 3.0
+    assert float.fromhex(timing["LITE"]["maximum_hex"]) == 1.0
 
 
 def test_refuses_unsealed_contract_and_other_world(

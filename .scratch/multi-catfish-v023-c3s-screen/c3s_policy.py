@@ -11,7 +11,7 @@ from pathlib import Path
 import resource
 import sys
 import time
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Literal, Mapping, Sequence
 
 import numpy as np
 
@@ -34,6 +34,7 @@ import run_v023_c3_contingency_f1 as f1  # noqa: E402
 CONFIG_PATH = HERE / "c3s_config.json"
 CONFIG_SCHEMA = "multi-catfish-mcrl-v023-c3s-policy-config-v1"
 NOMINAL_CONVENTION = "OPS3_UNIT_RICIAN_GAIN_ZERO_DB_SHADOW_CURRENT_ANCHOR_ONLY"
+Catalog = Literal["full", "lite"]
 
 
 class C3SPolicyError(RuntimeError):
@@ -211,16 +212,65 @@ def _evacuation_skeletons(
     return tuple(rows)
 
 
+def _lite_unilateral_skeletons(
+    observation: Any, reference: np.ndarray, q12: np.ndarray,
+) -> tuple[dict[str, object], ...]:
+    """Keep each user's first Q12-ranked physical alternative to BASE."""
+
+    values = np.asarray(q12)
+    tables = tuple(observation.candidates.slot_tables)
+    if (
+        values.dtype != np.dtype(np.float32)
+        or values.shape != (len(tables), f1.NUM_ACTIONS)
+        or not np.all(np.isfinite(values))
+    ):
+        raise C3SPolicyError("lite catalog requires one finite float32 Q1+Q2 surface")
+    try:
+        # Besides producing all physically distinct choices, this donor rejects
+        # ambiguous legal physical keys using the inherited E1/F1 rule.
+        full_rows = f1.enumerate_unilateral_candidates(observation, reference)
+    except Exception as error:
+        raise C3SPolicyError("lite unilateral legality validation failed") from error
+    by_user_action = {
+        (int(row["focal_user"]), int(row["candidate_action"])): row
+        for row in full_rows
+    }
+    rows: list[dict[str, object]] = []
+    for user, table in enumerate(tables):
+        mask = np.asarray(table.mask)
+        legal = [int(action) for action in np.flatnonzero(mask).tolist()]
+        base_action = int(reference[user])
+        if not legal:
+            if base_action != f1.NO_OP_ACTION:
+                raise C3SPolicyError("empty-mask lite user does not have BASE NOOP")
+            continue
+        ranked = sorted(legal, key=lambda action: (-float(values[user, action]), action))
+        if ranked[0] != base_action:
+            raise C3SPolicyError("lite Q1+Q2 ranking does not reproduce BASE")
+        # Starting after BASE naturally skips all BASE-equivalent slots because
+        # the inherited full rows contain only physically different choices.
+        for action in ranked[1:]:
+            skeleton = by_user_action.get((user, action))
+            if skeleton is None:
+                continue
+            rows.append(skeleton)
+            break
+    return tuple(rows)
+
+
 def build_s0_catalog(
     *, step_env: Any, observation: Any, base_actions: np.ndarray,
     rng: np.random.Generator, interval_s: float,
+    catalog: Catalog = "full", q12: np.ndarray | None = None,
     timing_out: dict[str, float] | None = None,
 ) -> tuple[dict[str, object], ...]:
-    """Build BASE, every F1 unilateral, then every E1 evacuation in donor order."""
+    """Build the declared full or Q12-pruned-lite catalog in fixed order."""
 
     reference = np.asarray(base_actions)
     if reference.dtype.kind not in "iu" or reference.ndim != 1:
         raise C3SPolicyError("BASE action vector is malformed")
+    if catalog not in ("full", "lite"):
+        raise C3SPolicyError("catalog must be 'full' or 'lite'")
     try:
         evaluation_started = time.perf_counter()
         # Origin membership comes from BASE's nominal/native service result.
@@ -236,7 +286,11 @@ def build_s0_catalog(
         base_evaluation_seconds = time.perf_counter() - evaluation_started
         enumeration_started = time.perf_counter()
         # F1 and E1 retain ownership of physical-key legality and ordering.
-        unilateral = f1.enumerate_unilateral_candidates(observation, reference)
+        unilateral = (
+            f1.enumerate_unilateral_candidates(observation, reference)
+            if catalog == "full"
+            else _lite_unilateral_skeletons(observation, reference, np.asarray(q12))
+        )
         rows: list[dict[str, object]] = [{
             "profile_id": "BASE", "kind": "base", "tie_key": (0,),
             "actions": reference.astype(np.int64, copy=True), "nominal": base_nominal,
@@ -298,13 +352,17 @@ class C3SPolicyAdapter:
 
     def __init__(
         self, *, physical: Any, frozen: Any, eta_ref: Fraction | None = None,
-        eta_config: Path = CONFIG_PATH, decision_function: DecisionFunction | None = None,
+        eta_config: Path = CONFIG_PATH, catalog: Catalog = "full",
+        decision_function: DecisionFunction | None = None,
     ) -> None:
         self.physical = physical
         self.frozen = frozen
         self.eta_ref = load_eta_ref(eta_config) if eta_ref is None else Fraction(eta_ref)
         if self.eta_ref <= 0:
             raise C3SPolicyError("eta_ref must be positive")
+        if catalog not in ("full", "lite"):
+            raise C3SPolicyError("catalog must be 'full' or 'lite'")
+        self.catalog: Catalog = catalog
         self._decision_function = decision_function or _real_decision
         self.decision_records: list[dict[str, object]] = []
 
@@ -344,6 +402,7 @@ class C3SPolicyAdapter:
             raise C3SPolicyError("selected complete action vector is malformed")
         self.decision_records.append({
             "decision_index": len(self.decision_records),
+            "catalog": self.catalog,
             "wall_seconds_hex": elapsed.hex(),
             "catalog_size": result.catalog_size,
             "unique_nominal_evaluations": result.unique_nominal_evaluations,
@@ -372,7 +431,7 @@ def _real_decision(
     phases: dict[str, float] = {}
     q_started = time.perf_counter()
     try:
-        _native, _q12, base = e1._q12_surface_base_only(
+        _native, q12, base = e1._q12_surface_base_only(
             adapter.physical, adapter.frozen, step_env, observation
         )
         interval_s = float(step_env.driver.config.ephemeris.time_step_s)
@@ -382,7 +441,8 @@ def _real_decision(
     catalog_started = time.perf_counter()
     catalog = build_s0_catalog(
         step_env=step_env, observation=observation, base_actions=base,
-        rng=rng, interval_s=interval_s, timing_out=phases,
+        rng=rng, interval_s=interval_s, catalog=adapter.catalog, q12=q12,
+        timing_out=phases,
     )
     phases["catalog_total"] = time.perf_counter() - catalog_started
     unique_nominal_evaluations = int(phases.pop("unique_nominal_evaluations"))
