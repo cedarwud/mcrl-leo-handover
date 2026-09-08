@@ -1,5 +1,24 @@
 # E1 engineering changelog
 
+## Fix pass 4 — Astra R4 runtime-binding closure
+
+- Replaced the `threadpoolctl`/`numpy.show_config()` acceptance fallback with
+  `effective_thread_pools()`. It enumerates loaded files from
+  `/proc/self/maps`, loads each recognised OpenBLAS, MKL, BLIS, GNU OpenMP,
+  Intel OpenMP, or LLVM OpenMP runtime through `ctypes`, invokes its runtime
+  thread-count getter, and binds its library kind, mapped path, file SHA-256,
+  exact API symbol, and returned value.
+- Runtime authentication now refuses when no BLAS/OpenMP pool can be inspected,
+  when a recognised runtime cannot expose its required getter, or when any
+  inspected pool differs from one. The existing environment and effective
+  PyTorch thread checks remain fail-closed.
+- `numpy.show_config()` text and digest remain in provenance with
+  `acceptance_evidence: false`; build configuration never authenticates a live
+  pool size. No `threadpoolctl` dependency was added.
+- Added server-runtime evidence, missing-inspector refusal, ctypes pool-value
+  refusal, and an isolated actual `torch.set_num_threads(1 -> 2 -> 1)`
+  regression.
+
 ## Fix pass 3 — Astra R3 blocking items (a)–(d)
 
 - Item (a) — runtime bindings: authenticate the declared one-thread process

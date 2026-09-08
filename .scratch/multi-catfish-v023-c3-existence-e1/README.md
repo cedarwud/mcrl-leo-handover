@@ -112,6 +112,17 @@ and semantic digest, the rebuilt TLE manifest digest, and the exact command
 arguments. Build one authority per exact unit or merge invocation. The runner
 accepts only the bound output root and canonical TLE root.
 
+The preflight authenticates effective one-thread execution without
+`threadpoolctl`. After NumPy and PyTorch are loaded, it enumerates
+`/proc/self/maps` and calls the native getter in every recognised OpenBLAS,
+MKL, BLIS, GNU OpenMP, Intel OpenMP, or LLVM OpenMP library through `ctypes`.
+Each pool binding records the library kind, mapped path, file SHA-256, API
+symbol, and live value. No inspectable pool, an unsupported recognised
+runtime, any value other than one, or a non-one PyTorch count refuses the run.
+The full `numpy.show_config()` text and digest are retained only as
+informational build provenance and are explicitly marked as non-acceptance
+evidence.
+
 After all twelve units exist, `--merge` authenticates them and writes the
 terminal U1/J1 decision. A premature merge exits with
 `E1_MERGE_WAITING <n> units missing` and writes no terminal. Tapes, manifests,
@@ -128,7 +139,11 @@ unit or merge work.
 Implementation tests are unit fixtures only:
 
 ```bash
-/home/sat/mcrl-leo-handover/.venv/bin/python -m pytest -q .scratch/multi-catfish-v023-c3-existence-e1
+PYTHONPATH=/home/sat/mcrl-leo-handover-e1/src \
+TMPDIR=/home/sat/mcrl-leo-handover-e1/.tmp \
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
+/home/sat/mcrl-leo-handover/.venv/bin/python -m pytest -q \
+  .scratch/multi-catfish-v023-c3-existence-e1
 ```
 
 ## E1 fix pass 1 changelog
@@ -162,3 +177,9 @@ Implementation tests are unit fixtures only:
 - Item 6: focused lifecycle, concurrency, real-solver-iteration, seal-mutation,
   and portable interpreter-boundary tests are included.
 - Item 7: the write-once launch-authority builder and seal order are included.
+
+## E1 fix pass 4 review mapping
+
+- Astra R4 item (a): live BLAS/OpenMP ABI getters and the effective PyTorch
+  getter are the acceptance evidence; NumPy build configuration is provenance
+  only. Missing or non-one runtime evidence fails closed.

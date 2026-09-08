@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 from contextlib import contextmanager
+import ctypes
 from dataclasses import dataclass
 import fcntl
 from fractions import Fraction
@@ -383,17 +384,102 @@ def _cpu_model() -> str:
     return platform.processor() or platform.machine()
 
 
-def _threadpool_info() -> list[dict[str, object]] | None:
-    """Return runtime BLAS/OpenMP pools when threadpoolctl is installed."""
+def _loaded_shared_library_paths() -> list[Path]:
+    """Return unique absolute file paths mapped into this Linux process."""
 
+    maps = Path("/proc/self/maps")
     try:
-        from threadpoolctl import threadpool_info
-    except ModuleNotFoundError:
-        return None
-    info = threadpool_info()
-    if not isinstance(info, list):
-        raise E1Error("threadpoolctl returned malformed runtime evidence")
-    return [dict(row) for row in info]
+        lines = maps.read_text(encoding="utf-8", errors="strict").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise E1Error("cannot enumerate loaded shared libraries from /proc/self/maps") from error
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for line in lines:
+        fields = line.split(None, 5)
+        if len(fields) != 6 or not fields[5].startswith("/"):
+            continue
+        raw = fields[5]
+        if raw.endswith(" (deleted)"):
+            raw = raw.removesuffix(" (deleted)")
+        if raw not in seen:
+            seen.add(raw)
+            paths.append(Path(raw))
+    return paths
+
+
+def _thread_pool_api(path: Path) -> tuple[str, tuple[str, ...]] | None:
+    """Identify a supported BLAS/OpenMP runtime and its getter symbols."""
+
+    name = path.name.lower()
+    if "openblas" in name:
+        # NumPy's scipy-openblas wheel namespaces the public symbols.  The
+        # unprefixed spellings cover upstream LP64 and ILP64 builds.
+        return "openblas", (
+            "openblas_get_num_threads", "openblas_get_num_threads64_",
+            "openblas_get_num_threads_64_", "scipy_openblas_get_num_threads",
+            "scipy_openblas_get_num_threads64_",
+            "scipy_openblas_get_num_threads_64_",
+        )
+    if name.startswith("libmkl_rt.") or name == "libmkl_rt":
+        return "mkl", ("mkl_get_max_threads",)
+    if name.startswith("libblis.") or name == "libblis":
+        return "blis", ("bli_thread_get_num_threads",)
+    if name.startswith("libgomp.") or name == "libgomp":
+        return "gnu_openmp", ("omp_get_max_threads",)
+    if name.startswith("libiomp5.") or name == "libiomp5":
+        return "intel_openmp", ("omp_get_max_threads",)
+    if name.startswith("libomp.") or name == "libomp":
+        return "llvm_openmp", ("omp_get_max_threads",)
+    return None
+
+
+def effective_thread_pools() -> list[dict[str, object]]:
+    """Inspect every loaded, recognised BLAS/OpenMP runtime through its ABI."""
+
+    pools: list[dict[str, object]] = []
+    recognised = 0
+    for path in _loaded_shared_library_paths():
+        specification = _thread_pool_api(path)
+        if specification is None:
+            continue
+        recognised += 1
+        library, api_names = specification
+        try:
+            runtime = ctypes.CDLL(str(path))
+        except OSError as error:
+            raise E1Error(f"cannot inspect loaded {library} runtime {path}") from error
+        getter = None
+        api = ""
+        for candidate in api_names:
+            try:
+                getter = getattr(runtime, candidate)
+            except AttributeError:
+                continue
+            api = candidate
+            break
+        if getter is None:
+            raise E1Error(
+                f"loaded {library} runtime exposes no supported thread getter: {path}"
+            )
+        getter.argtypes = []
+        getter.restype = ctypes.c_int
+        try:
+            value = int(getter())
+            digest = file_sha256(path)
+        except (OSError, ValueError) as error:
+            raise E1Error(f"cannot authenticate loaded {library} runtime {path}") from error
+        pools.append({
+            "library": library,
+            "path": str(path),
+            "sha256": digest,
+            "api": api,
+            "value": value,
+        })
+    if recognised == 0 or not pools:
+        raise E1Error(
+            "no loaded BLAS/OpenMP runtime can be inspected via /proc/self/maps and ctypes"
+        )
+    return pools
 
 
 def _runtime_thread_bindings(torch: Any) -> dict[str, object]:
@@ -411,40 +497,31 @@ def _runtime_thread_bindings(torch: Any) -> dict[str, object]:
     ):
         raise E1Error("runtime bindings violate the declared one-thread rule")
 
-    pools = _threadpool_info()
-    numpy_config: dict[str, str] | None = None
-    if pools is not None:
-        if not pools or any(
-            type(row.get("num_threads")) is not int
-            or row["num_threads"] != DECLARED_RUNTIME_THREADS
-            for row in pools
-            if row.get("user_api") in {"blas", "openmp"}
-        ):
-            raise E1Error("effective BLAS/OpenMP runtime threads violate the one-thread rule")
-        relevant = [row for row in pools if row.get("user_api") in {"blas", "openmp"}]
-        if not relevant:
-            raise E1Error("effective BLAS/OpenMP runtime thread evidence is unavailable")
-        authentication = "threadpoolctl+torch+environment"
-    else:
-        stream = io.StringIO()
-        with contextlib.redirect_stdout(stream):
-            np.show_config()
-        config_text = stream.getvalue()
-        if not config_text.strip():
-            raise E1Error("NumPy configuration evidence is unavailable")
-        numpy_config = {
-            "text": config_text,
-            "sha256": hashlib.sha256(config_text.encode("utf-8")).hexdigest(),
-        }
-        authentication = "torch+environment+numpy.show_config"
+    pools = effective_thread_pools()
+    if any(
+        type(row.get("value")) is not int
+        or row["value"] != DECLARED_RUNTIME_THREADS
+        for row in pools
+    ):
+        raise E1Error("effective BLAS/OpenMP runtime threads violate the one-thread rule")
+
+    stream = io.StringIO()
+    with contextlib.redirect_stdout(stream):
+        np.show_config()
+    config_text = stream.getvalue()
+    numpy_config = {
+        "text": config_text,
+        "sha256": hashlib.sha256(config_text.encode("utf-8")).hexdigest(),
+        "acceptance_evidence": False,
+    }
 
     return {
         "declared_threads": DECLARED_RUNTIME_THREADS,
-        "authentication": authentication,
+        "authentication": "proc-maps+ctypes+torch+environment",
         "environment": environment,
         "torch_num_threads": torch_threads["intraop"],
         "torch_num_interop_threads": torch_threads["interop"],
-        "threadpoolctl": pools,
+        "inspected_pools": pools,
         "numpy_show_config": numpy_config,
     }
 

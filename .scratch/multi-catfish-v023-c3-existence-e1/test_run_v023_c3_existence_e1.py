@@ -7,8 +7,11 @@ from contextlib import contextmanager
 import copy
 import json
 import multiprocessing
+import os
 from pathlib import Path
 import stat
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -898,19 +901,24 @@ def test_process_bindings_capture_runtime_hardware_threads_and_venv(
         monkeypatch.setenv(name, "1")
     monkeypatch.setattr(torch, "get_num_threads", lambda: 1)
     monkeypatch.setattr(torch, "get_num_interop_threads", lambda: 1)
-    monkeypatch.setattr(e1, "_threadpool_info", lambda: None)
+    pool = {
+        "library": "openblas", "path": "/fixture/libopenblas.so",
+        "sha256": "a" * 64, "api": "openblas_get_num_threads", "value": 1,
+    }
+    monkeypatch.setattr(e1, "effective_thread_pools", lambda: [pool])
     bindings = e1.process_bindings()
     assert set(bindings["third_party_versions"]) == {"numpy", "torch", "sgp4"}
     assert bindings["hardware"]["cpu_model"]
     assert bindings["hardware"]["logical_core_count"] >= 1
     threads = bindings["effective_threads"]
     assert threads["declared_threads"] == 1
-    assert threads["authentication"] == "torch+environment+numpy.show_config"
+    assert threads["authentication"] == "proc-maps+ctypes+torch+environment"
     assert threads["environment"] == {name: "1" for name in e1.THREAD_ENVIRONMENT_NAMES}
     assert threads["torch_num_threads"] == 1
     assert threads["torch_num_interop_threads"] == 1
-    assert threads["threadpoolctl"] is None
+    assert threads["inspected_pools"] == [pool]
     assert "Build Dependencies" in threads["numpy_show_config"]["text"]
+    assert threads["numpy_show_config"]["acceptance_evidence"] is False
     assert e1.hashlib.sha256(
         threads["numpy_show_config"]["text"].encode("utf-8")
     ).hexdigest() == threads["numpy_show_config"]["sha256"]
@@ -923,7 +931,64 @@ def test_process_bindings_capture_runtime_hardware_threads_and_venv(
         e1.process_bindings()
 
 
-def test_process_bindings_refuse_effective_threadpoolctl_mismatch(
+def test_effective_thread_pools_are_present_on_server_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import torch
+
+    for name in e1.THREAD_ENVIRONMENT_NAMES:
+        assert os.environ.get(name) == "1"
+    try:
+        pools = e1.effective_thread_pools()
+    except e1.E1Error as error:
+        if "no loaded BLAS/OpenMP runtime" in str(error):
+            pytest.skip(f"test host truly has no loaded BLAS/OpenMP runtime: {error}")
+        raise
+    monkeypatch.setattr(torch, "get_num_interop_threads", lambda: 1)
+    bindings = e1._runtime_thread_bindings(torch)
+    assert bindings["inspected_pools"] == pools
+    assert pools
+    assert all(set(pool) == {"library", "path", "sha256", "api", "value"} for pool in pools)
+    assert all(pool["value"] == 1 for pool in pools)
+    assert all(Path(str(pool["path"])).is_file() for pool in pools)
+    assert all(e1.file_sha256(Path(str(pool["path"]))) == pool["sha256"] for pool in pools)
+
+
+@pytest.mark.parametrize(
+    ("filename", "library", "api"),
+    [
+        ("libopenblas.so", "openblas", "openblas_get_num_threads"),
+        ("libmkl_rt.so", "mkl", "mkl_get_max_threads"),
+        ("libblis.so", "blis", "bli_thread_get_num_threads"),
+        ("libgomp.so.1", "gnu_openmp", "omp_get_max_threads"),
+        ("libiomp5.so", "intel_openmp", "omp_get_max_threads"),
+        ("libomp.so.5", "llvm_openmp", "omp_get_max_threads"),
+    ],
+)
+def test_thread_pool_api_covers_required_runtimes(
+    filename: str, library: str, api: str,
+) -> None:
+    specification = e1._thread_pool_api(Path("/runtime") / filename)
+    assert specification is not None
+    assert specification[0] == library
+    assert api in specification[1]
+
+
+def test_runtime_bindings_refuse_missing_ctypes_inspector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import torch
+
+    for name in e1.THREAD_ENVIRONMENT_NAMES:
+        monkeypatch.setenv(name, "1")
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 1)
+    monkeypatch.setattr(torch, "get_num_interop_threads", lambda: 1)
+    monkeypatch.setattr(e1, "_loaded_shared_library_paths", lambda: [])
+    with pytest.raises(e1.E1Error, match="no loaded BLAS/OpenMP runtime can be inspected"):
+        e1._runtime_thread_bindings(torch)
+
+
+def test_process_bindings_refuse_effective_ctypes_pool_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import torch
@@ -936,16 +1001,50 @@ def test_process_bindings_refuse_effective_threadpoolctl_mismatch(
     monkeypatch.setattr(torch, "get_num_threads", lambda: 1)
     monkeypatch.setattr(torch, "get_num_interop_threads", lambda: 1)
     monkeypatch.setattr(
-        e1, "_threadpool_info",
+        e1, "effective_thread_pools",
         lambda: [{
-            "user_api": "blas", "internal_api": "openblas", "num_threads": 4,
-            "prefix": "libscipy_openblas", "filepath": "/fixture/libblas.so",
-            "version": "fixture", "threading_layer": "pthreads",
-            "architecture": "fixture",
+            "library": "openblas", "path": "/fixture/libopenblas.so",
+            "sha256": "b" * 64, "api": "openblas_get_num_threads", "value": 4,
         }],
     )
     with pytest.raises(e1.E1Error, match="effective BLAS/OpenMP"):
         e1.process_bindings()
+
+
+def test_process_bindings_refuse_actual_torch_pool_mutation_in_subprocess() -> None:
+    code = f"""
+import sys
+
+sys.path.insert(0, {str(e1.HERE)!r})
+import torch
+
+torch.set_num_interop_threads(1)
+import run_v023_c3_existence_e1 as e1
+
+before = torch.get_num_threads()
+assert before == 1, before
+try:
+    torch.set_num_threads(2)
+    assert torch.get_num_threads() == 2
+    try:
+        e1.process_bindings()
+    except e1.E1Error as error:
+        assert "one-thread rule" in str(error), str(error)
+    else:
+        raise AssertionError("binding check accepted an actual two-thread torch pool")
+finally:
+    torch.set_num_threads(before)
+assert torch.get_num_threads() == 1
+print("ACTUAL_TORCH_POOL_1_TO_2_REFUSED_AND_RESTORED")
+"""
+    environment = os.environ.copy()
+    environment.update({name: "1" for name in e1.THREAD_ENVIRONMENT_NAMES})
+    completed = subprocess.run(
+        [sys.executable, "-c", code], cwd=e1.REPO, env=environment,
+        text=True, capture_output=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "ACTUAL_TORCH_POOL_1_TO_2_REFUSED_AND_RESTORED" in completed.stdout
 
 
 def test_launch_authority_builder_roundtrip_and_every_field_mutation_refused(
