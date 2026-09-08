@@ -115,10 +115,10 @@
       "callable": {"module": "runner_module", "name": "RunAuthorityDigests"},
       "kwargs": {
         "authority_sha256": {"sha256": {"artifact": "successor_contract"}},
-        "code_sha256": {"sha256": {"artifact": "factory_code"}},
-        "input_sha256": {"sha256": {"artifact": "target_root"}}
+        "code_sha256": {"sha256": {"artifact": "learner_manifest"}},
+        "input_sha256": {"sha256": {"path_join": [{"artifact": "target_root"}, "MANIFEST.sha256"]}}
       },
-      "inputs": ["successor_contract", "factory_code", "target_root"]
+      "inputs": ["successor_contract", "learner_manifest", "target_root"]
     },
     {
       "name": "runner_config",
@@ -186,8 +186,8 @@
     },
     {
       "name": "resume_one_epoch",
-      "callable": {"method_of": "resumed_runner", "name": "run_to_epoch"},
-      "args": [2],
+      "callable": {"module": "dryrun_support", "name": "advance_resumed_two_route_orchestrator_one_epoch"},
+      "args": [{"result": "resumed_runner"}],
       "inputs": ["target_root", "learner_manifest"]
     }
   ]
