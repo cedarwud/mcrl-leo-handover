@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import copy
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from fractions import Fraction
 import json
 import math
@@ -11,6 +12,7 @@ from pathlib import Path
 import resource
 import sys
 import time
+from types import SimpleNamespace
 from typing import Any, Callable, Literal, Mapping, Sequence
 
 import numpy as np
@@ -39,6 +41,127 @@ Catalog = Literal["full", "lite"]
 
 class C3SPolicyError(RuntimeError):
     """A policy input, donor rule, or evaluation-neutrality check failed."""
+
+
+def _readonly(value: object, *, dtype: np.dtype | type | None = None) -> np.ndarray:
+    result = np.array(value, dtype=dtype, copy=True, order="C")
+    result.setflags(write=False)
+    return result
+
+
+def _structural_sha256(value: object) -> str:
+    """Hash values recursively, including mutable arrays and RNG internals."""
+
+    import hashlib
+
+    digest = hashlib.sha256()
+    active: dict[int, int] = {}
+    retained: list[object] = []
+
+    def visit(item: object) -> None:
+        if item is None or isinstance(item, (bool, int, str, bytes)):
+            digest.update(type(item).__name__.encode("ascii"))
+            digest.update(repr(item).encode("utf-8"))
+            return
+        if isinstance(item, float):
+            digest.update(b"float")
+            digest.update(item.hex().encode("ascii"))
+            return
+        if isinstance(item, np.generic):
+            visit(item.item())
+            return
+        if isinstance(item, np.ndarray):
+            array = np.ascontiguousarray(item)
+            digest.update(b"ndarray")
+            digest.update(array.dtype.str.encode("ascii"))
+            digest.update(repr(array.shape).encode("ascii"))
+            digest.update(b"1" if item.flags.writeable else b"0")
+            digest.update(array.tobytes(order="C"))
+            return
+        if isinstance(item, np.random.Generator):
+            digest.update(b"numpy.random.Generator")
+            visit(item.bit_generator.state)
+            return
+        identity = id(item)
+        if identity in active:
+            digest.update(f"ref:{active[identity]}".encode("ascii"))
+            return
+        active[identity] = len(active)
+        retained.append(item)
+        digest.update(f"{type(item).__module__}.{type(item).__qualname__}".encode("utf-8"))
+        if isinstance(item, Mapping):
+            for key in sorted(item, key=lambda candidate: repr(candidate)):
+                visit(key)
+                visit(item[key])
+        elif isinstance(item, (tuple, list)):
+            for child in item:
+                visit(child)
+        elif isinstance(item, (set, frozenset)):
+            for child_digest in sorted(_structural_sha256(child) for child in item):
+                digest.update(child_digest.encode("ascii"))
+        elif is_dataclass(item):
+            for definition in fields(item):
+                digest.update(definition.name.encode("utf-8"))
+                visit(getattr(item, definition.name))
+        elif hasattr(item, "__dict__"):
+            visit(vars(item))
+        elif hasattr(type(item), "__slots__"):
+            slots = type(item).__slots__
+            for name in ((slots,) if isinstance(slots, str) else tuple(slots)):
+                if hasattr(item, name):
+                    digest.update(str(name).encode("utf-8"))
+                    visit(getattr(item, name))
+        else:
+            digest.update(repr(item).encode("utf-8"))
+
+    visit(value)
+    return digest.hexdigest()
+
+
+def _assert_no_prohibited_capabilities(value: object) -> None:
+    """Reject any environment, RNG, or keyed-field object reachable by selection."""
+
+    seen: set[int] = set()
+
+    def visit(item: object) -> None:
+        if item is None or isinstance(item, (bool, int, float, str, bytes, np.generic, np.ndarray)):
+            return
+        identity = id(item)
+        if identity in seen:
+            return
+        seen.add(identity)
+        qualified = f"{type(item).__module__}.{type(item).__qualname__}"
+        if (
+            isinstance(item, np.random.Generator)
+            or qualified.endswith(".StepEnvironment")
+            or qualified.endswith(".TrainerEnvironment")
+            or qualified.endswith(".KeyedFadingField")
+        ):
+            raise C3SPolicyError(f"prohibited coordinator capability is reachable: {qualified}")
+        if isinstance(item, Mapping):
+            children = tuple(item.items())
+        elif isinstance(item, (tuple, list, set, frozenset)):
+            children = tuple(enumerate(item))
+        elif is_dataclass(item):
+            children = tuple((definition.name, getattr(item, definition.name)) for definition in fields(item))
+        elif hasattr(item, "__dict__"):
+            children = tuple(vars(item).items())
+        elif hasattr(type(item), "__slots__"):
+            slots = type(item).__slots__
+            names = (slots,) if isinstance(slots, str) else tuple(slots)
+            children = tuple((name, getattr(item, name)) for name in names if hasattr(item, name))
+        else:
+            children = ()
+        for _name, child in children:
+            visit(child)
+
+    visit(value)
+
+
+def _live_neutrality_fingerprint(step_env: Any, rng: np.random.Generator) -> str:
+    """Bind all live environment state, including nested mobility/tracking RNGs."""
+
+    return _structural_sha256((step_env, rng))
 
 
 def fraction_payload(value: Fraction) -> dict[str, str]:
@@ -258,38 +381,275 @@ def _lite_unilateral_skeletons(
     return tuple(rows)
 
 
+@dataclass(frozen=True)
+class FrozenCandidates:
+    """Only current geometry, physical keys and legal masks needed by S0."""
+
+    slot_tables: tuple[Any, ...]
+    off_axis_deg: np.ndarray
+    elevation_deg: np.ndarray
+    window_satellite_ecef_km: np.ndarray
+    window_norad_ids: np.ndarray
+
+
+@dataclass(frozen=True)
+class NominalPhysicsSnapshot:
+    """Detached current-slot native-physics inputs; never a live environment."""
+
+    candidates: FrozenCandidates
+    grid: Any
+    user_ecef_km: np.ndarray
+    historical_satellite_ecef: tuple[tuple[int, tuple[tuple[int, np.ndarray], ...]], ...]
+    physics: Any
+    segments: tuple[Any, ...]
+    previous_association: tuple[Any, ...]
+    pending_segment_age: np.ndarray | None
+    step_index: int
+
+
+class _DetachedDriver:
+    def __init__(self, snapshot: NominalPhysicsSnapshot) -> None:
+        self.grid = snapshot.grid
+        self._users = snapshot.user_ecef_km
+        self._historical = {
+            int(offset): {int(norad): position for norad, position in positions}
+            for offset, positions in snapshot.historical_satellite_ecef
+        }
+
+    def user_ecef_km(self) -> np.ndarray:
+        return self._users
+
+    def satellite_ecef_at(self, offset_steps: int) -> dict[int, np.ndarray]:
+        try:
+            return self._historical[int(offset_steps)]
+        except KeyError as error:
+            raise C3SPolicyError("nominal evaluator requested unsnapshotted geometry") from error
+
+
+class _DetachedNominalContext:
+    """Minimal receiver for the native current-slot physics equations."""
+
+    def __init__(self, snapshot: NominalPhysicsSnapshot) -> None:
+        self.num_users = len(snapshot.candidates.slot_tables)
+        self.driver = _DetachedDriver(snapshot)
+        self.physics = snapshot.physics
+        self._segments = list(copy.deepcopy(snapshot.segments))
+        self._previous_association = list(copy.deepcopy(snapshot.previous_association))
+        self._pending_segment_age = (
+            None if snapshot.pending_segment_age is None
+            else np.array(snapshot.pending_segment_age, dtype=np.int64, copy=True)
+        )
+        self._step_index = snapshot.step_index
+
+    def _draw_fading(
+        self, satellite_ecef: Mapping[int, np.ndarray], _unused: object,
+        _elevation_by_norad: Mapping[int, np.ndarray] | None = None, *, event: str = "direct",
+    ) -> tuple[dict[int, np.ndarray], dict[int, np.ndarray]]:
+        del event
+        order = sorted(satellite_ecef)
+        return (
+            {int(norad): np.ones(self.num_users, dtype=np.float64) for norad in order},
+            {int(norad): np.zeros(self.num_users, dtype=np.float64) for norad in order},
+        )
+
+    def _warm_start_gain(self, uid: int, association: Any, historical: Any) -> float | None:
+        from mcrl.env.step import StepEnvironment
+
+        return StepEnvironment._warm_start_gain(self, uid, association, historical)
+
+
+@dataclass(frozen=True)
+class NominalSnapshotEvaluator:
+    """Pure nominal evaluator constructed only from a detached snapshot."""
+
+    snapshot: NominalPhysicsSnapshot
+
+    def evaluate(self, actions: np.ndarray) -> Any:
+        from mcrl.env.action_contract import assert_selected_actions_valid
+        from mcrl.env.step import StepEnvironment
+
+        context = _DetachedNominalContext(self.snapshot)
+        selected = assert_selected_actions_valid(actions, self.snapshot.candidates.slot_tables)
+        physics = StepEnvironment._resolve_physics(
+            context, self.snapshot.candidates, selected, None
+        )
+        return SimpleNamespace(
+            resolution=physics["resolution"], radiating=physics["radiating"],
+            link_power_w=physics["link_power_w"], link_rate_bps=physics["rate"],
+            fixed_power_w=physics["fixed_power_w"], system_power_w=physics["system_power_w"],
+        )
+
+
+@dataclass(frozen=True)
+class DecisionSnapshot:
+    """The complete and capability-free §2 coordinator input."""
+
+    native_state_matrix: np.ndarray
+    legal_masks: np.ndarray
+    slot_physical_keys: np.ndarray
+    q12_proposal: np.ndarray
+    base_actions: np.ndarray
+    candidates: FrozenCandidates
+    committed_association: tuple[Any, ...]
+    committed_segments: tuple[Any, ...]
+    committed_radiating: Any
+    tracking_state: tuple[Any, Any]
+    interval_s: float
+    catalog: Catalog
+    eta_ref: Fraction
+    q_inference_seconds: float
+
+    def verify(self) -> str:
+        arrays = (
+            self.native_state_matrix, self.legal_masks, self.slot_physical_keys,
+            self.q12_proposal, self.base_actions,
+        )
+        users = self.legal_masks.shape[0]
+        if (
+            self.native_state_matrix.ndim != 2
+            or self.legal_masks.dtype != np.bool_
+            or self.legal_masks.shape != (users, f1.NUM_ACTIONS)
+            or self.slot_physical_keys.shape != (users, f1.NUM_ACTIONS, 2)
+            or self.q12_proposal.dtype != np.float32
+            or self.q12_proposal.shape != self.legal_masks.shape
+            or self.base_actions.shape != (users,)
+            or any(array.flags.writeable for array in arrays)
+            or not np.all(np.isfinite(self.native_state_matrix))
+            or not np.all(np.isfinite(self.q12_proposal))
+            or not math.isfinite(self.interval_s) or self.interval_s <= 0
+            or not math.isfinite(self.q_inference_seconds) or self.q_inference_seconds < 0
+        ):
+            raise C3SPolicyError("pre-decision coordinator snapshot is malformed or mutable")
+        _assert_no_prohibited_capabilities(self)
+        return _structural_sha256(self)
+
+
+def _copy_grid(grid: Any) -> Any:
+    copied = copy.deepcopy(grid)
+    for definition in fields(copied):
+        value = getattr(copied, definition.name)
+        if isinstance(value, np.ndarray):
+            value.setflags(write=False)
+    return copied
+
+
+def _snapshot_inputs(
+    adapter: "C3SPolicyAdapter", step_env: Any, observation: Any,
+) -> tuple[DecisionSnapshot, NominalSnapshotEvaluator]:
+    from mcrl.env.action_contract import SlotTable
+
+    q_started = time.perf_counter()
+    native, q12, base = e1._q12_surface_base_only(
+        adapter.physical, adapter.frozen, step_env, observation
+    )
+    q_seconds = time.perf_counter() - q_started
+    native.verify()
+    original = observation.candidates
+    tables = tuple(
+        SlotTable(
+            norad_ids=_readonly(table.norad_ids, dtype=np.int64),
+            cell_ids=_readonly(table.cell_ids, dtype=np.int64),
+            mask=_readonly(table.mask, dtype=np.bool_),
+        )
+        for table in tuple(original.slot_tables)
+    )
+    candidates = FrozenCandidates(
+        slot_tables=tables,
+        off_axis_deg=_readonly(original.off_axis_deg, dtype=np.float64),
+        elevation_deg=_readonly(original.elevation_deg, dtype=np.float64),
+        window_satellite_ecef_km=_readonly(
+            original.window_satellite_ecef_km, dtype=np.float64
+        ),
+        window_norad_ids=_readonly(original.window_norad_ids, dtype=np.int64),
+    )
+    keys = _readonly(
+        np.stack(
+            [np.stack((table.norad_ids, table.cell_ids), axis=1) for table in tables],
+            axis=0,
+        ),
+        dtype=np.int64,
+    )
+    pending = getattr(step_env, "_pending_segment_age", None)
+    history: list[tuple[int, tuple[tuple[int, np.ndarray], ...]]] = []
+    if int(getattr(step_env, "_step_index", -1)) == 0 and pending is not None:
+        for age in sorted(set(int(value) for value in np.asarray(pending).tolist())):
+            if age <= 0:
+                continue
+            positions = step_env.driver.satellite_ecef_at(-age)
+            history.append((
+                -age,
+                tuple(
+                    (int(norad), _readonly(position, dtype=np.float64))
+                    for norad, position in sorted(positions.items())
+                ),
+            ))
+    nominal_physics = NominalPhysicsSnapshot(
+        candidates=candidates,
+        grid=_copy_grid(step_env.driver.grid),
+        user_ecef_km=_readonly(step_env.driver.user_ecef_km(), dtype=np.float64),
+        historical_satellite_ecef=tuple(history),
+        physics=replace(step_env.physics, fading_enabled=False),
+        segments=tuple(copy.deepcopy(getattr(step_env, "_segments", ()))),
+        previous_association=tuple(copy.deepcopy(getattr(step_env, "_previous_association", ()))),
+        pending_segment_age=(None if pending is None else _readonly(pending, dtype=np.int64)),
+        step_index=int(getattr(step_env, "_step_index", -1)),
+    )
+    snapshot = DecisionSnapshot(
+        native_state_matrix=_readonly(native.state_matrix, dtype=np.float32),
+        legal_masks=_readonly(native.action_masks, dtype=np.bool_),
+        slot_physical_keys=keys,
+        q12_proposal=_readonly(q12, dtype=np.float32),
+        base_actions=_readonly(base, dtype=np.int64),
+        candidates=candidates,
+        committed_association=nominal_physics.previous_association,
+        committed_segments=nominal_physics.segments,
+        committed_radiating=copy.deepcopy(getattr(step_env, "_previous_radiating", None)),
+        tracking_state=(copy.deepcopy(original.d2), copy.deepcopy(original.dwell)),
+        interval_s=float(step_env.driver.config.ephemeris.time_step_s),
+        catalog=adapter.catalog,
+        eta_ref=adapter.eta_ref,
+        q_inference_seconds=q_seconds,
+    )
+    evaluator = NominalSnapshotEvaluator(nominal_physics)
+    snapshot.verify()
+    _assert_no_prohibited_capabilities(evaluator)
+    return snapshot, evaluator
+
+
 def build_s0_catalog(
-    *, step_env: Any, observation: Any, base_actions: np.ndarray,
-    rng: np.random.Generator, interval_s: float,
-    catalog: Catalog = "full", q12: np.ndarray | None = None,
+    *, snapshot: DecisionSnapshot, evaluator: NominalSnapshotEvaluator,
     timing_out: dict[str, float] | None = None,
 ) -> tuple[dict[str, object], ...]:
     """Build the declared full or Q12-pruned-lite catalog in fixed order."""
 
-    reference = np.asarray(base_actions)
+    snapshot.verify()
+    _assert_no_prohibited_capabilities(evaluator)
+    reference = np.asarray(snapshot.base_actions)
     if reference.dtype.kind not in "iu" or reference.ndim != 1:
         raise C3SPolicyError("BASE action vector is malformed")
-    if catalog not in ("full", "lite"):
+    if snapshot.catalog not in ("full", "lite"):
         raise C3SPolicyError("catalog must be 'full' or 'lite'")
     try:
         evaluation_started = time.perf_counter()
         # Origin membership comes from BASE's nominal/native service result.
-        with s0.nominal_no_fading(step_env):
-            base_evaluation = e1._evaluate_actions_neutral(step_env, reference, rng)
-            base_profile, base_link_power = f1.profile_from_evaluation(
-                base_evaluation, interval_s=interval_s
-            )
-            del base_link_power
-            base_nominal = _metric_from_e1_payload(
-                e1._profile_metrics(base_profile), label="BASE nominal evaluation"
-            )
+        base_evaluation = evaluator.evaluate(reference)
+        base_profile, base_link_power = f1.profile_from_evaluation(
+            base_evaluation, interval_s=snapshot.interval_s
+        )
+        del base_link_power
+        base_nominal = _metric_from_e1_payload(
+            e1._profile_metrics(base_profile), label="BASE nominal evaluation"
+        )
         base_evaluation_seconds = time.perf_counter() - evaluation_started
         enumeration_started = time.perf_counter()
         # F1 and E1 retain ownership of physical-key legality and ordering.
+        observation = SimpleNamespace(candidates=snapshot.candidates)
         unilateral = (
             f1.enumerate_unilateral_candidates(observation, reference)
-            if catalog == "full"
-            else _lite_unilateral_skeletons(observation, reference, np.asarray(q12))
+            if snapshot.catalog == "full"
+            else _lite_unilateral_skeletons(
+                observation, reference, snapshot.q12_proposal
+            )
         )
         rows: list[dict[str, object]] = [{
             "profile_id": "BASE", "kind": "base", "tie_key": (0,),
@@ -313,8 +673,12 @@ def build_s0_catalog(
             actions = np.asarray(row["actions"], dtype=np.int64)
             key = tuple(int(value) for value in actions.tolist())
             if key not in cache:
-                cache[key] = s0._nominal_metric(
-                    e1, f1, step_env, actions, rng, interval_s
+                evaluation = evaluator.evaluate(actions)
+                profile, _link_power = f1.profile_from_evaluation(
+                    evaluation, interval_s=snapshot.interval_s
+                )
+                cache[key] = _metric_from_e1_payload(
+                    e1._profile_metrics(profile), label=f"{row['profile_id']} nominal evaluation"
                 )
             row["nominal"] = cache[key]
         nominal_seconds = time.perf_counter() - nominal_started
@@ -323,6 +687,7 @@ def build_s0_catalog(
                 "base_nominal_evaluation": base_evaluation_seconds,
                 "enumeration": enumeration_seconds,
                 "remaining_nominal_evaluations": nominal_seconds,
+                "nominal_evaluation": base_evaluation_seconds + nominal_seconds,
                 "unique_nominal_evaluations": float(len(cache)),
             })
     except C3SPolicyError:
@@ -344,7 +709,7 @@ class DecisionResult:
     unique_nominal_evaluations: int = 0
 
 
-DecisionFunction = Callable[["C3SPolicyAdapter", Any, Any, np.random.Generator], DecisionResult]
+DecisionFunction = Callable[[DecisionSnapshot, NominalSnapshotEvaluator], DecisionResult]
 
 
 class C3SPolicyAdapter:
@@ -372,27 +737,30 @@ class C3SPolicyAdapter:
         if not isinstance(rng, np.random.Generator):
             raise C3SPolicyError("policy RNG must be numpy.random.Generator")
         try:
-            before = e1._evaluation_snapshot(step_env, rng)
+            before = _live_neutrality_fingerprint(step_env, rng)
         except Exception as error:
             raise C3SPolicyError("cannot snapshot the pre-decision environment") from error
-        original_physics = getattr(step_env, "physics", None)
-        original_field = getattr(step_env, "_fading_field", None)
         started = time.perf_counter()
         result: DecisionResult | None = None
         decision_error: BaseException | None = None
         try:
-            result = self._decision_function(self, step_env, observation, rng)
+            snapshot, evaluator = _snapshot_inputs(self, step_env, observation)
+            snapshot_digest = snapshot.verify()
+            _assert_no_prohibited_capabilities((snapshot, evaluator))
+            result = self._decision_function(snapshot, evaluator)
+            if snapshot.verify() != snapshot_digest:
+                raise C3SPolicyError("coordinator mutated its frozen input snapshot")
         except BaseException as error:
             decision_error = error
         elapsed = time.perf_counter() - started
         try:
-            e1._assert_evaluation_neutral(step_env, rng, before)
+            after = _live_neutrality_fingerprint(step_env, rng)
         except Exception as error:
-            raise C3SPolicyError("candidate evaluation changed environment state or RNG") from error
-        if getattr(step_env, "physics", None) != original_physics or getattr(
-            step_env, "_fading_field", None
-        ) is not original_field:
-            raise C3SPolicyError("nominal evaluation did not restore physics/fading state")
+            raise C3SPolicyError("cannot authenticate the post-decision environment") from error
+        if after != before:
+            raise C3SPolicyError(
+                "snapshot construction or coordinator changed environment/RNG/field/tracking state"
+            )
         if decision_error is not None:
             raise decision_error
         assert result is not None
@@ -419,35 +787,29 @@ class C3SPolicyAdapter:
             "phase_wall_seconds_hex": {
                 name: float(value).hex() for name, value in result.phase_wall_seconds.items()
             },
-            "peak_rss_kib": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
+            "process_lifetime_peak_rss_kib": int(
+                resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            ),
+            "rss_measurement_scope": (
+                "PROCESS_LIFETIME_HIGH_WATER_MARK_NOT_ISOLATED_PER_ARM;"
+                "FULL_EXECUTES_BEFORE_LITE"
+            ),
         })
         return actions.astype(np.int64, copy=True)
 
 
 def _real_decision(
-    adapter: C3SPolicyAdapter, step_env: Any, observation: Any,
-    rng: np.random.Generator,
+    snapshot: DecisionSnapshot, evaluator: NominalSnapshotEvaluator,
 ) -> DecisionResult:
-    phases: dict[str, float] = {}
-    q_started = time.perf_counter()
-    try:
-        _native, q12, base = e1._q12_surface_base_only(
-            adapter.physical, adapter.frozen, step_env, observation
-        )
-        interval_s = float(step_env.driver.config.ephemeris.time_step_s)
-    except Exception as error:
-        raise C3SPolicyError("authenticated Q1+Q2 BASE proposal failed") from error
-    phases["q_inference"] = time.perf_counter() - q_started
+    phases: dict[str, float] = {"q_inference": snapshot.q_inference_seconds}
     catalog_started = time.perf_counter()
     catalog = build_s0_catalog(
-        step_env=step_env, observation=observation, base_actions=base,
-        rng=rng, interval_s=interval_s, catalog=adapter.catalog, q12=q12,
-        timing_out=phases,
+        snapshot=snapshot, evaluator=evaluator, timing_out=phases,
     )
     phases["catalog_total"] = time.perf_counter() - catalog_started
     unique_nominal_evaluations = int(phases.pop("unique_nominal_evaluations"))
     selection_started = time.perf_counter()
-    selected = select_candidate(catalog, eta_ref=adapter.eta_ref)
+    selected = select_candidate(catalog, eta_ref=snapshot.eta_ref)
     phases["selection"] = time.perf_counter() - selection_started
     counts = {
         kind: sum(row["kind"] == kind for row in catalog)
@@ -455,7 +817,7 @@ def _real_decision(
     }
     return DecisionResult(
         actions=np.asarray(selected["actions"], dtype=np.int64),
-        base_actions=np.asarray(base, dtype=np.int64),
+        base_actions=np.asarray(snapshot.base_actions, dtype=np.int64),
         profile_id=str(selected["profile_id"]),
         catalog_size=len(catalog),
         counts=counts,

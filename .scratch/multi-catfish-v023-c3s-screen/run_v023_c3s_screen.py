@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import datetime as dt
+import datetime as dt
+import errno
 from fractions import Fraction
 import hashlib
 import json
@@ -80,6 +83,21 @@ PROGRESSION_RULE = (
 UNIT_RECEIPT_NAME = "receipt.json"
 TERMINAL_RECEIPT_NAME = "terminal-receipt.json"
 GLOBAL_INVALIDATION_NAME = "GLOBAL-INVALIDATION.json"
+TERMINAL_DIRECTORY_NAME = "terminal"
+GLOBAL_INVALIDATION_DIRECTORY_NAME = "global-invalidation"
+EVIDENCE_MANIFEST_SCHEMA = f"{SCHEMA}-evidence-manifest"
+WORLD_CENSUS_SCHEMA = f"{SCHEMA}-world-census"
+
+EVIDENCE_FILES = (
+    ("e1_result", E1_DIR / "E1-RESULT-RECORD-2026-09-08.md"),
+    ("s0_diagnostic", REPO / ".scratch/multi-catfish-v023-c3-probe-results-20260908/PROBE-S0-2026-09-08.md"),
+    ("oracle_marginals", REPO / ".scratch/multi-catfish-v023-c3-probe-results-20260908/ORACLE-MARGINALS-2026-09-08.md"),
+    ("future_path_memo", REPO / ".scratch/multi-catfish-v023-controller-handoff-20260907/ADJUDICATION-C3-FUTURE-PATH-CODEX-GPT6-ASTRA-ULTRA-2026-09-07.md"),
+    ("global_view_codex", REPO / ".scratch/multi-catfish-v023-controller-handoff-20260907/GLOBAL-VIEW-C3-CODEX-GPT6-ASTRA-ULTRA-2026-09-08.md"),
+    ("global_view_gemini", REPO / ".scratch/multi-catfish-v023-controller-handoff-20260907/GLOBAL-VIEW-C3-GEMINI-3.8-FLASH-HIGH-2026-09-08.md"),
+    ("global_view_question", REPO / ".scratch/multi-catfish-v023-controller-handoff-20260907/GLOBAL-VIEW-C3-QUESTION-2026-09-08.md"),
+    ("f1_run_report", REPO / ".scratch/multi-catfish-v023-controller-handoff-20260907/F1-KILL-SCREEN-RUN-REPORT-2026-09-07.md"),
+)
 
 
 class C3SScreenError(RuntimeError):
@@ -248,24 +266,31 @@ def _local(path: Path, *, field: str) -> Path:
 
 
 def expected_code_bindings() -> list[dict[str, str]]:
-    paths = (
-        ("c3s_policy", HERE / "c3s_policy.py"),
-        ("c3s_runner", HERE / "run_v023_c3s_screen.py"),
-        ("c3s_preflight_builder", HERE / "build_c3s_preflight_manifest.py"),
-        ("c3s_authority_builder", HERE / "build_c3s_launch_authority.py"),
-        ("c3s_tests", HERE / "test_c3s_screen.py"),
-        ("eta_ref_config", CONFIG_PATH),
-        ("s0_nominal_evaluator", S0_DIR / "run_probe_s0.py"),
-        ("e1_catalog_and_neutrality", E1_DIR / "run_v023_c3_existence_e1.py"),
-        ("f1_unilateral_builder", F1_DIR / "run_v023_c3_contingency_f1.py"),
-        ("f2_lineage_loader", F2_DIR / "run_v023_c3_contingency_f2.py"),
-        ("step_physics", REPO / "src/mcrl/env/step.py"),
-        ("keyed_field", REPO / "src/mcrl/env/keyed_fading.py"),
-        ("rng_factory", REPO / "src/mcrl/runtime/training_pipeline.py"),
+    paths: list[tuple[str, Path]] = [("eta_ref_config", CONFIG_PATH)]
+    roots = (
+        ("c3s", HERE), ("s0", S0_DIR), ("e1", E1_DIR),
+        ("f0", REPO / ".scratch/multi-catfish-v023-c3-contingency"),
+        ("f1", F1_DIR), ("f2", F2_DIR),
+        ("physical", REPO / ".scratch/multi-catfish-v023-physical"),
+        ("runtime", REPO / "src/mcrl"),
     )
+    for prefix, root in roots:
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" not in path.parts:
+                paths.append((f"{prefix}:{path.relative_to(root).as_posix()}", path))
+    unique: dict[Path, str] = {}
+    for role, path in paths:
+        unique.setdefault(path.resolve(), role)
     return [
         {"role": role, "path": str(path.resolve()), "sha256": file_sha256(path)}
-        for role, path in paths
+        for path, role in sorted(unique.items(), key=lambda row: str(row[0]))
+    ]
+
+
+def expected_evidence_entries() -> list[dict[str, str]]:
+    return [
+        {"role": role, "path": str(path.resolve()), "sha256": file_sha256(path)}
+        for role, path in EVIDENCE_FILES
     ]
 
 
@@ -321,13 +346,102 @@ def _validate_sealed(path: Path, *, digest: str, field: str) -> None:
         raise C3SScreenError(f"{field} is not sealed mode-0444 with matching sidecar")
 
 
+def _sealed_json_binding(value: object, *, field: str) -> tuple[dict[str, Any], dict[str, str]]:
+    if not isinstance(value, Mapping) or set(value) != {"path", "sha256"}:
+        raise C3SScreenError(f"{field} binding is malformed")
+    path = _local(Path(str(value["path"])), field=field)
+    digest = _digest(value["sha256"], field=f"{field} sha256")
+    if str(path) != value["path"]:
+        raise C3SScreenError(f"{field} path is not canonical")
+    _validate_sealed(path, digest=digest, field=field)
+    return load_json(path, field=field), {"path": str(path), "sha256": digest}
+
+
+def validate_evidence_manifest(value: object) -> dict[str, str]:
+    payload, binding = _sealed_json_binding(value, field="C3S evidence manifest")
+    expected = {
+        "schema": EVIDENCE_MANIFEST_SCHEMA,
+        "status": "FROZEN_COMPLETE_EVIDENCE",
+        "entries": expected_evidence_entries(),
+    }
+    if payload != expected:
+        raise C3SScreenError("C3S evidence manifest is incomplete or drifted")
+    return binding
+
+
+def validate_world_census(value: object) -> dict[str, str]:
+    payload, binding = _sealed_json_binding(value, field="C3S world census")
+    if set(payload) != {
+        "schema", "status", "inventory_complete", "inventory_scope",
+        "source_artifacts", "used_worlds", "allocated_worlds", "c3s_worlds",
+        "collisions",
+    }:
+        raise C3SScreenError("C3S world census schema is incomplete")
+    sources = payload.get("source_artifacts")
+    if not isinstance(sources, list) or not sources:
+        raise C3SScreenError("C3S world census lacks authenticated inventory sources")
+    seen_paths: set[str] = set()
+    for source in sources:
+        if not isinstance(source, Mapping) or set(source) != {"path", "sha256"}:
+            raise C3SScreenError("C3S world census source binding is malformed")
+        source_path = Path(str(source["path"])).resolve()
+        source_digest = _digest(source["sha256"], field="world census source sha256")
+        if str(source_path) != source["path"] or str(source_path) in seen_paths:
+            raise C3SScreenError("C3S world census source paths are not canonical and unique")
+        seen_paths.add(str(source_path))
+        if file_sha256(source_path) != source_digest:
+            raise C3SScreenError("C3S world census source digest changed")
+    used = payload.get("used_worlds")
+    allocated = payload.get("allocated_worlds")
+    if (
+        payload.get("schema") != WORLD_CENSUS_SCHEMA
+        or payload.get("status") != "FROZEN_COMPLETE_USED_ALLOCATED_CENSUS"
+        or payload.get("inventory_complete") is not True
+        or not isinstance(payload.get("inventory_scope"), str)
+        or not payload["inventory_scope"].strip()
+        or not isinstance(used, list) or any(type(item) is not int for item in used)
+        or not isinstance(allocated, list) or any(type(item) is not int for item in allocated)
+        or len(used) != len(set(used)) or len(allocated) != len(set(allocated))
+        or payload.get("c3s_worlds") != list(WORLDS)
+    ):
+        raise C3SScreenError("C3S world census contents are malformed")
+    collisions = sorted(set(WORLDS).intersection(set(used) | set(allocated)))
+    if collisions or payload.get("collisions") != []:
+        raise C3SScreenError("C3S worlds collide with the complete used/allocated census")
+    return binding
+
+
+def validate_freeze_metadata(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping) or set(value) != {"timestamp_utc", "reviewer"}:
+        raise C3SScreenError("C3S freeze metadata is malformed")
+    timestamp = value.get("timestamp_utc")
+    reviewer = value.get("reviewer")
+    try:
+        parsed = dt.datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise C3SScreenError("C3S freeze timestamp is not ISO-8601") from error
+    if parsed.tzinfo is None or parsed.utcoffset() != dt.timedelta(0):
+        raise C3SScreenError("C3S freeze timestamp must be UTC")
+    if not isinstance(reviewer, str) or not reviewer.strip():
+        raise C3SScreenError("C3S freeze reviewer is absent")
+    return {"timestamp_utc": str(timestamp), "reviewer": reviewer}
+
+
 def validate_preflight_manifest(path: Path) -> tuple[dict[str, Any], str]:
     target = Path(path)
     payload = load_json(target, field="C3S preflight manifest")
-    expected = {
+    base = {
         "schema": PREFLIGHT_SCHEMA, "status": "FROZEN_PREFLIGHT",
         "claim_ceiling": CLAIM_CEILING, **validate_static_bindings(),
         "code_files": expected_code_bindings(),
+    }
+    if set(payload) != set(base) | {"evidence_manifest", "world_census", "freeze"}:
+        raise C3SScreenError("C3S preflight schema lacks required freeze provenance")
+    expected = {
+        **base,
+        "evidence_manifest": validate_evidence_manifest(payload.get("evidence_manifest")),
+        "world_census": validate_world_census(payload.get("world_census")),
+        "freeze": validate_freeze_metadata(payload.get("freeze")),
     }
     if payload != expected:
         raise C3SScreenError("C3S preflight disagrees with exact bindings/code")
@@ -340,7 +454,7 @@ AUTHORITY_KEYS = {
     "schema", "status", "claim_ceiling", "contract", "preflight_manifest",
     "lineage_authorities", "preregistration", "tle_archive", "code_files",
     "execution", "output_root", "launch_arguments", "test_split_opened",
-    "episode_training", "learner_update", "efficacy_claim",
+    "episode_training", "learner_update", "efficacy_claim", "freeze_provenance",
 }
 
 
@@ -358,6 +472,7 @@ def validate_launch_authority(
     if set(payload) != AUTHORITY_KEYS:
         raise C3SScreenError("launch authority keys differ from the exact schema")
     static = validate_static_bindings()
+    preflight = load_json(preflight_path, field="C3S preflight manifest")
     expected = {
         "schema": LAUNCH_AUTHORITY_SCHEMA, "status": "FROZEN_LAUNCH_AUTHORITY",
         "claim_ceiling": CLAIM_CEILING,
@@ -369,6 +484,11 @@ def validate_launch_authority(
         "preregistration": static["preregistration"],
         "tle_archive": static["tle_archive"],
         "code_files": expected_code_bindings(),
+        "freeze_provenance": {
+            "evidence_manifest": preflight.get("evidence_manifest"),
+            "world_census": preflight.get("world_census"),
+            "freeze": preflight.get("freeze"),
+        },
         "execution": {
             "mode": "unit" if target is not None else "merge",
             "unit": None if target is None else target.as_dict(),
@@ -398,6 +518,7 @@ def authority_common_binding(authority: Mapping[str, object]) -> dict[str, objec
         "preregistration": authority.get("preregistration"),
         "tle_archive": authority.get("tle_archive"),
         "code_files": authority.get("code_files"),
+        "freeze_provenance": authority.get("freeze_provenance"),
         "panel": execution.get("panel"),
         "eta_ref_exact": execution.get("eta_ref_exact"),
         "output_root": authority.get("output_root"),
@@ -430,6 +551,31 @@ def write_once_with_sidecar(
         # Never remove the primary after publication: it is write-once evidence.
         raise
     return target, sidecar, digest
+
+
+def _publish_directory_artifact(
+    root: Path, *, directory_name: str, filename: str, payload: Mapping[str, object],
+) -> Path:
+    """Atomically publish an immutable receipt and sidecar as one directory."""
+
+    output = _local(root, field="output root")
+    destination = output / directory_name
+    if destination.exists() or destination.is_symlink():
+        raise C3SScreenError(f"refusing to overwrite write-once {directory_name}")
+    output.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".stage-{directory_name}-", dir=output))
+    try:
+        write_once_with_sidecar(stage / filename, payload)
+        stage.chmod(0o555)
+        os.rename(stage, destination)
+    finally:
+        if stage.exists() and not stage.is_symlink():
+            stage.chmod(0o755)
+            shutil.rmtree(stage)
+    target = destination / filename
+    digest = file_sha256(target)
+    _validate_sealed(target, digest=digest, field=directory_name)
+    return target
 
 
 def _step_metric(outcome: Any, interval_s: float) -> dict[str, object]:
@@ -760,31 +906,183 @@ def _publish_unit(root: Path, key: UnitKey, payload: Mapping[str, object]) -> Pa
     return destination / UNIT_RECEIPT_NAME
 
 
+def _producer_authority(
+    receipt: Mapping[str, object], *, key: UnitKey, root: Path, horizon: int,
+    preflight_sha256: str, producer_common_binding: Mapping[str, object],
+) -> dict[str, Any]:
+    binding = receipt.get("launch_authority")
+    if not isinstance(binding, Mapping) or set(binding) != {"path", "sha256"}:
+        raise C3SScreenError(f"unit {key.slug} lacks producer launch authority")
+    authority_path = _local(Path(str(binding["path"])), field="producer launch authority")
+    digest = _digest(binding["sha256"], field="producer authority sha256")
+    if str(authority_path) != binding["path"] or file_sha256(authority_path) != digest:
+        raise C3SScreenError(f"unit {key.slug} producer authority digest is invalid")
+    _validate_sealed(authority_path, digest=digest, field="producer launch authority")
+    authority = load_json(authority_path, field="producer launch authority")
+    arguments = authority.get("launch_arguments")
+    preflight = producer_common_binding.get("preflight_manifest")
+    if not isinstance(arguments, list) or not isinstance(preflight, Mapping):
+        raise C3SScreenError(f"unit {key.slug} producer authority is malformed")
+    validated = validate_launch_authority(
+        authority_path,
+        preflight_path=Path(str(preflight.get("path"))),
+        preflight_sha256=preflight_sha256,
+        output_root=root,
+        horizon=horizon,
+        launch_arguments=arguments,
+        target=key,
+    )
+    if (
+        receipt.get("launch_authority_sha256") != digest
+        or authority_common_binding(validated) != dict(producer_common_binding)
+    ):
+        raise C3SScreenError(f"unit {key.slug} producer authority is not merge-compatible")
+    return validated
+
+
+def _validate_complete_unit(
+    path: Path, key: UnitKey, *, root: Path, horizon: int,
+    preflight_sha256: str, producer_common_binding: Mapping[str, object],
+) -> tuple[dict[str, Any], str]:
+    digest = file_sha256(path)
+    _validate_sealed(path, digest=digest, field=f"unit {key.slug}")
+    receipt = load_json(path, field=f"unit {key.slug}")
+    _producer_authority(
+        receipt, key=key, root=root, horizon=horizon,
+        preflight_sha256=preflight_sha256,
+        producer_common_binding=producer_common_binding,
+    )
+    arms = receipt.get("arms")
+    decisions = receipt.get("decisions_by_arm")
+    changes = receipt.get("action_changes_by_arm")
+    expected_root = e1.KeyedFadingField.from_components(
+        FIELD_COMPONENT, key.world
+    ).root_digest
+    trajectory_ok = isinstance(arms, Mapping) and set(arms) == set(ARMS)
+    if trajectory_ok:
+        for arm in ARMS:
+            trajectory = arms[arm]
+            trajectory_ok = (
+                isinstance(trajectory, Mapping)
+                and isinstance(trajectory.get("steps"), list)
+                and len(trajectory["steps"]) == horizon
+                and isinstance(trajectory.get("decision_wall_seconds_hex"), list)
+                and len(trajectory["decision_wall_seconds_hex"]) == horizon
+                and [
+                    row.get("step_index") for row in trajectory["steps"]
+                    if isinstance(row, Mapping)
+                ] == list(range(horizon))
+            )
+            if not trajectory_ok:
+                break
+    if (
+        receipt.get("schema") != UNIT_RECEIPT_SCHEMA
+        or receipt.get("status") != "COMPLETE"
+        or receipt.get("outcome") != "C3S_SCREEN_UNIT_COMPLETE"
+        or receipt.get("unit") != key.as_dict()
+        or receipt.get("horizon") != horizon
+        or receipt.get("users") != USERS
+        or receipt.get("field_component") != FIELD_COMPONENT
+        or receipt.get("field_root_digest") != expected_root
+        or receipt.get("lineage_authority")
+        != f2.lineage_authority_bindings()[LINEAGES.index(key.lineage)]
+        or not trajectory_ok
+        or len({arms[arm].get("initial_state_sha256") for arm in ARMS}) != 1
+        or not isinstance(decisions, Mapping)
+        or set(decisions) != set(COORDINATOR_ARMS)
+        or not isinstance(changes, Mapping)
+        or set(changes) != set(COORDINATOR_ARMS)
+        or any(not isinstance(decisions[arm], list) or len(decisions[arm]) != horizon
+               for arm in COORDINATOR_ARMS)
+        or any(
+            changes[arm] != sum(
+                bool(row.get("action_changed"))
+                for row in decisions[arm] if isinstance(row, Mapping)
+            )
+            for arm in COORDINATOR_ARMS
+        )
+        or any(
+            changes[arm] == 0 and (
+                arms["BASE"].get("action_trace_sha256")
+                != arms[arm].get("action_trace_sha256")
+                or arms["BASE"].get("steps") != arms[arm].get("steps")
+            )
+            for arm in COORDINATOR_ARMS
+        )
+        or receipt.get("preflight_manifest_sha256") != preflight_sha256
+        or receipt.get("producer_common_binding") != dict(producer_common_binding)
+        or receipt.get("integrity") is not True
+    ):
+        raise C3SScreenError(f"unit {key.slug} is invalid or incomplete")
+    return receipt, digest
+
+
+def _publish_incomplete_attempt(
+    root: Path, key: UnitKey, payload: Mapping[str, object]
+) -> Path:
+    attempts = _local(root, field="output root") / "incomplete" / "units" / key.slug
+    for sequence in range(1, 1_000_000):
+        path = attempts / f"attempt-{sequence:06d}.json"
+        try:
+            return write_once_with_sidecar(path, payload)[0]
+        except C3SScreenError as collision:
+            if "refusing to overwrite" not in str(collision):
+                raise
+    raise C3SScreenError("incomplete unit attempt namespace is exhausted")
+
+
+def _is_resource_failure(error: BaseException) -> bool:
+    return isinstance(error, MemoryError) or (
+        isinstance(error, OSError)
+        and error.errno in {12, 23, 24, 27, 28, 122}
+    )
+
+
 def execute_unit(
     *, key: UnitKey, output: Path, horizon: int,
     preflight_sha256: str, authority_sha256: str,
-    producer_common_binding: Mapping[str, object],
+    authority_path: Path, producer_common_binding: Mapping[str, object],
 ) -> tuple[Path, bool]:
+    root = _local(output, field="output root")
+    existing = _unit_path(root, key)
+    if existing.exists() or existing.is_symlink():
+        _validate_complete_unit(
+            existing, key, root=root, horizon=horizon,
+            preflight_sha256=preflight_sha256,
+            producer_common_binding=producer_common_binding,
+        )
+        return existing, True
     try:
         payload = execute_physical_unit(key, horizon=horizon)
         payload["preflight_manifest_sha256"] = preflight_sha256
         payload["launch_authority_sha256"] = authority_sha256
+        payload["launch_authority"] = {
+            "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
+        }
         payload["producer_common_binding"] = dict(producer_common_binding)
-        return _publish_unit(output, key, payload), True
-    except (KeyboardInterrupt, C3SScreenIncomplete) as error:
+        return _publish_unit(root, key, payload), True
+    except BaseException as error:
+        if not isinstance(error, (KeyboardInterrupt, C3SScreenIncomplete)) and not _is_resource_failure(error):
+            if not isinstance(error, Exception):
+                raise
+            payload = invalid_receipt(
+                scope="unit", error=error, key=key, preflight_sha256=preflight_sha256,
+                authority_sha256=authority_sha256,
+                producer_common_binding=producer_common_binding,
+            )
+            payload["launch_authority"] = {
+                "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
+            }
+            return _publish_unit(root, key, payload), False
         payload = incomplete_receipt(
             scope="unit", error=error, key=key, preflight_sha256=preflight_sha256,
             authority_sha256=authority_sha256,
             producer_common_binding=producer_common_binding,
         )
-        return _publish_unit(output, key, payload), False
-    except Exception as error:
-        payload = invalid_receipt(
-            scope="unit", error=error, key=key, preflight_sha256=preflight_sha256,
-            authority_sha256=authority_sha256,
-            producer_common_binding=producer_common_binding,
-        )
-        return _publish_unit(output, key, payload), False
+        payload["launch_authority"] = {
+            "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
+        }
+        return _publish_incomplete_attempt(root, key, payload), False
 
 
 def _load_complete_units(
@@ -799,71 +1097,11 @@ def _load_complete_units(
         if not path.exists() and not path.is_symlink():
             missing += 1
             continue
-        digest = file_sha256(path)
-        _validate_sealed(path, digest=digest, field=f"unit {key.slug}")
-        receipt = load_json(path, field=f"unit {key.slug}")
-        arms = receipt.get("arms")
-        decisions = receipt.get("decisions_by_arm")
-        changes = receipt.get("action_changes_by_arm")
-        expected_root = e1.KeyedFadingField.from_components(
-            FIELD_COMPONENT, key.world
-        ).root_digest
-        trajectory_ok = isinstance(arms, Mapping) and set(arms) == set(ARMS)
-        if trajectory_ok:
-            for arm in ARMS:
-                trajectory = arms[arm]
-                trajectory_ok = (
-                    isinstance(trajectory, Mapping)
-                    and isinstance(trajectory.get("steps"), list)
-                    and len(trajectory["steps"]) == horizon
-                    and isinstance(trajectory.get("decision_wall_seconds_hex"), list)
-                    and len(trajectory["decision_wall_seconds_hex"]) == horizon
-                    and [
-                        row.get("step_index") for row in trajectory["steps"]
-                        if isinstance(row, Mapping)
-                    ] == list(range(horizon))
-                )
-                if not trajectory_ok:
-                    break
-        if (
-            receipt.get("schema") != UNIT_RECEIPT_SCHEMA
-            or receipt.get("status") != "COMPLETE"
-            or receipt.get("outcome") != "C3S_SCREEN_UNIT_COMPLETE"
-            or receipt.get("unit") != key.as_dict()
-            or receipt.get("horizon") != horizon
-            or receipt.get("users") != USERS
-            or receipt.get("field_component") != FIELD_COMPONENT
-            or receipt.get("field_root_digest") != expected_root
-            or receipt.get("lineage_authority")
-            != f2.lineage_authority_bindings()[LINEAGES.index(key.lineage)]
-            or not trajectory_ok
-            or len({arms[arm].get("initial_state_sha256") for arm in ARMS}) != 1
-            or not isinstance(decisions, Mapping)
-            or set(decisions) != set(COORDINATOR_ARMS)
-            or not isinstance(changes, Mapping)
-            or set(changes) != set(COORDINATOR_ARMS)
-            or any(not isinstance(decisions[arm], list) or len(decisions[arm]) != horizon
-                   for arm in COORDINATOR_ARMS)
-            or any(
-                changes[arm] != sum(
-                    bool(row.get("action_changed"))
-                    for row in decisions[arm] if isinstance(row, Mapping)
-                )
-                for arm in COORDINATOR_ARMS
-            )
-            or any(
-                changes[arm] == 0 and (
-                    arms["BASE"].get("action_trace_sha256")
-                    != arms[arm].get("action_trace_sha256")
-                    or arms["BASE"].get("steps") != arms[arm].get("steps")
-                )
-                for arm in COORDINATOR_ARMS
-            )
-            or receipt.get("preflight_manifest_sha256") != preflight_sha256
-            or receipt.get("producer_common_binding") != dict(producer_common_binding)
-            or receipt.get("integrity") is not True
-        ):
-            raise C3SScreenError(f"unit {key.slug} is invalid or incomplete")
+        receipt, digest = _validate_complete_unit(
+            path, key, root=root, horizon=horizon,
+            preflight_sha256=preflight_sha256,
+            producer_common_binding=producer_common_binding,
+        )
         receipts.append(receipt)
         bindings.append({"unit": key.as_dict(), "path": str(path.relative_to(root)), "sha256": digest})
     if missing:
@@ -879,7 +1117,11 @@ def coordinator_timing_summary(
     wall: list[float] = []
     catalogs: list[int] = []
     unique_evaluations: list[int] = []
-    peak_rss = 0
+    process_peak_rss = 0
+    phase_values = {
+        name: [] for name in ("q_inference", "enumeration", "nominal_evaluation")
+    }
+    profile_counts = {name: 0 for name in ("base", "unilateral", "joint")}
     for receipt in receipts:
         decisions_by_arm = receipt.get("decisions_by_arm")
         if not isinstance(decisions_by_arm, Mapping):
@@ -890,12 +1132,13 @@ def coordinator_timing_summary(
             try:
                 seconds = float.fromhex(str(row["wall_seconds_hex"]))
                 catalog = int(row["catalog_size"])
-                rss = int(row["peak_rss_kib"])
+                rss = int(row["process_lifetime_peak_rss_kib"])
                 unique = int(row["unique_nominal_evaluations"])
                 phases = row["phase_wall_seconds_hex"]
                 required_phases = {
                     "q_inference", "base_nominal_evaluation", "enumeration",
-                    "remaining_nominal_evaluations", "catalog_total", "selection",
+                    "remaining_nominal_evaluations", "nominal_evaluation",
+                    "catalog_total", "selection",
                 }
                 if not isinstance(phases, Mapping) or set(phases) != required_phases:
                     raise ValueError("phase keys drifted")
@@ -919,17 +1162,28 @@ def coordinator_timing_summary(
             wall.append(seconds)
             catalogs.append(catalog)
             unique_evaluations.append(unique)
-            peak_rss = max(peak_rss, rss)
+            process_peak_rss = max(process_peak_rss, rss)
+            for name in phase_values:
+                phase_values[name].append(float.fromhex(str(phases[name])))
+            for name in profile_counts:
+                profile_counts[name] += int(counts[name])
     if not wall:
         raise C3SScreenError("C3S decision timing summary is empty")
-    ordered = sorted(wall)
-    p95 = ordered[math.ceil(0.95 * len(ordered)) - 1]
+    def summary(values: Sequence[float]) -> dict[str, str]:
+        ordered = sorted(values)
+        return {
+            "mean_hex": (math.fsum(values) / len(values)).hex(),
+            "median_hex": (
+                (ordered[(len(ordered) - 1) // 2] + ordered[len(ordered) // 2]) / 2
+            ).hex(),
+            "p95_nearest_rank_hex": ordered[math.ceil(0.95 * len(ordered)) - 1].hex(),
+            "maximum_hex": max(values).hex(),
+        }
     return {
         "decisions": len(wall),
-        "wall_seconds": {
-            "mean_hex": (math.fsum(wall) / len(wall)).hex(),
-            "median_hex": ((ordered[(len(ordered) - 1) // 2] + ordered[len(ordered) // 2]) / 2).hex(),
-            "p95_nearest_rank_hex": p95.hex(), "maximum_hex": max(wall).hex(),
+        "wall_seconds": summary(wall),
+        "phase_wall_seconds": {
+            name: summary(values) for name, values in phase_values.items()
         },
         "catalog_size": {
             "minimum": min(catalogs), "maximum": max(catalogs),
@@ -939,7 +1193,12 @@ def coordinator_timing_summary(
             "minimum": min(unique_evaluations), "maximum": max(unique_evaluations),
             "mean": math.fsum(unique_evaluations) / len(unique_evaluations),
         },
-        "peak_rss_kib": peak_rss,
+        "profile_counts": profile_counts,
+        "process_lifetime_peak_rss_kib": process_peak_rss,
+        "rss_measurement_scope": (
+            "PROCESS_LIFETIME_HIGH_WATER_MARK_NOT_ISOLATED_PER_ARM;"
+            "FULL_EXECUTES_BEFORE_LITE"
+        ),
     }
 
 
@@ -1031,10 +1290,49 @@ def full_vs_lite_comparison(
 
 def execute_merge(
     *, output: Path, horizon: int, preflight_sha256: str, authority_sha256: str,
-    producer_common_binding: Mapping[str, object],
+    authority_path: Path, producer_common_binding: Mapping[str, object],
 ) -> tuple[Path, bool]:
     root = _local(output, field="output root")
-    terminal = root / TERMINAL_RECEIPT_NAME
+    expected_authority = {
+        "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
+    }
+    terminal = root / TERMINAL_DIRECTORY_NAME / TERMINAL_RECEIPT_NAME
+    invalidation = (
+        root / GLOBAL_INVALIDATION_DIRECTORY_NAME / GLOBAL_INVALIDATION_NAME
+    )
+    if terminal.exists() or terminal.is_symlink():
+        digest = file_sha256(terminal)
+        _validate_sealed(terminal, digest=digest, field="terminal receipt")
+        existing = load_json(terminal, field="terminal receipt")
+        if (
+            existing.get("schema") != TERMINAL_RECEIPT_SCHEMA
+            or existing.get("status") != "COMPLETE"
+            or existing.get("outcome") != "C3S_THREE_ARM_SCREEN_COMPLETE"
+            or existing.get("preflight_manifest_sha256") != preflight_sha256
+            or existing.get("launch_authority_sha256") != authority_sha256
+            or existing.get("launch_authority") != expected_authority
+            or existing.get("producer_common_binding") != dict(producer_common_binding)
+            or existing.get("integrity") is not True
+        ):
+            raise C3SScreenError("existing terminal receipt is not reusable")
+        return terminal, True
+    if invalidation.exists() or invalidation.is_symlink():
+        digest = file_sha256(invalidation)
+        _validate_sealed(invalidation, digest=digest, field="global invalidation")
+        existing = load_json(invalidation, field="global invalidation")
+        if (
+            existing.get("schema") != TERMINAL_RECEIPT_SCHEMA
+            or existing.get("status") != "INVALID_RUN"
+            or existing.get("outcome") != "INVALID_RUN"
+            or existing.get("scope") != "merge"
+            or existing.get("preflight_manifest_sha256") != preflight_sha256
+            or existing.get("launch_authority_sha256") != authority_sha256
+            or existing.get("launch_authority") != expected_authority
+            or existing.get("producer_common_binding") != dict(producer_common_binding)
+            or existing.get("integrity") is not False
+        ):
+            raise C3SScreenError("existing global invalidation is malformed")
+        return invalidation, False
     try:
         receipts, bindings = _load_complete_units(
             root, horizon=horizon, preflight_sha256=preflight_sha256,
@@ -1075,12 +1373,17 @@ def execute_merge(
             "unit_receipts": bindings,
             "preflight_manifest_sha256": preflight_sha256,
             "launch_authority_sha256": authority_sha256,
+            "launch_authority": {
+                "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
+            },
             "producer_common_binding": dict(producer_common_binding),
             "integrity": True, "test_split_opened": False,
             "episode_training": False, "learner_update": False, "efficacy_claim": False,
         }
-        write_once_with_sidecar(terminal, payload)
-        return terminal, True
+        return _publish_directory_artifact(
+            root, directory_name=TERMINAL_DIRECTORY_NAME,
+            filename=TERMINAL_RECEIPT_NAME, payload=payload,
+        ), True
     except MergeWaiting as error:
         payload = incomplete_receipt(
             scope="merge", error=error, key=None,
@@ -1100,14 +1403,40 @@ def execute_merge(
             error.receipt = path
             break
         raise
-    except Exception as error:
+    except BaseException as error:
+        if isinstance(error, (KeyboardInterrupt, C3SScreenIncomplete)) or _is_resource_failure(error):
+            payload = incomplete_receipt(
+                scope="merge", error=error, key=None,
+                preflight_sha256=preflight_sha256,
+                authority_sha256=authority_sha256,
+                producer_common_binding=producer_common_binding,
+            )
+            for sequence in range(1, 1_000_000):
+                path = root / "incomplete" / f"merge-{sequence:06d}.json"
+                try:
+                    published = write_once_with_sidecar(path, payload)[0]
+                except C3SScreenError as collision:
+                    if "refusing to overwrite" in str(collision):
+                        continue
+                    raise
+                if isinstance(error, MergeWaiting):
+                    error.receipt = published
+                break
+            raise
+        if not isinstance(error, Exception):
+            raise
         payload = invalid_receipt(
             scope="merge", error=error, key=None, preflight_sha256=preflight_sha256,
             authority_sha256=authority_sha256,
             producer_common_binding=producer_common_binding,
         )
-        write_once_with_sidecar(root / GLOBAL_INVALIDATION_NAME, payload)
-        return root / GLOBAL_INVALIDATION_NAME, False
+        payload["launch_authority"] = {
+            "path": str(Path(authority_path).resolve()), "sha256": authority_sha256,
+        }
+        return _publish_directory_artifact(
+            root, directory_name=GLOBAL_INVALIDATION_DIRECTORY_NAME,
+            filename=GLOBAL_INVALIDATION_NAME, payload=payload,
+        ), False
 
 
 def estimate(*, units: int) -> dict[str, object]:
@@ -1220,12 +1549,14 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         receipt, valid = execute_unit(
             key=key, output=args.output, horizon=args.horizon,
             preflight_sha256=preflight_sha, authority_sha256=authority_sha,
+            authority_path=args.launch_authority,
             producer_common_binding=authority_common_binding(authority),
         )
         return {"mode": "unit", "receipt": str(receipt), "valid": valid, "worlds": list(WORLDS)}
     receipt, valid = execute_merge(
         output=args.output, horizon=args.horizon, preflight_sha256=preflight_sha,
         authority_sha256=authority_sha,
+        authority_path=args.launch_authority,
         producer_common_binding=authority_common_binding(authority),
     )
     return {"mode": "merge", "receipt": str(receipt), "valid": valid, "worlds": list(WORLDS)}
