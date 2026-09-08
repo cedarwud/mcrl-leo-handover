@@ -115,3 +115,13 @@ Writes made, total: `/home/sat/mcrl-v023-stageA-OFFLINE-GATE-NONFORMAL-20260907T
 and `/home/sat/mcrl-leo-handover-wip/.tmp/` (git-excluded). This file was **not** written
 into the server worktree: with the freeze not performed, an untracked file there would make
 the binder's whole-repository scan report dirty and invalidate the next freeze attempt.
+
+## Attempt #2 — dispatched 2026-09-08 00:12 UTC
+
+Gate spec realigned (codex gpt-5.6-sol `gate-spec-align`, 17 tests, commit `5adf898`), synced to the server
+worktree (HEAD identical, porcelain empty). Pre-bind run of the realigned gate against the sealed r8 root:
+`/home/sat/mcrl-v023-stageA-OFFLINE-GATE-PREBIND-20260908T000741Z-r8` — 5 PASS (authenticate, load, model_config,
+orchestrator_config, authority_digests), 15 BLOCKED with the documented `requires_after: bind … --write` reason, 0 FAIL.
+Operator (Claude Opus, ssh) dispatched with `prompts/operator-r8-postseal-and-stagea-freeze-launch.md` + attempt-2 notes
+(post-bind gate invocation with `--artifact target_root=…`; expected 20/20 PASS; no writes into the worktree before the
+single final commit). Outcome: pending.
