@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import copy
 import json
+import multiprocessing
 from pathlib import Path
 import stat
 from types import SimpleNamespace
@@ -17,6 +19,36 @@ from mcrl.env.link_budget import fixed_power_w, pa_efficiency, supply_power_w, s
 import build_e1_preflight_manifest as preflight
 import build_e1_launch_authority as authority_builder
 import run_v023_c3_existence_e1 as e1
+
+
+def _competing_budget_worker(
+    output: str, cap: float, key: e1.UnitKey, elapsed: float,
+    start: object, reserved: object, release: object, finished: object,
+) -> None:
+    """Reserve and settle in a real child process under parent-controlled timing."""
+
+    try:
+        start.wait()
+        reservation = e1._reserve_budget(
+            Path(output), cap, scope="unit", key=key, declared_default=6.0
+        )
+        reserved.put(("reserved", reservation.token))
+        if not release.wait(10.0):
+            raise RuntimeError("parent did not release budget worker")
+        charged = e1._finish_budget(
+            Path(output), cap, reservation=reservation, elapsed=elapsed
+        )
+        try:
+            e1._finish_budget(
+                Path(output), cap, reservation=reservation, elapsed=elapsed
+            )
+        except e1.E1Error as error:
+            duplicate = str(error)
+        else:
+            duplicate = "duplicate charge unexpectedly succeeded"
+        finished.put(("finished", charged, duplicate))
+    except BaseException as error:
+        reserved.put(("error", type(error).__name__, str(error)))
 
 
 def _profile(
@@ -384,24 +416,63 @@ def test_exhausted_worker_budget_is_incomplete(
 def test_concurrent_budget_reservations_are_visible_and_charged_once(
     tmp_path: Path,
 ) -> None:
-    cap = 20.0
-    first = e1._reserve_budget(
-        tmp_path, cap, scope="unit", key=e1.ALL_UNITS[0], declared_default=6.0
-    )
-    second = e1._reserve_budget(
-        tmp_path, cap, scope="unit", key=e1.ALL_UNITS[1], declared_default=6.0
-    )
+    context = multiprocessing.get_context("fork")
+    cap = 12.0
+    start = context.Event()
+    release = context.Event()
+    reserved = context.Queue()
+    finished = context.Queue()
+    processes = [
+        context.Process(
+            target=_competing_budget_worker,
+            args=(
+                str(tmp_path), cap, e1.ALL_UNITS[index], elapsed,
+                start, reserved, release, finished,
+            ),
+        )
+        for index, elapsed in enumerate((9.0, 3.0))
+    ]
+    for process in processes:
+        process.start()
+    start.set()
+    reservation_messages = [reserved.get(timeout=10.0) for _ in processes]
+    assert all(message[0] == "reserved" for message in reservation_messages)
+
     during = e1._budget_snapshot(tmp_path, cap)
-    assert [row["token"] for row in during["reservations"]] == [first.token, second.token]
-    assert [float.fromhex(row["reserved_worker_seconds_hex"]) for row in during["reservations"]] == [6.0, 6.0]
-    assert e1._finish_budget(tmp_path, cap, reservation=first, elapsed=2.25) == 2.25
-    assert e1._finish_budget(tmp_path, cap, reservation=second, elapsed=3.5) == 5.75
+    assert {row["token"] for row in during["reservations"]} == {
+        message[1] for message in reservation_messages
+    }
+    assert [
+        float.fromhex(row["reserved_worker_seconds_hex"])
+        for row in during["reservations"]
+    ] == [6.0, 6.0]
+    with pytest.raises(e1.E1Incomplete, match="cannot reserve"):
+        e1._reserve_budget(
+            tmp_path, cap, scope="merge", declared_default=6.0
+        )
+
+    release.set()
+    finish_messages = [finished.get(timeout=10.0) for _ in processes]
+    for process in processes:
+        process.join(timeout=10.0)
+        assert process.exitcode == 0
+    assert all(message[0] == "finished" for message in finish_messages)
+    assert all("already charged" in message[2] for message in finish_messages)
+
     after = e1._budget_snapshot(tmp_path, cap)
     assert after["reservations"] == []
-    assert float.fromhex(after["charged_worker_seconds_hex"]) == 5.75
+    assert float.fromhex(after["charged_worker_seconds_hex"]) == 12.0
     assert after["unit_charge_count"] == 2
-    with pytest.raises(e1.E1Error, match="already charged"):
-        e1._finish_budget(tmp_path, cap, reservation=first, elapsed=2.25)
+
+
+def test_budget_charges_full_elapsed_beyond_reservation(tmp_path: Path) -> None:
+    reservation = e1._reserve_budget(
+        tmp_path, 20.0, scope="unit", key=e1.ALL_UNITS[0], declared_default=6.0
+    )
+    assert reservation.reserved_worker_seconds == 6.0
+    assert e1._finish_budget(
+        tmp_path, 20.0, reservation=reservation, elapsed=9.0
+    ) == 9.0
 
 
 def test_interruption_charges_exact_mocked_elapsed_once(tmp_path: Path) -> None:
@@ -416,6 +487,85 @@ def test_interruption_charges_exact_mocked_elapsed_once(tmp_path: Path) -> None:
     assert float.fromhex(payload["worker_seconds_hex"]) == 3.5
     ledger = e1._budget_snapshot(tmp_path, e1.DEFAULT_BUDGET_WORKER_SECONDS)
     assert float.fromhex(ledger["charged_worker_seconds_hex"]) == 3.5
+    assert ledger["unit_charge_count"] == 1
+    assert ledger["reservations"] == []
+
+
+def test_execute_unit_publication_interruption_resumes_without_duplicate_charge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = e1.ALL_UNITS[0]
+    preflight_sha = "6" * 64
+    ticks = iter((10.0, 12.0, 20.0, 23.0))
+    real_rename = e1.os.rename
+    interrupted = False
+
+    def interrupt_before_unit_rename(source: object, destination: object) -> None:
+        nonlocal interrupted
+        destination_path = Path(destination)
+        if not interrupted and destination_path == tmp_path / "units" / key.slug:
+            interrupted = True
+            raise KeyboardInterrupt("between unit staging and rename")
+        real_rename(source, destination)
+
+    monkeypatch.setattr(e1.os, "rename", interrupt_before_unit_rename)
+    receipt, skipped, valid = e1.execute_unit(
+        key=key, output=tmp_path, tle_root=e1.CANONICAL_TLE_ROOT,
+        preflight_sha256=preflight_sha, clock=lambda: next(ticks),
+        generator=lambda **_kwargs: _synthetic_tape(key, preflight_sha),
+    )
+    assert not skipped and not valid
+    assert e1._load_json(receipt, field="publication interruption")["status"] == "INCOMPLETE"
+    assert not (tmp_path / "units" / key.slug).exists()
+    assert list((tmp_path / "units").glob(".stage-*")) == []
+
+    completed, skipped, valid = e1.execute_unit(
+        key=key, output=tmp_path, tle_root=e1.CANONICAL_TLE_ROOT,
+        preflight_sha256=preflight_sha, clock=lambda: next(ticks),
+        generator=lambda **_kwargs: _synthetic_tape(key, preflight_sha),
+    )
+    assert not skipped and valid and completed.exists()
+    ledger = e1._budget_snapshot(tmp_path, e1.DEFAULT_BUDGET_WORKER_SECONDS)
+    assert float.fromhex(ledger["charged_worker_seconds_hex"]) == 5.0
+    assert ledger["unit_charge_count"] == 2
+    assert ledger["reservations"] == []
+
+
+def test_execute_unit_deferred_sigterm_during_settlement_is_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = e1.ALL_UNITS[0]
+    preflight_sha = "5" * 64
+    real_mask = e1._interruption_safe_publication
+    real_finish = e1._finish_budget
+    settling = False
+    raised = False
+
+    def tracked_finish(*args: object, **kwargs: object) -> float:
+        nonlocal settling
+        settling = True
+        return real_finish(*args, **kwargs)
+
+    @contextmanager
+    def defer_once_at_settlement() -> object:
+        nonlocal raised
+        with real_mask():
+            yield
+        if settling and not raised:
+            raised = True
+            raise e1.E1Incomplete("deferred SIGTERM during unit settlement")
+
+    monkeypatch.setattr(e1, "_finish_budget", tracked_finish)
+    monkeypatch.setattr(e1, "_interruption_safe_publication", defer_once_at_settlement)
+    receipt, skipped, valid = e1.execute_unit(
+        key=key, output=tmp_path, tle_root=e1.CANONICAL_TLE_ROOT,
+        preflight_sha256=preflight_sha,
+        generator=lambda **_kwargs: _synthetic_tape(key, preflight_sha),
+    )
+    assert not skipped and not valid
+    assert e1._load_json(receipt, field="unit settlement interruption")["status"] == "INCOMPLETE"
+    assert len(list((tmp_path / "incomplete").glob("*.json"))) == 1
+    ledger = e1._budget_snapshot(tmp_path, e1.DEFAULT_BUDGET_WORKER_SECONDS)
     assert ledger["unit_charge_count"] == 1
     assert ledger["reservations"] == []
 
@@ -439,6 +589,73 @@ def test_solver_resource_exhaustion_is_incomplete_not_invalid(
     assert not skipped and not valid
     assert e1._load_json(receipt, field="solver incomplete")["status"] == "INCOMPLETE"
     assert not (tmp_path / e1.DEFAULT_TERMINAL_RECEIPT_NAME).exists()
+
+
+def test_merge_charges_through_terminal_publication_and_readback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preflight_sha = "2" * 64
+    for key in e1.ALL_UNITS:
+        e1.write_unit_bundle(tmp_path, key=key, tape=_synthetic_tape(key, preflight_sha))
+    now = [0.0]
+    real_build = e1.build_terminal_receipt
+    real_publish = e1._publish_write_once
+
+    def timed_build(**kwargs: object) -> dict[str, object]:
+        now[0] += 3.0
+        return real_build(**kwargs)
+
+    def timed_publish(path: Path, payload: dict[str, object]) -> str:
+        now[0] += 7.0
+        return real_publish(path, payload)
+
+    monkeypatch.setattr(e1, "build_terminal_receipt", timed_build)
+    monkeypatch.setattr(e1, "_publish_write_once", timed_publish)
+    terminal, skipped, valid = e1.execute_merge(
+        output=tmp_path, preflight_sha256=preflight_sha, clock=lambda: now[0]
+    )
+    assert not skipped and valid
+    assert e1._load_json(terminal, field="terminal")["status"] == "COMPLETE"
+    ledger = e1._budget_snapshot(tmp_path, e1.DEFAULT_BUDGET_WORKER_SECONDS)
+    assert float.fromhex(ledger["charged_worker_seconds_hex"]) == 10.0
+
+
+def test_merge_deferred_sigterm_during_settlement_publishes_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preflight_sha = "1" * 64
+    for key in e1.ALL_UNITS:
+        e1.write_unit_bundle(tmp_path, key=key, tape=_synthetic_tape(key, preflight_sha))
+    real_mask = e1._interruption_safe_publication
+    real_finish = e1._finish_budget
+    settling = False
+    raised = False
+
+    def tracked_finish(*args: object, **kwargs: object) -> float:
+        nonlocal settling
+        settling = True
+        return real_finish(*args, **kwargs)
+
+    @contextmanager
+    def defer_once_at_settlement() -> object:
+        nonlocal raised
+        with real_mask():
+            yield
+        if settling and not raised:
+            raised = True
+            raise e1.E1Incomplete("deferred SIGTERM during merge settlement")
+
+    monkeypatch.setattr(e1, "_finish_budget", tracked_finish)
+    monkeypatch.setattr(e1, "_interruption_safe_publication", defer_once_at_settlement)
+    receipt, skipped, valid = e1.execute_merge(
+        output=tmp_path, preflight_sha256=preflight_sha
+    )
+    assert not skipped and not valid
+    assert e1._load_json(receipt, field="merge settlement interruption")["status"] == "INCOMPLETE"
+    incomplete = list((tmp_path / "incomplete").glob("merge-*.json"))
+    assert incomplete == [receipt]
+    ledger = e1._budget_snapshot(tmp_path, e1.DEFAULT_BUDGET_WORKER_SECONDS)
+    assert ledger["reservations"] == []
 
 
 @pytest.mark.parametrize(
@@ -672,21 +889,63 @@ def test_launch_authority_freezes_roots_and_arguments(
 def test_process_bindings_capture_runtime_hardware_threads_and_venv(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import torch
+
     (tmp_path / "pyvenv.cfg").write_text("home = /portable-fixture\n", encoding="ascii")
     monkeypatch.setattr(e1, "_assert_server_interpreter", lambda: None)
     monkeypatch.setattr(e1.sys, "prefix", str(tmp_path))
+    for name in e1.THREAD_ENVIRONMENT_NAMES:
+        monkeypatch.setenv(name, "1")
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 1)
+    monkeypatch.setattr(torch, "get_num_interop_threads", lambda: 1)
+    monkeypatch.setattr(e1, "_threadpool_info", lambda: None)
     bindings = e1.process_bindings()
     assert set(bindings["third_party_versions"]) == {"numpy", "torch", "sgp4"}
     assert bindings["hardware"]["cpu_model"]
     assert bindings["hardware"]["logical_core_count"] >= 1
-    assert set(bindings["effective_threads"]["environment"]) == {
-        "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"
-    }
-    assert bindings["effective_threads"]["torch_num_threads"] >= 1
-    assert bindings["effective_threads"]["torch_num_interop_threads"] >= 1
+    threads = bindings["effective_threads"]
+    assert threads["declared_threads"] == 1
+    assert threads["authentication"] == "torch+environment+numpy.show_config"
+    assert threads["environment"] == {name: "1" for name in e1.THREAD_ENVIRONMENT_NAMES}
+    assert threads["torch_num_threads"] == 1
+    assert threads["torch_num_interop_threads"] == 1
+    assert threads["threadpoolctl"] is None
+    assert "Build Dependencies" in threads["numpy_show_config"]["text"]
+    assert e1.hashlib.sha256(
+        threads["numpy_show_config"]["text"].encode("utf-8")
+    ).hexdigest() == threads["numpy_show_config"]["sha256"]
     venv = bindings["virtual_environment"]
     assert Path(venv["root"]) == Path(e1.sys.prefix).resolve()
     assert e1.file_sha256(Path(venv["pyvenv_cfg_path"])) == venv["pyvenv_cfg_sha256"]
+
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "2")
+    with pytest.raises(e1.E1Error, match="one-thread rule"):
+        e1.process_bindings()
+
+
+def test_process_bindings_refuse_effective_threadpoolctl_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import torch
+
+    (tmp_path / "pyvenv.cfg").write_text("home = /portable-fixture\n", encoding="ascii")
+    monkeypatch.setattr(e1, "_assert_server_interpreter", lambda: None)
+    monkeypatch.setattr(e1.sys, "prefix", str(tmp_path))
+    for name in e1.THREAD_ENVIRONMENT_NAMES:
+        monkeypatch.setenv(name, "1")
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 1)
+    monkeypatch.setattr(torch, "get_num_interop_threads", lambda: 1)
+    monkeypatch.setattr(
+        e1, "_threadpool_info",
+        lambda: [{
+            "user_api": "blas", "internal_api": "openblas", "num_threads": 4,
+            "prefix": "libscipy_openblas", "filepath": "/fixture/libblas.so",
+            "version": "fixture", "threading_layer": "pthreads",
+            "architecture": "fixture",
+        }],
+    )
+    with pytest.raises(e1.E1Error, match="effective BLAS/OpenMP"):
+        e1.process_bindings()
 
 
 def test_launch_authority_builder_roundtrip_and_every_field_mutation_refused(

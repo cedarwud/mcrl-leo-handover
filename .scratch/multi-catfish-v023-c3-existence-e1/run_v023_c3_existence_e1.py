@@ -10,12 +10,14 @@ authenticates all twelve units and solves U1 and J1 without running physics.
 from __future__ import annotations
 
 import argparse
+import contextlib
 from contextlib import contextmanager
 from dataclasses import dataclass
 import fcntl
 from fractions import Fraction
 import hashlib
 import importlib.metadata
+import io
 import json
 import math
 import os
@@ -95,6 +97,11 @@ DEFAULT_BUDGET_WORKER_SECONDS = 57_600.0
 DEFAULT_BUDGET_RESERVATION_WORKER_SECONDS = DEFAULT_BUDGET_WORKER_SECONDS / 12.0
 CANONICAL_TLE_ROOT = Path("/home/sat/mcrl-runtime/tle-frozen-20260820")
 CANONICAL_INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
+DECLARED_RUNTIME_THREADS = 1
+THREAD_ENVIRONMENT_NAMES = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
 
 UNILATERAL_PROFILE_PREFIX = "U"
 JOINT_PROFILE_PREFIX = "J"
@@ -376,6 +383,72 @@ def _cpu_model() -> str:
     return platform.processor() or platform.machine()
 
 
+def _threadpool_info() -> list[dict[str, object]] | None:
+    """Return runtime BLAS/OpenMP pools when threadpoolctl is installed."""
+
+    try:
+        from threadpoolctl import threadpool_info
+    except ModuleNotFoundError:
+        return None
+    info = threadpool_info()
+    if not isinstance(info, list):
+        raise E1Error("threadpoolctl returned malformed runtime evidence")
+    return [dict(row) for row in info]
+
+
+def _runtime_thread_bindings(torch: Any) -> dict[str, object]:
+    environment = {name: os.environ.get(name) for name in THREAD_ENVIRONMENT_NAMES}
+    torch_threads = {
+        "intraop": torch.get_num_threads(),
+        "interop": torch.get_num_interop_threads(),
+    }
+    if (
+        any(value != str(DECLARED_RUNTIME_THREADS) for value in environment.values())
+        or torch_threads != {
+            "intraop": DECLARED_RUNTIME_THREADS,
+            "interop": DECLARED_RUNTIME_THREADS,
+        }
+    ):
+        raise E1Error("runtime bindings violate the declared one-thread rule")
+
+    pools = _threadpool_info()
+    numpy_config: dict[str, str] | None = None
+    if pools is not None:
+        if not pools or any(
+            type(row.get("num_threads")) is not int
+            or row["num_threads"] != DECLARED_RUNTIME_THREADS
+            for row in pools
+            if row.get("user_api") in {"blas", "openmp"}
+        ):
+            raise E1Error("effective BLAS/OpenMP runtime threads violate the one-thread rule")
+        relevant = [row for row in pools if row.get("user_api") in {"blas", "openmp"}]
+        if not relevant:
+            raise E1Error("effective BLAS/OpenMP runtime thread evidence is unavailable")
+        authentication = "threadpoolctl+torch+environment"
+    else:
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            np.show_config()
+        config_text = stream.getvalue()
+        if not config_text.strip():
+            raise E1Error("NumPy configuration evidence is unavailable")
+        numpy_config = {
+            "text": config_text,
+            "sha256": hashlib.sha256(config_text.encode("utf-8")).hexdigest(),
+        }
+        authentication = "torch+environment+numpy.show_config"
+
+    return {
+        "declared_threads": DECLARED_RUNTIME_THREADS,
+        "authentication": authentication,
+        "environment": environment,
+        "torch_num_threads": torch_threads["intraop"],
+        "torch_num_interop_threads": torch_threads["interop"],
+        "threadpoolctl": pools,
+        "numpy_show_config": numpy_config,
+    }
+
+
 def process_bindings() -> dict[str, object]:
     _assert_server_interpreter()
     import torch
@@ -384,18 +457,15 @@ def process_bindings() -> dict[str, object]:
     pyvenv = venv_root / "pyvenv.cfg"
     if not pyvenv.is_file() or pyvenv.is_symlink():
         raise E1Error("selected virtual environment lacks a regular pyvenv.cfg")
-    thread_names = (
-        "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
-        "NUMEXPR_NUM_THREADS",
-    )
     sgp4_version = importlib.metadata.version("sgp4")
     core_count = os.cpu_count()
     if core_count is None or core_count <= 0 or not _cpu_model():
         raise E1Error("hardware CPU identity is unavailable")
-    thread_environment = {name: os.environ.get(name) for name in thread_names}
+    effective_threads = _runtime_thread_bindings(torch)
+    thread_environment = effective_threads["environment"]
     torch_threads = {
-        "intraop": torch.get_num_threads(),
-        "interop": torch.get_num_interop_threads(),
+        "intraop": effective_threads["torch_num_threads"],
+        "interop": effective_threads["torch_num_interop_threads"],
     }
     return {
         "checkout_root": str(REPO.resolve()),
@@ -415,11 +485,7 @@ def process_bindings() -> dict[str, object]:
             "machine": platform.machine(),
             "kernel": platform.release(),
         },
-        "effective_threads": {
-            "environment": thread_environment,
-            "torch_num_threads": torch_threads["intraop"],
-            "torch_num_interop_threads": torch_threads["interop"],
-        },
+        "effective_threads": effective_threads,
         "thread_environment": thread_environment,
         "torch_threads": torch_threads,
         "virtual_environment": {
@@ -1410,7 +1476,7 @@ def _parse_budget(payload: Mapping[str, object], cap: float) -> tuple[float, int
     except (KeyError, TypeError, ValueError) as error:
         raise E1Error("worker budget ledger is malformed") from error
     if (
-        not math.isfinite(charged) or charged < 0.0 or charged > cap
+        not math.isfinite(charged) or charged < 0.0
         or not math.isfinite(unit_charged) or unit_charged < 0.0
         or type(count) is not int or count < 0
         or not isinstance(reservations, list)
@@ -1439,7 +1505,7 @@ def _parse_budget(payload: Mapping[str, object], cap: float) -> tuple[float, int
             raise E1Error("worker budget reservation is malformed")
         seen.add(token)
         normalized.append(dict(row))
-    if charged + math.fsum(
+    if math.fsum(
         float.fromhex(str(row["reserved_worker_seconds_hex"])) for row in normalized
     ) > cap:
         raise E1Error("worker budget reservations exceed the total pool")
@@ -1542,7 +1608,7 @@ def _reserve_budget(
 def _finish_budget(
     output: Path, cap: float, *, reservation: BudgetReservation, elapsed: float,
 ) -> float:
-    charge = min(max(0.0, elapsed), reservation.reserved_worker_seconds)
+    charge = max(0.0, elapsed)
 
     def update(payload: dict[str, object]) -> tuple[dict[str, object], float]:
         charged, count, unit_charged, reservations = _parse_budget(payload, cap)
@@ -1570,11 +1636,8 @@ def _record_budget(output: Path, cap: float, elapsed: float) -> float:
     charge = max(0.0, elapsed)
 
     def update(payload: dict[str, object]) -> tuple[dict[str, object], float]:
-        charged, _count, _unit_charged, reservations = _parse_budget(payload, cap)
-        available = cap - math.fsum(
-            float.fromhex(str(row["reserved_worker_seconds_hex"])) for row in reservations
-        )
-        charged_after = min(available, charged + charge)
+        charged, _count, _unit_charged, _reservations = _parse_budget(payload, cap)
+        charged_after = charged + charge
         replacement = dict(payload)
         replacement["charged_worker_seconds_hex"] = charged_after.hex()
         return replacement, charged_after
@@ -1846,11 +1909,28 @@ def execute_unit(
             signal.signal(signal.SIGALRM, old_handler)
             if old_timer is not None and old_timer[0] > 0.0:
                 signal.setitimer(signal.ITIMER_REAL, *old_timer)
-    with _interruption_safe_publication():
-        used_after = _finish_budget(
-            output, budget_worker_seconds, reservation=reservation,
-            elapsed=clock() - started,
-        )
+    used_after: float | None = None
+    settlement_caught: BaseException | None = None
+    try:
+        with _interruption_safe_publication():
+            used_after = _finish_budget(
+                output, budget_worker_seconds, reservation=reservation,
+                elapsed=clock() - started,
+            )
+    except (Exception, KeyboardInterrupt) as error:
+        settlement_caught = error
+    if settlement_caught is not None:
+        if isinstance(settlement_caught, (E1Incomplete, KeyboardInterrupt)):
+            return _write_incomplete(
+                output, scope="unit", preflight_sha256=preflight_sha256,
+                error=settlement_caught, key=key,
+                worker_seconds=(
+                    used_after if used_after is not None
+                    else _read_budget(output, budget_worker_seconds)
+                ),
+            ), False, False
+        raise settlement_caught
+    assert used_after is not None
     if caught is None:
         assert result is not None
         return result
@@ -2064,11 +2144,52 @@ def execute_merge(
     payload: dict[str, object] | None = None
     caught: BaseException | None = None
     try:
-        if existed_at_start:
-            receipt = _load_json(terminal, field="existing terminal receipt")
-            if terminal.stat().st_mode & 0o777 != 0o444:
-                raise E1Error("terminal receipt remains writable")
-            if receipt.get("status") == "COMPLETE":
+        try:
+            if existed_at_start:
+                receipt = _load_json(terminal, field="existing terminal receipt")
+                if terminal.stat().st_mode & 0o777 != 0o444:
+                    raise E1Error("terminal receipt remains writable")
+                if receipt.get("status") == "COMPLETE":
+                    receipts = []
+                    digests = []
+                    tapes = []
+                    for key in ALL_UNITS:
+                        unit_receipt, digest, tape = authenticate_unit_bundle(
+                            root, key=key, preflight_sha256=preflight_sha256
+                        )
+                        receipts.append(unit_receipt)
+                        digests.append((key, digest))
+                        tapes.append(tape)
+                    expected = build_terminal_receipt(
+                        receipts=receipts, receipt_digests=digests, tapes=tapes,
+                        preflight_sha256=preflight_sha256,
+                    )
+                    if receipt != expected:
+                        raise E1Error("existing terminal receipt disagrees with its units")
+                    result = (terminal, True, True)
+                else:
+                    expected_keys = set(invalid_terminal_receipt(
+                        preflight_sha256=preflight_sha256, error=E1Error("placeholder")
+                    ))
+                    if (
+                        set(receipt) != expected_keys
+                        or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
+                        or receipt.get("status") != "INVALID_RUN"
+                        or receipt.get("outcome") != "INVALID_RUN"
+                        or receipt.get("claim_ceiling") != CLAIM_CEILING
+                        or receipt.get("panel_bindings") != panel_bindings()
+                        or receipt.get("lineage_authorities") != f2.lineage_authority_bindings()
+                        or receipt.get("formula_digests") != formula_digests()
+                        or receipt.get("preflight_manifest_sha256") != preflight_sha256
+                        or receipt.get("integrity") is not False
+                    ):
+                        raise E1Error("existing INVALID_RUN terminal receipt drifted")
+                    _digest(receipt.get("error_sha256"), field="terminal error_sha256")
+                    result = (terminal, True, False)
+            else:
+                missing = sum(not _unit_dir(root, key).is_dir() for key in ALL_UNITS)
+                if missing:
+                    raise E1MergeWaiting(missing)
                 receipts = []
                 digests = []
                 tapes = []
@@ -2083,60 +2204,58 @@ def execute_merge(
                     receipts=receipts, receipt_digests=digests, tapes=tapes,
                     preflight_sha256=preflight_sha256,
                 )
-                if receipt != expected:
-                    raise E1Error("existing terminal receipt disagrees with its units")
-                result = (terminal, True, True)
-            else:
-                expected_keys = set(invalid_terminal_receipt(
-                    preflight_sha256=preflight_sha256, error=E1Error("placeholder")
-                ))
-                if (
-                    set(receipt) != expected_keys
-                    or receipt.get("schema") != TERMINAL_RECEIPT_SCHEMA
-                    or receipt.get("status") != "INVALID_RUN"
-                    or receipt.get("outcome") != "INVALID_RUN"
-                    or receipt.get("claim_ceiling") != CLAIM_CEILING
-                    or receipt.get("panel_bindings") != panel_bindings()
-                    or receipt.get("lineage_authorities") != f2.lineage_authority_bindings()
-                    or receipt.get("formula_digests") != formula_digests()
-                    or receipt.get("preflight_manifest_sha256") != preflight_sha256
-                    or receipt.get("integrity") is not False
-                ):
-                    raise E1Error("existing INVALID_RUN terminal receipt drifted")
-                _digest(receipt.get("error_sha256"), field="terminal error_sha256")
-                result = (terminal, True, False)
-        else:
-            missing = sum(not _unit_dir(root, key).is_dir() for key in ALL_UNITS)
-            if missing:
-                raise E1MergeWaiting(missing)
-            receipts = []
-            digests = []
-            tapes = []
-            for key in ALL_UNITS:
-                receipt, digest, tape = authenticate_unit_bundle(
-                    root, key=key, preflight_sha256=preflight_sha256
+                payload = expected
+        except (Exception, KeyboardInterrupt) as error:
+            caught = error
+
+        publish_valid: bool | None = None
+        if result is None and not isinstance(
+            caught, (E1MergeWaiting, estimands.E1ResourceIncomplete, E1Incomplete, KeyboardInterrupt)
+        ) and not (caught is not None and existed_at_start):
+            if caught is not None:
+                payload = invalid_terminal_receipt(
+                    preflight_sha256=preflight_sha256, error=caught
                 )
-                receipts.append(receipt)
-                digests.append((key, digest))
-                tapes.append(tape)
-            payload = build_terminal_receipt(
-                receipts=receipts, receipt_digests=digests, tapes=tapes,
-                preflight_sha256=preflight_sha256,
-            )
-    except (Exception, KeyboardInterrupt) as error:
-        caught = error
+                publish_valid = False
+            else:
+                assert payload is not None
+                publish_valid = True
+            try:
+                digest = _publish_write_once(terminal, payload)
+                _verify_published(terminal, payload, digest)
+                result = (terminal, False, publish_valid)
+            except (Exception, KeyboardInterrupt) as error:
+                caught = error
     finally:
         if timer_installed:
             signal.setitimer(signal.ITIMER_REAL, 0.0)
             signal.signal(signal.SIGALRM, old_handler)
             if old_timer is not None and old_timer[0] > 0.0:
                 signal.setitimer(signal.ITIMER_REAL, *old_timer)
-    with _interruption_safe_publication():
-        used_after = _finish_budget(
-            root, budget_worker_seconds, reservation=reservation,
-            elapsed=clock() - started,
-        )
-    if caught is None and result is not None:
+
+    used_after: float | None = None
+    settlement_caught: BaseException | None = None
+    try:
+        with _interruption_safe_publication():
+            used_after = _finish_budget(
+                root, budget_worker_seconds, reservation=reservation,
+                elapsed=clock() - started,
+            )
+    except (Exception, KeyboardInterrupt) as error:
+        settlement_caught = error
+    if settlement_caught is not None:
+        if isinstance(settlement_caught, (E1Incomplete, KeyboardInterrupt)):
+            path = _write_incomplete(
+                root, scope="merge", preflight_sha256=preflight_sha256,
+                error=settlement_caught, worker_seconds=(
+                    used_after if used_after is not None
+                    else _read_budget(root, budget_worker_seconds)
+                ),
+            )
+            return path, False, False
+        raise settlement_caught
+    assert used_after is not None
+    if result is not None:
         return result
     if isinstance(caught, E1MergeWaiting):
         raise caught
@@ -2151,24 +2270,8 @@ def execute_merge(
             root, preflight_sha256=preflight_sha256, error=caught
         )
         return path, False, False
-    if caught is not None:
-        payload = invalid_terminal_receipt(
-            preflight_sha256=preflight_sha256, error=caught
-        )
-        valid = False
-    else:
-        assert payload is not None
-        valid = True
-    try:
-        digest = _publish_write_once(terminal, payload)
-        _verify_published(terminal, payload, digest)
-    except (E1Incomplete, KeyboardInterrupt) as error:
-        path = _write_incomplete(
-            root, scope="merge", preflight_sha256=preflight_sha256,
-            error=error, worker_seconds=used_after,
-        )
-        return path, False, False
-    return terminal, False, valid
+    assert caught is not None
+    raise caught
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:

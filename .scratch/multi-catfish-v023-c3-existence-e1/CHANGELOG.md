@@ -1,5 +1,27 @@
 # E1 engineering changelog
 
+## Fix pass 3 — Astra R3 blocking items (a)–(d)
+
+- Item (a) — runtime bindings: authenticate the declared one-thread process
+  rule against every OpenMP/BLAS/NumExpr environment binding and PyTorch's
+  effective intra-op and inter-op counts. When available, bind and enforce
+  every effective BLAS/OpenMP count reported by `threadpoolctl`; otherwise
+  bind the full `numpy.show_config()` evidence and its SHA-256 with the
+  environment and effective PyTorch counts. Refuse any mismatch.
+- Item (b) — budget: charge full nonnegative elapsed time even when it exceeds
+  the reservation, retain an overdrawn ledger as valid exhausted evidence,
+  and move merge settlement after terminal staging, atomic publication,
+  immutable verification, and readback so publication time is charged.
+- Item (c) — interruption coverage: catch interruption delivered while the
+  unit or merge settlement mask is restored and publish an immutable
+  INCOMPLETE receipt after the exactly-once ledger settlement.
+- Item (d) — tests: replace the same-process reservation exercise with two
+  parent-controlled competing processes that prove locked reservation
+  visibility, exhausted-pool refusal, full elapsed charging, and exactly-once
+  settlement. Add execute-unit interrupted-publication/resume coverage,
+  unit/merge deferred-settlement interruption coverage, merge
+  publication-time accounting, and runtime thread mismatch refusals.
+
 ## Fix pass 2 — Astra re-review items 4–7
 
 - Item 4 — runtime bindings: record NumPy, PyTorch, and SGP4 versions; CPU
