@@ -9,6 +9,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 
 import pytest
 
@@ -364,7 +366,7 @@ def test_formal_wrapper_reports_preflight_receipt_faults(
         receipt.write_bytes(contents)
     result = subprocess.run(
         [
-            str(REPO / ".venv/bin/python"), str(HERE / FORMAL.__file__),
+            sys.executable, str(HERE / FORMAL.__file__),
             "--output-root", str(tmp_path / "output"), "--epochs", "100",
             "--provider-factory", "unused:factory", "--model-config-json", "unused.json",
             "--train-seed", str(COMMON.TRAIN_SEED),
@@ -501,7 +503,7 @@ def producer_output(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Pat
     )
     result = subprocess.run(
         [
-            str(REPO / ".venv/bin/python"),
+            sys.executable,
             str(HERE / "run_v023_c1c2_successor_formal.py"),
             "--output-root", str(output), "--epochs", "100",
             "--provider-factory", "v023_c1c2_provider_factory_v3:make_provider",
@@ -693,7 +695,7 @@ def nonformal_output(
     ]
     result = subprocess.run(
         [
-            str(REPO / ".venv/bin/python"),
+            sys.executable,
             str(HERE / "run_v023_c1c2_successor_formal.py"),
             "--output-root", str(output), *command_tail,
         ],
@@ -709,7 +711,7 @@ def nonformal_output(
     ledger_temp.write_bytes(b"truncated-ledger")
     resumed = subprocess.run(
         [
-            str(REPO / ".venv/bin/python"),
+            sys.executable,
             str(HERE / "run_v023_c1c2_successor_formal.py"),
             "--resume", str(output), *command_tail,
         ],
@@ -738,7 +740,7 @@ def test_wrapper_mode_admission_and_nonformal_receipt_stamping(
     ]
     missing_flag = subprocess.run(
         [
-            str(REPO / ".venv/bin/python"), str(HERE / FORMAL.__file__),
+            sys.executable, str(HERE / FORMAL.__file__),
             "--resume", str(output), "--preflight-receipt", str(preflight), *common,
         ],
         cwd=REPO, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -749,7 +751,7 @@ def test_wrapper_mode_admission_and_nonformal_receipt_stamping(
 
     laundering = subprocess.run(
         [
-            str(REPO / ".venv/bin/python"), str(HERE / FORMAL.__file__),
+            sys.executable, str(HERE / FORMAL.__file__),
             "--resume", str(formal_output), "--preflight-receipt", str(formal_preflight),
             "--nonformal", *common,
         ],
@@ -956,7 +958,7 @@ def test_launcher_orders_freeze_manifest_sync_diagnostic_and_tmux():
     )
     assert "'$remote_builder' --repo '$checkout' --check >/dev/null" in text
     assert text.index("preflight_command=") < text.index("diagnostic_command=")
-    assert text.index("diagnostic_command=") < text.rindex("tmux new-session")
+    assert text.index("diagnostic_command=") < text.rindex("start_controller_session")
     assert "OMP_NUM_THREADS=1" in text
     assert "'$remote_preflight' --repo '$checkout'" in text
     assert "--target-root '$target_root' --formal" in text
@@ -1004,7 +1006,7 @@ def test_launcher_local_dry_run_is_explicit_and_default_stays_remote(
     assert "LOCAL bash -c" in local.stdout
     assert "ssh" not in local.stdout
     assert "local:/" not in local.stdout
-    assert r"\'server_host\':\'local\'" in local.stdout
+    assert "server_host=local" in local.stdout
 
     remote_env = dict(base_env)
     remote_env.pop("V023_SUCCESSOR_SERVER_HOST", None)
@@ -1022,3 +1024,159 @@ def test_launcher_local_dry_run_is_explicit_and_default_stays_remote(
         "sat:/home/sat/mcrl-v023-c1c2-successor-source-training-"
         "20260907-100e-r1-checkout/"
     ) in remote.stdout
+
+
+def _controller_harness(
+    tmp_path: Path, checkout_name: str, action: str,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    checkout = tmp_path / checkout_name
+    checkout.mkdir()
+    stub_python = checkout / "stub python"
+    stub_python.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        "if [[ $1 == - || $1 == -c ]]; then\n"
+        f"  exec {shutil.which('python3')} \"$@\"\n"
+        "fi\n"
+        "printf 'STUB_CONTROLLER_COMMAND %s\\n' \"$1\"\n",
+        encoding="ascii",
+    )
+    stub_python.chmod(0o755)
+    tmux_tmpdir = Path(tempfile.mkdtemp(prefix="fix12-tmux-", dir="/tmp"))
+    command_path = os.environ["PATH"]
+    if action == "stub-tmux":
+        stub_bin = checkout / "stub bin"
+        stub_bin.mkdir()
+        stub_tmux = stub_bin / "tmux"
+        stub_tmux.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -Eeuo pipefail\n"
+            "controller=${!#}\n"
+            "bash -c \"$controller\"\n",
+            encoding="ascii",
+        )
+        stub_tmux.chmod(0o755)
+        command_path = f"{stub_bin}:{command_path}"
+    harness = r'''
+source "$1"
+checkout=$2
+server_python=$3
+tmux_session=$4
+remote_formal_runner="$checkout/formal runner.py"
+remote_verifier="$checkout/verifier.py"
+remote_model_config="$checkout/model config.json"
+remote_preflight_receipt="$checkout/preflight receipt.json"
+remote_provider_config="$checkout/provider config.json"
+remote_learner_manifest="$checkout/learner manifest.json"
+remote_startup_marker="$checkout/SUCCESSOR-STARTUP.json"
+remote_log="$checkout/successor source-training.log"
+output_root="$checkout/formal output"
+remote_controller_script="$checkout/successor-controller-$tmux_session.sh"
+provider_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+remote_env="export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1"
+factory_env="export MCRL_V023_C1C2_PROVIDER_CONFIG_PATH=$(printf %q "$remote_provider_config") MCRL_V023_C1C2_PROVIDER_CONFIG_SHA256=$provider_sha MCRL_V023_C1C2_LEARNER_MANIFEST_PATH=$(printf %q "$remote_learner_manifest")"
+controller_body=$(assemble_controller_script)
+if [[ $5 == syntax ]]; then
+  printf '%s' "$controller_body"
+  exit 0
+fi
+controller_sha256=$(printf '%s' "$controller_body" | sha256sum | awk '{print $1}')
+install_controller_script "$remote_controller_script" "$controller_body"
+[[ $(stat -c %a "$remote_controller_script") == 700 ]]
+start_controller_session "$remote_controller_script" "$controller_sha256"
+printf 'CONTROLLER_SHA256=%s\n' "$controller_sha256"
+'''
+    env = {
+        **os.environ,
+        "PATH": command_path,
+        "TMPDIR": str(tmux_tmpdir),
+        "TMUX_TMPDIR": str(tmux_tmpdir),
+        "V023_SUCCESSOR_SERVER_HOST": "local",
+    }
+    env.pop("TMUX", None)
+    env.pop("TMUX_PANE", None)
+    result = subprocess.run(
+        [
+            "bash", "-c", harness, "controller-harness",
+            str(HERE / "sync_launch_v023_c1c2_successor_server.sh"),
+            str(checkout), str(stub_python),
+            f"fix12-{abs(hash(checkout_name))}", action,
+        ],
+        cwd=REPO,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=15,
+    )
+    return result, tmux_tmpdir
+
+
+def test_controller_program_assembled_for_synthetic_checkout_passes_bash_n(
+    tmp_path: Path,
+):
+    assembled, tmux_tmpdir = _controller_harness(
+        tmp_path, "synthetic-checkout", "syntax"
+    )
+    shutil.rmtree(tmux_tmpdir)
+    assert assembled.returncode == 0, assembled.stderr
+    syntax = subprocess.run(
+        ["bash", "-n"], input=assembled.stdout, text=True,
+        capture_output=True, check=False,
+    )
+    assert syntax.returncode == 0, syntax.stderr
+    assert "--epochs 100 --provider-factory" in assembled.stdout
+    assert "os.O_WRONLY | os.O_CREAT | os.O_EXCL" in assembled.stdout
+
+
+@pytest.mark.parametrize(
+    "checkout_name",
+    ["controller-checkout", "controller checkout's quoted path"],
+)
+def test_local_tmux_runs_transient_controller_and_writes_startup_receipt(
+    tmp_path: Path, checkout_name: str,
+):
+    launched, tmux_tmpdir = _controller_harness(tmp_path, checkout_name, "launch")
+    if "Operation not permitted" in launched.stderr:
+        shutil.rmtree(tmux_tmpdir, ignore_errors=True)
+        pytest.skip("sandbox denies tmux Unix-socket connection creation")
+    assert launched.returncode == 0, launched.stderr + launched.stdout
+    checkout = tmp_path / checkout_name
+    marker = checkout / "SUCCESSOR-STARTUP.json"
+    log = checkout / "successor source-training.log"
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and not (marker.is_file() and log.is_file()):
+        time.sleep(0.05)
+    assert marker.is_file()
+    payload = json.loads(marker.read_text(encoding="ascii"))
+    assert payload == {
+        "output_root": str(checkout / "formal output"),
+        "server_host": "local",
+        "status": "CONTROLLER_STARTED",
+    }
+    assert log.read_text(encoding="ascii").splitlines()[0].startswith(
+        "SUCCESSOR_CONTROLLER_STARTED sha256="
+    )
+    script = next(checkout.glob("successor-controller-*.sh"))
+    assert script.stat().st_mode & 0o777 == 0o700
+    assert hashlib.sha256(script.read_bytes()).hexdigest() in launched.stdout
+    shutil.rmtree(tmux_tmpdir, ignore_errors=True)
+
+
+def test_controller_tmux_command_quotes_space_and_single_quote_in_path(
+    tmp_path: Path,
+):
+    launched, tmux_tmpdir = _controller_harness(
+        tmp_path, "controller checkout's quoted path", "stub-tmux"
+    )
+    shutil.rmtree(tmux_tmpdir, ignore_errors=True)
+    assert launched.returncode == 0, launched.stderr + launched.stdout
+    checkout = tmp_path / "controller checkout's quoted path"
+    marker = checkout / "SUCCESSOR-STARTUP.json"
+    log = checkout / "successor source-training.log"
+    assert json.loads(marker.read_text(encoding="ascii"))["status"] == (
+        "CONTROLLER_STARTED"
+    )
+    assert log.read_text(encoding="ascii").splitlines()[0].startswith(
+        "SUCCESSOR_CONTROLLER_STARTED sha256="
+    )

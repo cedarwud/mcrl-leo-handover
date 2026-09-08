@@ -49,6 +49,7 @@ remote_diagnostic_root=${checkout}/successor-one-epoch-diagnostic-scratch
 remote_diagnostic_receipt=${remote_diagnostic_root}/one-epoch-diagnostic.json
 remote_startup_marker=${checkout}/SUCCESSOR-STARTUP.json
 remote_log=${checkout}/successor-source-training.log
+remote_controller_script=${checkout}/successor-controller-${tmux_session}.sh
 
 die() {
   printf 'SUCCESSOR_LAUNCH_REFUSED: %s\n' "$*" >&2
@@ -78,12 +79,99 @@ print_remote() {
   fi
 }
 
+assemble_controller_script() {
+  local controller_pythonpath
+  controller_pythonpath=${checkout}/src:${checkout}:${checkout}/${factory_rel}:${checkout}/${runner_rel}
+  printf '%s\n' '#!/usr/bin/env bash' 'set -Eeuo pipefail'
+  printf 'export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONPATH=%q\n' \
+    "$controller_pythonpath"
+  printf 'export MCRL_V023_C1C2_PROVIDER_CONFIG_PATH=%q MCRL_V023_C1C2_PROVIDER_CONFIG_SHA256=%q MCRL_V023_C1C2_LEARNER_MANIFEST_PATH=%q\n' \
+    "$remote_provider_config" "$provider_sha" "$remote_learner_manifest"
+  printf '%s\n' \
+    'umask 077' \
+    'controller_sha256=$(sha256sum -- "$0" | awk '\''{print $1}'\'')' \
+    'printf '\''SUCCESSOR_CONTROLLER_STARTED sha256=%s\n'\'' "$controller_sha256"'
+  printf '%q - %q %q %q <<'\''PY'\''\n' \
+    "$server_python" "$remote_startup_marker" "$output_root" "$server_host"
+  printf '%s\n' \
+    'import json' \
+    'import os' \
+    'import sys' \
+    'p = sys.argv[1]' \
+    'payload = {' \
+    '    "status": "CONTROLLER_STARTED",' \
+    '    "output_root": sys.argv[2],' \
+    '    "server_host": sys.argv[3],' \
+    '}' \
+    'fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)' \
+    'os.write(fd, (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii"))' \
+    'os.close(fd)' \
+    'PY'
+  quote_command \
+    "$server_python" "$remote_formal_runner" \
+    --output-root "$output_root" \
+    --epochs 100 \
+    --provider-factory v023_c1c2_provider_factory_v3:make_provider \
+    --model-config-json "$remote_model_config" \
+    --train-seed 2927175120652069826 \
+    --preflight-receipt "$remote_preflight_receipt" \
+    --execute
+  quote_command \
+    "$server_python" "$remote_verifier" \
+    --repo "$checkout" \
+    --output-root "$output_root" \
+    --provider-config "$remote_provider_config" \
+    --model-config "$remote_model_config" \
+    --preflight-receipt "$remote_preflight_receipt" \
+    --write
+}
+
+controller_install_command() {
+  local destination=$1
+  local installer install_command
+  installer='import os,sys; p=sys.argv[1]; data=sys.stdin.buffer.read(); fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o700); stream=os.fdopen(fd,"wb"); stream.write(data); stream.close()'
+  printf -v install_command '%q ' "$server_python" -c "$installer" "$destination"
+  printf '%s\n' "$install_command"
+}
+
+install_controller_script() {
+  local destination=$1
+  local body=$2
+  local install_command
+  install_command=$(controller_install_command "$destination")
+  printf '%s' "$body" | run_remote "$install_command"
+}
+
+controller_start_command() {
+  local script_path=$1
+  local expected_sha256=$2
+  local script_q startup_q log_q expected_q tmux_command tmux_body
+  printf -v script_q '%q' "$script_path"
+  printf -v startup_q '%q' "$remote_startup_marker"
+  printf -v log_q '%q' "$remote_log"
+  printf -v expected_q '%q' "$expected_sha256"
+  printf -v tmux_body 'bash %q >>%q 2>&1' "$script_path" "$remote_log"
+  printf -v tmux_command '%q ' tmux new-session -d -s "$tmux_session" "$tmux_body"
+  printf 'set -Eeuo pipefail; test ! -e %s && test ! -L %s; test ! -e %s && test ! -L %s; test "$(sha256sum -- %s | awk '\''{print $1}'\'')" = %s; %s\n' \
+    "$startup_q" "$startup_q" "$log_q" "$log_q" \
+    "$script_q" "$expected_q" "$tmux_command"
+}
+
+start_controller_session() {
+  local script_path=$1
+  local expected_sha256=$2
+  local start_command
+  start_command=$(controller_start_command "$script_path" "$expected_sha256")
+  run_remote "$start_command"
+}
+
 usage() {
   printf '%s\n' \
     'Usage: sync_launch_v023_c1c2_successor_server.sh [--dry-run]' \
     '       sync_launch_v023_c1c2_successor_server.sh --check-diagnostic-receipt PATH'
 }
 
+main() {
 dry_run=0
 diagnostic_only=
 while (($#)); do
@@ -146,9 +234,16 @@ if ((dry_run)); then
   print_remote "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt' --target-root '$target_root' --formal"
   print_remote "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$remote_diagnostic_root' && test ! -L '$remote_diagnostic_root'; '$server_python' '$remote_diagnostic' --repo '$checkout' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --output-root '$remote_diagnostic_root'"
   print_remote "set -Eeuo pipefail; $dry_remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt' --diagnostic-preflight-receipt '$remote_preflight_receipt'"
-  dry_controller="set -Eeuo pipefail; $dry_remote_env; $dry_factory_env; umask 077; '$server_python' -c \"import json,os; p='$remote_startup_marker'; fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,(json.dumps({'status':'CONTROLLER_STARTED','output_root':'$output_root','server_host':'$server_host'},sort_keys=True,separators=(',',':'))+'\\n').encode('ascii')); os.close(fd)\"; '$server_python' '$remote_formal_runner' --output-root '$output_root' --epochs 100 --provider-factory v023_c1c2_provider_factory_v3:make_provider --model-config-json '$remote_model_config' --train-seed 2927175120652069826 --preflight-receipt '$remote_preflight_receipt' --execute; '$server_python' '$remote_verifier' --repo '$checkout' --output-root '$output_root' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --preflight-receipt '$remote_preflight_receipt' --write"
-  print_remote "set -Eeuo pipefail; test ! -e '$output_root' && test ! -L '$output_root'; test ! -e '$remote_startup_marker' && test ! -L '$remote_startup_marker'; test ! -e '$remote_log' && test ! -L '$remote_log'; tmux new-session -d -s '$tmux_session' \"$dry_controller >>'$remote_log' 2>&1\""
-  printf 'PATHS tmux=%s log=%s startup=%s output=%s\n' "$tmux_session" "$remote_log" "$remote_startup_marker" "$output_root"
+  provider_sha=$dry_provider_sha
+  dry_controller=$(assemble_controller_script)
+  dry_controller_sha=$(printf '%s' "$dry_controller" | sha256sum | awk '{print $1}')
+  printf 'CONTROLLER_SCRIPT path=%q mode=0700 create=O_EXCL sha256=%s server_host=%q\n' \
+    "$remote_controller_script" "$dry_controller_sha" "$server_host"
+  print_remote "$(controller_install_command "$remote_controller_script")"
+  print_remote "$(controller_start_command "$remote_controller_script" "$dry_controller_sha")"
+  printf 'PATHS tmux=%s controller=%s controller_sha256=%s log=%s startup=%s output=%s\n' \
+    "$tmux_session" "$remote_controller_script" "$dry_controller_sha" \
+    "$remote_log" "$remote_startup_marker" "$output_root"
   exit 0
 fi
 
@@ -200,8 +295,11 @@ run_remote "set -Eeuo pipefail; $remote_env; '$server_python' '$remote_preflight
   || die 'one-epoch diagnostic did not produce an authenticated PASS receipt'
 
 run_remote "$remote_absence" || die "output root appeared before launch: $output_root"
-controller="set -Eeuo pipefail; $remote_env; $factory_env; umask 077; '$server_python' -c \"import json,os; p='$remote_startup_marker'; fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,(json.dumps({'status':'CONTROLLER_STARTED','output_root':'$output_root','server_host':'$server_host'},sort_keys=True,separators=(',',':'))+'\\n').encode('ascii')); os.close(fd)\"; '$server_python' '$remote_formal_runner' --output-root '$output_root' --epochs 100 --provider-factory v023_c1c2_provider_factory_v3:make_provider --model-config-json '$remote_model_config' --train-seed 2927175120652069826 --preflight-receipt '$remote_preflight_receipt' --execute; '$server_python' '$remote_verifier' --repo '$checkout' --output-root '$output_root' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --preflight-receipt '$remote_preflight_receipt' --write"
-run_remote "set -Eeuo pipefail; test ! -e '$remote_startup_marker' && test ! -L '$remote_startup_marker'; test ! -e '$remote_log' && test ! -L '$remote_log'; tmux new-session -d -s '$tmux_session' \"$controller >>'$remote_log' 2>&1\"" \
+controller=$(assemble_controller_script)
+controller_sha256=$(printf '%s' "$controller" | sha256sum | awk '{print $1}')
+install_controller_script "$remote_controller_script" "$controller" \
+  || die 'transient source-training controller could not be installed with O_EXCL'
+start_controller_session "$remote_controller_script" "$controller_sha256" \
   || die 'tmux source-training controller failed to start'
 
 acknowledged=0
@@ -213,5 +311,11 @@ for _ in $(seq 1 24); do
   sleep 5
 done
 ((acknowledged)) || die "startup was not acknowledged within 120 s: $remote_startup_marker"
-printf 'SUCCESSOR_SOURCE_TRAINING_LAUNCHED tmux=%s log=%s startup=%s output=%s preflight=%s\n' \
-  "$tmux_session" "$remote_log" "$remote_startup_marker" "$output_root" "$remote_preflight_receipt"
+printf 'SUCCESSOR_SOURCE_TRAINING_LAUNCHED tmux=%s controller=%s controller_sha256=%s log=%s startup=%s output=%s preflight=%s\n' \
+  "$tmux_session" "$remote_controller_script" "$controller_sha256" \
+  "$remote_log" "$remote_startup_marker" "$output_root" "$remote_preflight_receipt"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
