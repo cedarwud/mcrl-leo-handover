@@ -1,0 +1,36 @@
+{
+  "schema": "multi-catfish-mcrl-v023-c3s-variant-matrix-config-v1",
+  "constants": {
+    "arms": ["BASE", "LITE", "V-J", "V-U", "V-M", "V-C", "V-H", "V-P", "V-L2"],
+    "worlds": [8464287092499831892, 7305539127129390835, 7691130988233444596, 5887834234954284271],
+    "lineages": [2026092101, 2026092102, 2026092103],
+    "horizon_steps": 30,
+    "users": 100,
+    "service_margin": {"numerator": "1", "denominator": "1000"},
+    "latency_threshold_seconds": "30.08",
+    "association_reversal_window_steps": 3,
+    "V-J.catalog": "EVACUATION_ONLY",
+    "V-U.catalog": "UNILATERAL_ONLY_TOP_2_PER_USER",
+    "V-U.top_actions_per_user": 2,
+    "V-M.catalog": "LITE",
+    "V-M.acceptance_margin_base_bits_fraction": {"numerator": "1", "denominator": "1000"},
+    "V-C.catalog": "LITE",
+    "V-C.cadence_steps": 3,
+    "V-C.cadence_residue": 0,
+    "V-H.catalog": "LITE",
+    "V-H.exclusion_steps": 3,
+    "V-P.catalog": "LITE",
+    "V-P.projection_horizon_cap": 3,
+    "V-P.persistence_kappa_bits": "10097071012.757404",
+    "V-P.persistence_indicator": "ABSORBING_FINAL_OFFSET",
+    "V-L2.catalog": "LITE",
+    "V-L2.lookahead_steps": 1,
+    "V-L2.projection_channels": "MEDIAN_NO_FADING",
+    "V-L2.objective_intervals": 2
+  },
+  "imports": {
+    "c3s_policy": "../multi-catfish-v023-c3s-screen/c3s_policy.py",
+    "runner_helpers": "../multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py",
+    "ops3_live": "src/mcrl/runtime/ee_axis_ops3_live.py"
+  }
+}
