@@ -21,3 +21,6 @@ constant/catalog/BASE/horizon configuration only.
 
 Disclosure carried into the contract: S0 and oracle-marginal diagnostics (development evidence on the E1 anchors) were opened before this
 declaration; the design is informed by them; the additive third head is closed at the oracle level for the tested targets/regimes.
+
+## Addendum A accepted (07:45 UTC)
+Second configuration C3-S(lite): BASE ∪ top-2 Q1+Q2 actions per user (BASE + runner-up, physically distinct, lowest-slot ties) ∪ full-origin evacuations; identical rule/η_ref/guard/ties/atomic execution; arms BASE, C3-S(full), C3-S(lite), 36 episodes; independent kill rule per arm; progression rule fixed now (both SUPPORT → lite proceeds, full reported; one → that one; none → family closed for this configuration). Timing reported, never a gate.
