@@ -1,0 +1,13 @@
+# diag3 — mechanism separation for the LITE gain (controller pre-declaration, 2026-09-08, server clock ≈ 16:50 UTC; written before any diag3 unit ran)
+
+**Why.** diag2 (8→12/12 `ablate_anchor` units) shows LITE's pooled-EE gain survives the removal of segment anchoring (+3.33 % vs +2.92 % anchored) while the forced-renewal premium collapses to exactly zero; the gain is monotone in the dwell-refresh phase. The cadence audit (`C3S-CADENCE-AUDIT-2026-09-08`) verified that BASE and LITE decide at every step with equal candidate constraints, so the remaining explanations are (b) set-level multi-user coordination vs (d) exact current-slot rescoring of single-user alternatives (information/computation), possibly mixed.
+
+**Arms (already implemented in `c3s_diagnostic_policy.py`, never executed):** `BASE`, `LITE_UNILATERAL_ONLY` (LITE catalogue restricted to BASE + unilateral rows, same evaluator/guard/objective), `LITE_EVACUATION_ONLY` (BASE + evacuation rows). Physics: `none` and `ablate_anchor`. Units: the same 4 TRAIN worlds × 3 lineages × 30 steps as diag2. Outputs `diag3-run-main-{none,ablate_anchor}`; authorities `DIAG3-AUTH-*`; logs `/home/sat/mcrl-v023-c3s-diag3-launch-20260908/`; ≤ 6 concurrent; exit-code dry-run gate before launch.
+
+**Pre-declared reading (diagnostic only; no admission gate, no threshold on any claim).** With g = LITE's pooled gain vs BASE from diag2 in the same physics, u = `LITE_UNILATERAL_ONLY` gain, e = `LITE_EVACUATION_ONLY` gain (pooled ΣB/ΣE over the 12 units, paired to the unit's BASE):
+- u ≥ ⅔·g → exact rescoring of single-user alternatives is the principal mechanism (information/computation advantage of an exact evaluator over the learned per-user Q); multi-user coordination is secondary.
+- e ≥ ⅔·g and u ≤ ⅓·g → set-level multi-user coordination is the principal mechanism.
+- otherwise → mixed; report both shares and the per-phase slopes of each arm.
+The phase slope of each arm is reported beside the pooled number. Harness check: diag3's BASE trajectories must be bit-identical (per-step bits/joules/served) to diag2's BASE for the same unit and physics; any difference = HARNESS_FAIL for diag3.
+
+**Consequence for the successor (declared now):** the reading feeds the V025 C3 design only through the pre-declared regime map: if (d) dominates, the successor's deployable C3 must be specified as an exact-evaluator coordinator whose value over the learned heads is information, and the training claim must be phrased accordingly; if (b) dominates, the set-level coordinator design stands as sealed. Neither reading changes the primary architecture, the priority order or the claim margin.
