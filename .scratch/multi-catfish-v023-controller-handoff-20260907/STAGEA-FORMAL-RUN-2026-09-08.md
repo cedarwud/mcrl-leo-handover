@@ -125,3 +125,15 @@ orchestrator_config, authority_digests), 15 BLOCKED with the documented `require
 Operator (Claude Opus, ssh) dispatched with `prompts/operator-r8-postseal-and-stagea-freeze-launch.md` + attempt-2 notes
 (post-bind gate invocation with `--artifact target_root=…`; expected 20/20 PASS; no writes into the worktree before the
 single final commit). Outcome: pending.
+
+### Attempt #2 outcome — STOPPED at step 2b (2026-09-08 02:08 UTC)
+Steps 1, 2(a)–(d) PASS (post-seal load check; stage-C manifest 675431fa…; bind e57012ca… / learner 33f86b4d… / provider 0126fd89…;
+launch manifest 35a00470…; git identity 5adf898 clean). Post-bind gate: 11 PASS / 7 BLOCKED / 2 FAIL —
+`v023_two_route_learner_orchestrator.V023TwoRouteOrchestratorError: provider identity contains a forbidden R7/Q3/C3 value`
+(the r8 receipt's `source_family` = `MCRL_V023_LCSRS_C3_OBSERVABILITY_V1`, copied by factory-v3 into the identity; latent
+`code_closure` path keys). Genuine chain break (the formal runner uses the same constructor). Second blocker: the launcher wrapper
+ssh's to `sat` from `sat`. Nothing launched, no commit, sealed root untouched; binder outputs left uncommitted in the worktree.
+Fix pass 10 dispatched on a server workspace (`/home/sat/mcrl-v023-codex-ws-stagea-fix10`): guard exemption for provenance labels +
+closure context for `code_closure`, launcher local-host mode, per-step gate timings; the fixed gate is re-run in the workspace
+against the sealed root before any re-bind. Next: fix lands → commit → wip worktree: remove the never-run binder outputs (recorded),
+sync, re-bind, gate 20/20, launch with `V023_SUCCESSOR_SERVER_HOST=local`.

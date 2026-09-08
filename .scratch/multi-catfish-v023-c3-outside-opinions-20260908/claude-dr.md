@@ -1,0 +1,103 @@
+# C3 Coordination/Externality Head: Literature Map, Failure-Mode Diagnosis, and New Candidate Targets
+
+*(Prepared for the authors of the multi-user LEO-satellite handover RL package; mapped onto its C1/C2/C3 heads, the Q1+Q2+Q3/κ masked-argmax deployment rule, the frozen λ_bits_per_J, the OPS-3 tape, and the R7/F1/V0.14 record.)*
+
+## TL;DR
+- The eight C3 failures are textbook instances of one deep mismatch: the C3 targets are **difference-reward / counterfactual / cost-share signals** (Wolpert–Tumer difference rewards; Foerster et al. COMA counterfactual baseline; Shapley/cost-sharing) whose *alignment* guarantee holds only for an **additive** global objective — but the deployed objective is a **ratio of sums** (pooled bits ÷ pooled energy) composed by an **additive** masked argmax of Q1+Q2+Q3/κ. So "learnable and held-out-predictive" (factoredness with respect to a proxy) simply does not imply "raises pooled EE."
+- The kill-screen result is more subtle than it first appears: because the physical tape enumerates only **legal unilateral deviations**, and V0.14 concludes the beneficial events are **multi-agent coordination events**, the tape is structurally blind to exactly the events that would support C3. "No EE support on the unilateral tape" is therefore *consistent with* the coordination hypothesis, not proof that C3 is empty.
+- We give five pre-registerable candidates. The only one that both stays inside the fixed additive deployment rule and attacks an un-probed bug is a **Dinkelbach-repriced surplus** (replace the frozen λ_bits_per_J with a λ tracked to the current pooled EE). Honest probability that *any* candidate lifts pooled EE **under the fixed Q1+Q2+Q3/κ rule** is low (~15%). Recommend running only the cheap repricing tape-diagnostic this week and deferring composition/tape changes to a follow-up.
+
+## Key Findings
+
+**1. Each C3 target family is a named construct with a documented failure regime.**
+- **PNFE ≈ difference reward / Wonderful Life Utility (WLU).** The difference reward is D_i(z) = G(z) − G(z_{−i}) (Wolpert & Tumer 2001, "Optimal Payoff Functions for Members of Collectives"; Agogino & Tumer 2008). Its two celebrated properties — *factoredness* ("any action that increases D_i simultaneously increases G") and high *learnability* (signal-to-noise on the agent's own action) — are both defined **relative to the global utility G the agent is actually optimizing.** If G is not the deployed objective, and here G is a ratio while D_i is additive, the factoredness guarantee is void.
+- **Coalition residual ≈ two-player marginal contribution / COMA counterfactual baseline / Shapley value.** COMA (Foerster, Farquhar, Afouras, Nardelli & Whiteson, AAAI 2018) marginalizes one agent's action with others held fixed; Shapley-Q (Wang, Zhang, Gu & Kim; SHAQ/SQDDPG) distributes a global reward by marginal contribution. Both assume the credited quantity is the **additive team return**, and both are **one-step** counterfactuals.
+- **CSE / EC ≈ fair cost-sharing / energy-share rules.** These are cost-sharing games; the governing theory is potential games and the (robust) price of anarchy / smoothness framework (Roughgarden, "Intrinsic Robustness of the Price of Anarchy," JACM), where altruistic/cost-share incentives can *worsen* the equilibrium (Braess-type effects).
+
+**2. Why per-agent externality signals fail to move a global objective — four mechanisms, all visible in the record.**
+- *(a) Non-additive (ratio) objective.* Difference rewards, COMA, VDN/QMIX, and Shapley-Q are all built for a global reward that is **additively decomposable** across agents/time. EE = Σbits/Σenergy is not. The credit-assignment literature is explicit about this boundary: Kumar, Nguyen, Kumar & Lau (NeurIPS 2018, "Credit Assignment For Collective Multiagent RL With Global Rewards") address the "setting where some (or all) joint-reward component may be non-decomposable among agents," and note that "naive extension of the previous DR [difference-reward] methods in deep multiagent RL setting … is infeasible for large domains."
+- *(b) Strong coupling / coordination events.* Ding et al. (arXiv:2511.07778, "A Historical Interaction-Enhanced Shapley Policy Gradient Algorithm") state that "traditional credit assignment schemes in MARL cannot reliably capture individual contributions in strongly coupled tasks while maintaining training stability." When the beneficial event is several users moving together, a per-user counterfactual that holds others fixed measures the wrong thing.
+- *(c) Scale mismatch on the value estimate.* Deployment adds Q3/κ to Q1+Q2 inside an argmax. Adding a shaped term to a Q-value is **not** policy-invariant unless it is potential-based: Ng, Harada & Russell (ICML 1999) prove that the potential form r̃(s,a) = r(s,a) + γΦ(s′) − Φ(s) leaves π* invariant and that this "is a necessary condition for invariance … any other transformation may yield suboptimal policies," explicitly attributing "well-known 'bugs' in reward shaping procedures" to non-potential-based rewards. The 1/κ divisor is precisely a scale knob; the record's "scale issues" are the signature of an ill-scaled non-potential additive term distorting the argmax.
+- *(d) One-step counterfactuals under multi-step dynamics.* Each decision unfolds over **47 D2 substeps**; a one-step unilateral-deviation counterfactual cannot capture EE consequences that accrue across substeps.
+
+**3. The ratio objective is the crux, and the frozen λ is very likely mispriced.**
+By Dinkelbach's transform (Werner Dinkelbach, University of Cologne, 1967, "On Nonlinear Fractional Programming," *Management Science* 13(7):492–498, DOI 10.1287/mnsc.13.7.492), maximizing f(x)/g(x) is equivalent to finding the root of F(λ) = max_x[f(x) − λ g(x)], and at the optimum **λ\* = f(x\*)/g(x\*)** — the optimal λ equals the EE value itself. F(λ) is convex, continuous, and strictly decreasing with a unique root, so:
+- λ < current EE ⇒ F > 0 ⇒ the surrogate **over-rewards throughput**;
+- λ > current EE ⇒ F < 0 ⇒ the surrogate **over-rewards energy saving**;
+- only λ = current pooled EE gives F = 0 and a surrogate gradient aligned with the true ratio gradient.
+
+The correct per-user "repriced" reward is therefore **(bits_i − λ·energy_i)** with **λ set to the current operating-point EE**, updated by the Dinkelbach iteration λ_{t+1} = (Σ_i bits_i)/(Σ_i energy_i). The package uses a **frozen** λ_bits_per_J. A frozen λ that does not equal the running pooled EE makes ΣF systematically nonzero and biases every per-user surplus — exactly the sign/scale pathology in the record. This is the canonical wireless-EE decomposition: Zappone & Jorswieck (TU Dresden), "Energy Efficiency in Wireless Networks via Fractional Programming Theory," *Foundations and Trends in Communications and Information Theory* 11(3–4):185–396, 2015 (DOI 10.1561/0100000088); Isheden, Chong, Jorswieck & Fettweis (IEEE TWC 2012), whose framework "transform[s] the objective function … to a weighted sum of rate and power"; and Shen & Yu (IEEE TSP 2018), who note the multi-ratio case where plain single-ratio Dinkelbach must be replaced by a quadratic transform.
+
+**4. Composition rules other than additive argmax exist, but changing them is a new deployment contract.**
+Alternatives to Q1+Q2+Q3/κ: use C3 as a **veto/constraint** (shielding — Alshiekh et al. 2018; action masking), a **tie-break within a tolerance band** (Thresholded Lexicographic Ordering — Vamplew et al.; Skalse, Hammond, Griffin & Abate, IJCAI 2022, "Lexicographic Multi-Objective Reinforcement Learning"), or a **gating/switching** signal. Each sidesteps the additive scale-mismatch problem (mechanism c). But under the package's contracts, the deployed rule is a sealed masked argmax of Q1+Q2 (with C1/C2 sealed) plus Q3/κ; **a composition change alters that contract and is therefore a NEW pre-registered design, not a reinterpretation of the existing C3 result.** It is legitimate under the integrity rules only if declared with formula + falsifier before computation and disclosed as distinct from the eight prior attempts.
+
+**5. Coordination-event targets are learnable in principle, but the current tape cannot evaluate them.**
+Coordination graphs factor the joint value as q(s,a) = Σ_i f^i(a_i) + Σ_{(i,j)∈E} f^{ij}(a_i,a_j) (Guestrin, Koller & Parr 2002; Deep Coordination Graphs — Böhmer, Kurin & Whiteson 2020; Max-Plus action selection — Vlassis, Kok & others). A set-level C3 would be a pairwise payoff Q3_{ij}(a_i,a_j) over the co-beam / co-satellite neighborhood, deployable via Max-Plus. OPS-3 (28 actions × 16 local features, 47 D2 substeps per decision) is rich enough to fit such a payoff. **But the kill-screen tape enumerates only legal *unilateral* deviations**; coordination events are *joint* deviations the tape does not contain, so it cannot in principle exhibit EE support for a coordination target. Testing a set-level C3 requires a joint-deviation (pair/triple) tape.
+
+**6. Negative-result framing precedent is well established.** The auxiliary-task literature repeatedly shows a signal can be learnable/predictive yet not help the deployed objective. Jaderberg et al. (UNREAL, ICLR 2017) obtain gains only through a *shared representation*, not from the auxiliary head acting on control. Rafiee, Jin, Luo, White & White (arXiv:2204.00565, 2022, "What makes useful auxiliary tasks in reinforcement learning") report that auxiliary-task results are "mixed: in some cases … substantial performance gain … whereas in other cases they achieve marginal improvements or even harm the performance," and that "surprisingly, the main task policy tends to be less useful compared to other policies." Voelcker et al. (2024) show observation reconstruction helps features but not always control. The standard framing: **learnability / prediction ≠ alignment with the control objective.**
+
+## Details
+
+### (a) Design → literature analogue → known failure mode → already demonstrated in the record
+
+| # | Package C3 design (per 01-CHRONOLOGY.md) | Literature analogue | Known failure mode | Already demonstrated in the record? |
+|---|---|---|---|---|
+| 1 | **PNFE** (per-user factored externality) | Difference reward / WLU (Wolpert–Tumer 2001; Agogino–Tumer 2008) | Factoredness holds only w.r.t. an **additive** G; void for ratio EE | **Yes** — R7/F1: target learnable & held-out-predictive, deploying does not raise (often lowers) pooled EE |
+| 2 | **Coalition residual** (pairwise) | Two-player marginal contribution / COMA counterfactual baseline (Foerster et al. 2018); Shapley-Q (Wang et al.) | One-step counterfactual; fails under strong coupling / coordination events (Ding et al. 2025) | **Yes** — kill screen: no EE support on unilateral tape; V0.14 says events are multi-agent |
+| 3 | **CSE** (cost-share externality) | Fair cost-sharing rule / altruistic congestion game (Roughgarden smoothness) | Cost-share alignment ≠ ratio alignment; altruism can worsen PoA | **Yes** — kill screen: one of two cost-shared/energy-share targets, no EE support |
+| 4 | **EC** (energy-share externality) | Cost-sharing / marginal-cost pricing | Same as #3; Braess-type — adding a signal can lower global performance | **Yes** — kill screen: second energy-share target, no EE support |
+| 5–8 | Remaining pre-registered C3 variants (frozen-λ repricings / horizon / normalization variants — verify against 01-CHRONOLOGY.md) | Additive potential/shaping terms added to Q (Ng–Harada–Russell 1999) | Non-potential additive term on the value estimate is not policy-invariant; scale mismatch via 1/κ | **Yes** — robust across all eight; "scale issues" match ill-scaled additive shaping |
+
+*(Designs 5–8: I could not read their exact names from the archive in this environment; the mapping is by family and must be checked against 01-CHRONOLOGY.md and the R7/F1 result files.)*
+
+### (b) New C3 candidates (pre-registerable, in the package's notation)
+
+**Candidate A — Dinkelbach-repriced pooled surplus (stays inside the fixed additive rule).**
+- *Target:* s_i = bits_i − λ_t · energy_i, with λ_t = pooled EE at the operating point, updated λ_{t+1} = (Σ_i bits_i)/(Σ_i energy_i). Q3 regresses Σ_i s_i.
+- *First-principles motivation:* by Dinkelbach, only λ = current EE makes the additive surrogate's gradient agree with the ratio gradient; the frozen λ_bits_per_J is almost certainly ≠ running EE, which produces the observed sign/scale errors.
+- *Falsifier:* if, after repricing to the correct λ, the sign of the deviation-level surplus on the existing tape still disagrees with realized ΔEE, the ratio-decomposition hypothesis is refuted.
+- *Cheapest test on existing infrastructure:* recompute the *existing* unilateral-deviation tape's per-user surplus with λ = per-episode measured pooled EE (no new rollouts); report the sign-agreement rate between surplus and realized ΔEE.
+- *Pre-declaration:* fix the λ update rule, the sign-agreement metric, and the decision threshold before computation; TRAIN/held-out split only, no TEST; disclose as continuous with the eight prior attempts.
+
+**Candidate B — Pairwise coordination payoff on a joint-deviation tape.**
+- *Target:* Q3_{ij}(a_i,a_j) over co-beam / co-satellite neighborhoods N; deploy (only if pre-declared) via Max-Plus over the coordination graph.
+- *Motivation:* V0.14 says beneficial events are joint; a pairwise payoff is the minimal set-level object that can represent "who should move together."
+- *Falsifier:* if pairwise joint deviations on an extended tape show no EE support, the coordination hypothesis fails.
+- *Cheapest test:* extend the tape to enumerate legal **pair** deviations for co-beam pairs only (bounded, not O(n²) all-pairs).
+- *Pre-declaration:* fix the neighborhood definition N and the pair set before computation. Requires new tape infrastructure → follow-up.
+
+**Candidate C — C3 as a tolerance-band tie-break (Thresholded Lexicographic), not an additive term.**
+- *Rule:* among actions within τ of max(Q1+Q2), pick argmax Q3. No 1/κ addition ⇒ no scale mismatch (removes mechanism c).
+- *Falsifier:* if within-band tie-break by C3 does not raise EE, composition is not the bottleneck.
+- *Cheapest test:* on the existing tape, restrict to actions within τ of the masked-argmax value and check whether the C3-preferred action has higher realized EE.
+- *Pre-declaration:* this is a **NEW deployment contract** — declare τ, the rule, and the falsifier before computation; disclose as distinct from the eight additive attempts.
+
+**Candidate D — Potential-based / training-only C3 (Ng–Harada–Russell form).**
+- *Target:* use C3 only in training as γΦ(s′) − Φ(s), never as a deployment argmax term.
+- *Motivation:* policy-invariant shaping cannot distort the argmax; tests whether C3 is better used to shape *learning* than to bias *deployment*.
+- *Falsifier:* if training with the potential term changes neither the learned Q1/Q2 nor EE, C3 carries no exploitable structure.
+
+**Candidate E — Multi-substep counterfactual.**
+- *Target:* replace the one-step unilateral-deviation surplus with a k-substep rollout counterfactual over the 47 D2 substeps.
+- *Falsifier:* if the multi-step counterfactual still shows no EE support, mechanism (d) is excluded and the negative result is strengthened.
+
+### (c) Honest probability and where to spend the week
+Under the **fixed** deployment rule (masked argmax of Q1+Q2+Q3/κ), the probability that any candidate yields a positive pooled-EE effect is **low, ~15%**. Rationale: the negative result is robust across eight pre-registered designs plus a kill screen, and three of the four failure mechanisms (ratio non-additivity, coordination-event invisibility, one-step counterfactual under multi-step dynamics) are *structural*, not tuning artifacts. Candidate A is the single unexplored bug that stays inside the fixed rule, but even a correctly priced λ will not help if the beneficial events are genuinely multi-agent (invisible to any per-user additive term). Candidates B and C require a new tape or a new contract and thus fall outside the fixed rule.
+
+**Recommendation:** in the current paper (one week, parallel compute), run **only Candidate A's tape-repricing diagnostic** — it is nearly free (reuses the existing tape) and it either surfaces the λ bug or definitively closes the ratio-decomposition explanation, strengthening the negative result either way. **Defer B and C** (joint-deviation tape; composition change) to a follow-up, since both modify sealed infrastructure or the deployment contract. Candidate E can be added this week only if a k-substep replay is already supported by the tape format; otherwise defer.
+
+### (d) Paper framing for the C3 negative result
+"Across eight pre-registered designs, the C3 coordination/externality targets are learnable and held-out-predictive, yet adding the learned signal to the deployed masked-argmax controller does not raise pooled energy efficiency and often lowers it; a kill screen over the full physical tape of every legal unilateral deviation finds no EE support for either cost-shared/energy-share externality. We argue this is expected rather than anomalous: pooled EE is a ratio of sums, so per-user additive difference-reward/counterfactual signals — which are aligned only with additive global objectives — are the wrong decomposition, and the events that would help are multi-agent coordination events that a unilateral-deviation tape cannot even represent. Learnability and held-out prediction therefore certify factoredness with respect to a proxy, not alignment with the deployed ratio objective under an additive composition rule."
+
+## Recommendations
+1. **This week (cheap, inside the fixed rule):** run Candidate A. Recompute the existing unilateral-deviation tape's per-user surplus with λ retracked to the per-episode measured pooled EE (Dinkelbach update λ_{t+1} = Σbits/Σenergy), and report the sign-agreement rate between deviation-level surplus and realized ΔEE. Pre-declare the λ rule, metric, and threshold; TRAIN/held-out only.
+   - *Benchmark that changes the plan:* if sign-agreement jumps from ~chance to high **and** a within-rule deployment of the repriced Q3 lifts pooled EE on held-out data, escalate to a full pre-registered deployment arm. If it stays at chance, close the ratio-decomposition explanation and publish the negative result as-is.
+2. **Follow-up paper #1:** build a **joint-deviation (pair/triple) tape** restricted to co-beam neighborhoods and test Candidate B (pairwise coordination payoff via Max-Plus). This directly tests the V0.14 coordination hypothesis that the unilateral tape cannot.
+3. **Follow-up paper #2:** pre-register Candidate C (tolerance-band tie-break) and/or Candidate D (training-only potential-based C3) as **new deployment contracts**, disclosed as distinct from the eight additive attempts.
+4. **Integrity guardrails on all of the above:** no TEST-split use; λ, neighborhoods N, τ, and falsifiers declared before computation; no reruns selected by outcome; the eight prior failures disclosed in every write-up.
+
+## Caveats
+- **I could not extract the uploaded zip in this environment** (no file-system/shell tool was available to me; only web tools). All mapping onto package specifics — C1/C2/C3, Q1+Q2+Q3/κ, λ_bits_per_J, PNFE / coalition-residual / CSE / EC, OPS-3 (28×16×47), R7/F1, V0.14, the kill screen, and the integrity rules — is based on the user's written description. The authors must verify every file-specific claim against 00-README.md, 01-CHRONOLOGY.md, the R7/F1 result files, the contracts, the physics code, and the tape-format documentation. In particular, the exact names/definitions of C3 designs 5–8 and the precise deployment-contract wording (whether the masked-argmax rule is formally sealed) must be checked before treating any composition change as a "new design."
+- The ~15% probability is a considered judgment from the literature and the robustness of the record, not a computed posterior.
+- Whether a composition-rule change counts as a legitimate new design versus a prohibited post-hoc rescue depends on the exact contract text; treat the constraint conservatively and pre-register.
+- Verbatim theorem statements for Dinkelbach (1967) are reproduced from peer-reviewed follow-on papers (the 1967 original is paywalled); minimization-form restatements were converted to the EE-maximization (max) form used here. For a *sum of per-user EEs* (rather than one pooled ratio), single-ratio Dinkelbach does not apply and the generalized/quadratic transform (Crouzeix–Ferland–Schaible; Shen–Yu 2018) is required — relevant only if the package's objective is later redefined away from the single pooled ratio.
