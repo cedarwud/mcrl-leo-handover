@@ -1,0 +1,39 @@
+**FIX_FIRST.** Re-reviewed E1 commit `5a06ade7` against R1 and the contract, read-only and offline. Several repairs are sound, but the seven R1 items are not all closed.
+
+1. **Coordinator isolation and neutrality — BLOCKING.** Independent traversal of the actual native fixture’s `(snapshot, evaluator)` data graph found **no environment, keyed field, or RNG**. Repeated native selection was deterministic before mutation, and detached nominal rates/powers matched native no-fading evaluation.
+
+   However, [the adapter authenticates only `DecisionSnapshot`](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:748), excluding the evaluator’s independent geometry/physics. Reproduced using the native four-user fixture, with only the metric user-count check adjusted in memory:
+
+   ```python
+   digest = snapshot.verify()
+   evaluator.snapshot.user_ecef_km.setflags(write=True)
+   evaluator.snapshot.user_ecef_km[0, 0] += 100
+   ```
+
+   Selection changed **`U:0:7 → U:0:8`**, while `snapshot.verify() == digest`. Thus selection is not bound to the authenticated frozen snapshot. Fourteen copied occupancy/D2/dwell arrays also remain writable at [snapshot construction](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:606).
+
+   The recursive fingerprint improves nested-state coverage, but [RNG hashing](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:81) omits `bit_generator.seed_seq.state`. Reproduced: **`rng.spawn(1)` increments `n_children_spawned`, but the neutrality fingerprint stays identical**, including when that RNG is nested under the environment.
+
+2. **Complete freeze — BLOCKING.** OPS-3, native state, F0 and physics sources are now included, together with sealed evidence and reviewer/timestamp metadata. But [the directory-based code census](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:268) still omits `.scratch/multi-catfish-v020-c3-source-audit/run_v020_repriced_c3_gate.py`, which [F2 actively invokes to load Q heads](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3-contingency-f2/run_v023_c3_contingency_f2.py:802). Verified: that file exists and is absent from `expected_code_bindings()`.
+
+   [World-census validation](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:372) authenticates source bytes without establishing that the supplied world lists cover those sources. An in-memory validator probe accepted **empty used/allocated lists with the actual, unrelated config file as its hash-authenticated inventory source**. Completeness still needs derivation from authenticated inventories or an independently established complete-inventory authority.
+
+3. **Completed reuse and interrupted units — repaired in the inspected control flow.** [Completed units are authenticated before physics](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1047) and returned without recomputation. [Separate sequenced incomplete attempts](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1020) leave the canonical unit path free; `MemoryError` and specified resource-related `OSError`s now receive INCOMPLETE treatment. Filesystem regression execution remains unverified here because temporary writes are unavailable.
+
+4. **Producer authority at merge — repaired.** [Producer validation](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:909) now loads each authority, checks its digest and 0444 sidecar seal, and validates unit, horizon, output root, code/freeze and common bindings. Merge reaches this through complete-unit validation. Read-only probes correctly rejected both missing authority and bogus digest.
+
+5. **Atomic terminal publication and re-entry — PARTIAL, BLOCKING.** [Staged directory rename](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:556) publishes the terminal receipt and sidecar together. [Ordinary merge re-entry](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1303) authenticates and reuses existing terminal state.
+
+   Two gaps remain. [Unit execution](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1046) never checks global invalidation; an in-memory existing-invalidation probe still reached the physics sentinel. Also, a competing merge’s publication collision enters [generic invalidation publication](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1428). Fault injection reproduced attempted publications **`terminal/COMPLETE`, then `global-invalidation/INVALID_RUN`**. Publication needs terminal-state arbitration and collision-safe reuse.
+
+6. **Timing summaries — PARTIAL, BLOCKING for the requested per-arm coverage.** [FULL/LITE summaries](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1172) now carry Q inference, enumeration, combined nominal evaluation and total-wall **mean/median/nearest-rank p95/max**. BASE still has only [selector-total statistics](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1205); its [Q inference call](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:704) has no dedicated phase record. Add BASE Q timing and explicit zero/not-applicable enumeration and nominal fields. The process-lifetime RSS limitation is now correctly labelled.
+
+7. **Tests — improved, but insufficient to close the blockers.** Actual evacuation membership, aliases, duplicate keys, empty-mask NOOP and native nominal physics now have coverage. But [repeatability still uses fake evaluation](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/test_c3s_screen.py:666), and [completed-reuse testing mocks authentication](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/test_c3s_screen.py:727). Add regressions for the reproduced evaluator mutation, RNG spawning, omitted loader, incomplete census, unit invalidation and terminal collision.
+
+**Scientific choices:** no change found in the diff to the [exact objective/service guard and numeric ties](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:256), η_ref **`0x1.d94fb72305d6ap+26`**, full/lite catalogs, four worlds, three lineages, three independent arms, 100 users, T=30, [committed endpoint accounting](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:581), or [exact pooled kill rule](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:821). The historical S0 anchor result was not replayed.
+
+**Validation:** prescribed pytest failed before collection because no temporary directory is writable. Capture-disabled subset: **17 passed, 11 deselected**. Additional probes above used only memory and reads. `--estimate` passed; `--dry-run` correctly refused the unsealed contract. Checkout remained clean.
+
+Minimal fixes: authenticate/freeze the entire coordinator input graph; include RNG spawning state; complete dependency and inventory provenance; enforce terminal state for units and competing merges; finish BASE timing; add and pass the corresponding regressions. The current [output-root constraint](/home/sat/mcrl-leo-handover-e1/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:261) requires outputs to resolve inside `.scratch/multi-catfish-v023-c3s-screen/`.
+
+`ASTRA_C3S_IMPL=FIX_FIRST`
