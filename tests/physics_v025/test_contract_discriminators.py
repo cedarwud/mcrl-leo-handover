@@ -36,8 +36,25 @@ def test_full_network_difference_surplus_not_focal_only() -> None:
     """Focal +1 and nonfocal -10 at deltaE=0 gives system teacher +1-10=-9."""
 
     focal_delta, nonfocal_delta, energy_delta = 1, -10, 0
-    base = reward_core(10, 1, 1)
-    candidate = reward_core(10 + focal_delta + nonfocal_delta, 1 + energy_delta, 1)
+    base = reward_core(
+        StepEndpoint.build(
+            bits=10, joules=1, decoding_user_seconds=1, useful_user_seconds=1,
+            opportunity_user_seconds=1, complete_service_user_steps=1, user_steps=1,
+        ),
+        eta_ref=1,
+    )
+    candidate = reward_core(
+        StepEndpoint.build(
+            bits=10 + focal_delta + nonfocal_delta,
+            joules=1 + energy_delta,
+            decoding_user_seconds=1,
+            useful_user_seconds=1,
+            opportunity_user_seconds=1,
+            complete_service_user_steps=1,
+            user_steps=1,
+        ),
+        eta_ref=1,
+    )
     system_difference = candidate - base
     assert system_difference == -9
     assert system_difference != focal_delta

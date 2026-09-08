@@ -18,7 +18,13 @@ from mcrl.physics_v025.energy import (
     pa_supply_power_w,
     schedule_energy,
 )
-from mcrl.physics_v025.endpoint import StepEndpoint, calibration, pool, reward_core
+from mcrl.physics_v025.endpoint import (
+    StepEndpoint,
+    assert_same_energy_price,
+    calibration,
+    pool,
+    reward_core,
+)
 
 
 def test_one_beam_cap_joules_and_user_deduplication() -> None:
@@ -167,12 +173,26 @@ def test_exact_pooling_duplicate_and_all_dark_disposition() -> None:
 def test_reward_endpoint_identity_and_pricing_fixture() -> None:
     """sum R=sum B-eta*sum E; eta=2 prefers delta(-3,-2)=+1, eta=1 rejects it=-1."""
 
-    rows = ((10, 1), (20, 9))
-    assert sum((reward_core(b, e, 2) for b, e in rows), Fraction()) == reward_core(30, 10, 2)
-    assert reward_core(7, 8, 2) - reward_core(10, 10, 2) == 1
-    assert reward_core(7, 8, 1) - reward_core(10, 10, 1) == -1
+    rows = (endpoint(10, 1), endpoint(20, 9))
+    assert sum((reward_core(row, eta_ref=2) for row in rows), Fraction()) == reward_core(
+        pool(rows), eta_ref=2
+    )
+    assert reward_core(endpoint(7, 8), eta_ref=2) - reward_core(endpoint(10, 10), eta_ref=2) == 1
+    assert reward_core(endpoint(7, 8), eta_ref=1) - reward_core(endpoint(10, 10), eta_ref=1) == -1
     eta, kappa = calibration(100, 10, users=5, time_s=2)
     assert eta == 10 and kappa == 10
+
+
+def test_lambda_eta_parity_requires_both_explicit_and_equal() -> None:
+    """Stage-2 targets cannot omit either price or silently use lambda=9 with eta_ref=10."""
+
+    assert assert_same_energy_price(lambda_bits_per_j=10, eta_ref=10) == 10
+    with pytest.raises(MCRLContractError):
+        assert_same_energy_price(lambda_bits_per_j=9, eta_ref=10)
+    with pytest.raises(TypeError):
+        assert_same_energy_price(eta_ref=10)  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        reward_core(endpoint(10, 1))  # type: ignore[call-arg]
 
 
 def test_surplus_change_sign_matches_ee_at_exact_reference_ratio() -> None:
@@ -181,7 +201,9 @@ def test_surplus_change_sign_matches_ee_at_exact_reference_ratio() -> None:
     eta = Fraction(100, 10)
     reference_ee = Fraction(100, 10)
     for bits, expected_sign in ((101, 1), (99, -1)):
-        surplus_delta = reward_core(bits, 10, eta) - reward_core(100, 10, eta)
+        surplus_delta = reward_core(endpoint(bits, 10), eta_ref=eta) - reward_core(
+            endpoint(100, 10), eta_ref=eta
+        )
         ee_delta = Fraction(bits, 10) - reference_ee
         assert (surplus_delta > 0) - (surplus_delta < 0) == expected_sign
         assert (ee_delta > 0) - (ee_delta < 0) == expected_sign

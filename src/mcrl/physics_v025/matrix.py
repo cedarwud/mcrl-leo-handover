@@ -1,4 +1,4 @@
-"""Predeclared 18-cell V0.25 physics matrix and shared-tape hooks."""
+"""Predeclared 20-cell V0.25 physics matrix and shared-tape hooks."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Literal
 
 from mcrl.errors import MCRLContractError
 
-ArchitectureCode = Literal["b", "a", "a\u2032"]
+ArchitectureCode = Literal["b", "a-\u03b3", "a\u2032-\u03b3", "a-r", "a\u2032-r"]
 IntegrationCode = Literal["0", "T"]
 StandbyCode = Literal["0", "f"]
 InterruptionCode = Literal["off", "on"]
@@ -25,8 +25,8 @@ class PhysicsSetting:
     rate: RateCode
 
     def __post_init__(self) -> None:
-        if self.architecture not in {"b", "a", "a\u2032"}:
-            raise MCRLContractError("architecture must be b, a, or a-prime")
+        if self.architecture not in {"b", "a-\u03b3", "a\u2032-\u03b3", "a-r", "a\u2032-r"}:
+            raise MCRLContractError("architecture is outside the sealed V0.25 v1.1 matrix")
         if self.integration not in {"0", "T"}:
             raise MCRLContractError("integration must be 0 or T")
         if self.standby not in {"0", "f"}:
@@ -48,9 +48,12 @@ class PhysicsSetting:
             ("0", "0", "off", "U"): "U",
         }
         try:
-            return mapping[signature]
+            treatment = mapping[signature]
         except KeyError:
             raise MCRLContractError("setting is outside the predeclared fractional matrix") from None
+        if self.architecture in {"a-r", "a\u2032-r"} and treatment != "0":
+            raise MCRLContractError("rate-target architectures are declared only for treatment 0")
+        return treatment
 
     @property
     def label(self) -> str:
@@ -85,14 +88,20 @@ def _setting(architecture: ArchitectureCode, treatment: str) -> PhysicsSetting:
     return PhysicsSetting(architecture, integration, standby, interruption, rate)  # type: ignore[arg-type]
 
 
-# Sealed priority order.  The seal orders the 15 primary-eligible cells and
-# calls U diagnostic-only; the three U cells are appended in sealed architecture
-# priority (a, b, a-prime), never interleaved into primary selection.
-MATRIX_SETTINGS = tuple(
+# Sealed v1.1 priority order.  Only the two added rate-target treatment-0
+# cells are declared; the retained treatments use the relabelled original
+# architectures.  U remains diagnostic-only and cannot become primary.
+MATRIX_SETTINGS = (
+    _setting("a-r", "0"),
+    _setting("a\u2032-r", "0"),
+) + tuple(
     _setting(architecture, treatment)
     for treatment in ("0", "S", "H", "SH", "T")
-    for architecture in ("a", "b", "a\u2032")
-) + tuple(_setting(architecture, "U") for architecture in ("a", "b", "a\u2032"))
+    for architecture in ("a-\u03b3", "b", "a\u2032-\u03b3")
+) + tuple(
+    _setting(architecture, "U")
+    for architecture in ("a-\u03b3", "b", "a\u2032-\u03b3")
+)
 
 
 def shared_computation_plan(*, q: float | None = None) -> dict[str, object]:
@@ -100,11 +109,12 @@ def shared_computation_plan(*, q: float | None = None) -> dict[str, object]:
 
     if q is not None and q <= 0.0:
         raise MCRLContractError("q must be positive when supplied")
-    equivalents = 3 * (1 + 47)
+    architectures = ["a-r", "a\u2032-r", "a-\u03b3", "b", "a\u2032-\u03b3"]
+    equivalents = len(architectures) * (1 + 47)
     core_hours = equivalents * (302.0 * 4.0 / 3600.0)
     return {
-        "schema": "mcrl-v025-physics-shared-computation-plan-v1",
-        "architectures": ["a", "b", "a\u2032"],
+        "schema": "mcrl-v025-physics-shared-computation-plan-v1.1",
+        "architectures": architectures,
         "physical_tapes_per_architecture": {"snapshot": 1, "integrated_subintervals": 47},
         "shared_physical_equivalents": equivalents,
         "reference_core_hours": core_hours,

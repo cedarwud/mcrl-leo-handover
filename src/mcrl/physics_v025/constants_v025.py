@@ -13,10 +13,10 @@ import json
 import math
 from types import MappingProxyType
 
-ENGINE_VERSION = "V025-ANGLE-TPC-TDM-ACM-STAGE1"  # Provenance: sealed V025 priority declaration, declaration §primary.
+ENGINE_VERSION = "V025-ANGLE-RATE-TPC-TDM-ACM-STAGE1B"  # Provenance: sealed V025 v1.1 amendment, primary architecture.
 REFERENCE_ARCHITECTURE = "b"  # Provenance: sealed V025 priority declaration, declared reference model.
-PRIMARY_ARCHITECTURE = "a"  # Provenance: sealed V025 priority declaration, primary system model.
-SENSITIVITY_ARCHITECTURE = "a\u2032"  # Provenance: sealed V025 priority declaration, architectural sensitivity.
+PRIMARY_ARCHITECTURE = "a-r"  # Provenance: sealed V025 v1.1 amendment, primary system model.
+SENSITIVITY_ARCHITECTURE = "a\u2032-r"  # Provenance: sealed V025 v1.1 amendment, architectural sensitivity.
 
 CARRIER_FREQUENCY_HZ = 20.0e9  # Provenance: round-3 §2.6, retained source-bound benchmark carrier.
 SPEED_OF_LIGHT_M_S = 299_792_458.0  # Provenance: SI exact definition of the speed of light.
@@ -44,6 +44,7 @@ ROLL_OFF = 0.20  # Provenance: round-3 §2.8 prospective DVB-S2 shaping choice.
 IMPLEMENTATION_MARGIN_DB = 1.7  # Provenance: round-3 §2.9 prospective common receiver allowance (VERIFY_SOURCE).
 POWER_CONTROL_TARGET_DB = 7.528187540  # Provenance: round-3 §2.9 8PSK 2/3 model threshold.
 POWER_CONTROL_TARGET_LINEAR = 10.0 ** (POWER_CONTROL_TARGET_DB / 10.0)  # Provenance: round-3 §4 stated 5.660030272 target, derived from dB.
+RATE_TARGET_BPS = 50_000_000.0  # Provenance: sealed V025 v1.1 amendment; synthetic operating point inherited from Track B L1, not calibrated demand (VERIFY_SOURCE for physical use).
 SINR_MIN_DB = -1.441812460  # Provenance: round-3 §2.9 QPSK 1/4 model threshold.
 SINR_MIN = 10.0 ** (SINR_MIN_DB / 10.0)  # Provenance: round-3 §2.10 PHY decodability boundary.
 SHANNON_MIN_DB = -2.35 - 10.0 * math.log10(1.0 + ROLL_OFF)  # Provenance: round-3 §4 U treatment, lowest threshold with margin off.
@@ -139,6 +140,7 @@ VERIFY_SOURCE = MappingProxyType(  # Provenance: round-3 §2 explicit hardware/p
         "standby_ground_hpa_proxy_flight_applicability": True,
         "interruption_live_beam_cell_procedure_applicability": True,
         "common_1p7_db_margin_complete_distortion_budget": True,
+        "rate_target_physical_calibration": True,
     }
 )
 
@@ -201,6 +203,7 @@ PROVENANCE = MappingProxyType(  # Provenance: stage-1 constants-manifest contrac
         "IMPLEMENTATION_MARGIN_DB": "round-3 §2.9 prospective common allowance; VERIFY_SOURCE",
         "POWER_CONTROL_TARGET_DB": "round-3 §2.9 8PSK 2/3 model threshold",
         "POWER_CONTROL_TARGET_LINEAR": "round-3 §4 target derived from dB",
+        "RATE_TARGET_BPS": "sealed V025 v1.1 synthetic Track B L1 operating point; VERIFY_SOURCE for physical use",
         "SINR_MIN_DB": "round-3 §2.9 QPSK 1/4 model threshold",
         "SINR_MIN": "round-3 §2.10 PHY decodability boundary",
         "SHANNON_MIN_DB": "round-3 §4 margin-off U eligibility threshold",

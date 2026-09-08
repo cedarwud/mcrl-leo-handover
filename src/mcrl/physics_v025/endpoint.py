@@ -109,13 +109,35 @@ def pool(steps: Iterable[StepEndpoint]) -> EndpointTotals:
     )
 
 
-def reward_core(bits: Number, joules: Number, eta_ref: Number) -> Fraction:
-    """Auditable per-step core ``B_t - eta_ref*E_t``."""
+def reward_core(
+    endpoint: StepEndpoint | EndpointTotals,
+    *,
+    eta_ref: Number,
+) -> Fraction:
+    """Return ``B - eta_ref*E`` for either one step or its pooled endpoint."""
 
-    b, e, eta = exact(bits), exact(joules), exact(eta_ref)
+    if isinstance(endpoint, StepEndpoint):
+        endpoint.verify()
+    b, e, eta = endpoint.bits, endpoint.joules, exact(eta_ref)
     if b < 0 or e < 0 or eta <= 0:
         raise MCRLContractError("reward inputs require B,E>=0 and eta_ref>0")
     return b - eta * e
+
+
+def assert_same_energy_price(
+    *,
+    lambda_bits_per_j: Number,
+    eta_ref: Number,
+) -> Fraction:
+    """Fail closed unless explicit target lambda and endpoint eta are identical."""
+
+    target_price = exact(lambda_bits_per_j)
+    endpoint_price = exact(eta_ref)
+    if target_price <= 0 or endpoint_price <= 0:
+        raise MCRLContractError("lambda and eta_ref must both be positive")
+    if target_price != endpoint_price:
+        raise MCRLContractError("target lambda and endpoint eta_ref do not match")
+    return endpoint_price
 
 
 def calibration(bits: Number, joules: Number, *, users: int, time_s: Number) -> tuple[Fraction, Fraction]:
@@ -130,6 +152,7 @@ def calibration(bits: Number, joules: Number, *, users: int, time_s: Number) -> 
 __all__ = [
     "EndpointTotals",
     "StepEndpoint",
+    "assert_same_energy_price",
     "calibration",
     "exact",
     "pool",

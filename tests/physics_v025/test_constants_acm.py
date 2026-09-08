@@ -13,6 +13,8 @@ from mcrl.physics_v025.acm import (
     ACMRate,
     ACM_MODES,
     UncappedShannonDiagnosticRate,
+    rate_target_mode,
+    rate_target_sinr,
     select_mode,
     served_phy,
 )
@@ -24,6 +26,7 @@ from mcrl.physics_v025.constants_v025 import (
     DECISION_INTERVAL_S,
     IMPLEMENTATION_MARGIN_DB,
     POWER_CONTROL_TARGET_LINEAR,
+    RATE_TARGET_BPS,
     ROLL_OFF,
     SINR_MIN,
     SYSTEM_TEMPERATURE_K,
@@ -125,10 +128,51 @@ def test_clock_band_noise_and_temperature_arithmetic() -> None:
 
 
 def test_all_explicit_round3_verify_source_flags_are_live() -> None:
-    """The seven hardware/proxy applicability questions remain visibly unresolved."""
+    """Seven round-3 flags plus synthetic r-star physical calibration remain unresolved."""
 
-    assert len(VERIFY_SOURCE) == 7
+    assert len(VERIFY_SOURCE) == 8
     assert all(VERIFY_SOURCE.values())
+
+
+def test_rate_target_acm_known_answers_and_monotone_gamma() -> None:
+    """At n=1/2/4, required SE=.30/.60/1.20 selects QPSK 1/4, 2/5, 3/4."""
+
+    expected = (
+        (1, 0.30, "QPSK 1/4", -1.4418124604762483),
+        (2, 0.60, "QPSK 2/5", 0.6081875395237517),
+        (4, 1.20, "QPSK 3/4", 4.938187539523752),
+    )
+    for occupancy, required_se, name, threshold_db in expected:
+        assert RATE_TARGET_BPS * occupancy / BEAM_BANDWIDTH_HZ == pytest.approx(required_se)
+        mode = rate_target_mode(RATE_TARGET_BPS, BEAM_BANDWIDTH_HZ, occupancy)
+        assert mode is not None
+        assert mode.name == name
+        assert mode.threshold_db == pytest.approx(threshold_db, abs=1e-12)
+        assert mode.spectral_efficiency_bit_per_s_hz > required_se
+
+    gammas = [
+        rate_target_sinr(RATE_TARGET_BPS, BEAM_BANDWIDTH_HZ, occupancy)
+        for occupancy in range(1, 13)
+    ]
+    assert all(value is not None for value in gammas)
+    assert all(left <= right for left, right in zip(gammas, gammas[1:]))  # type: ignore[operator]
+    assert rate_target_sinr(RATE_TARGET_BPS, BEAM_BANDWIDTH_HZ, 13) is None
+
+
+def test_shannon_inverse_convexity_and_discrete_acm_overshoot() -> None:
+    """2^(0.3n)-1 has positive second differences; selected ACM rates exceed 50 Mbit/s."""
+
+    shannon_power = [2.0 ** (occupancy * RATE_TARGET_BPS / BEAM_BANDWIDTH_HZ) - 1.0 for occupancy in range(1, 6)]
+    second_differences = [
+        right - 2.0 * middle + left
+        for left, middle, right in zip(shannon_power, shannon_power[1:], shannon_power[2:])
+    ]
+    assert all(value > 0.0 for value in second_differences)
+    for occupancy in (1, 2, 4):
+        mode = rate_target_mode(RATE_TARGET_BPS, BEAM_BANDWIDTH_HZ, occupancy)
+        assert mode is not None
+        achieved = BEAM_BANDWIDTH_HZ * mode.spectral_efficiency_bit_per_s_hz / occupancy
+        assert achieved > RATE_TARGET_BPS
 
 
 def test_every_manifest_constant_has_value_and_provenance() -> None:

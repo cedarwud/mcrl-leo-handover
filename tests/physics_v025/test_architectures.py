@@ -9,6 +9,8 @@ import pytest
 
 from mcrl.physics_v025.acm import ACMRate, UncappedShannonDiagnosticRate
 from mcrl.physics_v025.architectures import (
+    AngleRateTPC_FDM,
+    AngleRateTPC_TDM,
     AngleTPC_FDM,
     AngleTPC_TDM,
     FixedRF,
@@ -17,8 +19,12 @@ from mcrl.physics_v025.architectures import (
     RadiationConfig,
 )
 from mcrl.physics_v025.channel import noise_power_w
-from mcrl.physics_v025.constants_v025 import POWER_CONTROL_TARGET_LINEAR
-from mcrl.physics_v025.energy import HardwareInventory
+from mcrl.physics_v025.constants_v025 import (
+    BEAM_BANDWIDTH_HZ,
+    POWER_CONTROL_TARGET_LINEAR,
+    RATE_TARGET_BPS,
+)
+from mcrl.physics_v025.energy import HardwareInventory, pa_supply_power_w, schedule_energy
 from mcrl.physics_v025.resolution import resolve_configuration
 
 
@@ -236,3 +242,114 @@ def test_geometry_copies_and_freezes_caller_arrays() -> None:
     assert current.nominal_cross_gain[0, 0] == 0.0
     with pytest.raises(ValueError):
         current.nominal_cross_gain[0, 0] = 1.0
+
+
+def test_rate_target_cap_marks_infeasible_but_keeps_phy_bits_and_energy() -> None:
+    """At n=2, realised gamma=.8 is PHY-decodable but below Gamma_r=1.1503; both cap attempts remain."""
+
+    config = RadiationConfig(bandwidth_hz=BEAM_BANDWIDTH_HZ)
+    noise = noise_power_w(config.bandwidth_hz)
+    gain = 0.8 * noise / config.beam_cap_w
+    links = (Link(0, (1, 1), 0, gain), Link(1, (1, 1), 0, gain))
+    outcome = resolve_configuration(
+        AngleRateTPC_TDM(),
+        config,
+        geometry(links),
+        ACMRate(),
+        HardwareInventory.fixed(((1, 1),)),
+        duration_s=1.0,
+        field="nominal",
+    )
+    assert outcome.valid
+    assert outcome.complete_service == {0: True, 1: True}
+    assert outcome.rate_target_feasible == {0: False, 1: False}
+    assert outcome.rate_target_attained == {0: False, 1: False}
+    assert outcome.bits is not None and all(value > 0.0 for value in outcome.bits.values())
+    assert outcome.energy is not None and outcome.energy.joules > 0.0
+    assert all(
+        tx.rf_power_w == config.beam_cap_w
+        for slot in outcome.radiation.slots
+        for tx in slot.transmissions
+    )
+
+
+def test_rate_target_no_mode_forces_cap_without_invalidating_solver() -> None:
+    """n=13 requires SE=3.9 above the frozen 3.710856 ceiling, so every attempt is infeasible at cap."""
+
+    links = tuple(Link(user, (1, 1), 0, 1.0) for user in range(13))
+    result = AngleRateTPC_TDM().radiate(RadiationConfig(), geometry(links), "nominal")
+    assert result.valid
+    assert result.per_user_rate_target_feasible == {user: False for user in range(13)}
+    assert result.certificate.saturated_users == tuple(range(13))
+    assert all(
+        tx.rf_power_w == 1.65 and tx.rate_target_sinr is None
+        for slot in result.slots
+        for tx in slot.transmissions
+    )
+
+
+def test_rate_target_tdm_slot_pa_and_fdm_summed_rf_fixture() -> None:
+    """TDM integrates PA(.2)/2+PA(.8)/2; FDM sums .1+.4=.5 RF before one PA evaluation."""
+
+    config = RadiationConfig(bandwidth_hz=BEAM_BANDWIDTH_HZ)
+    gamma = 1.1503202205024041  # Gamma_r(2), independently frozen above.
+    noise = noise_power_w(config.bandwidth_hz)
+    links = (
+        Link(0, (1, 1), 0, gamma * noise / 0.2),
+        Link(1, (1, 1), 0, gamma * noise / 0.8),
+    )
+    current = geometry(links)
+    tdm = AngleRateTPC_TDM().radiate(config, current, "nominal")
+    fdm = AngleRateTPC_FDM().radiate(config, current, "nominal")
+    assert [tx.rf_power_w for slot in tdm.slots for tx in slot.transmissions] == pytest.approx([0.2, 0.8])
+    assert [tx.rf_power_w for tx in fdm.slots[0].transmissions] == pytest.approx([0.1, 0.4])
+    assert dict(fdm.slots[0].beam_rf_w)[(1, 1)] == pytest.approx(0.5)
+    inventory = HardwareInventory.fixed(((1, 1),))
+    tdm_energy = schedule_energy(
+        inventory,
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in tdm.slots),
+        duration_s=1.0,
+    )
+    fdm_energy = schedule_energy(
+        inventory,
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in fdm.slots),
+        duration_s=1.0,
+    )
+    assert tdm_energy.pa_j == pytest.approx((pa_supply_power_w(0.2) + pa_supply_power_w(0.8)) / 2.0)
+    assert fdm_energy.pa_j == pytest.approx(pa_supply_power_w(0.5))
+
+
+def test_rate_target_angle_gain_halving_doubles_power_below_cap() -> None:
+    """For a-r below cap, p=Gamma_r*N/h: h/2 changes .4 W to .8 W."""
+
+    config = RadiationConfig(bandwidth_hz=BEAM_BANDWIDTH_HZ)
+    gamma = 0.7174947934871672  # Gamma_r(1).
+    noise = noise_power_w(config.bandwidth_hz)
+    gain = gamma * noise / 0.4
+    strong = AngleRateTPC_TDM().radiate(config, geometry((Link(0, (1, 1), 0, gain),)), "nominal")
+    weak = AngleRateTPC_TDM().radiate(config, geometry((Link(0, (1, 1), 0, gain / 2.0),)), "nominal")
+    assert strong.slots[0].transmissions[0].rf_power_w == pytest.approx(0.4)
+    assert weak.slots[0].transmissions[0].rf_power_w == pytest.approx(0.8)
+    assert strong.per_user_rate_target_feasible == weak.per_user_rate_target_feasible == {0: True}
+
+
+def test_rate_target_coupled_solve_clears_discrete_threshold() -> None:
+    """For p=.5+.1p_peer, a-r reaches 5/9 and both users decode the selected target mode."""
+
+    config = RadiationConfig(bandwidth_hz=BEAM_BANDWIDTH_HZ)
+    gamma = 0.7174947935658479  # max(QPSK 1/4 threshold, frozen served_PHY floor).
+    noise = noise_power_w(config.bandwidth_hz)
+    direct = gamma * noise / 0.5
+    coupling = 0.1 * direct / gamma
+    links = (Link(0, (1, 1), 0, direct), Link(1, (2, 1), 0, direct))
+    result = AngleRateTPC_TDM().radiate(
+        config,
+        geometry(links, np.array([[0.0, coupling], [coupling, 0.0]])),
+        "nominal",
+    )
+    assert [tx.rf_power_w for tx in result.slots[0].transmissions] == pytest.approx([5 / 9, 5 / 9])
+    assert result.per_user_rate_target_feasible == {0: True, 1: True}
+    assert all(
+        ACMRate().rate_bps(tx.sinr, tx.bandwidth_hz) >= RATE_TARGET_BPS
+        for tx in result.slots[0].transmissions
+    )

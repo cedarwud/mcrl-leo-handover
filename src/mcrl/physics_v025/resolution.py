@@ -23,6 +23,8 @@ class ResolutionResult:
     bits: dict[int, float] | None
     decoding_time_fraction: dict[int, float] | None
     complete_service: dict[int, bool] | None
+    rate_target_attained: dict[int, bool] | None
+    rate_target_feasible: dict[int, bool] | None
     energy: EnergyReceipt | None
 
     @property
@@ -47,7 +49,7 @@ def resolve_configuration(
         raise ValueError("duration_s must be finite and nonnegative")
     radiation = architecture.radiate(radiation_config, geometry, field)
     if not radiation.valid:
-        return ResolutionResult(radiation, None, None, None, None, None)
+        return ResolutionResult(radiation, None, None, None, None, None, None, None)
 
     rates = {link.user_id: 0.0 for link in geometry.links}
     served_fraction = {link.user_id: 0.0 for link in geometry.links}
@@ -78,7 +80,16 @@ def resolve_configuration(
         and math.isclose(served_fraction[user], allocated_fraction[user], rel_tol=0.0, abs_tol=1.0e-15)
         for user in rates
     }
-    return ResolutionResult(radiation, rates, bits, served_fraction, complete, energy)
+    return ResolutionResult(
+        radiation,
+        rates,
+        bits,
+        served_fraction,
+        complete,
+        radiation.rate_target_attained,
+        radiation.per_user_rate_target_feasible,
+        energy,
+    )
 
 
 __all__ = ["ResolutionResult", "resolve_configuration"]

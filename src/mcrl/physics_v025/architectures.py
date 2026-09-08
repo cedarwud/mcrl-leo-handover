@@ -1,4 +1,4 @@
-"""Three V0.25 radiation architectures behind one immutable interface."""
+"""Five V0.25 radiation architectures behind one immutable interface."""
 
 from __future__ import annotations
 
@@ -10,17 +10,20 @@ import numpy as np
 
 from mcrl.errors import MCRLContractError
 
+from .acm import ACMRate, rate_target_sinr
 from .channel import noise_power_w
 from .constants_v025 import (
     BEAM_BANDWIDTH_HZ,
     BEAM_RF_CAP_W,
     POWER_CONTROL_TARGET_LINEAR,
+    RATE_TARGET_BPS,
     POWER_SOLVER_ITERATION_CAP,
     POWER_SOLVER_TOLERANCE_W,
 )
 
 BeamIdentity = tuple[int, int]
 FieldKind = Literal["nominal", "realised"]
+ArchitectureCode = Literal["b", "a-\u03b3", "a\u2032-\u03b3", "a-r", "a\u2032-r"]
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,7 @@ class RadiationConfig:
     bandwidth_hz: float = BEAM_BANDWIDTH_HZ
     beam_cap_w: float = BEAM_RF_CAP_W
     target_sinr: float = POWER_CONTROL_TARGET_LINEAR
+    rate_target_bps: float = RATE_TARGET_BPS
     solver_tolerance_w: float = POWER_SOLVER_TOLERANCE_W
     solver_iteration_cap: int = POWER_SOLVER_ITERATION_CAP
 
@@ -116,6 +120,7 @@ class RadiationConfig:
             self.bandwidth_hz,
             self.beam_cap_w,
             self.target_sinr,
+            self.rate_target_bps,
             self.solver_tolerance_w,
         )
         if any(not math.isfinite(value) or value <= 0.0 for value in scalars):
@@ -148,6 +153,9 @@ class Transmission:
     noise_w: float
     bandwidth_hz: float
     subband: tuple[float, float]
+    rate_target_bps: float | None = None
+    rate_target_sinr: float | None = None
+    rate_target_feasible: bool | None = None
 
     @property
     def interference_w(self) -> float:
@@ -173,10 +181,11 @@ class RadiationSlot:
 
 @dataclass(frozen=True)
 class RadiationResult:
-    architecture: Literal["b", "a", "a\u2032"]
+    architecture: ArchitectureCode
     field: FieldKind
     slots: tuple[RadiationSlot, ...]
     certificate: PowerCertificate
+    rate_target_bps: float | None = None
 
     @property
     def valid(self) -> bool:
@@ -202,9 +211,51 @@ class RadiationResult:
                 )
         return result
 
+    @property
+    def per_user_rate_target_feasible(self) -> dict[int, bool] | None:
+        """Controller feasibility by user, distinct from realised PHY service."""
+
+        rows: dict[int, bool] = {}
+        saw_target = False
+        for slot in self.slots:
+            for tx in slot.transmissions:
+                if tx.rate_target_feasible is None:
+                    continue
+                saw_target = True
+                rows[tx.user_id] = rows.get(tx.user_id, True) and tx.rate_target_feasible
+        return rows if saw_target or self.rate_target_bps is not None else None
+
+    @property
+    def rate_target_attained(self) -> dict[int, bool] | None:
+        """Realised achieved-ACM target status over this normalized user-step."""
+
+        transmission_targets = {
+            tx.rate_target_bps
+            for slot in self.slots
+            for tx in slot.transmissions
+            if tx.rate_target_bps is not None
+        }
+        if self.rate_target_bps is None:
+            if transmission_targets:
+                raise MCRLContractError("non-target radiation contains a rate target")
+            return None
+        if transmission_targets and transmission_targets != {self.rate_target_bps}:
+            raise MCRLContractError("radiation result contains inconsistent rate targets")
+        target = self.rate_target_bps
+        rates: dict[int, float] = {}
+        model = ACMRate()
+        for slot in self.slots:
+            for tx in slot.transmissions:
+                rates.setdefault(tx.user_id, 0.0)
+                if model.served(tx.sinr, allocated=True):
+                    rates[tx.user_id] += slot.fraction * model.rate_bps(
+                        tx.sinr, tx.bandwidth_hz
+                    )
+        return {user: rate >= target for user, rate in rates.items()}
+
 
 class RadiationArchitecture(Protocol):
-    code: Literal["b", "a", "a\u2032"]
+    code: ArchitectureCode
 
     def radiate(
         self,
@@ -272,16 +323,39 @@ def _solve_power(
     caps: np.ndarray,
     active_user_ids: tuple[int, ...],
     config: RadiationConfig,
+    *,
+    target_sinr: np.ndarray | None = None,
+    force_cap: np.ndarray | None = None,
+    enforce_target_clearance: bool = False,
 ) -> tuple[np.ndarray, PowerCertificate]:
     """Capped standard-interference fixed point, always initialised at zero."""
 
+    targets = (
+        np.full(len(active_user_ids), config.target_sinr, dtype=np.float64)
+        if target_sinr is None
+        else np.asarray(target_sinr, dtype=np.float64)
+    )
+    forced = (
+        np.zeros(len(active_user_ids), dtype=np.bool_)
+        if force_cap is None
+        else np.asarray(force_cap, dtype=np.bool_)
+    )
+    if targets.shape != caps.shape or forced.shape != caps.shape:
+        raise MCRLContractError("power target, forced-cap mask, and caps must share shape")
     power = np.zeros(len(active_user_ids), dtype=np.float64)
     residual = math.inf
     for iteration in range(1, config.solver_iteration_cap + 1):
-        updated = np.minimum(caps, config.target_sinr * (noise + coupling @ power) / direct)
+        updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
+        updated[forced] = caps[forced]
         residual = float(np.max(np.abs(updated - power))) if power.size else 0.0
         power = updated
-        if residual <= config.solver_tolerance_w:
+        clears_target = True
+        if enforce_target_clearance and power.size:
+            achieved_sinr = power * direct / (noise + coupling @ power)
+            clears_target = bool(
+                np.all(forced | (power == caps) | (achieved_sinr >= targets))
+            )
+        if residual <= config.solver_tolerance_w and clears_target:
             break
     else:
         certificate = PowerCertificate(
@@ -292,7 +366,8 @@ def _solve_power(
             tuple(active_user_ids[index] for index in np.flatnonzero(power >= caps)),
         )
         return power, certificate
-    final = np.minimum(caps, config.target_sinr * (noise + coupling @ power) / direct)
+    final = np.minimum(caps, targets * (noise + coupling @ power) / direct)
+    final[forced] = caps[forced]
     final_residual = float(np.max(np.abs(final - power))) if power.size else 0.0
     status: Literal["CONVERGED", "INVALID"] = (
         "CONVERGED" if final_residual <= config.solver_tolerance_w else "INVALID"
@@ -315,6 +390,10 @@ def _transmissions(
     noise: np.ndarray,
     bandwidth: np.ndarray,
     subbands: tuple[tuple[float, float], ...],
+    *,
+    rate_target_bps: float | None = None,
+    rate_target_sinr_values: tuple[float | None, ...] | None = None,
+    rate_target_feasible: tuple[bool, ...] | None = None,
 ) -> tuple[Transmission, ...]:
     rows = []
     for row, index in enumerate(active):
@@ -338,6 +417,13 @@ def _transmissions(
                 noise_w=float(noise[row]),
                 bandwidth_hz=float(bandwidth[row]),
                 subband=subbands[row],
+                rate_target_bps=rate_target_bps,
+                rate_target_sinr=(
+                    None if rate_target_sinr_values is None else rate_target_sinr_values[row]
+                ),
+                rate_target_feasible=(
+                    None if rate_target_feasible is None else rate_target_feasible[row]
+                ),
             )
         )
     return tuple(rows)
@@ -403,7 +489,7 @@ class FixedRF:
 class AngleTPC_TDM:
     """Architecture a: nominal target-SINR power control with full-band TDM."""
 
-    code: Literal["a"] = "a"
+    code: Literal["a-\u03b3"] = "a-\u03b3"
 
     def radiate(
         self, config: RadiationConfig, geometry: Geometry, nominal_or_realised: FieldKind
@@ -450,7 +536,7 @@ class AngleTPC_TDM:
 class AngleTPC_FDM:
     """Architecture a-prime: equal FDM subbands and per-user share caps."""
 
-    code: Literal["a\u2032"] = "a\u2032"
+    code: Literal["a\u2032-\u03b3"] = "a\u2032-\u03b3"
 
     def radiate(
         self, config: RadiationConfig, geometry: Geometry, nominal_or_realised: FieldKind
@@ -508,21 +594,240 @@ class AngleTPC_FDM:
         return RadiationResult(self.code, nominal_or_realised, (slot,), certificate)
 
 
+def _rate_targets(
+    config: RadiationConfig,
+    geometry: Geometry,
+    active: tuple[int, ...],
+    members: dict[BeamIdentity, tuple[int, ...]],
+) -> tuple[np.ndarray, np.ndarray, tuple[float | None, ...]]:
+    """Build per-user ACM targets and the explicit no-mode forced-cap mask."""
+
+    values: list[float] = []
+    forced: list[bool] = []
+    reported: list[float | None] = []
+    for index in active:
+        occupancy = len(members[geometry.links[index].beam])
+        gamma = rate_target_sinr(
+            config.rate_target_bps,
+            config.bandwidth_hz,
+            occupancy,
+        )
+        reported.append(gamma)
+        forced.append(gamma is None)
+        values.append(1.0 if gamma is None else gamma)
+    return (
+        np.asarray(values, dtype=np.float64),
+        np.asarray(forced, dtype=np.bool_),
+        tuple(reported),
+    )
+
+
+def _target_feasibility(
+    power: np.ndarray,
+    direct: np.ndarray,
+    coupling: np.ndarray,
+    noise: np.ndarray,
+    target_sinr_values: tuple[float | None, ...],
+) -> tuple[bool, ...]:
+    denominators = noise + coupling @ power
+    actual = power * direct / denominators
+    return tuple(
+        gamma is not None and value >= gamma
+        for value, gamma in zip(actual, target_sinr_values)
+    )
+
+
+class AngleRateTPC_TDM:
+    """Architecture a-r: per-user ACM rate target over full-band TDM."""
+
+    code: Literal["a-r"] = "a-r"
+
+    def radiate(
+        self, config: RadiationConfig, geometry: Geometry, nominal_or_realised: FieldKind
+    ) -> RadiationResult:
+        members = _beam_members(geometry)
+        nominal_direct_all = geometry.gains("nominal")
+        field_direct_all = geometry.gains(nominal_or_realised)
+        slots: list[RadiationSlot] = []
+        certificates: list[PowerCertificate] = []
+        for start, end, active in _tdm_slots(geometry):
+            nominal_direct = nominal_direct_all[list(active)] if active else np.zeros(0)
+            nominal_coupling = _masked_coupling(geometry, active, "nominal")
+            noise = np.full(len(active), noise_power_w(config.bandwidth_hz))
+            targets, forced, reported_targets = _rate_targets(
+                config, geometry, active, members
+            )
+            caps = np.full(len(active), config.beam_cap_w)
+            power, certificate = _solve_power(
+                nominal_direct,
+                nominal_coupling,
+                noise,
+                caps,
+                tuple(geometry.links[index].user_id for index in active),
+                config,
+                target_sinr=targets,
+                force_cap=forced,
+                enforce_target_clearance=True,
+            )
+            certificates.append(certificate)
+            field_coupling = _masked_coupling(geometry, active, nominal_or_realised)
+            bandwidth = np.full(len(active), config.bandwidth_hz)
+            slots.append(
+                RadiationSlot(
+                    start,
+                    end,
+                    tuple(
+                        (geometry.links[index].beam, float(power[row]))
+                        for row, index in enumerate(active)
+                    ),
+                    _transmissions(
+                        geometry,
+                        active,
+                        power,
+                        field_direct_all[list(active)] if active else np.zeros(0),
+                        field_coupling,
+                        noise,
+                        bandwidth,
+                        tuple((0.0, config.bandwidth_hz) for _ in active),
+                        rate_target_bps=config.rate_target_bps,
+                        rate_target_sinr_values=reported_targets,
+                        rate_target_feasible=_target_feasibility(
+                            power,
+                            nominal_direct,
+                            nominal_coupling,
+                            noise,
+                            reported_targets,
+                        ),
+                    ),
+                    certificate,
+                )
+            )
+        return RadiationResult(
+            self.code,
+            nominal_or_realised,
+            tuple(slots),
+            _aggregate_certificates(certificates),
+            config.rate_target_bps,
+        )
+
+
+class AngleRateTPC_FDM:
+    """Architecture a-prime-r: ACM rate target over equal physical sub-bands."""
+
+    code: Literal["a\u2032-r"] = "a\u2032-r"
+
+    def radiate(
+        self, config: RadiationConfig, geometry: Geometry, nominal_or_realised: FieldKind
+    ) -> RadiationResult:
+        members = _beam_members(geometry)
+        active = tuple(index for beam in members.values() for index in beam)
+        subband_by_index: dict[int, tuple[float, float]] = {}
+        cap_by_index: dict[int, float] = {}
+        for beam_members in members.values():
+            width = config.bandwidth_hz / len(beam_members)
+            for position, index in enumerate(beam_members):
+                subband_by_index[index] = (position * width, (position + 1) * width)
+                cap_by_index[index] = config.beam_cap_w / len(beam_members)
+        subbands = tuple(subband_by_index[index] for index in active)
+        bandwidth = np.asarray([high - low for low, high in subbands], dtype=np.float64)
+        overlap = np.zeros((len(active), len(active)), dtype=np.float64)
+        for row, (victim_low, victim_high) in enumerate(subbands):
+            for column, (aggressor_low, aggressor_high) in enumerate(subbands):
+                overlap_hz = max(
+                    0.0,
+                    min(victim_high, aggressor_high) - max(victim_low, aggressor_low),
+                )
+                overlap[row, column] = overlap_hz / (aggressor_high - aggressor_low)
+        nominal_direct = (
+            geometry.gains("nominal")[list(active)] if active else np.zeros(0)
+        )
+        nominal_coupling = _masked_coupling(geometry, active, "nominal", overlap)
+        noise = np.asarray([noise_power_w(value) for value in bandwidth])
+        targets, forced, reported_targets = _rate_targets(
+            config, geometry, active, members
+        )
+        caps = np.asarray([cap_by_index[index] for index in active])
+        power, certificate = _solve_power(
+            nominal_direct,
+            nominal_coupling,
+            noise,
+            caps,
+            tuple(geometry.links[index].user_id for index in active),
+            config,
+            target_sinr=targets,
+            force_cap=forced,
+            enforce_target_clearance=True,
+        )
+        beam_power: dict[BeamIdentity, float] = {}
+        for row, index in enumerate(active):
+            beam = geometry.links[index].beam
+            beam_power[beam] = beam_power.get(beam, 0.0) + float(power[row])
+        if any(
+            value > config.beam_cap_w + config.solver_tolerance_w
+            for value in beam_power.values()
+        ):
+            raise MCRLContractError("rate-target FDM allocation exceeded the per-beam RF cap")
+        field_coupling = _masked_coupling(
+            geometry, active, nominal_or_realised, overlap
+        )
+        slot = RadiationSlot(
+            0.0,
+            1.0,
+            tuple(sorted(beam_power.items())),
+            _transmissions(
+                geometry,
+                active,
+                power,
+                geometry.gains(nominal_or_realised)[list(active)]
+                if active
+                else np.zeros(0),
+                field_coupling,
+                noise,
+                bandwidth,
+                subbands,
+                rate_target_bps=config.rate_target_bps,
+                rate_target_sinr_values=reported_targets,
+                rate_target_feasible=_target_feasibility(
+                    power,
+                    nominal_direct,
+                    nominal_coupling,
+                    noise,
+                    reported_targets,
+                ),
+            ),
+            certificate,
+        )
+        return RadiationResult(
+            self.code,
+            nominal_or_realised,
+            (slot,),
+            certificate,
+            config.rate_target_bps,
+        )
+
+
 def architecture_for(code: str) -> RadiationArchitecture:
     """Return the declared architecture without aliases or module mutation."""
 
     if code == "b":
         return FixedRF()
-    if code == "a":
+    if code == "a-\u03b3":
         return AngleTPC_TDM()
-    if code in {"a\u2032", "a'"}:
+    if code == "a\u2032-\u03b3":
         return AngleTPC_FDM()
+    if code == "a-r":
+        return AngleRateTPC_TDM()
+    if code == "a\u2032-r":
+        return AngleRateTPC_FDM()
     raise MCRLContractError(f"unknown V0.25 architecture {code!r}")
 
 
 __all__ = [
+    "AngleRateTPC_FDM",
+    "AngleRateTPC_TDM",
     "AngleTPC_FDM",
     "AngleTPC_TDM",
+    "ArchitectureCode",
     "BeamIdentity",
     "FieldKind",
     "FixedRF",

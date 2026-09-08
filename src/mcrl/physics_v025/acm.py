@@ -61,6 +61,50 @@ def select_mode(sinr_linear: float) -> ACMMode | None:
     return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
 
 
+def rate_target_mode(
+    rate_target_bps: float,
+    full_bandwidth_hz: float,
+    occupancy: int,
+) -> ACMMode | None:
+    """Return the lowest-threshold frozen ACM mode that meets ``r*``.
+
+    For TDM, ``full_bandwidth_hz / occupancy`` is effective airtime
+    bandwidth.  For FDM it is the physical sub-band bandwidth.  Both therefore
+    implement the sealed ``Gamma_r(n_b)`` definition with one helper.
+    """
+
+    if not math.isfinite(rate_target_bps) or rate_target_bps <= 0.0:
+        raise MCRLContractError("rate target must be finite and positive")
+    if not math.isfinite(full_bandwidth_hz) or full_bandwidth_hz <= 0.0:
+        raise MCRLContractError("full bandwidth must be finite and positive")
+    if type(occupancy) is not int or occupancy < 1:
+        raise MCRLContractError("occupancy must be a positive exact integer")
+    required_se = rate_target_bps * occupancy / full_bandwidth_hz
+    eligible = [
+        mode
+        for mode in ACM_MODES
+        if mode.spectral_efficiency_bit_per_s_hz >= required_se
+    ]
+    return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
+
+
+def rate_target_sinr(
+    rate_target_bps: float,
+    full_bandwidth_hz: float,
+    occupancy: int,
+) -> float | None:
+    """Return ``Gamma_r(n_b)`` or ``None`` when the ACM table cannot meet it."""
+
+    mode = rate_target_mode(rate_target_bps, full_bandwidth_hz, occupancy)
+    if mode is None:
+        return None
+    # The separately frozen PHY service floor is rounded at its declared dB
+    # precision and is a few parts in 1e10 above the derived first-mode value.
+    # A controller target must clear both gates to avoid reporting a nominally
+    # selected QPSK 1/4 mode as unserved.
+    return max(mode.threshold_linear, SINR_MIN)
+
+
 class RateModel(Protocol):
     name: str
 
@@ -128,6 +172,8 @@ __all__ = [
     "RateModel",
     "UncappedShannonDiagnosticRate",
     "rate_model",
+    "rate_target_mode",
+    "rate_target_sinr",
     "select_mode",
     "served_phy",
 ]

@@ -108,34 +108,40 @@ def test_d2_visibility_and_dwell_arithmetic() -> None:
 
 
 def test_matrix_exact_sealed_order_digests_and_no_baseline_relabel() -> None:
-    """15 eligible priorities are sealed; aU/bU/a'U append as diagnostic-only, totaling 18."""
+    """The v1.1 order has two rate cells, 15 retained/relabelled cells, and three U diagnostics."""
 
     expected = [
-        "a0", "b0", "a\u20320", "aS", "bS", "a\u2032S", "aH", "bH", "a\u2032H",
-        "aSH", "bSH", "a\u2032SH", "aT", "bT", "a\u2032T", "aU", "bU", "a\u2032U",
+        "a-r0", "a\u2032-r0", "a-\u03b30", "b0", "a\u2032-\u03b30",
+        "a-\u03b3S", "bS", "a\u2032-\u03b3S", "a-\u03b3H", "bH", "a\u2032-\u03b3H",
+        "a-\u03b3SH", "bSH", "a\u2032-\u03b3SH", "a-\u03b3T", "bT", "a\u2032-\u03b3T",
+        "a-\u03b3U", "bU", "a\u2032-\u03b3U",
     ]
     assert [setting.label for setting in MATRIX_SETTINGS] == expected
-    assert len({setting.digest for setting in MATRIX_SETTINGS}) == 18
+    assert len({setting.digest for setting in MATRIX_SETTINGS}) == 20
     plan = shared_computation_plan()
     assert plan["all_neutral_control_label"] == "ALL_NEUTRAL_CONTROL"
     assert "BASELINE" not in json.dumps(plan)
 
 
 def test_matrix_rejects_undeclared_factorial_corner() -> None:
-    """Snapshot+standby is outside the declared fractional 18-cell design."""
+    """Snapshot+standby is outside the declared fractional 20-cell design."""
 
-    setting = PhysicsSetting("a", "T", "f", "off", "ACM")
+    setting = PhysicsSetting("a-\u03b3", "T", "f", "off", "ACM")
     with pytest.raises(MCRLContractError):
         _ = setting.treatment
+    with pytest.raises(MCRLContractError):
+        _ = PhysicsSetting("a-r", "T", "0", "off", "ACM").treatment
 
 
-def test_estimate_exposes_144_equivalent_shared_plan() -> None:
-    """Three architectures*(one snapshot+47 intervals)=144, costing 144*302*4/3600=48.32 core-h."""
+def test_estimate_exposes_all_20_cells_and_240_equivalent_shared_plan() -> None:
+    """Five architectures*48 boundaries=240 and the estimate enumerates all 20 digested cells."""
 
     plan = shared_computation_plan(q=2.0)
-    assert plan["shared_physical_equivalents"] == 3 * (1 + 47) == 144
-    assert plan["reference_core_hours"] == pytest.approx(48.32)
-    assert plan["estimated_core_hours"] == pytest.approx(96.64)
+    assert plan["shared_physical_equivalents"] == 5 * (1 + 47) == 240
+    assert plan["reference_core_hours"] == pytest.approx(80.53333333333333)
+    assert plan["estimated_core_hours"] == pytest.approx(161.06666666666666)
+    assert plan["settings_count"] == len(plan["settings"]) == 20
+    assert len({row["digest"] for row in plan["settings"]}) == 20
     assert plan["rescore_from_integrated_tape"] == ["S", "H", "SH", "U"]
 
 
@@ -162,6 +168,32 @@ def test_shared_tape_rescores_standby_handover_and_u_without_reradiation() -> No
     assert interrupted.bits[0] == pytest.approx(zero.bits[0] * (30.08 - 0.062) / 30.08)
     assert upper.bits[0] == pytest.approx(8.0 * 2.0 * 30.08)
     assert upper.bits[0] > zero.bits[0]
+
+
+def test_rate_target_cell_reports_target_and_phy_status_separately() -> None:
+    """A feasible a-r0 step exposes independent true served_PHY/attained/feasible fields."""
+
+    bandwidth = 500.0e6 / 3.0
+    gamma_r1 = 0.7174947934871672
+    direct = gamma_r1 * noise_power_w(bandwidth) / 0.5
+    current = Geometry((Link(0, (1, 1), 0, direct),), np.zeros((1, 1)))
+    samples = tuple((index * 0.640, current) for index in range(48))
+    tape = build_shared_tape(
+        "a-r",
+        samples,
+        HardwareInventory.fixed(((1, 1),)),
+        config=RadiationConfig(bandwidth_hz=bandwidth),
+    )
+    setting = next(row for row in MATRIX_SETTINGS if row.label == "a-r0")
+    score = score_setting(tape, setting)
+    assert score.served_phy == {0: True}
+    assert score.rate_target_attained == {0: True}
+    assert score.rate_target_feasible == {0: True}
+    profile = score.as_profile()
+    assert profile["served_PHY"] == [True]
+    assert profile["rate_target_attained"] == [True]
+    assert profile["rate_target_feasible"] == [True]
+    assert float.fromhex(profile["rate_target_bps"]) == 50_000_000.0
 
 
 def test_track_b_dependency_injection_hook_returns_bound_profile() -> None:

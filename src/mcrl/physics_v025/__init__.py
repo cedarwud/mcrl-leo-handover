@@ -6,6 +6,8 @@ control rather than an implicit dependency.
 """
 
 from .architectures import (
+    AngleRateTPC_FDM,
+    AngleRateTPC_TDM,
     AngleTPC_FDM,
     AngleTPC_TDM,
     FixedRF,
@@ -14,9 +16,12 @@ from .architectures import (
     RadiationConfig,
     architecture_for,
 )
+from .endpoint import assert_same_energy_price, reward_core
 from .matrix import MATRIX_SETTINGS, PhysicsSetting
 
 __all__ = [
+    "AngleRateTPC_FDM",
+    "AngleRateTPC_TDM",
     "AngleTPC_FDM",
     "AngleTPC_TDM",
     "FixedRF",
@@ -26,4 +31,6 @@ __all__ = [
     "PhysicsSetting",
     "RadiationConfig",
     "architecture_for",
+    "assert_same_energy_price",
+    "reward_core",
 ]

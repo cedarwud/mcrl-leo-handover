@@ -55,6 +55,10 @@ class CellScore:
     joules: float
     decoding_time_s: dict[int, float]
     useful_time_s: dict[int, float]
+    served_phy: dict[int, bool]
+    rate_target_attained: dict[int, bool] | None
+    rate_target_feasible: dict[int, bool] | None
+    rate_target_bps: float | None
     valid: bool
     certificate_residual_w: float
 
@@ -65,7 +69,20 @@ class CellScore:
             "setting_digest": self.setting.digest,
             "bits": [self.bits[user].hex() for user in users],
             "energy_j": self.joules.hex(),
-            "served": [self.decoding_time_s[user] > 0.0 for user in users],
+            "served_PHY": [self.served_phy[user] for user in users],
+            "rate_target_attained": (
+                None
+                if self.rate_target_attained is None
+                else [self.rate_target_attained[user] for user in users]
+            ),
+            "rate_target_feasible": (
+                None
+                if self.rate_target_feasible is None
+                else [self.rate_target_feasible[user] for user in users]
+            ),
+            "rate_target_bps": (
+                None if self.rate_target_bps is None else self.rate_target_bps.hex()
+            ),
             "users": users,
             "valid": self.valid,
             "solver_residual_w": self.certificate_residual_w.hex(),
@@ -141,7 +158,9 @@ def score_setting(
         raise MCRLContractError("setting architecture does not match shared tape")
     residual = max(boundary.radiation.certificate.residual_w for boundary in tape.integrated)
     if any(not boundary.radiation.valid for boundary in tape.integrated):
-        return CellScore(setting, {}, math.nan, {}, {}, False, residual)
+        return CellScore(
+            setting, {}, math.nan, {}, {}, {}, None, None, None, False, residual
+        )
     if setting.integration == "T":
         point = _rescore_boundary(tape.snapshot, tape.inventory, setting)
         receipt = snapshot_terminal(point, start_s=tape.integrated[0].time_s)
@@ -152,12 +171,54 @@ def score_setting(
             interruptions=interruptions,
             interruption_enabled=setting.interruption == "on",
         )
+    users = sorted(receipt.bits)
+    duration_s = tape.integrated[-1].time_s - tape.integrated[0].time_s
+    served_phy = {
+        user: receipt.decoding_time_s[user] > 0.0
+        for user in users
+    }
+    is_rate_target = setting.architecture in {"a-r", "a\u2032-r"}
+    target_values = {
+        boundary.radiation.rate_target_bps
+        for boundary in tape.integrated
+        if boundary.radiation.rate_target_bps is not None
+    }
+    if is_rate_target and len(target_values) != 1:
+        raise MCRLContractError("rate-target tape must bind exactly one r-star value")
+    config_target = next(iter(target_values)) if target_values else None
+    attained = (
+        {
+            user: receipt.bits[user] >= float(config_target) * duration_s
+            for user in users
+        }
+        if is_rate_target
+        else None
+    )
+    feasibility_rows = [
+        boundary.radiation.per_user_rate_target_feasible
+        for boundary in tape.integrated
+    ]
+    feasible = (
+        {
+            user: all(
+                row is not None and row.get(user, False)
+                for row in feasibility_rows
+            )
+            for user in users
+        }
+        if is_rate_target
+        else None
+    )
     return CellScore(
         setting,
         receipt.bits,
         receipt.joules,
         receipt.decoding_time_s,
         receipt.useful_time_s,
+        served_phy,
+        attained,
+        feasible,
+        config_target,
         True,
         residual,
     )
@@ -187,7 +248,7 @@ def track_b_regeneration_adapter(**context: object) -> object:
         interruptions=context.get("v025_interruptions", ()),  # type: ignore[arg-type]
     )
     return {
-        "schema": "mcrl-v025-track-b-adapter-receipt-v1",
+        "schema": "mcrl-v025-track-b-adapter-receipt-v1.1",
         "lever_id": context.get("lever_id"),
         "lever_identity": context.get("identity"),
         "keyed_fading_event": context.get("keyed_fading_event"),
