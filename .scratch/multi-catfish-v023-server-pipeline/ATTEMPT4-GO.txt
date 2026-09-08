@@ -1,0 +1,18 @@
+ATTEMPT4-GO — controller authorisation for stage-A attempt #4 (written 2026-09-08 12:12 UTC)
+
+Context: attempt #3 STOP at step 3 = launcher local-host quoting defect (your STOP-stageA.md is correct; classification INFRASTRUCTURE DEFECT accepted). Science receipts are valid; nothing scientific changes.
+
+Fix lane (already dispatched by the controller): codex gpt-5.6-sol is repairing the launcher in the scratch clone
+  /home/sat/mcrl-v023-codex-ws-stagea-fix12   (branch stagea/fix12, prompt: controller handoff prompts/codex-sol-stagea-fix12.md)
+It will write /home/sat/mcrl-v023-codex-ws-stagea-fix12/FIX12-DONE (containing the commit id) when finished, plus
+  .scratch/multi-catfish-v023-c1c2-successor-launch/FIX12-REPORT-2026-09-08.md (tests summary, digest-bound files, replay steps).
+
+Your steps (single writer of the wip worktree remains you):
+1. Poll for FIX12-DONE (every ~5 min; if absent after 90 min, write STOP-fix12-timeout.md and keep watching).
+2. Review FIX12-REPORT: pytest summary must be all-pass; the diff must touch only the launch package (launcher + its tests) — if it touches src/, docs/, sealed files or any receipt, STOP (write STOP-fix12-scope.md) and do not land.
+3. Land the fix into /home/sat/mcrl-leo-handover-wip exactly as land_attempt3.sh did for fix 11 (fetch the branch from the scratch clone, fast-forward or cherry-pick onto f165e969; the uncommitted binder outputs from steps 2c/2d may be discarded ONLY by re-running the binder, never by git checkout/reset/clean of tracked files). Commit message: "stage-A launcher fix pass 12: transient controller script for local/ssh tmux start; offline quoting tests".
+4. Replay attempt #4 = operator-stagea-attempt3.md from step 2c onward with the same authorities: bind --write/--check → launch manifest --write/--check → gate (--reuse-from …fix11, 20/20) → step 3 dry-run → real launch (HOST=local) → step 4 verify → 4b replay-arms → step 5 stage B → ONE commit of freeze artifacts + receipts → write ATTEMPT3-DONE.txt (keep the file name; add "attempt #4" inside) → wait for S1-GO.txt.
+5. New standing permission (owner directive 2026-09-08 12:10 UTC): if another INFRASTRUCTURE defect blocks a step, you may yourself dispatch codex (gpt-5.6-sol for implementation, gpt-6-astra read-only for adjudication; binary /home/sat/.npm-global/bin/codex, `codex exec --model … --sandbox workspace-write --skip-git-repo-check -C <scratch clone> -o <final.md> - < prompt.md`, always in a scratch clone, never in the wip worktree) to repair it, then land + replay as above, logging every dispatch in PIPELINE-LOG.md. Scientific refusals (gate FAIL, verifier FAIL, manifest mismatch of sealed inputs) still STOP for the controller.
+6. Keep STATUS.md/PIPELINE-LOG.md current at each transition.
+
+The controller watches STATUS.md, STOP-*.md, ATTEMPT3-DONE.txt.

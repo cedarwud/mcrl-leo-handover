@@ -1,0 +1,17 @@
+# ChatGPT Q&A prompt — round 5 (C3-S closed-loop kill screen v1 returned SUPPORT)
+
+Attach: `multi-catfish-c3s-v1-support-review-package-20260908-r5.zip`. Read `00-README.md` first, then the files in numbered order.
+
+You are a hostile but fair methods reviewer for a LEO multi-beam handover paper. Our third "Catfish" component was redefined as C3-S: a deployment-time, model-based set-level coordinator (no learned parameters) on top of two learned per-user Q-heads (BASE = argmax(Q1+Q2)). A pre-registered closed-loop development kill screen (4 fresh worlds × 3 lineages × 30 steps) returned SUPPORT for both coordinator arms: pooled EE +2.883 % (FULL) and +2.922 % (LITE) versus BASE, served counts identical, every world and lineage positive, coordinator deviating from BASE at all 360 decisions. Two fresh-context red-teams (files 06, 07) and a harness audit (file 08) are included, together with the adjudication of the confirmatory plan (file 09).
+
+Answer in this order, with file/section citations, ≤ 12 lines each:
+
+1. **Is the SUPPORT more likely a real closed-loop effect or an artifact?** Rank the artifact hypotheses in files 06–08 by your own probability of overturning the +2.9 %, and add any we missed. Which single cheap test would you run first?
+2. **Mechanism: coordination or repair?** If the gain is mostly unilateral corrections of the learned baseline's proposals, what may the paper still claim about a "third component", and what confirmatory contrast would you require to say the learned heads still matter under the coordinator (e.g., DROP_C1+C3-S vs FULL2+C3-S)?
+3. **Energy-accounting realism.** Given the physics summary in file 01 (per-beam RF power = max over users; PA ≈ 94.8 % of energy; 0.338 W circuit + 0.200 W baseband constants; legal cap 1.65 W; PA saturation 5.218 W), is "switching beams off saves PA energy" a defensible model for a LEO payload? What idle/activation terms would a reviewer demand, and how should a sensitivity analysis be pre-declared without retuning?
+4. **Confirmatory design.** File 09 proposes: arm = variant-matrix progression winner (LITE fallback); FULL2 + C3-S vs FULL2 on 100/500/1 500/3 000 fresh TRAIN worlds, 30 steps, pooled EE strictly greater and served fraction ≥ BASE − 0.001; early futility at 100 and 500; η_ref sensitivity 0.8/1.0/1.2 (non-decisional); failure decomposition I + R. Is this a valid confirmation given the exposure? What would you change, and what is the minimum N you would accept for a bounded claim?
+5. **Latency.** Measured LITE ≈ 49 s per decision under 12-way contention against a 30.08 s control interval. What may be claimed about deployability now, and what conditions must an engineering speed-up meet so that the confirmatory result still applies (we require bit-identical decisions and an equivalence receipt)?
+6. **Framing.** File 06 argues the original "load balancing" framing was wrong for satellite EE (consolidation, not balancing; beam evacuation is a coordination game that additive per-user heads cannot solve). Do you agree? Write the two paper sentences you would insist on for the architecture and for the claim ceiling.
+7. **Statistics.** Four world clusters, three crossed lineages, dependent contrasts. Which descriptive uncertainty statement is honest, and which inferential statements must be avoided until the fresh-world ladder?
+
+End with a one-line verdict: `SUPPORT_CREDIBLE` / `SUPPORT_QUALIFY_FIRST` / `SUPPORT_LIKELY_ARTIFACT`, plus the one test you would require before any confirmatory compute is spent.
