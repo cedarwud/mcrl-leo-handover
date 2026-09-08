@@ -103,6 +103,106 @@ MATRIX_SETTINGS = tuple(
     for architecture in ("a-\u03b3", "b", "a\u2032-\u03b3")
 )
 
+
+@dataclass(frozen=True)
+class SealedRunSetting:
+    """A sealed executable setting, including prospective regime overrides."""
+
+    run_id: str
+    base_cell: str
+    claim_classification: Literal["PRIMARY", "EXPLORATORY_SENSITIVITY"]
+    regime: str
+    rate_target_bps: float = 50_000_000.0
+    user_count: int = 100
+    circuit_power_per_active_chain_w: float = 0.338
+    c2_horizon_offsets: int = 3
+
+    def __post_init__(self) -> None:
+        if self.base_cell not in {row.label for row in MATRIX_SETTINGS}:
+            raise MCRLContractError("sealed run setting names an unknown base cell")
+        if self.claim_classification == "PRIMARY" and self.run_id != "a-r0":
+            raise MCRLContractError("a-r0 is the only primary run setting")
+        if self.claim_classification != "PRIMARY" and self.run_id == "a-r0":
+            raise MCRLContractError("a-r0 cannot be exploratory")
+        if self.rate_target_bps <= 0 or self.user_count <= 0:
+            raise MCRLContractError("regime rate target and user count must be positive")
+        if self.circuit_power_per_active_chain_w < 0:
+            raise MCRLContractError("regime circuit power must be nonnegative")
+        if self.c2_horizon_offsets not in {1, 2, 3}:
+            raise MCRLContractError("C2 horizon must contain the first 1, 2, or 3 offsets")
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "run_id": self.run_id,
+            "base_cell": self.base_cell,
+            "claim_classification": self.claim_classification,
+            "regime": self.regime,
+            "rate_target_bps": self.rate_target_bps,
+            "user_count": self.user_count,
+            "circuit_power_per_active_chain_w": self.circuit_power_per_active_chain_w,
+            "c2_horizon_offsets": self.c2_horizon_offsets,
+        }
+
+    @property
+    def digest(self) -> str:
+        encoded = json.dumps(
+            self.payload(), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("ascii")
+        return hashlib.sha256(encoded).hexdigest()
+
+
+PRIMARY_RUN_SETTING = SealedRunSetting("a-r0", "a-r0", "PRIMARY", "R0")
+REGIME_RUN_SETTINGS = (
+    SealedRunSetting("R1", "a-r0", "EXPLORATORY_SENSITIVITY", "R1", rate_target_bps=100_000_000.0),
+    SealedRunSetting("R2", "a-r0", "EXPLORATORY_SENSITIVITY", "R2", user_count=150),
+    SealedRunSetting("R3", "a-r0", "EXPLORATORY_SENSITIVITY", "R3", circuit_power_per_active_chain_w=1.0),
+    SealedRunSetting("R4", "a-r0", "EXPLORATORY_SENSITIVITY", "R4", circuit_power_per_active_chain_w=0.1),
+)
+C2_HORIZON_RUN_SETTINGS = (
+    SealedRunSetting("C2-H1", "a-r0", "EXPLORATORY_SENSITIVITY", "C2-H1", c2_horizon_offsets=1),
+    SealedRunSetting("C2-H2", "a-r0", "EXPLORATORY_SENSITIVITY", "C2-H2", c2_horizon_offsets=2),
+)
+
+
+def run_setting_for(run_id: str) -> SealedRunSetting:
+    """Resolve the CLI setting identity without aliasing scientific labels."""
+
+    if run_id == "a-r0":
+        return PRIMARY_RUN_SETTING
+    for row in REGIME_RUN_SETTINGS + C2_HORIZON_RUN_SETTINGS:
+        if row.run_id == run_id:
+            return row
+    for setting in MATRIX_SETTINGS:
+        if setting.label == run_id:
+            regime = "R5" if run_id == "a′-r0" else "R6" if run_id == "a-γ0" else "MATRIX"
+            return SealedRunSetting(
+                run_id,
+                run_id,
+                "EXPLORATORY_SENSITIVITY",
+                regime,
+            )
+    raise MCRLContractError(f"unknown sealed run setting: {run_id}")
+
+
+# Enumeration preserves the sealed 31-cell list, then appends only genuinely
+# new settings.  R5/R6 are aliases of existing matrix cells and are not run twice.
+ALL_SEALED_RUN_SETTINGS = tuple(run_setting_for(row.label) for row in MATRIX_SETTINGS) + (
+    *REGIME_RUN_SETTINGS,
+    *C2_HORIZON_RUN_SETTINGS,
+)
+LAUNCH_RUN_ORDER = (
+    PRIMARY_RUN_SETTING,
+    *REGIME_RUN_SETTINGS,
+    run_setting_for("a′-r0"),
+    run_setting_for("a-γ0"),
+    *C2_HORIZON_RUN_SETTINGS,
+    *tuple(
+        run_setting_for(row.label)
+        for row in MATRIX_SETTINGS
+        if row.label not in {"a-r0", "a′-r0", "a-γ0"}
+    ),
+)
+
 # Canonical UTF-8 rendering of the v1.2 amendment's explicit order.  The
 # launcher, receipts, and KAT all bind these exact Unicode labels; no ASCII
 # alias is allowed to become a scientific cell identity.
@@ -139,6 +239,10 @@ def shared_computation_plan(*, q: float | None = None) -> dict[str, object]:
             for setting in MATRIX_SETTINGS
         ],
         "settings_count": len(MATRIX_SETTINGS),
+        "sealed_run_settings": [row.payload() | {"digest": row.digest} for row in ALL_SEALED_RUN_SETTINGS],
+        "sealed_run_settings_count": len(ALL_SEALED_RUN_SETTINGS),
+        "launch_run_order": [row.run_id for row in LAUNCH_RUN_ORDER],
+        "only_primary_run_id": "a-r0",
         "cell_list_utf8_sha256": hashlib.sha256(SEALED_CELL_LIST_UTF8).hexdigest(),
         "primary_eligible_settings_count_from_explicit_list": 25,
         "diagnostic_settings_count": 6,
@@ -150,7 +254,14 @@ def shared_computation_plan(*, q: float | None = None) -> dict[str, object]:
 
 __all__ = [
     "MATRIX_SETTINGS",
+    "ALL_SEALED_RUN_SETTINGS",
+    "C2_HORIZON_RUN_SETTINGS",
+    "LAUNCH_RUN_ORDER",
+    "PRIMARY_RUN_SETTING",
+    "REGIME_RUN_SETTINGS",
     "SEALED_CELL_LIST_UTF8",
     "PhysicsSetting",
+    "SealedRunSetting",
+    "run_setting_for",
     "shared_computation_plan",
 ]

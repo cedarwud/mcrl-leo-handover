@@ -13,7 +13,8 @@ child one scatters/moves the 100 users.  Element sets are selected once at
 that epoch.  For each NORAD the closest epoch in the available files at
 date-1/date/date+1 is retained, subject to the legacy 24-hour age ceiling;
 the selected TLE is then propagated for the whole tape (it is not reselected
-at each boundary).
+at each boundary).  This accuracy-first benchmark convention permits a future
+epoch and is therefore explicitly non-causal; it is not a deployment claim.
 
 The legacy D2/TTT history uses 47 samples spanning 46 measurement intervals
 backward and ending at each decision instant.  V0.25 integration instead
@@ -78,6 +79,7 @@ from .constants_v025 import (
 from .tapes import (
     PrimitiveBoundary,
     PrimitiveStepArrays,
+    ProviderProtocolOutputs,
     UserLayout,
     canonical_bytes,
 )
@@ -170,11 +172,15 @@ class LegacyWorldProvider:
         tle_root: str | Path = DEFAULT_TLE_ROOT,
         start_utc: dt.datetime | dt.date | str | None = None,
         steps: int = CANONICAL_STEPS,
+        user_count: int = 100,
     ) -> None:
         if type(steps) is not int or steps < 1:
             raise ValueError("steps must be a positive exact integer")
+        if type(user_count) is not int or user_count < 1:
+            raise ValueError("user_count must be a positive exact integer")
         self.tle_root = Path(tle_root).expanduser()
         self.requested_steps = steps
+        self.user_count = user_count
         # Controller T6: a shortened rehearsal truncates a canonical world;
         # it must never change the 30-step shortlist/inventory universe.
         self.steps = PREPARED_STEPS
@@ -219,7 +225,7 @@ class LegacyWorldProvider:
         # such a check is true by construction and cannot detect seed drift.
         _env_rng, mobility_rng, _action_rng, _control_rng = _evaluation_rngs(seed)
 
-        mobility = MobilityConfig(num_users=MobilityConfig().num_users)
+        mobility = MobilityConfig(num_users=self.user_count)
         config = ScenarioConfig(
             mobility=mobility,
             steps_per_episode=self.steps,
@@ -374,6 +380,20 @@ class LegacyWorldProvider:
 
         path = Path(ephemeris.__file__).resolve()
         return path.name, hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def protocol_outputs(self, *, world_seed: int) -> ProviderProtocolOutputs:
+        """Return all mandatory audit-A provider/tape protocol bindings."""
+
+        world = self._ensure(world_seed)
+        _split_name, split_digest = self.split_binding()
+        split = self._split.part_for(world.start_utc.date()).upper()
+        return ProviderProtocolOutputs(
+            split=split,
+            start_utc=world.start_utc.isoformat(),
+            tle_files=world.tle_files,
+            split_rule_digest=split_digest,
+            provider_source_digest=self.provider_source_sha256(),
+        )
 
     def step_user_layouts(
         self, *, world_seed: int, steps: int
@@ -958,10 +978,10 @@ class LegacyWorldProvider:
             step_index=step_index,
             start_time_s=self._time_origin_s,
         ).boundary_view(boundary_index)
-def factory() -> LegacyWorldProvider:
+def factory(*, user_count: int = 100) -> LegacyWorldProvider:
     """CLI-compatible zero-argument provider factory."""
 
-    return LegacyWorldProvider()
+    return LegacyWorldProvider(user_count=user_count)
 
 
 __all__ = ["CANONICAL_STEPS", "DEFAULT_TLE_ROOT", "LegacyWorldProvider", "factory"]

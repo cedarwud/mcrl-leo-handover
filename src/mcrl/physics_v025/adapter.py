@@ -18,6 +18,7 @@ from mcrl.errors import MCRLContractError
 
 from .acm import rate_model
 from .architectures import FieldKind, Geometry, RadiationConfig, RadiationResult, architecture_for
+from .constants_v025 import CIRCUIT_POWER_PER_CHAIN_W
 from .energy import (
     HardwareInventory,
     PRIMARY_IDLE_POWER_W,
@@ -48,6 +49,7 @@ class SharedArchitectureTape:
     integrated: tuple[RadiationBoundary, ...]
     snapshot: RadiationBoundary
     users: tuple[int, ...] = ()
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,7 @@ def build_shared_tape(
     config: RadiationConfig = RadiationConfig(),
     field: FieldKind = "realised",
     roster: Sequence[int] | None = None,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
 ) -> SharedArchitectureTape:
     """Build one 48-boundary tape and its separately named terminal snapshot."""
 
@@ -137,6 +140,7 @@ def build_shared_tape(
             boundaries,
             boundaries[-1],
             users,
+            circuit_power_per_active_chain_w,
         )
     return SharedArchitectureTape(
         architecture,
@@ -144,6 +148,7 @@ def build_shared_tape(
         boundaries,
         boundaries[0],
         users,
+        circuit_power_per_active_chain_w,
     )
 
 
@@ -152,6 +157,7 @@ def _rescore_boundary(
     inventory: HardwareInventory,
     setting: PhysicsSetting,
     roster: Sequence[int],
+    circuit_power_per_active_chain_w: float,
 ) -> BoundarySample:
     model = rate_model(setting.rate)
     transmitting_users = {
@@ -179,8 +185,49 @@ def _rescore_boundary(
         ((slot.fraction, dict(slot.beam_rf_w)) for slot in boundary.radiation.slots),
         duration_s=1.0,
         idle_power_w=idle,
+        circuit_power_per_active_chain_w=circuit_power_per_active_chain_w,
     )
     return BoundarySample(boundary.time_s, rates, energy.joules, decoded)
+
+
+def discontinuities_from_event_ledger(
+    tape: SharedArchitectureTape,
+    events: Iterable[InterruptionEvent],
+    *,
+    exact_limits_by_time: Mapping[
+        float, tuple[BoundarySample, BoundarySample]
+    ] | None = None,
+) -> tuple[BoundarySample, ...]:
+    """Validate and flatten authentic event-time left/right limits.
+
+    Provider handovers currently occur at the decision boundary and therefore
+    need no interior pair. Any future interior event must carry two provider-
+    evaluated samples at that exact instant. A preceding D2 sample is never
+    retimestamped as a left limit; missing or mismatched limits fail closed.
+    """
+
+    event_times = sorted(
+        {
+            float(event.time_s)
+            for event in events
+            if tape.integrated[0].time_s < event.time_s < tape.integrated[-1].time_s
+        }
+    )
+    if not event_times:
+        return ()
+    result: list[BoundarySample] = []
+    supplied = {} if exact_limits_by_time is None else exact_limits_by_time
+    for event_time in event_times:
+        limits = supplied.get(event_time)
+        if limits is None or len(limits) != 2:
+            raise MCRLContractError(
+                "interior event lacks authentic left/right limit samples"
+            )
+        left, right = limits
+        if left.time_s != event_time or right.time_s != event_time:
+            raise MCRLContractError("event limit samples do not match the ledger instant")
+        result.extend((left, right))
+    return tuple(result)
 
 
 def score_setting(
@@ -188,6 +235,7 @@ def score_setting(
     setting: PhysicsSetting,
     *,
     interruptions: Iterable[InterruptionEvent] = (),
+    discontinuities: Iterable[BoundarySample] = (),
 ) -> CellScore:
     """Rescore a declared cell without recomputing geometry or radiation."""
 
@@ -199,15 +247,28 @@ def score_setting(
             setting, {}, math.nan, {}, {}, {}, None, None, None, None, False, residual
         )
     if setting.integration == "T":
-        point = _rescore_boundary(tape.snapshot, tape.inventory, setting, tape.users)
+        point = _rescore_boundary(
+            tape.snapshot,
+            tape.inventory,
+            setting,
+            tape.users,
+            tape.circuit_power_per_active_chain_w,
+        )
         receipt = snapshot_left(point, end_s=tape.integrated[-1].time_s)
     else:
         points = tuple(
-            _rescore_boundary(boundary, tape.inventory, setting, tape.users)
+            _rescore_boundary(
+                boundary,
+                tape.inventory,
+                setting,
+                tape.users,
+                tape.circuit_power_per_active_chain_w,
+            )
             for boundary in tape.integrated
         )
         receipt = integrate_47_subintervals(
             points,
+            discontinuities=discontinuities,
             interruptions=interruptions,
             interruption_enabled=setting.interruption == "on",
         )
@@ -333,6 +394,7 @@ __all__ = [
     "RadiationBoundary",
     "SharedArchitectureTape",
     "build_shared_tape",
+    "discontinuities_from_event_ledger",
     "score_setting",
     "track_b_regeneration_adapter",
 ]

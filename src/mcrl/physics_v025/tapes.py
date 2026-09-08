@@ -10,6 +10,7 @@ the same detached tape.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import datetime as dt
 import hashlib
 import json
 import math
@@ -602,6 +603,48 @@ class CarrierAction:
 
 
 @dataclass(frozen=True)
+class ProviderProtocolOutputs:
+    """Mandatory provider/tape seam attestation from pipeline audit A."""
+
+    split: str
+    start_utc: str
+    tle_files: tuple[tuple[str, str], ...]
+    split_rule_digest: str
+    provider_source_digest: str
+
+    def __post_init__(self) -> None:
+        try:
+            parsed = dt.datetime.fromisoformat(self.start_utc.replace("Z", "+00:00"))
+        except (AttributeError, ValueError) as error:
+            raise MCRLContractError("provider start UTC is not an exact ISO-8601 instant") from error
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise MCRLContractError("provider start UTC must carry an explicit UTC offset")
+        if parsed.utcoffset() != dt.timedelta(0):
+            raise MCRLContractError("provider start UTC offset must be exactly +00:00")
+        if self.split != "TRAIN":
+            raise MCRLContractError("successor provider protocol must attest TRAIN")
+        if not self.tle_files:
+            raise MCRLContractError("provider protocol must name every opened TLE file")
+        hexadecimal = set("0123456789abcdef")
+        digests = (self.split_rule_digest, self.provider_source_digest) + tuple(
+            digest for _name, digest in self.tle_files
+        )
+        if any(len(value) != 64 or not set(value) <= hexadecimal for value in digests):
+            raise MCRLContractError("provider protocol digests must be lowercase SHA-256")
+        if any(not name for name, _digest in self.tle_files):
+            raise MCRLContractError("provider protocol TLE filenames must be nonempty")
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "split": self.split,
+            "start_utc": self.start_utc,
+            "tle_files": [list(row) for row in self.tle_files],
+            "split_rule_sha256": self.split_rule_digest,
+            "provider_source_sha256": self.provider_source_digest,
+        }
+
+
+@dataclass(frozen=True)
 class ExogenousWorldTape:
     domain: str
     seed: int
@@ -612,12 +655,12 @@ class ExogenousWorldTape:
     inventory: HardwareInventory
     steps: tuple[StepTape, ...]
     carriers: tuple[CarrierAction, ...]
+    protocol: ProviderProtocolOutputs
     generating_input_digest: str | None = None
-    tle_files: tuple[tuple[str, str], ...] = ()
     step_user_layouts: tuple[tuple[UserLayout, ...], ...] = ()
 
     def __post_init__(self) -> None:
-        if self.seed != seed_from_domain(self.domain) or self.split != "TRAIN":
+        if self.seed != seed_from_domain(self.domain) or self.split != self.protocol.split:
             raise MCRLContractError("world identity does not match the fresh TRAIN domain rule")
         if not self.tle_date or type(self.training_seed) is not int or self.training_seed < 0:
             raise MCRLContractError("world needs a TLE-date x training-seed cluster identity")
@@ -678,6 +721,12 @@ class ExogenousWorldTape:
         return digest_payload([row.payload() for row in self.carriers])
 
     @property
+    def tle_files(self) -> tuple[tuple[str, str], ...]:
+        """Compatibility view; ownership is the mandatory protocol output."""
+
+        return self.protocol.tle_files
+
+    @property
     def digest(self) -> str:
         return digest_payload(self.manifest())
 
@@ -687,6 +736,7 @@ class ExogenousWorldTape:
             "domain": self.domain,
             "seed": self.seed,
             "split": self.split,
+            "start_utc": self.protocol.start_utc,
             "cluster": {"tle_date": self.tle_date, "training_seed": self.training_seed},
             "steps": len(self.steps),
             "samples_per_interval": D2_SUBINTERVALS + 1,
@@ -701,7 +751,14 @@ class ExogenousWorldTape:
             "d2_entry_elevation_deg_by_candidate": True,
             "cross_gain_key": "(NORAD,cell_id)",
             "boundary_storage": "numpy-float64",
-            "tle_files": [[name, digest] for name, digest in self.tle_files],
+            "tle_files": [list(row) for row in self.protocol.tle_files],
+            "split_rule_sha256": self.protocol.split_rule_digest,
+            "provider_source_sha256": self.protocol.provider_source_digest,
+            "provider_protocol": self.protocol.payload(),
+            "stream_identities": {
+                "mobility": f"seed-sequence:{self.seed}:child-1",
+                "fading": f"sha256-keyed:{self.seed}:user:norad:absolute-time",
+            },
             "step_user_layout_sha256": (
                 None
                 if not self.step_user_layouts
@@ -799,6 +856,8 @@ class PrimitiveWorldProvider(Protocol):
 
     def cluster_identity(self, *, world_seed: int) -> tuple[str, int]: ...
 
+    def protocol_outputs(self, *, world_seed: int) -> ProviderProtocolOutputs: ...
+
     def user_layout(self, *, world_seed: int) -> Iterable[UserLayout]: ...
 
     def boundary(
@@ -892,6 +951,7 @@ def build_world_tape(
     if type(steps) is not int or steps < 1 or not math.isfinite(start_time_s):
         raise MCRLContractError("steps and start time are invalid")
     seed = seed_from_domain(domain)
+    protocol = provider.protocol_outputs(world_seed=seed)
     # This call is deliberately first: hardware exists before candidates/actions.
     inventory = HardwareInventory.fixed(provider.inventory(world_seed=seed))
     tle_date, training_seed = provider.cluster_identity(world_seed=seed)
@@ -936,8 +996,6 @@ def build_world_tape(
         if callable(manifest_digest_builder)
         else None
     )
-    tle_binding = getattr(provider, "tle_binding", None)
-    tle_files = tuple(tle_binding(world_seed=seed)) if callable(tle_binding) else ()
     layout_at_step = getattr(provider, "user_layout_at_step", None)
     step_user_layouts = (
         tuple(layout_at_step(world_seed=seed, step_index=index) for index in range(steps))
@@ -945,18 +1003,18 @@ def build_world_tape(
         else ()
     )
     return ExogenousWorldTape(
-        domain,
-        seed,
-        "TRAIN",
-        tle_date,
-        training_seed,
-        layout,
-        inventory,
-        tuple(step_rows),
-        carriers,
-        generating_input_digest,
-        tle_files,
-        step_user_layouts,
+        domain=domain,
+        seed=seed,
+        split=protocol.split,
+        tle_date=tle_date,
+        training_seed=training_seed,
+        user_layout=layout,
+        inventory=inventory,
+        steps=tuple(step_rows),
+        carriers=carriers,
+        protocol=protocol,
+        generating_input_digest=generating_input_digest,
+        step_user_layouts=step_user_layouts,
     )
 
 
@@ -975,6 +1033,18 @@ class TinySyntheticProvider:
 
     def cluster_identity(self, *, world_seed: int) -> tuple[str, int]:
         return ("synthetic-tle", world_seed)
+
+    def protocol_outputs(self, *, world_seed: int) -> ProviderProtocolOutputs:
+        synthetic_source = digest_payload(
+            {"provider": type(self).__qualname__, "users": self.users}
+        )
+        return ProviderProtocolOutputs(
+            split="TRAIN",
+            start_utc="2026-01-01T00:00:00+00:00",
+            tle_files=(("SYNTHETIC.tle", digest_payload({"world_seed": world_seed})),),
+            split_rule_digest=digest_payload({"rule": "synthetic-train-only"}),
+            provider_source_digest=synthetic_source,
+        )
 
     def user_layout(self, *, world_seed: int) -> Iterable[UserLayout]:
         rng = np.random.default_rng(world_seed)
@@ -1082,6 +1152,7 @@ __all__ = [
     "PrimitiveBoundary",
     "PrimitiveCandidate",
     "PrimitiveWorldProvider",
+    "ProviderProtocolOutputs",
     "PROBE_WORLD_DOMAINS",
     "REFERENCE_CARRIERS",
     "StepTape",

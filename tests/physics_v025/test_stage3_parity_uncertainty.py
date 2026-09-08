@@ -286,7 +286,7 @@ def _iid_blocks() -> tuple[dict[str, float | str | int], ...]:
         rows.append(
             {
                 "tle_date": f"2026-08-{1 + index % 20:02d}",
-                "training_seed": index // 20,
+                "learner_seed": index // 20,
                 "full_bits": 1.08 * energy + rng.normal(0.0, 2.0),
                 "full_joules": energy,
                 "comparator_bits": comparator_energy + rng.normal(0.0, 2.0),

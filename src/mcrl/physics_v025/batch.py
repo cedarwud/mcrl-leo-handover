@@ -70,6 +70,8 @@ def evaluate_ar_tdm_catalogue(
     *,
     field: str = "realised",
     chunk_size: int = 256,
+    rate_target_bps: float = RATE_TARGET_BPS,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
 ) -> BatchARResult:
     """Evaluate ``C x U`` selected candidate-row indices without row objects.
 
@@ -90,8 +92,8 @@ def evaluate_ar_tdm_catalogue(
     gamma = np.asarray(
         [0.0]
         + [
-            np.nan if rate_target_sinr(RATE_TARGET_BPS, BEAM_BANDWIDTH_HZ, n) is None
-            else float(rate_target_sinr(RATE_TARGET_BPS, BEAM_BANDWIDTH_HZ, n))
+            np.nan if rate_target_sinr(rate_target_bps, BEAM_BANDWIDTH_HZ, n) is None
+            else float(rate_target_sinr(rate_target_bps, BEAM_BANDWIDTH_HZ, n))
             for n in range(1, users + 1)
         ],
         dtype=np.float64,
@@ -311,7 +313,7 @@ def evaluate_ar_tdm_catalogue(
                     ),
                     axis=1,
                 )
-                circuit_w = np.sum(active & (power > 0.0), axis=1) * CIRCUIT_POWER_PER_CHAIN_W
+                circuit_w = np.sum(active & (power > 0.0), axis=1) * circuit_power_per_active_chain_w
                 same_sat = aggressor_norad[:, :, None] == aggressor_norad[:, None, :]
                 earlier_active_sat = np.any(
                     same_sat & (active[:, None, :] & lower_user), axis=2
@@ -340,7 +342,7 @@ def evaluate_ar_tdm_catalogue(
             previous_energy = boundary_energy
 
     joules = np.sum(components, axis=1)
-    attained = bits >= RATE_TARGET_BPS * (47 * D2_MEASUREMENT_STEP_S)
+    attained = bits >= rate_target_bps * (47 * D2_MEASUREMENT_STEP_S)
     return BatchARResult(
         *(
             _readonly(value)

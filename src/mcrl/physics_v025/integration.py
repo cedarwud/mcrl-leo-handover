@@ -189,7 +189,15 @@ def integrate_47_subintervals(
         counts[point.time_s] = counts.get(point.time_s, 0) + 1
     if any(count != 2 for count in counts.values()):
         raise MCRLContractError("each event discontinuity needs exactly left/right samples")
-    merged = tuple(sorted(points + extra, key=lambda point: point.time_s))
+    # When an event lands on a scheduled D2 sample, its explicit left/right
+    # limits replace that single regular point.  Keeping all three would still
+    # interpolate the preceding interval to the regular (right-limit) value.
+    merged = tuple(
+        sorted(
+            tuple(point for point in points if point.time_s not in counts) + extra,
+            key=lambda point: point.time_s,
+        )
+    )
     return integrate_trapezoidal(
         merged,
         interruptions=interruptions,
