@@ -16,20 +16,20 @@ import tempfile
 from typing import Any
 
 
-HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
-SCHEMA = "multi-catfish-mcrl-v023-c3s-confirmatory-world-plan-v1"
-SPLIT = "TRAIN"
-ARMS = ("FULL2", "FULL2+C3-S")
-EPISODES = 9000
-MIN_EPISODES = 3000
-DOMAIN_PREFIX = "C3S_CONFIRM/world/"
-FIELD_COMPONENT = "MCRL_V020_REPRICED_C3_GATE_V1"
-MASK63 = (1 << 63) - 1
-E1_INVENTORY = REPO / ".scratch/multi-catfish-v023-c3-existence-e1/E1-WORLD-DERIVATION-2026-09-08.json"
-C3S_INVENTORY = REPO / ".scratch/multi-catfish-v023-c3s-screen/C3S-WORLD-DERIVATION-2026-09-08.json"
-V024_INVENTORY = REPO / ".scratch/multi-catfish-v024-regime-b-design/V024-WORLD-DERIVATION-2026-09-08.json"
-STAGEC_BUILDER = REPO / ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/build_v023_c1c2_successor_world_plan.py"
+HERE = Path(__file__).resolve().parent  # Provenance: confirmatory package location.
+REPO = HERE.parents[1]  # Provenance: workspace package layout.
+SCHEMA = "multi-catfish-mcrl-v023-c3s-confirmatory-world-plan-v1"  # Provenance: pre-built plan schema retained by v2.
+SPLIT = "TRAIN"  # Provenance: astra C exact estimand.
+ARMS = ("FULL2", "FULL2+C3-S")  # Provenance: astra C exact estimand.
+EPISODES = 9000  # Provenance: amended A plan allocation ceiling.
+MIN_EPISODES = 3000  # Provenance: astra C contribution boundary.
+DOMAIN_PREFIX = "C3S_CONFIRM/world/"  # Provenance: amended A plan seed rule.
+FIELD_COMPONENT = "MCRL_V020_REPRICED_C3_GATE_V1"  # Provenance: amended A plan keyed-field namespace.
+MASK63 = (1 << 63) - 1  # Provenance: project SHA-256 seed derivation rule.
+E1_INVENTORY = REPO / ".scratch/multi-catfish-v023-c3-existence-e1/E1-WORLD-DERIVATION-2026-09-08.json"  # Provenance: freshness census A plan.
+C3S_INVENTORY = REPO / ".scratch/multi-catfish-v023-c3s-screen/C3S-WORLD-DERIVATION-2026-09-08.json"  # Provenance: freshness census A plan.
+V024_INVENTORY = REPO / ".scratch/multi-catfish-v024-regime-b-design/V024-WORLD-DERIVATION-2026-09-08.json"  # Provenance: freshness census A plan.
+STAGEC_BUILDER = REPO / ".scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/build_v023_c1c2_successor_world_plan.py"  # Provenance: stage-C allocated-world census.
 
 
 class WorldPlanError(ValueError):
@@ -233,7 +233,17 @@ def verify_world_plan(value: Mapping[str, object]) -> str:
     if type(episodes) is not int or episodes < MIN_EPISODES:
         raise WorldPlanError("plan episode budget is below 3000")
     expected = build_world_plan(episodes)
-    if dict(value) != expected:
+    # The sealed package may be copied between worktrees. Absolute inventory
+    # paths are provenance labels; role, bytes, counts, seeds, and plan digest
+    # remain authoritative. Relocation must not require rewriting the seal.
+    def relocation_neutral(payload: Mapping[str, object]) -> dict[str, object]:
+        normalized = json.loads(json.dumps(payload))
+        normalized.pop("plan_sha256", None)
+        for record in normalized["collision_census"]["inventory_bindings"]:
+            record.pop("path", None)
+        return normalized
+
+    if relocation_neutral(value) != relocation_neutral(expected):
         raise WorldPlanError("plan differs from the declared domain rule or collision census")
     return supplied
 
