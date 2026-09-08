@@ -1,0 +1,32 @@
+**Q1 — ADMISSIBLE, through an explicitly sealed procedural amendment.** Closing a verified 3000-episode HELD root for reporting changes neither the falsifier nor its disposition. Deferral alone must not silently mean permanent closure.
+
+The current addendum §3 is “Cost basis.” Preserve the sealed original; issue a versioned successor that identifies its predecessor digest, inserts the following §3, and renumbers the remaining sections:
+
+> **§3 — Administrative closure without continuation.** After independently verified complete four-arm coverage at 3000 and `C1C2_DEVELOPMENT_PREDICTION_HELD`, the owner may explicitly decline continuation, or defer it and explicitly request closure of this reporting root. A written decision, recorded verbatim with notification/reply timestamps, channel and controller identity, shall be authenticated by a named SHA-256 sidecar and bound to the execution bindings, plan, policy mapping, preserved 3000 result, HELD token and checkpoint. Silence, an unanswered notification, or deferral without closure instruction is insufficient. After confirming that no continuation episodes have executed and no continuation is active, the controller may publish an administrative-closure receipt and whole-tree seal. The original result, token and scientific interpretation remain unchanged. Every resulting figure shall state “continuation to 9000 not performed”. Closure does not authorize reopening or modifying the sealed root. Any later continuation requires separately declared authority preserving this root and its provenance. FALSIFIED continues to prohibit continuation.
+
+Implement `seal_stage_c_declined_continuation.py`, preferably as a dedicated administrative entry point. It must authenticate the decision and complete admission/history, obtain exclusive root control, reject STOP/incomplete/conflicting continuation evidence, preserve existing scientific bytes, publish closure evidence, and write `MANIFEST.sha256` then `COMPLETE` last. Verify the finished sealed root. Do not weaken the renderer’s formal-input checks.
+
+The figure loader must authenticate closure evidence and enforce the caption. `FIGURE-MANIFEST.json` must carry: original HELD disposition and result digest; completed boundary 3000; planned maximum 9000; continuation performed=false; declined/deferred reason; decision-marker and closure-receipt hashes; bindings, plan, policy and tree-seal identities; actual rung coverage; mandatory caption text; unchanged TRAIN-development claim ceiling; renderer digest. Merely recording the caption without rendering it is insufficient.
+
+**Q2 — BUILD_NOW, conditional on review and acceptance before use.** The supplied timing supports engineering this option now; 4–5 hours remains a capacity-dependent estimate.
+
+Minimal change: extend scheduling, worker admission, boundary construction, arm merging, four-arm assembly and independent verification to an explicitly authorized 3001–9000 interval. Authenticate the existing notification/authority chain and verified HELD checkpoint **before scheduling any continuation chunk**. Preserve plan `866d28e0…`, four arms, original prefix bytes, numerical kernel, stream replay, resource limits and 100-episode checkpoint cadence. Emit `continuation-result.json` at 9000, never another scientific disposition; seal only after verification. Simply raising `continuation_limit` is insufficient.
+
+The existing §2 **acceptance definition** can remain the numerical equivalence criterion if its compared semantics and exclusions remain unchanged. But existing evidence for earlier code does not authenticate revised code. Run the prescribed all-four-arm 200-versus-2×100 acceptance against the final bound implementation.
+
+Additionally require focused tests of the newly introduced 3000→3001 boundary, authority rejection, preserved prefix, restart/merge behavior and 9000 publication/sealing. Include bitwise boundary replay at continuation offsets. The generic 200 comparison alone does not exercise these branches; a second full 9000 acceptance experiment is unnecessary. Independently review the complete affected continuation flow before issuing a renewed final-code verdict.
+
+**Q3 — ADMISSIBLE, with identity and path conditions.** A plain clone satisfies `test -d .git`. Use `/home/sat/mcrl-leo-handover-stagec` only after verifying its committed closure, commit/tree and all bound paths. Log substitution of the example checkout path; preserve the sealed procedure bytes.
+
+“Post-stage-A commit” is insufficient if Q1/Q2/M2 changes are absent: bind the final reviewed commit containing them. Never commit between binding and execution. This ruling does not retrospectively satisfy the contract’s earlier requirement to pin Stage-C code before Stage A; any departure needs explicit superseding authority.
+
+**Q4 — Versioned supersession, not silent replacement.** This checkout still hashes to `675431fa…`; I have not verified the branch’s claimed `4225377990…`.
+
+Preserve the original manifest, FROZEN pin, Stage-A bindings and review receipts. Log M2, author/controller, UTC time, old/new full digests and entry counts, commits/trees, exact added/changed/deleted members, test evidence, and absence of Stage-C outcomes. Explicitly authorize the execution-only departure from Stage A’s prior pin; authenticate unchanged Stage-A artifacts under their original evidence.
+
+Generate the revised manifest/pin/sync list in the revision, then independently authenticate **every member**, not just the added file. The controller seals the supersession; an independent Astra reviewer re-authenticates it and issues a new `ASTRA_STAGEC_CODE_FINAL` tied to the final digest. For isolated M2, an ultra **delta review plus affected integration/regression checks** is sufficient; unchanged code need not receive a wholesale repeated audit. Combined Q1/Q2 changes require review of all affected flows. Rebind downstream dependencies and acceptance evidence; never carry forward the old YES unqualified.
+
+ASTRA_Q1=ADMISSIBLE  
+ASTRA_Q2=BUILD_NOW  
+ASTRA_Q3=ADMISSIBLE  
+ASTRA_Q4=Preserve old seals; authorize supersession; authenticate full closure; obtain fresh scoped ultra verdict; rebind final reviewed revision.
