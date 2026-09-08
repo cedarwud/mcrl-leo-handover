@@ -209,3 +209,21 @@ are the state. Delegate execution to codex (server) and Claude sub-agents; the c
 - E1: re-review R2 = FIX_FIRST (runtime bindings, budget accounting, revalidation/publication/global-marker consistency, tests); fix pass 2 + `build_e1_launch_authority.py` running on the server E1 checkout `/home/sat/mcrl-leo-handover-e1`. Seal order unchanged.
 - Outside opinions (owner's `dr/`): astra `NO_CHANGE`, owner message `UNCHANGED`; archived in `.scratch/multi-catfish-v023-c3-outside-opinions-20260908/`.
 - Server-resident pipeline session: still NOT started by the owner (classifier blocks the controller from starting it). Runbook + skeleton installed under `/home/sat/mcrl-v023-pipeline-20260908/`.
+
+## Addendum 2026-09-08 06:30 UTC — E1 result, candidates in flight, Track B opened
+- **E1 = (HEADROOM, HEADROOM):** η_BASE 124 075 740.55 bits/J; U₁ +1.99 %; J₁ +2.22 %; service feasible; terminal receipt on the server
+  (`/home/sat/mcrl-v023-c3-existence-e1-20260908-r1/terminal-receipt.json`, sha256 0bc54fad…); record `E1-RESULT-RECORD-2026-09-08.md`.
+  Authorised next: kill screens for C-C (from the E1 tapes; codex implementing in the E1 checkout dir `…/c3-candidate-cc/`) and C-A (joint
+  coalition value; codex on `/home/sat/mcrl-v023-codex-ws-cand-a`, branch `codex/cand-a`); C-B admissible later. Seal order for each:
+  implementation review (astra) → controller seals the candidate contract (chmod 0444 + sidecar) → preflight → authority → dry-run → run.
+- **Track B (V024 regime-B, owner decision):** separate branch `v024/regime-b` (server worktree `/home/sat/mcrl-v024-regime-b`), design
+  memo + Gemini physics proposal + protocol + world derivation + astra prereg draft in `.scratch/multi-catfish-v024-regime-b-design/`;
+  codex step B1 (finite-demand goodput accounting under `src/` on THAT branch only + regime-map probe runner) running. Owner's criterion:
+  C1, C2, C3 each positive (DROP arms). Fast-iteration loop: regime-map probe → oracle marginal probe → full campaign on the first
+  qualifying grid point (G1→G2→G3; G0 control). Outside-review package `artifacts/multi-catfish-track-b-chatgpt-review-package-20260908-r1.zip`
+  with Deep Research (literature anchors/realism) and Q&A (red-team) prompts — owner runs them; results feed the prereg BEFORE sealing.
+- **Stage C / stage A:** fix pass 7 (5 remaining ultra items) relaunched after a provider capacity error; on DONE → `land_stagec_fix6.sh`-style
+  landing (fetch codex/stagec-fix6, merge, re-pin manifest, record) → ultra scoped review #3 → if YES → `land_attempt3.sh` → dispatch
+  `prompts/operator-stagea-attempt3.md`. Provider capacity errors (gpt-5.6-sol on the server) recur: on `CODEX_EXIT=1` with
+  "Selected model is at capacity", relaunch with a RESUME NOTE (keep partial edits).
+- Server pipeline session: still not started by the owner.
