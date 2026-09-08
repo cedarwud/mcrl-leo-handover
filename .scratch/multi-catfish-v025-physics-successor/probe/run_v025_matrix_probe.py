@@ -33,8 +33,13 @@ if str(REPO / "src") not in sys.path:
     sys.path.insert(0, str(REPO / "src"))
 
 from mcrl.errors import MCRLContractError  # noqa: E402
-from mcrl.physics_v025.acm import rate_model  # noqa: E402
-from mcrl.physics_v025.adapter import CellScore, build_shared_tape, score_setting  # noqa: E402
+from mcrl.physics_v025.acm import ACM_MODES, rate_model, select_mode  # noqa: E402
+from mcrl.physics_v025.adapter import (  # noqa: E402
+    CellScore,
+    SharedArchitectureTape,
+    build_shared_tape,
+    score_setting,
+)
 from mcrl.physics_v025.calibration import (  # noqa: E402
     CalibrationObservation,
     CalibrationValues,
@@ -45,6 +50,7 @@ from mcrl.physics_v025.calibration import (  # noqa: E402
 from mcrl.physics_v025.constants_v025 import (  # noqa: E402
     BEAM_RF_CAP_W,
     DECISION_INTERVAL_S,
+    POWER_SOLVER_TOLERANCE_W,
     SINR_MIN_DB,
     constant_manifest,
 )
@@ -131,6 +137,12 @@ class Configuration:
     @property
     def mapping(self) -> dict[int, tuple[int, int] | None]:
         return dict(self.assignments)
+
+
+CatalogueBuilder = Callable[
+    [ExogenousWorldTape, int, "Configuration"], tuple["Configuration", ...]
+]
+EVALUATION_EQUIVALENCE_KEY: Callable[["Configuration"], object] | None = None
 
 
 @dataclass(frozen=True)
@@ -256,13 +268,29 @@ class StepEvaluator:
         self.step_index = step_index
         self.field = field
         self.counter = counter
-        self._shared: dict[str, object] = {}
+        self._shared: dict[str, SharedArchitectureTape] = {}
         self._evaluated: dict[str, EvaluatedProfile] = {}
+        self._equivalent: dict[object, EvaluatedProfile] = {}
         self.physical_evaluations = 0
 
     def evaluate(self, config: Configuration) -> EvaluatedProfile:
         if config.configuration_id in self._evaluated:
             return self._evaluated[config.configuration_id]
+        equivalence_key = (
+            None if EVALUATION_EQUIVALENCE_KEY is None else EVALUATION_EQUIVALENCE_KEY(config)
+        )
+        if equivalence_key is not None and equivalence_key in self._equivalent:
+            source = self._equivalent[equivalence_key]
+            result = EvaluatedProfile(
+                config,
+                _rebind_cell_score(source.score, source.config, config),
+                source.energy_components,
+                source.lit_beam_seconds,
+                source.lit_satellite_seconds,
+            )
+            self._shared[config.configuration_id] = self._shared[source.config.configuration_id]
+            self._evaluated[config.configuration_id] = result
+            return result
         geometry = self.tape.geometry_for(step_index=self.step_index, assignments=config.mapping)
         shared = build_shared_tape(
             self.setting.architecture,
@@ -279,6 +307,8 @@ class StepEvaluator:
         result = EvaluatedProfile(config, score, components, beam_seconds, satellite_seconds)
         self._shared[config.configuration_id] = shared
         self._evaluated[config.configuration_id] = result
+        if equivalence_key is not None:
+            self._equivalent[equivalence_key] = result
         self.physical_evaluations += len(shared.integrated)
         if self.counter is not None:
             self.counter.boundary_evaluations += len(shared.integrated)
@@ -289,11 +319,58 @@ class StepEvaluator:
         shared = self._shared[config.configuration_id]
         powers = [
             tx.rf_power_w
-            for boundary in shared.integrated  # type: ignore[attr-defined]
+            for boundary in shared.integrated
             for slot in boundary.radiation.slots
             for tx in slot.transmissions
         ]
         return (max(powers, default=0.0), BEAM_RF_CAP_W)
+
+
+def _rebind_cell_score(
+    score: CellScore, source: Configuration, target: Configuration
+) -> CellScore:
+    """Rebind a physically exchangeable profile to target user identities."""
+
+    source_by_beam: dict[tuple[int, int] | None, list[int]] = {}
+    target_by_beam: dict[tuple[int, int] | None, list[int]] = {}
+    for user, beam in source.assignments:
+        source_by_beam.setdefault(beam, []).append(user)
+    for user, beam in target.assignments:
+        target_by_beam.setdefault(beam, []).append(user)
+    if {beam: len(users) for beam, users in source_by_beam.items()} != {
+        beam: len(users) for beam, users in target_by_beam.items()
+    }:
+        raise ProbeError("equivalence key merged configurations with different beam counts")
+    user_map = {
+        old: new
+        for beam in source_by_beam
+        for old, new in zip(
+            sorted(source_by_beam[beam]), sorted(target_by_beam[beam]), strict=True
+        )
+    }
+
+    def remap(values):
+        return None if values is None else {user_map[user]: value for user, value in values.items()}
+
+    boundary_attainment = (
+        None
+        if score.rate_target_attainment_by_boundary is None
+        else tuple(remap(values) for values in score.rate_target_attainment_by_boundary)
+    )
+    return CellScore(
+        score.setting,
+        remap(score.bits),
+        score.joules,
+        remap(score.decoding_time_s),
+        remap(score.useful_time_s),
+        remap(score.served_phy),
+        remap(score.rate_target_attained),
+        remap(score.rate_target_feasible),
+        boundary_attainment,
+        score.rate_target_bps,
+        score.valid,
+        score.certificate_residual_w,
+    )
 
 
 def _nominal_configuration(config: Configuration, profile: EvaluatedProfile) -> NominalConfiguration:
@@ -306,17 +383,22 @@ def _nominal_configuration(config: Configuration, profile: EvaluatedProfile) -> 
     )
 
 
-def _calibrate(setting: PhysicsSetting) -> CalibrationValues:
+def _calibrate(
+    setting: PhysicsSetting,
+    *,
+    catalogue_builder: CatalogueBuilder = _catalogue,
+    start_time_s: float = 0.0,
+) -> CalibrationValues:
     observations = []
     for index, domain in enumerate(CALIBRATION_WORLD_DOMAINS, start=1):
         tape = build_world_tape(
             domain=domain,
             provider=WORLD_PROVIDER_FACTORY(),
             steps=1,
-            start_time_s=0.0,
+            start_time_s=start_time_s,
         )
         base = _base_configuration(tape, 0, "nearest-eligible")
-        catalog = _catalogue(tape, 0, base)
+        catalog = catalogue_builder(tape, 0, base)
         nominal_evaluator = StepEvaluator(tape, setting, 0, field="nominal")
         nominal_profiles = {
             config.configuration_id: nominal_evaluator.evaluate(config) for config in catalog
@@ -493,6 +575,9 @@ def _factor_scores(
     users = tuple(user for user, _ in base.assignments)
     interaction_sum = Fraction()
     interaction_count = 0
+    joint_by_assignments = {
+        row.assignments: row for row in catalog if row.changed_users == 2
+    }
     for user0, user1 in itertools.combinations(users, 2):
         uni0 = [row for row in catalog if row.changed_users == 1 and dict(row.assignments)[user0] != dict(base.assignments)[user0]]
         uni1 = [row for row in catalog if row.changed_users == 1 and dict(row.assignments)[user1] != dict(base.assignments)[user1]]
@@ -501,7 +586,7 @@ def _factor_scores(
                 merged_map = dict(base.assignments)
                 merged_map[user0] = dict(first.assignments)[user0]
                 merged_map[user1] = dict(second.assignments)[user1]
-                joint = next((row for row in catalog if row.mapping == merged_map), None)
+                joint = joint_by_assignments.get(tuple(sorted(merged_map.items())))
                 if joint is None:
                     continue
                 interaction = c3_lcsrs_interaction(
@@ -656,8 +741,74 @@ def _rate_tail(bits: Mapping[int, float]) -> dict[str, float]:
     }
 
 
+def _physical_diagnostics(shared: SharedArchitectureTape) -> dict[str, object]:
+    """Summarise the already-built radiation tape without rerunning physics."""
+
+    certificates = [boundary.radiation.certificate for boundary in shared.integrated]
+    transmissions = [
+        tx
+        for boundary in shared.integrated
+        for slot in boundary.radiation.slots
+        for tx in slot.transmissions
+    ]
+    modes = []
+    saturated = 0
+    for boundary in shared.integrated:
+        for slot in boundary.radiation.slots:
+            saturated_users = set(slot.certificate.saturated_users)
+            for tx in slot.transmissions:
+                mode = select_mode(tx.sinr)
+                modes.append("UNSERVED" if mode is None else mode.name)
+                saturated += int(tx.user_id in saturated_users)
+    distribution = {
+        name: modes.count(name) for name in sorted(set(modes))
+    }
+    plateau_name = max(ACM_MODES, key=lambda mode: mode.efficiency_bit_per_symbol).name
+    cap_rows = [
+        rf
+        for boundary in shared.integrated
+        for slot in boundary.radiation.slots
+        for _beam, rf in slot.beam_rf_w
+    ]
+    iterations = np.asarray([certificate.iterations for certificate in certificates], dtype=np.float64)
+    return {
+        "acm_mode_counts": distribution,
+        "acm_samples": len(modes),
+        "se_plateau_hits": modes.count(plateau_name),
+        "se_plateau_share": 0.0 if not modes else modes.count(plateau_name) / len(modes),
+        "beam_cap_hit_share": 0.0
+        if not cap_rows
+        else sum(rf >= BEAM_RF_CAP_W - POWER_SOLVER_TOLERANCE_W for rf in cap_rows)
+        / len(cap_rows),
+        "beam_cap_hits": sum(
+            rf >= BEAM_RF_CAP_W - POWER_SOLVER_TOLERANCE_W for rf in cap_rows
+        ),
+        "beam_cap_samples": len(cap_rows),
+        "user_cap_hit_share": 0.0 if not transmissions else saturated / len(transmissions),
+        "user_cap_hits": saturated,
+        "user_cap_samples": len(transmissions),
+        "fixed_point": {
+            "status_counts": {
+                status: sum(certificate.status == status for certificate in certificates)
+                for status in ("FIXED", "CONVERGED", "INVALID")
+            },
+            "iterations_p50": float(np.quantile(iterations, 0.50)),
+            "iterations_p95": float(np.quantile(iterations, 0.95)),
+            "iterations_max": int(max(iterations, default=0)),
+            "iterations_sum": int(sum(iterations)),
+            "samples": len(certificates),
+            "residual_w_max": max((certificate.residual_w for certificate in certificates), default=0.0),
+        },
+    }
+
+
 def _arm_row(
-    *, arm: str, profile: EvaluatedProfile, base: Configuration, elapsed_s: float
+    *,
+    arm: str,
+    profile: EvaluatedProfile,
+    base: Configuration,
+    elapsed_s: float,
+    diagnostics: Mapping[str, object],
 ) -> dict[str, object]:
     users = max(1, len(base.assignments))
     opportunity = users * DECISION_INTERVAL_S
@@ -700,6 +851,7 @@ def _arm_row(
             for kind in ("beam_change", "satellite_change", "cell_rekey", "initial_entry", "reentry", "exit")
         },
         "decision_time_s": elapsed_s,
+        "usable_energy_range": diagnostics,
     }
 
 
@@ -711,10 +863,11 @@ def execute_step(
     carrier: str,
     calibration: CalibrationValues,
     counter: EvaluationCounter,
+    catalogue_builder: CatalogueBuilder = _catalogue,
 ) -> dict[str, object]:
     counter_start = counter.boundary_evaluations
     base = _base_configuration(tape, step_index, carrier)
-    catalog = _catalogue(tape, step_index, base)
+    catalog = catalogue_builder(tape, step_index, base)
     evaluator = StepEvaluator(tape, setting, step_index, counter=counter)
     evaluated = {row.configuration_id: evaluator.evaluate(row) for row in catalog}
     base_profile = evaluated[base.configuration_id]
@@ -756,7 +909,17 @@ def execute_step(
     for arm in ARMS:
         started = time.perf_counter()
         profile = evaluator.evaluate(selections[arm])
-        arm_rows.append(_arm_row(arm=arm, profile=profile, base=base, elapsed_s=time.perf_counter() - started))
+        arm_rows.append(
+            _arm_row(
+                arm=arm,
+                profile=profile,
+                base=base,
+                elapsed_s=time.perf_counter() - started,
+                diagnostics=_physical_diagnostics(
+                    evaluator._shared[profile.config.configuration_id]
+                ),
+            )
+        )
     return {
         "step_index": step_index,
         "carrier": carrier,
@@ -965,19 +1128,31 @@ def run_unit(
     executed_steps: int = 3,
     calibration: CalibrationValues | None = None,
     expected_world_digest: str | None = None,
+    catalogue_builder: CatalogueBuilder = _catalogue,
+    tape: ExogenousWorldTape | None = None,
 ) -> dict[str, object]:
     if executed_steps < 1:
         raise ProbeError("executed_steps must be positive")
     domain = _world_domain(world_index)
-    tape = build_world_tape(
-        domain=domain,
-        provider=WORLD_PROVIDER_FACTORY(),
-        steps=executed_steps + 3,
-        start_time_s=0.0,
+    tape = (
+        build_world_tape(
+            domain=domain,
+            provider=WORLD_PROVIDER_FACTORY(),
+            steps=executed_steps + 3,
+            start_time_s=0.0,
+        )
+        if tape is None
+        else tape
     )
+    if tape.domain != domain or len(tape.steps) < executed_steps + 3:
+        raise ProbeError("supplied common tape does not cover the requested unit")
     if expected_world_digest is not None and tape.digest != expected_world_digest:
         raise ProbeError("rebuilt world tape disagrees with the pre-outcome sealed manifest")
-    calibration = _calibrate(setting) if calibration is None else calibration
+    calibration = (
+        _calibrate(setting, catalogue_builder=catalogue_builder)
+        if calibration is None
+        else calibration
+    )
     if calibration.setting_digest != setting.digest:
         raise ProbeError("frozen calibration does not belong to the requested cell")
     started = time.perf_counter()
@@ -990,6 +1165,7 @@ def run_unit(
             carrier=REFERENCE_CARRIERS[step % len(REFERENCE_CARRIERS)],
             calibration=calibration,
             counter=counter,
+            catalogue_builder=catalogue_builder,
         )
         for step in range(executed_steps)
     ]
@@ -1011,7 +1187,8 @@ def run_unit(
         "calibration": calibration.payload(),
         "calibration_sha256": calibration.digest,
         "catalogue_definition": {
-            "complete_cartesian_legal_assignments": True,
+            "complete_cartesian_legal_assignments": catalogue_builder is _catalogue,
+            "builder": catalogue_builder.__name__,
             "base_always_present_and_wins_exact_ties": True,
             "top_proposals_per_user": TOP_PROPOSALS,
             "evacuations": "complete combinations of top-two proposals",

@@ -351,14 +351,32 @@ def _solve_power(
         power = updated
         clears_target = True
         if enforce_target_clearance and power.size:
-            achieved_sinr = power * direct / (noise + coupling @ power)
+            denominator = noise + coupling @ power
+            achieved_sinr = power * direct / denominator
+            # A stable fixed point can land a few floating-point ulps below
+            # its algebraically identical target and otherwise spin until the
+            # 4096-iteration cap.  Keep this strictly at rounding scale; the
+            # ordinary power-domain convergence tolerance must not weaken the
+            # discrete rate-feasibility gate.
+            clearance_slack = 8.0 * np.spacing(targets)
             clears_target = bool(
                 np.all(
                     forced
                     | (power == caps)
-                    | (achieved_sinr >= np.nextafter(targets, -np.inf))
+                    | (achieved_sinr + clearance_slack >= targets)
                 )
             )
+            if residual <= config.solver_tolerance_w and clears_target:
+                # Preserve the strict downstream feasibility comparison by
+                # nudging only rounding-scale under-target powers upward.
+                for _rounding_step in range(8):
+                    below = (~forced) & (power < caps) & (achieved_sinr < targets)
+                    if not np.any(below):
+                        break
+                    power[below] = np.nextafter(power[below], caps[below])
+                    denominator = noise + coupling @ power
+                    achieved_sinr = power * direct / denominator
+                clears_target = bool(np.all(forced | (power == caps) | (achieved_sinr >= targets)))
         if residual <= config.solver_tolerance_w and clears_target:
             break
     else:
