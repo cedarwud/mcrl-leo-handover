@@ -227,3 +227,18 @@ are the state. Delegate execution to codex (server) and Claude sub-agents; the c
   `prompts/operator-stagea-attempt3.md`. Provider capacity errors (gpt-5.6-sol on the server) recur: on `CODEX_EXIT=1` with
   "Selected model is at capacity", relaunch with a RESUME NOTE (keep partial edits).
 - Server pipeline session: still not started by the owner.
+
+## Addendum 2026-09-08 07:55 UTC — direction decided; C3-S screen pending; GitHub mirror
+- Probes (E1 anchors, development diagnostics): oracle marginals → additive exact C3 ≤ 0 in G0–G3 (C2 negative in G0/G1); S0 deployable
+  set-level decoder → +1.81 % pooled EE, service unchanged. Decision: C3 = set-level coordinator ("C3-S") in the ORIGINAL regime; Track B paused
+  (probe v1 units INVALID_RUN AttributeError; round-2 adjudication AMEND_GRID with outcome-exposure caveat). C-C ran: NO_SUPPORT
+  (NO_EXACT_TIE_EXPOSURE) → closed. C-A implemented (43 worker-hours estimate > 16 h cap) → deferred.
+- C3-S contract (`.scratch/multi-catfish-v023-c3s-screen/…CONTRACT…md`, astra draft + Addendum A lite catalog; controller review accepted; UNSEALED)
+  and runner (server E1 checkout `…/c3s-screen/`, 10 tests; lite-arm pass running). Seal order: lite pass → astra implementation review (ON THE
+  SERVER: `/home/sat/.npm-global/bin/codex exec --model gpt-6-astra --sandbox read-only`) → seal (chmod 0444 + sidecar via
+  `seal_candidate_contract.sh`-style step; contract path is the c3s-screen dir) → preflight → authorities → dry-run → run 12 units × 3 arms (T = 30;
+  full ≈ 9–14 worker-hours, lite ≈ 1–1.5) → merge → decisions `C3S_FULL/LITE_SCREEN_SUPPORT|NO_SUPPORT`.
+- Stage C: ultra scoped review #3 running on manifest e290ef50… (fix pass 7 landed at 45326f0); YES → `land_attempt3.sh` → operator attempt #3.
+- GitHub: the wip branch history holds two 106 MB receipt copies → GitHub rejects it. Filtered mirror branch `gh/wip-multi-catfish-v023-20260907`
+  (two paths removed via filter-repo) is pushed FROM THE SERVER clone (stored HTTPS credential); regenerate + re-push (`--force`) after new commits.
+- Server codex now supports gpt-6-astra (user-prefix install 0.153.4); all reviews run on the server from now on.
