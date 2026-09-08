@@ -242,3 +242,17 @@ are the state. Delegate execution to codex (server) and Claude sub-agents; the c
 - GitHub: the wip branch history holds two 106 MB receipt copies → GitHub rejects it. Filtered mirror branch `gh/wip-multi-catfish-v023-20260907`
   (two paths removed via filter-repo) is pushed FROM THE SERVER clone (stored HTTPS credential); regenerate + re-push (`--force`) after new commits.
 - Server codex now supports gpt-6-astra (user-prefix install 0.153.4); all reviews run on the server from now on.
+
+## Addendum 2026-09-08 10:55 UTC — stage A attempt #3 running on the server session; C3-S v1 running
+- Stage-C code FINAL (ultra R4 YES, manifest 95182c8d…); wip worktree at f165e96 clean; the SERVER PIPELINE SESSION (tmux `mcrl-pipeline`) is
+  executing stage-A attempt #3 per `ATTEMPT3-GO.txt` + `prompts/operator-stagea-attempt3.md`; it writes STATUS.md / STOP-*.md / ATTEMPT3-DONE.txt
+  under `/home/sat/mcrl-v023-pipeline-20260908/`. After ATTEMPT3-DONE: the controller fast-forwards the plain clone `/home/sat/mcrl-leo-handover-stagec`
+  to the final commit (the session's final commit lands in the wip worktree; fetch it back to local first) and writes `S1-GO.txt`; the session then
+  runs S1–S4 (skeleton corrected 10:35 UTC: `V023_STAGEC_PYTHON`, binder writes by default, launcher notes).
+- C3-S: contract v1 SEALED (1b19e0f4…); vertical-slice screen running in `/home/sat/mcrl-v023-c3s-run` (12 units detached; logs
+  `/home/sat/mcrl-v023-c3s-launch-20260908/unit-*.log`; merge with `merge_c3s_v1.sh`); hardened v2 runner (fix pass 2, 33 tests) merged locally
+  for the record re-run if v1 supports. Variant matrix: contract draft + controller review in `.scratch/multi-catfish-v023-c3s-variants/`
+  (unsealed; round-4 outside package built); nine-arm runner being built on `codex/c3s-variants` (server); runs after v1.
+  FULL2+C3-S confirmatory plan draft amended (A0–A7; horizon stays 30); ladder runner being built on `codex/c3s-ladder`.
+- Closed: C-C NO_SUPPORT; C-A deferred (FIX_FIRST ×2, 43 worker-hours); Track B paused (r2 probe: G0 merged, G1–G3 need per-grid units).
+- GitHub mirror pushed from the server (`gh/wip-multi-catfish-v023-20260907`); regenerate + `--force` after new commits.
