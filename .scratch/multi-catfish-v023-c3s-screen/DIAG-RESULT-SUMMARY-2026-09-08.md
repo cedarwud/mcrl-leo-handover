@@ -24,3 +24,8 @@ The gain is either (b) genuine set-level multi-user coordination, (d) exact curr
 
 ## Status of the v1 claim
 C3-S v1 (+2.88 % FULL / +2.92 % LITE, TRAIN panel, development evidence) is now attributed away from the two artefact hypotheses (renewal premium, churn) and from a harness defect; it is not yet attributed between coordination and exact rescoring. It remains development evidence in the legacy physics; the V025 successor matrix decides the regime for the real claim.
+
+## Addendum (17:10 UTC) — astra adjudication and runner cross-check
+- Astra independently decoded all 27 receipts and reproduced the table (LITE +2.921776 % / +2.893833 %; forced renewal +0.494376 % / exactly 0; random −1.116708 % / −1.252791 %; NULL 90/90). Its corrections are accepted: the result shows anchor-independence, not blanket artefact exclusion; under ablation LITE's energy advantage is exactly its 177 fewer beam-slots at 6.266 W each (activation is the only energy lever of the legacy model); the diag3 ⅔/⅓ reading is withdrawn (see the diag3 declaration addendum) and mechanism attribution moves to the V025 runner (singleton/interaction decomposition, Δ_joint, `S_UNI` comparator, deadline rule).
+- The runner's own NULL merge reports `C3S_DIAGNOSTIC_INCOMPLETE missing_units=9` because the merge authority expects 12 units while the NULL check was declared on 3; the placebo verdict rests on the per-unit `--assert-null-equals-base` (all EXIT=0) and the independent per-step comparison (90/90).
+- Astra priors before diag3: mixed 45 %, exact rescoring 40 %, multi-user coordination 15 %.
