@@ -115,6 +115,6 @@ smoke anchors cannot be certified below 60 core-minutes on the current path.
    run the <=10-core-minute rehearsal, derive and seal stride, then run the
    bounded smoke. Until then the seal package remains HOLD.
 
-No commit was made: the working tree already contains controller-owned,
-untracked decision documents and stage-3 changes, and the requested stage-4
-deliverables are not complete enough to represent as a successful stage commit.
+A scoped HOLD commit was made without adding controller-owned decision files or
+temporary artifacts. It records the implemented contracts and the explicit
+compute blockers; it must not be interpreted as a launch/admission signature.
