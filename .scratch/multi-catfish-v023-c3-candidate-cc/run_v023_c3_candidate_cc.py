@@ -26,6 +26,7 @@ if str(E1_DIR) not in sys.path:
     sys.path.insert(0, str(E1_DIR))
 
 import run_v023_c3_existence_e1 as e1  # noqa: E402
+from c3_contingency_f0 import C3F0Error, _assert_close as f0_assert_close  # noqa: E402
 
 
 SCHEMA = "multi-catfish-mcrl-v023-c3-candidate-cc-v1"
@@ -47,6 +48,7 @@ E1_TERMINAL = "terminal-receipt.json"
 E1_TAPE = "e1-physical-tape.json"
 E1_MANIFEST = "e1-physical-tape.manifest.json"
 E1_RECEIPT = "receipt.json"
+E1_TERMINAL_SHA256 = "0bc54fad23c8cdac2ce789c49ee37880f4df6e32110576c7a800443df0e7c4a6"
 JQ = Path("/usr/bin/jq")
 STEPS = (0, 1)
 USERS = 100
@@ -69,6 +71,14 @@ AUTHORITY_KEYS = {
 
 class CCError(RuntimeError):
     """A C-C contract, authority, tape, or receipt failed closed."""
+
+
+class CCMergeWaiting(CCError):
+    """Merge cannot begin until every immutable unit receipt is present."""
+
+    def __init__(self, missing: int) -> None:
+        self.missing = missing
+        super().__init__(f"{missing} units missing")
 
 
 def pin_single_thread_runtime() -> None:
@@ -284,6 +294,9 @@ _TAPE_JQ = """
 def _e1_terminal_metadata(root: Path) -> tuple[dict[str, Any], str]:
     terminal = root / E1_TERMINAL
     _mode_0444(terminal, field="E1 terminal receipt")
+    terminal_sha = file_sha256(terminal)
+    if terminal_sha != E1_TERMINAL_SHA256:
+        raise CCError("E1 terminal receipt differs from the reviewed digest")
     metadata = _jq_json(terminal, _TERMINAL_JQ, field="E1 terminal receipt metadata")
     expected_keys = {
         "schema", "status", "outcome", "claim_ceiling", "integrity",
@@ -310,7 +323,7 @@ def _e1_terminal_metadata(root: Path) -> tuple[dict[str, Any], str]:
     rows = metadata.get("unit_receipts")
     if not isinstance(rows, list) or len(rows) != len(e1.ALL_UNITS):
         raise CCError("E1 terminal receipt lacks the exact twelve-unit panel")
-    return metadata, file_sha256(terminal)
+    return metadata, E1_TERMINAL_SHA256
 
 
 def _unit_paths(root: Path, key: e1.UnitKey) -> tuple[Path, Path, Path]:
@@ -475,7 +488,7 @@ def _metrics(value: object, *, users: int, field: str) -> dict[str, object]:
     }
 
 
-def _f0(value: object, *, field: str) -> str:
+def _f0(value: object, *, field: str, network_energy_j: object) -> str:
     expected_keys = {
         "f0_schema", "verified", "power_residual_w", "energy_residual_j"
     }
@@ -486,10 +499,25 @@ def _f0(value: object, *, field: str) -> str:
         or value.get("verified") is not True
     ):
         raise CCError(f"{field} lacks a verified corrected-F0 receipt")
-    for name in ("power_residual_w", "energy_residual_j"):
-        residual = _float_hex(value[name], field=f"{field} {name}")
-        if residual != 0.0:
-            raise CCError(f"{field} conservation residual is nonzero")
+    energy = _float_hex(
+        network_energy_j, field=f"{field} network energy", positive=True
+    )
+    comparisons = (
+        (
+            "power_residual_w",
+            energy / float(e1.INTERVAL_S),
+        ),
+        ("energy_residual_j", energy),
+    )
+    try:
+        for name, canonical in comparisons:
+            residual = _float_hex(value[name], field=f"{field} {name}")
+            f0_assert_close(
+                canonical + residual, canonical,
+                field=f"serialized {field} {name}",
+            )
+    except C3F0Error as error:
+        raise CCError(f"{field} conservation residual failed F0 verification") from error
     return canonical_sha256(value)
 
 
@@ -606,7 +634,10 @@ def select_anchor(step: Mapping[str, object]) -> dict[str, object]:
         raise CCError("stored BASE is not min of the exact float32 tie sets")
     keys = _validate_key_table(masks, step.get("action_physical_keys"), reference)
     base_metrics = _metrics(step.get("reference_metrics"), users=users, field="BASE")
-    base_f0 = _f0(step.get("reference_f0_conservation"), field="BASE")
+    base_f0 = _f0(
+        step.get("reference_f0_conservation"), field="BASE",
+        network_energy_j=base_metrics["total_energy_j"],
+    )
 
     focal: int | None = None
     for user, tie in enumerate(ties):
@@ -655,7 +686,10 @@ def select_anchor(step: Mapping[str, object]) -> dict[str, object]:
                 ):
                     raise CCError("E1 unilateral row does not authenticate the tied complete profile")
                 metrics = _metrics(row.get("metrics"), users=users, field="candidate")
-                f0_sha = _f0(row.get("f0_conservation"), field="candidate")
+                f0_sha = _f0(
+                    row.get("f0_conservation"), field="candidate",
+                    network_energy_j=metrics["total_energy_j"],
+                )
                 profile_id = f"U:{focal}:{action}"
             energy = _float_hex(metrics["total_energy_j"], field="candidate energy", positive=True)
             candidates.append((energy, action, metrics, f0_sha, profile_id))
@@ -686,7 +720,74 @@ def select_anchor(step: Mapping[str, object]) -> dict[str, object]:
     }
 
 
-def evaluate_unit_tape(tape: Mapping[str, object], *, key: e1.UnitKey, tape_sha256: str) -> dict[str, object]:
+def producer_common_binding(authority: Mapping[str, object]) -> dict[str, object]:
+    """Return the contract/preflight/code identity shared by all C-C authorities."""
+
+    contract = authority.get("contract")
+    preflight = authority.get("preflight_manifest")
+    code_files = authority.get("code_files")
+    if (
+        not isinstance(contract, Mapping)
+        or not isinstance(preflight, Mapping)
+        or not isinstance(code_files, list)
+    ):
+        raise CCError("C-C authority lacks producer bindings")
+    code_digests = []
+    for row in code_files:
+        if not isinstance(row, Mapping) or not isinstance(row.get("role"), str):
+            raise CCError("C-C authority code binding is malformed")
+        code_digests.append({
+            "role": row["role"],
+            "sha256": _digest(row.get("sha256"), field=f"{row['role']} code SHA-256"),
+        })
+    return {
+        "contract_sha256": _digest(
+            contract.get("sha256"), field="C-C contract SHA-256"
+        ),
+        "preflight_manifest_sha256": _digest(
+            preflight.get("sha256"), field="C-C preflight SHA-256"
+        ),
+        "code_files": code_digests,
+    }
+
+
+def unit_producer_binding(
+    authority: Mapping[str, object], *, authority_sha256: str
+) -> dict[str, object]:
+    return {
+        **producer_common_binding(authority),
+        "unit_authority_sha256": _digest(
+            authority_sha256, field="C-C unit authority SHA-256"
+        ),
+    }
+
+
+def validate_receipt_producer(
+    receipt: Mapping[str, object], *, authority: Mapping[str, object]
+) -> dict[str, object]:
+    producer = receipt.get("producer_cc_authority")
+    expected_keys = {
+        "contract_sha256", "preflight_manifest_sha256", "code_files",
+        "unit_authority_sha256",
+    }
+    if not isinstance(producer, Mapping) or set(producer) != expected_keys:
+        raise CCError("C-C unit receipt lacks exact producer authority provenance")
+    common = {name: producer[name] for name in (
+        "contract_sha256", "preflight_manifest_sha256", "code_files"
+    )}
+    if common != producer_common_binding(authority):
+        raise CCError("C-C unit receipt producer binding differs from merge authority")
+    _digest(
+        producer.get("unit_authority_sha256"),
+        field="C-C unit receipt authority SHA-256",
+    )
+    return dict(producer)
+
+
+def evaluate_unit_tape(
+    tape: Mapping[str, object], *, key: e1.UnitKey, tape_sha256: str,
+    producer_authority: Mapping[str, object],
+) -> dict[str, object]:
     expected_keys = {
         "schema", "status", "claim_ceiling", "unit", "panel_bindings",
         "preflight_manifest_sha256", "steps", "test_split_opened",
@@ -718,6 +819,7 @@ def evaluate_unit_tape(tape: Mapping[str, object], *, key: e1.UnitKey, tape_sha2
         "unit": {"world": key.world, "lineage": key.lineage},
         "source_e1_tape_sha256": _digest(tape_sha256, field="E1 tape SHA-256"),
         "source_e1_preflight_sha256": tape["preflight_manifest_sha256"],
+        "producer_cc_authority": dict(producer_authority),
         "anchors": anchors,
         "counts": {
             "anchors": len(anchors),
@@ -815,9 +917,17 @@ def pool_unit_receipts(receipts: Sequence[Mapping[str, object]]) -> dict[str, ob
     }
 
 
-def build_terminal_receipt(receipts: Sequence[Mapping[str, object]], receipt_bindings: Sequence[Mapping[str, object]]) -> dict[str, object]:
+def build_terminal_receipt(
+    receipts: Sequence[Mapping[str, object]],
+    receipt_bindings: Sequence[Mapping[str, object]], *,
+    authority: Mapping[str, object] | None = None,
+) -> dict[str, object]:
     if len(receipts) != len(e1.ALL_UNITS) or len(receipt_bindings) != len(e1.ALL_UNITS):
         raise CCError("C-C merge requires exactly twelve unit receipts")
+    if authority is None:
+        raise CCError("C-C merge requires producer authority provenance")
+    for receipt in receipts:
+        validate_receipt_producer(receipt, authority=authority)
     pooled = pool_unit_receipts(receipts)
     if pooled["counts"]["anchors"] != 24 or pooled["counts"]["service_opportunities"] != OPPORTUNITIES:
         raise CCError("C-C merge does not cover 24 anchors and 2,400 opportunities")
@@ -828,6 +938,7 @@ def build_terminal_receipt(receipts: Sequence[Mapping[str, object]], receipt_bin
         "reasons": pooled["reasons"],
         "claim_ceiling": CLAIM_CEILING,
         "panel_bindings": panel_bindings(),
+        "producer_cc_binding": producer_common_binding(authority),
         "unit_receipts": list(receipt_bindings),
         "counts": pooled["counts"],
         "exact_pooling": pooled["exact"],
@@ -841,8 +952,11 @@ def build_terminal_receipt(receipts: Sequence[Mapping[str, object]], receipt_bin
     }
 
 
-def invalid_receipt(*, scope: str, error: BaseException, key: e1.UnitKey | None = None) -> dict[str, object]:
-    return {
+def invalid_receipt(
+    *, scope: str, error: BaseException, key: e1.UnitKey | None = None,
+    producer_authority: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "schema": UNIT_RECEIPT_SCHEMA if key is not None else TERMINAL_RECEIPT_SCHEMA,
         "status": "INVALID_RUN", "outcome": "INVALID_RUN", "reasons": [],
         "scope": scope, "claim_ceiling": CLAIM_CEILING,
@@ -853,6 +967,11 @@ def invalid_receipt(*, scope: str, error: BaseException, key: e1.UnitKey | None 
         "test_split_opened": False, "episode_training": False,
         "learner_update": False, "efficacy_claim": False,
     }
+    if key is not None:
+        if producer_authority is None:
+            raise CCError("invalid C-C unit receipt requires producer authority provenance")
+        payload["producer_cc_authority"] = dict(producer_authority)
+    return payload
 
 
 def _write_once(path: Path, payload: Mapping[str, object]) -> str:
@@ -916,16 +1035,28 @@ def _publish_unit(output: Path, *, key: e1.UnitKey, payload: Mapping[str, object
             shutil.rmtree(stage)
 
 
-def execute_unit(*, key: e1.UnitKey, e1_root: Path, output: Path, authority: Mapping[str, object]) -> tuple[Path, bool]:
+def execute_unit(
+    *, key: e1.UnitKey, e1_root: Path, output: Path,
+    authority: Mapping[str, object], authority_sha256: str,
+) -> tuple[Path, bool]:
     tape_binding = authority["e1_input"]["units"][e1.ALL_UNITS.index(key)]["tape"]
     tape_path = Path(tape_binding["path"])
+    producer = unit_producer_binding(
+        authority, authority_sha256=authority_sha256
+    )
     try:
         extracted = _jq_json(tape_path, _TAPE_JQ, field=f"E1 tape {key.slug} steps 0-1")
-        payload = evaluate_unit_tape(extracted, key=key, tape_sha256=tape_binding["sha256"])
+        payload = evaluate_unit_tape(
+            extracted, key=key, tape_sha256=tape_binding["sha256"],
+            producer_authority=producer,
+        )
         receipt, _digest_value = _publish_unit(output, key=key, payload=payload)
         return receipt, True
     except Exception as error:
-        payload = invalid_receipt(scope="unit", error=error, key=key)
+        payload = invalid_receipt(
+            scope="unit", error=error, key=key,
+            producer_authority=producer,
+        )
         receipt, _digest_value = _publish_unit(output, key=key, payload=payload)
         return receipt, False
 
@@ -933,8 +1064,13 @@ def execute_unit(*, key: e1.UnitKey, e1_root: Path, output: Path, authority: Map
 def _load_candidate_units(output: Path, authority: Mapping[str, object]) -> tuple[list[dict[str, Any]], list[dict[str, object]]]:
     receipts = []
     bindings = []
+    missing = 0
     for index, key in enumerate(e1.ALL_UNITS):
-        path = Path(output) / "units" / key.slug / DEFAULT_UNIT_RECEIPT
+        unit_root = Path(output) / "units" / key.slug
+        if not unit_root.exists() and not unit_root.is_symlink():
+            missing += 1
+            continue
+        path = unit_root / DEFAULT_UNIT_RECEIPT
         _mode_0444(path, field=f"C-C unit receipt {key.slug}")
         digest = file_sha256(path)
         _validate_sidecar(path, digest=digest, field=f"C-C unit receipt {key.slug}")
@@ -950,11 +1086,14 @@ def _load_candidate_units(output: Path, authority: Mapping[str, object]) -> tupl
             or payload.get("integrity") is not True
         ):
             raise CCError(f"C-C unit receipt {key.slug} is invalid or incomplete")
+        validate_receipt_producer(payload, authority=authority)
         receipts.append(payload)
         bindings.append({
             "unit": {"world": key.world, "lineage": key.lineage},
             "path": f"units/{key.slug}/{DEFAULT_UNIT_RECEIPT}", "sha256": digest,
         })
+    if missing:
+        raise CCMergeWaiting(missing)
     return receipts, bindings
 
 
@@ -963,9 +1102,11 @@ def execute_merge(*, output: Path, authority: Mapping[str, object]) -> tuple[Pat
     terminal = root / DEFAULT_TERMINAL
     try:
         receipts, bindings = _load_candidate_units(root, authority)
-        payload = build_terminal_receipt(receipts, bindings)
+        payload = build_terminal_receipt(receipts, bindings, authority=authority)
         write_once_with_sidecar(terminal, payload)
         return terminal, True
+    except CCMergeWaiting:
+        raise
     except Exception as error:
         payload = invalid_receipt(scope="merge", error=error)
         write_once_with_sidecar(terminal, payload)
@@ -997,6 +1138,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         receipt, valid = execute_unit(
             key=key, e1_root=Path(args.from_e1_root), output=Path(args.output),
             authority=authority,
+            authority_sha256=file_sha256(Path(args.launch_authority)),
         )
         return {"mode": "unit", "receipt": receipt, "valid": valid}
     receipt, valid = execute_merge(output=Path(args.output), authority=authority)
@@ -1029,6 +1171,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         result = run(args)
+    except CCMergeWaiting as error:
+        print(f"C_C_MERGE_WAITING {error.missing} units missing")
+        return 3
     except Exception as error:
         print(f"C_C_ERROR: {error}", file=sys.stderr)
         return 2

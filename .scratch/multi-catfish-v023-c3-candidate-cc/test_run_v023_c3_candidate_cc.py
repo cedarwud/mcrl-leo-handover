@@ -9,6 +9,8 @@ import stat
 import numpy as np
 import pytest
 
+import build_cc_launch_authority as authority_builder
+import c3_contingency_f0 as f0
 import run_v023_c3_candidate_cc as cc
 
 
@@ -81,6 +83,19 @@ def _step(
 
 def _pooled(anchor: dict[str, object]) -> dict[str, object]:
     return cc.pool_unit_receipts([{"anchors": [anchor]}])
+
+
+def _authority() -> dict[str, object]:
+    return {
+        "contract": {"path": "/sealed/contract.md", "sha256": "1" * 64},
+        "preflight_manifest": {
+            "path": "/sealed/preflight.json", "sha256": "2" * 64,
+        },
+        "code_files": [
+            {"role": "cc_runner", "path": "/sealed/runner.py", "sha256": "3" * 64},
+            {"role": "cc_tests", "path": "/sealed/tests.py", "sha256": "4" * 64},
+        ],
+    }
 
 
 def test_no_ties_records_no_exposure_and_no_support() -> None:
@@ -213,3 +228,249 @@ def test_exact_rational_pooling_uses_binary64_values_losslessly() -> None:
     assert base_bits != Fraction(1, 10)
     assert eta_selected == Fraction.from_float(0.2) / Fraction.from_float(0.3)
     assert pooled["outcome"] == "C_C_FAST_SCREEN_SUPPORT"
+
+
+def test_e1_accepted_roundoff_residual_is_accepted_by_cc() -> None:
+    users = 100
+    profile_fields = {
+        "link_rate_bps": np.ones(users),
+        "served": np.ones(users, dtype=np.bool_),
+        "serving_satellite": np.zeros(users, dtype=np.int64),
+        "serving_cell": np.zeros(users, dtype=np.int64),
+        "active_beam_satellites": np.asarray([0], dtype=np.int64),
+        "active_beam_cells": np.asarray([0], dtype=np.int64),
+        "beam_power_w": np.asarray([1.0]),
+        "fixed_power_w": 0.0,
+        "system_power_w": 0.0,
+        "interval_s": 30.08,
+    }
+    prototype = f0.PhysicalProfile(**profile_fields)
+    canonical = f0._canonical_power_components(prototype)
+    profile_fields.update({
+        "fixed_power_w": canonical.fixed_power_w,
+        "system_power_w": canonical.system_power_w,
+    })
+    receipt = cc.e1._conservation(f0.PhysicalProfile(**profile_fields))
+
+    assert receipt["power_residual_w"] == (-2.0 ** -50).hex()
+    energy = f0.PhysicalProfile(**profile_fields).network_energy_j.hex()
+    assert cc._f0(
+        receipt, field="synthetic E1 profile", network_energy_j=energy
+    ) == cc.canonical_sha256(receipt)
+
+    invalid = {**receipt, "power_residual_w": float(1.0e-6).hex()}
+    with pytest.raises(cc.CCError, match="failed F0 verification"):
+        cc._f0(invalid, field="material mismatch", network_energy_j=energy)
+
+
+def test_e1_terminal_must_match_reviewed_digest_before_metadata_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    terminal = tmp_path / cc.E1_TERMINAL
+    terminal.write_text("{}\n", encoding="ascii")
+    terminal.chmod(0o444)
+    monkeypatch.setattr(
+        cc, "_jq_json",
+        lambda *_args, **_kwargs: pytest.fail("unreviewed terminal metadata was read"),
+    )
+    with pytest.raises(cc.CCError, match="reviewed digest"):
+        cc._e1_terminal_metadata(tmp_path)
+
+
+def test_unit_receipt_carries_exact_cc_producer_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority = _authority()
+    producer = cc.unit_producer_binding(authority, authority_sha256="5" * 64)
+    key = cc.e1.ALL_UNITS[0]
+    tape = {
+        "schema": cc.e1.UNIT_TAPE_SCHEMA,
+        "status": "COMPLETE_IMMUTABLE_TAPE",
+        "claim_ceiling": cc.e1.CLAIM_CEILING,
+        "unit": key.as_dict(),
+        "panel_bindings": cc.e1.panel_bindings(),
+        "preflight_manifest_sha256": "6" * 64,
+        "steps": [{"step_index": 0}, {"step_index": 1}],
+        "test_split_opened": False,
+        "episode_training": False,
+        "learner_update": False,
+        "efficacy_claim": False,
+    }
+    anchors = [
+        {"focal_user": None, "legal_physical_change": False,
+         "base_metrics": {"opportunities": 100}},
+        {"focal_user": 0, "legal_physical_change": True,
+         "base_metrics": {"opportunities": 100}},
+    ]
+    monkeypatch.setattr(cc, "select_anchor", lambda step: anchors[step["step_index"]])
+
+    receipt = cc.evaluate_unit_tape(
+        tape, key=key, tape_sha256="7" * 64, producer_authority=producer
+    )
+    assert receipt["producer_cc_authority"] == {
+        "contract_sha256": "1" * 64,
+        "preflight_manifest_sha256": "2" * 64,
+        "code_files": [
+            {"role": "cc_runner", "sha256": "3" * 64},
+            {"role": "cc_tests", "sha256": "4" * 64},
+        ],
+        "unit_authority_sha256": "5" * 64,
+    }
+
+
+def test_merge_refuses_receipts_without_cc_provenance() -> None:
+    receipts = [
+        {"source_e1_tape_sha256": f"{index:064x}", "anchors": []}
+        for index in range(len(cc.e1.ALL_UNITS))
+    ]
+    bindings = [{} for _key in cc.e1.ALL_UNITS]
+    with pytest.raises(cc.CCError, match="producer authority provenance"):
+        cc.build_terminal_receipt(receipts, bindings, authority=_authority())
+
+
+def test_merge_requires_common_contract_preflight_and_code_binding() -> None:
+    authority = _authority()
+    producer = cc.unit_producer_binding(authority, authority_sha256="5" * 64)
+    receipts = [
+        {"producer_cc_authority": dict(producer), "anchors": []}
+        for _key in cc.e1.ALL_UNITS
+    ]
+    receipts[-1]["producer_cc_authority"] = {
+        **producer,
+        "code_files": [
+            {"role": "foreign_runner", "sha256": "a" * 64},
+        ],
+    }
+    bindings = [{} for _key in cc.e1.ALL_UNITS]
+    with pytest.raises(cc.CCError, match="differs from merge authority"):
+        cc.build_terminal_receipt(receipts, bindings, authority=authority)
+
+
+def test_documented_authority_invocation_executes_without_separator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "e1"
+    source.mkdir()
+    contract = tmp_path / "contract.md"
+    preflight = tmp_path / "preflight.json"
+    output_root = tmp_path / "run-output"
+    authority = tmp_path / "authority.json"
+    unit = f"{cc.e1.ALL_UNITS[0].world}:{cc.e1.ALL_UNITS[0].lineage}"
+
+    monkeypatch.setattr(cc, "HERE", tmp_path)
+    monkeypatch.setattr(cc, "pin_single_thread_runtime", lambda: None)
+    monkeypatch.setattr(cc, "validate_preflight_manifest", lambda _path: ({}, "8" * 64))
+    monkeypatch.setattr(
+        cc, "sealed_contract_binding",
+        lambda: {"path": str(contract.resolve()), "sha256": "9" * 64},
+    )
+    monkeypatch.setattr(cc, "expected_code_bindings", lambda: [])
+    monkeypatch.setattr(
+        cc, "discover_e1_input",
+        lambda _source, hash_tapes: {
+            "root": str(source.resolve()),
+            "terminal_receipt": {"sha256": cc.E1_TERMINAL_SHA256},
+            "units": [],
+        },
+    )
+    launch_arguments = [
+        "--preflight-manifest", str(preflight),
+        "--launch-authority", str(authority),
+        "--from-e1-root", str(source),
+        "--output", str(output_root),
+        "--unit", unit,
+    ]
+    result = authority_builder.main([
+        "--preflight-manifest", str(preflight),
+        "--contract", str(contract),
+        "--from-e1-root", str(source),
+        "--output-root", str(output_root),
+        "--output", str(authority),
+        "--launch-arguments", *launch_arguments,
+    ])
+
+    assert result == 0
+    payload = json.loads(authority.read_text(encoding="utf-8"))
+    assert payload["launch_arguments"] == launch_arguments
+    assert payload["e1_input"]["terminal_receipt"]["sha256"] == cc.E1_TERMINAL_SHA256
+
+
+def test_missing_units_wait_without_publishing_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cc, "HERE", tmp_path)
+    output = tmp_path / "run-output"
+    with pytest.raises(cc.CCMergeWaiting) as caught:
+        cc.execute_merge(output=output, authority=_authority())
+    assert caught.value.missing == len(cc.e1.ALL_UNITS)
+    assert not (output / cc.DEFAULT_TERMINAL).exists()
+
+
+def test_present_corrupt_unit_publishes_invalid_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cc, "HERE", tmp_path)
+    output = tmp_path / "run-output"
+    (output / "units" / cc.e1.ALL_UNITS[0].slug).mkdir(parents=True)
+
+    terminal, valid = cc.execute_merge(output=output, authority=_authority())
+    assert valid is False
+    assert json.loads(terminal.read_text(encoding="utf-8"))["status"] == "INVALID_RUN"
+
+
+def test_main_prints_exact_merge_waiting_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cc, "pin_single_thread_runtime", lambda: None)
+    monkeypatch.setattr(
+        cc, "run", lambda _args: (_ for _ in ()).throw(cc.CCMergeWaiting(4))
+    )
+    assert cc.main(["--merge"]) == 3
+    assert capsys.readouterr().out == "C_C_MERGE_WAITING 4 units missing\n"
+
+
+def test_exact_pooling_sums_unequal_energy_anchors_before_ratio() -> None:
+    anchors = [
+        {
+            "focal_user": 0,
+            "legal_physical_change": True,
+            "base_metrics": _metrics(10.0, 1.0, 2),
+            "selected_metrics": _metrics(9.0, 0.5, 2),
+        },
+        {
+            "focal_user": 0,
+            "legal_physical_change": True,
+            "base_metrics": _metrics(90.0, 9.0, 2),
+            "selected_metrics": _metrics(92.0, 10.0, 2),
+        },
+    ]
+    pooled = cc.pool_unit_receipts([{"anchors": anchors}])
+    exact = pooled["exact"]
+    eta_selected = Fraction(
+        int(exact["eta_selected"]["numerator"]),
+        int(exact["eta_selected"]["denominator"]),
+    )
+    assert eta_selected == Fraction(101, 1) / Fraction.from_float(10.5)
+    assert pooled["outcome"] == "C_C_FAST_SCREEN_NO_SUPPORT"
+    assert pooled["reasons"] == ["EE_NOT_ABOVE_BASE"]
+
+
+@pytest.mark.parametrize(
+    ("lost", "outcome", "reasons"),
+    [
+        (2, "C_C_FAST_SCREEN_SUPPORT", []),
+        (3, "C_C_FAST_SCREEN_NO_SUPPORT", ["SERVICE_NONINFERIORITY_FAILED"]),
+    ],
+)
+def test_exact_lost_service_boundary_over_2400_opportunities(
+    lost: int, outcome: str, reasons: list[str]
+) -> None:
+    anchor = {
+        "focal_user": 0,
+        "legal_physical_change": True,
+        "base_metrics": _metrics(100.0, 10.0, 2400, users=2400),
+        "selected_metrics": _metrics(100.0, 9.0, 2400 - lost, users=2400),
+    }
+    pooled = _pooled(anchor)
+    assert pooled["outcome"] == outcome
+    assert pooled["reasons"] == reasons

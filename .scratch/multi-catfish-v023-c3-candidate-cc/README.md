@@ -27,7 +27,15 @@ exact rational value before summing and comparing. A valid panel emits
 is strictly above BASE, and service is no worse than BASE minus 0.001. Otherwise
 it emits `C_C_FAST_SCREEN_NO_SUPPORT` with every applicable declared reason.
 Any integrity failure emits `INVALID_RUN` when a write-once receipt can safely be
-published.
+published. If one or more final unit directories are absent, merge instead
+prints `C_C_MERGE_WAITING <n> units missing` and leaves the terminal path
+unwritten; a present but corrupt or incomplete unit remains `INVALID_RUN`.
+
+The admitted E1 source is fixed to reviewed terminal SHA-256
+`0bc54fad23c8cdac2ce789c49ee37880f4df6e32110576c7a800443df0e7c4a6`.
+Every C-C unit receipt also binds its producing unit authority digest and the
+common sealed contract, preflight, and role-to-code digests. Merge refuses
+receipts whose common producer binding differs from its validated authority.
 
 The E1 schema has every required field. Both the E1 source builder and an
 immutable unit tape were checked for `q1_q2_float32`, `action_masks`,
@@ -73,7 +81,7 @@ OUT=$CC/run-output
    "$PY" "$CC/build_cc_launch_authority.py" \
      --preflight-manifest "$CC/CC-PREFLIGHT-MANIFEST.json" \
      --contract "$CONTRACT" --from-e1-root "$E1" --output-root "$OUT" \
-     --output "$AUTH" --launch-arguments -- \
+     --output "$AUTH" --launch-arguments \
      --preflight-manifest "$CC/CC-PREFLIGHT-MANIFEST.json" \
      --launch-authority "$AUTH" --from-e1-root "$E1" --output "$OUT" \
      --unit "$UNIT"
