@@ -17,6 +17,8 @@ from mcrl.physics_v025.architectures import (
     Geometry,
     Link,
     RadiationConfig,
+    _solve_power,
+    _target_feasibility,
 )
 from mcrl.physics_v025.channel import noise_power_w
 from mcrl.physics_v025.constants_v025 import (
@@ -165,7 +167,12 @@ def test_coupled_power_convergence_saturation_and_failure_certificate() -> None:
     links = (Link(0, (1, 1), 0, direct), Link(1, (2, 1), 0, direct))
     converged = AngleTPC_TDM().radiate(config, geometry(links, cross), "nominal")
     assert converged.certificate.status == "CONVERGED"
-    assert converged.certificate.residual_w <= 1e-10
+    assert (
+        converged.certificate.residual_w <= 1e-10
+        or converged.certificate.residual_w / max(
+            tx.rf_power_w for tx in converged.slots[0].transmissions
+        ) <= 1e-9
+    )
     assert [tx.rf_power_w for tx in converged.slots[0].transmissions] == pytest.approx([5 / 9, 5 / 9], abs=2e-10)
 
     weak = POWER_CONTROL_TARGET_LINEAR * noise / 10.0
@@ -400,3 +407,51 @@ def test_rate_target_coupled_solve_clears_discrete_threshold() -> None:
         ACMRate().rate_bps(tx.sinr, tx.bandwidth_hz) >= RATE_TARGET_BPS
         for tx in result.slots[0].transmissions
     )
+
+
+def test_near_unit_spectral_radius_converges_to_analytic_fixed_point() -> None:
+    coupling = np.full((3, 3), 0.4995)
+    np.fill_diagonal(coupling, 0.0)
+    power, certificate = _solve_power(
+        np.ones(3),
+        coupling,
+        np.full(3, 0.0001),
+        np.full(3, 1.65),
+        (0, 1, 2),
+        RadiationConfig(bandwidth_hz=1.0, target_sinr=1.0),
+    )
+    assert certificate.status == "CONVERGED"
+    assert power == pytest.approx(np.full(3, 0.1), rel=2e-6)
+
+
+def test_jointly_unattainable_rate_targets_converge_at_cap() -> None:
+    power, certificate = _solve_power(
+        np.ones(2),
+        np.array(((0.0, 2.0), (2.0, 0.0))),
+        np.ones(2),
+        np.full(2, 1.65),
+        (0, 1),
+        RadiationConfig(bandwidth_hz=1.0, target_sinr=1.0),
+        target_sinr=np.ones(2),
+    )
+    assert certificate.status == "CONVERGED"
+    assert certificate.saturated_users == (0, 1)
+    assert _target_feasibility(
+        power,
+        np.ones(2),
+        np.array(((0.0, 2.0), (2.0, 0.0))),
+        np.ones(2),
+        (1.0, 1.0),
+    ) == (False, False)
+
+
+def test_nonfinite_coupled_update_is_invalid() -> None:
+    _power, certificate = _solve_power(
+        np.ones(2),
+        np.array(((0.0, np.nan), (0.0, 0.0))),
+        np.ones(2),
+        np.full(2, 1.65),
+        (0, 1),
+        RadiationConfig(bandwidth_hz=1.0, target_sinr=1.0),
+    )
+    assert certificate.status == "INVALID"

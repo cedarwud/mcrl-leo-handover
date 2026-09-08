@@ -1,20 +1,24 @@
-# V0.25 probe seal package — DRAFT (2026-09-08)
+# V0.25 probe seal package — stage-4 HOLD package (2026-09-08)
 
-Status: **HOLD / controller signature and stage-4 runner update required before
-any overnight unit is opened.** This draft is outcome-blind. The controller has
-named `mcrl.physics_v025.provider_legacy:LegacyWorldProvider`, but its source and
-TLE bindings are still being completed in the provider worktree. Synthetic
-digests are labelled and are not admissible as formal world or calibration seals.
+Status: **HOLD — not launchable and not signed.** This package is outcome-blind.
+The real provider is integrated, but the measured exact catalogue path misses
+the binding compute targets. Formal R2 manifests, calibration, rehearsal, and
+smoke were therefore not opened; `PENDING_NOT_RUN` is a blocker, not a wildcard.
 
 ## Governing identities
 
 - Sealed v1.2 amendment SHA-256: `cd1922fbeae9da2df9aa8ccadddaa11410932c02dfbea63a9f620202737a25bf`.
 - Sealed v1.3 count erratum SHA-256: `62cecfc48cc066a678555774bd52bc31b13677bb4ebb5e11d1e4dbb95974f917`.
-- Launcher/receipt schema: `multi-catfish-mcrl-v025-matrix-probe-v1.2-stage3`.
+- Launcher/receipt schema: `multi-catfish-mcrl-v025-matrix-probe-v1.3-stage4`.
 - Canonical UTF-8 cell-list SHA-256: `2c1e47637d87daf5e559e1e4b4a9afd9904dbb3bdb891bf9f4546a75c498d2f0`.
-- Launcher SHA-256: `e3d8e617d193d6df3f00e666a54c0e7dfc9e031ba10e064b0ada2aac3ab2f6a7`.
+- Launcher SHA-256: `5e311b3fec2809eb633e371d8f2df4ba569262f26fcac129f0bbed5800704534`.
+- Integrated provider SHA-256: `3e6ad0b5c5c25b16b7f6c7cc4dca2b0f12487d4e400cd3d090002a24b491cb38`.
+- Provider handoff SHA-256: `7140f116cff04f3614b5bedb5145949804eaad43df8a1cf56339b9d8d6e266d1`.
+- Frozen TLE archive digest: `fe2d0ccc2148de73c7014be8af06efc20700f5cf3e8d1f58641222910da0e934`.
 - Dry-run declared-target/decoder/reward KAT receipt SHA-256:
   `1384f24951e78c6c39b59e655a2b13b89f5ec6b9e265276d6ee38852350f6e08`.
+- Current code-authority aggregate SHA-256:
+  `dd821e1cfc47716e67cb63b17b817efed2386603f035f9552793b373a57bae9e`.
 
 ## Cell order to seal
 
@@ -68,12 +72,12 @@ calibration-world digests.
 
 | Domain | Formal SHA-256 to sign | Synthetic package-check SHA-256 (not admissible) |
 |---|---|---|
-| `V025_PROBE/world/1` | `PENDING_FORMAL_PROVIDER` | `ba04fe101fd43e760147c3e05980f908b029817fa3f3cca050fe71136e7ae31e` |
-| `V025_PROBE/world/2` | `PENDING_FORMAL_PROVIDER` | `9e12402f3987ca33017b569dbcbf75156468f1d6b7f227a9a988eab21ab19c99` |
-| `V025_PROBE/world/3` | `PENDING_FORMAL_PROVIDER` | `2254af4119d61fcc9ab90ef3e577af621f103ea0ca7ed4ef8e1538758268de11` |
-| `V025_PROBE/world/4` | `PENDING_FORMAL_PROVIDER` | `aebcc45b801a244280b68301ff17770319bfb553a1cdd04f2fd44e7d78c7c8c9` |
-| `V025_CAL/world/1` | `PENDING_FORMAL_PROVIDER` | `8149e7399177779b13dc6dee58c18b156100a4fc43bde9aab46fac4c83a1ca94` |
-| `V025_CAL/world/2` | `PENDING_FORMAL_PROVIDER` | `7f47d3abc19e644e0cc62b3d8ccd4f0194d0949e3e79e6e1ef04969de4287109` |
+| `V025_PROBE_R2/world/1` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+| `V025_PROBE_R2/world/2` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+| `V025_PROBE_R2/world/3` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+| `V025_PROBE_R2/world/4` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+| `V025_CAL_R2/world/1` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+| `V025_CAL_R2/world/2` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
 
 Synthetic aggregate receipt digests are `7bafa6fac30cdf9ffa80f324ae73fbb87fe4e83280ff2180241a5b654c4d5b46`
 (probe) and `4e25b452e4c2d5e38b94225d6e2538d8b90ba9c0d4102ac4ed2e3af6e74988ca`
@@ -86,7 +90,8 @@ triplet in `calibration-manifest.json`: `η_ref`, `lambda_bits_per_j`, and
 `kappa_bits_per_user_s`, plus the setting digest, selected nominal-greedy
 configuration IDs, two calibration domains, and per-setting calibration digest.
 The manifest enforces `λ = η_ref = ΣB_ref/ΣE_ref` and
-`κ = ΣB_ref/(U·T_ref)`. None may be supplied by a runtime default.
+`κ = ΣB_ref/(U·N_ref)` bits per user-step, where `N_ref` is a decision-step
+count and never seconds. None may be supplied by a runtime default.
 
 The per-setting checklist is:
 
@@ -141,9 +146,34 @@ a′-γU-margin η=PENDING λ=PENDING κ=PENDING
   only from those proposals. LC-SRS uses atomic `00/10/01/11` profiles and the
   declared `Ψ = F11 − F10 − F01 + F00`; `t3_energy` is absent.
 - Current catalogue-definition digest:
-  `cde4da460bf47ab9b6ac04f4beec1b6930261a4be2d903c0f038782805926fb0`.
+  `f99f9e9d2bbbd0673a3c18239408216f198f4d8566f891166daa2b0d8b679679`.
   The controller must replace this digest if provider-owned mask semantics alter
   any catalogue input before launch.
+
+## Stage-4 compute disposition
+
+The engine now rolls 30 steps under all three carriers (90 anchors/world) and
+records `--anchor-stride` (default 1); merge rejects mixed strides. The arm list
+is the original twelve plus `UNI` and arm 13 `S_UNI` (14 reported arms). The
+coordinator's whole-path deadline is 30.08 s on one declared worker; operational
+unit concurrency is 14.
+
+Pre-outcome development measurements:
+
+| Component | Measured | Target | Result |
+|---|---:|---:|---|
+| real-provider 48-boundary step | 9.9–12.5 s | <=1 s/anchor | FAIL |
+| exact a-r0 batch, 128 rows | 4.292 s (.0335 s/row) | <=.02 s/row | FAIL |
+| exact a-r0 batch, 2,912 rows | >90 s, interrupted | <=58.24 s | FAIL |
+| current + nominal + three offsets, lower bound | >450 s/anchor | 30.08 s | FAIL |
+
+The formal rehearsal would exceed its 10-core-minute ceiling before completing
+three anchors, so it was not opened. Formal `q`, 31×4×90 projected cost, and
+the smallest sealable stride are `PENDING_NOT_RUN`. A rough lower bound would
+require approximately stride 10, but it is not sealed because C2 is not yet on
+the batch path. The smoke (90 anchors, or first 10 anchors) would likewise
+exceed 60 core-minutes on the current path and was not opened. No outcome was
+used to change a default, order, constant, or rule.
 
 ## Rehearsal cost to seal
 
@@ -154,9 +184,8 @@ process wall `1.50 s`, user CPU `1.47 s`, peak RSS `54,196 KiB`,
 `0.06320372460103255 core-hours`. Rehearsal receipt SHA-256:
 `780ba4549dfbb56bbee029613f345b270fa62c45ede392296cd237a555ada8cd`.
 
-This is below the ten-core-minute rehearsal ceiling but remains a synthetic
-transfer estimate. Repeat the same command with the formal provider, then seal
-that q and projection without truncating worlds, cells, or catalogues.
+This stage-3 number is superseded and is not a real-provider transfer estimate.
+Do not use it to launch or choose a stride.
 
 The formal stage-4 rehearsal additionally seals a cost table containing provider
 seconds per world, catalogue rows and seconds per anchor, and projection per
@@ -169,11 +198,30 @@ first); then reduce four probe worlds to three. Baselines and U diagnostics,
 48-boundary integration, calibration, placebo/dry-run, and the final 12+1 arm
 inventory are never thinned.
 
+## Deployment capability and admission wording
+
+S0, S_UNI, FULL/DROP and UNI consume authenticated current geometry for every
+user, live legal-option sets, and the nominal joint-physics model. They consume
+no realised fading and no future TLE beyond the declared three-offset horizon.
+S0 uses nominal top-two proposals plus frozen evacuations; S_UNI uses iterated
+exact unilateral best response; FULL/DROP share the bounded catalogue and sum
+the declared C1/C2/C3 targets with one term removed by each DROP; UNI retains
+all targets but restricts search to unilateral moves. All apply the matched
+service guard and 30.08-s whole-path deadline, receipt declared workers, and
+fall back to BASE.
+
+Admission requires: physics/integrity PASS; complete U1 census with certified
+optimum; J1 beyond BASE and beyond U_all by more than certified numerical error
+under matched QoS; deployable S0 >=1%; usable-energy opportunity beyond error
+where claimed; and every retained factor's FULL-DROP oracle marginal positive
+under QoS. U1 need not exceed BASE for C3. Training uses a-r0 regardless of
+secondary-cell results. No admission gate was evaluated in this HOLD package.
+
 ## Exact detached launch commands
 
 The provider identity below is exact. All output is under
 `/home/sat/mcrl-v025-probe-launch-2026-09-08/`; the unit supervisor rejects more
-than eight concurrent processes.
+than 14 concurrent processes.
 
 ```bash
 install -d /home/sat/mcrl-v025-probe-launch-2026-09-08/logs /home/sat/mcrl-v025-probe-launch-2026-09-08/output
@@ -182,7 +230,7 @@ nohup bash -lc 'cd /home/sat/mcrl-v025-codex-ws-engine && PYTHONPATH=src python 
 
 nohup bash -lc 'cd /home/sat/mcrl-v025-codex-ws-engine && PYTHONPATH=src python .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py --calibrate --provider mcrl.physics_v025.provider_legacy:LegacyWorldProvider --output /home/sat/mcrl-v025-probe-launch-2026-09-08/output' >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/calibration.log 2>&1 &
 
-nohup /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/probe/launch_v025_units.sh mcrl.physics_v025.provider_legacy:LegacyWorldProvider /home/sat/mcrl-v025-probe-launch-2026-09-08 8 >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/units-supervisor.log 2>&1 &
+nohup /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/probe/launch_v025_units.sh mcrl.physics_v025.provider_legacy:LegacyWorldProvider /home/sat/mcrl-v025-probe-launch-2026-09-08 14 STRIDE_PENDING >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/units-supervisor.log 2>&1 &
 
 nohup bash -lc 'cd /home/sat/mcrl-v025-codex-ws-engine && PYTHONPATH=src python .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py --merge --output /home/sat/mcrl-v025-probe-launch-2026-09-08/output' >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/merge.log 2>&1 &
 ```

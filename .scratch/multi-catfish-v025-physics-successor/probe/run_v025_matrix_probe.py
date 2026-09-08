@@ -10,6 +10,7 @@ ever deep-copied.  A server launcher may replace only ``WORLD_PROVIDER_FACTORY``
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
@@ -22,6 +23,7 @@ from pathlib import Path
 import stat
 import sys
 import time
+import uuid
 from typing import Callable, Iterable, Mapping, Sequence
 
 import numpy as np
@@ -35,12 +37,14 @@ if str(REPO / "src") not in sys.path:
 from mcrl.errors import MCRLContractError  # noqa: E402
 from mcrl.physics_v025.acm import ACM_MODES, rate_model, select_mode  # noqa: E402
 from mcrl.physics_v025.adapter import CellScore, build_shared_tape, score_setting  # noqa: E402
+from mcrl.physics_v025.batch import evaluate_ar_tdm_catalogue  # noqa: E402
 from mcrl.physics_v025.calibration import (  # noqa: E402
     CalibrationObservation,
     CalibrationValues,
     NominalConfiguration,
     freeze_setting_calibration,
     nominal_greedy_reference,
+    assert_calibration_world_separation,
 )
 from mcrl.physics_v025.constants_v025 import (  # noqa: E402
     BEAM_RF_CAP_W,
@@ -91,10 +95,11 @@ from mcrl.physics_v025.targets import (  # noqa: E402
 )
 
 
-SCHEMA = "multi-catfish-mcrl-v025-matrix-probe-v1.2-stage3"
+SCHEMA = "multi-catfish-mcrl-v025-matrix-probe-v1.3-stage4"
 UNIT_SCHEMA = f"{SCHEMA}-unit-receipt"
 MERGE_SCHEMA = f"{SCHEMA}-merge-receipt"
 DEFAULT_OUTPUT = REPO / "artifacts/v025-physics-successor/matrix-probe"
+ATTEMPT_REGISTRY = HERE / "ATTEMPT-REGISTRY-2026-09.jsonl"
 REFERENCE_SECONDS = 302.0
 REFERENCE_WORKERS = 4
 REFERENCE_EVALUATIONS = 3_840
@@ -111,6 +116,8 @@ ARMS = (
     "DROP_C1",
     "DROP_C2",
     "DROP_C3",
+    "UNI",
+    "S_UNI",
     ALL_NEUTRAL_CONTROL,
     "NULL",
     "RANDOM_FEASIBLE",
@@ -122,6 +129,44 @@ MARGINALS = {
     "C3": ("FULL", "DROP_C3"),
 }
 TOP_PROPOSALS = 2
+COMPLETE_CATALOGUE_LIMIT = 4_096
+PAIRWISE_TOP_K_USERS = 10
+CATALOGUE_CAP = 3_200
+DECISION_DEADLINE_S = 30.08
+DECLARED_WORKERS = 1
+SET_LEVEL_ARMS = ("S0_DEPLOYABLE", "FULL", "DROP_C1", "DROP_C2", "DROP_C3", "UNI", "S_UNI")
+
+
+def apply_deadline_fallback(
+    selections: Mapping[str, Configuration],
+    *,
+    base: Configuration,
+    missed: bool,
+) -> dict[str, Configuration]:
+    """Commit BASE for every deployable set arm after one whole-path miss."""
+
+    result = dict(selections)
+    if missed:
+        for arm in SET_LEVEL_ARMS:
+            result[arm] = base
+    return result
+
+
+def catalogue_definition() -> dict[str, object]:
+    definition = {
+        "version": "mcrl-v025-bounded-catalogue-v2",
+        "complete_cartesian_limit": COMPLETE_CATALOGUE_LIMIT,
+        "unilateral": "every live legal move for every user",
+        "s0": "top-two nominal proposals plus frozen beam evacuations",
+        "pairwise": {
+            "top_k_users_by_nominal_unilateral_surplus": PAIRWISE_TOP_K_USERS,
+            "top_legal_options_per_user": TOP_PROPOSALS,
+        },
+        "evacuation": "every user on each active beam to best live legal alternative",
+        "zero_legal_user": "explicit null action; excluded from Cartesian factor",
+        "cap": CATALOGUE_CAP,
+    }
+    return {**definition, "sha256": digest_payload(definition)}
 
 # Server injection seam. The object is read sequentially and detached by
 # build_world_tape; it is never cloned or retained in a receipt.
@@ -130,6 +175,84 @@ WORLD_PROVIDER_FACTORY: Callable[[], PrimitiveWorldProvider] = TinySyntheticProv
 
 class ProbeError(RuntimeError):
     pass
+
+
+def _source_digest_for_factory(factory: Callable[[], object]) -> str:
+    module = sys.modules.get(factory.__module__)
+    path = None if module is None else getattr(module, "__file__", None)
+    if path is None or not Path(path).is_file():
+        return digest_payload({"module": factory.__module__, "name": factory.__qualname__})
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _code_authority_digest() -> str:
+    digest = hashlib.sha256()
+    for path in (Path(__file__), *sorted((REPO / "src/mcrl/physics_v025").glob("*.py"))):
+        digest.update(path.relative_to(REPO).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def append_attempt(
+    *,
+    status: str,
+    attempt_id: str,
+    experiment: str,
+    panel: str,
+    cell: str,
+    unit: str,
+    authority: Mapping[str, object],
+) -> str:
+    """Append one fsynced hash-chained attempt record."""
+
+    if status not in {"STARTED", "DONE", "ABANDONED"}:
+        raise ProbeError("attempt status is invalid")
+    import fcntl
+
+    ATTEMPT_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+    with ATTEMPT_REGISTRY.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.seek(0)
+        lines = [line for line in handle.read().splitlines() if line]
+        previous = None
+        if lines:
+            previous = json.loads(lines[-1])["record_sha256"]
+        record = {
+            "schema": f"{SCHEMA}-attempt-v1",
+            "status": status,
+            "attempt_id": attempt_id,
+            "experiment": experiment,
+            "panel": panel,
+            "cell": cell,
+            "unit": unit,
+            "authority": dict(authority),
+            "utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "previous_record_sha256": previous,
+        }
+        record["record_sha256"] = digest_payload(record)
+        handle.seek(0, os.SEEK_END)
+        handle.write(canonical_bytes(record) + b"\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return str(record["record_sha256"])
+
+
+def _attempt_records() -> list[dict[str, object]]:
+    if not ATTEMPT_REGISTRY.is_file():
+        return []
+    records = [json.loads(line) for line in ATTEMPT_REGISTRY.read_text(encoding="ascii").splitlines() if line]
+    previous = None
+    for record in records:
+        declared = record.get("record_sha256")
+        unsigned = dict(record)
+        unsigned.pop("record_sha256", None)
+        if unsigned.get("previous_record_sha256") != previous or declared != digest_payload(unsigned):
+            raise ProbeError("attempt registry hash chain is invalid")
+        previous = declared
+    return records
 
 
 @dataclass(frozen=True)
@@ -216,41 +339,167 @@ def _candidate_shortlist(boundary) -> set[tuple[int, tuple[int, int]]]:
     }
 
 
+def _rekeyed_users(tape: ExogenousWorldTape, step_index: int) -> tuple[int, ...]:
+    step = tape.steps[step_index]
+    return () if step.arrays is not None else step.boundaries[0].cell_rekeyed_users
+
+
+def _legal_options(
+    tape: ExogenousWorldTape, step_index: int
+) -> tuple[dict[int, tuple[tuple[int, int], ...]], dict[str, int]]:
+    """Return decision-instant legal options without materialising array rows."""
+
+    step = tape.steps[step_index]
+    users = tuple(sorted(user.user_id for user in tape.user_layout))
+    if step.arrays is not None:
+        arrays = step.arrays
+        live = arrays.visible[0] & arrays.d2_eligible[0] & arrays.cell_reachable[0]
+        options: dict[int, list[tuple[float, tuple[int, int]]]] = {user: [] for user in users}
+        for row in np.flatnonzero(live).tolist():
+            user = int(arrays.users[int(arrays.row_user_column[row])])
+            identity = tuple(int(value) for value in arrays.identities[row])
+            options[user].append((float(arrays.slants_km[0, row]), identity))
+        resolved = {
+            user: tuple(identity for _slant, identity in sorted(set(rows)))
+            for user, rows in options.items()
+        }
+        legal_count = int(np.count_nonzero(live))
+        return resolved, {
+            "coarse_shortlist_count": int(len(arrays.identities)),
+            "full_successor_legal_count": legal_count,
+            "candidate_shortlist_miss_count": 0,
+        }
+    first = step.boundaries[0]
+    shortlist = _candidate_shortlist(first)
+    full_legal = {(row.user_id, row.identity) for row in first.candidates if row.legal}
+    misses = full_legal - shortlist
+    resolved = {
+        user: tuple(
+            row.identity
+            for row in sorted(
+                (
+                    row
+                    for row in first.candidates
+                    if row.user_id == user
+                    and row.legal
+                    and (row.user_id, row.identity) in shortlist
+                ),
+                key=lambda row: (row.slant_km, row.identity),
+            )
+        )
+        for user in users
+    }
+    return resolved, {
+        "coarse_shortlist_count": len(shortlist),
+        "full_successor_legal_count": len(full_legal),
+        "candidate_shortlist_miss_count": len(misses),
+    }
+
+
+def _configuration(
+    base: Configuration,
+    mapping: Mapping[int, tuple[int, int] | None],
+    *,
+    kind: str,
+) -> Configuration:
+    assignments = tuple(sorted(mapping.items()))
+    base_map = base.mapping
+    changed = sum(base_map[user] != identity for user, identity in assignments)
+    encoded = ";".join(
+        f"{user}:NULL" if identity is None else f"{user}:{identity[0]}:{identity[1]}"
+        for user, identity in assignments
+    )
+    return Configuration(f"CFG:{encoded}", assignments, changed, kind)
+
+
 def _catalogue_with_census(
     tape: ExogenousWorldTape,
     step_index: int,
     base: Configuration,
 ) -> tuple[tuple[Configuration, ...], dict[str, int]]:
-    first = tape.steps[step_index].boundaries[0]
     users = tuple(sorted(user.user_id for user in tape.user_layout))
-    shortlist = _candidate_shortlist(first)
-    full_legal = {(row.user_id, row.identity) for row in first.candidates if row.legal}
-    misses = full_legal - shortlist
-    options = {
-        user: tuple(
-            sorted(
-                {
-                    row.identity
-                    for row in first.candidates
-                    if row.user_id == user and row.legal and (row.user_id, row.identity) in shortlist
-                }
-            )
+    options, census = _legal_options(tape, step_index)
+    factors = tuple(options[user] if options[user] else (None,) for user in users)
+    product_size = math.prod(len(factor) for factor in factors)
+    rows: list[Configuration] = [base]
+    base_map = base.mapping
+    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+        for product in itertools.product(*factors):
+            mapping = dict(zip(users, product, strict=True))
+            if mapping == base_map:
+                continue
+            rows.append(_configuration(base, mapping, kind="complete-cartesian"))
+        mode = "complete-cartesian"
+    else:
+        # (i) every legal unilateral move; an option-less user keeps the
+        # explicit null action and never collapses the other users' catalogue.
+        unilaterals: dict[int, list[Configuration]] = {user: [] for user in users}
+        for user in users:
+            for identity in options[user]:
+                if identity == base_map[user]:
+                    continue
+                mapping = dict(base_map)
+                mapping[user] = identity
+                row = _configuration(base, mapping, kind="unilateral")
+                rows.append(row)
+                unilaterals[user].append(row)
+
+        # Nominal unilateral surplus ordering is deterministic here and can
+        # be replaced by the exact nominal evaluator before sealing.  Legal
+        # options arrive in increasing slant order, so the rank is the sealed
+        # causal proxy and never uses realised fading.
+        ranked_users = sorted(
+            users,
+            key=lambda user: (-len(unilaterals[user]), user),
+        )[:PAIRWISE_TOP_K_USERS]
+
+        # (ii) S0 top-two proposals assembled as complete deployable profiles.
+        for proposal_rank in range(TOP_PROPOSALS):
+            mapping = dict(base_map)
+            for user in users:
+                if len(unilaterals[user]) > proposal_rank:
+                    mapping[user] = unilaterals[user][proposal_rank].mapping[user]
+            if mapping != base_map:
+                rows.append(_configuration(base, mapping, kind="s0-top-two"))
+
+        # (iii) pairwise moves among top K, over each user's top two options.
+        for first, second in itertools.combinations(ranked_users, 2):
+            for first_row in unilaterals[first][:TOP_PROPOSALS]:
+                for second_row in unilaterals[second][:TOP_PROPOSALS]:
+                    mapping = dict(base_map)
+                    mapping[first] = first_row.mapping[first]
+                    mapping[second] = second_row.mapping[second]
+                    rows.append(_configuration(base, mapping, kind="pairwise-top10-top2"))
+
+        # (iv) one evacuation set per active beam, every incumbent user moved
+        # to its best live legal alternative (or explicit null if none).
+        for beam in sorted({identity for identity in base_map.values() if identity is not None}):
+            mapping = dict(base_map)
+            affected = [user for user in users if base_map[user] == beam]
+            for user in affected:
+                mapping[user] = next(
+                    (identity for identity in options[user] if identity != beam),
+                    None,
+                )
+            if mapping != base_map:
+                rows.append(_configuration(base, mapping, kind="beam-evacuation"))
+        mode = "bounded-union-v2"
+
+    unique = {row.assignments: row for row in rows}
+    ordered = (base,) + tuple(
+        sorted(
+            (row for assignments, row in unique.items() if assignments != base.assignments),
+            key=lambda row: row.configuration_id,
         )
-        for user in users
-    }
-    rows = [base]
-    for product in itertools.product(*(options[user] for user in users)):
-        assignments = tuple(zip(users, product, strict=True))
-        if assignments == base.assignments:
-            continue
-        changed = sum(dict(base.assignments)[user] != identity for user, identity in assignments)
-        kind = "unilateral" if changed == 1 else "joint"
-        identity = ";".join(f"{user}:{beam[0]}:{beam[1]}" for user, beam in assignments)
-        rows.append(Configuration(f"CFG:{identity}", assignments, changed, kind))
-    return tuple(rows), {
-        "coarse_shortlist_count": len(shortlist),
-        "full_successor_legal_count": len(full_legal),
-        "candidate_shortlist_miss_count": len(misses),
+    )
+    if mode != "complete-cartesian" and len(ordered) > CATALOGUE_CAP:
+        raise ProbeError(f"bounded catalogue exceeded sealed cap {CATALOGUE_CAP}")
+    return ordered, {
+        **census,
+        "complete_cartesian_size": product_size,
+        "catalogue_mode": mode,
+        "null_action_users": sum(not options[user] for user in users),
+        "bounded_catalogue_count": len(ordered),
     }
 
 
@@ -359,7 +608,95 @@ class StepEvaluator:
         self.counter = counter
         self._shared: dict[str, object] = {}
         self._evaluated: dict[str, EvaluatedProfile] = {}
+        self._invalid: set[str] = set()
         self.physical_evaluations = 0
+
+    def evaluate_many(self, configs: Sequence[Configuration]) -> None:
+        """Populate the cache through the dense real-world ``a-r0`` path."""
+
+        missing = [row for row in configs if row.configuration_id not in self._evaluated]
+        step = self.tape.steps[self.step_index]
+        if not missing or step.arrays is None or self.setting.label != "a-r0":
+            for config in missing:
+                self.evaluate(config)
+            return
+        arrays = step.arrays
+        row_of = arrays._row_index()
+        users = tuple(int(value) for value in arrays.users)
+        selected = np.full((len(missing), len(users)), -1, dtype=np.int64)
+        for config_index, config in enumerate(missing):
+            mapping = config.mapping
+            for user_column, user in enumerate(users):
+                identity = mapping[user]
+                if identity is not None:
+                    selected[config_index, user_column] = row_of[(user, identity)]
+        result = evaluate_ar_tdm_catalogue(arrays, selected, field=self.field)
+        mode_names = ("NO_MODE",) + tuple(row.name for row in ACM_MODES)
+        for index, config in enumerate(missing):
+            if not bool(result.valid[index]):
+                self._invalid.add(config.configuration_id)
+                continue
+            per_user_bits = {
+                user: float(result.bits[index, column])
+                for column, user in enumerate(users)
+            }
+            decoding = {
+                user: float(result.decoding_time_s[index, column])
+                for column, user in enumerate(users)
+            }
+            served = {user: decoding[user] > 0.0 for user in users}
+            feasible = {
+                user: bool(result.feasible[index, column])
+                for column, user in enumerate(users)
+            }
+            attained = {
+                user: bool(result.attained[index, column])
+                for column, user in enumerate(users)
+            }
+            score = CellScore(
+                self.setting,
+                per_user_bits,
+                float(result.joules[index]),
+                decoding,
+                dict(decoding),
+                served,
+                attained,
+                feasible,
+                None,
+                2_500_000.0,
+                True,
+                float(result.residual_w[index]),
+            )
+            components = {
+                "pa_j": float(result.pa_j[index]),
+                "circuit_j": float(result.circuit_j[index]),
+                "standby_j": 0.0,
+                "baseband_j": float(result.baseband_j[index]),
+                "bus_j": 0.0,
+            }
+            counts = {
+                name: int(result.mode_counts[index, column])
+                for column, name in enumerate(mode_names)
+                if result.mode_counts[index, column]
+            }
+            profile = EvaluatedProfile(
+                config,
+                score,
+                components,
+                components["circuit_j"] / 0.338,
+                components["baseband_j"] / 0.200,
+                counts,
+                int(result.plateau_users[index]),
+                len(users),
+                int(result.cap_hits[index]),
+                int(result.transmissions[index]),
+                None,
+            )
+            self._evaluated[config.configuration_id] = profile
+        evaluations = len(missing) * 48
+        self.physical_evaluations += evaluations
+        if self.counter is not None:
+            self.counter.boundary_evaluations += evaluations
 
     def evaluate(self, config: Configuration) -> EvaluatedProfile:
         if config.configuration_id in self._evaluated:
@@ -370,6 +707,7 @@ class StepEvaluator:
             geometry,
             self.tape.inventory,
             field=self.field,  # type: ignore[arg-type]
+            roster=tuple(user.user_id for user in self.tape.user_layout),
         )
         score = score_setting(
             shared,
@@ -482,7 +820,7 @@ def _calibrate(setting: PhysicsSetting) -> CalibrationValues:
             setting,
             0,
             transition_from=base,
-            cell_rekeyed_users=tape.steps[0].boundaries[0].cell_rekeyed_users,
+            cell_rekeyed_users=_rekeyed_users(tape, 0),
             field="nominal",
         )
         nominal_profiles = {
@@ -498,7 +836,7 @@ def _calibrate(setting: PhysicsSetting) -> CalibrationValues:
             setting,
             0,
             transition_from=base,
-            cell_rekeyed_users=tape.steps[0].boundaries[0].cell_rekeyed_users,
+            cell_rekeyed_users=_rekeyed_users(tape, 0),
         ).evaluate(chosen)
         observations.append(
             CalibrationObservation.build(
@@ -549,6 +887,7 @@ def _forecast_rows(
     config: Configuration,
     carrier: str,
     counter: EvaluationCounter,
+    focal_user: int,
 ) -> tuple[OffsetProjection, ...]:
     rows = []
     for offset in range(1, 4):
@@ -561,39 +900,38 @@ def _forecast_rows(
             setting,
             projected_step,
             transition_from=base,
-            cell_rekeyed_users=tape.steps[projected_step].boundaries[0].cell_rekeyed_users,
+            cell_rekeyed_users=_rekeyed_users(tape, projected_step),
+            field="nominal",
             counter=counter,
         )
         try:
             result = evaluator.evaluate(persisted)
             valid = True
         except (MCRLContractError, ProbeError):
-            # A failed projection is represented as a charged failed attempt by
-            # using the projected default energy and zero candidate bits.
-            fallback = evaluator.evaluate(base)
-            zero_score = fallback.score
-            result = fallback
+            result = None
             valid = False
-        required, cap = evaluator.required_power(result.config)
+        required, cap = 0.0, BEAM_RF_CAP_W
         margins = []
         ses = []
-        shared = evaluator._shared[result.config.configuration_id]
-        model = rate_model(setting.rate)
-        for boundary in shared.integrated:  # type: ignore[attr-defined]
-            for slot in boundary.radiation.slots:
-                for tx in slot.transmissions:
-                    margins.append(10.0 * math.log10(tx.sinr) - SINR_MIN_DB)
-                    ses.append(model.rate_bps(tx.sinr, tx.bandwidth_hz) / tx.bandwidth_hz)
-        survives = valid and all(result.score.served_phy.values())
-        outcome = result.outcome()
-        if not valid:
+        if valid and result is not None:
+            required, cap = evaluator.required_power(result.config)
+            shared = evaluator._shared[result.config.configuration_id]
+            model = rate_model(setting.rate)
+            for boundary in shared.integrated:  # type: ignore[attr-defined]
+                for slot in boundary.radiation.slots:
+                    for tx in slot.transmissions:
+                        margins.append(10.0 * math.log10(tx.sinr) - SINR_MIN_DB)
+                        ses.append(model.rate_bps(tx.sinr, tx.bandwidth_hz) / tx.bandwidth_hz)
+            survives = bool(result.score.served_phy.get(focal_user, False))
+            outcome = result.outcome()
+        else:
+            survives = False
             outcome = NetworkOutcome.build(
                 bits=0,
-                joules=result.joules,
+                joules=0,
                 phi=0,
                 decoding_availability=0,
                 useful_availability=0,
-                per_user_bits={user: 0 for user in result.score.bits},
             )
         rows.append(
             OffsetProjection(
@@ -618,6 +956,7 @@ def _factor_scores(
     step_index: int,
     carrier: str,
     base: Configuration,
+    incumbent: Configuration,
     catalog: Sequence[Configuration],
     evaluated: Mapping[str, EvaluatedProfile],
     calibration: CalibrationValues,
@@ -637,17 +976,20 @@ def _factor_scores(
         )
         identity = dict(config.assignments)[user]
         c1 = c1_difference_surplus(
-            config
-            and evaluated[config.configuration_id].outcome(
+            evaluated[config.configuration_id].outcome(
                 phi=_phi_for(
-                    base,
+                    incumbent,
                     config,
-                    cell_rekeyed_users=tape.steps[step_index]
-                    .boundaries[0]
-                    .cell_rekeyed_users,
+                    cell_rekeyed_users=_rekeyed_users(tape, step_index),
                 )
             ),
-            base_profile.outcome(),
+            base_profile.outcome(
+                phi=_phi_for(
+                    incumbent,
+                    base,
+                    cell_rekeyed_users=_rekeyed_users(tape, step_index),
+                )
+            ),
             lambda_bits_per_j=calibration.lambda_bits_per_j,
             eta_ref=calibration.eta_ref,
             kappa_bits_per_user_s=calibration.kappa_bits_per_user_s,
@@ -660,6 +1002,7 @@ def _factor_scores(
             config=config,
             carrier=carrier,
             counter=counter,
+            focal_user=user,
         )
         default_forecast = _forecast_rows(
             tape=tape,
@@ -668,6 +1011,7 @@ def _factor_scores(
             config=base,
             carrier=carrier,
             counter=counter,
+            focal_user=user,
         )
         c2 = c2_persistence_forecast(
             candidate_forecast,
@@ -697,12 +1041,6 @@ def _factor_scores(
                     f10=evaluated[first.configuration_id].outcome(),
                     f01=evaluated[second.configuration_id].outcome(),
                     f11=evaluated[joint.configuration_id].outcome(),
-                    externality_e_by_user={
-                        # Whole-network C1 already owns every unilateral bit
-                        # and energy change. C3 carries only Psi's equal share.
-                        user0: 0,
-                        user1: 0,
-                    },
                     lambda_bits_per_j=calibration.lambda_bits_per_j,
                     eta_ref=calibration.eta_ref,
                     kappa_bits_per_user_s=calibration.kappa_bits_per_user_s,
@@ -755,6 +1093,7 @@ def _set_select(
     base: Configuration,
     calibration: CalibrationValues,
 ) -> Configuration:
+    del evaluated, calibration
     base_map = dict(base.assignments)
     scored = []
     for config in catalog:
@@ -763,11 +1102,73 @@ def _set_select(
             if identity == base_map[user]:
                 continue
             bonus += sum((factors[name].get((user, identity), Fraction()) for name in include), Fraction())
-        # Per-cell re-optimisation: every configuration receives the selected
-        # setting's independently recomputed whole-network profile.
-        core = _objective(evaluated[config.configuration_id], calibration)
-        scored.append((core + calibration.kappa_bits_per_user_s * bonus, config.configuration_id, config))
+        # Factor arms compare only the declared target sum.  Exact F is
+        # reserved for the U1/J1/union ceiling arms and S_UNI comparator.
+        scored.append((bonus, config.configuration_id, config))
     return min(scored, key=lambda row: (-row[0], row[1]))[2]
+
+
+def _unilateral_factor_select(
+    *,
+    base: Configuration,
+    catalog: Sequence[Configuration],
+    factors: Mapping[str, Mapping[tuple[int, tuple[int, int] | None], Fraction]],
+) -> Configuration:
+    candidates = [base] + [row for row in catalog if row.changed_users == 1]
+    return _set_select(
+        catalog=candidates,
+        evaluated={},
+        factors=factors,
+        include=("C1", "C2", "C3"),
+        base=base,
+        calibration=None,  # type: ignore[arg-type]
+    )
+
+
+def _s_uni_select(
+    *,
+    base: Configuration,
+    tape: ExogenousWorldTape,
+    step_index: int,
+    evaluator: StepEvaluator,
+    calibration: CalibrationValues,
+    deadline_at: float,
+) -> tuple[Configuration, int, float, bool]:
+    """Information-matched exact single-user best response to convergence."""
+
+    started = time.perf_counter()
+    options, _census = _legal_options(tape, step_index)
+    current = base
+    iterations = 0
+    while True:
+        if time.perf_counter() >= deadline_at:
+            return base, iterations, time.perf_counter() - started, True
+        current_profile = evaluator.evaluate(current)
+        best = current
+        best_value = _objective(current_profile, calibration)
+        for user in sorted(options):
+            for identity in options[user]:
+                if identity == current.mapping[user]:
+                    continue
+                mapping = current.mapping
+                mapping[user] = identity
+                candidate = _configuration(base, mapping, kind="s-uni-iterate")
+                profile = evaluator.evaluate(candidate)
+                if sum(profile.score.served_phy.values()) < sum(
+                    evaluator.evaluate(base).score.served_phy.values()
+                ):
+                    continue
+                value = _objective(profile, calibration)
+                if value > best_value or (
+                    value == best_value and candidate.configuration_id < best.configuration_id
+                ):
+                    best, best_value = candidate, value
+            if time.perf_counter() >= deadline_at:
+                return base, iterations, time.perf_counter() - started, True
+        if best.assignments == current.assignments:
+            return current, iterations, time.perf_counter() - started, False
+        current = best
+        iterations += 1
 
 
 def _s0_select(
@@ -783,7 +1184,7 @@ def _s0_select(
         setting,
         step_index,
         transition_from=base,
-        cell_rekeyed_users=tape.steps[step_index].boundaries[0].cell_rekeyed_users,
+        cell_rekeyed_users=_rekeyed_users(tape, step_index),
         field="nominal",
         counter=counter,
     )
@@ -856,6 +1257,19 @@ def _arm_row(
     handover_count = sum(
         event.kind in {"beam_change", "satellite_change", "cell_rekey"} for event in events
     )
+    complete = sum(
+        math.isclose(
+            float(profile.score.decoding_time_s.get(user, 0.0)),
+            DECISION_INTERVAL_S,
+            rel_tol=0.0,
+            abs_tol=1.0e-9,
+        )
+        for user, _identity in base.assignments
+    )
+    partial = sum(
+        float(profile.score.decoding_time_s.get(user, 0.0)) > 0.0
+        for user, _identity in base.assignments
+    )
     return {
         "arm": arm,
         "configuration_id": profile.config.configuration_id,
@@ -867,7 +1281,12 @@ def _arm_row(
         "lit_satellite_seconds": profile.lit_satellite_seconds,
         "decoding_availability": math.fsum(profile.score.decoding_time_s.values()) / opportunity,
         "useful_availability": math.fsum(profile.score.useful_time_s.values()) / opportunity,
+        "partial_service_availability": partial / users,
+        "complete_service_availability": complete / users,
+        "complete_service_user_steps": complete,
+        "full_roster_user_steps": users,
         "phi_signalling_qos_preference": float(phi),
+        "phi_priced_handover_cost_per_user_step": -float(phi) / users,
         "handover_rate_per_user_decision": handover_count / users,
         "rate_tail": _rate_tail(profile.score.bits),
         "served_PHY": profile.score.served_phy,
@@ -880,8 +1299,78 @@ def _arm_row(
             kind: sum(event.kind == kind for event in events)
             for kind in ("beam_change", "satellite_change", "cell_rekey", "initial_entry", "reentry", "exit")
         },
+        "prior_current_identities": [
+            {
+                "user_id": user,
+                "prior": None if base.mapping[user] is None else list(base.mapping[user]),
+                "current": (
+                    None
+                    if profile.config.mapping[user] is None
+                    else list(profile.config.mapping[user])
+                ),
+                "event_type": next(event.kind for event in events if event.user_id == user),
+            }
+            for user, _identity in base.assignments
+        ],
         "decision_time_s": elapsed_s,
     }
+
+
+def _canonical_step_rows(
+    steps: Sequence[Mapping[str, object]],
+    *,
+    provider_sha256: str,
+    code_sha256: str,
+) -> list[dict[str, object]]:
+    rows = []
+    for step in steps:
+        for arm in step["arms"]:  # type: ignore[index]
+            rows.append(
+                {
+                    "schema": f"{SCHEMA}-canonical-step-row",
+                    "anchor_index": int(step["anchor_index"]),
+                    "step_index": int(step["step_index"]),
+                    "carrier": str(step["carrier"]),
+                    "arm": str(arm["arm"]),
+                    "bits_hex": float(arm["bits"]).hex(),
+                    "joules_hex": float(arm["joules"]).hex(),
+                    "energy_hex": {
+                        name: float(value).hex()
+                        for name, value in arm["energy"].items()  # type: ignore[union-attr]
+                    },
+                    "opportunity_user_seconds_hex": (
+                        int(arm["full_roster_user_steps"]) * DECISION_INTERVAL_S
+                    ).hex(),
+                    "served_partial_user_steps": int(
+                        round(
+                            float(arm["partial_service_availability"])
+                            * int(arm["full_roster_user_steps"])
+                        )
+                    ),
+                    "served_complete_user_steps": int(arm["complete_service_user_steps"]),
+                    "full_roster_user_steps": int(arm["full_roster_user_steps"]),
+                    "prior_current_identities": arm["prior_current_identities"],
+                    "phi_numerator_hex": float(arm["phi_signalling_qos_preference"]).hex(),
+                    "phi_denominator": int(arm["full_roster_user_steps"]),
+                    "provider_sha256": provider_sha256,
+                    "code_sha256": code_sha256,
+                }
+            )
+    return rows
+
+
+def _verify_reaggregation(
+    rows: Sequence[Mapping[str, object]], summary: Mapping[str, object]
+) -> None:
+    for arm_name in ARMS:
+        selected = [row for row in rows if row["arm"] == arm_name]
+        expected = summary["arms"][arm_name]  # type: ignore[index]
+        bits = math.fsum(float.fromhex(str(row["bits_hex"])) for row in selected)
+        joules = math.fsum(float.fromhex(str(row["joules_hex"])) for row in selected)
+        if not math.isclose(bits, float(expected["bits"]), rel_tol=0.0, abs_tol=1e-8) or not math.isclose(
+            joules, float(expected["joules"]), rel_tol=0.0, abs_tol=1e-10
+        ):
+            raise ProbeError("canonical rows disagree with receipt summary")
 
 
 def _usable_energy_range_step(
@@ -939,18 +1428,29 @@ def execute_step(
     carrier: str,
     calibration: CalibrationValues,
     counter: EvaluationCounter,
+    incumbent: Configuration | None = None,
 ) -> dict[str, object]:
+    decision_started = time.perf_counter()
+    deadline_at = decision_started + DECISION_DEADLINE_S
     counter_start = counter.boundary_evaluations
     base = _base_configuration(tape, step_index, carrier)
+    incumbent = base if incumbent is None else incumbent
     catalog, catalogue_census = _catalogue_with_census(tape, step_index, base)
     evaluator = StepEvaluator(
         tape,
         setting,
         step_index,
-        transition_from=base,
-        cell_rekeyed_users=tape.steps[step_index].boundaries[0].cell_rekeyed_users,
+        transition_from=incumbent,
+        cell_rekeyed_users=_rekeyed_users(tape, step_index),
         counter=counter,
     )
+    evaluator.evaluate_many(catalog)
+    evaluator.evaluate_many(catalog)
+    catalog = tuple(
+        row for row in catalog if row.configuration_id not in evaluator._invalid
+    )
+    if base.configuration_id not in evaluator._evaluated:
+        raise ProbeError("BASE has an invalid power certificate")
     evaluated = {row.configuration_id: evaluator.evaluate(row) for row in catalog}
     base_profile = evaluated[base.configuration_id]
     unilateral = [evaluated[row.configuration_id] for row in catalog if row.changed_users == 1]
@@ -967,10 +1467,19 @@ def execute_step(
         step_index=step_index,
         carrier=carrier,
         base=base,
+        incumbent=incumbent,
         catalog=catalog,
         evaluated=evaluated,
         calibration=calibration,
         counter=counter,
+    )
+    s_uni, s_uni_iterations, s_uni_wall_s, s_uni_missed = _s_uni_select(
+        base=base,
+        tape=tape,
+        step_index=step_index,
+        evaluator=evaluator,
+        calibration=calibration,
+        deadline_at=deadline_at,
     )
     selections = {
         "E1_U1": u1.config,
@@ -980,13 +1489,19 @@ def execute_step(
         "FULL": _set_select(catalog=catalog, evaluated=evaluated, factors=factors, include=("C1", "C2", "C3"), base=base, calibration=calibration),
         "DROP_C1": _set_select(catalog=catalog, evaluated=evaluated, factors=factors, include=("C2", "C3"), base=base, calibration=calibration),
         "DROP_C2": _set_select(catalog=catalog, evaluated=evaluated, factors=factors, include=("C1", "C3"), base=base, calibration=calibration),
-        "DROP_C3": _independent_proposal(base=base, catalog=catalog, factors=factors, include=("C1", "C2")),
+        "DROP_C3": _set_select(catalog=catalog, evaluated=evaluated, factors=factors, include=("C1", "C2"), base=base, calibration=calibration),
+        "UNI": _unilateral_factor_select(base=base, catalog=catalog, factors=factors),
+        "S_UNI": s_uni,
         ALL_NEUTRAL_CONTROL: base,
         # NULL traverses the coordinator but commits BASE byte-for-byte.
         "NULL": base,
         "RANDOM_FEASIBLE": catalog[int(tape.seed + step_index) % len(catalog)],
         "NOMINAL_GREEDY": nominal_control,
     }
+    deadline_missed = s_uni_missed or time.perf_counter() > deadline_at
+    selections = apply_deadline_fallback(
+        selections, base=base, missed=deadline_missed
+    )
     range_diagnostic = _usable_energy_range_step(
         selected=evaluated[selections["FULL"].configuration_id],
         base=base,
@@ -1001,13 +1516,21 @@ def execute_step(
             _arm_row(
                 arm=arm,
                 profile=profile,
-                base=base,
-                cell_rekeyed_users=tape.steps[step_index]
-                .boundaries[0]
-                .cell_rekeyed_users,
+                base=incumbent,
+                cell_rekeyed_users=_rekeyed_users(tape, step_index),
                 elapsed_s=time.perf_counter() - started,
             )
         )
+        arm_rows[-1]["computation_deadline_s"] = DECISION_DEADLINE_S
+        arm_rows[-1]["declared_worker_count"] = DECLARED_WORKERS
+        arm_rows[-1]["deadline_missed"] = (
+            deadline_missed
+            if arm in SET_LEVEL_ARMS
+            else False
+        )
+        if arm == "S_UNI":
+            arm_rows[-1]["iteration_count"] = s_uni_iterations
+            arm_rows[-1]["decoder_wall_s"] = s_uni_wall_s
     return {
         "step_index": step_index,
         "carrier": carrier,
@@ -1036,6 +1559,15 @@ def execute_step(
         },
         "non_additive_interaction_bits": float(interaction_sum),
         "non_additive_interaction_count": interaction_count,
+        "coordinator": {
+            "deadline_s": DECISION_DEADLINE_S,
+            "declared_worker_count": DECLARED_WORKERS,
+            "whole_path_wall_s": time.perf_counter() - decision_started,
+            "deadline_missed": deadline_missed,
+            "fallback": "BASE" if deadline_missed else None,
+            "s_uni_iterations": s_uni_iterations,
+            "s_uni_wall_s": s_uni_wall_s,
+        },
         "successor_usable_energy_range": range_diagnostic,
         "physical_boundary_evaluations": counter.boundary_evaluations - counter_start,
     }
@@ -1077,11 +1609,16 @@ def _summarize_steps(steps: Sequence[Mapping[str, object]], calibration: Calibra
             "standby_j": math.fsum(float(row["energy"]["standby_j"]) for row in rows),  # type: ignore[index]
             "circuit_j": math.fsum(float(row["energy"]["circuit_j"]) for row in rows),  # type: ignore[index]
             "baseband_j": math.fsum(float(row["energy"]["baseband_j"]) for row in rows),  # type: ignore[index]
-            "availability": math.fsum(float(row["decoding_availability"]) for row in rows) / len(rows),
+            "availability": math.fsum(float(row["complete_service_availability"]) for row in rows) / len(rows),
+            "decoding_availability": math.fsum(float(row["decoding_availability"]) for row in rows) / len(rows),
+            "partial_service_availability": math.fsum(float(row["partial_service_availability"]) for row in rows) / len(rows),
             "useful_availability": math.fsum(float(row["useful_availability"]) for row in rows) / len(rows),
             "phi_signalling_qos_preference": math.fsum(
                 float(row["phi_signalling_qos_preference"]) for row in rows
             ),
+            "phi_priced_handover_cost_per_user_step": math.fsum(
+                float(row["phi_priced_handover_cost_per_user_step"]) for row in rows
+            ) / len(rows),
             "handovers": {
                 kind: sum(int(row["handovers"][kind]) for row in rows)  # type: ignore[index]
                 for kind in ("beam_change", "satellite_change", "cell_rekey", "initial_entry", "reentry", "exit")
@@ -1176,12 +1713,24 @@ def pooled_ratio_cluster_bootstrap(
         "comparator_joules",
         "full_qos",
         "comparator_qos",
-        "full_phi",
-        "comparator_phi",
+        "full_phi_cost_per_user_step",
+        "comparator_phi_cost_per_user_step",
         "full_handover_rate",
         "comparator_handover_rate",
     )
-    values = np.asarray([[float(row[field]) for field in fields] for row in clusters], dtype=np.float64)
+    def value(row: Mapping[str, float], field: str) -> float:
+        if field in row:
+            return float(row[field])
+        if field == "full_phi_cost_per_user_step":
+            return max(0.0, -float(row.get("full_phi", 0.0)))
+        if field == "comparator_phi_cost_per_user_step":
+            return max(0.0, -float(row.get("comparator_phi", 0.0)))
+        raise ProbeError(f"bootstrap row lacks {field}")
+
+    values = np.asarray(
+        [[value(row, field) for field in fields] for row in clusters],
+        dtype=np.float64,
+    )
     if not np.all(np.isfinite(values)) or np.any(values[:, (0, 1, 2, 3)] < 0.0):
         raise ProbeError("bootstrap inputs must be finite and physical")
     if np.any(values[:, 1] <= 0.0) or np.any(values[:, 3] <= 0.0):
@@ -1196,21 +1745,28 @@ def pooled_ratio_cluster_bootstrap(
     # All worlds have the same number of decision opportunities by contract,
     # so the paired resample's mean availability is the pooled QoS estimator.
     qos_delta = (sampled[:, 4] - sampled[:, 5]) / len(values)
-    phi_delta = (sampled[:, 6] - sampled[:, 7]) / len(values)
-    handover_delta = (sampled[:, 8] - sampled[:, 9]) / len(values)
+    def relative_change(numerator: np.ndarray, denominator: np.ndarray) -> np.ndarray:
+        result = np.full(numerator.shape, np.inf, dtype=np.float64)
+        positive = denominator > 0.0
+        result[positive] = numerator[positive] / denominator[positive] - 1.0
+        result[(denominator == 0.0) & (numerator == 0.0)] = 0.0
+        return result
+
+    phi_relative = relative_change(sampled[:, 6], sampled[:, 7])
+    handover_relative = relative_change(sampled[:, 8], sampled[:, 9])
     paired_log_ee = np.log((values[:, 0] / values[:, 1]) / (values[:, 2] / values[:, 3]))
     sampled_log_ee = paired_log_ee[indices].mean(axis=1)
 
     totals = values.sum(axis=0)
     observed_pp = 100.0 * ((totals[0] / totals[1]) / (totals[2] / totals[3]) - 1.0)
     observed_qos = (totals[4] - totals[5]) / len(values)
-    observed_phi = (totals[6] - totals[7]) / len(values)
-    observed_handovers = (totals[8] - totals[9]) / len(values)
+    observed_phi = float(relative_change(totals[6:7], totals[7:8])[0])
+    observed_handovers = float(relative_change(totals[8:9], totals[9:10])[0])
     ee_lower = float(np.quantile(contrast_pp, 0.025))
     ee_upper = float(np.quantile(contrast_pp, 0.975))
     qos_lower = float(np.quantile(qos_delta, 0.025))
-    phi_lower = float(np.quantile(phi_delta, 0.025))
-    handover_upper = float(np.quantile(handover_delta, 0.975))
+    phi_upper = float(np.quantile(phi_relative, 0.975))
+    handover_upper = float(np.quantile(handover_relative, 0.975))
     return {
         "schema": f"{SCHEMA}-pooled-ratio-cluster-bootstrap",
         "clusters": len(values),
@@ -1224,12 +1780,13 @@ def pooled_ratio_cluster_bootstrap(
         "ee_margin_pass": ee_lower > 0.5,
         "qos_availability_delta": observed_qos,
         "qos_availability_lower_95": qos_lower,
-        "phi_signalling_qos_delta": observed_phi,
-        "phi_signalling_qos_lower_95": phi_lower,
-        "handover_rate_delta": observed_handovers,
-        "handover_rate_upper_95": handover_upper,
-        "qos_noninferiority_margin": 0.0,
-        "qos_noninferior": qos_lower >= 0.0 and phi_lower >= 0.0 and handover_upper <= 0.0,
+        "phi_priced_handover_cost_relative_change": observed_phi,
+        "phi_priced_handover_cost_relative_upper_95": phi_upper,
+        "handover_rate_relative_change": observed_handovers,
+        "handover_rate_relative_upper_95": handover_upper,
+        "availability_margin_fraction": -0.005,
+        "relative_cost_margin": 0.05,
+        "qos_noninferior": qos_lower > -0.005 and phi_upper < 0.05 and handover_upper < 0.05,
         "supplementary_paired_world_log_ee": {
             "mean_log_ratio": float(paired_log_ee.mean()),
             "lower_95_percentage_points": float(100.0 * np.expm1(np.quantile(sampled_log_ee, 0.025))),
@@ -1356,12 +1913,20 @@ def run_unit(
     *,
     setting: PhysicsSetting,
     world_index: int,
-    executed_steps: int = 3,
+    executed_steps: int = 30,
+    anchor_stride: int = 1,
+    smoke_not_matrix: bool = False,
+    attempt_id: str | None = None,
     calibration: CalibrationValues | None = None,
     expected_world_digest: str | None = None,
 ) -> dict[str, object]:
-    if executed_steps < 1:
-        raise ProbeError("executed_steps must be positive")
+    if (
+        type(executed_steps) is not int
+        or not 1 <= executed_steps <= 30
+        or type(anchor_stride) is not int
+        or anchor_stride < 1
+    ):
+        raise ProbeError("executed_steps must be 1..30 and anchor stride positive")
     domain = _world_domain(world_index)
     tape = build_world_tape(
         domain=domain,
@@ -1376,21 +1941,43 @@ def run_unit(
         raise ProbeError("frozen calibration does not belong to the requested cell")
     started = time.perf_counter()
     counter = EvaluationCounter()
-    steps = [
-        execute_step(
-            tape=tape,
-            setting=setting,
-            step_index=step,
-            carrier=REFERENCE_CARRIERS[step % len(REFERENCE_CARRIERS)],
-            calibration=calibration,
-            counter=counter,
-        )
-        for step in range(executed_steps)
-    ]
+    steps = []
+    anchor_index = 0
+    for step in range(0, executed_steps, anchor_stride):
+        for carrier in REFERENCE_CARRIERS:
+            incumbent = _base_configuration(
+                tape,
+                max(0, step - 1),
+                carrier,
+            )
+            row = execute_step(
+                tape=tape,
+                setting=setting,
+                step_index=step,
+                carrier=carrier,
+                calibration=calibration,
+                counter=counter,
+                incumbent=incumbent,
+            )
+            row["anchor_index"] = anchor_index
+            row["forecast_offsets"] = [1, 2, 3]
+            steps.append(row)
+            anchor_index += 1
     elapsed = time.perf_counter() - started
+    provider_sha256 = _source_digest_for_factory(WORLD_PROVIDER_FACTORY)
+    code_sha256 = _code_authority_digest()
+    summary = _summarize_steps(steps, calibration)
+    canonical_rows = _canonical_step_rows(
+        steps,
+        provider_sha256=provider_sha256,
+        code_sha256=code_sha256,
+    )
+    _verify_reaggregation(canonical_rows, summary)
     receipt = {
         "schema": UNIT_SCHEMA,
-        "status": "COMPLETE",
+        "status": "SMOKE_NOT_MATRIX" if smoke_not_matrix else "COMPLETE",
+        "SMOKE_NOT_MATRIX": smoke_not_matrix,
+        "attempt_id": attempt_id,
         "split": "TRAIN",
         "test_split_opened": False,
         "training": False,
@@ -1399,31 +1986,33 @@ def run_unit(
         "world_index": world_index,
         "world_domain": domain,
         "world_seed": tape.seed,
+        "learner_seed": 0,
         "cluster": {
             "tle_date": tape.tle_date,
-            "training_seed": tape.training_seed,
+            "world_seed": tape.seed,
+            "learner_seed": 0,
             "oracle_world": world_index,
         },
         "world_manifest": tape.manifest(),
         "world_manifest_sha256": tape.digest,
         "calibration": calibration.payload(),
         "calibration_sha256": calibration.digest,
-        "catalogue_definition": {
-            "coarse_shortlist_is_superset_of_successor_legal_set": True,
-            "complete_cartesian_legal_assignments": True,
-            "base_always_present_and_wins_exact_ties": True,
-            "top_proposals_per_user": TOP_PROPOSALS,
-            "evacuations": "complete combinations of top-two proposals",
-            "sha256": digest_payload({"top": TOP_PROPOSALS, "evacuation": "complete", "version": 1}),
-        },
-        "c2_schema_sha256": SCHEMA_SHA256,
+        "provider_source_sha256": provider_sha256,
+        "code_authority_sha256": code_sha256,
+        "anchor_stride": anchor_stride,
+        "canonical_steps_rolled": 30,
+        "anchor_count": len(steps),
+        "catalogue_definition": catalogue_definition(),
+        "catalogue_definition_sha256": catalogue_definition()["sha256"],
         "arms": list(ARMS),
         "steps": steps,
+        "canonical_step_rows": canonical_rows,
+        "canonical_step_rows_sha256": digest_payload(canonical_rows),
         "candidate_shortlist_miss_count": sum(
             int(step["e1_certificate"]["candidate_shortlist_miss_count"]) for step in steps
         ),
         "successor_usable_energy_range": _summarize_energy_range(steps),
-        "failure_analysis": _summarize_steps(steps, calibration),
+        "failure_analysis": summary,
         "elapsed_seconds": elapsed,
     }
     receipt["receipt_sha256"] = digest_payload(receipt)
@@ -1497,10 +2086,11 @@ def _dry_run_parity_receipt() -> dict[str, object]:
         "fixture",
         Fraction(1),
         Fraction(1),
-        Fraction(2),
+        Fraction(1, 2),
         Fraction(1),
         Fraction(1),
         1,
+        2,
         Fraction(1, 2),
         CALIBRATION_WORLD_DOMAINS,
         ("fixture-1", "fixture-2"),
@@ -1627,7 +2217,7 @@ def rehearsal() -> dict[str, object]:
     receipt = run_unit(
         setting=setting,
         world_index=1,
-        executed_steps=3,
+        executed_steps=1,
         calibration=calibration,
     )
     elapsed = time.perf_counter() - started
@@ -1639,7 +2229,7 @@ def rehearsal() -> dict[str, object]:
         "schema": f"{SCHEMA}-rehearsal",
         "cell": "a-r0",
         "world": 1,
-        "steps": 3,
+        "anchors": 3,
         "arms": list(ARMS),
         "elapsed_seconds": elapsed,
         "physical_boundary_evaluations": evaluations,
@@ -1659,7 +2249,7 @@ def rehearsal() -> dict[str, object]:
             "rescoring": "12 arms and exact-factor per-cell selection",
             "action": "optimize shared primitive computation; do not truncate cells/worlds/catalogue",
         },
-        "synthetic_rehearsal_only": True,
+        "development_rehearsal_not_claim_panel": True,
         "unit_receipt_sha256": receipt["receipt_sha256"],
     }
 
@@ -1669,6 +2259,7 @@ def build_calibration_manifest() -> dict[str, object]:
 
     values = [_calibrate(setting) for setting in MATRIX_SETTINGS]
     world_manifests = []
+    calibration_tapes = []
     for world_index, domain in enumerate(CALIBRATION_WORLD_DOMAINS, start=1):
         tape = build_world_tape(
             domain=domain,
@@ -1676,6 +2267,7 @@ def build_calibration_manifest() -> dict[str, object]:
             steps=1,
             start_time_s=0.0,
         )
+        calibration_tapes.append(tape)
         world_manifests.append(
             {
                 "world_index": world_index,
@@ -1684,6 +2276,18 @@ def build_calibration_manifest() -> dict[str, object]:
                 "world_manifest_sha256": tape.digest,
             }
         )
+    probe_tapes = [
+        build_world_tape(
+            domain=domain,
+            provider=WORLD_PROVIDER_FACTORY(),
+            steps=1,
+            start_time_s=0.0,
+        )
+        for domain in PROBE_WORLD_DOMAINS
+    ]
+    assert_calibration_world_separation(
+        calibration_tapes=calibration_tapes, probe_tapes=probe_tapes
+    )
     payload = {
         "schema": f"{SCHEMA}-calibration-manifest",
         "status": "FROZEN_CALIBRATION",
@@ -1699,10 +2303,11 @@ def build_calibration_manifest() -> dict[str, object]:
     return payload
 
 
-def build_probe_world_manifest(*, executed_steps: int = 3) -> dict[str, object]:
+def build_probe_world_manifest(*, executed_steps: int = 30) -> dict[str, object]:
     """Materialize/digest the four common tapes before opening any arm outcome."""
 
     worlds = []
+    probe_tapes = []
     for index, domain in enumerate(PROBE_WORLD_DOMAINS, start=1):
         tape = build_world_tape(
             domain=domain,
@@ -1710,6 +2315,7 @@ def build_probe_world_manifest(*, executed_steps: int = 3) -> dict[str, object]:
             steps=executed_steps + 3,
             start_time_s=0.0,
         )
+        probe_tapes.append(tape)
         worlds.append(
             {
                 "world_index": index,
@@ -1719,6 +2325,18 @@ def build_probe_world_manifest(*, executed_steps: int = 3) -> dict[str, object]:
                 "world_manifest_sha256": tape.digest,
             }
         )
+    calibration_tapes = [
+        build_world_tape(
+            domain=domain,
+            provider=WORLD_PROVIDER_FACTORY(),
+            steps=1,
+            start_time_s=0.0,
+        )
+        for domain in CALIBRATION_WORLD_DOMAINS
+    ]
+    assert_calibration_world_separation(
+        calibration_tapes=calibration_tapes, probe_tapes=probe_tapes
+    )
     payload = {
         "schema": f"{SCHEMA}-world-manifest",
         "status": "FROZEN_WORLD_MANIFEST",
@@ -1839,20 +2457,24 @@ def _merged_uncertainty(receipts: Sequence[Mapping[str, object]]) -> dict[str, o
         cluster_ids = [
             (
                 str(row["world_manifest"]["cluster"]["tle_date"]),  # type: ignore[index]
-                int(row["world_index"]),
+                int(row.get("learner_seed", 0)),
             )
             for row in rows
         ]
-        if len(set(cluster_ids)) != len(rows):
-            raise ProbeError(f"duplicate TLE-date x oracle-world cluster in {setting.label}")
         contrasts: dict[str, object] = {}
         for name, comparator in (*((name, drop) for name, (_full, drop) in MARGINALS.items()), ("ALL_NEUTRAL", ALL_NEUTRAL_CONTROL)):
-            clusters = []
+            grouped: dict[tuple[str, int], list[dict[str, float]]] = {}
             for row in rows:
                 arms = row["failure_analysis"]["arms"]  # type: ignore[index]
                 full = arms["FULL"]
                 other = arms[comparator]
-                clusters.append(
+                grouped.setdefault(
+                    (
+                        str(row["world_manifest"]["cluster"]["tle_date"]),  # type: ignore[index]
+                        int(row.get("learner_seed", 0)),
+                    ),
+                    [],
+                ).append(
                     {
                         "tle_date": row["world_manifest"]["cluster"]["tle_date"],
                         "training_seed": row["world_manifest"]["cluster"]["training_seed"],
@@ -1862,10 +2484,33 @@ def _merged_uncertainty(receipts: Sequence[Mapping[str, object]]) -> dict[str, o
                         "comparator_joules": other["joules"],
                         "full_qos": full["availability"],
                         "comparator_qos": other["availability"],
-                        "full_phi": full["phi_signalling_qos_preference"],
-                        "comparator_phi": other["phi_signalling_qos_preference"],
+                        "full_phi_cost_per_user_step": full["phi_priced_handover_cost_per_user_step"],
+                        "comparator_phi_cost_per_user_step": other["phi_priced_handover_cost_per_user_step"],
                         "full_handover_rate": full["handover_rate_per_user_decision"],
                         "comparator_handover_rate": other["handover_rate_per_user_decision"],
+                    }
+                )
+            clusters = []
+            for (tle_date, learner_seed), members in sorted(grouped.items()):
+                clusters.append(
+                    {
+                        "tle_date": tle_date,
+                        "training_seed": learner_seed,
+                        "full_bits": math.fsum(row["full_bits"] for row in members),
+                        "full_joules": math.fsum(row["full_joules"] for row in members),
+                        "comparator_bits": math.fsum(row["comparator_bits"] for row in members),
+                        "comparator_joules": math.fsum(row["comparator_joules"] for row in members),
+                        **{
+                            field: math.fsum(row[field] for row in members) / len(members)
+                            for field in (
+                                "full_qos",
+                                "comparator_qos",
+                                "full_phi_cost_per_user_step",
+                                "comparator_phi_cost_per_user_step",
+                                "full_handover_rate",
+                                "comparator_handover_rate",
+                            )
+                        },
                     }
                 )
             bootstrap_seed = seed_from_domain(f"V025_PROBE/bootstrap/{setting.label}/{name}")
@@ -1878,7 +2523,7 @@ def _merged_uncertainty(receipts: Sequence[Mapping[str, object]]) -> dict[str, o
             contrasts[name] = primary
         marginal_rows = [contrasts[name] for name in MARGINALS]
         results[setting.label] = {
-            "cluster_ids_tle_date_x_world": [[date, world] for date, world in cluster_ids],
+            "cluster_ids_tle_date_x_learner_seed": [[date, seed] for date, seed in sorted(set(cluster_ids))],
             "training_seed_by_world": {
                 str(row["world_index"]): row["world_manifest"]["cluster"]["training_seed"]  # type: ignore[index]
                 for row in rows
@@ -1900,6 +2545,10 @@ def _merged_uncertainty(receipts: Sequence[Mapping[str, object]]) -> dict[str, o
 
 
 def merge(output: Path) -> dict[str, object]:
+    registry = _attempt_records()
+    by_attempt: dict[str, list[dict[str, object]]] = {}
+    for record in registry:
+        by_attempt.setdefault(str(record["attempt_id"]), []).append(record)
     bindings = []
     receipts = []
     for setting in MATRIX_SETTINGS:
@@ -1919,11 +2568,26 @@ def merge(output: Path) -> dict[str, object]:
                 raise ProbeError(f"unit identity mismatch: {path}")
             if receipt.get("schema") != UNIT_SCHEMA or receipt.get("status") != "COMPLETE":
                 raise ProbeError(f"unit schema/status mismatch: {path}")
+            attempt_id = receipt.get("attempt_id")
+            attempt_rows = by_attempt.get(str(attempt_id), [])
+            statuses = [row.get("status") for row in attempt_rows]
+            if statuses != ["STARTED", "DONE"]:
+                raise ProbeError(f"unit lacks one clean STARTED/DONE attempt: {path}")
+            if any(row.get("status") == "ABANDONED" for row in attempt_rows):
+                raise ProbeError(f"unit has an unadjudicated abandoned attempt: {path}")
             _verify_self_digest(receipt, label=f"unit {setting.label}:{world}")
             if receipt.get("world_manifest_sha256") != digest_payload(receipt["world_manifest"]):
                 raise ProbeError(f"embedded world-manifest digest mismatch: {path}")
             if receipt.get("calibration_sha256") != digest_payload(receipt["calibration"]):
                 raise ProbeError(f"embedded calibration digest mismatch: {path}")
+            if receipt.get("canonical_step_rows_sha256") != digest_payload(
+                receipt.get("canonical_step_rows")
+            ):
+                raise ProbeError(f"canonical step-row digest mismatch: {path}")
+            _verify_reaggregation(
+                receipt["canonical_step_rows"],  # type: ignore[arg-type]
+                receipt["failure_analysis"],  # type: ignore[arg-type]
+            )
             receipts.append(receipt)
             bindings.append({"cell": setting.label, "world": world, "path": str(path), "sha256": digest})
     for world in range(1, 5):
@@ -1934,6 +2598,12 @@ def merge(output: Path) -> dict[str, object]:
         digests = {row["calibration_sha256"] for row in receipts if row["cell"] == setting.label}
         if len(digests) != 1:
             raise ProbeError(f"calibration drift across worlds for {setting.label}")
+    strides = {int(row.get("anchor_stride", 0)) for row in receipts}
+    if len(strides) != 1 or next(iter(strides)) < 1:
+        raise ProbeError("merge refuses missing or mixed anchor strides")
+    catalogue_digests = {row.get("catalogue_definition_sha256") for row in receipts}
+    if catalogue_digests != {catalogue_definition()["sha256"]}:
+        raise ProbeError("catalogue definition drift across units")
     uncertainty = _merged_uncertainty(receipts)
     payload = {
         "schema": MERGE_SCHEMA,
@@ -1943,6 +2613,8 @@ def merge(output: Path) -> dict[str, object]:
         "cell_order": [setting.label for setting in MATRIX_SETTINGS],
         "worlds": list(PROBE_WORLD_DOMAINS),
         "all_cells_reported": True,
+        "anchor_stride": next(iter(strides)),
+        "catalogue_definition_sha256": catalogue_definition()["sha256"],
         "test_split_opened": False,
         "training": False,
         "uncertainty": uncertainty,
@@ -1967,6 +2639,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--calibration", type=Path, help="immutable calibration manifest for --unit")
     parser.add_argument("--world-manifest", type=Path, help="immutable pre-outcome world manifest for --unit")
     parser.add_argument("--q", type=float)
+    parser.add_argument("--anchor-stride", type=int, default=1)
+    parser.add_argument("--executed-steps", type=int, default=30)
+    parser.add_argument("--smoke-not-matrix", action="store_true")
     return parser
 
 
@@ -1997,7 +2672,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if args.rehearsal:
-        print(json.dumps(rehearsal(), indent=2, sort_keys=True))
+        payload = rehearsal()
+        path = args.output / "rehearsal.json"
+        digest = write_immutable(path, payload)
+        print(json.dumps({"status": "COMPLETE", "path": str(path), "file_sha256": digest, **payload}, indent=2, sort_keys=True))
         return 0
     if args.calibrate:
         if not args.provider:
@@ -2027,14 +2705,61 @@ def main(argv: Sequence[str] | None = None) -> int:
             world = int(world_text)
         except (ValueError, ProbeError) as error:
             raise SystemExit(f"invalid --unit CELL:WORLD: {error}") from error
-        receipt = run_unit(
-            setting=setting,
-            world_index=world,
-            calibration=load_calibration(args.calibration, setting),
-            expected_world_digest=load_world_digest(args.world_manifest, world),
+        frozen_calibration = load_calibration(args.calibration, setting)
+        world_digest = load_world_digest(args.world_manifest, world)
+        attempt_id = str(uuid.uuid4())
+        authority = {
+            "code_sha256": _code_authority_digest(),
+            "provider_sha256": _source_digest_for_factory(WORLD_PROVIDER_FACTORY),
+            "world_sha256": world_digest,
+            "calibration_sha256": frozen_calibration.digest,
+        }
+        append_attempt(
+            status="STARTED",
+            attempt_id=attempt_id,
+            experiment="V025_PHYSICS_SUCCESSOR",
+            panel="SMOKE" if args.smoke_not_matrix else "PROBE_R2",
+            cell=setting.label,
+            unit=str(world),
+            authority=authority,
         )
-        path = _unit_path(args.output, setting, world)
-        digest = write_immutable(path, receipt)
+        try:
+            receipt = run_unit(
+                setting=setting,
+                world_index=world,
+                executed_steps=args.executed_steps,
+                anchor_stride=args.anchor_stride,
+                smoke_not_matrix=args.smoke_not_matrix,
+                attempt_id=attempt_id,
+                calibration=frozen_calibration,
+                expected_world_digest=world_digest,
+            )
+            path = (
+                args.output / "smoke" / "a-r0-world-1.json"
+                if args.smoke_not_matrix
+                else _unit_path(args.output, setting, world)
+            )
+            digest = write_immutable(path, receipt)
+        except Exception:
+            append_attempt(
+                status="ABANDONED",
+                attempt_id=attempt_id,
+                experiment="V025_PHYSICS_SUCCESSOR",
+                panel="SMOKE" if args.smoke_not_matrix else "PROBE_R2",
+                cell=setting.label,
+                unit=str(world),
+                authority=authority,
+            )
+            raise
+        append_attempt(
+            status="DONE",
+            attempt_id=attempt_id,
+            experiment="V025_PHYSICS_SUCCESSOR",
+            panel="SMOKE" if args.smoke_not_matrix else "PROBE_R2",
+            cell=setting.label,
+            unit=str(world),
+            authority={**authority, "receipt_file_sha256": digest},
+        )
         print(json.dumps({"status": "COMPLETE", "path": str(path), "file_sha256": digest}, indent=2, sort_keys=True))
         return 0
     payload = merge(args.output)

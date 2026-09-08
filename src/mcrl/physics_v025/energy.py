@@ -108,14 +108,25 @@ def interval_energy(
     duration = interval.duration_s
     pa_j = circuit_j = standby_j = 0.0
     active_satellites: set[int] = set()
-    for identity in inventory.chains:
-        rf = float(interval.beam_rf_w.get(identity, 0.0))
+    active_by_satellite: dict[int, int] = {}
+    for identity, raw_rf in interval.beam_rf_w.items():
+        rf = float(raw_rf)
         if rf > 0.0:
             active_satellites.add(identity[0])
+            active_by_satellite[identity[0]] = active_by_satellite.get(identity[0], 0) + 1
             pa_j += max(idle_power_w, pa_supply_power_w(rf)) * duration
             circuit_j += CIRCUIT_POWER_PER_CHAIN_W * duration
-        else:
-            standby_j += idle_power_w * duration
+    if idle_power_w > 0.0:
+        # Sensitivity-only physical census: every represented satellite owns
+        # 12 RF chains, independent of the number of realisable earth cells.
+        represented_satellites = {identity[0] for identity in inventory.chains}
+        if any(active_by_satellite.get(satellite, 0) > 12 for satellite in represented_satellites):
+            raise MCRLContractError("active beams exceed the declared 12-chain satellite census")
+        idle_chains = sum(
+            12 - active_by_satellite.get(satellite, 0)
+            for satellite in represented_satellites
+        )
+        standby_j = idle_chains * idle_power_w * duration
     baseband_j = len(active_satellites) * BASEBAND_POWER_PER_ACTIVE_SATELLITE_W * duration
     receipt = EnergyReceipt(
         math.fsum((pa_j, circuit_j, standby_j, baseband_j)),

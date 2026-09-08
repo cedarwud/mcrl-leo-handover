@@ -51,7 +51,7 @@ SHANNON_MIN_DB = -2.35 - 10.0 * math.log10(1.0 + ROLL_OFF)  # Provenance: round-
 SHANNON_MIN = 10.0 ** (SHANNON_MIN_DB / 10.0)  # Provenance: round-3 §4 U diagnostic eligibility boundary.
 
 POWER_SOLVER_TOLERANCE_W = 1.0e-10  # Provenance: sealed V025 declaration and round-3 §4 frozen solver tolerance.
-POWER_SOLVER_ITERATION_CAP = 4_096  # Provenance: sealed V025 declaration and round-3 §4 frozen solver cap.
+POWER_SOLVER_ITERATION_CAP = 65_536  # Provenance: controller coupled-solve decision, 2026-09-08.
 
 D2_MEASUREMENT_STEP_S = 0.640  # Provenance: round-3 §2.17 native measurement clock.
 D2_SUBINTERVALS = 47  # Provenance: round-3 §2.17 native subinterval count.

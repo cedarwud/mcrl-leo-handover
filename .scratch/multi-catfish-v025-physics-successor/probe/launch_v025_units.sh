@@ -4,9 +4,14 @@ set -euo pipefail
 
 provider=${1:?usage: launch_v025_units.sh PACKAGE:FACTORY LAUNCH_ROOT [MAX_UNITS]}
 launch_root=${2:?usage: launch_v025_units.sh PACKAGE:FACTORY LAUNCH_ROOT [MAX_UNITS]}
-max_units=${3:-8}
-if (( max_units < 1 || max_units > 8 )); then
-  echo "MAX_UNITS must be in 1..8" >&2
+max_units=${3:-14}
+anchor_stride=${4:-1}
+if (( max_units < 1 || max_units > 14 )); then
+  echo "MAX_UNITS must be in 1..14" >&2
+  exit 2
+fi
+if (( anchor_stride < 1 )); then
+  echo "ANCHOR_STRIDE must be positive" >&2
   exit 2
 fi
 
@@ -36,6 +41,7 @@ for cell in "${cells[@]}"; do
         --provider "$provider" \
         --world-manifest "$output/world-manifest.json" \
         --calibration "$output/calibration-manifest.json" \
+        --anchor-stride "$anchor_stride" \
         --output "$output"
     ) >"$logs/unit-$(printf '%03d' "$index")-world-$world.log" 2>&1 &
   done

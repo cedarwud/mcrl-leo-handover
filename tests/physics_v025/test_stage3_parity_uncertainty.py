@@ -270,9 +270,9 @@ def test_rekey_estimator_is_derived_from_receipt_ledger_and_handles_no_boundary(
         "corrected_boundary_conditional_rekey_by_arm"
     ][runner.ALL_NEUTRAL_CONTROL]
     assert neutral == {
-        "rekeys": 1,
-        "eligible_user_boundaries": 2,
-        "rate": 0.5,
+        "rekeys": 2,
+        "eligible_user_boundaries": 6,
+        "rate": 1 / 3,
         "numerator_source": "physical event ledger",
     }
 

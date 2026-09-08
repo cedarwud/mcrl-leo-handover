@@ -149,21 +149,19 @@ def production_c3(
     """Evaluate the same raw profiles through the production target formula."""
 
     _validate_profiles((p00, p10, p01, p11))
-    externality = (Fraction(), Fraction())
     result = c3_lcsrs_interaction(
         coalition_users=(0, 1),
         f00=_outcome(p00),
         f10=_outcome(p10),
         f01=_outcome(p01),
         f11=_outcome(p11),
-        externality_e_by_user={0: externality[0], 1: externality[1]},
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
         kappa_bits_per_user_s=kappa_bits_per_user_s,
     )
     return C3ParityResult(
         (result.f00, result.f10, result.f01, result.f11),
-        externality,
+        (Fraction(), Fraction()),
         result.psi,
         (dict(result.z3_by_user)[0], dict(result.z3_by_user)[1]),
     )

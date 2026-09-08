@@ -67,13 +67,13 @@ def test_consolidation_fixture_reduces_ee_by_1p5466_percent() -> None:
     assert (16.0 / one_power) / (32.0 / two_power) - 1.0 == pytest.approx(-0.01546575, abs=1e-8)
 
 
-def test_idle_switching_floor_and_tiny_active_clamp() -> None:
-    """A dark chain costs P_idle*delta=.698609768*delta; active uses max(idle,P_PA)."""
+def test_idle_switching_uses_declared_twelve_chain_satellite_census() -> None:
+    """The sensitivity counts 12 physical chains, not realisable cell identities."""
 
     inventory = HardwareInventory.fixed(((1, 1),))
     dark = interval_energy(inventory, EnergyInterval(2.0, {}), idle_power_w=SENSITIVITY_IDLE_POWER_W)
     assert SENSITIVITY_IDLE_POWER_W == pytest.approx(0.698609768, abs=5e-10)
-    assert dark.joules == pytest.approx(2 * SENSITIVITY_IDLE_POWER_W)
+    assert dark.joules == pytest.approx(2 * 12 * SENSITIVITY_IDLE_POWER_W)
     tiny = interval_energy(
         inventory,
         EnergyInterval(1.0, {(1, 1): 1e-12}),
@@ -81,6 +81,7 @@ def test_idle_switching_floor_and_tiny_active_clamp() -> None:
     )
     assert tiny.pa_j == pytest.approx(SENSITIVITY_IDLE_POWER_W)
     assert tiny.circuit_j == 0.338
+    assert tiny.standby_j == pytest.approx(11 * SENSITIVITY_IDLE_POWER_W)
 
 
 def test_lit_beam_and_first_satellite_monotonicity() -> None:
@@ -220,7 +221,7 @@ def test_reward_endpoint_identity_and_pricing_fixture() -> None:
     )
     assert reward_core(endpoint(7, 8), eta_ref=2) - reward_core(endpoint(10, 10), eta_ref=2) == 1
     assert reward_core(endpoint(7, 8), eta_ref=1) - reward_core(endpoint(10, 10), eta_ref=1) == -1
-    eta, kappa = calibration(100, 10, users=5, time_s=2)
+    eta, kappa = calibration(100, 10, users=5, decision_steps=2, time_s=2)
     assert eta == 10 and kappa == 10
 
 

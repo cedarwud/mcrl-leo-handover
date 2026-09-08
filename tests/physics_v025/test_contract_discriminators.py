@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from fractions import Fraction
+import importlib.util
 import math
+from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
@@ -146,12 +149,21 @@ def test_tiny_positive_below_certified_error_is_not_a_pass() -> None:
 
 
 def test_deadline_fallback_is_frozen_base() -> None:
-    """A selector taking 30.081>30.08 seconds executes BASE, not its stale proposal."""
+    """The production fallback replaces every set-level proposal with BASE."""
 
-    elapsed, deadline = 30.081, 30.08
-    base, proposal = (1, 2), (7, 8)
-    executed = base if elapsed > deadline else proposal
-    assert executed == base
+    path = Path(__file__).resolve().parents[2] / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+    spec = importlib.util.spec_from_file_location("v025_deadline_runner", path)
+    assert spec is not None and spec.loader is not None
+    runner = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = runner
+    spec.loader.exec_module(runner)
+    base = runner.Configuration("BASE", ((0, (1, 1)),), 0, "base")
+    proposal = runner.Configuration("P", ((0, (2, 1)),), 1, "proposal")
+    selected = runner.apply_deadline_fallback(
+        {arm: proposal for arm in runner.ARMS}, base=base, missed=True
+    )
+    assert all(selected[arm] is base for arm in runner.SET_LEVEL_ARMS)
+    assert selected["E1_U1"] is proposal
 
 
 def test_legacy_r3_load_arithmetic_is_characterized_not_energy() -> None:
