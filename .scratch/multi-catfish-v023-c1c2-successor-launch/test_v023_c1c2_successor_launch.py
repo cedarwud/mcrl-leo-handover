@@ -961,3 +961,64 @@ def test_launcher_orders_freeze_manifest_sync_diagnostic_and_tmux():
     assert "'$remote_preflight' --repo '$checkout'" in text
     assert "--target-root '$target_root' --formal" in text
     assert "120 s" in text
+
+
+def test_launcher_local_dry_run_is_explicit_and_default_stays_remote(
+    tmp_path: Path,
+):
+    fake_python = tmp_path / "python"
+    fake_python.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$*\" == *\"--paths\"* ]]; then\n"
+        "  printf '%s\\n' 'src/mcrl/__init__.py'\n"
+        "fi\n",
+        encoding="ascii",
+    )
+    fake_python.chmod(0o755)
+    fake_sha = tmp_path / "sha256sum"
+    fake_sha.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s  %s\\n' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \"$1\"\n",
+        encoding="ascii",
+    )
+    fake_sha.chmod(0o755)
+    base_env = {
+        **os.environ,
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "V023_SUCCESSOR_LOCAL_PYTHON": str(fake_python),
+    }
+    command = [
+        "bash", str(HERE / "sync_launch_v023_c1c2_successor_server.sh"),
+        "--dry-run",
+    ]
+
+    local = subprocess.run(
+        command,
+        cwd=REPO,
+        env={**base_env, "V023_SUCCESSOR_SERVER_HOST": "local"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert local.returncode == 0, local.stderr + local.stdout
+    assert "LOCAL bash -c" in local.stdout
+    assert "ssh" not in local.stdout
+    assert "local:/" not in local.stdout
+    assert r"\'server_host\':\'local\'" in local.stdout
+
+    remote_env = dict(base_env)
+    remote_env.pop("V023_SUCCESSOR_SERVER_HOST", None)
+    remote = subprocess.run(
+        command,
+        cwd=REPO,
+        env=remote_env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert remote.returncode == 0, remote.stderr + remote.stdout
+    assert "REMOTE ssh -- sat" in remote.stdout
+    assert (
+        "sat:/home/sat/mcrl-v023-c1c2-successor-source-training-"
+        "20260907-100e-r1-checkout/"
+    ) in remote.stdout

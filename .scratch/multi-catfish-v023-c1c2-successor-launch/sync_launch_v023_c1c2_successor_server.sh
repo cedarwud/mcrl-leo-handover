@@ -4,6 +4,8 @@ set -Eeuo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 repo_root=$(cd -- "${script_dir}/../.." && pwd -P)
 server_host=${V023_SUCCESSOR_SERVER_HOST:-sat}
+local_host=0
+[[ "$server_host" == local ]] && local_host=1
 checkout=/home/sat/mcrl-v023-c1c2-successor-source-training-20260907-100e-r1-checkout
 target_root=/home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8
 output_root=/home/sat/mcrl-v023-c1c2-successor-source-training-20260907-100e-r1
@@ -58,6 +60,24 @@ quote_command() {
   printf '\n'
 }
 
+run_remote() {
+  if ((local_host)); then
+    bash -c "$1"
+  else
+    ssh -- "$server_host" "$1"
+  fi
+}
+
+print_remote() {
+  if ((local_host)); then
+    printf 'LOCAL '
+    quote_command bash -c "$1"
+  else
+    printf 'REMOTE '
+    quote_command ssh -- "$server_host" "$1"
+  fi
+}
+
 usage() {
   printf '%s\n' \
     'Usage: sync_launch_v023_c1c2_successor_server.sh [--dry-run]' \
@@ -104,7 +124,11 @@ if ((dry_run)); then
   done
   dry_rsync+=("./$bundle_rel/V023-C1C2-SUCCESSOR-LAUNCH-MANIFEST.json")
   dry_rsync+=("./$bundle_rel/V023-C1C2-SUCCESSOR-LAUNCH-MANIFEST.json.sha256")
-  dry_rsync+=("${server_host}:${checkout}/")
+  if ((local_host)); then
+    dry_rsync+=("${checkout}/")
+  else
+    dry_rsync+=("${server_host}:${checkout}/")
+  fi
   dry_provider_sha=$(sha256sum "$provider_config" | awk '{print $1}')
   dry_remote_env="export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONPATH='$checkout/src:$checkout:$checkout/$factory_rel:$checkout/$runner_rel'"
   dry_factory_env="export MCRL_V023_C1C2_PROVIDER_CONFIG_PATH='$remote_provider_config' MCRL_V023_C1C2_PROVIDER_CONFIG_SHA256='$dry_provider_sha' MCRL_V023_C1C2_LEARNER_MANIFEST_PATH='$remote_learner_manifest'"
@@ -112,25 +136,18 @@ if ((dry_run)); then
   quote_command "${local_bind_cmd[@]}"
   printf 'LOCAL '
   quote_command "${local_manifest_cmd[@]}"
-  printf 'REMOTE '
-  quote_command ssh -- "$server_host" "test ! -e '$output_root' && test ! -L '$output_root'"
+  print_remote "test ! -e '$output_root' && test ! -L '$output_root'"
   printf 'RSYNC '
   printf '(cd %q && ' "$repo_root"
   quote_command "${dry_rsync[@]}"
   printf ')\n'
-  printf 'REMOTE ssh -- %q %q\n' "$server_host" \
-    "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_builder' --repo '$checkout' --check >/dev/null"
-  printf 'REMOTE ssh -- %q %q\n' "$server_host" \
-    "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_bind' --repo '$checkout' --verify-learner-manifest-only"
-  printf 'REMOTE ssh -- %q %q\n' "$server_host" \
-    "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt' --target-root '$target_root' --formal"
-  printf 'REMOTE ssh -- %q %q\n' "$server_host" \
-    "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$remote_diagnostic_root' && test ! -L '$remote_diagnostic_root'; '$server_python' '$remote_diagnostic' --repo '$checkout' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --output-root '$remote_diagnostic_root'"
-  printf 'REMOTE ssh -- %q %q\n' "$server_host" \
-    "set -Eeuo pipefail; $dry_remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt' --diagnostic-preflight-receipt '$remote_preflight_receipt'"
-  dry_controller="set -Eeuo pipefail; $dry_remote_env; $dry_factory_env; umask 077; '$server_python' -c \"import json,os; p='$remote_startup_marker'; fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,(json.dumps({'status':'CONTROLLER_STARTED','output_root':'$output_root'},sort_keys=True,separators=(',',':'))+'\\n').encode('ascii')); os.close(fd)\"; '$server_python' '$remote_formal_runner' --output-root '$output_root' --epochs 100 --provider-factory v023_c1c2_provider_factory_v3:make_provider --model-config-json '$remote_model_config' --train-seed 2927175120652069826 --preflight-receipt '$remote_preflight_receipt' --execute; '$server_python' '$remote_verifier' --repo '$checkout' --output-root '$output_root' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --preflight-receipt '$remote_preflight_receipt' --write"
-  printf 'REMOTE ssh -- %q %q\n' "$server_host" \
-    "set -Eeuo pipefail; test ! -e '$output_root' && test ! -L '$output_root'; test ! -e '$remote_startup_marker' && test ! -L '$remote_startup_marker'; test ! -e '$remote_log' && test ! -L '$remote_log'; tmux new-session -d -s '$tmux_session' \"$dry_controller >>'$remote_log' 2>&1\""
+  print_remote "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_builder' --repo '$checkout' --check >/dev/null"
+  print_remote "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_bind' --repo '$checkout' --verify-learner-manifest-only"
+  print_remote "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt' --target-root '$target_root' --formal"
+  print_remote "set -Eeuo pipefail; cd '$checkout'; $dry_remote_env; $dry_factory_env; test ! -e '$remote_diagnostic_root' && test ! -L '$remote_diagnostic_root'; '$server_python' '$remote_diagnostic' --repo '$checkout' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --output-root '$remote_diagnostic_root'"
+  print_remote "set -Eeuo pipefail; $dry_remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt' --diagnostic-preflight-receipt '$remote_preflight_receipt'"
+  dry_controller="set -Eeuo pipefail; $dry_remote_env; $dry_factory_env; umask 077; '$server_python' -c \"import json,os; p='$remote_startup_marker'; fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,(json.dumps({'status':'CONTROLLER_STARTED','output_root':'$output_root','server_host':'$server_host'},sort_keys=True,separators=(',',':'))+'\\n').encode('ascii')); os.close(fd)\"; '$server_python' '$remote_formal_runner' --output-root '$output_root' --epochs 100 --provider-factory v023_c1c2_provider_factory_v3:make_provider --model-config-json '$remote_model_config' --train-seed 2927175120652069826 --preflight-receipt '$remote_preflight_receipt' --execute; '$server_python' '$remote_verifier' --repo '$checkout' --output-root '$output_root' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --preflight-receipt '$remote_preflight_receipt' --write"
+  print_remote "set -Eeuo pipefail; test ! -e '$output_root' && test ! -L '$output_root'; test ! -e '$remote_startup_marker' && test ! -L '$remote_startup_marker'; test ! -e '$remote_log' && test ! -L '$remote_log'; tmux new-session -d -s '$tmux_session' \"$dry_controller >>'$remote_log' 2>&1\""
   printf 'PATHS tmux=%s log=%s startup=%s output=%s\n' "$tmux_session" "$remote_log" "$remote_startup_marker" "$output_root"
   exit 0
 fi
@@ -148,7 +165,7 @@ reject_forbidden_config(json.loads(Path(sys.argv[1]).read_text(encoding="ascii")
 PY
 
 remote_absence="test ! -e '$output_root' && test ! -L '$output_root'"
-ssh -- "$server_host" "$remote_absence" || die "output root exists or cannot be checked: $output_root"
+run_remote "$remote_absence" || die "output root exists or cannot be checked: $output_root"
 
 mapfile -t payload_paths < <("$local_python" "$builder" --repo "$repo_root" --paths)
 ((${#payload_paths[@]} > 0)) || die 'launch manifest has no payload paths'
@@ -159,33 +176,37 @@ for relative in "${payload_paths[@]}"; do
 done
 rsync_args+=("./$bundle_rel/V023-C1C2-SUCCESSOR-LAUNCH-MANIFEST.json")
 rsync_args+=("./$bundle_rel/V023-C1C2-SUCCESSOR-LAUNCH-MANIFEST.json.sha256")
-rsync_args+=("${server_host}:${checkout}/")
+if ((local_host)); then
+  rsync_args+=("${checkout}/")
+else
+  rsync_args+=("${server_host}:${checkout}/")
+fi
 (cd "$repo_root" && "${rsync_args[@]}") || die 'authenticated launch closure sync failed'
 
 remote_env="export PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONPATH='$checkout/src:$checkout:$checkout/$factory_rel:$checkout/$runner_rel'"
-ssh -- "$server_host" "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_builder' --repo '$checkout' --check >/dev/null" \
+run_remote "set -Eeuo pipefail; cd '$checkout'; '$server_python' '$remote_builder' --repo '$checkout' --check >/dev/null" \
   || die 'server launch payload or Stage-C manifest member verification failed'
-ssh -- "$server_host" "set -Eeuo pipefail; cd '$checkout'; $remote_env; '$server_python' '$remote_bind' --repo '$checkout' --verify-learner-manifest-only" \
+run_remote "set -Eeuo pipefail; cd '$checkout'; $remote_env; '$server_python' '$remote_bind' --repo '$checkout' --verify-learner-manifest-only" \
   || die 'server learner manifest verification failed'
 
 provider_sha=$(sha256sum "$provider_config" | awk '{print $1}')
 factory_env="export MCRL_V023_C1C2_PROVIDER_CONFIG_PATH='$remote_provider_config' MCRL_V023_C1C2_PROVIDER_CONFIG_SHA256='$provider_sha' MCRL_V023_C1C2_LEARNER_MANIFEST_PATH='$remote_learner_manifest'"
 preflight_command="set -Eeuo pipefail; cd '$checkout'; $remote_env; $factory_env; test ! -e '$output_root' && test ! -L '$output_root'; '$server_python' '$remote_preflight' --repo '$checkout' --bindings '$remote_bindings' --manifest '$remote_manifest' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --declaration '$remote_declaration' --output-root '$output_root' --receipt '$remote_preflight_receipt' --target-root '$target_root' --formal"
-ssh -- "$server_host" "$preflight_command" || die 'factory-v3 preflight failed'
+run_remote "$preflight_command" || die 'factory-v3 preflight failed'
 
 diagnostic_command="set -Eeuo pipefail; cd '$checkout'; $remote_env; $factory_env; test ! -e '$remote_diagnostic_root' && test ! -L '$remote_diagnostic_root'; '$server_python' '$remote_diagnostic' --repo '$checkout' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --output-root '$remote_diagnostic_root'"
-ssh -- "$server_host" "$diagnostic_command" || die 'one-epoch diagnostic execution failed'
-ssh -- "$server_host" "set -Eeuo pipefail; $remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt' --diagnostic-preflight-receipt '$remote_preflight_receipt'" \
+run_remote "$diagnostic_command" || die 'one-epoch diagnostic execution failed'
+run_remote "set -Eeuo pipefail; $remote_env; '$server_python' '$remote_preflight' --diagnostic-receipt '$remote_diagnostic_receipt' --diagnostic-preflight-receipt '$remote_preflight_receipt'" \
   || die 'one-epoch diagnostic did not produce an authenticated PASS receipt'
 
-ssh -- "$server_host" "$remote_absence" || die "output root appeared before launch: $output_root"
-controller="set -Eeuo pipefail; $remote_env; $factory_env; umask 077; '$server_python' -c \"import json,os; p='$remote_startup_marker'; fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,(json.dumps({'status':'CONTROLLER_STARTED','output_root':'$output_root'},sort_keys=True,separators=(',',':'))+'\\n').encode('ascii')); os.close(fd)\"; '$server_python' '$remote_formal_runner' --output-root '$output_root' --epochs 100 --provider-factory v023_c1c2_provider_factory_v3:make_provider --model-config-json '$remote_model_config' --train-seed 2927175120652069826 --preflight-receipt '$remote_preflight_receipt' --execute; '$server_python' '$remote_verifier' --repo '$checkout' --output-root '$output_root' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --preflight-receipt '$remote_preflight_receipt' --write"
-ssh -- "$server_host" "set -Eeuo pipefail; test ! -e '$remote_startup_marker' && test ! -L '$remote_startup_marker'; test ! -e '$remote_log' && test ! -L '$remote_log'; tmux new-session -d -s '$tmux_session' \"$controller >>'$remote_log' 2>&1\"" \
+run_remote "$remote_absence" || die "output root appeared before launch: $output_root"
+controller="set -Eeuo pipefail; $remote_env; $factory_env; umask 077; '$server_python' -c \"import json,os; p='$remote_startup_marker'; fd=os.open(p,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600); os.write(fd,(json.dumps({'status':'CONTROLLER_STARTED','output_root':'$output_root','server_host':'$server_host'},sort_keys=True,separators=(',',':'))+'\\n').encode('ascii')); os.close(fd)\"; '$server_python' '$remote_formal_runner' --output-root '$output_root' --epochs 100 --provider-factory v023_c1c2_provider_factory_v3:make_provider --model-config-json '$remote_model_config' --train-seed 2927175120652069826 --preflight-receipt '$remote_preflight_receipt' --execute; '$server_python' '$remote_verifier' --repo '$checkout' --output-root '$output_root' --provider-config '$remote_provider_config' --model-config '$remote_model_config' --preflight-receipt '$remote_preflight_receipt' --write"
+run_remote "set -Eeuo pipefail; test ! -e '$remote_startup_marker' && test ! -L '$remote_startup_marker'; test ! -e '$remote_log' && test ! -L '$remote_log'; tmux new-session -d -s '$tmux_session' \"$controller >>'$remote_log' 2>&1\"" \
   || die 'tmux source-training controller failed to start'
 
 acknowledged=0
 for _ in $(seq 1 24); do
-  if ssh -- "$server_host" "test -f '$remote_startup_marker' && tmux has-session -t '$tmux_session' 2>/dev/null" >/dev/null 2>&1; then
+  if run_remote "test -f '$remote_startup_marker' && tmux has-session -t '$tmux_session' 2>/dev/null" >/dev/null 2>&1; then
     acknowledged=1
     break
   fi
