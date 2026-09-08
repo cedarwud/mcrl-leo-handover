@@ -5,3 +5,6 @@ Read order: 01 (controller's first-principles reference design), 02 (controller 
 Status of the project when this package was cut: development kill screen C3-S v1 returned SUPPORT (+2.9 % pooled EE) but is treated as mechanism-unattributed; a decisive diagnostic set (NULL ≡ BASE, random renewal, forced renewal, anchor ablation) is running; formal source training is on HOLD pending the owner's ratification of the successor physics; nothing here is a paper claim.
 
 The two prompts (`PROMPT-CHATGPT-QA.md`, `PROMPT-CHATGPT-DEEP-RESEARCH.md`) reference these file numbers.
+
+## Refresh r5.1 (server clock ≈ 15:35 UTC)
+Added after the first cut: 05b astra round 4 (fixed-SINR vs per-user rate target inside the angle-aware primary), 05c/05d the SEALED priority declaration v1.0 and its v1.1 amendment (primary is now (a-r) memoryless angle-aware power control with a per-user rate target of 50 Mbit/s, synthetic; fixed RF is the declared reference; 20-cell matrix priority a-r0 > a′-r0 > a-γ0 > b0 > …), 17–19 Opus second-opinion registers (geometry/time; channel/bits; evaluation), 20 the differential clean-room physics audit (the code implements the declared model to < 1e-6; the model, not the arithmetic, is the problem), 21 the post-round-3 addenda (12 later findings). The Q&A question 1 remains open on purpose: judge (a-r)/(a-γ)/(b) independently of our sealed choice.
