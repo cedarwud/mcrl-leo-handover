@@ -285,6 +285,20 @@ def verify_certificate(
     bits, energy, served = _totals_exact(panel, inner.choices)
     if inner.score != 0 or bits - q * energy != 0 or served < required:
         raise E1EstimandError("certificate does not prove global optimality")
+    estimand = U1_ESTIMAND if candidate_field == "unilateral_profiles" else J1_ESTIMAND
+    base_ratio = (
+        sum((anchor.base.bits_exact for anchor in panel), Fraction(0))
+        / sum((anchor.base.energy_exact for anchor in panel), Fraction(0))
+    )
+    base_float_bits = math.fsum(anchor.base.total_bits for anchor in panel)
+    base_float_energy = math.fsum(anchor.base.total_energy_j for anchor in panel)
+    if (
+        result.get("value_hex") != float(q).hex()
+        or result.get(estimand) != float(q)
+        or result.get("eta_BASE_hex") != (base_float_bits / base_float_energy).hex()
+        or result.get("eta_BASE_exact") != _fraction_payload(base_ratio)
+    ):
+        raise E1EstimandError("certificate numeric summary disagrees with exact proof")
     chosen = result.get("chosen_profiles")
     expected = {
         anchor.anchor_id: anchor.profiles[index].profile_id
@@ -335,6 +349,7 @@ def _solve(values: Sequence[object], *, candidate_field: str, estimand: str) -> 
         "value_hex": float(q).hex(),
         "eta_BASE": base_float_bits / base_float_energy,
         "eta_BASE_hex": (base_float_bits / base_float_energy).hex(),
+        "eta_BASE_exact": _fraction_payload(base_bits / base_energy),
         "chosen_profiles": chosen,
         "pooled": {
             "total_bits_hex": float_bits.hex(),

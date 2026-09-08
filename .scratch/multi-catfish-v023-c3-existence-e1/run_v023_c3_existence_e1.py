@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from fractions import Fraction
 import hashlib
 import json
 import math
@@ -561,12 +562,23 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
     if base.users != USERS:
         raise E1Error("BASE profile has the wrong user count")
     _verify_metrics(base, step.get("reference_metrics"))
+    _conservation(base)
     try:
         # The imported F1 reader recomputes F0 and proves exact unilateral
         # mask/tie/NOOP/physical-key coverage from this shared tape surface.
         f1.target_surfaces_from_step(step)
     except f1.F1Error as error:
         raise E1Error(f"unilateral tape verification failed: {error}") from error
+    unilateral = step.get("unilateral_candidates")
+    if not isinstance(unilateral, list):
+        raise E1Error("unilateral candidate tape must be a list")
+    for row in unilateral:
+        if not isinstance(row, Mapping):
+            raise E1Error("unilateral candidate row is malformed")
+        expected_id = f"{UNILATERAL_PROFILE_PREFIX}:{row.get('focal_user')}:{row.get('candidate_action')}"
+        if row.get("profile_id") != expected_id:
+            raise E1Error("unilateral profile ID drifted")
+        _verify_metrics(f1.profile_from_payload(row.get("profile")), row.get("metrics"))
     reference = np.asarray(step.get("reference_actions"))
     masks = np.asarray(step.get("action_masks"))
     if reference.dtype.kind not in "iu" or reference.shape != (USERS,):
@@ -622,7 +634,7 @@ def verify_step_payload(step: Mapping[str, object]) -> dict[str, object]:
             raise E1Error("joint witness F0 conservation receipt disagrees")
     if observed != expected:
         raise E1Error("joint witness catalog is not exact and exhaustive")
-    return {"base": base, "unilateral_count": len(step["unilateral_candidates"]), "joint_count": len(joint)}
+    return {"base": base, "unilateral_count": len(unilateral), "joint_count": len(joint)}
 
 
 def build_unit_tape_payload(
@@ -963,8 +975,18 @@ def build_terminal_receipt(
     unilateral_panel, joint_panel = _anchor_panels(tapes)
     u1 = estimands.solve_u1(unilateral_panel)
     j1 = estimands.solve_j1(joint_panel)
-    unilateral_outcome = UNILATERAL_OUTCOMES[0] if u1["U1"] > u1["eta_BASE"] else UNILATERAL_OUTCOMES[1]
-    joint_outcome = JOINT_OUTCOMES[0] if j1["J1"] > j1["eta_BASE"] else JOINT_OUTCOMES[1]
+    def exact_value(payload: Mapping[str, object], field: str) -> Fraction:
+        raw = payload[field]
+        if not isinstance(raw, Mapping):
+            raise E1Error(f"{field} exact value is malformed")
+        return Fraction(int(raw["numerator"]), int(raw["denominator"]))
+
+    u1_exact = exact_value(u1["certificate"], "optimal_ratio_exact")
+    u1_base_exact = exact_value(u1, "eta_BASE_exact")
+    j1_exact = exact_value(j1["certificate"], "optimal_ratio_exact")
+    j1_base_exact = exact_value(j1, "eta_BASE_exact")
+    unilateral_outcome = UNILATERAL_OUTCOMES[0] if u1_exact > u1_base_exact else UNILATERAL_OUTCOMES[1]
+    joint_outcome = JOINT_OUTCOMES[0] if j1_exact > j1_base_exact else JOINT_OUTCOMES[1]
     if u1["eta_BASE_hex"] != j1["eta_BASE_hex"]:
         raise E1Error("U1 and J1 BASE denominators disagree")
     return {
