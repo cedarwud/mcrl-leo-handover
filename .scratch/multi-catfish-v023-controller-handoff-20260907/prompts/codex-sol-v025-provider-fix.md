@@ -13,3 +13,5 @@ For each of the 16 defects and 14 traps: either FIX (with a non-tautological KAT
 - Every remaining trap in the audit's list gets the same treatment.
 
 Then: run the full physics_v025 suite plus the provider suite, redo the ≤ 10-core-minute rehearsal, and write `V025-PROVIDER-FIX-REPORT-2026-09-08.md` with a table (defect/trap → FIX/REBUT → evidence → KAT name), the pytest line, provider source SHA-256, realisable inventory count, peak RSS, and rehearsal timings. Do not touch `/home/sat/mcrl-v025-codex-ws-engine`.
+
+## Addendum — controller decisions on the traps (binding): read `.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PROVIDER-2026-09-08.md` in this workspace. Item 1 changes the protocol: emit cross gains keyed by aggressor (NORAD, beam-chain) — add the field alongside the existing NORAD-keyed one if `tapes.py` cannot be changed in this workspace, and state it in the report so the engine's stage 4 consumes it.
