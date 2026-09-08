@@ -41,6 +41,8 @@ BOOTSTRAP_REPLICATES = 500
 FORMAL_ADMISSION_NAME = "FORMAL-ADMISSION.json"
 TREE_MANIFEST_NAME = "MANIFEST.sha256"
 COMPLETE_NAME = "COMPLETE"
+ADMINISTRATIVE_CLOSURE_NAME = "ADMINISTRATIVE-CLOSURE.json"
+CLOSURE_CAPTION = "continuation to 9000 not performed"
 
 
 class FigurePipelineError(RuntimeError):
@@ -64,6 +66,7 @@ ARM_ORDER = tuple(PRODUCER.ARMS)
 FORMAL_ADMISSION_SCHEMA = f"{PRODUCER.SCHEMA}-formal-admission-v1"
 PLAN_BUILDER = importlib.import_module("build_v023_c1c2_successor_world_plan")
 FROZEN_PLAN_SHA256 = PLAN_BUILDER.build_world_plan()["plan_sha256"]
+ADMINISTRATIVE_CLOSURE_SCHEMA = f"{PRODUCER.SCHEMA}-administrative-closure-v1"
 RECEIPT_FIELDS = frozenset(field.name for field in fields(PRODUCER.EpisodeReceipt))
 
 
@@ -453,6 +456,78 @@ def _validate_terminal_result(
             raise FigurePipelineError("3000 result disposition semantics drifted")
 
 
+def _authenticate_administrative_closure(
+    root: Path,
+    admission: Mapping[str, object],
+    result: Mapping[str, object],
+    *,
+    tracked: list[tuple[str, str]],
+) -> dict[str, object] | None:
+    path = root / ADMINISTRATIVE_CLOSURE_NAME
+    if not path.exists():
+        return None
+    receipt = _read_json(path)
+    receipt_sha = file_sha256(path)
+    if not _authenticate_sidecars(path, receipt_sha):
+        raise FigurePipelineError("administrative closure lacks its digest sidecar")
+    marker_record = receipt.get("decision_marker")
+    addendum_record = receipt.get("addendum_r2")
+    if not isinstance(marker_record, Mapping) or not isinstance(addendum_record, Mapping):
+        raise FigurePipelineError("administrative closure lacks decision/addendum bindings")
+    marker_path = Path(str(marker_record.get("path", "")))
+    addendum_path = Path(str(addendum_record.get("path", "")))
+    marker_sha = file_sha256(marker_path)
+    addendum_sha = file_sha256(addendum_path)
+    if not _authenticate_sidecars(marker_path, marker_sha) or not _authenticate_sidecars(addendum_path, addendum_sha):
+        raise FigurePipelineError("administrative closure external binding lacks a valid sidecar")
+    marker = _read_json(marker_path)
+    reply = marker.get("owner_reply_verbatim")
+    result_sha = file_sha256(root / "result.json")
+    checkpoint_sha = file_sha256(root / "checkpoints/checkpoint-003000.json")
+    decision = receipt.get("decision")
+    expected_held_sha = hashlib.sha256(PRODUCER.HELD.encode("ascii")).hexdigest()
+    if (
+        receipt.get("schema") != ADMINISTRATIVE_CLOSURE_SCHEMA
+        or receipt.get("status") != "ADMINISTRATIVE_CLOSURE_SEALED"
+        or receipt.get("formal") is not True
+        or decision not in {"DECLINE_CONTINUATION", "DEFER_AND_CLOSE_REPORTING_ROOT"}
+        or receipt.get("reason") != decision
+        or receipt.get("continuation_performed") is not False
+        or receipt.get("planned_maximum_episodes") != 9000
+        or receipt.get("completed_boundary") != 3000
+        or receipt.get("bindings_sha256") != admission.get("bindings_sha256")
+        or receipt.get("plan_sha256") != admission.get("plan_sha256")
+        or receipt.get("policy_bindings_sha256") != admission.get("policy_bindings_sha256")
+        or receipt.get("admission_mapping_sha256") != admission.get("admission_mapping_sha256")
+        or receipt.get("result_3000_sha256") != result_sha
+        or receipt.get("checkpoint_3000_sha256") != checkpoint_sha
+        or receipt.get("held_terminal_token_sha256") != expected_held_sha
+        or marker_record.get("sha256") != marker_sha
+        or addendum_record.get("sha256") != addendum_sha
+        or marker.get("decision") != decision
+        or marker.get("bindings_sha256") != admission.get("bindings_sha256")
+        or marker.get("plan_sha256") != admission.get("plan_sha256")
+        or marker.get("policy_bindings_sha256", marker.get("policy_mapping_sha256"))
+        != admission.get("policy_bindings_sha256")
+        or marker.get("result_3000_sha256") != result_sha
+        or marker.get("checkpoint_3000_sha256") != checkpoint_sha
+        or marker.get("held_terminal_token_sha256") != expected_held_sha
+        or not isinstance(reply, str) or len(reply.strip()) < 20
+        or not str(marker.get("notification_sent_utc", "")).endswith("Z")
+        or not str(marker.get("owner_reply_received_utc", "")).endswith("Z")
+        or not isinstance(marker.get("notification_channel"), str)
+        or not marker.get("notification_channel", "").strip()
+        or receipt.get("controller_identity") != marker.get("recorded_by")
+        or result.get("overall_token") != PRODUCER.HELD
+    ):
+        raise FigurePipelineError("administrative closure authentication drifted")
+    tracked.extend((
+        ("administrative-closure/decision-marker", marker_sha),
+        ("administrative-closure/addendum-r2", addendum_sha),
+    ))
+    return {**receipt, "receipt_sha256": receipt_sha}
+
+
 @dataclass(frozen=True)
 class Rung:
     completed: int
@@ -469,6 +544,11 @@ class RootData:
     formal: bool
     rungs: tuple[Rung, ...]
     authenticated_files: tuple[tuple[str, str], ...]
+    original_disposition: str | None = None
+    result_3000_sha256: str | None = None
+    continuation_performed: bool | None = None
+    administrative_closure: Mapping[str, object] | None = None
+    tree_seal_sha256: str | None = None
 
     @property
     def receipt_count(self) -> int:
@@ -628,6 +708,8 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
             raise FigurePipelineError("rung pooled endpoints are missing")
         _compare_pooled(expected_pooled, pooled)
         all_rungs.append(Rung(completed, expected_pooled, tuple(rows)))
+    terminal_results: dict[str, dict[str, Any]] = {}
+    terminal_digests: dict[str, str] = {}
     for result_name, boundary, continuation in (
         ("result.json", 3000, False),
         ("continuation-result.json", 9000, True),
@@ -637,6 +719,8 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
             continue
         result = _read_json(result_path)
         result_digest = file_sha256(result_path)
+        terminal_results[result_name] = result
+        terminal_digests[result_name] = result_digest
         if (result_path.name, result_digest) not in tracked:
             tracked.append((result_path.name, result_digest))
             tracked.extend(
@@ -655,12 +739,37 @@ def load_root(root: str | Path, *, allow_nonformal: bool = False) -> RootData:
         )
     if all_rungs[-1].completed > 3000 and not (source / "result.json").is_file():
         raise FigurePipelineError("post-3000 history lacks the preserved 3000 result")
+    result_3000 = terminal_results.get("result.json")
+    continuation_result = terminal_results.get("continuation-result.json")
+    closure = None
+    if admission is not None and result_3000 is not None:
+        closure = _authenticate_administrative_closure(
+            source, admission, result_3000, tracked=tracked
+        )
+    if closure is not None and continuation_result is not None:
+        raise FigurePipelineError("administratively closed root cannot carry continuation output")
+    if (
+        result_3000 is not None
+        and result_3000.get("overall_token") == PRODUCER.HELD
+        and continuation_result is None
+        and closure is None
+    ):
+        raise FigurePipelineError("HELD root lacks authenticated administrative closure")
     tracked_sorted = tuple(sorted(set(tracked)))
     root_digest = canonical_sha256(
         {"files": [{"path": path, "sha256": digest} for path, digest in tracked_sorted]}
     )
     assert arms is not None and claim_ceiling is not None
-    return RootData(source, root_digest, arms, claim_ceiling, formal, tuple(all_rungs), tracked_sorted)
+    tree_seal_sha = file_sha256(source / TREE_MANIFEST_NAME) if formal else None
+    return RootData(
+        source, root_digest, arms, claim_ceiling, formal, tuple(all_rungs),
+        tracked_sorted,
+        None if result_3000 is None else str(result_3000.get("overall_token")),
+        terminal_digests.get("result.json"),
+        None if result_3000 is None else continuation_result is not None,
+        closure,
+        tree_seal_sha,
+    )
 
 
 COLORS = {
@@ -697,6 +806,11 @@ def _decorate(fig: Any, data: RootData, *, title: str) -> None:
         f"   |   authenticated root: {data.root_sha256}"
     )
     fig.text(0.5, 0.012, footer, ha="center", va="bottom", fontsize=5.6, color="#555555")
+    if data.administrative_closure is not None:
+        fig.text(
+            0.5, 0.045, CLOSURE_CAPTION, ha="center", va="bottom",
+            fontsize=8.2, color="#7A2E2E", weight="bold",
+        )
     if not data.formal:
         fig.text(
             0.5,
@@ -913,6 +1027,44 @@ def render(
                 "receipt_count": data.receipt_count,
                 "rung_count": len(data.rungs),
                 "rung_range": [data.rungs[0].completed, data.rungs[-1].completed],
+                "actual_rung_coverage": [rung.completed for rung in data.rungs],
+                "original_disposition": data.original_disposition,
+                "result_3000_sha256": data.result_3000_sha256,
+                "completed_boundary": data.rungs[-1].completed,
+                "planned_maximum_episodes": (
+                    data.administrative_closure.get("planned_maximum_episodes")
+                    if data.administrative_closure is not None else 9000
+                ),
+                "continuation_performed": data.continuation_performed,
+                "administrative_closure_reason": (
+                    data.administrative_closure.get("reason")
+                    if data.administrative_closure is not None else None
+                ),
+                "decision_marker_sha256": (
+                    data.administrative_closure["decision_marker"]["sha256"]
+                    if data.administrative_closure is not None else None
+                ),
+                "administrative_closure_sha256": (
+                    data.administrative_closure.get("receipt_sha256")
+                    if data.administrative_closure is not None else None
+                ),
+                "bindings_sha256": (
+                    data.administrative_closure.get("bindings_sha256")
+                    if data.administrative_closure is not None else None
+                ),
+                "plan_sha256": (
+                    data.administrative_closure.get("plan_sha256")
+                    if data.administrative_closure is not None else FROZEN_PLAN_SHA256
+                ),
+                "policy_bindings_sha256": (
+                    data.administrative_closure.get("policy_bindings_sha256")
+                    if data.administrative_closure is not None else None
+                ),
+                "tree_seal_sha256": data.tree_seal_sha256,
+                "mandatory_caption": (
+                    CLOSURE_CAPTION if data.administrative_closure is not None else None
+                ),
+                "renderer_sha256": code_digest,
                 "authenticated_files": [
                     {"path": path, "sha256": digest} for path, digest in data.authenticated_files
                 ],

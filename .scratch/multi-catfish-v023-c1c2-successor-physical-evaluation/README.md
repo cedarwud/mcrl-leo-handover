@@ -39,6 +39,13 @@ that may emit four-arm rungs or the 3,000 disposition. All four arms authenticat
 the Stage-A/B supplement, runtime admission, and all-four-arm equivalence
 evidence; the withdrawn early-BASELINE mode is absent.
 
+Authorized chunk continuation uses cumulative 6,000 and 9,000 arm merges.
+Every post-3,000 worker carries the authenticated owner marker/continuation
+authority digests in its provenance, starts from a draw-replayed boundary at
+3,000 or 6,000, and preserves the complete prefix. The 9,000 four-arm assembly
+appends `continuation-result.json` to the existing root; it never writes a
+second `result.json` or another scientific disposition.
+
 `v023_c1c2_successor_plumbing_diagnostic.py` is the exact one-world Stage B
 check: world index 1, id
 `train-v023-c1c2-successor-plumbing-001`, seed `936547238915053535`, 100 users,

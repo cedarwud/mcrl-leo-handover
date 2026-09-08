@@ -37,6 +37,7 @@ import build_v023_c1c2_successor_world_plan as plan_builder
 import preflight_v023_c1c2_successor_stagec as preflight
 import run_v023_c1c2_successor_stage_c as controller
 import run_v023_c1c2_successor_stage_c_chunks as chunk_controller
+import seal_stage_c_declined_continuation as closure_sealer
 import stagec_common as common
 import verify_v023_c1c2_successor_stagec as verifier
 import v023_c1c2_successor_physical_runner as runner
@@ -1009,6 +1010,80 @@ def test_9000_banner_refuses_each_required_owner_marker_field(
         )
 
 
+@pytest.mark.parametrize(
+    "decision", ["DECLINE_CONTINUATION", "DEFER_AND_CLOSE_REPORTING_ROOT"]
+)
+def test_administrative_decision_marker_authenticates_explicit_closure(
+    tmp_path: Path, decision: str
+) -> None:
+    digests = {
+        name: common.canonical_sha256({"closure-fixture": name})
+        for name in ("bindings", "policy", "mapping", "result", "checkpoint")
+    }
+    marker = tmp_path / "owner-decision.json"
+    _write_json(marker, {
+        "formal": True,
+        "decision": decision,
+        "owner_reply_verbatim": "I explicitly request closure of this reporting root.",
+        "notification_sent_utc": "2026-09-08T01:00:00Z",
+        "owner_reply_received_utc": "2026-09-08T01:01:00Z",
+        "notification_channel": "controller-chat",
+        "recorded_by": "controller-test",
+        "bindings_sha256": digests["bindings"],
+        "plan_sha256": common.PLAN_SHA256,
+        "policy_bindings_sha256": digests["policy"],
+        "admission_mapping_sha256": digests["mapping"],
+        "result_3000_sha256": digests["result"],
+        "held_terminal_token_sha256": closure_sealer.HELD_TOKEN_SHA256,
+        "checkpoint_3000_sha256": digests["checkpoint"],
+    })
+    common.write_digest_sidecar(marker)
+    payload, observed = closure_sealer._authenticate_decision_marker(
+        marker,
+        bindings_sha256=digests["bindings"],
+        plan_sha256=common.PLAN_SHA256,
+        policy_bindings_sha256=digests["policy"],
+        admission_mapping_sha256=digests["mapping"],
+        result_sha256=digests["result"],
+        checkpoint_sha256=digests["checkpoint"],
+    )
+    assert payload["decision"] == decision
+    assert observed == common.file_sha256(marker)
+
+
+def test_administrative_decision_marker_refuses_silence_or_plain_deferral(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "silent-decision.json"
+    digest = "a" * 64
+    _write_json(marker, {
+        "formal": True,
+        "decision": "DEFER_CONTINUATION",
+        "owner_reply_verbatim": "I will decide whether to continue at a later time.",
+        "notification_sent_utc": "2026-09-08T01:00:00Z",
+        "owner_reply_received_utc": "2026-09-08T01:01:00Z",
+        "notification_channel": "controller-chat",
+        "recorded_by": "controller-test",
+        "bindings_sha256": digest,
+        "plan_sha256": common.PLAN_SHA256,
+        "policy_bindings_sha256": digest,
+        "result_3000_sha256": digest,
+        "held_terminal_token_sha256": closure_sealer.HELD_TOKEN_SHA256,
+        "checkpoint_3000_sha256": digest,
+    })
+    common.write_digest_sidecar(marker)
+    with pytest.raises(common.StageCError, match="silent|unanswered"):
+        closure_sealer._authenticate_decision_marker(
+            marker,
+            bindings_sha256=digest,
+            plan_sha256=common.PLAN_SHA256,
+            policy_bindings_sha256=digest,
+            admission_mapping_sha256=digest,
+            result_sha256=digest,
+            checkpoint_sha256=digest,
+        )
+
+
 def test_manifest_requires_closure_list_and_syncs_every_closure_path(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="required closure list missing"):
         manifest_builder.closure(tmp_path)
@@ -1106,6 +1181,10 @@ def test_chunk_launcher_enforces_worker_cap_and_has_merge_step() -> None:
     assert "--barrier" in source
     assert "chunk-receipt.json" in source
     assert "merge-arm" in source
+    assert "6000) previous=3000" in source
+    assert "9000) previous=6000" in source
+    assert "--continuation-authority" in source
+    assert "--owner-notification-marker" in source
     help_result = subprocess.run(
         [
             sys.executable,
@@ -1128,3 +1207,28 @@ def test_chunk_launcher_enforces_worker_cap_and_has_merge_step() -> None:
             "--start", "0", "--end", "100", "--chunk-root", "chunk",
         ]
     ).end == 100
+
+
+def test_chunk_continuation_refuses_missing_authority_before_boundary_work() -> None:
+    called = False
+
+    class NoSchedulingRunner:
+        class C1C2PhysicalError(RuntimeError):
+            pass
+
+        @staticmethod
+        def authenticate_continuation_chain(*_args, **_kwargs):
+            nonlocal called
+            called = True
+
+    with pytest.raises(common.StageCError, match="continuation authority"):
+        chunk_controller._authenticate_continuation(
+            argparse.Namespace(
+                continuation_authority=None,
+                owner_notification_marker=None,
+                bindings=Path("bindings.json"),
+            ),
+            {"stage_c_output_root": "/must-not-be-read"},
+            NoSchedulingRunner,
+        )
+    assert called is False

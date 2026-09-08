@@ -40,6 +40,37 @@ def _policy(bindings: Mapping[str, object], runner: Any, arm: str) -> Any:
     )
 
 
+def _authenticate_continuation(
+    args: argparse.Namespace,
+    bindings: Mapping[str, object],
+    runner: Any,
+) -> dict[str, object]:
+    authority_path = getattr(args, "continuation_authority", None)
+    marker_path = getattr(args, "owner_notification_marker", None)
+    if authority_path is None or marker_path is None:
+        raise common.StageCError(
+            "post-3000 scheduling requires continuation authority and owner-notification marker"
+        )
+    root = Path(str(bindings.get("stage_c_output_root", "")))
+    checkpoint = common.read_json(
+        root / "checkpoints/checkpoint-003000.json", field="preserved 3000 checkpoint"
+    )
+    policy_bindings = checkpoint.get("policy_bindings")
+    if not isinstance(policy_bindings, Mapping) or tuple(policy_bindings) != common.ARMS:
+        raise common.StageCError("preserved 3000 checkpoint policy mapping drifted")
+    try:
+        return runner.authenticate_continuation_chain(
+            authority_path,
+            marker_path,
+            root=root,
+            bindings_sha256=common.file_sha256(args.bindings),
+            plan_sha256=common.PLAN_SHA256,
+            policy_bindings=policy_bindings,
+        )
+    except runner.C1C2PhysicalError as error:
+        raise common.StageCError(str(error)) from error
+
+
 def authenticate_launch(args: argparse.Namespace) -> dict[str, object]:
     bindings = common.verify_bindings(args.bindings)
     supplement = common.verify_stage_ab_supplement(
@@ -72,7 +103,7 @@ def authenticate_launch(args: argparse.Namespace) -> dict[str, object]:
         rng_factory=sequential_controller._rngs,
         runtime_admission=admission,
     )
-    return {
+    result = {
         "status": "AUTHENTICATED_STAGEC_CHUNK_LAUNCH",
         "arm": args.arm,
         "bindings_sha256": common.file_sha256(args.bindings),
@@ -80,6 +111,14 @@ def authenticate_launch(args: argparse.Namespace) -> dict[str, object]:
         "acceptance_sha256": acceptance["acceptance_bundle_sha256"],
         "runtime_admission_sha256": admission_sha,
     }
+    if (
+        getattr(args, "continuation_authority", None) is not None
+        or getattr(args, "owner_notification_marker", None) is not None
+    ):
+        authority = _authenticate_continuation(args, bindings, runner)
+        result["continuation_authority_sha256"] = authority["authority_sha256"]
+        result["owner_notification_sha256"] = authority["owner_notification_sha256"]
+    return result
 
 
 def run_chunk(args: argparse.Namespace) -> dict[str, object]:
@@ -115,6 +154,9 @@ def run_chunk(args: argparse.Namespace) -> dict[str, object]:
         runtime_admission=admission,
     )
     plan = runner.EvaluationPlan.from_file(bindings["world_plan"]["path"])
+    continuation = (
+        _authenticate_continuation(args, bindings, runner) if args.end > 3000 else None
+    )
     schedule_sha = str(bindings["scheduling_addendum"]["sha256"])
     context = {
         "arm": args.arm,
@@ -122,7 +164,8 @@ def run_chunk(args: argparse.Namespace) -> dict[str, object]:
         "schedule_sha256": schedule_sha,
         "execution_mode": "arm_decoupled",
         "formal": True,
-        "continuation_limit": 3000,
+        "continuation_limit": 9000 if continuation is not None else 3000,
+        "continuation_authority": continuation,
         "parent_checkpoint": (
             None if args.parent_checkpoint is None else {
                 "path": str(args.parent_checkpoint.resolve()),
@@ -145,7 +188,7 @@ def run_chunk(args: argparse.Namespace) -> dict[str, object]:
             "acceptance_procedure_sha256": bindings["acceptance_procedure"]["sha256"],
         },
     }
-    boundaries = tuple(range(0, 3001, 100))
+    boundaries = tuple(sorted({0, args.start, args.end}))
     table = runner.build_chunk_boundary_states(plan, context, boundaries)
     return runner.run_arm_chunk(
         args.arm, args.start, args.end, table[args.start], args.chunk_root
@@ -156,19 +199,47 @@ def merge_arm(args: argparse.Namespace) -> dict[str, object]:
     verifier = sequential_controller._module(
         common.HERE / "verify_v023_c1c2_successor_stagec.py"
     )
+    runner = _runner()
+    continuation_required = any(
+        common.read_json(root / "chunk-receipt.json", field="chunk receipt").get(
+            "end_boundary", 0
+        ) > 3000
+        for root in args.chunk_roots
+    )
+    bindings = None
+    if continuation_required:
+        prospective = common.verify_bindings(args.bindings)
+        supplement = common.verify_stage_ab_supplement(
+            args.admission_supplement, args.bindings, prospective
+        )
+        bindings = common.materialize_stage_ab(prospective, supplement)
+        _authenticate_continuation(args, bindings, runner)
     for root in args.chunk_roots:
         verifier.verify_arm_chunk(
             root, args.bindings, arm=args.arm,
             admission_supplement=args.admission_supplement,
             acceptance_bundle=args.acceptance_bundle,
             runtime_admission=args.runtime_admission,
+            continuation_authority=getattr(args, "continuation_authority", None),
+            owner_notification_marker=getattr(args, "owner_notification_marker", None),
         )
-    return _runner().merge_arm_chunks(args.arm, args.chunk_roots, args.output)
+    return runner.merge_arm_chunks(args.arm, args.chunk_roots, args.output)
 
 
 def check_barrier(args: argparse.Namespace) -> dict[str, object]:
     root = args.arm_merge_root
     merge = common.read_json(root / "arm-merge.json", field="previous arm merge")
+    if (
+        getattr(args, "continuation_authority", None) is not None
+        or getattr(args, "owner_notification_marker", None) is not None
+        or args.completed > 3000
+    ):
+        prospective = common.verify_bindings(args.bindings)
+        supplement = common.verify_stage_ab_supplement(
+            args.admission_supplement, args.bindings, prospective
+        )
+        bindings = common.materialize_stage_ab(prospective, supplement)
+        _authenticate_continuation(args, bindings, _runner())
     if (
         merge.get("status") != "COMPLETE_ARM_MERGE"
         or merge.get("formal") is not True
@@ -210,6 +281,8 @@ def check_barrier(args: argparse.Namespace) -> dict[str, object]:
             admission_supplement=args.admission_supplement,
             acceptance_bundle=args.acceptance_bundle,
             runtime_admission=args.runtime_admission,
+            continuation_authority=getattr(args, "continuation_authority", None),
+            owner_notification_marker=getattr(args, "owner_notification_marker", None),
         )
         for episode in range(start + 1, end + 1):
             row, _state = runner._read_episode_record(
@@ -315,23 +388,57 @@ def merge_four(args: argparse.Namespace) -> dict[str, object]:
     roots = {arm: root for arm, root in zip(common.ARMS, args.arm_roots, strict=True)}
     mappings = common.read_json(args.admission_mapping, field="four-arm admission mapping")
     mapping = common.verify_stage_c_admission_mapping(mappings.get("admission_mapping"))
-    result = _runner().merge_four_arm(roots, args.output, admission_mapping=mapping)
+    runner = _runner()
+    merges = {
+        arm: common.read_json(root / "arm-merge.json", field=f"{arm} arm merge")
+        for arm, root in roots.items()
+    }
+    completed = {merge.get("completed_episode") for merge in merges.values()}
+    if len(completed) != 1:
+        raise common.StageCError("four-arm merge boundaries disagree")
+    boundary = completed.pop()
+    continuation = None
+    verifier = sequential_controller._module(
+        common.HERE / "verify_v023_c1c2_successor_stagec.py"
+    )
+    if boundary == 9000:
+        continuation = _authenticate_continuation(args, bindings, runner)
+        prefix = verifier.verify_finished(
+            args.output, args.bindings, args.admission_supplement,
+            require_tree_seal=False,
+        )
+        if prefix.get("completed_episode") != 3000 or prefix.get("overall_token") != runner.HELD:
+            raise common.StageCError("continuation requires an independently verified HELD 3000 root")
+    elif boundary != 3000:
+        raise common.StageCError("four-arm merge must publish boundary 3000 or 9000")
+    result = runner.merge_four_arm(
+        roots, args.output, admission_mapping=mapping,
+        continuation_authority=continuation,
+    )
     policy_bindings = {
         arm: mapping[arm]["policy_binding"] for arm in common.ARMS
     }
-    sequential_controller._formal_marker(
-        args.output,
-        common.file_sha256(args.bindings),
-        common.PLAN_SHA256,
-        mapping,
-    )
-    common.publish_sealed_json(
-        args.output / common.FORMAL_ADMISSION_NAME,
-        mappings,
-        field="formal Stage-C admission",
-    )
-    if result.get("overall_token") == _runner().FALSIFIED:
+    if boundary == 3000:
+        sequential_controller._formal_marker(
+            args.output,
+            common.file_sha256(args.bindings),
+            common.PLAN_SHA256,
+            mapping,
+        )
+        common.publish_sealed_json(
+            args.output / common.FORMAL_ADMISSION_NAME,
+            mappings,
+            field="formal Stage-C admission",
+        )
+        if result.get("overall_token") == runner.FALSIFIED:
+            common.write_tree_seal(args.output)
+    else:
+        verifier.verify_finished(
+            args.output, args.bindings, args.admission_supplement,
+            require_tree_seal=False,
+        )
         common.write_tree_seal(args.output)
+        verifier.verify_finished(args.output, args.bindings, args.admission_supplement)
     result["bindings_sha256"] = common.file_sha256(args.bindings)
     result["policy_bindings_sha256"] = common.canonical_sha256(policy_bindings)
     result["stage_ab_supplement_sha256"] = supplement["supplement_sha256"]
@@ -340,6 +447,10 @@ def merge_four(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _parser() -> argparse.ArgumentParser:
+    def continuation_options(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--continuation-authority", type=Path)
+        command.add_argument("--owner-notification-marker", type=Path)
+
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     check = sub.add_parser("check-launch")
@@ -348,14 +459,16 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument("--acceptance-bundle", type=Path, required=True)
     check.add_argument("--runtime-admission", type=Path, required=True)
     check.add_argument("--arm", choices=common.ARMS, required=True)
+    continuation_options(check)
     barrier = sub.add_parser("check-barrier")
     barrier.add_argument("--bindings", type=Path, required=True)
     barrier.add_argument("--admission-supplement", type=Path, required=True)
     barrier.add_argument("--acceptance-bundle", type=Path, required=True)
     barrier.add_argument("--runtime-admission", type=Path, required=True)
     barrier.add_argument("--arm", choices=common.ARMS, required=True)
-    barrier.add_argument("--completed", type=int, choices=common.PAUSES, required=True)
+    barrier.add_argument("--completed", type=int, choices=common.CHUNK_BARRIERS, required=True)
     barrier.add_argument("--arm-merge-root", type=Path, required=True)
+    continuation_options(barrier)
     chunk = sub.add_parser("run-chunk")
     chunk.add_argument("--bindings", type=Path, required=True)
     chunk.add_argument("--arm", choices=common.ARMS, required=True)
@@ -367,6 +480,7 @@ def _parser() -> argparse.ArgumentParser:
     chunk.add_argument("--acceptance-bundle", type=Path, required=True)
     chunk.add_argument("--parent-checkpoint", type=Path)
     chunk.add_argument("--repair-authority", type=Path)
+    continuation_options(chunk)
     arm = sub.add_parser("merge-arm")
     arm.add_argument("--arm", choices=common.ARMS, required=True)
     arm.add_argument("--chunk-roots", type=Path, nargs="+", required=True)
@@ -375,6 +489,7 @@ def _parser() -> argparse.ArgumentParser:
     arm.add_argument("--admission-supplement", type=Path, required=True)
     arm.add_argument("--acceptance-bundle", type=Path, required=True)
     arm.add_argument("--runtime-admission", type=Path, required=True)
+    continuation_options(arm)
     four = sub.add_parser("merge-four")
     four.add_argument("--bindings", type=Path, required=True)
     four.add_argument("--arm-roots", type=Path, nargs=4, required=True)
@@ -387,6 +502,7 @@ def _parser() -> argparse.ArgumentParser:
     four.add_argument("--admission-supplement", type=Path, required=True)
     four.add_argument("--acceptance-bundle", type=Path, required=True)
     four.add_argument("--output", type=Path, required=True)
+    continuation_options(four)
     return parser
 
 

@@ -2,10 +2,11 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --bindings PATH --admission-supplement PATH --acceptance-bundle PATH --runtime-admission PATH --arm ARM --barrier 100|500|1500|3000 --chunks-root DIR --arm-merge-root DIR [--previous-arm-merge DIR] [--max-workers N] [--merge]" >&2
+  echo "usage: $0 --bindings PATH --admission-supplement PATH --acceptance-bundle PATH --runtime-admission PATH --arm ARM --barrier 100|500|1500|3000|6000|9000 --chunks-root DIR --arm-merge-root DIR [--previous-arm-merge DIR] [--continuation-authority JSON --owner-notification-marker JSON] [--max-workers N] [--merge]" >&2
 }
 
 bindings= supplement= acceptance= runtime_admission= arm= barrier= chunks_root= arm_merge_root= previous_arm_merge= max_workers=
+continuation_authority= owner_notification_marker=
 merge_only=0
 while (($#)); do
   case "$1" in
@@ -18,6 +19,8 @@ while (($#)); do
     --chunks-root) chunks_root=$2; shift 2 ;;
     --arm-merge-root) arm_merge_root=$2; shift 2 ;;
     --previous-arm-merge) previous_arm_merge=$2; shift 2 ;;
+    --continuation-authority) continuation_authority=$2; shift 2 ;;
+    --owner-notification-marker) owner_notification_marker=$2; shift 2 ;;
     --max-workers) max_workers=$2; shift 2 ;;
     --merge) merge_only=1; shift ;;
     *) usage; exit 2 ;;
@@ -31,14 +34,25 @@ case "$barrier" in
   500) previous=100 ;;
   1500) previous=500 ;;
   3000) previous=1500 ;;
-  *) echo "barrier must be one of 100, 500, 1500, 3000" >&2; exit 2 ;;
+  6000) previous=3000 ;;
+  9000) previous=6000 ;;
+  *) echo "barrier must be one of 100, 500, 1500, 3000, 6000, 9000" >&2; exit 2 ;;
 esac
+if ((barrier > 3000)); then
+  [[ -n "$continuation_authority" && -n "$owner_notification_marker" ]] || { echo "barrier $barrier requires --continuation-authority and --owner-notification-marker" >&2; exit 2; }
+elif [[ -n "$continuation_authority" || -n "$owner_notification_marker" ]]; then
+  echo "continuation artifacts are valid only above 3000" >&2
+  exit 2
+fi
 
 here=$(cd "$(dirname "$0")" && pwd -P)
 repo=$(cd "$here/../.." && pwd -P)
 python=${V023_STAGEC_PYTHON:-$repo/.venv/bin/python}
 controller=$here/run_v023_c1c2_successor_stage_c_chunks.py
 common_args=(--bindings "$bindings" --admission-supplement "$supplement" --acceptance-bundle "$acceptance" --runtime-admission "$runtime_admission")
+if ((barrier > 3000)); then
+  common_args+=(--continuation-authority "$continuation_authority" --owner-notification-marker "$owner_notification_marker")
+fi
 export PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 export PYTHONPATH="$repo/src" TMPDIR="$repo/.tmp"
 "$python" "$controller" check-launch "${common_args[@]}" --arm "$arm" >/dev/null
@@ -98,6 +112,15 @@ for ((worker=0; worker<workers; worker++)); do
     end=$((10#${name: -6:6}))
     printf -v command 'echo 1000 > /proc/self/oom_score_adj && OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=%q TMPDIR=%q %q %q run-chunk --bindings %q --admission-supplement %q --acceptance-bundle %q --runtime-admission %q --arm %q --start %d --end %d --chunk-root %q' \
       "$repo/src" "$repo/.tmp" "$python" "$controller" "$bindings" "$supplement" "$acceptance" "$runtime_admission" "$arm" "$start" "$end" "$root"
+    if ((barrier > 3000)); then
+      printf -v extra ' --continuation-authority %q --owner-notification-marker %q' "$continuation_authority" "$owner_notification_marker"
+      command+="$extra"
+      if ((start == previous)); then
+        parent="$previous_arm_merge/checkpoints/$(printf 'checkpoint-%06d.json' "$previous")"
+        printf -v extra ' --parent-checkpoint %q' "$parent"
+        command+="$extra"
+      fi
+    fi
     commands+=("$command")
   done
   joined=${commands[0]}

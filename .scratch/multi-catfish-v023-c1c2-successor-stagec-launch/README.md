@@ -114,6 +114,41 @@ bundle.
    `result.json`, and emits `continuation-result.json` without a second
    scientific disposition.
 
+   The chunk scheduler exposes the authorized continuation as cumulative
+   barriers 6,000 and 9,000. Both invocations require the same
+   `--continuation-authority` and `--owner-notification-marker`; 6,000 binds
+   the 3,000 `--previous-arm-merge`, and 9,000 binds the 6,000 merge. Every
+   post-3,000 worker repeats the chain check before constructing a boundary
+   state. The 9,000 `merge-four` appends only new checkpoints/rungs and
+   `continuation-result.json` to the verified 3,000 root, independently verifies
+   the unsealed 9,000 tree, and only then writes the whole-tree seal.
+
+10. If the owner instead explicitly declines continuation, or defers and
+    explicitly requests closure of this reporting root, use the dedicated
+    administrative entry point. The decision marker must carry a named
+    `.sha256` sidecar, the verbatim reply, ordered UTC notification/reply
+    timestamps, channel, controller identity, one of
+    `DECLINE_CONTINUATION`/`DEFER_AND_CLOSE_REPORTING_ROOT`, and the bound
+    bindings, plan, policy-map, 3,000 result, HELD token and checkpoint
+    digests. The separately sealed R2 addendum is read and verified at runtime:
+
+    ```bash
+    python seal_stage_c_declined_continuation.py \
+      --bindings /path/to/V023-C1C2-SUCCESSOR-STAGEC-EXECUTION-BINDINGS.json \
+      --admission-supplement /path/to/STAGE-AB-ADMISSION-SUPPLEMENT.json \
+      --acceptance-bundle /path/to/STAGEC-CHUNK-ACCEPTANCE-BUNDLE.json \
+      --root /path/to/stage-c-root \
+      --decision-marker /path/to/owner-closure-decision.json \
+      --addendum-r2 /path/to/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-08-R2.md \
+      --output-receipt /path/to/stage-c-root/ADMINISTRATIVE-CLOSURE.json
+    ```
+
+    Silence, an unanswered notification, plain deferral, FALSIFIED, any STOP,
+    any post-3,000 artifact, and any active continuation writer are refused.
+    The command preserves every existing root byte, writes the closure receipt
+    and sidecar, then `MANIFEST.sha256`, and writes `COMPLETE` last. A closed
+    root cannot later be reopened for continuation.
+
 ## Server launch and resume
 
 `--dry-run` performs no SSH, rsync, tmux, simulator, or artifact write beyond
@@ -169,6 +204,12 @@ order, recomputes every cumulative pool with `math.fsum` over individual
 episode totals, and emits four-arm checkpoints/rungs only from complete arm
 coverage. No boundary below 3,000 emits a scientific disposition; early
 BASELINE cannot continue above 3,000.
+
+Post-3,000 scheduling uses barriers 6,000 and 9,000 with 100-aligned chunks.
+It is never admitted by raising a numeric limit: every launch, worker, barrier
+check, arm merge, four-arm merge and independent chunk verification
+authenticates the owner marker and continuation authority against the preserved
+HELD result and checkpoint-003000 bytes.
 
 Before the first `merge-four`, run `build_stage_c_admission_mapping.py` once
 per ladder with the bindings, Stage-A/B supplement, all-four-arm acceptance
