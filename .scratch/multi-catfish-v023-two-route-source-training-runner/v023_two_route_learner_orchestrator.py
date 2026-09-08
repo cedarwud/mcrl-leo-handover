@@ -319,10 +319,10 @@ def _identity_path_or_digest_field(field: str) -> bool:
 
 
 def _provenance_label_field(field: str) -> bool:
-    """Exempt only declared provenance names and names ending in ``_family``."""
+    """Exempt only the six declared provenance value labels."""
 
     normalized = field.lower()
-    return normalized.endswith("_family") or normalized in {
+    return normalized in {
         "source_family",
         "field_component",
         "keyed_field",
@@ -332,26 +332,43 @@ def _provenance_label_field(field: str) -> bool:
     }
 
 
+def _valid_code_closure(value: object) -> bool:
+    """Recognize only path-to-SHA-256 closure maps as inert provenance."""
+
+    if not isinstance(value, Mapping) or not value:
+        return False
+    for key, digest in value.items():
+        if not isinstance(key, str) or not isinstance(digest, str):
+            return False
+        path = Path(key)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or "/" not in key
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        ):
+            return False
+    return True
+
+
 def _reject_forbidden_identity_fields(
     value: object, *, field: str = "", closure_context: bool = False
 ) -> None:
     if isinstance(value, Mapping):
         for key, item in value.items():
             normalized = str(key).lower()
-            child_closure = closure_context or normalized in {
-                "learner_runtime", "bindings", "manifest_files", "consumed_files",
-                "code_closure", "closure", "code_closure_files",
-            }
-            if not child_closure and any(
+            child_closure = normalized in {"code_closure", "code_closure_files"} and _valid_code_closure(item)
+            if not closure_context and not child_closure and any(
                 token in {"R7", "Q3", "C3"}
                 for token in _identity_tokens(str(key))
             ):
                 raise V023TwoRouteOrchestratorError(
                     "provider identity contains a forbidden R7/Q3/C3 field"
                 )
-            _reject_forbidden_identity_fields(
-                item, field=str(key), closure_context=child_closure
-            )
+            if not child_closure:
+                _reject_forbidden_identity_fields(
+                    item, field=str(key), closure_context=False
+                )
     elif isinstance(value, (list, tuple, set)):
         for item in value:
             _reject_forbidden_identity_fields(

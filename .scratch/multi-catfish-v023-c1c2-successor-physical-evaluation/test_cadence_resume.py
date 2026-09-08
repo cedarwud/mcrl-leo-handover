@@ -12,10 +12,13 @@ import pytest
 
 
 HERE = Path(__file__).resolve().parent
-if str(HERE) not in sys.path:
-    sys.path.insert(0, str(HERE))
+STAGEC = HERE.parent / "multi-catfish-v023-c1c2-successor-stagec-launch"
+for path in (HERE, STAGEC):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 import build_v023_c1c2_successor_world_plan as builder
+import run_v023_c1c2_successor_stage_c as sequential_controller
 import v023_c1c2_successor_physical_runner as runner
 from mcrl.runtime.trainer_env import TrainerEnvironment
 
@@ -376,6 +379,16 @@ def test_held_3000_authority_admits_9000_core_runner_and_forgery_is_refused(
     assert result_9000["completed_episode"] == 9000
     assert result_9000["terminal_result_emitted"] is True
     assert (output / "continuation-result.json").is_file()
+    recovered_authority = runner.authenticate_continuation_chain(
+        authority_path,
+        notification,
+        root=output,
+        bindings_sha256=bindings_sha,
+        plan_sha256=plan.plan_sha256,
+        policy_bindings=adapter.policy_bindings,
+        allow_published_continuation=True,
+    )
+    assert recovered_authority["authority_sha256"] == authority_sha
 
 
 def _rngs(seed: int):
@@ -835,10 +848,18 @@ def test_chunk_refuses_early_baseline_above_3000_and_missing_fourth_arm(
         )
 
 
-def test_continuation_boundary_replay_is_bitwise_at_3000_and_6000() -> None:
+def test_continuation_boundary_replay_matches_sequential_controller_at_3001(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in runner.NUMERICAL_THREAD_ENV:
+        monkeypatch.setenv(name, "1")
     plan = _plan()
-    adapter = _ChunkTransportStub("BASELINE")
-    context = _chunk_context(adapter)
+    sequential_adapter = _ChunkTransportStub("BASELINE")
+    direct_rows, direct_states = sequential_controller._replay_arm_prefix_for_equivalence(
+        sequential_adapter, plan, arm="BASELINE", completed=3001
+    )
+    chunk_adapter = _ChunkTransportStub("BASELINE")
+    context = _chunk_context(chunk_adapter)
     context.update({
         "continuation_limit": 9000,
         "continuation_authority": {
@@ -851,20 +872,15 @@ def test_continuation_boundary_replay_is_bitwise_at_3000_and_6000() -> None:
             )
         },
     })
-    table = runner.build_chunk_boundary_states(plan, context, (0, 3000, 6000, 9000))
-    sequence = np.random.SeedSequence(plan.worlds[0].world_seed)
-    environment_rng = np.random.default_rng(sequence.spawn(2)[0])
-    age_rng = environment_rng.spawn(1)[0]
-    sequential_states = {}
-    for episode in range(1, 9001):
-        age_rng.integers(0, runner.STEPS, size=runner.USERS)
-        if episode in {3000, 6000, 9000}:
-            sequential_states[episode] = json.loads(
-                json.dumps(runner._jsonable(age_rng.bit_generator.state))
-            )
-    for boundary in (3000, 6000, 9000):
-        assert table[boundary]["environment_training_state"]["age_rng_state"] == sequential_states[boundary]
-        assert table[boundary]["draw_replay"]["draws_replayed"] == boundary
+    table = runner.build_chunk_boundary_states(plan, context, (0, 3000, 3100))
+    root = tmp_path / "BASELINE-003000-003100"
+    runner.run_arm_chunk("BASELINE", 3000, 3100, table[3000], root)
+    chunk_row, _state = runner._read_episode_record(
+        root / "episodes/episode-003001.json"
+    )
+    assert chunk_row.as_dict() == direct_rows[3000].as_dict()
+    assert table[3000]["resume_state"] == direct_states[3000]
+    assert table[3000]["draw_replay"]["draws_replayed"] == 3000
     assert table[3000]["resume_state"]["episode_index"] == 3000
     assert plan.worlds[3000].episode_index == 3001
 
@@ -902,3 +918,14 @@ def test_interrupted_3001_continuation_chunk_resumes_without_duplication(
     assert receipt["provenance"]["continuation_authority_sha256"] == (
         context["continuation_authority"]["continuation_authority_sha256"]
     )
+
+
+def test_write_once_accepts_identical_recovery_and_rejects_drift(tmp_path: Path) -> None:
+    path = tmp_path / "checkpoint-003100.json"
+    payload = {"completed_episode": 3100, "preserved": True}
+    runner._write_once(path, payload)
+    original = path.read_bytes()
+    runner._write_once(path, payload)
+    assert path.read_bytes() == original
+    with pytest.raises(runner.C1C2PhysicalError, match="refusing to overwrite"):
+        runner._write_once(path, {**payload, "preserved": False})

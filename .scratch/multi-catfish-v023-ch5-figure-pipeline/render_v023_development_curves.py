@@ -35,6 +35,10 @@ PRODUCER_PATH = (
     / "multi-catfish-v023-c1c2-successor-physical-evaluation"
     / "v023_c1c2_successor_physical_runner.py"
 )
+STAGEC_PATH = REPO / ".scratch/multi-catfish-v023-c1c2-successor-stagec-launch"
+if str(STAGEC_PATH) not in sys.path:
+    sys.path.insert(0, str(STAGEC_PATH))
+import stagec_common as STAGEC_COMMON  # noqa: E402
 WATERMARK = "REHEARSAL — NOT A RESULT"
 FORBIDDEN_LABEL_WORDS = ("significant", "proves", "efficacy", "TEST")
 BOOTSTRAP_REPLICATES = 500
@@ -481,11 +485,23 @@ def _authenticate_administrative_closure(
     if not _authenticate_sidecars(marker_path, marker_sha) or not _authenticate_sidecars(addendum_path, addendum_sha):
         raise FigurePipelineError("administrative closure external binding lacks a valid sidecar")
     marker = _read_json(marker_path)
-    reply = marker.get("owner_reply_verbatim")
     result_sha = file_sha256(root / "result.json")
     checkpoint_sha = file_sha256(root / "checkpoints/checkpoint-003000.json")
     decision = receipt.get("decision")
     expected_held_sha = hashlib.sha256(PRODUCER.HELD.encode("ascii")).hexdigest()
+    try:
+        STAGEC_COMMON.validate_owner_closure_decision_marker(
+            marker,
+            bindings_sha256=str(admission.get("bindings_sha256")),
+            plan_sha256=str(admission.get("plan_sha256")),
+            policy_bindings_sha256=str(admission.get("policy_bindings_sha256")),
+            admission_mapping_sha256=str(admission.get("admission_mapping_sha256")),
+            result_3000_sha256=result_sha,
+            held_terminal_token_sha256=expected_held_sha,
+            checkpoint_3000_sha256=checkpoint_sha,
+        )
+    except STAGEC_COMMON.StageCError as error:
+        raise FigurePipelineError(str(error)) from error
     if (
         receipt.get("schema") != ADMINISTRATIVE_CLOSURE_SCHEMA
         or receipt.get("status") != "ADMINISTRATIVE_CLOSURE_SEALED"
@@ -505,18 +521,6 @@ def _authenticate_administrative_closure(
         or marker_record.get("sha256") != marker_sha
         or addendum_record.get("sha256") != addendum_sha
         or marker.get("decision") != decision
-        or marker.get("bindings_sha256") != admission.get("bindings_sha256")
-        or marker.get("plan_sha256") != admission.get("plan_sha256")
-        or marker.get("policy_bindings_sha256", marker.get("policy_mapping_sha256"))
-        != admission.get("policy_bindings_sha256")
-        or marker.get("result_3000_sha256") != result_sha
-        or marker.get("checkpoint_3000_sha256") != checkpoint_sha
-        or marker.get("held_terminal_token_sha256") != expected_held_sha
-        or not isinstance(reply, str) or len(reply.strip()) < 20
-        or not str(marker.get("notification_sent_utc", "")).endswith("Z")
-        or not str(marker.get("owner_reply_received_utc", "")).endswith("Z")
-        or not isinstance(marker.get("notification_channel"), str)
-        or not marker.get("notification_channel", "").strip()
         or receipt.get("controller_identity") != marker.get("recorded_by")
         or result.get("overall_token") != PRODUCER.HELD
     ):

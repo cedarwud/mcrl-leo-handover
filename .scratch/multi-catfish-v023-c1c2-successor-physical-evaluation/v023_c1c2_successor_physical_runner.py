@@ -258,8 +258,11 @@ def _parameter_sha256(network: Any) -> str:
 
 
 def _write_once(path: Path, payload: object) -> None:
+    raw = _canonical_bytes(payload)
     if path.exists() or path.is_symlink():
-        raise C1C2PhysicalError(f"refusing to overwrite output: {path}")
+        if path.is_symlink() or not path.is_file() or path.read_bytes() != raw:
+            raise C1C2PhysicalError(f"refusing to overwrite output: {path}")
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.parent.is_symlink() or not path.parent.is_dir():
         raise C1C2PhysicalError(f"output parent is not a directory: {path.parent}")
@@ -268,7 +271,7 @@ def _write_once(path: Path, payload: object) -> None:
     )
     try:
         with os.fdopen(descriptor, "wb") as handle:
-            handle.write(_canonical_bytes(payload))
+            handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
         try:
@@ -2249,6 +2252,7 @@ def _merge_four_arm_locked(
     *,
     admission_mapping: Mapping[str, object],
     continuation_authority: Mapping[str, object] | None = None,
+    resume_continuation: bool = False,
 ) -> dict[str, object]:
     """Assemble four complete arm merges in frozen arm/episode order."""
 
@@ -2311,10 +2315,10 @@ def _merge_four_arm_locked(
     else:
         if output.is_symlink() or not output.is_dir():
             raise C1C2PhysicalError("9000 continuation requires the existing 3000 root")
-        if any((output / name).exists() for name in (
-            "ADMINISTRATIVE-CLOSURE.json", "MANIFEST.sha256", "COMPLETE",
-            "continuation-result.json",
-        )):
+        forbidden = ["ADMINISTRATIVE-CLOSURE.json", "COMPLETE"]
+        if not resume_continuation:
+            forbidden.extend(("MANIFEST.sha256", "continuation-result.json"))
+        if any((output / name).exists() for name in forbidden):
             raise C1C2PhysicalError("sealed, closed, or completed root cannot be continued")
         result_3000 = _read_json(output / "result.json", label="preserved 3000 result")
         checkpoint_3000 = _read_checkpoint(
@@ -2529,12 +2533,14 @@ def merge_four_arm(
     *,
     admission_mapping: Mapping[str, object],
     continuation_authority: Mapping[str, object] | None = None,
+    resume_continuation: bool = False,
 ) -> dict[str, object]:
     output = Path(output_dir)
     with _exclusive_root_lock(output):
         return _merge_four_arm_locked(
             arm_roots, output, admission_mapping=admission_mapping,
             continuation_authority=continuation_authority,
+            resume_continuation=resume_continuation,
         )
 
 
@@ -2657,17 +2663,19 @@ def authenticate_continuation_chain(
     bindings_sha256: str,
     plan_sha256: str,
     policy_bindings: Mapping[str, object],
+    allow_published_continuation: bool = False,
 ) -> dict[str, Any]:
     """Authenticate the complete administrative chain before post-3000 work."""
 
     output = Path(root)
     if output.is_symlink() or not output.is_dir():
         raise C1C2PhysicalError("preserved 3000 root is unavailable")
-    if any((output / name).exists() for name in (
-        "ADMINISTRATIVE-CLOSURE.json", "MANIFEST.sha256", "COMPLETE",
-    )):
+    forbidden = ["ADMINISTRATIVE-CLOSURE.json", "COMPLETE"]
+    if not allow_published_continuation:
+        forbidden.append("MANIFEST.sha256")
+    if any((output / name).exists() for name in forbidden):
         raise C1C2PhysicalError("sealed or administratively closed root cannot continue")
-    if (output / "continuation-result.json").exists():
+    if (output / "continuation-result.json").exists() and not allow_published_continuation:
         raise C1C2PhysicalError("continuation result already exists")
     bindings_digest = _digest(bindings_sha256, field="bindings_sha256")
     authority_digest = file_sha256(authority_path)

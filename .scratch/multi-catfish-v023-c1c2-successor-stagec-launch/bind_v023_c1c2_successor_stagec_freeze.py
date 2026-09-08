@@ -158,6 +158,9 @@ def build_bindings(args: argparse.Namespace) -> dict[str, object]:
     code_sha, code_entries = common.verify_code_manifest()
     declaration_sha = common.verify_named_sidecar(common.DECLARATION)
     schedule_sha = common.verify_named_sidecar(common.SCHEDULING_ADDENDUM)
+    predecessor_schedule_sha = common.verify_named_sidecar(
+        common.PREDECESSOR_SCHEDULING_ADDENDUM
+    )
     schedule_text = common.SCHEDULING_ADDENDUM.read_text(encoding="utf-8")
     acceptance_sha = common.file_sha256(
         common.ACCEPTANCE_PROCEDURE, field="acceptance procedure"
@@ -247,6 +250,10 @@ def build_bindings(args: argparse.Namespace) -> dict[str, object]:
             "sha256": schedule_sha,
             "stage_a_pin_name": "stage_c_scheduling_addendum_sha256",
             "scientific_declaration_changed": False,
+        },
+        "predecessor_addendum": {
+            "path": str(common.PREDECESSOR_SCHEDULING_ADDENDUM.resolve()),
+            "sha256": predecessor_schedule_sha,
         },
         "acceptance_procedure": {
             "path": str(common.ACCEPTANCE_PROCEDURE.resolve()),

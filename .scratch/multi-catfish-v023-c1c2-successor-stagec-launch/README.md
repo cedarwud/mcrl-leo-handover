@@ -118,10 +118,25 @@ bundle.
    barriers 6,000 and 9,000. Both invocations require the same
    `--continuation-authority` and `--owner-notification-marker`; 6,000 binds
    the 3,000 `--previous-arm-merge`, and 9,000 binds the 6,000 merge. Every
+   scheduling invocation first runs the full finished-root verifier under the
+   two-thread controller environment, then publishes a sealed
+   `continuation/PREFIX-VERIFICATION.json` receipt and an authenticated
+   `ACTIVITY-<arm>-<barrier>.json` registry of external chunk roots under the
+   reporting-root writer lock. Administrative closure refuses that durable
+   history even after the external workers have exited. Every
    post-3,000 worker repeats the chain check before constructing a boundary
    state. The 9,000 `merge-four` appends only new checkpoints/rungs and
    `continuation-result.json` to the verified 3,000 root, independently verifies
    the unsealed 9,000 tree, and only then writes the whole-tree seal.
+   Final `merge-four` and `verify_finished()` are controller operations: OMP,
+   OpenBLAS, MKL, and NumExpr thread counts must each be `2`. The launcher's
+   9,000 `--merge` path switches from the one-thread chunk environment to this
+   bound controller environment explicitly.
+   If publication is interrupted after later checkpoints or after
+   `continuation-result.json`, rerun the final merge with
+   `--resume-continuation`; existing byte-identical files are authenticated and
+   retained, missing publication steps are completed, and drifted bytes are
+   refused.
 
 10. If the owner instead explicitly declines continuation, or defers and
     explicitly requests closure of this reporting root, use the dedicated
@@ -214,8 +229,9 @@ HELD result and checkpoint-003000 bytes.
 Before the first `merge-four`, run `build_stage_c_admission_mapping.py` once
 per ladder with the bindings, Stage-A/B supplement, all-four-arm acceptance
 bundle, runtime admission, and Stage-B root, then pass its write-once output to
-every `merge-four` as `--admission-mapping`. This mapping records arm-policy
-identity; it is not a scientific choice.
+every `merge-four` as `--admission-mapping`. The builder emits the complete
+formal-admission object, including authenticated input files and the exact
+arm-policy mapping; it is not a scientific choice.
 
 The independent verifier accepts `--arm ARM` for a chunk root and recomputes
 the plan identity, persisted age stream, exact boundary states, episode
