@@ -22,3 +22,20 @@ constructed by `validate_launch_authority`: the sealed preflight, design memo,
 protocol, fixed panel, one grid/mode, checkout, output root, and four false
 scientific-boundary flags. `G0` is reported but `select_grid()` can only choose
 the first qualifying member of `G1`, `G2`, `G3`.
+
+## Iteration-2 parallel lever matrix
+
+`run_v024_lever_matrix_probe.py` is a separate successor runner; it does not
+modify the finite-demand runner or its receipts. Its priority-ordered registry
+contains L1, L12, L2 and L4. Unit/merge launches use `--lever ID` plus
+`--unit WORLD:CARRIER` or `--merge`; `--estimate` reports every lever without
+opening the simulator. L1/L12 are explicitly `REGEN_REQUIRED`. L2/L4 bind the
+same r2 tape bytes read-only and reprice profiles individually, but their
+declared `VERIFY_SOURCE` items remain `TODO_CONTROLLER_DECLARE` launch blockers.
+
+The matrix-wide preflight binds code, the sealed memo/protocol, adjudications,
+declaration, constants table, panel and all twelve r2 digests. Launch
+authorities are per lever and exact invocation so valid levers can run
+independently and up to two single-thread units can run in parallel. The
+acquisition hooks require complete OPS-3, LC-SRS, set-catalog, composed-arm and
+failure-ledger inputs; they never fabricate missing tapes.
