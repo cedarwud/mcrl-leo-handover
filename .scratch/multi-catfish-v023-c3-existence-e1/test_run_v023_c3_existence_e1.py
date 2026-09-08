@@ -23,6 +23,8 @@ import build_e1_preflight_manifest as preflight
 import build_e1_launch_authority as authority_builder
 import run_v023_c3_existence_e1 as e1
 
+e1.pin_single_thread_runtime()
+
 
 def _competing_budget_worker(
     output: str, cap: float, key: e1.UnitKey, elapsed: float,
@@ -912,6 +914,7 @@ def test_process_bindings_capture_runtime_hardware_threads_and_venv(
     assert bindings["hardware"]["logical_core_count"] >= 1
     threads = bindings["effective_threads"]
     assert threads["declared_threads"] == 1
+    assert threads["interop_pinned_by"] == "e1.pin_single_thread_runtime"
     assert threads["authentication"] == "proc-maps+ctypes+torch+environment"
     assert threads["environment"] == {name: "1" for name in e1.THREAD_ENVIRONMENT_NAMES}
     assert threads["torch_num_threads"] == 1
@@ -1045,6 +1048,113 @@ print("ACTUAL_TORCH_POOL_1_TO_2_REFUSED_AND_RESTORED")
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "ACTUAL_TORCH_POOL_1_TO_2_REFUSED_AND_RESTORED" in completed.stdout
+
+
+@pytest.mark.parametrize("entrypoint", ["runner", "preflight", "authority"])
+def test_pinned_entrypoint_process_has_one_thread_runtime(entrypoint: str) -> None:
+    code = f"""
+import sys
+
+sys.path.insert(0, {str(e1.HERE)!r})
+import run_v023_c3_existence_e1 as e1
+
+def check_bindings():
+    bindings = e1.process_bindings()["effective_threads"]
+    assert bindings["torch_num_threads"] == 1, bindings
+    assert bindings["torch_num_interop_threads"] == 1, bindings
+    pools = bindings["inspected_pools"]
+    assert pools, bindings
+    assert all(pool["value"] == 1 for pool in pools), pools
+    libraries = {{pool["library"] for pool in pools}}
+    assert {{"openblas", "gnu_openmp"}} <= libraries, pools
+    print("PINNED_ENTRYPOINT_THREADS_PASS")
+
+if {entrypoint!r} == "runner":
+    def run(_args):
+        check_bindings()
+        return {{"preflight": "fixture", "worlds": e1.WORLDS}}
+    e1.run = run
+    status = e1.main(["--dry-run"])
+elif {entrypoint!r} == "preflight":
+    import build_e1_preflight_manifest as preflight
+    def write_manifest(_path):
+        check_bindings()
+        return "manifest", "sidecar", "digest"
+    preflight.write_manifest = write_manifest
+    status = preflight.main(["--output", "fixture"])
+else:
+    import build_e1_launch_authority as authority
+    def write_authority(**_kwargs):
+        check_bindings()
+        return "authority", "sidecar", "digest"
+    authority.write_authority = write_authority
+    status = authority.main([
+        "--preflight-manifest", "preflight", "--contract", "contract",
+        "--output-root", "output-root", "--tle-root", "tle-root",
+        "--output", "authority", "--launch-arguments", "--merge",
+    ])
+assert status == 0, status
+"""
+    environment = os.environ.copy()
+    environment.update({name: "1" for name in e1.THREAD_ENVIRONMENT_NAMES})
+    completed = subprocess.run(
+        [sys.executable, "-c", code], cwd=e1.REPO, env=environment,
+        text=True, capture_output=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "PINNED_ENTRYPOINT_THREADS_PASS" in completed.stdout
+
+
+def test_unpinned_process_refuses_simulated_twenty_thread_interop() -> None:
+    code = f"""
+import sys
+
+sys.path.insert(0, {str(e1.HERE)!r})
+import torch
+import run_v023_c3_existence_e1 as e1
+
+torch.get_num_interop_threads = lambda: 20
+try:
+    e1.process_bindings()
+except e1.E1Error as error:
+    assert "one-thread rule" in str(error), str(error)
+else:
+    raise AssertionError("unpinned twenty-thread inter-op runtime was accepted")
+print("UNPINNED_INTEROP_20_REFUSED")
+"""
+    environment = os.environ.copy()
+    environment.update({name: "1" for name in e1.THREAD_ENVIRONMENT_NAMES})
+    completed = subprocess.run(
+        [sys.executable, "-c", code], cwd=e1.REPO, env=environment,
+        text=True, capture_output=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "UNPINNED_INTEROP_20_REFUSED" in completed.stdout
+
+
+def test_late_interop_pin_is_a_clear_refusal_in_subprocess() -> None:
+    code = f"""
+import sys
+
+sys.path.insert(0, {str(e1.HERE)!r})
+import torch
+
+torch.set_num_interop_threads(1)
+import build_e1_preflight_manifest as preflight
+status = preflight.main(["--output", "must-not-exist"])
+assert status == 2, status
+print("LATE_INTEROP_PIN_REFUSED")
+"""
+    environment = os.environ.copy()
+    environment.update({name: "1" for name in e1.THREAD_ENVIRONMENT_NAMES})
+    completed = subprocess.run(
+        [sys.executable, "-c", code], cwd=e1.REPO, env=environment,
+        text=True, capture_output=True, check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "LATE_INTEROP_PIN_REFUSED" in completed.stdout
+    assert "before inter-op work; refusing E1 process" in completed.stderr
+    assert "Traceback" not in completed.stderr
 
 
 def test_launch_authority_builder_roundtrip_and_every_field_mutation_refused(

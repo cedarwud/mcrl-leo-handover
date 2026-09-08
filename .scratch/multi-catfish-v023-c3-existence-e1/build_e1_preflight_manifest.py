@@ -49,6 +49,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        e1.pin_single_thread_runtime()
+    except e1.E1Error as error:
+        print(f"E1_PREFLIGHT_ERROR: {error}", file=sys.stderr)
+        return 2
     args = _parser().parse_args(argv)
     try:
         target, sidecar, digest = write_manifest(args.output)

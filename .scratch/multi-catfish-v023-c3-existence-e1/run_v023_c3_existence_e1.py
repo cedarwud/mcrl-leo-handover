@@ -99,6 +99,7 @@ DEFAULT_BUDGET_RESERVATION_WORKER_SECONDS = DEFAULT_BUDGET_WORKER_SECONDS / 12.0
 CANONICAL_TLE_ROOT = Path("/home/sat/mcrl-runtime/tle-frozen-20260820")
 CANONICAL_INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
 DECLARED_RUNTIME_THREADS = 1
+INTEROP_PINNED_BY = "e1.pin_single_thread_runtime"
 THREAD_ENVIRONMENT_NAMES = (
     "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
     "NUMEXPR_NUM_THREADS",
@@ -125,6 +126,31 @@ class E1MergeWaiting(E1Incomplete):
     def __init__(self, missing: int) -> None:
         self.missing = missing
         super().__init__(f"{missing} units missing")
+
+
+_single_thread_runtime_pinned = False
+
+
+def pin_single_thread_runtime() -> None:
+    """Pin Torch before inter-op work and fail closed if the call is late."""
+
+    global _single_thread_runtime_pinned
+    import torch
+
+    if not _single_thread_runtime_pinned:
+        try:
+            torch.set_num_interop_threads(DECLARED_RUNTIME_THREADS)
+            torch.set_num_threads(DECLARED_RUNTIME_THREADS)
+        except RuntimeError as error:
+            raise E1Error(
+                "cannot pin Torch to one thread before inter-op work; refusing E1 process"
+            ) from error
+        _single_thread_runtime_pinned = True
+    if (
+        torch.get_num_threads() != DECLARED_RUNTIME_THREADS
+        or torch.get_num_interop_threads() != DECLARED_RUNTIME_THREADS
+    ):
+        raise E1Error("Torch single-thread runtime pin did not take effect")
 
 
 def canonical_bytes(value: object) -> bytes:
@@ -517,6 +543,7 @@ def _runtime_thread_bindings(torch: Any) -> dict[str, object]:
 
     return {
         "declared_threads": DECLARED_RUNTIME_THREADS,
+        "interop_pinned_by": INTEROP_PINNED_BY,
         "authentication": "proc-maps+ctypes+torch+environment",
         "environment": environment,
         "torch_num_threads": torch_threads["intraop"],
@@ -2413,6 +2440,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        pin_single_thread_runtime()
+    except E1Error as error:
+        print(f"E1_ERROR: {error}", file=sys.stderr)
+        return 2
     raw = list(sys.argv[1:] if argv is None else argv)
     args = _parser().parse_args(raw)
     args.raw_launch_arguments = raw
