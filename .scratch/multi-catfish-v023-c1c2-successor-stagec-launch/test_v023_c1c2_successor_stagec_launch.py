@@ -1325,6 +1325,101 @@ def test_chunk_launcher_enforces_worker_cap_and_has_merge_step() -> None:
     ).end == 100
 
 
+@pytest.mark.parametrize(
+    "interruption", ["checkpoint-only", "continuation-result-unsealed"]
+)
+def test_real_wrapper_resume_reaches_merge_four_and_skips_authenticated_arm_merge(
+    tmp_path: Path, interruption: str,
+) -> None:
+    reporting = tmp_path / "reporting"
+    (reporting / "continuation").mkdir(parents=True)
+    _write_json(
+        reporting / "continuation/ACTIVITY-BASELINE-009000.json",
+        {"fixture": "registered-before-interruption"},
+    )
+    if interruption == "checkpoint-only":
+        _write_json(
+            reporting / "checkpoints/checkpoint-003100.json",
+            {"fixture": interruption},
+        )
+    else:
+        _write_json(
+            reporting / "continuation-result.json",
+            {"fixture": interruption},
+        )
+    bindings = tmp_path / "bindings.json"
+    _write_json(bindings, {"stage_c_output_root": str(reporting.resolve())})
+    chunks = tmp_path / "chunks"
+    for start in range(0, 9000, 100):
+        _write_json(
+            chunks / f"BASELINE-{start:06d}-{start + 100:06d}/chunk-receipt.json",
+            {"fixture": start},
+        )
+    arm_merge = tmp_path / "arm-merge"
+    _write_json(arm_merge / "arm-merge.json", {"fixture": "authenticated"})
+    previous_merge = tmp_path / "previous-arm-merge"
+    _write_json(previous_merge / "arm-merge.json", {"fixture": "previous"})
+    command_log = tmp_path / "commands.jsonl"
+    controller_path = tmp_path / "synthetic-controller.py"
+    controller_path.write_text(
+        "import json,os,sys\n"
+        "args=sys.argv[1:]\n"
+        "with open(os.environ['WRAPPER_COMMAND_LOG'],'a',encoding='ascii') as f:\n"
+        " f.write(json.dumps(args,separators=(',',':'))+'\\n')\n"
+        "print(json.dumps({'status':'SYNTHETIC_WRAPPER_COMMAND'}))\n",
+        encoding="ascii",
+    )
+    placeholders = {
+        name: tmp_path / f"{name}.json"
+        for name in ("supplement", "acceptance", "runtime", "authority", "owner", "mapping")
+    }
+    for name, path in placeholders.items():
+        _write_json(path, {"fixture": name})
+    four_roots = [tmp_path / f"four-{arm}" for arm in common.ARMS]
+    for root in four_roots:
+        _write_json(root / "arm-merge.json", {"fixture": root.name})
+    environment = dict(os.environ)
+    environment.update({
+        "V023_STAGEC_PYTHON": sys.executable,
+        "V023_STAGEC_CONTROLLER": str(controller_path),
+        "WRAPPER_COMMAND_LOG": str(command_log),
+        "PYTHONPATH": str(REPO / "src"),
+        "TMPDIR": str(REPO / ".tmp"),
+    })
+    completed = subprocess.run(
+        [
+            str(HERE / "launch_stage_c_chunks.sh"),
+            "--bindings", str(bindings),
+            "--admission-supplement", str(placeholders["supplement"]),
+            "--acceptance-bundle", str(placeholders["acceptance"]),
+            "--runtime-admission", str(placeholders["runtime"]),
+            "--arm", "BASELINE", "--barrier", "9000",
+            "--chunks-root", str(chunks),
+            "--arm-merge-root", str(arm_merge),
+            "--previous-arm-merge", str(previous_merge),
+            "--continuation-authority", str(placeholders["authority"]),
+            "--owner-notification-marker", str(placeholders["owner"]),
+            "--merge", "--four-arm-roots", *(str(root) for root in four_roots),
+            "--admission-mapping", str(placeholders["mapping"]),
+            "--final-output", str(reporting), "--resume-continuation",
+        ],
+        cwd=REPO,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    commands = [json.loads(line) for line in command_log.read_text().splitlines()]
+    names = [command[0] for command in commands]
+    assert names[0] == "check-launch"
+    assert "merge-arm" not in names
+    assert names.count("check-barrier") == 2
+    assert names[-1] == "merge-four"
+    assert "--resume-continuation" in commands[0]
+    assert "--resume-continuation" in commands[-1]
+
+
 def test_chunk_continuation_refuses_missing_authority_before_boundary_work() -> None:
     called = False
 
@@ -1445,9 +1540,17 @@ def test_complete_q1_marker_contract_refuses_schema_time_and_controller(
 @pytest.mark.parametrize(
     ("field", "value"),
     [
+        ("schema", "unknown-continuation-schema"),
+        ("status", "C3_EFFICACY"),
+        ("status", "UNKNOWN_STATUS"),
+        ("split", "TEST"),
+        ("authorized_from_3000_token", verifier.FALSIFIED),
+        ("completed_episode", 8999),
         ("overall_token", verifier.HELD),
         ("reasons", []),
         ("terminal_boundary", 8999),
+        ("plan_sha256", "a" * 64),
+        ("arms", list(reversed(common.ARMS))),
         ("q3_evaluated", True),
         ("test_split_opened", True),
         ("episode_training", True),
@@ -1460,8 +1563,13 @@ def test_9000_continuation_semantic_mutations_are_refused(
 ) -> None:
     continuation = {
         "schema": verifier.CONTINUATION_RESULT_SCHEMA,
+        "status": verifier.STATUS,
+        "split": "TRAIN",
         "completed_episode": 9000,
         "terminal_boundary": 9000,
+        "plan_sha256": common.PLAN_SHA256,
+        "arms": list(common.ARMS),
+        "authorized_from_3000_token": verifier.HELD,
         "scientific_disposition_emitted": False,
         "q3_evaluated": False,
         "test_split_opened": False,
@@ -1594,6 +1702,85 @@ def test_continuation_registration_binds_verified_prefix_and_external_roots(
     assert registered["registered_chunk_roots"] == [
         str(path.resolve()) for path in chunk_roots
     ]
+    refreshed = chunk_controller.register_continuation_activity(
+        argparse.Namespace(
+            bindings=bindings_path,
+            admission_supplement=tmp_path / "supplement.json",
+            acceptance_bundle=tmp_path / "acceptance.json",
+            arm="BASELINE",
+            barrier=6000,
+            chunk_roots=chunk_roots,
+            continuation_authority=tmp_path / "authority.json",
+            owner_notification_marker=tmp_path / "owner.json",
+        )
+    )
+    assert refreshed["history_sequence"] == 2
+    assert refreshed["previous_activity"] == {
+        "path": str(activity_path.resolve()),
+        "sha256": registered["activity_sha256"],
+    }
+    refreshed_path = Path(str(refreshed["activity_path"]))
+    assert common.verify_named_sidecar(refreshed_path) == refreshed["activity_sha256"]
+    assert refreshed["prefix_verification"] != registered["prefix_verification"]
+
+
+def test_registered_activity_is_reverified_and_later_stop_refuses_scheduling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reporting = tmp_path / "reporting"
+    _write_json(reporting / "result.json", {"overall_token": verifier.HELD})
+    _write_json(
+        reporting / "checkpoints/checkpoint-003000.json",
+        {"completed_episode": 3000},
+    )
+    bindings_path = tmp_path / "bindings.json"
+    _write_json(bindings_path, {"fixture": "activity-reverification"})
+    bindings = {"stage_c_output_root": str(reporting.resolve())}
+    monkeypatch.setattr(common, "verify_bindings", lambda _path: dict(bindings))
+    monkeypatch.setattr(
+        common, "verify_stage_ab_supplement",
+        lambda *_args: {"supplement_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(common, "verify_acceptance_bundle", lambda *_args: {})
+    monkeypatch.setattr(common, "materialize_stage_ab", lambda value, _supplement: value)
+    monkeypatch.setattr(common, "verify_runtime_identity", lambda _bindings: None)
+
+    class IndependentPrefixVerifier:
+        HELD = verifier.HELD
+
+        @staticmethod
+        def verify_finished(root, *_args, **_kwargs):
+            verifier._reject_nonformal(root)
+            return {"completed_episode": 3000, "overall_token": verifier.HELD}
+
+    monkeypatch.setattr(controller, "_module", lambda _path: IndependentPrefixVerifier)
+    monkeypatch.setattr(
+        chunk_controller,
+        "_authenticate_continuation_without_activity",
+        lambda *_args: {
+            "authority_sha256": "b" * 64,
+            "owner_notification_sha256": "c" * 64,
+        },
+    )
+    args = argparse.Namespace(
+        bindings=bindings_path,
+        admission_supplement=tmp_path / "supplement.json",
+        acceptance_bundle=tmp_path / "acceptance.json",
+        arm="BASELINE",
+        barrier=6000,
+        chunk_roots=[tmp_path / "chunks/BASELINE-003000-003100"],
+        continuation_authority=tmp_path / "authority.json",
+        owner_notification_marker=tmp_path / "owner.json",
+    )
+    first = chunk_controller.register_continuation_activity(args)
+    assert first["history_sequence"] == 1
+    _write_json(
+        reporting / "integrity-stop.json",
+        {"overall_token": verifier.STOP},
+    )
+    with pytest.raises(common.StageCError, match="STOP token"):
+        chunk_controller.register_continuation_activity(args)
+    assert not list((reporting / "continuation").glob("*REVERIFY*.json"))
 
 
 def test_tree_seal_finalises_interruption_after_manifest_publication(
@@ -1613,100 +1800,3 @@ def test_tree_seal_finalises_interruption_after_manifest_publication(
         f"{manifest_sha}  {common.TREE_MANIFEST_NAME}\n"
     )
     assert common.verify_tree_seal(root) == manifest_sha
-
-
-@pytest.mark.parametrize("interruption", ["after-checkpoint", "after-continuation-result"])
-def test_merge_four_resume_continuation_recovers_both_publication_interruptions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interruption: str,
-) -> None:
-    output = tmp_path / "reporting"
-    policy_bindings = {arm: {"arm": arm} for arm in sorted(common.ARMS)}
-    _write_json(
-        output / "checkpoints/checkpoint-003000.json",
-        {"policy_bindings": policy_bindings},
-    )
-    _write_json(output / "result.json", {"overall_token": verifier.HELD})
-    interrupted_path = (
-        output / "checkpoints/checkpoint-003100.json"
-        if interruption == "after-checkpoint"
-        else output / "continuation-result.json"
-    )
-    _write_json(interrupted_path, {"interruption": interruption})
-    interrupted_bytes = interrupted_path.read_bytes()
-    bindings_path = tmp_path / "bindings.json"
-    _write_json(bindings_path, {"fixture": "resume-continuation"})
-    bindings = {"stage_c_output_root": str(output.resolve())}
-    mapping = {arm: {"policy_binding": {"arm": arm}} for arm in common.ARMS}
-    mapping_path = tmp_path / "formal-admission.json"
-    _write_json(mapping_path, {"admission_mapping": mapping})
-    acceptance_path = tmp_path / "acceptance.json"
-    _write_json(acceptance_path, {"fixture": "acceptance"})
-    arm_roots = []
-    for arm in common.ARMS:
-        root = tmp_path / f"merged-{arm}"
-        _write_json(root / "arm-merge.json", {"completed_episode": 9000})
-        arm_roots.append(root)
-    monkeypatch.setattr(common, "verify_bindings", lambda _path: dict(bindings))
-    monkeypatch.setattr(
-        common, "verify_stage_ab_supplement", lambda *_args: {"supplement_sha256": "a" * 64}
-    )
-    monkeypatch.setattr(common, "verify_acceptance_bundle", lambda *_args: {})
-    monkeypatch.setattr(common, "materialize_stage_ab", lambda value, _supplement: value)
-    monkeypatch.setattr(common, "verify_runtime_identity", lambda _bindings: None)
-    monkeypatch.setattr(
-        common, "verify_stage_c_admission_mapping", lambda value: dict(value)
-    )
-    monkeypatch.setattr(
-        chunk_controller, "_verify_continuation_activity", lambda *_args: {
-            "continuation_authority_sha256": "b" * 64,
-            "owner_notification_sha256": "c" * 64,
-        },
-    )
-
-    class RecoveryRunner:
-        HELD = verifier.HELD
-
-        class C1C2PhysicalError(RuntimeError):
-            pass
-
-        @staticmethod
-        def authenticate_continuation_chain(*_args, **kwargs):
-            assert kwargs["allow_published_continuation"] is True
-            return {
-                "authority_sha256": "b" * 64,
-                "owner_notification_sha256": "c" * 64,
-            }
-
-        @staticmethod
-        def merge_four_arm(*_args, **kwargs):
-            assert kwargs["resume_continuation"] is True
-            assert interrupted_path.read_bytes() == interrupted_bytes
-            if interruption == "after-checkpoint":
-                _write_json(output / "continuation-result.json", {"completed_episode": 9000})
-            return {"completed_episode": 9000}
-
-    class RecoveryVerifier:
-        @staticmethod
-        def verify_finished(*_args, **_kwargs):
-            assert (output / "continuation-result.json").is_file()
-            return {"completed_episode": 9000, "overall_token": verifier.HELD}
-
-    monkeypatch.setattr(chunk_controller, "_runner", lambda: RecoveryRunner)
-    monkeypatch.setattr(controller, "_module", lambda _path: RecoveryVerifier)
-    result = chunk_controller.merge_four(
-        argparse.Namespace(
-            bindings=bindings_path,
-            admission_supplement=tmp_path / "supplement.json",
-            acceptance_bundle=acceptance_path,
-            arm_roots=arm_roots,
-            admission_mapping=mapping_path,
-            output=output,
-            continuation_authority=tmp_path / "authority.json",
-            owner_notification_marker=tmp_path / "owner.json",
-            continuation_activity=tmp_path / "activity.json",
-            resume_continuation=True,
-        )
-    )
-    assert result["completed_episode"] == 9000
-    assert interrupted_path.read_bytes() == interrupted_bytes
-    assert (output / common.COMPLETE_NAME).is_file()

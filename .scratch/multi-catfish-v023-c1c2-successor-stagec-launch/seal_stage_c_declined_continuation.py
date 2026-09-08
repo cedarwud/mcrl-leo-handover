@@ -97,15 +97,10 @@ def _refuse_continuation_evidence(root: Path, bindings_path: Path) -> None:
 def _verify_bound_r2_addendum(
     path: Path, bindings: Mapping[str, object]
 ) -> str:
-    schedule = bindings.get("scheduling_addendum")
-    if (
-        not isinstance(schedule, Mapping)
-        or path.resolve() != Path(str(schedule.get("path", ""))).resolve()
-    ):
-        raise common.StageCError("closure addendum must be the R2 path bound by execution bindings")
-    addendum_sha = common.verify_named_sidecar(path)
-    if addendum_sha != schedule.get("sha256"):
-        raise common.StageCError("closure addendum must be the R2 digest bound by execution bindings")
+    _path, addendum_sha = common.verify_bound_scheduling_addendum(
+        {"path": str(path.resolve()), "sha256": common.file_sha256(path)},
+        bindings,
+    )
     return addendum_sha
 
 
@@ -168,6 +163,10 @@ def seal(args: argparse.Namespace) -> dict[str, object]:
             "addendum_r2": {
                 "path": str(args.addendum_r2.resolve()),
                 "sha256": addendum_sha,
+            },
+            "execution_bindings": {
+                "path": str(args.bindings.resolve()),
+                "sha256": common.file_sha256(args.bindings),
             },
             "bindings_sha256": common.file_sha256(args.bindings),
             "plan_sha256": common.PLAN_SHA256,
