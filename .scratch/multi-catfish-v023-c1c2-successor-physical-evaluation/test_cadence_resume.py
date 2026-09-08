@@ -21,6 +21,7 @@ for path in (HERE, STAGEC):
 
 import build_v023_c1c2_successor_world_plan as builder
 import run_v023_c1c2_successor_stage_c as sequential_controller
+import run_v023_c1c2_successor_stage_c_chunks as chunk_controller
 import stagec_common
 import verify_v023_c1c2_successor_stagec as independent_verifier
 import v023_c1c2_successor_physical_runner as runner
@@ -854,9 +855,9 @@ def test_chunk_refuses_early_baseline_above_3000_and_missing_fourth_arm(
 
 @pytest.mark.parametrize("boundary", [3000, 6000])
 def test_continuation_boundary_state_matches_real_sequential_controller_bitwise(
-    boundary: int, monkeypatch: pytest.MonkeyPatch,
+    boundary: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Compare assembled state with two real StepEnvironment transitions."""
+    """Drive the production controller/adapter/runner across each boundary."""
 
     from mcrl.env.constants import TLE_ROOT_DEFAULT
     from mcrl.env.ephemeris import TRAIN, BlockAlternatingSplit, EpisodeStartSampler
@@ -872,7 +873,7 @@ def test_continuation_boundary_state_matches_real_sequential_controller_bitwise(
     plan = _plan()
     archive = TleArchive(Path(TLE_ROOT_DEFAULT).expanduser())
 
-    def environment_factory(bound_archive, users):
+    def make_environment(bound_archive, users):
         driver = ScenarioDriver(
             bound_archive,
             ScenarioConfig(
@@ -884,71 +885,66 @@ def test_continuation_boundary_state_matches_real_sequential_controller_bitwise(
         sampler = EpisodeStartSampler.for_archive(bound_archive, split, TRAIN)
         return TrainerEnvironment(StepEnvironment(driver), sampler)
 
-    class RealBoundaryAdapter:
-        arm = "BASELINE"
-        rng_factory = staticmethod(_rngs)
+    binding = {
+        "arm": "BASELINE",
+        "routes": [],
+        "checkpoint_sha256": runner.canonical_sha256(
+            {"fixture": "production-boundary-controller"}
+        ),
+        "fixed_policy": True,
+    }
 
-        def __init__(self, initial_state):
-            self.archive = archive
-            self.environment_factory = environment_factory
-            self._state = initial_state
-            self._binding = {
-                "arm": self.arm,
-                "routes": [],
-                "checkpoint_sha256": runner.canonical_sha256(
-                    {"fixture": "real-boundary-controller"}
-                ),
-                "fixed_policy": True,
-            }
-
-        @property
-        def policy_bindings(self):
-            return {self.arm: self._binding}
-
-        def resume_state_for(self, arm):
-            assert arm == self.arm
-            return self._state
-
-        def run_episode(self, *, arm, world, plan_sha256, resume_state=None):
-            assert arm == self.arm
-            environment = environment_factory(archive, 2)
-            environment.load_training_state_dict(
-                resume_state["environment_training_state"]
+    class FirstSafePolicyAdapter:
+        @staticmethod
+        def select_actions(_states, masks):
+            return np.asarray(
+                [int(np.flatnonzero(mask.mask)[0]) for mask in masks],
+                dtype=np.int64,
             )
-            env_rng, mobility_rng = _rngs(world.world_seed)
-            states, masks, _observation = environment.reset(env_rng, mobility_rng)
-            state_arrays = [
-                [
-                    state.access_vector.copy(),
-                    state.channel_quality.copy(),
-                    state.beam_offsets.copy(),
-                    state.beam_loads.copy(),
-                ]
-                for state in states
-            ]
-            mask_arrays = [mask.mask.copy() for mask in masks]
-            for _step in range(2):
-                actions = np.asarray(
-                    [int(np.flatnonzero(mask.mask)[0]) for mask in masks],
-                    dtype=np.int64,
-                )
-                step = environment.step(actions, env_rng)
-                masks = list(step.action_masks)
-            training_state = environment.training_state_dict()
-            self._state = {
-                "schema": f"{runner.SCHEMA}-resume-state",
-                "arm": arm,
-                "episode_index": world.episode_index,
-                "world_id": world.world_id,
-                "world_seed": world.world_seed,
-                "field_root_digest": world.field_root_digest,
-                "plan_sha256": plan_sha256,
-                "policy_binding": self._binding,
-                "environment_training_state": training_state,
-            }
-            return {"states": state_arrays, "masks": mask_arrays}
 
-    independent_environment = environment_factory(archive, 2)
+    policy = SimpleNamespace(
+        arm="BASELINE",
+        routes=(),
+        adapter=FirstSafePolicyAdapter(),
+        verify=lambda: None,
+        binding=lambda: dict(binding),
+    )
+    admission_path = tmp_path / f"admission-{boundary}.json"
+    admission_payload = {
+        "schema": f"{runner.SCHEMA}-runtime-admission-v1",
+        "status": "FORMAL_RUNTIME_ADMITTED",
+        "split": runner.SPLIT,
+        "admitted_evaluation_sha256": plan.plan_sha256,
+        "sampler": {
+            "part": "train",
+            "as_dict_sha256": runner.canonical_sha256(
+                make_environment(archive, 2).sampler.as_dict()
+            ),
+        },
+        "learned_training_provenance": {
+            arm: {} for arm in runner.LEARNED_ARMS
+        },
+    }
+    admission_sha = _seal_json(admission_path, admission_payload)
+    admission = {
+        **admission_payload,
+        "admission_path": str(admission_path.resolve()),
+        "admission_sha256": admission_sha,
+        "authenticated_predecessor_statuses": [
+            "PASS_SOURCE_TRAINING_INTEGRITY", "PASS_PLUMBING_INTEGRITY"
+        ],
+    }
+
+    def production_adapter(environment_factory):
+        return runner.FixedPolicyEpisodeAdapter(
+            policies=(policy,),
+            archive=archive,
+            environment_factory=environment_factory,
+            rng_factory=_rngs,
+            runtime_admission=admission,
+        )
+
+    independent_environment = make_environment(archive, 2)
     seed_rng = _rngs(plan.worlds[0].world_seed)[0]
     independent_environment.environment._age_rng = seed_rng.spawn(1)[0]
     for _episode in range(boundary):
@@ -963,18 +959,10 @@ def test_continuation_boundary_state_matches_real_sequential_controller_bitwise(
         "world_seed": plan.worlds[boundary - 1].world_seed,
         "field_root_digest": plan.worlds[boundary - 1].field_root_digest,
         "plan_sha256": plan.plan_sha256,
-        "policy_binding": RealBoundaryAdapter(None).policy_bindings["BASELINE"],
+        "policy_binding": binding,
         "environment_training_state": independent_environment.training_state_dict(),
     }
-    sequential_adapter = RealBoundaryAdapter(direct_initial)
-    window = SimpleNamespace(
-        worlds=plan.worlds[boundary : boundary + 2],
-        plan_sha256=plan.plan_sha256,
-    )
-    direct_rows, direct_states = sequential_controller._replay_arm_prefix_for_equivalence(
-        sequential_adapter, window, arm="BASELINE", completed=2
-    )
-    chunk_adapter = RealBoundaryAdapter(None)
+    chunk_adapter = production_adapter(make_environment)
     context = _chunk_context(chunk_adapter)
     context.update({
         "continuation_limit": 9000,
@@ -990,10 +978,137 @@ def test_continuation_boundary_state_matches_real_sequential_controller_bitwise(
     })
     table = runner.build_chunk_boundary_states(plan, context, (0, boundary))
     assembled = table[boundary]["resume_state"]
-    chunk_adapter._state = assembled
-    chunk_rows, chunk_states = sequential_controller._replay_arm_prefix_for_equivalence(
-        chunk_adapter, window, arm="BASELINE", completed=2
+
+    monkeypatch.setattr(runner, "ARMS", ("BASELINE",))
+    tiny_plan = SimpleNamespace(
+        worlds=plan.worlds[boundary : boundary + 2],
+        plan_sha256=plan.plan_sha256,
+        verify=lambda: None,
     )
+    monkeypatch.setattr(
+        runner.EvaluationPlan, "from_file", staticmethod(lambda _path: tiny_plan)
+    )
+    monkeypatch.setattr(
+        stagec_common,
+        "verify_stage_ab_supplement",
+        lambda *_args: {"supplement_sha256": "s" * 64},
+    )
+    monkeypatch.setattr(
+        stagec_common,
+        "verify_acceptance_bundle",
+        lambda *_args: {"acceptance_bundle_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(stagec_common, "materialize_stage_ab", lambda value, _supplement: value)
+    monkeypatch.setattr(stagec_common, "verify_runtime_identity", lambda _bindings: None)
+    monkeypatch.setattr(stagec_common, "verify_code_manifest", lambda: ("c" * 64, {}))
+    monkeypatch.setattr(
+        stagec_common, "tree_manifest", lambda _root: ([{"fixture": "tle"}], "t" * 64)
+    )
+    monkeypatch.setattr(sequential_controller, "_authenticate_preflight", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(sequential_controller, "_authenticate_stage_b", lambda *_args: None)
+    monkeypatch.setattr(sequential_controller, "_module", lambda _path: runner)
+    monkeypatch.setattr(sequential_controller, "_stage_c_runtime_admission", lambda **_kwargs: admission)
+    monkeypatch.setattr(sequential_controller, "_policies", lambda *_args: (policy,))
+    monkeypatch.setattr(
+        sequential_controller,
+        "_admission_mapping",
+        lambda _bindings, adapter: {
+            "BASELINE": {"policy_binding": adapter.policy_bindings["BASELINE"]}
+        },
+    )
+    monkeypatch.setattr(sequential_controller, "_formal_marker", lambda *_args: None)
+    monkeypatch.setattr(
+        sequential_controller, "_formal_admission_payload", lambda **_kwargs: {}
+    )
+    monkeypatch.setattr(sequential_controller, "_publish_formal_admission", lambda *_args: None)
+
+    active_bindings: dict[str, object] = {}
+    monkeypatch.setattr(stagec_common, "verify_bindings", lambda _path: dict(active_bindings))
+    original_adapter_and_plan = sequential_controller._adapter_and_plan
+
+    class BoundaryTransitionObserved(KeyboardInterrupt):
+        pass
+
+    def execute_through_controller(initial_state, label):
+        captures = []
+        adapters = []
+
+        def capturing_environment_factory(bound_archive, users):
+            if captures:
+                raise BoundaryTransitionObserved
+            environment = make_environment(bound_archive, users)
+            reset = environment.reset
+
+            def capture_reset(*args, **kwargs):
+                states, masks, observation = reset(*args, **kwargs)
+                captures.append({
+                    "states": [
+                        [
+                            state.access_vector.copy(),
+                            state.channel_quality.copy(),
+                            state.beam_offsets.copy(),
+                            state.beam_loads.copy(),
+                        ]
+                        for state in states
+                    ],
+                    "masks": [mask.mask.copy() for mask in masks],
+                })
+                return states, masks, observation
+
+            environment.reset = capture_reset
+            return environment
+
+        monkeypatch.setattr(
+            sequential_controller, "_make_environment", capturing_environment_factory
+        )
+
+        def adapter_and_plan(bindings, physical_runner, *, policies, runtime_admission):
+            adapter, selected_plan = original_adapter_and_plan(
+                bindings,
+                physical_runner,
+                policies=policies,
+                runtime_admission=runtime_admission,
+            )
+            adapter.restore_resume_states({"BASELINE": initial_state})
+            adapters.append(adapter)
+            return adapter, selected_plan
+
+        monkeypatch.setattr(
+            sequential_controller, "_adapter_and_plan", adapter_and_plan
+        )
+        output = tmp_path / f"controller-{boundary}-{label}"
+        active_bindings.clear()
+        active_bindings.update({
+            "stage_c_output_root": str(output.resolve()),
+            "code": {"external_manifest_sha256": "c" * 64},
+            "physical_inputs": {
+                "tle_root": str(Path(TLE_ROOT_DEFAULT).expanduser()),
+                "tle_manifest": [{"fixture": "tle"}],
+                "tle_manifest_sha256": "t" * 64,
+            },
+            "world_plan": {"path": str(tmp_path / "tiny-world-plan.json")},
+        })
+        _fixture_write(tmp_path / "bindings.json", {"fixture": "controller-boundary"})
+        with pytest.raises(BoundaryTransitionObserved):
+            sequential_controller.run(SimpleNamespace(
+                bindings=tmp_path / "bindings.json",
+                admission_supplement=tmp_path / "supplement.json",
+                acceptance_bundle=tmp_path / "acceptance.json",
+                output=output,
+                preflight_receipt=tmp_path / "preflight.json",
+                stage_b_root=tmp_path / "stage-b",
+                runtime_admission_root=tmp_path / "runtime-admission",
+                pause_at=100,
+                resume_checkpoint=None,
+                continuation_authority=None,
+                owner_notification_marker=None,
+                repair_authority=None,
+            ))
+        assert len(captures) == 1
+        return captures, adapters[0].resume_state_for("BASELINE")
+
+    direct_captures, direct_final = execute_through_controller(direct_initial, "direct")
+    chunk_captures, chunk_final = execute_through_controller(assembled, "assembled")
 
     direct_rng = runner._canonical_bytes(
         runner._jsonable(direct_initial["environment_training_state"]["age_rng_state"])
@@ -1002,20 +1117,22 @@ def test_continuation_boundary_state_matches_real_sequential_controller_bitwise(
         runner._jsonable(assembled["environment_training_state"]["age_rng_state"])
     )
     assert direct_rng == assembled_rng
-    for direct_row, chunk_row in zip(direct_rows, chunk_rows, strict=True):
+    for direct_episode, chunk_episode in zip(
+        direct_captures, chunk_captures, strict=True
+    ):
         for direct_user, chunk_user in zip(
-            direct_row["states"], chunk_row["states"], strict=True
+            direct_episode["states"], chunk_episode["states"], strict=True
         ):
             for direct_array, chunk_array in zip(
                 direct_user, chunk_user, strict=True
             ):
                 assert np.array_equal(direct_array, chunk_array)
         for direct_mask, chunk_mask in zip(
-            direct_row["masks"], chunk_row["masks"], strict=True
+            direct_episode["masks"], chunk_episode["masks"], strict=True
         ):
             assert np.array_equal(direct_mask, chunk_mask)
-    assert runner._canonical_bytes(runner._jsonable(direct_states[boundary + 2])) == (
-        runner._canonical_bytes(runner._jsonable(chunk_states[boundary + 2]))
+    assert runner._canonical_bytes(runner._jsonable(direct_final)) == runner._canonical_bytes(
+        runner._jsonable(chunk_final)
     )
     assert table[boundary]["draw_replay"]["draws_replayed"] == boundary
     assert plan.worlds[boundary].episode_index == boundary + 1
@@ -1315,24 +1432,13 @@ def test_real_merger_and_independent_verifier_recover_publication_interruptions(
             continuation_authority=authority,
         )
     monkeypatch.setattr(runner, "_write_once", original_write)
-    result = runner.merge_four_arm(
-        arm_roots,
-        output,
-        admission_mapping=mapping,
-        continuation_authority=authority,
-        resume_continuation=True,
-    )
-    assert result["completed_episode"] == 9000
-    for relative, expected in preserved.items():
-        assert runner.file_sha256(output / relative) == expected
-    assert len(list(output.glob("result.json"))) == 1
-
     monkeypatch.setattr(stagec_common, "verify_bindings", lambda _path: dict(bindings))
     monkeypatch.setattr(
         stagec_common,
         "verify_stage_ab_supplement",
         lambda *_args: dict(supplement),
     )
+    monkeypatch.setattr(stagec_common, "verify_acceptance_bundle", lambda *_args: {})
     monkeypatch.setattr(stagec_common, "materialize_stage_ab", lambda value, _supplement: value)
     monkeypatch.setattr(stagec_common, "verify_runtime_identity", lambda _bindings: None)
     monkeypatch.setattr(stagec_common, "verify_code_manifest", lambda: ("c" * 64, {}))
@@ -1340,6 +1446,11 @@ def test_real_merger_and_independent_verifier_recover_publication_interruptions(
         stagec_common,
         "stage_c_admission_mapping",
         lambda _bindings, _policies: dict(mapping),
+    )
+    monkeypatch.setattr(
+        stagec_common,
+        "verify_stage_c_admission_mapping",
+        lambda value: {arm: dict(value[arm]) for arm in stagec_common.ARMS},
     )
     monkeypatch.setattr(
         independent_verifier,
@@ -1353,10 +1464,60 @@ def test_real_merger_and_independent_verifier_recover_publication_interruptions(
         "_verify_formal_admission",
         lambda *_args: dict(admission),
     )
-    assert independent_verifier.verify_finished(
-        output, bindings_path, supplement_path, require_tree_seal=False
-    )["completed_episode"] == 9000
-    stagec_common.write_tree_seal(output)
+    prefix_receipt = output / "continuation/PREFIX-VERIFICATION.json"
+    _fixture_write(prefix_receipt, {
+        "schema": stagec_common.SCHEMA_CONTINUATION_PREFIX_VERIFICATION,
+        "status": "VERIFIED_HELD_3000_PREFIX",
+        "formal": True,
+        "reporting_root": str(output.resolve()),
+        "completed_episode": 3000,
+        "overall_token": runner.HELD,
+        "bindings_sha256": bindings_sha,
+        "history_sequence": 1,
+    })
+    stagec_common.write_digest_sidecar(prefix_receipt)
+    activity_path = output / "continuation/ACTIVITY-BASELINE-009000.json"
+    _fixture_write(activity_path, {
+        "schema": stagec_common.SCHEMA_CONTINUATION_ACTIVITY,
+        "status": "CONTINUATION_ACTIVITY_REGISTERED",
+        "formal": True,
+        "history_sequence": 1,
+        "previous_activity": None,
+        "reporting_root": str(output.resolve()),
+        "arm": "BASELINE",
+        "barrier": 9000,
+        "bindings_sha256": bindings_sha,
+        "continuation_authority_sha256": authority["authority_sha256"],
+        "owner_notification_sha256": authority["owner_notification_sha256"],
+        "prefix_verification": {
+            "path": str(prefix_receipt.resolve()),
+            "sha256": runner.file_sha256(prefix_receipt),
+        },
+        "registered_chunk_roots": [str(root.resolve()) for root in arm_roots.values()],
+        "published_before_chunk_execution": True,
+    })
+    stagec_common.write_digest_sidecar(activity_path)
+    mapping_path = tmp_path / "admission-mapping.json"
+    _fixture_write(mapping_path, {"admission_mapping": mapping})
+    acceptance_path = tmp_path / "acceptance.json"
+    _fixture_write(acceptance_path, {"fixture": "accepted"})
+    result = chunk_controller.merge_four(SimpleNamespace(
+        bindings=bindings_path,
+        admission_supplement=supplement_path,
+        acceptance_bundle=acceptance_path,
+        arm_roots=list(arm_roots.values()),
+        admission_mapping=mapping_path,
+        output=output,
+        continuation_authority=authority_path,
+        owner_notification_marker=notification,
+        continuation_activity=activity_path,
+        resume_continuation=True,
+    ))
+    assert result["completed_episode"] == 9000
+    for relative, expected in preserved.items():
+        assert runner.file_sha256(output / relative) == expected
+    assert len(list(output.glob("result.json"))) == 1
+    assert (output / stagec_common.COMPLETE_NAME).is_file()
     assert independent_verifier.verify_finished(
         output, bindings_path, supplement_path
     )["completed_episode"] == 9000
