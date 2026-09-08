@@ -24,3 +24,6 @@ declaration; the design is informed by them; the additive third head is closed a
 
 ## Addendum A accepted (07:45 UTC)
 Second configuration C3-S(lite): BASE ∪ top-2 Q1+Q2 actions per user (BASE + runner-up, physically distinct, lowest-slot ties) ∪ full-origin evacuations; identical rule/η_ref/guard/ties/atomic execution; arms BASE, C3-S(full), C3-S(lite), 36 episodes; independent kill rule per arm; progression rule fixed now (both SUPPORT → lite proceeds, full reported; one → that one; none → family closed for this configuration). Timing reported, never a gate.
+
+## Seal (controller, 2026-09-08 10:25 UTC)
+Contract body sealed as v1: sha256 1b19e0f4c6c5f1591e3ca670da368fea0e785ec70fc51af5a9fe9edfdbfc7a7f. Scientific content final. The implementation is run as a VERTICAL SLICE now (owner principle: prove the whole path end to end before hardening); the outstanding astra R2 items are integrity plumbing (evaluator-input authentication, loader/census completeness, invalidation precedence, BASE timing, test realism) that do not change any number. Fix pass 2 continues in parallel; if the slice supports, the hardened v2 runner re-runs the screen for the record before the FULL2 ladder.
