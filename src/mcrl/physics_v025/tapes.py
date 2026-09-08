@@ -66,6 +66,26 @@ def digest_payload(value: object) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
+def _step_array_digest(step: "PrimitiveStepArrays", *, boundary_zero_only: bool = False) -> str:
+    """Canonical digest for an array snapshot without multi-gigabyte JSON."""
+
+    digest = hashlib.sha256()
+    for name in step.__dataclass_fields__:
+        value = np.asarray(getattr(step, name))
+        if boundary_zero_only and value.ndim > 0 and value.shape[0] == 48:
+            value = value[:1]
+        contiguous = np.ascontiguousarray(value)
+        header = canonical_bytes(
+            {"name": name, "dtype": contiguous.dtype.str, "shape": list(contiguous.shape)}
+        )
+        digest.update(len(header).to_bytes(8, "big"))
+        digest.update(header)
+        payload = contiguous.tobytes(order="C")
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
 def reference_policy_manifest() -> dict[str, object]:
     definitions = {
         "nearest-eligible": "minimum slant among visible D2-eligible physical candidates; physical-ID tie",
@@ -120,12 +140,20 @@ class PrimitiveCandidate:
     realised_cross_gain_by_norad: tuple[tuple[int, float], ...]
     remaining_visibility_s: float
     remaining_d2_s: float
+    cell_reachable: bool = True
+    # Stage-4 protocol: the physical aggressor key is (NORAD, cell), not
+    # merely NORAD.  The legacy fields remain as compatibility views for
+    # synthetic fixtures; real providers populate these identity-keyed rows.
+    nominal_cross_gain_by_identity: tuple[tuple[BeamIdentity, float], ...] = ()
+    realised_cross_gain_by_identity: tuple[tuple[BeamIdentity, float], ...] = ()
+    visibility_right_censored: bool = False
+    d2_right_censored: bool = False
 
     def __post_init__(self) -> None:
         if self.visible != (self.elevation_deg >= MINIMUM_ELEVATION_DEG):
             raise MCRLContractError("candidate visibility disagrees with live 10-degree floor")
         if len(self.identity) != 2:
-            raise MCRLContractError("candidate identity must be (NORAD, beam-chain)")
+            raise MCRLContractError("candidate identity must be (NORAD, cell_id)")
         if any(value < 0.0 or not math.isfinite(value) for value in (
             self.slant_km,
             self.d2_distance_km,
@@ -143,10 +171,29 @@ class PrimitiveCandidate:
                 raise MCRLContractError("cross-gain fields must use unique sorted NORAD order")
             if any(type(norad) is not int or not math.isfinite(gain) or gain < 0.0 for norad, gain in rows):
                 raise MCRLContractError("cross-gain fields must be finite and nonnegative")
+        for name in (
+            "nominal_cross_gain_by_identity",
+            "realised_cross_gain_by_identity",
+        ):
+            rows = getattr(self, name)
+            if tuple(sorted(rows)) != rows or len({identity for identity, _ in rows}) != len(rows):
+                raise MCRLContractError(
+                    "identity cross-gain fields must use unique sorted physical identities"
+                )
+            if any(
+                len(identity) != 2
+                or any(type(value) is not int for value in identity)
+                or not math.isfinite(gain)
+                or gain < 0.0
+                for identity, gain in rows
+            ):
+                raise MCRLContractError(
+                    "identity cross-gain fields must be finite and nonnegative"
+                )
 
     @property
     def legal(self) -> bool:
-        return self.visible and self.d2_eligible
+        return self.visible and self.d2_eligible and self.cell_reachable
 
     def payload(self) -> dict[str, object]:
         return {
@@ -169,6 +216,17 @@ class PrimitiveCandidate:
             ],
             "remaining_visibility_s": _f(self.remaining_visibility_s),
             "remaining_d2_s": _f(self.remaining_d2_s),
+            "cell_reachable": self.cell_reachable,
+            "nominal_cross_gain_by_identity": [
+                [list(identity), _f(gain)]
+                for identity, gain in self.nominal_cross_gain_by_identity
+            ],
+            "realised_cross_gain_by_identity": [
+                [list(identity), _f(gain)]
+                for identity, gain in self.realised_cross_gain_by_identity
+            ],
+            "visibility_right_censored": self.visibility_right_censored,
+            "d2_right_censored": self.d2_right_censored,
         }
 
 
@@ -190,23 +248,308 @@ class PrimitiveBoundary:
 
 
 @dataclass(frozen=True)
+class PrimitiveStepArrays:
+    """One 48-boundary step in compact, immutable NumPy form.
+
+    Cross-gain storage is factorised by victim user, wanted-satellite slot,
+    and physical aggressor.  This preserves the exact per-beam quantity
+    without materialising millions of Python tuples.  Object boundaries are
+    generated only by :meth:`boundary_view`, the audit/KAT compatibility
+    seam; engine geometry is assembled directly from these arrays.
+    """
+
+    absolute_time_s: np.ndarray
+    users: np.ndarray
+    row_user_column: np.ndarray
+    legacy_action_index: np.ndarray
+    identities: np.ndarray
+    colors: np.ndarray
+    elevations_deg: np.ndarray
+    d2_entry_elevations_deg: np.ndarray
+    slants_km: np.ndarray
+    d2_distances_km: np.ndarray
+    visible: np.ndarray
+    d2_eligible: np.ndarray
+    cell_reachable: np.ndarray
+    nominal_gain: np.ndarray
+    realised_gain: np.ndarray
+    remaining_visibility_s: np.ndarray
+    remaining_d2_s: np.ndarray
+    visibility_right_censored: np.ndarray
+    d2_right_censored: np.ndarray
+    aggressor_identities: np.ndarray
+    aggressor_colors: np.ndarray
+    aggressor_satellite_column: np.ndarray
+    row_wanted_slot: np.ndarray
+    cross_base_nominal: np.ndarray
+    fading_by_satellite: np.ndarray
+    receive_gain_by_wanted_slot: np.ndarray
+
+    def __post_init__(self) -> None:
+        arrays = {
+            name: np.asarray(getattr(self, name))
+            for name in self.__dataclass_fields__
+        }
+        times = arrays["absolute_time_s"]
+        rows = arrays["identities"].shape[0]
+        users = arrays["users"].shape[0]
+        aggressors = arrays["aggressor_identities"].shape[0]
+        satellites = arrays["fading_by_satellite"].shape[2]
+        if times.shape != (D2_SUBINTERVALS + 1,):
+            raise MCRLContractError("step arrays need exactly 48 boundary times")
+        if arrays["identities"].shape != (rows, 2):
+            raise MCRLContractError("step identities must have shape (R,2)")
+        if arrays["aggressor_identities"].shape != (aggressors, 2):
+            raise MCRLContractError("aggressor identities must have shape (A,2)")
+        for name in (
+            "row_user_column", "legacy_action_index", "colors", "row_wanted_slot"
+        ):
+            if arrays[name].shape != (rows,):
+                raise MCRLContractError(f"{name} must have shape (R,)")
+        for name in (
+            "elevations_deg", "d2_entry_elevations_deg", "slants_km",
+            "d2_distances_km", "visible", "d2_eligible", "cell_reachable",
+            "nominal_gain", "realised_gain", "remaining_visibility_s",
+            "remaining_d2_s", "visibility_right_censored",
+            "d2_right_censored",
+        ):
+            if arrays[name].shape != (D2_SUBINTERVALS + 1, rows):
+                raise MCRLContractError(f"{name} must have shape (48,R)")
+        if arrays["aggressor_colors"].shape != (aggressors,):
+            raise MCRLContractError("aggressor_colors must have shape (A,)")
+        if arrays["aggressor_satellite_column"].shape != (aggressors,):
+            raise MCRLContractError("aggressor satellite columns must have shape (A,)")
+        if arrays["cross_base_nominal"].shape != (48, users, aggressors):
+            raise MCRLContractError("cross_base_nominal must have shape (48,U,A)")
+        if arrays["fading_by_satellite"].shape[:2] != (48, users):
+            raise MCRLContractError("fading_by_satellite must have shape (48,U,S)")
+        slots = arrays["receive_gain_by_wanted_slot"].shape[2]
+        if arrays["receive_gain_by_wanted_slot"].shape != (48, users, slots, satellites):
+            raise MCRLContractError(
+                "receive_gain_by_wanted_slot must have shape (48,U,L,S)"
+            )
+        if np.any(arrays["row_user_column"] < 0) or np.any(arrays["row_user_column"] >= users):
+            raise MCRLContractError("row user column is outside the user array")
+        if np.any(arrays["aggressor_satellite_column"] < 0) or np.any(
+            arrays["aggressor_satellite_column"] >= satellites
+        ):
+            raise MCRLContractError("aggressor satellite column is invalid")
+        if not np.all(np.isfinite(times)):
+            raise MCRLContractError("step boundary times must be finite")
+        for name, value in arrays.items():
+            frozen = np.array(value, copy=True)
+            frozen.setflags(write=False)
+            object.__setattr__(self, name, frozen)
+
+    def __len__(self) -> int:
+        return D2_SUBINTERVALS + 1
+
+    def _row_index(self) -> dict[tuple[int, BeamIdentity], int]:
+        return {
+            (int(self.users[int(self.row_user_column[row])]),
+             (int(identity[0]), int(identity[1]))): row
+            for row, identity in enumerate(self.identities)
+        }
+
+    def _aggressor_index(self) -> dict[BeamIdentity, int]:
+        return {
+            (int(identity[0]), int(identity[1])): index
+            for index, identity in enumerate(self.aggressor_identities)
+        }
+
+    def _cross(self, boundary_index: int, victim_row: int, aggressor: BeamIdentity) -> tuple[float, float]:
+        aggressor_index = self._aggressor_index().get(aggressor)
+        if aggressor_index is None:
+            return 0.0, 0.0
+        return self._cross_at_index(boundary_index, victim_row, aggressor_index)
+
+    def _cross_at_index(
+        self, boundary_index: int, victim_row: int, aggressor_index: int
+    ) -> tuple[float, float]:
+        aggressor = tuple(
+            int(value) for value in self.aggressor_identities[aggressor_index]
+        )
+        if tuple(int(value) for value in self.identities[victim_row]) == aggressor:
+            return 0.0, 0.0
+        if int(self.colors[victim_row]) != int(self.aggressor_colors[aggressor_index]):
+            return 0.0, 0.0
+        user = int(self.row_user_column[victim_row])
+        wanted_slot = int(self.row_wanted_slot[victim_row])
+        satellite = int(self.aggressor_satellite_column[aggressor_index])
+        nominal = float(
+            self.cross_base_nominal[boundary_index, user, aggressor_index]
+            * self.receive_gain_by_wanted_slot[boundary_index, user, wanted_slot, satellite]
+        )
+        realised = nominal * float(self.fading_by_satellite[boundary_index, user, satellite])
+        return nominal, realised
+
+    def boundary_view(self, boundary_index: int) -> PrimitiveBoundary:
+        """Materialise the expensive object view only for audit/KAT callers."""
+
+        if type(boundary_index) is not int or not 0 <= boundary_index < len(self):
+            raise MCRLContractError("boundary index must be in 0..47")
+        aggressors = [
+            (int(identity[0]), int(identity[1]))
+            for identity in self.aggressor_identities
+        ]
+        rows: list[PrimitiveCandidate] = []
+        for row, raw_identity in enumerate(self.identities):
+            identity = (int(raw_identity[0]), int(raw_identity[1]))
+            nominal_identity = []
+            realised_identity = []
+            user = int(self.row_user_column[row])
+            wanted_slot = int(self.row_wanted_slot[row])
+            satellite_columns = self.aggressor_satellite_column
+            nominal_all = (
+                self.cross_base_nominal[boundary_index, user]
+                * self.receive_gain_by_wanted_slot[
+                    boundary_index, user, wanted_slot, satellite_columns
+                ]
+            )
+            realised_all = nominal_all * self.fading_by_satellite[
+                boundary_index, user, satellite_columns
+            ]
+            for aggressor_index, aggressor in enumerate(aggressors):
+                if aggressor == identity or int(self.aggressor_colors[aggressor_index]) != int(self.colors[row]):
+                    continue
+                nominal_identity.append((aggressor, float(nominal_all[aggressor_index])))
+                realised_identity.append((aggressor, float(realised_all[aggressor_index])))
+            # Compatibility view: NORAD-only maps cannot represent multiple
+            # beams, so aggregate all emitted physical terms by NORAD.
+            nominal_norad: dict[int, float] = {}
+            realised_norad: dict[int, float] = {}
+            for (norad, _cell), gain in nominal_identity:
+                nominal_norad[norad] = nominal_norad.get(norad, 0.0) + gain
+            for (norad, _cell), gain in realised_identity:
+                realised_norad[norad] = realised_norad.get(norad, 0.0) + gain
+            rows.append(
+                PrimitiveCandidate(
+                    user_id=int(self.users[int(self.row_user_column[row])]),
+                    identity=identity,
+                    color=int(self.colors[row]),
+                    elevation_deg=float(self.elevations_deg[boundary_index, row]),
+                    d2_entry_elevation_deg=float(self.d2_entry_elevations_deg[boundary_index, row]),
+                    slant_km=float(self.slants_km[boundary_index, row]),
+                    d2_distance_km=float(self.d2_distances_km[boundary_index, row]),
+                    visible=bool(self.visible[boundary_index, row]),
+                    d2_eligible=bool(self.d2_eligible[boundary_index, row]),
+                    nominal_gain=float(self.nominal_gain[boundary_index, row]),
+                    realised_gain=float(self.realised_gain[boundary_index, row]),
+                    nominal_cross_gain_by_norad=tuple(sorted(nominal_norad.items())),
+                    realised_cross_gain_by_norad=tuple(sorted(realised_norad.items())),
+                    remaining_visibility_s=float(self.remaining_visibility_s[boundary_index, row]),
+                    remaining_d2_s=float(self.remaining_d2_s[boundary_index, row]),
+                    cell_reachable=bool(self.cell_reachable[boundary_index, row]),
+                    nominal_cross_gain_by_identity=tuple(nominal_identity),
+                    realised_cross_gain_by_identity=tuple(realised_identity),
+                    visibility_right_censored=bool(self.visibility_right_censored[boundary_index, row]),
+                    d2_right_censored=bool(self.d2_right_censored[boundary_index, row]),
+                )
+            )
+        return PrimitiveBoundary(float(self.absolute_time_s[boundary_index]), tuple(rows))
+
+    def geometry_at(
+        self,
+        *,
+        boundary_index: int,
+        assignments: Mapping[int, BeamIdentity | None],
+    ) -> Geometry:
+        """Build selected geometry directly from arrays and physical keys."""
+
+        row_of = self._row_index()
+        selected: list[int] = []
+        identities: list[BeamIdentity] = []
+        for user in sorted(assignments):
+            identity = assignments[user]
+            if identity is None:
+                continue
+            try:
+                row = row_of[(user, identity)]
+            except KeyError:
+                raise MCRLContractError("assignment is absent from the exogenous tape") from None
+            if boundary_index == 0 and not (
+                bool(self.visible[0, row])
+                and bool(self.d2_eligible[0, row])
+                and bool(self.cell_reachable[0, row])
+            ):
+                raise MCRLContractError("assignment is not legal at the decision instant")
+            selected.append(row)
+            identities.append(identity)
+        nominal_cross = np.zeros((len(selected), len(selected)), dtype=np.float64)
+        realised_cross = np.zeros_like(nominal_cross)
+        aggressor_of = self._aggressor_index()
+        for victim_index, victim_row in enumerate(selected):
+            for aggressor_index, aggressor in enumerate(identities):
+                if victim_index == aggressor_index:
+                    continue
+                physical_column = aggressor_of.get(aggressor)
+                if physical_column is not None:
+                    nominal_cross[victim_index, aggressor_index], realised_cross[
+                        victim_index, aggressor_index
+                    ] = self._cross_at_index(
+                        boundary_index, victim_row, physical_column
+                    )
+        return Geometry(
+            tuple(
+                Link(
+                    int(self.users[int(self.row_user_column[row])]),
+                    identities[index],
+                    int(self.colors[row]),
+                    float(self.nominal_gain[boundary_index, row]),
+                    float(self.realised_gain[boundary_index, row]),
+                )
+                for index, row in enumerate(selected)
+            ),
+            nominal_cross,
+            realised_cross,
+        )
+
+
+@dataclass(frozen=True)
 class StepTape:
     step_index: int
     refresh_phase: int
-    boundaries: tuple[PrimitiveBoundary, ...]
+    boundaries: tuple[PrimitiveBoundary, ...] = ()
+    arrays: PrimitiveStepArrays | None = None
 
     def __post_init__(self) -> None:
-        if len(self.boundaries) != D2_SUBINTERVALS + 1:
+        if (self.arrays is None) == (len(self.boundaries) == 0):
+            raise MCRLContractError(
+                "step tape needs exactly one of object boundaries or compact arrays"
+            )
+        times = (
+            np.asarray([boundary.absolute_time_s for boundary in self.boundaries])
+            if self.arrays is None
+            else self.arrays.absolute_time_s
+        )
+        if times.shape != (D2_SUBINTERVALS + 1,):
             raise MCRLContractError("each step tape needs t plus 47 boundary samples")
-        start = self.boundaries[0].absolute_time_s
-        for index, boundary in enumerate(self.boundaries):
+        start = float(times[0])
+        for index, actual in enumerate(times):
             expected = start + index * D2_MEASUREMENT_STEP_S
-            if not math.isclose(boundary.absolute_time_s, expected, abs_tol=1e-12):
+            if not math.isclose(float(actual), expected, abs_tol=1e-12):
                 raise MCRLContractError("D2 samples are not aligned to t + k*0.640, k=0..47")
         if not 0 <= self.refresh_phase < IDENTITY_REFRESH_DECISIONS:
             raise MCRLContractError("refresh phase is outside the frozen four-decision cadence")
 
+    def boundary_at(self, boundary_index: int) -> PrimitiveBoundary:
+        if self.arrays is not None:
+            return self.arrays.boundary_view(boundary_index)
+        return self.boundaries[boundary_index]
+
+    @property
+    def boundary_count(self) -> int:
+        return D2_SUBINTERVALS + 1
+
     def payload(self) -> dict[str, object]:
+        if self.arrays is not None:
+            # Full sub-boundary arrays are intentionally not JSON-serialized.
+            # The compact input digest binds their generator and the k=0 bytes.
+            return {
+                "step_index": self.step_index,
+                "refresh_phase": self.refresh_phase,
+                "array_sha256": _step_array_digest(self.arrays),
+            }
         return {
             "step_index": self.step_index,
             "refresh_phase": self.refresh_phase,
@@ -242,6 +585,9 @@ class ExogenousWorldTape:
     inventory: HardwareInventory
     steps: tuple[StepTape, ...]
     carriers: tuple[CarrierAction, ...]
+    generating_input_digest: str | None = None
+    tle_files: tuple[tuple[str, str], ...] = ()
+    step_user_layouts: tuple[tuple[UserLayout, ...], ...] = ()
 
     def __post_init__(self) -> None:
         if self.seed != seed_from_domain(self.domain) or self.split != "TRAIN":
@@ -250,9 +596,22 @@ class ExogenousWorldTape:
             raise MCRLContractError("world needs a TLE-date x training-seed cluster identity")
         inventory = set(self.inventory.chains)
         for step in self.steps:
-            for boundary in step.boundaries:
-                if any(row.identity not in inventory for row in boundary.candidates):
-                    raise MCRLContractError("candidate expanded the pre-action hardware inventory")
+            if step.arrays is not None:
+                legal = (
+                    step.arrays.visible
+                    & step.arrays.d2_eligible
+                    & step.arrays.cell_reachable
+                )
+                identities = {
+                    tuple(int(value) for value in step.arrays.identities[row])
+                    for row in np.flatnonzero(np.any(legal, axis=0)).tolist()
+                }
+                if not identities <= inventory:
+                    raise MCRLContractError("legal candidate expanded the hardware inventory")
+            else:
+                for boundary in step.boundaries:
+                    if any(row.legal and row.identity not in inventory for row in boundary.candidates):
+                        raise MCRLContractError("legal candidate expanded the hardware inventory")
 
     @property
     def inventory_digest(self) -> str:
@@ -260,6 +619,8 @@ class ExogenousWorldTape:
 
     @property
     def tape_digest(self) -> str:
+        if self.generating_input_digest is not None:
+            return self.generating_input_digest
         return digest_payload([step.payload() for step in self.steps])
 
     @property
@@ -292,6 +653,19 @@ class ExogenousWorldTape:
             "candidate_refresh_period_n": CANDIDATE_REFRESH_N,
             "visibility_elevation_deg": _f(MINIMUM_ELEVATION_DEG),
             "d2_entry_elevation_deg_by_candidate": True,
+            "cross_gain_key": "(NORAD,cell_id)",
+            "boundary_storage": "numpy-float64",
+            "tle_files": [[name, digest] for name, digest in self.tle_files],
+            "step_user_layout_sha256": (
+                None
+                if not self.step_user_layouts
+                else digest_payload(
+                    [
+                        [row.payload() for row in layout]
+                        for layout in self.step_user_layouts
+                    ]
+                )
+            ),
         }
 
     def geometry_for(
@@ -303,6 +677,17 @@ class ExogenousWorldTape:
         """Materialize one selected configuration without mutating the tape."""
 
         step = self.steps[step_index]
+        if step.arrays is not None:
+            return tuple(
+                (
+                    float(step.arrays.absolute_time_s[boundary_index]),
+                    step.arrays.geometry_at(
+                        boundary_index=boundary_index,
+                        assignments=assignments,
+                    ),
+                )
+                for boundary_index in range(step.boundary_count)
+            )
         result: list[tuple[float, Geometry]] = []
         for boundary_index, boundary in enumerate(step.boundaries):
             by_key = {(row.user_id, row.identity): row for row in boundary.candidates}
@@ -321,17 +706,26 @@ class ExogenousWorldTape:
             nominal_cross = np.zeros((len(chosen), len(chosen)), dtype=np.float64)
             realised_cross = np.zeros_like(nominal_cross)
             for victim_index, victim in enumerate(chosen):
-                nominal_map = dict(victim.nominal_cross_gain_by_norad)
-                realised_map = dict(victim.realised_cross_gain_by_norad)
+                nominal_map = (
+                    dict(victim.nominal_cross_gain_by_identity)
+                    if victim.nominal_cross_gain_by_identity
+                    else dict(victim.nominal_cross_gain_by_norad)
+                )
+                realised_map = (
+                    dict(victim.realised_cross_gain_by_identity)
+                    if victim.realised_cross_gain_by_identity
+                    else dict(victim.realised_cross_gain_by_norad)
+                )
                 for aggressor_index, aggressor in enumerate(chosen):
                     if victim_index == aggressor_index:
                         continue
-                    nominal_cross[victim_index, aggressor_index] = nominal_map.get(
-                        aggressor.identity[0], 0.0
+                    key: object = (
+                        aggressor.identity
+                        if victim.nominal_cross_gain_by_identity
+                        else aggressor.identity[0]
                     )
-                    realised_cross[victim_index, aggressor_index] = realised_map.get(
-                        aggressor.identity[0], 0.0
-                    )
+                    nominal_cross[victim_index, aggressor_index] = nominal_map.get(key, 0.0)
+                    realised_cross[victim_index, aggressor_index] = realised_map.get(key, 0.0)
             geometry = Geometry(
                 tuple(
                     Link(
@@ -372,6 +766,21 @@ def _legal_by_user(boundary: PrimitiveBoundary) -> dict[int, tuple[PrimitiveCand
     return {user: tuple(sorted(rows, key=lambda row: (row.slant_km, row.identity))) for user, rows in result.items()}
 
 
+def _legal_arrays_by_user(step: StepTape) -> dict[int, tuple[tuple[float, BeamIdentity], ...]]:
+    assert step.arrays is not None
+    arrays = step.arrays
+    result: dict[int, list[tuple[float, BeamIdentity]]] = {}
+    legal = arrays.visible[0] & arrays.d2_eligible[0] & arrays.cell_reachable[0]
+    for row in np.flatnonzero(legal).tolist():
+        user = int(arrays.users[int(arrays.row_user_column[row])])
+        identity = tuple(int(value) for value in arrays.identities[row])
+        result.setdefault(user, []).append((float(arrays.slants_km[0, row]), identity))
+    return {
+        user: tuple(sorted(rows, key=lambda item: (item[0], item[1])))
+        for user, rows in result.items()
+    }
+
+
 def fixed_carrier_actions(
     *, domain: str, steps: Sequence[StepTape], users: Sequence[int]
 ) -> tuple[CarrierAction, ...]:
@@ -383,11 +792,19 @@ def fixed_carrier_actions(
     rows: list[CarrierAction] = []
     world_seed = seed_from_domain(domain)
     for step in steps:
-        legal = _legal_by_user(step.boundaries[0])
+        object_legal = None if step.arrays is not None else _legal_by_user(step.boundaries[0])
+        array_legal = _legal_arrays_by_user(step) if step.arrays is not None else None
         for carrier in REFERENCE_CARRIERS:
             assignments: list[tuple[int, BeamIdentity | None]] = []
             for user in sorted(users):
-                options = legal.get(user, ())
+                if array_legal is not None:
+                    options = tuple(
+                        _CarrierOption(identity=identity)
+                        for _slant, identity in array_legal.get(user, ())
+                    )
+                else:
+                    assert object_legal is not None
+                    options = object_legal.get(user, ())
                 selected: BeamIdentity | None = None
                 if options:
                     if carrier == "stay-if-possible":
@@ -406,6 +823,11 @@ def fixed_carrier_actions(
                 assignments.append((user, selected))
             rows.append(CarrierAction(carrier, step.step_index, tuple(assignments)))
     return tuple(rows)
+
+
+@dataclass(frozen=True)
+class _CarrierOption:
+    identity: BeamIdentity
 
 
 def build_world_tape(
@@ -429,20 +851,51 @@ def build_world_tape(
     if not layout or len({row.user_id for row in layout}) != len(layout):
         raise MCRLContractError("user layout must be nonempty with unique identities")
     step_rows = []
+    array_builder = getattr(provider, "step_arrays", None)
     for step_index in range(steps):
         step_start = start_time_s + step_index * DECISION_INTERVAL_S
-        boundaries = tuple(
-            provider.boundary(
+        if callable(array_builder):
+            arrays = array_builder(
                 world_seed=seed,
                 step_index=step_index,
-                boundary_index=boundary_index,
-                absolute_time_s=step_start + boundary_index * D2_MEASUREMENT_STEP_S,
+                start_time_s=start_time_s,
             )
-            for boundary_index in range(D2_SUBINTERVALS + 1)
-        )
-        step_rows.append(StepTape(step_index, step_index % IDENTITY_REFRESH_DECISIONS, boundaries))
+            step_rows.append(
+                StepTape(
+                    step_index,
+                    step_index % IDENTITY_REFRESH_DECISIONS,
+                    arrays=arrays,
+                )
+            )
+        else:
+            boundaries = tuple(
+                provider.boundary(
+                    world_seed=seed,
+                    step_index=step_index,
+                    boundary_index=boundary_index,
+                    absolute_time_s=step_start + boundary_index * D2_MEASUREMENT_STEP_S,
+                )
+                for boundary_index in range(D2_SUBINTERVALS + 1)
+            )
+            step_rows.append(
+                StepTape(step_index, step_index % IDENTITY_REFRESH_DECISIONS, boundaries)
+            )
     users = tuple(row.user_id for row in layout)
     carriers = fixed_carrier_actions(domain=domain, steps=step_rows, users=users)
+    manifest_digest_builder = getattr(provider, "manifest_input_digest", None)
+    generating_input_digest = (
+        manifest_digest_builder(world_seed=seed)
+        if callable(manifest_digest_builder)
+        else None
+    )
+    tle_binding = getattr(provider, "tle_binding", None)
+    tle_files = tuple(tle_binding(world_seed=seed)) if callable(tle_binding) else ()
+    layout_at_step = getattr(provider, "user_layout_at_step", None)
+    step_user_layouts = (
+        tuple(layout_at_step(world_seed=seed, step_index=index) for index in range(steps))
+        if callable(layout_at_step)
+        else ()
+    )
     return ExogenousWorldTape(
         domain,
         seed,
@@ -453,6 +906,9 @@ def build_world_tape(
         inventory,
         tuple(step_rows),
         carriers,
+        generating_input_digest,
+        tle_files,
+        step_user_layouts,
     )
 
 
@@ -563,6 +1019,7 @@ __all__ = [
     "ExogenousWorldTape",
     "PrimitiveBoundary",
     "PrimitiveCandidate",
+    "PrimitiveStepArrays",
     "PrimitiveWorldProvider",
     "PROBE_WORLD_DOMAINS",
     "REFERENCE_CARRIERS",

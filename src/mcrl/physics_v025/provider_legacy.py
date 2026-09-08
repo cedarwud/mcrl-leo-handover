@@ -2,7 +2,7 @@
 
 The binding deliberately has only one interpretation of a physical beam:
 ``(NORAD, cell_id)``.  ``cell_id`` is the legacy earth-fixed hex-cell index;
-its reuse colour is ``CellGrid.colors[cell_id]``.  Thus a beam/RF-chain is
+its reuse colour is ``CellGrid.colors[cell_id]``.  Thus a beam identity is
 stable when action slots or a user's seven-cell neighbourhood are re-keyed.
 
 An episode start is drawn exactly as in the C3-S screen: a world seed is
@@ -13,16 +13,23 @@ date-1/date/date+1 is retained, subject to the legacy 24-hour age ceiling;
 the selected TLE is then propagated for the whole tape (it is not reselected
 at each boundary).
 
-Returned boundaries contain immutable Python scalars and tuples only.  The
-provider may keep NumPy geometry caches, but never exposes an environment,
-``SatelliteSet`` or sgp4 ``Satrec`` through the primitive seam.
+The legacy D2/TTT history uses 47 samples spanning 46 measurement intervals
+backward and ending at each decision instant.  V0.25 integration instead
+uses 48 boundaries spanning 47 intervals forward from that instant.  The
+provider takes boundary-zero eligibility from the legacy backward history,
+then advances it only for k=1..47; no forward sample can admit a candidate at
+the decision instant.
+
+Engine boundaries are immutable NumPy arrays.  Python candidate objects are
+created only by the audit view.  No environment, ``SatelliteSet``, sgp4
+``Satrec``, or process-global world cache crosses the primitive seam.
 """
 
 from __future__ import annotations
 
-from collections import OrderedDict
 from dataclasses import dataclass
 import datetime as dt
+import hashlib
 import math
 from pathlib import Path
 from typing import Iterable
@@ -32,6 +39,7 @@ import numpy as np
 from mcrl.errors import MCRLContractError
 from mcrl.env.constants import AREA_CENTER_LAT_DEG, AREA_CENTER_LON_DEG, R_E_KM
 from mcrl.env.d2 import elevation_for_slant_range
+from mcrl.env.action_contract import NUM_BEAM_SLOTS, NUM_SATELLITE_SLOTS
 from mcrl.env.ephemeris import (
     TEST,
     TRAIN,
@@ -50,6 +58,7 @@ from mcrl.runtime.training_pipeline import _evaluation_rngs
 from .channel import (
     interference_receive_gain_linear,
     keyed_fading_gain,
+    scintillation_loss_db,
     transmit_gain_linear,
 )
 from .constants_v025 import (
@@ -57,16 +66,25 @@ from .constants_v025 import (
     D2_MEASUREMENT_STEP_S,
     D2_SUBINTERVALS,
     D2_THRESHOLD_KM,
+    D2_TTT_S,
     DECISION_INTERVAL_S,
+    MINIMUM_ALTITUDE_KM,
     MINIMUM_ELEVATION_DEG,
     RX_GAIN_MAX_DBI,
+    constant_manifest,
 )
-from .tapes import PrimitiveBoundary, PrimitiveCandidate, UserLayout
+from .tapes import (
+    PrimitiveBoundary,
+    PrimitiveStepArrays,
+    UserLayout,
+    canonical_bytes,
+)
 
 
 DEFAULT_TLE_ROOT = Path("~/demo/tle_data/starlink/tle")
 CANONICAL_STEPS = 30
 _FUTURE_SECONDS = 900.0
+_FUTURE_INTERVALS = int(math.ceil(_FUTURE_SECONDS / D2_MEASUREMENT_STEP_S))
 _TIME_TOLERANCE_S = 2.0e-10
 
 
@@ -79,6 +97,7 @@ class _StepState:
     occupied: np.ndarray
     ttt_elapsed: np.ndarray
     reachable: np.ndarray
+    legacy_mask: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -141,11 +160,6 @@ class LegacyWorldProvider:
     TEST or embargo date is rejected before a TLE file is loaded.
     """
 
-    _STATE_CACHE: OrderedDict[
-        tuple[str, str | None, int, int], _WorldState
-    ] = OrderedDict()
-    _STATE_CACHE_SIZE = 2
-
     def __init__(
         self,
         *,
@@ -171,15 +185,8 @@ class LegacyWorldProvider:
                 )
         self._world_seed: int | None = None
         self._world: _WorldState | None = None
-        self._boundary_cache: dict[tuple[int, int], PrimitiveBoundary] = {}
-
-    def _cache_key(self, world_seed: int) -> tuple[str, str | None, int, int]:
-        return (
-            str(self.tle_root.resolve()),
-            None if self._forced_start is None else self._forced_start.isoformat(),
-            int(world_seed),
-            self.steps,
-        )
+        self._time_origin_s: float | None = None
+        self._manifest_input_digest: str | None = None
 
     def _start_for(self, world_seed: int) -> dt.datetime:
         if self._forced_start is not None:
@@ -202,29 +209,15 @@ class LegacyWorldProvider:
                 raise MCRLContractError("one provider instance binds exactly one world seed")
             return self._world
 
-        cache_key = self._cache_key(seed)
-        cached = self._STATE_CACHE.get(cache_key)
-        if cached is not None:
-            self._STATE_CACHE.move_to_end(cache_key)
-            self._world_seed = seed
-            self._world = cached
-            return cached
-
         start = self._start_for(seed)
-        # Recreate both streams so the epoch draw and user scatter have the
-        # exact C3-S ancestry.  The epoch draw on child zero is intentionally
-        # repeated before child one is handed to ScenarioDriver.
-        env_rng, mobility_rng, _action_rng, _control_rng = _evaluation_rngs(seed)
-        if self._forced_start is None:
-            sampled = EpisodeStartSampler.for_archive(
-                self._archive, self._split, TRAIN,
-                time_step_s=DECISION_INTERVAL_S,
-            ).draw(env_rng)
-            if sampled != start:
-                raise RuntimeError("legacy TRAIN epoch replay drifted")
+        # Child zero owns the exact TRAIN epoch draw in _start_for; child one
+        # owns mobility.  There is deliberately no fresh-stream replay check:
+        # such a check is true by construction and cannot detect seed drift.
+        _env_rng, mobility_rng, _action_rng, _control_rng = _evaluation_rngs(seed)
 
+        mobility = MobilityConfig(num_users=MobilityConfig().num_users)
         config = ScenarioConfig(
-            mobility=MobilityConfig(num_users=100),
+            mobility=mobility,
             steps_per_episode=self.steps,
         )
         driver = ScenarioDriver(self._archive, config)
@@ -246,10 +239,15 @@ class LegacyWorldProvider:
         for index in range(self.steps):
             if index:
                 candidate = driver.step(mobility_rng)
-            flat_norads = np.repeat(candidate.window_norad_ids, 7, axis=1)
+            flat_norads = np.repeat(
+                candidate.window_norad_ids, NUM_BEAM_SLOTS, axis=1
+            )
+            # SlotTable intentionally erases identities when any mask term is
+            # false.  The provider must preserve them, so use the frozen dwell
+            # neighbourhood and carry each predicate separately.
             flat_cells = np.tile(
-                np.stack([table.cell_ids for table in candidate.slot_tables]),
-                (1, 1),
+                candidate.dwell.neighborhood_cell_ids,
+                (1, NUM_SATELLITE_SLOTS),
             )
             decisions.append(
                 _StepState(
@@ -257,17 +255,26 @@ class LegacyWorldProvider:
                     _readonly(driver.user_xy_km),
                     _readonly(flat_norads),
                     _readonly(flat_cells),
-                    _readonly(np.repeat(candidate.slot_occupied, 7, axis=1)),
+                    _readonly(
+                        np.repeat(
+                            candidate.slot_occupied, NUM_BEAM_SLOTS, axis=1
+                        )
+                    ),
                     _readonly(
                         np.repeat(
                             np.stack(
                                 [assignment.ttt_counter for assignment in candidate.assignments]
                             ),
-                            7,
+                            NUM_BEAM_SLOTS,
                             axis=1,
                         )
                     ),
-                    _readonly(candidate.cell_reachable.reshape(100, -1)),
+                    _readonly(
+                        candidate.cell_reachable.reshape(
+                            config.mobility.num_users, -1
+                        )
+                    ),
+                    _readonly(candidate.masks),
                 )
             )
 
@@ -275,48 +282,32 @@ class LegacyWorldProvider:
         if satellites is None:  # pragma: no cover - guarded by reset
             raise RuntimeError("legacy scenario did not install a satellite set")
         tracked = satellites.norad_ids
-        future_samples = int(math.ceil(_FUTURE_SECONDS / D2_MEASUREMENT_STEP_S))
         tape_samples = (self.steps - 1) * D2_SUBINTERVALS + D2_SUBINTERVALS + 1
         jd, fr = step_times(
             start,
-            tape_samples + future_samples,
+            tape_samples + _FUTURE_INTERVALS,
             time_step_s=D2_MEASUREMENT_STEP_S,
         )
         positions = satellites.propagate_ecef(jd, fr, require_all_healthy=True)
-        if not np.all(np.isfinite(positions)):
-            raise MCRLContractError("sgp4 produced a non-finite ECEF primitive")
+        self._validate_propagation(positions)
 
-        visible_satellites: set[int] = set()
-        for step_index, state in enumerate(decisions):
-            begin = step_index * D2_SUBINTERVALS
-            block = positions[:, begin : begin + D2_SUBINTERVALS + 1, :]
-            # Chunk users to avoid a (100,S,48,3) temporary.
-            for users in np.array_split(state.user_ecef_km, 10):
-                delta = block[None, :, :, :] - users[:, None, None, :]
-                slant = np.linalg.norm(delta, axis=-1)
-                up = users / np.linalg.norm(users, axis=1, keepdims=True)
-                sine = np.einsum("ustc,uc->ust", delta, up) / slant
-                seen = np.any(
-                    sine >= math.sin(math.radians(MINIMUM_ELEVATION_DEG)),
-                    axis=(0, 2),
-                )
-                visible_satellites.update(int(value) for value in tracked[seen])
-
-        # A chain is the legacy global earth-fixed cell id.  Enumerate every
-        # cell family actually addressable by this world's moving users, then
-        # pair that frozen set with every satellite passing the exact 10° scan.
-        chains = sorted(
-            {
-                int(cell)
-                for state in decisions
-                for cell in state.cell_ids.ravel().tolist()
-                if int(cell) >= 0
-            }
-        )
+        # Hardware identities are only the pairs realised by at least one
+        # legal legacy action at a canonical decision instant.  This is the
+        # union of actual masks, never NORAD x cell Cartesian multiplication.
         inventory = tuple(
-            (norad, chain)
-            for norad in sorted(visible_satellites)
-            for chain in chains
+            sorted(
+                {
+                    (int(norad), int(cell))
+                    for state in decisions
+                    for norad, cell, legal in zip(
+                        state.norad_ids.ravel().tolist(),
+                        state.cell_ids.ravel().tolist(),
+                        state.legacy_mask.ravel().tolist(),
+                        strict=True,
+                    )
+                    if bool(legal) and int(norad) >= 0 and int(cell) >= 0
+                }
+            )
         )
         if not inventory:
             raise MCRLContractError("canonical TRAIN world has an empty inventory")
@@ -329,7 +320,7 @@ class LegacyWorldProvider:
         )
         layout = tuple(
             UserLayout(index, float(lat[index]), float(lon[index]))
-            for index in range(100)
+            for index in range(config.mobility.num_users)
         )
         self._world_seed = seed
         self._world = _WorldState(
@@ -343,13 +334,20 @@ class LegacyWorldProvider:
             layout,
             tle_files,
         )
-        self._STATE_CACHE[cache_key] = self._world
-        self._STATE_CACHE.move_to_end(cache_key)
-        while len(self._STATE_CACHE) > self._STATE_CACHE_SIZE:
-            self._STATE_CACHE.popitem(last=False)
         # ``satellites`` and ``driver`` now fall out of scope; no Satrec is
         # retained by the provider or any returned primitive object.
         return self._world
+
+    @staticmethod
+    def _validate_propagation(positions: np.ndarray) -> None:
+        """Fail closed on NaN and finite sub-surface sgp4 garbage."""
+
+        values = np.asarray(positions, dtype=np.float64)
+        if values.ndim != 3 or values.shape[-1] != 3 or not np.all(np.isfinite(values)):
+            raise MCRLContractError("sgp4 produced a non-finite ECEF primitive")
+        altitude = np.linalg.norm(values, axis=-1) - R_E_KM
+        if np.any(altitude < 0.0):
+            raise MCRLContractError("sgp4 produced a finite sub-surface primitive")
 
     def cluster_identity(self, *, world_seed: int) -> tuple[str, int]:
         world = self._ensure(world_seed)
@@ -359,6 +357,41 @@ class LegacyWorldProvider:
         """Daily filename/SHA-256 inputs used by nearest-epoch selection."""
 
         return self._ensure(world_seed).tle_files
+
+    def start_utc(self, *, world_seed: int) -> dt.datetime:
+        """Exact sampled instant, including the independently drawn offset."""
+
+        return self._ensure(world_seed).start_utc
+
+    def split_binding(self) -> tuple[str, str]:
+        """Source file/hash for the inherited block-alternating split rule."""
+
+        import mcrl.env.ephemeris as ephemeris
+
+        path = Path(ephemeris.__file__).resolve()
+        return path.name, hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def step_user_layouts(
+        self, *, world_seed: int, steps: int
+    ) -> tuple[tuple[UserLayout, ...], ...]:
+        world = self._ensure(world_seed)
+        if type(steps) is not int or not 1 <= steps <= CANONICAL_STEPS:
+            raise MCRLContractError("step layout count is outside the canonical world")
+        return tuple(
+            self.user_layout_at_step(world_seed=world_seed, step_index=index)
+            for index in range(steps)
+        )
+
+    @staticmethod
+    def _nominal_path_without_scintillation(
+        slant_km: np.ndarray,
+        elevation_deg: np.ndarray,
+        receive_gain: np.ndarray,
+    ) -> np.ndarray:
+        """Legacy path factor with L_c removed; keyed fading owns L_c once."""
+
+        legacy = link_power_factor(slant_km, elevation_deg, receive_gain)
+        return legacy * 10.0 ** (scintillation_loss_db(elevation_deg) / 10.0)
 
     def user_layout_at_step(
         self, *, world_seed: int, step_index: int
@@ -376,7 +409,7 @@ class LegacyWorldProvider:
         )
         return tuple(
             UserLayout(index, float(lat[index]), float(lon[index]))
-            for index in range(100)
+            for index in range(xy.shape[0])
         )
 
     def user_layout(self, *, world_seed: int) -> Iterable[UserLayout]:
@@ -404,6 +437,489 @@ class LegacyWorldProvider:
         if type(boundary) is not int or not 0 <= boundary <= D2_SUBINTERVALS:
             raise MCRLContractError("boundary_index must be in 0..47")
 
+    @staticmethod
+    def _row_metadata(state: _StepState) -> tuple[np.ndarray, ...]:
+        present = (state.norad_ids >= 0) & (state.cell_ids >= 0)
+        row_user, row_action = np.nonzero(present)
+        identities = np.stack(
+            (state.norad_ids[present], state.cell_ids[present]), axis=1
+        ).astype(np.int64)
+        keys = [
+            (int(row_user[index]), int(identity[0]), int(identity[1]))
+            for index, identity in enumerate(identities)
+        ]
+        if len(keys) != len(set(keys)):
+            raise MCRLContractError("candidate action rows contain duplicate identities")
+        return (
+            row_user.astype(np.int64),
+            row_action.astype(np.int64),
+            identities,
+            (row_action // NUM_BEAM_SLOTS).astype(np.int64),
+        )
+
+    def _forward_d2_slots(
+        self,
+        *,
+        world: _WorldState,
+        state: _StepState,
+        step_index: int,
+        position_columns: dict[int, int],
+    ) -> np.ndarray:
+        """Advance from the legacy decision latch; boundary zero never looks ahead."""
+
+        users = state.user_ecef_km.shape[0]
+        result = np.zeros((48, users, NUM_SATELLITE_SLOTS), dtype=bool)
+        result[0] = state.occupied[:, ::NUM_BEAM_SLOTS]
+        elapsed = state.ttt_elapsed[:, ::NUM_BEAM_SLOTS].astype(np.int64).copy()
+        active = np.zeros((users, NUM_SATELLITE_SLOTS), dtype=bool)
+        threshold_steps = int(round(D2_TTT_S / D2_MEASUREMENT_STEP_S))
+        if not math.isclose(
+            threshold_steps * D2_MEASUREMENT_STEP_S,
+            D2_TTT_S,
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        ):
+            raise MCRLContractError("D2 TTT is not an integer measurement count")
+        begin = step_index * D2_SUBINTERVALS
+        slot_norads = state.norad_ids[:, ::NUM_BEAM_SLOTS]
+        for boundary in range(48):
+            for user in range(users):
+                for slot in range(NUM_SATELLITE_SLOTS):
+                    norad = int(slot_norads[user, slot])
+                    if norad < 0:
+                        continue
+                    position = world.positions_ecef_km[
+                        position_columns[norad], begin + boundary
+                    ]
+                    distance = float(np.linalg.norm(position - state.user_ecef_km[user]))
+                    altitude = float(np.linalg.norm(position) - R_E_KM)
+                    entering = (
+                        distance + D2_HYSTERESIS_KM < D2_THRESHOLD_KM
+                        and altitude >= MINIMUM_ALTITUDE_KM
+                    )
+                    if boundary == 0:
+                        active[user, slot] = entering
+                        continue
+                    releasing = distance - D2_HYSTERESIS_KM > D2_THRESHOLD_KM
+                    elapsed[user, slot] = (
+                        elapsed[user, slot] + 1
+                        if entering and active[user, slot]
+                        else 0
+                    )
+                    active[user, slot] = entering
+                    latched = bool(result[boundary - 1, user, slot])
+                    if entering and elapsed[user, slot] >= threshold_steps:
+                        latched = True
+                    if releasing or altitude < MINIMUM_ALTITUDE_KM:
+                        latched = False
+                    result[boundary, user, slot] = latched
+        return result
+
+    @staticmethod
+    def _durations_from_mask(
+        mask: np.ndarray, active: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        durations = np.zeros((48,) + active.shape[1:], dtype=np.float64)
+        censored = np.zeros_like(durations, dtype=bool)
+        for boundary in range(48):
+            for index in np.ndindex(active.shape[1:]):
+                if not bool(active[(boundary,) + index]):
+                    continue
+                series = mask[(slice(boundary, boundary + _FUTURE_INTERVALS + 1),) + index]
+                failures = np.flatnonzero(~series)
+                intervals = int(failures[0]) if failures.size else _FUTURE_INTERVALS
+                durations[(boundary,) + index] = intervals * D2_MEASUREMENT_STEP_S
+                censored[(boundary,) + index] = not bool(failures.size)
+        return durations, censored
+
+    def step_arrays(
+        self,
+        *,
+        world_seed: int,
+        step_index: int,
+        start_time_s: float = 0.0,
+    ) -> PrimitiveStepArrays:
+        """Return one recomputable 48-boundary engine snapshot as arrays."""
+
+        world = self._ensure(world_seed)
+        self._indices(world, step_index, 0)
+        if not math.isfinite(start_time_s):
+            raise MCRLContractError("start_time_s must be finite")
+        state = world.steps[step_index]
+        users = np.arange(state.user_ecef_km.shape[0], dtype=np.int64)
+        row_user, row_action, identities, row_slot = self._row_metadata(state)
+        # Keep one genuine tracked-but-ineligible row per user.  The legacy
+        # four-slot action table erases these identities; the primitive mask
+        # seam must expose false D2/visibility values rather than make those
+        # predicates vacuous.  The lowest-elevation tracked satellite is a
+        # deterministic, non-action audit row (legacy_action_index == -1).
+        begin = step_index * D2_SUBINTERVALS
+        tracked_now = world.positions_ecef_km[:, begin, :]
+        user_delta = tracked_now[None, :, :] - state.user_ecef_km[:, None, :]
+        user_slant = np.linalg.norm(user_delta, axis=-1)
+        user_up_all = state.user_ecef_km / np.linalg.norm(
+            state.user_ecef_km, axis=1, keepdims=True
+        )
+        tracked_elevation = np.degrees(
+            np.arcsin(
+                np.clip(
+                    np.einsum("usc,uc->us", user_delta, user_up_all) / user_slant,
+                    -1.0,
+                    1.0,
+                )
+            )
+        )
+        extra_satellite_column = np.argmin(tracked_elevation, axis=1)
+        extra_norads = world.tracked_norads[extra_satellite_column].astype(np.int64)
+        extra_cells = np.asarray(
+            [
+                next(int(cell) for cell in state.cell_ids[user].tolist() if int(cell) >= 0)
+                for user in range(users.size)
+            ],
+            dtype=np.int64,
+        )
+        extra_identities = np.stack((extra_norads, extra_cells), axis=1)
+        identities = np.concatenate((identities, extra_identities), axis=0)
+        row_user = np.concatenate((row_user, users), axis=0)
+        row_action = np.concatenate(
+            (row_action, np.full(users.size, -1, dtype=np.int64)), axis=0
+        )
+        row_slot = np.concatenate(
+            (row_slot, np.full(users.size, NUM_SATELLITE_SLOTS, dtype=np.int64)),
+            axis=0,
+        )
+        row_cells = identities[:, 1]
+        grid = world.grid
+        colors = np.asarray(grid.colors[row_cells], dtype=np.int64)
+        tracked_column = {
+            int(norad): index
+            for index, norad in enumerate(world.tracked_norads.tolist())
+        }
+        satellite_norads = np.asarray(
+            sorted({int(value) for value in identities[:, 0]}), dtype=np.int64
+        )
+        satellite_column = {
+            int(norad): index for index, norad in enumerate(satellite_norads.tolist())
+        }
+        tracked_rows = np.asarray(
+            [tracked_column[int(norad)] for norad in satellite_norads], dtype=np.int64
+        )
+        positions = world.positions_ecef_km[tracked_rows, begin : begin + 48, :].transpose(1, 0, 2)
+        row_satellite = np.asarray(
+            [satellite_column[int(norad)] for norad in identities[:, 0]], dtype=np.int64
+        )
+        row_positions = positions[:, row_satellite, :]
+        row_users = state.user_ecef_km[row_user]
+        row_centres = grid.centers_ecef_km[row_cells]
+        delta = row_positions - row_users[None, :, :]
+        slants = np.linalg.norm(delta, axis=-1)
+        up = row_users / np.linalg.norm(row_users, axis=1, keepdims=True)
+        elevations = np.degrees(
+            np.arcsin(
+                np.clip(np.einsum("brc,rc->br", delta, up) / slants, -1.0, 1.0)
+            )
+        )
+        direct_angles = angle_between_deg(
+            row_positions,
+            np.broadcast_to(row_centres, row_positions.shape),
+            np.broadcast_to(row_users, row_positions.shape),
+        )
+        peak_receive = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+        direct_path = self._nominal_path_without_scintillation(
+            slants, elevations, np.full_like(slants, peak_receive)
+        )
+        nominal = transmit_gain_linear(direct_angles) * direct_path
+
+        fading = np.empty(
+            (48, users.size, satellite_norads.size), dtype=np.float64
+        )
+        times = (
+            float(start_time_s)
+            + step_index * DECISION_INTERVAL_S
+            + np.arange(48, dtype=np.float64) * D2_MEASUREMENT_STEP_S
+        )
+        for boundary in range(48):
+            absolute_ns = int(round(float(times[boundary]) * 1.0e9))
+            for user in range(users.size):
+                user_position = state.user_ecef_km[user]
+                for sat_column, norad in enumerate(satellite_norads.tolist()):
+                    sat_position = positions[boundary, sat_column]
+                    sat_delta = sat_position - user_position
+                    sat_slant = float(np.linalg.norm(sat_delta))
+                    sat_up = user_position / np.linalg.norm(user_position)
+                    sat_elevation = math.degrees(
+                        math.asin(float(np.clip(np.dot(sat_delta, sat_up) / sat_slant, -1.0, 1.0)))
+                    )
+                    fading[boundary, user, sat_column] = keyed_fading_gain(
+                        world=int(world_seed),
+                        user=user,
+                        norad=int(norad),
+                        absolute_time_ns=absolute_ns,
+                        elevation_deg=sat_elevation,
+                    )
+        realised = nominal * fading[:, row_user, row_satellite]
+
+        d2_slots = self._forward_d2_slots(
+            world=world,
+            state=state,
+            step_index=step_index,
+            position_columns=tracked_column,
+        )
+        d2_slots = np.concatenate(
+            (
+                d2_slots,
+                np.zeros((48, users.size, 1), dtype=bool),
+            ),
+            axis=2,
+        )
+        d2_eligible = d2_slots[:, row_user, row_slot]
+        visible = elevations >= MINIMUM_ELEVATION_DEG
+        cell_delta = row_positions - row_centres[None, :, :]
+        cell_slant = np.linalg.norm(cell_delta, axis=-1)
+        cell_up = row_centres / np.linalg.norm(row_centres, axis=1, keepdims=True)
+        cell_elevation = np.degrees(
+            np.arcsin(
+                np.clip(
+                    np.einsum("brc,rc->br", cell_delta, cell_up) / cell_slant,
+                    -1.0,
+                    1.0,
+                )
+            )
+        )
+        cell_reachable = cell_elevation >= 0.0
+
+        altitude = np.linalg.norm(row_positions, axis=-1) - R_E_KM
+        entry = np.empty_like(altitude)
+        for index in np.ndindex(entry.shape):
+            entry[index] = elevation_for_slant_range(
+                D2_THRESHOLD_KM - D2_HYSTERESIS_KM,
+                float(altitude[index]),
+            )
+
+        aggressor_identities = np.asarray(
+            sorted(
+                {
+                    (int(norad), int(cell))
+                    for norad, cell in identities[row_action >= 0].tolist()
+                }
+            ),
+            dtype=np.int64,
+        )
+        aggressor_colors = np.asarray(
+            grid.colors[aggressor_identities[:, 1]], dtype=np.int64
+        )
+        aggressor_satellite = np.asarray(
+            [satellite_column[int(norad)] for norad in aggressor_identities[:, 0]],
+            dtype=np.int64,
+        )
+        aggressor_positions = positions[:, aggressor_satellite, :]
+        aggressor_centres = grid.centers_ecef_km[aggressor_identities[:, 1]]
+        cross_vertex = np.broadcast_to(
+            aggressor_positions[:, None, :, :],
+            (48, users.size, aggressor_identities.shape[0], 3),
+        )
+        cross_angles = angle_between_deg(
+            cross_vertex,
+            np.broadcast_to(aggressor_centres[None, None, :, :], cross_vertex.shape),
+            np.broadcast_to(state.user_ecef_km[None, :, None, :], cross_vertex.shape),
+        )
+        cross_delta = cross_vertex - state.user_ecef_km[None, :, None, :]
+        cross_slant = np.linalg.norm(cross_delta, axis=-1)
+        user_up = state.user_ecef_km / np.linalg.norm(
+            state.user_ecef_km, axis=1, keepdims=True
+        )
+        cross_elevation = np.degrees(
+            np.arcsin(
+                np.clip(
+                    np.einsum("buac,uc->bua", cross_delta, user_up) / cross_slant,
+                    -1.0,
+                    1.0,
+                )
+            )
+        )
+        cross_base = transmit_gain_linear(cross_angles) * self._nominal_path_without_scintillation(
+            cross_slant, cross_elevation, np.ones_like(cross_slant)
+        )
+
+        # Terminal receive gain is indexed by the victim's four frozen
+        # satellite slots and the physical aggressor satellite.  The
+        # same-satellite P-10 override is applied here before per-beam colour
+        # and self masks are applied by PrimitiveStepArrays.
+        window_norads = np.concatenate(
+            (
+                state.norad_ids[:, ::NUM_BEAM_SLOTS],
+                extra_norads[:, None],
+            ),
+            axis=1,
+        )
+        wanted_slots = window_norads.shape[1]
+        wanted_positions = np.zeros(
+            (48, users.size, wanted_slots, 3), dtype=np.float64
+        )
+        wanted_valid = window_norads >= 0
+        for user in range(users.size):
+            for slot in range(wanted_slots):
+                norad = int(window_norads[user, slot])
+                if norad >= 0:
+                    wanted_positions[:, user, slot] = positions[:, satellite_column[norad]]
+        receive_vertex = np.broadcast_to(
+            state.user_ecef_km[None, :, None, None, :],
+            (48, users.size, wanted_slots, satellite_norads.size, 3),
+        )
+        receive_angles = angle_between_deg(
+            receive_vertex,
+            np.broadcast_to(
+                wanted_positions[:, :, :, None, :], receive_vertex.shape
+            ),
+            np.broadcast_to(
+                positions[:, None, None, :, :], receive_vertex.shape
+            ),
+        )
+        same_satellite = (
+            window_norads[:, :, None] == satellite_norads[None, None, :]
+        ) & wanted_valid[:, :, None]
+        receive_gain = interference_receive_gain_linear(
+            receive_angles,
+            same_satellite=np.broadcast_to(same_satellite[None, :, :, :], receive_angles.shape),
+        )
+
+        # Fixed 900.48-s sampled horizon at every boundary.  A no-crossing
+        # duration is explicitly right-censored instead of masquerading as a
+        # measured expiry.
+        horizon_positions = world.positions_ecef_km[
+            tracked_rows,
+            begin : begin + 48 + _FUTURE_INTERVALS,
+            :,
+        ].transpose(1, 0, 2)
+        visibility_duration = np.zeros((48, users.size, wanted_slots))
+        d2_duration = np.zeros_like(visibility_duration)
+        visibility_censored = np.zeros_like(visibility_duration, dtype=bool)
+        d2_censored = np.zeros_like(visibility_duration, dtype=bool)
+        for user in range(users.size):
+            user_position = state.user_ecef_km[user]
+            user_up_vector = user_position / np.linalg.norm(user_position)
+            for slot in range(wanted_slots):
+                norad = int(window_norads[user, slot])
+                if norad < 0:
+                    continue
+                sat_column = satellite_column[norad]
+                future_delta = horizon_positions[:, sat_column] - user_position
+                future_slant = np.linalg.norm(future_delta, axis=1)
+                future_elevation = np.degrees(
+                    np.arcsin(
+                        np.clip(
+                            (future_delta @ user_up_vector) / future_slant,
+                            -1.0,
+                            1.0,
+                        )
+                    )
+                )
+                visible_mask = future_elevation >= MINIMUM_ELEVATION_DEG
+                release_mask = (
+                    future_slant - D2_HYSTERESIS_KM <= D2_THRESHOLD_KM
+                )
+                for boundary_index in range(48):
+                    stop = boundary_index + _FUTURE_INTERVALS + 1
+                    vis_window = visible_mask[boundary_index:stop]
+                    d2_window = release_mask[boundary_index:stop]
+                    if bool(visible_mask[boundary_index]):
+                        failures = np.flatnonzero(~vis_window)
+                        visibility_censored[boundary_index, user, slot] = failures.size == 0
+                        count = _FUTURE_INTERVALS if failures.size == 0 else int(failures[0])
+                        visibility_duration[boundary_index, user, slot] = count * D2_MEASUREMENT_STEP_S
+                    if d2_slots[boundary_index, user, slot]:
+                        failures = np.flatnonzero(~d2_window)
+                        d2_censored[boundary_index, user, slot] = failures.size == 0
+                        count = _FUTURE_INTERVALS if failures.size == 0 else int(failures[0])
+                        d2_duration[boundary_index, user, slot] = count * D2_MEASUREMENT_STEP_S
+
+        return PrimitiveStepArrays(
+            absolute_time_s=times,
+            users=users,
+            row_user_column=row_user,
+            legacy_action_index=row_action,
+            identities=identities,
+            colors=colors,
+            elevations_deg=elevations,
+            d2_entry_elevations_deg=entry,
+            slants_km=slants,
+            d2_distances_km=slants,
+            visible=visible,
+            d2_eligible=d2_eligible,
+            cell_reachable=cell_reachable,
+            nominal_gain=nominal,
+            realised_gain=realised,
+            remaining_visibility_s=visibility_duration[:, row_user, row_slot],
+            remaining_d2_s=d2_duration[:, row_user, row_slot],
+            visibility_right_censored=visibility_censored[:, row_user, row_slot],
+            d2_right_censored=d2_censored[:, row_user, row_slot],
+            aggressor_identities=aggressor_identities,
+            aggressor_colors=aggressor_colors,
+            aggressor_satellite_column=aggressor_satellite,
+            row_wanted_slot=row_slot,
+            cross_base_nominal=cross_base,
+            fading_by_satellite=fading,
+            receive_gain_by_wanted_slot=receive_gain,
+        )
+
+    def provider_source_sha256(self) -> str:
+        return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+    def manifest_input_digest(self, *, world_seed: int) -> str:
+        """Bind generating inputs and every canonical k=0 primitive input.
+
+        Full forward arrays are deliberately excluded: they are regenerated
+        inside a unit and never serialized into a gigabyte-scale JSON tape.
+        """
+
+        world = self._ensure(world_seed)
+        if self._manifest_input_digest is not None:
+            return self._manifest_input_digest
+        split_path = Path(__import__("mcrl.env.ephemeris", fromlist=["x"]).__file__)
+        header = {
+            "schema": "mcrl-v025-provider-input-v2",
+            "world_seed": int(world_seed),
+            "start_utc": world.start_utc.isoformat(),
+            "tle_files": [list(row) for row in world.tle_files],
+            "provider_source_sha256": self.provider_source_sha256(),
+            "split_source": [
+                split_path.name,
+                hashlib.sha256(split_path.read_bytes()).hexdigest(),
+            ],
+            "constants": constant_manifest()["values"],
+            "inventory": [list(identity) for identity in world.inventory],
+        }
+        digest = hashlib.sha256(canonical_bytes(header))
+        for step_index, state in enumerate(world.steps):
+            position_index = step_index * D2_SUBINTERVALS
+            for name, value in (
+                ("user_ecef_km", state.user_ecef_km),
+                ("user_xy_km", state.user_xy_km),
+                ("norad_ids", state.norad_ids),
+                ("cell_ids", state.cell_ids),
+                ("occupied", state.occupied),
+                ("ttt_elapsed", state.ttt_elapsed),
+                ("reachable", state.reachable),
+                ("legacy_mask", state.legacy_mask),
+                ("satellite_ecef_km", world.positions_ecef_km[:, position_index, :]),
+            ):
+                array = np.ascontiguousarray(value)
+                descriptor = canonical_bytes(
+                    {
+                        "step": step_index,
+                        "name": name,
+                        "dtype": array.dtype.str,
+                        "shape": list(array.shape),
+                    }
+                )
+                digest.update(len(descriptor).to_bytes(8, "big"))
+                digest.update(descriptor)
+                payload = array.tobytes(order="C")
+                digest.update(len(payload).to_bytes(8, "big"))
+                digest.update(payload)
+        self._manifest_input_digest = digest.hexdigest()
+        return self._manifest_input_digest
+
     def boundary(
         self,
         *,
@@ -414,246 +930,27 @@ class LegacyWorldProvider:
     ) -> PrimitiveBoundary:
         world = self._ensure(world_seed)
         self._indices(world, step_index, boundary_index)
-        expected = step_index * DECISION_INTERVAL_S + boundary_index * D2_MEASUREMENT_STEP_S
-        if not math.isclose(float(absolute_time_s), expected, rel_tol=0.0, abs_tol=_TIME_TOLERANCE_S):
-            raise MCRLContractError("absolute boundary time disagrees with t+k*0.640 s")
-        cache_key = (step_index, boundary_index)
-        cached = self._boundary_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        state = world.steps[step_index]
-        time_index = step_index * D2_SUBINTERVALS + boundary_index
-        positions = world.positions_ecef_km[:, time_index, :]
-        column_of = {int(n): i for i, n in enumerate(world.tracked_norads.tolist())}
-        grid = world.grid
-        peak_receive = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
-        absolute_ns = int(round(expected * 1.0e9))
-
-        rows: list[PrimitiveCandidate] = []
-        for user in range(100):
-            user_ecef = state.user_ecef_km[user]
-            by_identity = {
-                (int(norad), int(cell)): (
-                    bool(occupied), int(ttt_elapsed), bool(reachable)
-                )
-                for norad, cell, occupied, ttt_elapsed, reachable in zip(
-                    state.norad_ids[user].tolist(),
-                    state.cell_ids[user].tolist(),
-                    state.occupied[user].tolist(),
-                    state.ttt_elapsed[user].tolist(),
-                    state.reachable[user].tolist(),
-                )
-                if int(norad) >= 0 and int(cell) >= 0
-            }
-            identities = [
-                (norad, cell, *by_identity[(norad, cell)])
-                for norad, cell in sorted(by_identity)
-            ]
-            candidate_norads = sorted({identity[0] for identity in identities})
-            sat_rows = np.asarray([column_of[norad] for norad in candidate_norads], dtype=np.int64)
-            sat_positions = positions[sat_rows]
-            delta = sat_positions - user_ecef
-            slants = np.linalg.norm(delta, axis=1)
-            up = user_ecef / np.linalg.norm(user_ecef)
-            elevations = np.degrees(np.arcsin(np.clip((delta @ up) / slants, -1.0, 1.0)))
-            sat_index = {norad: index for index, norad in enumerate(candidate_norads)}
-            fading = np.asarray(
-                [
-                    keyed_fading_gain(
-                        world=int(world_seed), user=user, norad=norad,
-                        absolute_time_ns=absolute_ns,
-                        elevation_deg=float(elevations[index]),
-                    )
-                    for index, norad in enumerate(candidate_norads)
-                ],
-                dtype=np.float64,
-            )
-            remaining: dict[tuple[int, bool], tuple[float, float]] = {}
-
-            row_norads = np.asarray([row[0] for row in identities], dtype=np.int64)
-            row_cells = np.asarray([row[1] for row in identities], dtype=np.int64)
-            wanted_columns = np.asarray([sat_index[int(n)] for n in row_norads], dtype=np.int64)
-            wanted_positions = sat_positions[wanted_columns]
-            centres = grid.centers_ecef_km[row_cells]
-            direct_angles = angle_between_deg(wanted_positions, centres, user_ecef)
-            direct_tx = transmit_gain_linear(direct_angles)
-            direct_path = link_power_factor(
-                slants[wanted_columns], elevations[wanted_columns],
-                np.full(len(identities), peak_receive),
-            )
-
-            # Cross rows use the aggressor's beam pointed at the victim row's
-            # earth-fixed cell.  This is one co-colour beam per NORAD, so no
-            # across-beam aggregation is hidden in the NORAD-keyed map.
-            other_positions = np.broadcast_to(
-                sat_positions[None, :, :], (len(identities), len(candidate_norads), 3)
-            )
-            cross_angles = angle_between_deg(
-                other_positions,
-                centres[:, None, :],
-                np.broadcast_to(
-                    user_ecef, (len(identities), len(candidate_norads), 3)
-                ),
-            )
-            cross_tx = transmit_gain_linear(cross_angles)
-            separations = angle_between_deg(
-                np.broadcast_to(user_ecef, other_positions.shape),
-                wanted_positions[:, None, :],
-                other_positions,
-            )
-            receive = interference_receive_gain_linear(
-                separations, same_satellite=False
-            )
-            cross_path = link_power_factor(
-                np.broadcast_to(slants, receive.shape),
-                np.broadcast_to(elevations, receive.shape),
-                receive,
-            )
-            cross_gain = cross_tx * cross_path
-
-            for row_index, (norad, cell, occupied0, ttt0, _reachable0) in enumerate(identities):
-                column = wanted_columns[row_index]
-                satellite = wanted_positions[row_index]
-                slant = float(slants[column])
-                elevation = float(elevations[column])
-                nominal = float(direct_tx[row_index] * direct_path[row_index])
-                visible = elevation >= MINIMUM_ELEVATION_DEG
-                d2_eligible = self._d2_at(
-                    world,
-                    state,
-                    user,
-                    column_of[norad],
-                    step_index * D2_SUBINTERVALS,
-                    boundary_index,
-                    latched0=occupied0,
-                    ttt_elapsed0=ttt0,
-                )
-
-                cross_nominal = tuple(
-                    (aggressor, float(cross_gain[row_index, other_index]))
-                    for other_index, aggressor in enumerate(candidate_norads)
-                    if aggressor != norad
-                )
-                cross_realised = tuple(
-                    (
-                        aggressor,
-                        float(cross_gain[row_index, other_index] * fading[other_index]),
-                    )
-                    for other_index, aggressor in enumerate(candidate_norads)
-                    if aggressor != norad
-                )
-
-                altitude = float(np.linalg.norm(satellite) - R_E_KM)
-                entry_elevation = elevation_for_slant_range(
-                    D2_THRESHOLD_KM - D2_HYSTERESIS_KM, altitude
-                )
-                remaining_key = (norad, d2_eligible)
-                if remaining_key not in remaining:
-                    remaining[remaining_key] = self._remaining(
-                        world,
-                        state,
-                        user,
-                        column_of[norad],
-                        time_index,
-                        visible=visible,
-                        d2_eligible=d2_eligible,
-                    )
-                remaining_visibility, remaining_d2 = remaining[remaining_key]
-                rows.append(
-                    PrimitiveCandidate(
-                        user,
-                        (norad, cell),
-                        int(grid.colors[cell]),
-                        elevation,
-                        float(entry_elevation),
-                        slant,
-                        slant,
-                        visible,
-                        d2_eligible,
-                        nominal,
-                        nominal * float(fading[column]),
-                        cross_nominal,
-                        cross_realised,
-                        remaining_visibility,
-                        remaining_d2,
-                    )
-                )
-
-        result = PrimitiveBoundary(float(absolute_time_s), tuple(rows))
-        self._boundary_cache[cache_key] = result
-        return result
-
-    def _remaining(
-        self,
-        world: _WorldState,
-        state: _StepState,
-        user: int,
-        sat_column: int,
-        time_index: int,
-        *,
-        visible: bool,
-        d2_eligible: bool,
-    ) -> tuple[float, float]:
-        future = world.positions_ecef_km[sat_column, time_index:, :]
-        user_ecef = state.user_ecef_km[user]
-        delta = future - user_ecef
-        slant = np.linalg.norm(delta, axis=1)
-        up = user_ecef / np.linalg.norm(user_ecef)
-        elevation = np.degrees(np.arcsin(np.clip((delta @ up) / slant, -1.0, 1.0)))
-
-        def duration(mask: np.ndarray, active: bool) -> float:
-            if not active:
-                return 0.0
-            failures = np.flatnonzero(~mask)
-            count = int(failures[0]) if failures.size else len(mask) - 1
-            return float(count * D2_MEASUREMENT_STEP_S)
-
-        visibility_s = duration(elevation >= MINIMUM_ELEVATION_DEG, visible)
-        d2_s = duration(
-            slant - D2_HYSTERESIS_KM <= D2_THRESHOLD_KM,
-            d2_eligible,
+        relative = (
+            step_index * DECISION_INTERVAL_S
+            + boundary_index * D2_MEASUREMENT_STEP_S
         )
-        return visibility_s, d2_s
-
-    def _d2_at(
-        self,
-        world: _WorldState,
-        state: _StepState,
-        user: int,
-        sat_column: int,
-        step_start_index: int,
-        boundary_index: int,
-        *,
-        latched0: bool,
-        ttt_elapsed0: int,
-    ) -> bool:
-        """Advance the legacy candidate-side Schmitt latch within one step."""
-
-        if boundary_index == 0:
-            return bool(latched0)
-        positions = world.positions_ecef_km[
-            sat_column,
-            step_start_index : step_start_index + boundary_index + 1,
-            :,
-        ]
-        slant = np.linalg.norm(positions - state.user_ecef_km[user], axis=1)
-        latched = bool(latched0)
-        elapsed = int(ttt_elapsed0)
-        active = bool(slant[0] + D2_HYSTERESIS_KM < D2_THRESHOLD_KM)
-        for distance in slant[1:]:
-            entering = bool(distance + D2_HYSTERESIS_KM < D2_THRESHOLD_KM)
-            releasing = bool(distance - D2_HYSTERESIS_KM > D2_THRESHOLD_KM)
-            if entering:
-                elapsed = elapsed + 1 if active else 0
-            else:
-                elapsed = 0
-            active = entering
-            if entering and elapsed >= 2:
-                latched = True
-            if releasing:
-                latched = False
-        return latched
+        inferred_origin = float(absolute_time_s) - relative
+        if self._time_origin_s is None:
+            self._time_origin_s = inferred_origin
+        elif not math.isclose(
+            inferred_origin,
+            self._time_origin_s,
+            rel_tol=0.0,
+            abs_tol=_TIME_TOLERANCE_S,
+        ):
+            raise MCRLContractError(
+                "absolute boundary time disagrees with the bound tape origin"
+            )
+        return self.step_arrays(
+            world_seed=world_seed,
+            step_index=step_index,
+            start_time_s=self._time_origin_s,
+        ).boundary_view(boundary_index)
 
 
 def factory() -> LegacyWorldProvider:

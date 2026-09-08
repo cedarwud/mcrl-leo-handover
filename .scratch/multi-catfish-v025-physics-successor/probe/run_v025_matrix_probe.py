@@ -190,12 +190,39 @@ def _base_configuration(tape: ExogenousWorldTape, step_index: int, carrier: str)
 
 
 def _catalogue(tape: ExogenousWorldTape, step_index: int, base: Configuration) -> tuple[Configuration, ...]:
-    first = tape.steps[step_index].boundaries[0]
+    step = tape.steps[step_index]
     users = tuple(sorted(user.user_id for user in tape.user_layout))
-    options = {
-        user: tuple(sorted({row.identity for row in first.candidates if row.user_id == user and row.legal}))
-        for user in users
-    }
+    if step.arrays is not None:
+        arrays = step.arrays
+        legal = arrays.visible[0] & arrays.d2_eligible[0] & arrays.cell_reachable[0]
+        options = {
+            user: tuple(
+                sorted(
+                    {
+                        tuple(int(value) for value in arrays.identities[row])
+                        for row in np.flatnonzero(
+                            legal
+                            & (arrays.users[arrays.row_user_column] == user)
+                        ).tolist()
+                    }
+                )
+            )
+            for user in users
+        }
+    else:
+        first = step.boundaries[0]
+        options = {
+            user: tuple(
+                sorted(
+                    {
+                        row.identity
+                        for row in first.candidates
+                        if row.user_id == user and row.legal
+                    }
+                )
+            )
+            for user in users
+        }
     rows = [base]
     for product in itertools.product(*(options[user] for user in users)):
         assignments = tuple(zip(users, product, strict=True))
