@@ -1,0 +1,416 @@
+[ThesisCover_11] 國立臺北大學資訊工程學系
+[ThesisCover_11] Department of Computer Science & Information Engineering
+[ThesisCover_11] National Taipei University
+[ThesisCover_11] 碩士論文
+[ThesisCover_11] Master Thesis
+[ThesisCover_11] 指導教授：陳裕賢 博士
+[ThesisCover_11] Advisor：Dr. Yuh-Shyan Chen
+[ThesisCover_11] 低軌道多波束衛星網路之節能型換手決策：基於角度感知多鯰魚式多目標強化學習
+[ThesisCover_affiliation] Energy-Efficient Handover Decision for LEO Multi-Beam Satellite Networks Based on Angle-Aware Multi-Catfish MODQN
+[ThesisCover_11] 研究生：吳柏宏
+[ThesisCover_11] Student：Bo-Hung, Wu
+[ThesisCover_11] 中華民國 115 年 7 月
+[ThesisCover_11] July, 2026
+[Heading1] 摘要
+[FirstParagraph] 低軌衛星（LEO）網路覆蓋廣、延遲較低，但衛星高速移動使波束覆蓋快速變化，換手因而頻繁且不易決策。本方法以既有 MODQN 的候選表、原生狀態與安全遮罩作為背景，在方法層將 Main 的唯一最終目標界定為網路總位元除以網路總能量的 ratio-of-sums 能量效率，而不是三個 legacy reward 的投票。每個使用者在共同 safe mask 下只保留三個獨立 Q surface：Q1、Q2 與 Q3；三者無權重直接相加，經一次 row-wise argmax 只執行一個 Main action。
+[BodyText] 第一路 C1 使用 focal current-slot own-rate 與完整 opening-step marginal network-energy surplus；RIS EXP／ACRM 只保留為 training source 與 comparison lineage，不在此稿宣稱有效。第二路 C2 沿用目前固定的 OPS-3 projected-persistence route，現階段僅能寫成 present but empirically unqualified。第三路 C3 為 two-user Local Coalition-Shapley Spatial Residual Surplus（LC-SRS）：training teacher 以相同隨機場評估 00、10、01、11 四個 matched current-slot profiles，產生 z3,i=ei+Ψ/2 的標籤；deployment 則以 deterministic relational C3View、共享 token scorer 與 reference-centred scalar Q3 讀取可部署的 predecision state。C3 teacher 的 privileged profile outcome 不會進入部署輸入，也不會引入 coordinator、auction、vote、joint decoder、fallback 或 post-selection repair。
+[BodyText] 這是與 current method 對齊的研究草稿，不是 empirical-final。C3 method core 已可在 Chapter 4 描述，但 gate outcome 尚未開啟；learnability、composition benefit、C1/C2 qualification、FULL-over-ablation ordering 與 EE efficacy 均留待 Chapter 5 的另行驗證。
+[BodyText] 關鍵字：低軌衛星、多波束網路、換手決策、網路比值總和能量效率、三路 Q surface、LC-SRS、預決策關係描述元
+[Heading1] 1. Introduction
+[FirstParagraph] 近年來行動通訊朝第六代行動通訊與非地面網路發展。低軌衛星能提供大範圍覆蓋與較低傳播延遲，可服務偏遠地區、海上與空中等難以部署地面基礎建設的環境，因而受到重視。但低軌衛星高速繞行地球，使用者可連接的衛星與波束隨時間不斷改變，連線維持與換手決策也因此更加困難。
+[BodyText] 在多波束低軌衛星系統中，一顆衛星以多個波束服務不同地理區域，使用者可能因衛星移動、波束覆蓋邊界改變或服務品質下降，而需在不同波束或不同衛星間換手。若只依訊號強度選波束，可能造成部分波束負載過高；只追求減少換手，可能讓使用者停留在逐漸變差的連線；只顧負載平衡，又可能犧牲部分使用者的傳輸品質。因此，低軌衛星的多波束換手不宜只用單一指標，而需同時考慮吞吐量、換手成本與負載平衡等多個目標。
+[BodyText] 為了處理這類動態決策問題，既有研究已從深度強化式學習與多目標學習等方向處理低軌衛星換手問題，分別關注接取延遲與碰撞，以及吞吐量與換手成本等面向 [1], [2]。其中，Sun 等人提出的多目標深度 Q 學習網路（Multi-Objective Deep Q-Learning Network, MODQN）將低軌衛星多波束換手表達為多目標深度強化式學習問題 [2]。
+[BodyText] 另一方面，能源感知、波束增益與頻譜共存相關研究顯示，鏈路幾何、功率成本與干擾都會影響換手及能源評估 [3], [4], [5]；動態傳播條件下的換手研究強調通道狀態與負載 [6]，隨機流量和時變拓樸下的波束管理則凸顯服務品質、負載與系統資源之間的取捨 [7]。然而，前述研究多從個別面向處理問題，尚缺少一個將偏軸角、由角度增益直接決定的發射功率，以及 MODQN 多目標訓練整合於低軌衛星多波束換手的框架。
+[BodyText] 因此，本文以 MODQN 的候選與遮罩介面為背景，提出與 Main-only network ratio-of-sums EE 對齊的 Multi-Catfish Reinforcement Learning（MCRL）方法草稿。此版本的「鯰魚」不表示第二個部署代理，而是保留方法沿革名稱；現行 C3 的訓練教師與部署學生具有明確的資訊邊界。主要貢獻如下：
+[Compact] 將 Main-only 的網路 ratio-of-sums EE 定為唯一最終目標，並保留第三章的角度、功率、SINR、throughput 與系統耗能物理鏈。每個 uninterrupted served physical-link segment 以 p0 起始，連續同一實體鏈路時由前一步功率與角度增益比遞推；公式不加 cap、clip 或 projection。
+[Compact] 明確劃分恰好三個獨立 Q surface 的 route roles：C1 的 own-rate／network-energy counterfactual、固定但尚未實證合格的 C2 OPS-3 projected-persistence，以及 two-user LC-SRS C3。三路只共用安全遮罩與已凍結的部署介面，不再以 legacy reward 向量或多網路投票表述現行方法。
+[Compact] 定義 C3 的 training-only four-profile teacher、deterministic relational C3View、shared token scorer 與 reference-centred scalar Q3，並以一次無權重的 Q1+Q2+Q3 masked argmax 執行 Main action。本文只凍結方法描述；任何 efficacy 或 learnability 結論均不在本章提出。
+[FirstParagraph] 其餘章節安排如下。第二章回顧低軌衛星換手、多波束資源管理、能量效率與強化式學習的相關研究。第三章說明系統模型與問題形式化。第四章介紹 MCRL 方法。第五章說明模擬設定與評估方式。第六章總結研究內容，並說明研究限制與未來可能方向。
+[Heading1] 2. Background
+[FirstParagraph] 本章先回顧低軌衛星換手、多目標強化式學習與鯰魚式訓練的歷史脈絡，再說明本研究的 current method positioning 與證據邊界。
+[Heading2] 2.1 Related Work
+[FirstParagraph] 低軌衛星換手問題涉及衛星高速移動、波束覆蓋變化、使用者連線品質與系統負載等因素。既有研究首先將深度強化式學習用於換手決策。Lee 等人 [1] 以深度強化式學習學習換手協定，以降低接取延遲與碰撞情形。這類方法透過與環境互動學習決策，較能因應隨時間變化的通訊環境。
+[BodyText] 隨著能源成本受到重視，換手決策也開始納入能量考量。Ntabeni 等人 [3] 提出能量感知 Q 學習，把訊號品質、換手次數與能量效率一併納入。Chen 等人 [4] 提出聯合低軌衛星換手與快速波束切換（HOBS）演算法，利用歷史訊號品質與波束索引縮小搜尋範圍，以降低波束訓練延遲；該方法同時考量訊號干擾雜訊比、波束發射功率、波束增益與波束切換，並把同衛星與跨衛星干擾納入訊號品質計算。Mendonça 等人 [5] 在頻譜共存的換手情境中考量偏軸天線損失與干擾管理，說明波束角度與干擾對換手決策具有影響。Liu 等人 [6] 則以多代理深度強化式學習處理換手，以三態 Markov 模型描述動態傳播條件，使決策能同時考慮通道狀態、負載與換手表現。第三章的通道、干擾與功率模型參考了上述研究對訊號品質與波束功率的處理方式。
+[BodyText] 多目標強化式學習著重於換手決策中的多項取捨。Sun 等人 [2] 建立的 MODQN 把低軌衛星的多波束換手設計為多目標深度強化式學習問題，並以並行 Q 網路表達不同的決策訊號；其原始 reward 定義與本稿的 current method 不同，僅作為方法背景與候選／遮罩介面的來源。Song 等人 [8] 也以深度強化式學習將吞吐量、換手次數與負載平衡納入多目標換手。Tajmajer [9] 以決策值進行模組化純量化；Basaklar 等人 [10] 則讓不同目標在學習過程中分別處理，而非在一開始合成單一純量。本文保留恰好三個獨立 Q surface，但以 C1、C2、C3 route roles 對齊 Main-only network ratio-of-sums EE；三路不代表 legacy reward voting，也不引入額外協調器。
+[BodyText] 圖 2-1 僅作為歷史 MODQN baseline 的骨幹示意。它所示的原始目標、權重純量化、探索與更新流程用來交代文獻背景，不等同於本稿的 live deployment；本稿的三個 Q surface、共享 safe mask 與一次無權重 masked argmax 於第四章重新定義。
+[ImageCaption] Fig. 2-1 MODQN baseline used in this study
+[BodyText] 圖 2-1：歷史 MODQN baseline 骨幹。圖中三個 Q 網路與原始 reward／權重流程只用於定位既有方法；本稿不採用其雙代理、legacy reward 或 deployment policy。現行 C1/C2/C3 route roles 與 Main-only one-pass composition 見第四章。
+[BodyText] 訓練經驗的選取與使用也會影響學到的策略。Schaul 等人 [11] 提出的優先經驗回放說明資料選取會改變學習訊號。Ke [12] 提出的鯰魚效應深度強化式學習（CDRL）則在主代理旁加入訓練角色，於訓練中促進探索與經驗利用，而不直接輸出部署決策。這些研究是本方法名稱與 training-source 思路的歷史 lineage；本稿不把第二個 agent、競爭 reward 或雙 replay pool 放入 live method。現行 C3 改以 privileged four-profile teacher 產生嚴格 two-user LC-SRS label，再由 deterministic relational C3View 的單一路徑 student 學習，部署時沒有第二個決策者。第四章將說明這條 teacher／student 邊界。
+[BodyText] 容量與資源限制也是多波束系統的重要問題。Zhu 等人 [7] 在隨機流量到達與時變拓樸的條件下探討多波束低軌衛星網路的波束管理，嘗試在服務品質、波束負載與系統資源之間取得平衡。在以強化式學習處理約束方面，Calvo-Fullana 等人 [13] 將約束資訊加入狀態，Agorio 等人 [14] 也將此作法用於多代理指派問題。Holder 等人 [15] 以強化式學習處理有限資源下的衛星指派，Ye 等人 [16] 則在蜂巢式網路中研究兼顧負載平衡的使用者關聯。這些工作提供 safe-mask 與 constrained-state 的背景；第四章則維持原生遮罩，並以 deterministic relational descriptor 處理 current-slot 的跨使用者資訊。
+[Heading2] 2.2 Motivation
+[FirstParagraph] 綜合第 2.1 節，本研究聚焦三個尚未被同時處理的問題。第一，能量感知換手需要把鏈路角度增益、偏軸角造成的功率變化、干擾、實際吞吐量與網路總能耗放在同一條 ratio-of-sums EE 鏈上，而不是把吞吐量與多個 legacy reward 分開投票。第二，若 Q surface 具有不同的資訊來源，必須按 C1、C2、C3 明確分工，並隔離 privileged teacher 與 deployable predecision state。第三，逐使用者獨立選擇雖保留原生遮罩介面，卻缺少可由當步狀態計算的跨使用者關係；若直接加入協調器或 joint decoder，又會改變既有 deployment contract。
+[BodyText] 本研究以一條方法層設計回應上述問題。第一，沿用第三章的角度感知物理鏈，將 Main 的唯一最終評估目標定為總 delivered bits／總 network energy；C1 提供 focal current-slot own-rate 與完整 opening-step marginal network-energy surplus，RIS EXP／ACRM 僅作 lineage 與 comparison source。第二，C2 固定為 present but empirically unqualified 的 OPS-3 projected-persistence route，不另造替代 objective。第三，C3 以 two-user LC-SRS 的四-profile teacher 產生 scoped residual label，student 只讀 deterministic relational C3View；三個 Q surface 在同一 safe mask 下無權重相加並一次 argmax，不加入 coordinator、auction、vote、joint decoder、fallback 或 post-selection repair。方法 core 可在第四章凍結，但 gate outcome 與所有 efficacy／learnability 結論仍開放。
+[BodyText] 偏軸角增大時，波束增益降低，接收訊號與 SINR 可能下降，因而降低吞吐量；在同一連續服務段，前一步增益較高而目前增益降低時，previous-step recurrence 可能提高目前 RF power，並改變功率放大器耗能。新 segment 不沿用 inactive link 的功率，而是重新從 p0 開始；recurrence 不含 power cap、clip 或 projection。完整模型於第 3.1.3 節說明，正式獎勵於第 3.2 節定義。
+[Heading1] 3. Preliminaries
+[FirstParagraph] 本章先說明使用者如何從可見波束中選擇服務波束，再介紹這條連線的訊號品質、吞吐量與耗能。最後將這些量整理成能量效率、換手成本與負載平衡三個目標。
+[Heading2] 3.1 System Model
+[Heading3] 3.1.1 Network Model
+[FirstParagraph] 考慮一個多波束低軌衛星下行通訊系統。低軌衛星持續移動，因此使用者可見的衛星與波束會隨時間改變。將時間離散為依序排列、長度為 Δt 的時間步，系統在每一步為每位使用者選擇一個可用的服務波束；Δt 的設定列於第 5.1 節。整體場景如圖 3-1 所示。
+[ImageCaption] Fig. 3-1 LEO multi-beam satellite system model
+[BodyText] 圖 3-1：多波束低軌衛星網路的系統模型。每位使用者從可見衛星提供的候選波束中選擇服務波束。波束方向會影響訊號品質，多位使用者選到相同波束時會共同使用其資源；系統也必須考慮波束干擾與換手成本；沒有使用者選取的波束不會啟用。
+[Heading4] Users, Satellites, and Beams
+[FirstParagraph] 以 U={1,…,U}、S={1,…,S} 與 V={1,…,V} 分別表示使用者、衛星與波束索引集合；u、s、v 與 t 則表示使用者、衛星、波束與時間步索引。
+[BodyText] 令 xu,s,v(t) 表示實際連線結果。當 xu,s,v(t)=1 時，使用者 u 由衛星 s 的波束 v 服務；否則為 0。每位使用者最多連上一個波束，因此
+[BodyText] xu,s,v(t)∈{0,1},  s∈S​v∈V​xu,s,v(t)≤1.(3.1)
+[FirstParagraph] 以 zs,v(t) 表示波束 (s,v) 是否啟用。對任意 u∈U、s∈S 與 v∈V，使用者只能連到已啟用的波束，因此
+[BodyText] zs,v(t)∈{0,1},  xu,s,v(t)≤zs,v(t).(3.2)
+[Heading4] Beam Activation and Load
+[FirstParagraph] 波束 (s,v) 實際服務的使用者數量為
+[BodyText] Us,v(t)=u∈U​xu,s,v(t).(3.3)
+[FirstParagraph] 本研究只啟用有使用者連接的波束，波束的啟用狀態因此由連線結果直接決定：
+[BodyText] zs,v(t)=1,Us,v(t)>0,0,Us,v(t)=0,  ∀s∈S, v∈V.(3.4)
+[FirstParagraph] 沒有使用者的波束不發射功率，也不產生干擾。本研究不另設每顆衛星可同時啟用的波束數上限。
+[Heading3] 3.1.2 Geometry and Channel Model
+[FirstParagraph] 在低軌衛星通訊中，幾何關係同時決定使用者與衛星的距離，以及使用者相對於波束中心的方向。參考非地面網路通道模型與低軌衛星相關研究 [17], [18]，定義使用者 u 與衛星 s 之間的斜距如式 (3.5)：
+[BodyText] du,s,v(t)=RE2sin2αu,s(t)+hs2+2REhs−REsinαu,s(t).(3.5)
+[FirstParagraph] 其中 αu,s(t) 為使用者相對於衛星的仰角，RE 為地球半徑，hs 為衛星高度。v 將斜距記為候選波束鏈路層量；對同一顆衛星的不同波束，它的數值可以相同。斜距是後續線性鏈路功率因子的一部分，該因子不直接承載 wanted-link 的角度型樣。
+[BodyText] 偏軸角描述使用者方向與波束中心方向之間的角度差。多波束低軌衛星模型以兩個方向向量的夾角定義偏軸角 [19, Eq. (5)]，因此使用者 u 相對於波束 (s,v) 的偏軸角定義如式 (3.6)：
+[BodyText] θu,s,v(t)=arccosvu,s,v(t)⋅ru,s,v(t)∥vu,s,v(t)∥∥ru,s,v(t)∥.(3.6)
+[FirstParagraph] 其中，vu,s,v(t) 表示候選鏈路 (u,s,v) 的波束中心方向向量，ru,s,v(t) 表示同一候選鏈路由衛星指向使用者的方向向量。兩者以三下標標示資料所有權；同一波束的 v 可在不同使用者間取相同值，同一使用者與衛星的 r 也可在不同波束間取相同值。偏軸角是本文把幾何資訊導入能量效率的入口。
+[BodyText] 沿用多波束衛星常用、亦見於 HOBS 的角度型樣 [4], [20]，發射端增益只保留其對偏軸角的依賴：
+[BodyText] GT​θ,θ3,  GT​0,θ3=G0.(3.7)
+[FirstParagraph] 其中 G0 為波束中心增益，θ3 表示全 3 dB 半功率波束寬；因此其單邊半功率角為 θ3/2。為了讓正文的可調天線參數與模擬器一一對應，採用一層 normalized pattern 展開：
+[BodyText] GT​θ,θ3=G0F​θ,θ3,  GT​0,θ3=G0,  F​0,θ3=1.(3.8)
+[FirstParagraph] 角度型樣採用 HOBS 式 (3) [4] 的 J1/J3 型樣，角度參數與 pattern 為
+[BodyText] μ​θ,θ3=2.07123sinθsinθ3/2,  F​θ,θ3=J1​μ​θ,θ32μ​θ,θ3+36J3​μ​θ,θ3μ​θ,θ332.(3.9)
+[FirstParagraph] 其中 J1(⋅) 與 J3(⋅) 分別為第一類貝索函數的一階與三階，2.07123 是該式的固定角度參數，同一數值亦見於其他多波束衛星文獻；F 在 θ=0 自然等於 1（1/4+3/4），因此不需要額外的 boresight 正規化常數；但 J1(μ)/(2μ) 與 36J3(μ)/μ3 在 μ=0 是 0/0，數值上以 |μ|<ϵμ 時直接取該極限值處理，ϵμ 的設定列於第 5.1 節。θ3 雖是固定的天線參數，但它出現在 μ 定義式的右側，並經由 μ 決定 F 與 GT 的形狀，因此列為三者的引數：每一條定義式的等號左側都必須涵蓋右側出現的量。G0 不同，它只是乘性的尺度常數，不改變型樣形狀，故不列入引數。式 (3.10) 之後的公式在特定鏈路的偏軸角上套用同一個函數，並明寫固定參數為 GT(θu,s,v,θ3)。這一層不引入帶三下標的增益變數，也不設型樣選擇器。
+[BodyText] 本研究不沿用 HOBS [4] Table I 的 G0=40 dBi。該表列出的孔徑 10c/fc、增益 40 dBi 與波束寬三值互斥；在量綱合法的兩種讀法下，40 dBi 分別要求孔徑效率 η=2.53（半徑讀法）或 η=10.13（直徑讀法），均大於 1。本研究改由波束寬一致的孔徑重導：D=1.0275λ/θ3=17.7λ；取 3GPP TR 38.821 [22] 各列反推的 Ka 頻段孔徑效率 0.639–0.645，得 G0=2000（33.0 dBi）。數值列於第 5.1 節。本研究的 θ3 一律指全半功率波束寬，與第 5.1 節的格半徑 Rb=hstan(θ3/2) 一致；HOBS 式 (3) 以單邊半功率角為分母，故式 (3.9) 代入 θ3/2。常數 2.07123 正校準於此點：μ=2.07123 時 F=1/2。
+[BodyText] 令 Hu,s,v(t) 表示不直接承載 wanted-link 角度型樣的線性鏈路功率因子。為了與通道實作對應，H 展開為
+[BodyText] Hu,s,v(t)=10−Lu,s,v(t)10Gu,s,vR(t),(3.10a)
+[FirstParagraph] 其中
+[BodyText] Lu,s,v(t)=Lf​du,s,v(t),fc+Lg​αu,s(t)+Lc​αu,s(t)+Ls​αu,s(t).(3.10b)
+[FirstParagraph] 四項損耗沿用 HOBS 式 (1) 的四類損耗，本文以單字母下標記為 L=Lf+Lg+Lc+Ls：Lf 為自由空間路徑損耗、Lg 為大氣氣體吸收、Lc 為閃爍、Ls 為遮蔽衰落，後三項皆隨仰角變化，其模型與數值列於第 5.1 節；四項皆以 dB 表示，代入 H 前轉成線性尺度；Gu,s,vR(t) 是接收端線性增益。公開展開不再往下加項；掃描損耗、NLoS clutter 等實作層通道修正併入 Hu,s,v(t)，不取得公開符號，也不是可調參數。
+[BodyText] Gu,s,vR(t) 以軸心增益扣除離軸損耗表示。令 θu,sR(t) 為使用者接收天線指向與第 s 顆衛星方向之間的夾角（以度為單位），則
+[BodyText] Gu,s,vR(t)=min​max​AR−BRlog10θu,sR(t), G−R, G+R.(3.10c)
+[FirstParagraph] AR、BR 與下限 G−R 取自 ITU-R S.465-6 的地球站參考輻射型樣 [21]，其適用範圍為 2 至 31 GHz，涵蓋本文的 fc。三者並非各自獨立設定：該建議書以 AR−BRlog10θR 描述 θ−R≤θR<48∘，以 G−R 描述 48∘≤θR≤180∘，兩段在 48∘ 連續銜接。軸心增益 G+R 取自低軌換手情境下同級 0.6 m 使用者終端所採的降額值 [5]，較該孔徑的理想增益保守約 4.7 dB。該建議書只在 θR≥θ−R 定義此包絡（本文終端在 fc 下 θ−R≈2.498∘）；本文於 θR<θ−R 延用同一包絡至 G+R 截止，此為建模上的簡化，不在該建議書的規定範圍內。
+[BodyText] wanted-link 的兩個線性功率增益因子仍直接相乘為
+[BodyText] Hu,s,v(t)GT​θu,s,v,θ3.(3.10)
+[FirstParagraph] 其中 GT 直接承載偏軸角，Hu,s,v(t) 保留其餘通道因素的物理意義——包含式 (3.10b) 的四項損耗、接收增益，以及萊斯小尺度衰落（其 K 因子 KR 屬情境校準，列於第 5.1 節）；兩者都是線性功率尺度的因子，不表示複數通道振幅。正文與簡化符號表、/ legacy simulator 前端共用這個能和控制項／runtime 欄位對應的一層公開展開；三者只允許排版不同，不允許公式、符號或可調參數不同。公開展開的深度上限即 HOBS 正文所示的深度：式 (1) 的四項損耗，以及式 (3) 那一層的單一 J1/J3 角度型樣結構。更深的天線量測、Bessel 近似誤差與通道校準細節不屬於公開主公式層級；不另建立只靠大小寫區分的中間通道符號。另需注意 MODQN 的 Gi,l,v 是通道增益，其角色對應本文的 Hu,s,v，與此處的天線增益 GT、GR 語意不同，不可同名合併。
+[Heading3] 3.1.3 Power, SINR and Throughput Model
+[FirstParagraph] 以下只保留每一條 UE–衛星–波束鏈路的實際量。pu,s,v 表示實際 RF 發射功率，不再由目標 SINR、最低速率或 lagged interference 反推；若程式需要標記 measured、predicted 或 cached provenance，該資訊放在資料欄位 metadata，不另建立第二個物理 SINR。
+[BodyText] 令 τu,s,v 為目前 uninterrupted served physical link (u,s,v) segment 的起始時間步。episode reset、handover、outage、unserved 與 re-entry 都會結束 continuity；新 segment 不保留 inactive-link cache，並以 p0 起始。只有同一實體鏈路在前後兩步都被服務時，角度感知功率才使用 previous-step recurrence：
+[BodyText] 這是本研究自行定義的角度感知功率規則，不是原始 MODQN 的公式。其建模條件是同一連續服務段內維持發射功率與發射增益的乘積： pu,s,v(t,θu,s,v(t),θ3)GT(θu,s,v(t),θ3)=pu,s,v(t−1,θu,s,v(t−1),θ3)GT(θu,s,v(t−1),θ3)。 把目前功率解出後，就得到下式；它只補償發射端角度增益，並不宣稱完整 SINR 或 throughput 固定。
+[BodyText] pu,s,v​t,θu,s,v(t),θ3=pu,s,v​t−1,θu,s,v(t−1),θ3GT​θu,s,v(t−1),θ3GT​θu,s,v(t),θ3,  xu,s,v(t−1)=xu,s,v(t)=1, GT​θu,s,v(t),θ3>0,(3.11)
+[FirstParagraph] segment 起始與 segment 內的 closed form 為
+[BodyText] pu,s,v​τu,s,v,θu,s,v(τu,s,v),θ3=p0,  pu,s,v​t,θu,s,v(t),θ3=p0 GT​θu,s,v(τu,s,v),θ3GT​θu,s,v(t),θ3.(3.12)
+[FirstParagraph] 式 (3.12) 只有在 τu,s,v 到 t 的每一步都維持同一 served physical link 且角度增益為正時成立；它是式 (3.11) 的 telescoped identity，不是跨事件的 runtime state。這個關係表達前一步角度增益如何遞推實際鏈路 RF power，不引入目標 SINR、需求功率反推、beam／satellite cap、PA clamp 或 min／max 投影。
+[BodyText] 在系統層定義全體角度狀態 θ(t)——即每一個 u∈U, s∈S, v∈V 的偏軸角 θu,s,v(t) 所組成的集合——並令 Iu,s,v(t,θu,s,v,θ3) 表示相對於 wanted link 的總同頻干擾。
+[BodyText] 波束以三色頻率重用配置。令 cs,v∈{0,1,2} 為波束 (s,v) 的頻率顏色，依其地面蜂巢在六角格上的軸向座標 (qs,v,rs,v) 指派為 cs,v=(qs,v−rs,v) mod 3。此規則使六角格上任兩個相鄰蜂巢必為異色：同色波束共用同一子頻帶，異色波束彼此正交。因此單一波束的可用頻寬為 Bw=Bg/3，而干擾只來自與服務波束同色且已啟用的其他波束。蜂巢排列與各波束的軸向座標屬環境設定，於第 5.1 節說明。
+[BodyText] 一支已啟用的波束以單一功率發射，不論其上載有幾位使用者；沿用執行端的聚合慣例，令 ps,v​t,θ,θ3=maxu∈U: xu,s,v(t)=1pu,s,v​t,θu,s,v(t),θ3 為該波束的發射功率。左側保留全系統角度狀態與固定波束寬參數，因為右側會在所有已服務鏈路中取最大值。參考 HOBS 與多波束低軌道衛星系統模型 [4], [20]，將干擾分為同衛星干擾與跨衛星干擾，分別如式 (3.12a) 與式 (3.12b)：
+[BodyText] Iu,s,vi(t,θu,s,v,θ3)=v′∈V, v′≠vcs,v′=cs,v​zs,v′(t) ps,v′​t,θ,θ3 GT​θu,s,v′(t),θ3Hu,s,v′(t),(3.12a)
+[FirstParagraph] Iu,s,vx(t,θu,s,v,θ3)=s′∈S, s′≠s​ v′∈Vcs′,v′=cs,v​zs′,v′(t) ps′,v′​t,θ,θ3 GT​θu,s′,v′(t),θ3Hu,s′,v′(t),(3.12b)
+[FirstParagraph] 且 Iu,s,v(t,θu,s,v,θ3)=Iu,s,vi(t,θu,s,v,θ3)+Iu,s,vx(t,θu,s,v,θ3)。每一項都以該干擾波束自己的偏軸角與線性鏈路因子計算，因為不同波束到同一位使用者的路徑損耗與增益都不同；求和以啟用指示 z 為門檻，而不是以其上載有幾位使用者為權重。
+[BodyText] 雜訊功率為 σ2=kBTBw，其中 kB 為波茲曼常數，T=Ta+T010Nf/10−1 為接收系統溫度。Ta 為天線溫度、Nf 為接收機雜訊指數、T0 為雜訊指數的參考溫度，數值取自 3GPP TR 38.821 的 VSAT 設定 [22]，列於第 5.1 節。雜訊在整支波束的頻寬上積分，因此與該波束的載量無關。唯一的鏈路 SINR 為
+[BodyText] γu,s,v​t,θu,s,v,θ3=pu,s,v​t,θu,s,v,θ3Hu,s,v(t)GT​θu,s,v,θ3Iu,s,v​t,θu,s,v,θ3+σ2,(3.13)
+[FirstParagraph] 其中 Iu,s,v(t,θu,s,v,θ3)+σ2>0。這個符號同時用於基線鏈路計算與角度感知功率替換；不另定義 estimated、required、target 或帶 serving-index 巢狀下標的 SINR。
+[BodyText] 波束內採時分多工，同一波束上的 Us,v(t) 位使用者依序使用可用頻寬。因此鏈路 throughput 為 [2], [4]
+[BodyText] Ru,s,v​t,θu,s,v,θ3=BwUs,v(t)log2​1+γu,s,v​t,θu,s,v,θ3,  Us,v(t)>0.(3.14)
+[FirstParagraph] Bw 是單一波束可用頻寬；單一使用者展示時只令 Us,v=1，不另建立第二套 rate 或 SINR 公式。連線變數 xu,s,v(t) 只負責選取實際服務鏈路，不另建立 user-level 的 SINR 或 throughput 別名。
+[BodyText] 一支波束由單一功率放大器驅動，因此電源端功率是逐波束而非逐鏈路的量。令 ξs,v​t,θ,θ3>0 為該波束由 RF power 到電源端消耗的有效轉換效率，則
+[BodyText] Ps,vp​t,θ,θ3=ps,v​t,θ,θ3ξs,v​t,θ,θ3.(3.15)
+[FirstParagraph] 發射出去的功率不等於實際耗掉的功率。波束的射頻訊號由功率放大器產生，其射頻輸出與所取用直流功率之比即為式 (3.15) 的 ξ。放大器接近飽和點時效率較高但較不線性，因此實務上退離飽和點一段距離運作，該距離稱為輸出回退 bo（以 dB 表示）：飽和功率為 ps=p+10bo/10，其中 p+ 是回退後的每波束操作上限。參考傳統類 B 功率放大器的功率與效率關係 [23]，以負載相依的平方根曲線近似回退區的效率變化；這是便於系統層分析的工程近似，不是完整的電路模型：
+[BodyText] ξs,v​t,θ,θ3=min​ξ+, ξ+ps,v​t,θ,θ3ps.(3.15a)
+[FirstParagraph] 平方根可由類 B 的理想近似理解：令 Vo 為輸出電壓振幅，在固定供應電壓與負載下射頻輸出功率滿足 ps,v∝Vo2，平均直流輸入功率則近似滿足 Ps,vp∝Vo，因此 ξ=ps,v/Ps,vp∝ps,v。射頻輸出為飽和功率的四分之一時，效率是 ξ+/2 而不是 ξ+/4。ξ+ 與 bo 的數值列於第 5.1 節；Ka 頻段衛星下行 GaN Doherty MMIC 的實測飽和功率附加效率為 23–31%，6 dB 輸出回退時約 20% [24]，與本模型的量級一致，但並非同一測量點。Morello 與 Mignone 的雙載波 DVB-DSNG 範例對每一載波採 5.5 dB 輸出回退 [25]，說明多載波操作為維持準線性區需要較大的回退；該敘述不足以泛化到所有多載波系統，此處僅作為回退量級的旁證。
+[BodyText] 這個形狀有一個對本論文重要的後果：由於低輸出時效率較差，把發射功率壓低並不會等比例降低功率消耗。真正影響能量效率的是「用多少功率換到多少吞吐量」，這也是第 3.2 節把能量效率而非單純發射功率作為第一個目標的理由。
+[BodyText] 令 Pf(t) 彙總所有不直接由偏軸角控制的 fixed／circuit overhead。令 Nsa(t)=v∈V​zs,v(t) 為衛星 s 的啟用波束數；本研究將一支啟用波束對應到一條射頻鏈，則
+[BodyText] Pf(t)=s∈S​Nsa(t) Pc+1​Nsa(t)>0Pb.(3.16a)
+[FirstParagraph] 基頻功率由該衛星的所有啟用波束共用，因此每顆衛星只計一次，不會重複計入。Pc 與 Pb 的數值取自 You 等人 Table II [26]，列於第 5.1 節。「一支波束對應一條射頻鏈」是本研究的對應設定，不是該文的衛星架構結論；該文另含本振功率與相移器功率，本研究不納入，因此式 (3.16a) 是 partial payload-power model，不是完整的衛星總功率模型。系統總功率為
+[BodyText] PN​t,θ,θ3=Pf(t)+s′∈S​v′∈V​zs′,v′(t) Ps′,v′p​t,θ,θ3.(3.16)
+[FirstParagraph] 此處對 (s,v) 求和而非對 (u,s,v) 求和：一支已啟用的波束只有一個放大器，其電源端功率不隨波束上載有幾位使用者而重複計入，這與式 (3.12a) 的 ps,v 聚合一致。若改為逐鏈路加總，多出的項為 s,v​(Us,v(t)−1)Ps,vp​t,θ,θ3，隨佔用人數單調上升，會使第一目標重複承擔第三目標的工作。
+[BodyText] 最後，固定鏈路 (u,s,v) 的 EE 顯示量定義為
+[BodyText] ηu,s,v​t,θu,s,v,θ3=Ru,s,v​t,θu,s,v,θ3PN​t,θ,θ3,  PN​t,θ,θ3>0.(3.17)
+[FirstParagraph] 這裡的三下標固定分子的 UE-link；分母仍是共同系統功率，因此 ηu,s,v 是單一 UE-link 對系統 EE 的顯示量／貢獻，不宣稱為 private-power 的 true per-user EE。
+[BodyText] 本研究採用的多目標深度 Q 網路（MODQN）基準，以三個 Q 網路分別學習三個目標；其中吞吐量原本是第一個獎勵項 [2]。本文將第一個獎勵定義為所選鏈路 EE 貢獻的總和，使模型同時考慮傳輸量、波束角度與功率消耗。
+[Heading2] 3.2 Problem Formulation
+[FirstParagraph] 本研究同時考慮能量效率、換手成本與負載平衡。令 Lw 為每個時間步納入決策的可見衛星數。以實際連線 xu,s,v(t) 為決策結果，長期目標可寫為 [2]
+[BodyText] P1:& maxt​u∈U​r1,u​t,θ,θ3,P2:& mint​u∈U​Ψu(t),P3:& mint​s∈S​v∈V​Us,v(t)2,s.t.:& xu,s,v(t)∈{0,1},  s∈S​v∈V​xu,s,v(t)≤1.(3.24)
+[FirstParagraph] P1 希望在相同耗能下傳送更多資料，P2 減少換手，P3 則使各波束承載的使用者數趨於平均：在總服務人數固定時，平方和的最小值恰為各波束人數相差至多一人的配置。以下分別定義三個目標。
+[Heading3] 3.2.1 Angle-Aware Energy Efficiency
+[FirstParagraph] 式 (3.15)–(3.17) 已先定義鏈路耗電、共同系統功率與固定鏈路 EE 顯示量。第一個獎勵則把使用者實際選取的鏈路 EE 貢獻相加：
+[BodyText] r1,u​t,θ,θ3&=s∈S​v∈V​xu,s,v(t)ηu,s,v​t,θu,s,v,θ3&=s∈S​v∈V​xu,s,v(t)Ru,s,v​t,θu,s,v,θ3PN​t,θ,θ3,  PN​t,θ,θ3>0.(3.25)
+[FirstParagraph] r1,u​t,θ,θ3 的單位為 bit/J，表示使用者 u 對瞬時系統能量效率的可加貢獻。式 (3.25) 只在共同系統功率為正時成立；未選取的鏈路由 xu,s,v(t)=0 排除。這裡不另建立 user-level SINR 或 user-level throughput 符號。
+[BodyText] 因此，角度直接進入 GT，而式 (3.13) 的 wanted-link numerator 使用 pu,s,vHu,s,vGT(θu,s,v,θ3)；式 (3.11)–(3.12) 以 segment-start p0 與 previous-step recurrence 決定角度相關鏈路 RF power。同一個 p 也進入總干擾所對應的系統狀態，以及式 (3.15)–(3.17) 的功率與 EE。主公式不需要目標 SINR、需求功率反推或保護性 cap。
+[Heading3] 3.2.2 Handover Cost
+[FirstParagraph] 沿用上述 (ρu(t),δu(t)) 表示的服務衛星與波束。同衛星換束的成本為 φ1，跨衛星換手的成本為 φ2，且 0<φ1<φ2。第二個獎勵為
+[BodyText] r2,u(t)=−Ψu(t),  Ψu(t)=0,(ρu(t),δu(t))=(ρu(t−1),δu(t−1)),φ1,ρu(t)=ρu(t−1), δu(t)≠δu(t−1),φ2,ρu(t)≠ρu(t−1).(3.27)
+[FirstParagraph] 因此，維持原連線時不產生成本，同衛星換束次之，跨衛星換手的成本最高。
+[Heading3] 3.2.3 Load Balancing
+[FirstParagraph] 第三個獎勵取使用者所選波束當步服務人數的負值；該人數即式 (3.3) 定義的 Us,v(t)：
+[BodyText] r3,u(t)=−Ubu(t)(t).(3.28)
+[FirstParagraph] 其中 bu(t) 為使用者 u 當步所選的波束，Ubu(t)(t) 為該波束當步服務的使用者數（式 (3.3)）。所選波束越擁擠，獎勵越低。此獎勵逐使用者可分解：由 u∈U​Ubu(t)(t)=s,v​Us,v(t)2，所有使用者的獎勵總和恰為 P3 目標的負值，故每位使用者的獎勵是全域目標的精確分解，不同於舊式以系統層級純量共享給所有使用者的作法。
+[Heading3] 3.2.4 Reward Vector and Evaluation Metric
+[FirstParagraph] MODQN 保留三維獎勵向量 [2]：
+[BodyText] Ru​t,θ,θ3=r1,u​t,θ,θ3, r2,u(t), r3,u(t).(3.29)
+[FirstParagraph] 三個分量的引數不同：r1,u 透過 ηu,s,v 與 PN 依賴整組偏軸角與波束寬參數，故帶 θ,θ3；r2,u 只由服務衛星與波束的變動決定、r3,u 只由佔用人數決定，兩者都不含角度。向量本身因第一個分量而帶 θ,θ3。這組向量保留作第三章的物理／baseline formulation；第四章的 current method 不以它作 deployment vote。
+[BodyText] 訓練使用逐步獎勵；跨時間的總位元／總能量評估屬於第五章的實驗評估程序，不在本節再建立第二個 EE 物理符號。第五章另行說明評估時間範圍、服務品質、覆蓋與換手指標，並將它們與式 (3.17) 的當步鏈路 EE 區分。
+[BodyText] MODQN 的歷史 baseline 讓每位使用者各自選取可行波束；狀態相近的使用者可能共同集中到少數波束。由式 (3.14)，同一波束上的使用者均分頻寬，集中會直接壓低每個人的速率，也使式 (3.24) 的 P3 baseline 目標惡化。第四章改以 C3 的 deterministic relational descriptor 與 single-pass composition 說明 current method；不把額外協調程序放入部署。
+[Heading1] 4. Multi-Catfish Reinforcement Learning (MCRL)
+[Heading2] 4.1 Method Overview
+[FirstParagraph] 第三章給出衛星、波束、角度、功率、SINR、throughput 與系統耗能的物理鏈。本章在該鏈上定義 current method：保留 MODQN 的候選表與原生 safe mask，將 Main 的唯一最終目標對齊為 network ratio-of-sums energy efficiency，並以恰好三個獨立 Q surface 表達三條不同來源的決策訊號。它們不是三個 legacy reward 的投票，也不是三個部署代理。
+[BodyText] 低軌衛星持續移動，每位使用者可選的實體波束會改變，但網路輸出長度必須固定。因此，每位使用者使用一張固定長度的候選表。表中保留 Lw 顆可見衛星，每顆衛星提供 Jw 個候選波束，共有 C=LwJw 個位置。令 C={1,…,C} 為候選編號集合，c∈C 表示表中的一個位置。
+[BodyText] 候選表的內容會隨時間更新。bu(c,t)∈S×V 表示候選位置 c 在時間 t 對使用者 u 所對應的實際衛星與波束。網路輸出的是候選編號，環境套用動作時，再由 bu(c,t) 回到第三章的衛星－波束索引。這個映射只改變固定輸出槽位，不改變物理鏈的定義。
+[BodyText] 沿用 MODQN 的原生 predecision state，可將候選順序下的資訊寫成
+[BodyText] su(t)&=concat​xu(t−1),(γu,s,v(t,θu,s,v,θ3))(s,v)=bu(c,t)c∈C,(θu,s,v(t))(s,v)=bu(c,t)c∈C,Nu(t−1).(4.1)
+[FirstParagraph] 其中 xu(t−1) 記錄前一步連線，兩個序列依候選順序排列鏈路 SINR 與偏軸角，Nu(t−1) 記錄候選對應的前一步負載資訊。式 (4.1) 只描述動作前可取得的 native observation；本步動作造成的連線、負載、throughput、energy 與 active set 不能回寫成同一步的輸入。Q1 與 Q2 使用其已認證的原生輸入；C3 另外只讀取捕獲後 detached 的 Q1+Q2 描述，不直接把觀測 SINR 或任何 profile outcome 當成 C3 特徵。
+[BodyText] 候選表的長度固定，但部分位置在當下可能不可用。以 mu,c(t) 表示 native safe-mask 分量：
+[BodyText] mu,c(t)∈{0,1},  Au+(t)={c∈C∣mu,c(t)=1}.(4.2)
+[FirstParagraph] 其中 Au+(t) 是使用者 u 在時間 t 的 safe action set；上標 + 只表示已通過原生安全條件。使用者選出的候選編號為 au(t)，其 one-hot 表示為
+[BodyText] au(t)∈Au+(t),  au,c(t)=1​{c=au(t)}, c∈C.(4.3)
+[FirstParagraph] 當 safe action set 為空時，該使用者不執行候選動作；這個 no-op 由 native environment contract 處理，不由 C3 另加 fallback。全體使用者在同一時間步的動作可記成 roster vector
+[BodyText] a(t)=a1(t),a2(t),…,aU(t),(4.4)
+[FirstParagraph] 但此向量只是同一步各使用者 action 的集合，不是 joint decoder、協調器或第二次決策。物理連線、波束啟用與能耗仍依第三章的式 (3.1)–(3.17) 計算。
+[Heading2] 4.2 Three Independent Q Surfaces and Main Objective
+[FirstParagraph] 本稿固定恰好三個獨立 Q surface：Q1、Q2 與 Q3。它們各自保留 route-specific 的學習來源與表示邊界，輸出先轉入共同的 normalized bits-per-κ 單位，再在部署端直接相加。沒有額外的 Q head、pair decoder、allocation vector 或後選擇分支。
+[BodyText] 在每個 native anchor，先由固定 Q1+Q2 的 inference-mode 分數得到 detached reference action。這個 reference 用來建立 C3 的相對描述，不是最終部署動作。完成三路分數計算後，Main 對每位使用者只做一次 masked argmax：
+[BodyText] au⋆(t)=argmaxa∈Au+(t)Q1​su(t),a+Q2​su(t),a+Q3​su(t),a.(4.5)
+[FirstParagraph] 式 (4.5) 是無權重的 row-wise sum 與單次 argmax。它不執行 coordinator、auction、vote、matching stage、joint decoder、iterative allocation、retry、fallback 或 post-selection repair。Main 的最終評估以 network ratio-of-sums EE 表示：對完整評估範圍，將所有 delivered bits 加總後除以所有 network energy 加總；不可改成 per-row EE 的平均，也不可把三路分數解讀成三個 reward 的多數決。
+[Heading2] 4.3 Shared Current-Slot Counterfactual and Route Roles
+[FirstParagraph] 三路學習共用同一個 predecision anchor 與 safe action domain，但不共用 privileged outcome。令 x0 表示 detached reference profile，並令 x 表示同一 anchor 的 candidate profile。共享的 network surplus 記為
+[BodyText] G(x)=u∈U​Bu(x)−λE(x),(4.6)
+[FirstParagraph] 其中 Bu(x) 是 profile x 中使用者 u 的 delivered bits，E(x) 是該 current-slot profile 的 network energy，λ 是凍結的 bits-per-joule multiplier。此式只作 current-slot counterfactual 的共同會計基礎；ratio-of-sums EE 的正式評估仍以整個評估範圍的總 bits 與總 energy 計算。
+[Heading3] C1：focal current-slot own-rate 與 network-energy surplus
+[FirstParagraph] C1 以 focal user 的 current-slot own-rate 為核心，同時納入完整 opening-step 的 marginal network-energy surplus。它比較同一 predecision anchor 下 reference 與 candidate 的網路物理變化，讓角度感知發射功率、干擾、throughput 與共同系統能耗沿用第三章的單一物理鏈。C1 的 source 只在 action opening 的完整步驟上形成，不能以只看 focal rate 的局部 proxy 取代。
+[BodyText] RIS EXP 與 ACRM 僅保留為此路線的 training-source／comparison lineage；它們不是本稿的 active deployment mechanism，也不能用來宣稱 C1 已具有效能。C1 的 qualification 與任何 efficacy 結論留待獨立實證。
+[Heading3] C2：固定 OPS-3 projected-persistence route
+[FirstParagraph] C2 目前固定為 OPS-3 projected-persistence route。它在本稿中是 present but empirically unqualified：保留作為第二個獨立 Q surface 的 route-specific context，但不沿用舊 r2／handover objective 的敘事，不宣稱已定案有效，也不自行發明替代 C2。C2 的狀態、目標與 inference provenance 必須和 C1、C3 分開記錄。
+[Heading3] C3：two-user LC-SRS route
+[FirstParagraph] C3 專門表達兩位使用者在同一 current slot 的 Local Coalition-Shapley Spatial Residual Surplus。它的 teacher 使用完整四-profile physical counterfactual；student 只使用可在 action 前捕獲的 deterministic relational descriptors。這個分工讓 C3 能表示 shared source、兩個 designated destinations 與非成員關係，又不把 privileged profile outcome 帶入部署輸入。
+[Heading2] 4.4 Exact Two-User LC-SRS Teacher
+[FirstParagraph] 對每一個已由 predecision topology enumeration 確定的 two-user pair，使用四個 matched current-slot profiles。令
+[BodyText] x0=00,  x1=10,  x2=01,  xc=11,(4.7)
+[FirstParagraph] 其中 00 表示兩位成員都維持 reference，10 表示 member 1 移動、member 2 維持 reference，01 表示 member 2 移動、member 1 維持 reference，11 表示兩位成員同時移動。除了這兩位成員外，pair-local profile 不改變其他使用者；同一 matched random field 供四個 profile 使用。
+[BodyText] 對 ordered member i∈{1,2}，定義 unilateral local term、non-focal externality 與 partial surplus：
+[BodyText] ℓi&=Bi(xi)−Bi(x0)−λE(xi)−E(x0),ei&=u∈Uu≠i​Bu(xi)−Bu(x0),di&=ℓi+ei.(4.8)
+[FirstParagraph] 再將兩位成員共同移動相對於兩個 unilateral profiles 的 bits 與 energy interaction 分開記為
+[BodyText] ΨB&=u∈U​Bu(xc)−u∈U​Bu(x0)−i=12u∈U​Bu(xi)−u∈U​Bu(x0),ΨE&=E(xc)−E(x0)−i=12E(xi)−E(x0),Ψ&=ΨB−λΨE.(4.9)
+[FirstParagraph] LC-SRS 的 paper target 為
+[BodyText] z3,i=ei+Ψ2,  yi=z3,iκ,(4.10)
+[FirstParagraph] 其中 κ 是三路共用的輸出尺度。對這個嚴格的 two-user current-slot game，label 滿足 exact scoped identity
+[BodyText] i=12ℓi+z3,i=G(xc)−G(x0).(4.11)
+[FirstParagraph] 式 (4.11) 只對命名的兩人、四個 current-slot profiles 成立；它不是 general m-player coalition、partial-adoption、all-roster、future-trajectory 或 learned-policy decomposition。teacher 在 profile evaluation 前拒絕成員數不是 2 的 topology，不以 Ψ 除以 coalition size，也不提供替代的 m-player attribution。
+[BodyText] teacher 的 privileged physical evaluator 只在 training 使用。它保留四個 profile 的 physical receipts、共同 random field 與公式項，先形成每個 member cell 的 matched label，再由 anchor-level assembler 寫入唯一的 teacher surface。reference cells 與 legal-but-unsupported cells 是零值 structural controls；supported member cells 寫入 yi。正負與零的 measured labels 都保留，不以 sign filter、零填補或 post-hoc 選擇刪除 supported cell。
+[Heading2] 4.5 Deterministic Relational C3View and Student
+[FirstParagraph] C3View 是在 profile evaluation 前從 immutable captured state 建立的 deterministic relational descriptor。對 focal user i 與候選 action a，令 cia 表示 action context，tiar 表示 focal／partner／相關使用者的 relation token，miar 表示 native action 與 relation mask。每一個 legal action 都有一個 typed pair-context token；普通 relation token 與 pair-context token 使用同一個 shared scorer。
+[BodyText] action context 可包含 candidate 的角度、距離、仰角、opening feasibility、committed load／active state／power、detached reference occupancy，以及 detached Q1+Q2 的 margin 與 rank。relation tokens 可包含 reference source、focal destination、partner destination 的 physical-key／co-channel relation、使用者角色、開啟可行性、detached occupancy、固定幾何與 deterministic coupling descriptors。這些量都從已捕獲的衛星位置、cell center、使用者位置、顏色與固定 link constants 計算；它們不評估 rate、energy、service、active set 或 hypothetical power。
+[BodyText] C3View 不讀取 teacher 的 profile fields、fading、label、future action、future association 或 post-action state，不抽取新的亂數，也不直接把 raw observed SINR 當成 token。Q1+Q2 的 detached output 只作為已認證原生 observation 的 inference descriptor，不能把 gradient 傳回 Q1、Q2、mask、topology 或 simulator。raw world、anchor、user、action、satellite 與 beam identifiers 只作 provenance metadata，不進入 learner numeric feature。
+[BodyText] student 使用一個同時處理 ordinary 與 pair-context token 的 shared token scorer：
+[BodyText] f:[cia,tiar]∈R67→64ReLU→64ReLU→1.(4.12)
+[FirstParagraph] 它直接輸出 normalized bits-per-κ 單位。令
+[BodyText] Fi(a)=r:miar=1​f(cia,tiar),  Q3,i(a)=Fi(a)−Fi(ai0),(4.13)
+[FirstParagraph] 其中 ai0 是 detached reference action。reference centering 使 reference output 恆為零；native mask 使 illegal row 與其 tokens 皆為零。C3 的公開輸出只有這一個 scalar Q3 surface，不另輸出 ei、Ψ、allocation vector、pair identity、profile selector 或 positive-credit head。
+[Heading2] 4.6 Route-Specific Learning and Deployment Procedure
+[FirstParagraph] current method 的 training／deployment boundary 依下列順序固定：
+[Compact] 在任何 profile evaluation 前，捕獲每位使用者的 native predecision observation、safe mask、physical keys、committed context 與必要的固定幾何；該捕獲結果對四-profile comparison 保持 immutable。
+[Compact] 以 inference-mode Q1 與 Q2 建立 detached reference action 與 reference occupancy；此步不讀取 teacher outcome，也不重抽 native observation。
+[Compact] 依 deterministic topology enumeration 找出 exactly-two-member pair，並建立每個 legal action 的 C3View；pair selection 在 outcome 開啟前完成。
+[Compact] training teacher 針對每個 pair 評估 00、10、01、11 matched profiles，計算式 (4.8)–(4.11) 的 scoped label 與 physical identity。
+[Compact] 將每個 anchor 組成一個 unique teacher surface：reference cells、unsupported legal cells 與 masked cells 分別保留其 control／receipt role，supported member cells 僅寫入一次 label。
+[Compact] 以 route-specific source fit 三個 Q surface。C1、C2 的來源與診斷各自保留；C3 student 只從 C3View teacher surface 與 structural controls 學習，採 reference-centred scalar regression，不使用 Bellman bootstrap。任何 C3 loss 都不更新 Q1、Q2、native state、mask 或物理 simulator。
+[Compact] deployment 時在同一份 captured C3View 上評估 Q3 一次，與 Q1、Q2 直接無權重相加，套用式 (4.5) 的 single masked argmax。選後只記錄同一個 action vector 的 physical receipt；不進行第二次 argmax、協調、retry、fallback 或 repair。
+[FirstParagraph] 這個程序使 privileged teacher、route-specific learner 與 Main deployment 的因果邊界可分別檢查。C3View 的 relational context 是資訊描述，不是額外的 action-selection stage；它也不把 full roster 的 joint decision 移入網路。
+[Heading2] 4.7 Method Status and Claim Ceiling
+[FirstParagraph] 本章是 current method-aligned draft。可凍結的內容包括 Main-only network ratio-of-sums EE、恰好三個獨立 Q surface、C1/C2/C3 route roles、two-user LC-SRS teacher、deterministic relational C3View、reference-centred scalar Q3 與 single-pass masked argmax。C2 仍是 present but empirically unqualified；C1 的 RIS EXP／ACRM 只屬 lineage／comparison；C3 的 formula 與 interface 也不等同於已觀察到的 learnability 或 composition benefit。
+[BodyText] Chapter 5 的既有實驗章不在本次支線改動。因而本稿不宣稱 C1、C2 或 C3 的 efficacy，不宣稱 FULL 大於任何 ablation，不宣稱學習可組合，也不把 current method 描述成 empirical-final。上述效能問題必須在另行凍結的實驗契約下，以可追溯的結果重新判定。
+[Heading1] 5. Experimental Results
+[Heading2] 5.1 Simulation Settings
+[FirstParagraph] 本章說明模擬環境、索引域、通道與能耗模型，以及訓練和評估設定。第三章的 active EE 主鏈是唯一的公式契約；本章只補充數值情境與實驗評估範圍，不重新定義 SINR、throughput 或 EE。
+[BodyText] 表 5-1 列出環境與索引域的數值設定。第三章的 v 表示一個波束索引，V 表示每顆衛星的波束位置數；本研究設定 V=39。表中的 U、S、V 與 C 分別對應各集合的元素數。
+[BodyText] 表 5-1：環境與索引域設定
+[Compact] 類別
+[Compact] 符號或關係
+[Compact] 本研究設定
+[Compact] 衛星星系
+[Compact] S​
+[Compact] 真實 Starlink 星曆（TLE 搭配 SGP4），373 個每日檔，涵蓋 2025-07-27 至 2026-08-20；傾角約 53 度
+[Compact] 衛星高度
+[Compact] hs​
+[Compact] 由星曆決定，不是設定值。語料期間逐日高度中位數為 483.0 km，該逐日中位數的範圍為 470.7–539.7 km；個別衛星的瞬時高度分布比此範圍寬
+[Compact] 可見衛星視窗
+[Compact] Lw​
+[Compact] 4
+[Compact] 地面使用者
+[Compact] U​
+[Compact] 100
+[Compact] 每顆衛星的波束指向位置
+[Compact] V​
+[Compact] 39。在 hs=483 km 的格陣上直接量測，39 格覆蓋服務區的 95.2%。格陣以 Rb 為六角格的外接圓半徑鋪設，格心間距 3Rb=24.24 km、單格面積 509.0 km​2，使每格內接於自身的 3 dB 等高線而不留覆蓋洞。以該面積作面積比估算得 18000×0.95/509.0=33.6 格，低於量測值，因為它忽略格陣裁切到矩形服務區時的邊緣溢出；以量測值為準
+[Compact] 每顆視窗衛星的局部候選排名
+[Compact] Jw​
+[Compact] 7（最接近使用者的波束位置及其六個相鄰位置）
+[Compact] 候選動作域
+[Compact] C=LwJw​
+[Compact] 4×7=28​
+[Compact] 視窗內可指向組合
+[Compact] LwV​
+[Compact] 4×39=156 個衛星－波束位置組合
+[Compact] 時間離散化
+[Compact] Δt、H
+[Compact] 每步 30.08 s；每回合 10 步
+[BodyText] 表中的兩個數字分別代表不同的模型對象：156 是視窗內可指向的衛星－波束位置總數，28 是每位使用者可選的候選動作數。
+[BodyText] 在 C=28 下，式 (4.1) 的四類原始分量——前一步連線、候選 SINR、偏軸角與前一步需求——各有 28 個元素，因此 Q 網路輸入 su 為 4C=112 維。
+[BodyText] 表 5-2 列出第三章通道與能耗模型的實驗校準值。正文主鏈使用 GT​θ,θ3、不直接承載 wanted-link 角度型樣的線性鏈路功率因子 Hu,s,v(t)、角度相關 pu,s,v、逐波束的 Ps,vp、Pf 與 PN；表中的細部通道設定只用於情境校準，不會擴張主公式。
+[BodyText] 表 5-2：通道與能耗模型設定
+[Compact] 類別
+[Compact] 符號或關係
+[Compact] 本研究設定
+[Compact] 載波與頻寬
+[Compact] fc、Bg
+[Compact] 20 GHz、500 MHz
+[Compact] 大氣氣體吸收
+[Compact] Lg(α)=Az/sinα​
+[Compact] Az=0.25 dB。式的形式取 TR 38.811 式 (6.6-8) [17]；天頂值由 TR 38.821 [22] 的 LEO Ka 頻段 20 GHz 下行鏈路預算反推，該表大氣損耗為 0.5 dB、LEO 目標仰角為 30 度
+[Compact] 閃爍
+[Compact] Lc(α)​
+[Compact] TR 38.811 表 6.6.6.2.1-1 [17] 的 20 GHz 對流層閃爍：仰角 90 度 0.12 dB、30 度 0.30 dB、10 度 1.08 dB。同文件 §6.6.6.1 說明電離層閃爍只在 6 GHz 以下考慮，本研究在 20 GHz 故不計
+[Compact] 遮蔽衰落
+[Compact] Ls(α)​
+[Compact] TR 38.811 表 6.6.2-3 [17] 的 Ka 頻段 LOS shadow fading，零均值、dB 域高斯，標準差由仰角 90 度的 0.4 dB 至 10 度的 1.9 dB。clutter loss 只在 NLOS 適用，固定終端取 LOS 故不計
+[Compact] 頻率重用
+[Compact] cs,v、Bw
+[Compact] 3 色重用；166.667 MHz
+[Compact] 波束寬與覆蓋半徑
+[Compact] θ3、Rb=hstan(θ3/2)
+[Compact] 3.32 度；在 hs=483 km 時為 13.998 km
+[Compact] 波束中心增益
+[Compact] G0​
+[Compact] 2000（線性），即 33.010 dBi
+[Compact] 接收增益上下限
+[Compact] G+R、G−R
+[Compact] 35 dBi、−10 dBi；式 (3.10c) 的截止值
+[Compact] 接收增益包絡
+[Compact] AR、BR
+[Compact] 32、25；式 (3.10c) 的地球站參考型樣參數，併入 Hu,s,v(t)
+[Compact] 軸心極限閾值
+[Compact] ϵμ​
+[Compact] 10−10​
+[Compact] Rician 衰落
+[Compact] KR​
+[Compact] 20 dB
+[Compact] 接收系統溫度
+[Compact] Ta、T0、Nf、T
+[Compact] 150 K、290 K、1.2 dB、242.294 K
+[Compact] 固定功率
+[Compact] Pf(t)​
+[Compact] 由射頻鏈、基頻與其他固定電路項彙總
+[Compact] 段起始發射功率
+[Compact] p0​
+[Compact] 0.825 W，即 p+/2；式 (3.11) 每個新 served segment 的起始值。p+/p0=2 給每個 served segment 3 dB 的增益預算；3 dB 是波束自身的半功率等高線（F=1/2 恰在 μ=2.07123，即 θ=θ3/2，其地面半徑正是 Rb），因此預算的大小由幾何決定而非任選。該預算是相對於段起始角度 θu,s,v(τu,s,v) 量的，不是相對於波束軸：式 (3.12) 的分子是 GT​θu,s,v(τu,s,v) 而非 G0，所以不可行的判準是「增益比連上那一刻掉了 3 dB」，只有在段起始恰好落在軸心時才等同於「離開該格」
+[Compact] 每波束射頻輸出上限
+[Compact] p+​
+[Compact] 1.65 W；式 (3.15a) 回退後的每波束操作上限，亦為鏈路可行性檢查的門檻。在 V=39 下單顆衛星所有波束同時滿載輻射 39×1.65=64.3 W，低於 HOBS Table I 的 LEO 最大發射功率 Pmax=50 dBm =100 W [4]，故該上限與所引文獻的每星功率預算相容；本研究不另設每星上限（見式 (3.11) 下方的排除項），此處僅作預算相容性檢查
+[Compact] PA 最大效率與輸出回退
+[Compact] ξ+、bo
+[Compact] 0.35、5 dB；式 (3.15a)，飽和功率 ps=p+10bo/10=5.218 W
+[Compact] 每啟用波束電路功率
+[Compact] Pc​
+[Compact] 0.338 W（300+19+14+5 mW，You 等人 Table II [26]）；式 (3.16a)
+[Compact] 衛星共用基頻功率
+[Compact] Pb​
+[Compact] 0.200 W [26]；式 (3.16a)
+[BodyText] 式 (3.10b) 的四項損耗中，HOBS 式 (1) 只給出名稱而未給數值；本研究以 3GPP 非地面網路報告 [17] 的對應表格代入 Lg、Lc 與 Ls，Lf 則由斜距與載波頻率直接計算。此代換是本研究的建模選擇，不是 HOBS 的原始設定。Ls 與萊斯衰落 KR 是本模型僅有的兩個隨機項，實驗以固定亂數種子重現。
+[BodyText] 目前 active 契約不把最低速率反推、beam／satellite cap、PA 參考曲線或 min／max projection 放入 EE 主公式。這些限制若由 legacy simulator 使用，只能作為本章的執行歷史，不能反向改寫式 (3.11)–(3.17)。
+[BodyText] 本章既有數值結果若由舊版 runtime 產生，仍須以 legacy provenance 解讀；在新契約完成 runtime parity 並重新執行實驗前，不把既有結果宣稱為新版公式的實證。
+[Compact] Legacy 執行設定（只作第五章 provenance）
+[Compact] 符號
+[Compact] 歷史設定
+[Compact] 最低速率門檻
+[Compact] Rm​
+[Compact] 1 Mbit/s
+[Compact] PA 參考輸出功率
+[Compact] P0​
+[Compact] 5.218 W；即式 (3.15a) 的 ps 在舊 runtime 的名稱，數值相同
+[Compact] 大氣衰減（legacy 式）
+[Compact] χatm；Latm=3dkmχatm/(10hskm)
+[Compact] χatm=0.05。該式在天頂只給 0.015 dB，等效大氣厚度 0.3 km，與 20 GHz 的氣體吸收量級不符，已由表 5-2 的餘割律取代
+[Compact] 每衛星 RF 輸出總上限
+[Compact] Psat,max​
+[Compact] 1013/10=19.953 W
+[Compact] PA 參考效率（legacy）
+[Compact] η0​
+[Compact] 0.35；已由 ξ+ 取代
+[BodyText] 表 5-3：方法與評估設定
+[Compact] 類別
+[Compact] 符號
+[Compact] 本研究設定
+[Compact] 三目標純量化權重
+[Compact] Ω=(ω1,ω2,ω3)​
+[Compact] (0.5,0.3,0.2)​
+[Compact] 換手成本
+[Compact] (φ1,φ2)​
+[Compact] 同衛星換束為 0.5、跨衛星換手為 1.0
+[Compact] 網路結構
+[Compact] —
+[Compact] 主代理與鯰魚代理的每個 Q 網路均使用 100、50、50 個隱藏單元
+[Compact] 學習與批次
+[Compact] B​
+[Compact] 學習率列為受控變因，掃描 {0.01,0.003,0.001}；批次大小 B=128
+[Compact] 探索與目標網路
+[Compact] ϵ、K
+[Compact] ϵ 由 1 線性降至 0.01，共 2000 回合；每 50 回合同步目標網路
+[Compact] 訓練長度
+[Compact] E、H
+[Compact] 9000 回合；每回合 10 步
+[Compact] 主代理與鯰魚代理折扣
+[Compact] βM、βF
+[Compact] 0.90、0.99
+[Compact] 能效分層
+[Compact] q1、q2、W
+[Compact] 0.50、0.80、5000 個轉移束
+[Compact] 週期性介入
+[Compact] ρI、[T1,T2]
+[Compact] 鯰魚樣本占 0.30；間隔由 4 至 16 步均勻抽取
+[Compact] 競爭獎勵
+[Compact] ηw​
+[Compact] 1.0
+[Compact] 目標尺度常數
+[Compact] (c1,c2,c3)​
+[Compact] (2471140.576, 1.0, 6)；由 P3／解析邊界得到，訓練前凍結
+[BodyText] MODQN [2] 報告的學習率為 0.01。本研究不逕自採用任一邊的預設值，而是把學習率列為受控變因並掃描上述三個值；主結果所採用的值於實驗完成後填入。
+[BodyText] 目前凍結的尺度常數為 (c1,c2,c3)=(2471140.576, 1.0, 6)。其中 c1 是 P3 探測在 12{,}000 個已服務決策步上的 r1,u 第 95 百分位數，c2=φ2=1.0 是換手成本的解析上界，c3=6 是 P3 探測中 |r3,u| 第 95 百分位數的取整值。三者在訓練開始前固定，並由所有更新程序共用；原始單位下的有效取捨權重為 ωj/cj。訓練後的有效貢獻或權重占比必須等訓練完成才可量測，目前尚無數值，不能由這些訓練前常數推論。
+[Heading3] 約束的作用範圍
+[FirstParagraph] 在凍結情境下量測本節設定的三項約束是否作用。每波束射頻輸出上限 p+ 在 12{,}000 個決策步中的 113 步(0.94%) 上開火：該步所需的發射功率超過上限，該鏈路判為不可行，使用者於該步 unserved。
+[BodyText] 可行步的峰值鏈路功率為 1.6452 W，已用掉 3 dB 增益預算的 99.6%。這不是「差一點超過」，是上限在削頂：被判為不可行的那些步，所需功率的中位數為預算的 117.2%、最大值 214.8%。所需功率的分布尾端伸到上限的兩倍以上，可行步只呈現它被切斷之後的切口。
+[BodyText] 這組數字綁定於三件事：Δt=30.08 s、暖啟動主臂，以及 stay-if-possible 參考策略。策略的影響最大：在 random-masked 參考策略下同一組設定給出 7.60%，是前者的八倍，因為它不會保住已經走進良好幾何的鏈路。Δt=1 s 時 outage 為 0.0000；關閉暖啟動（每個 episode 的 served segment 都由邊界重置）時在同一策略下亦為 0.0000（random-masked 下為 0.0016），可行峰值只到預算的 85.1%。
+[BodyText] 進場段齡的兩條抽樣臂都會使約束開火。主臂 Uniform{0,…,H−1} 的平均進場段齡為 4.56 步，開火率 0.94%；敏感度臂 Uniform{0,…,5} 的平均為 2.54 步，開火率 0.81%。後者是量得段長 6 步所對應的平衡態年齡分布，前者與策略無關但年齡偏老。年齡相差 1.79 倍而開火率只相差 1.16 倍。此一關係是門檻型的而非線性的：平均段齡由 0 增至 2.54 步時開火率由 0.0000 升至 0.0081，再增至 4.56 步時只多 0.0013。因此約束會開火並非由主臂的偏老年齡撐起；主臂為預註冊之主臂，其開火率視為上界。
+[BodyText] 三項幾何遮罩項在本情境下均不作用，Au(t) 恆為 28。遮罩與功率可行性是不同機制：前者決定使用者能選什麼，後者決定被選中的候選是否成為連線。
+[Heading1] 6. Conclusion
+[Heading2] 6.1 Summary
+[FirstParagraph] 本稿提出與 current method 對齊的 Multi-Catfish Reinforcement Learning（MCRL）方法草稿。方法層的 Main 只有一個最終目標：在完整評估範圍以 network ratio-of-sums energy efficiency 計算總 delivered bits 與總 network energy 的比值。部署端固定使用恰好三個獨立 Q surface：Q1、Q2 與 Q3；三者在共同 safe mask 下無權重相加，經一次 masked argmax 只執行一個 Main action。
+[BodyText] 三條 route 各有明確角色。C1 以 focal current-slot own-rate 加上完整 opening-step marginal network-energy surplus 建立第一路來源；RIS EXP／ACRM 只作 training-source 與 comparison lineage。C2 是目前固定的 OPS-3 projected-persistence route，於本稿中仍 present but empirically unqualified。C3 是 strict two-user Local Coalition-Shapley Spatial Residual Surplus（LC-SRS）：training-only teacher 以 00、10、01、11 四個 matched current-slot profiles 產生 scoped residual label，deployment student 則從 deterministic relational C3View 學習 reference-centred scalar Q3。
+[Heading2] 6.2 Contributions
+[FirstParagraph] 本研究目前可在方法層整理出下列貢獻：
+[Compact] 將 Main-only network ratio-of-sums EE 與第三章的角度、功率、SINR、throughput 及系統耗能物理鏈接合，並保持每個 served segment 的起始與 continuity 語意。
+[Compact] 將 C1、C2、C3 明確分成三個獨立 Q surface 的 route-specific learning source；三路使用同一 native safe-mask contract，但不以 legacy reward 向量、vote 或多代理部署方式解釋。
+[Compact] 定義 C3 的 exact two-user four-profile teacher、z3,i=ei+Ψ/2 paper target、deterministic relational C3View、shared token scorer 與 reference-centred scalar output。teacher 的 privileged profile outcome 不進入 deployment state。
+[Compact] 保留 single-pass deployment boundary：Q1+Q2+Q3 直接無權重相加後只做一次 masked argmax，不加入 coordinator、auction、joint decoder、fallback、retry 或 post-selection repair。
+[Heading2] 6.3 Limitations and Future Work
+[FirstParagraph] 本稿是 current method-aligned draft，不是 empirical-final。C3 method core 的公式與 interface 已明確限定，但 gate outcome 尚未開啟；因此不能由方法定義推論 C3 的 learnability、composition benefit、EE efficacy 或 FULL-over-ablation ordering。C1 的 qualification 與 C2 的 OPS-3 qualification 同樣保持開放，RIS EXP／ACRM 也不構成已驗證的效果證據。
+[BodyText] Chapter 5 的既有實驗章在本次支線保持 byte-for-byte 不變，其中的設定與結果仍屬既有 provenance，不能偷偷改寫成 V0.23 實證。後續若要回答 learnability 或 composition 問題，必須依另行凍結的執行契約完成可追溯的 source、learner、physical 與 deployment receipts，再更新實驗章與結論；在此之前，本章只保留方法描述與限制。
+[Heading1] References
+[1]	J.-H. Lee, C. Park, S. Park, and A. F. Molisch, "Handover Protocol Learning for LEO Satellite Networks: Access Delay and Collision Minimization," IEEE Transactions on Wireless Communications, Vol. 23, No. 7, pp. 7624-7637, Jul. 2024.
+[2]	Y. Sun, Y. Zhai, W. Wu, P. Si, and F. R. Yu, "Handover for Multi-Beam LEO Satellite Networks: A Multi-Objective Reinforcement Learning Method," IEEE Communications Letters, Vol. 28, No. 12, pp. 2834-2838, Dec. 2024.
+[3]	U. Ntabeni, B. Basutli, H. Alves, and J. Chuma, "Adaptive Handover Optimization in LEO Satellite Networks Using Energy-Aware Q-Learning," IEEE Open Journal of the Communications Society, Vol. 6, pp. 5657-5666, 2025.
+[4]	S.-H. Chen, L.-H. Shen, K.-T. Feng, L.-L. Yang, and J.-M. Wu, "Energy-Efficient Joint Handover and Beam Switching Scheme for Multi-LEO Networks," IEEE Vehicular Technology Conference (VTC2024-Spring), pp. 1-7, Singapore, 2024.
+[5]	M. O. K. Mendonça, E. Lagunas, J. Grotz, A. Pérez-Neira, and S. Chatzinotas, "Deep Q-Learning-Based Handover for Spectral Coexistence Between Feeder and User Links in LEO Satellite Networks," IEEE Open Journal of the Communications Society, Vol. 6, pp. 6777-6791, 2025.
+[6]	H. Liu, Y. Wang, P. Li, and J. Cheng, "A Multi-Agent Deep Reinforcement Learning-Based Handover Scheme for Mega-Constellation Under Dynamic Propagation Conditions," IEEE Transactions on Wireless Communications, Vol. 23, No. 10, pp. 13579-13596, Oct. 2024.
+[7]	J. Zhu, Y. Sun, and M. Peng, "Beam Management in Low Earth Orbit Satellite Networks With Random Traffic Arrival and Time-Varying Topology," IEEE Transactions on Vehicular Technology, Vol. 73, No. 9, pp. 13352-13367, Sep. 2024.
+[8]	M. Song, J. Tian, H. Zhang, T. Xu, H. Hu, and T. Zhou, "Deep Reinforcement Learning Based Multi-Objective Handover for LEO Satellite Networks," IEEE Vehicular Technology Conference (VTC2025-Spring), pp. 1-5, Oslo, Norway, 2025.
+[9]	T. Tajmajer, "Modular Multi-Objective Deep Reinforcement Learning With Decision Values," Federated Conference on Computer Science and Information Systems (FedCSIS), pp. 85-93, Poznań, Poland, 2018.
+[10]	T. Basaklar, S. Gumussoy, and U. Y. Ogras, "PD-MORL: Preference-Driven Multi-Objective Reinforcement Learning Algorithm," International Conference on Learning Representations (ICLR), Kigali, Rwanda, 2023.
+[11]	T. Schaul, J. Quan, I. Antonoglou, and D. Silver, "Prioritized Experience Replay," International Conference on Learning Representations (ICLR), San Juan, Puerto Rico, 2016.
+[12]	B.-H. Ke, "CDRL: Catfish-Effect-Based Deep Reinforcement Learning for Energy-Efficient Joint Switching of RF Chains and Reflecting Elements in RIS-Aided 6G Networks," M.S. thesis, Dept. Comput. Sci. Inf. Eng., National Taipei Univ., Taipei, Taiwan, 2025.
+[13]	M. Calvo-Fullana, S. Paternain, L. F. O. Chamon, and A. Ribeiro, "State Augmented Constrained Reinforcement Learning: Overcoming the Limitations of Learning With Rewards," IEEE Transactions on Automatic Control, Vol. 69, No. 7, pp. 4275-4290, 2024.
+[14]	L. Agorio, S. Van Alen, M. Calvo-Fullana, S. Paternain, and J. A. Bazerque, "Multi-Agent Assignment via State Augmented Reinforcement Learning," Learning for Dynamics and Control Conference (L4DC), Proceedings of Machine Learning Research (PMLR), Vol. 242, pp. 1202-1213, Oxford, UK, 2024.
+[15]	J. Holder, N. Jaques, and M. Mesbahi, "Multi-Agent Reinforcement Learning for Sequential Satellite Assignment Problems," AAAI Conference on Artificial Intelligence (AAAI), pp. 26516-26524, Philadelphia, PA, USA, 2025.
+[16]	Q. Ye, B. Rong, Y. Chen, M. Al-Shalash, C. Caramanis, and J. G. Andrews, "User Association for Load Balancing in Heterogeneous Cellular Networks," IEEE Transactions on Wireless Communications, Vol. 12, No. 6, pp. 2706-2716, Jun. 2013.
+[17]	3GPP, "Study on New Radio (NR) to Support Non-Terrestrial Networks (NTN)," 3rd Generation Partnership Project (3GPP), Technical Report TR 38.811, V15.4.0, 2020.
+[18]	J. Yu and J.-H. Kim, "Analysis of SINR According to Elevation Angle in Earth Fixed Beam," Asia-Pacific Conference on Communications (APCC), pp. 633-634, Jeju, South Korea, 2022.
+[19]	Y. Abudureheman, J. Chu, R. Song, X. Liu, W. Huangfu, and H. Zhang, "Resource Allocation in Multibeam LEO Satellite Systems Based on Beam Hopping and Frequency Reuse," IEEE Internet of Things Journal, Vol. 13, No. 1, pp. 167-180, Jan. 2026.
+[20]	E. Kim, I. P. Roberts, P. A. Iannucci, and J. G. Andrews, "Downlink Analysis of LEO Multi-Beam Satellite Communication in Shadowed Rician Channels," IEEE Global Communications Conference (GLOBECOM), pp. 1-6, Madrid, Spain, 2021.
+[21]	ITU-R, "Reference Radiation Pattern for Earth Station Antennas in the Fixed-Satellite Service for Use in Coordination and Interference Assessment in the Frequency Range From 2 to 31 GHz," International Telecommunication Union, Geneva, Switzerland, Recommendation ITU-R S.465-6, Jan. 2010.
+[22]	3GPP, "Solutions for NR to Support Non-Terrestrial Networks (NTN)," 3rd Generation Partnership Project (3GPP), Technical Report TR 38.821, V16.2.0, 2023.
+[23]	S. C. Cripps, RF Power Amplifiers for Wireless Communications, 2nd ed. Norwood, MA, USA: Artech House, 2006.
+[24]	A. Piacibello, R. Giofrè, R. Quaglia, R. Figueiredo, N. Carvalho, P. Colantonio, V. Valenta, and V. Camarchia, "A 5-W GaN Doherty Amplifier for Ka-Band Satellite Downlink With 4-GHz Bandwidth and 17-dB NPR," IEEE Microwave and Wireless Components Letters, Vol. 32, No. 8, pp. 964-967, Aug. 2022.
+[25]	A. Morello and V. Mignone, "DVB-S2—Ready for Lift Off," EBU Technical Review, No. 300, Oct. 2004.
+[26]	L. You, X. Qiang, K.-X. Li, C. G. Tsinos, W. Wang, X. Gao, and B. Ottersten, "Hybrid Analog/Digital Precoding for Downlink Massive MIMO LEO Satellite Communications," IEEE Transactions on Wireless Communications, Vol. 21, No. 8, pp. 5962-5976, Aug. 2022.
+[27]	V. Mnih, K. Kavukcuoglu, D. Silver, et al., "Human-Level Control Through Deep Reinforcement Learning," Nature, Vol. 518, No. 7540, pp. 529-533, 2015.
