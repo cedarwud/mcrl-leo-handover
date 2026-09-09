@@ -97598,3 +97598,42 @@ exec
 /bin/bash -lc 'rmdir artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM-r2 && PYTHONPATH=src nice -n 10 /home/sat/mcrl-leo-handover/.venv/bin/python scripts/generate_mechanism_coalition_corpus.py --output artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM-r2 --report COALITION-CORPUS-2026-09-09-r2.md' in /home/sat/mcrl-v025-coalgen-ws
 codex
 The restarted full run is healthy and still inside the first world-tape construction. The earlier process had exited before writing any shard, so I removed only its empty output directory and restarted cleanly; no generated data was overwritten.
+codex
+The restarted full run is healthy but still inside the first world-tape construction, which is the fixed ~3-minute setup cost observed in the smoke test. The output directory remains write-once and empty until the first anchor completes.
+ exited 1 in 259706ms:
+{"event": "world-start", "world": "V025_PROBE/world/1"}
+Traceback (most recent call last):
+  File "/home/sat/mcrl-v025-coalgen-ws/scripts/generate_mechanism_coalition_corpus.py", line 764, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/sat/mcrl-v025-coalgen-ws/scripts/generate_mechanism_coalition_corpus.py", line 754, in main
+    summary = generate(
+        source=args.source, output=args.output,
+        world_limit=args.world_limit, anchor_limit=args.anchor_limit,
+    )
+  File "/home/sat/mcrl-v025-coalgen-ws/scripts/generate_mechanism_coalition_corpus.py", line 610, in generate
+    shard = write_coalition_shard(shard_path, anchor_rows)
+  File "/home/sat/mcrl-v025-coalgen-ws/src/mcrl/stagec_v025/coalitions.py", line 578, in write_coalition_shard
+    digest = write_once_with_sha256(destination, encoded)
+  File "/home/sat/mcrl-v025-coalgen-ws/src/mcrl/stagec_v025/canonical.py", line 112, in write_once_with_sha256
+    digest = _write_once_bytes(destination, payload)
+  File "/home/sat/mcrl-v025-coalgen-ws/src/mcrl/stagec_v025/canonical.py", line 78, in _write_once_bytes
+    raise StageCContractError(f"refusing to overwrite artifact: {path}")
+mcrl.stagec_v025.canonical.StageCContractError: refusing to overwrite artifact: artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM-r2/rows/world-1/PILOT_NOT_CLAIM-mechanism-anchor-000.jsonl
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-coalgen-ws/scripts/generate_mechanism_coalition_corpus.py
+codex
+The full run stopped safely at its first write because a prior detached attempt had already created that shard in the same write-once directory. I’ve isolated the partial directory, fixed one nested-ledger key issue found while checking the traceback, and am starting a clean authenticated output directory now.
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 10 /home/sat/mcrl-leo-handover/.venv/bin/python scripts/generate_mechanism_coalition_corpus.py --output artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM-r3 --report COALITION-CORPUS-2026-09-09-r3.md' in /home/sat/mcrl-v025-coalgen-ws
+codex
+The clean run has entered world 1 and is progressing through the fixed tape build. The corpus process itself remains active; a polling wrapper error did not affect it.
+codex
+The clean run remains in its deterministic setup phase and has produced no errors. Based on the smoke timing, the first anchor should complete shortly; after that, the remaining anchors are incremental rather than rebuilding the tape each time.
+codex
+Generation has moved into the anchor loop: 14 anchors are complete, each with roughly 40–110 distinct coalition configurations. The archived pair compatibility guard is passing on every completed anchor, and the new three-change activation probes are contributing genuine size-three rows.
+2026-09-09T14:17:05.844606Z ERROR codex_core::tools::router: error=failed to parse function arguments: missing field `session_id` at line 1 column 50
+codex
+Thirty anchors are complete. Coalition counts are varying materially within anchors (low 40s to 131 so far), rather than collapsing to one design point; this is the identifiability repair the corpus needed.

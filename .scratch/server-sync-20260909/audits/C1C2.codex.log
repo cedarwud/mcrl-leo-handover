@@ -19635,3 +19635,620 @@ mae 2124.94400032897 rmse 2752.9584850869915 bias -373.61219313902893 wrong sign
 3 exact 5428.3376378759 learned_mean 25.969355780475265 err -5402.3682820954255 ratio_abs 0.004784034729025631
 4 exact -456.749207391386 learned_mean 139.0361583213516 err 595.7853657127375 ratio_abs -0.3044037210604555
 
+codex
+A second issue emerged while separating components: the saved “exact additive” receipt is exact C1 only; it contains no exact C2 continuation value. I’m therefore replaying only the 500 selected unilateral actions through the exact current and three-offset evaluator. This stays deterministic and bounded, and closes the C2 comparison without training.
+exec
+/bin/bash -lc "PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json,pathlib,importlib.util,sys,numpy as np
+from fractions import Fraction
+from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+from mcrl.physics_v025.tapes import build_world_tape
+from mcrl.physics_v025.targets import c2_persistence_forecast
+root=pathlib.Path('.'); spec=importlib.util.spec_from_file_location('audit_exact',root/'scripts/run_v025_pilot_c3.py'); m=importlib.util.module_from_spec(spec);sys.modules['audit_exact']=m;spec.loader.exec_module(m)
+out=root/'artifacts/v025-pilot-min-20260909-PILOT_NOT_CLAIM'; cp=json.load(open(out/'PILOT_NOT_CLAIM-calibration.json')); ratio=lambda n:Fraction(*cp[n]); cal=m.PilotCalibration(eta_ref=ratio('eta_ref'),lambda_bits_per_j=ratio('lambda_bits_per_j'),kappa_bits_per_user_step=ratio('kappa_bits_per_user_step'),bits_ref=ratio('bits_ref'),joules_ref=ratio('joules_ref'),users=int(cp['users']))
+recs=[]
+for line in open(out/'evaluation/PILOT_NOT_CLAIM-raw-receipts.jsonl'):
+ x=json.loads(line)
+ if x['arm']=='FULL' and x['catalogue_anchor']=='P-a0' and x['learner_seed']==6407676579069309528: recs.append(x)
+print(json.dumps({'event':'tape_build_start'}),flush=True); tape=build_world_tape(domain=m.EVALUATION_WORLDS[0],provider=LegacyWorldProvider(role='pilot-evaluation'),steps=8,start_time_s=0.0); print(json.dumps({'event':'tape_build_done'}),flush=True)
+setting=m.ENGINE._setting('a-r0'); rs=m.ENGINE.run_setting_for('a-r0'); results=[]
+for rec in sorted(recs,key=lambda x:x['anchor_index']):
+ step=rec['anchor_index']; base=m.ENGINE._base_configuration(tape,step,m.ENGINE.REFERENCE_CARRIERS[0]); incumbent=m.ENGINE._base_configuration(tape,max(0,step-1),m.ENGINE.REFERENCE_CARRIERS[0]); mapping={}
+ for part in rec['configuration_id'][4:].split(';'):
+  u,sat,cell=part.split(':');mapping[int(u)]=(int(sat),int(cell))
+ configs=[]
+ for u,ident in sorted(mapping.items()):
+  sm=base.mapping;sm[u]=ident;configs.append(m.ENGINE._configuration(base,sm,kind='audit-selected-singleton'))
+ ev=m.ENGINE.StepEvaluator(tape,setting,step,transition_from=incumbent,cell_rekeyed_users=m.ENGINE._rekeyed_users(tape,step),field='nominal',run_setting=rs,boundary_indices=(0,))
+ ev.evaluate_many((base,*configs)); bp=ev.evaluate(base); bcore=Fraction(str(bp.bits))-cal.eta_ref*Fraction(str(bp.joules))+cal.kappa_bits_per_user_step*m.ENGINE._phi_for(incumbent,base)
+ exact_c1=Fraction()
+ for c in configs:
+  p=ev.evaluate(c);exact_c1 += Fraction(str(p.bits))-cal.eta_ref*Fraction(str(p.joules))+cal.kappa_bits_per_user_step*m.ENGINE._phi_for(incumbent,c)-bcore
+ print(json.dumps({'event':'forecast_start','anchor':step,'configs':len(configs)+1}),flush=True)
+ forecasts,_=m.ENGINE._batched_stage2_forecasts(tape=tape,setting=setting,anchor_step=step,carrier=m.ENGINE.REFERENCE_CARRIERS[0],configs=(base,*configs),counter=m.ENGINE.EvaluationCounter(),calibration=cal,run_setting=rs)
+ exact_c2=Fraction()
+ bf=forecasts[base.configuration_id]
+ for c in configs:
+  z=c2_persistence_forecast(forecasts[c.configuration_id],bf,lambda_bits_per_j=cal.lambda_bits_per_j,eta_ref=cal.eta_ref,kappa_bits_per_user_step=cal.kappa_bits_per_user_step)
+  exact_c2 += z.normalized_total
+ result={'anchor':step,'size':len(configs),'exact_c1':float(exact_c1/cal.kappa_bits_per_user_step),'exact_c2':float(exact_c2),'exact_sum':float(exact_c1/cal.kappa_bits_per_user_step+exact_c2),'receipt_exact_additive':rec['joint_delta_anchor_normalized']-rec['psi_anchor_normalized']}
+ results.append(result);print(json.dumps({'event':'anchor_done',**result}),flush=True)
+print(json.dumps(results,indent=2,sort_keys=True))
+PY" in /home/sat/mcrl-v025-c1c2-ws
+codex
+The exact replay is still in tape construction; it remains a single low-priority process. Separately, checkpoint hashes verify correct arm isolation in all four seeds: DROP_C1 changes only C1, and DROP_C2 changes only C2. Existing source fixtures do produce arm-dependent choices, although one seed shows no decision difference for either drop.
+ succeeded in 81261ms:
+{"event": "tape_build_start"}
+{"event": "tape_build_done"}
+{"event": "forecast_start", "anchor": 0, "configs": 101}
+{"event": "anchor_done", "anchor": 0, "size": 100, "exact_c1": 41.64731430726556, "exact_c2": -166.3010576484521, "exact_sum": -124.65374334118653, "receipt_exact_additive": 1017.5704252853569}
+{"event": "forecast_start", "anchor": 1, "configs": 101}
+{"event": "anchor_done", "anchor": 1, "size": 100, "exact_c1": 119.14793249292025, "exact_c2": 82.51343150478384, "exact_sum": 201.6613639977041, "receipt_exact_additive": -2260.6085689043707}
+{"event": "forecast_start", "anchor": 2, "configs": 101}
+{"event": "anchor_done", "anchor": 2, "size": 100, "exact_c1": 12.24157120897406, "exact_c2": -161.47558612921077, "exact_sum": -149.23401492023672, "receipt_exact_additive": -1327.9861592843324}
+{"event": "forecast_start", "anchor": 3, "configs": 101}
+{"event": "anchor_done", "anchor": 3, "size": 100, "exact_c1": -111.20300704953198, "exact_c2": -300.0, "exact_sum": -411.203007049532, "receipt_exact_additive": 5428.3376378759}
+{"event": "forecast_start", "anchor": 4, "configs": 101}
+{"event": "anchor_done", "anchor": 4, "size": 100, "exact_c1": 113.11613367108505, "exact_c2": -210.05035378093876, "exact_sum": -96.93422010985373, "receipt_exact_additive": -456.749207391386}
+[
+  {
+    "anchor": 0,
+    "exact_c1": 41.64731430726556,
+    "exact_c2": -166.3010576484521,
+    "exact_sum": -124.65374334118653,
+    "receipt_exact_additive": 1017.5704252853569,
+    "size": 100
+  },
+  {
+    "anchor": 1,
+    "exact_c1": 119.14793249292025,
+    "exact_c2": 82.51343150478384,
+    "exact_sum": 201.6613639977041,
+    "receipt_exact_additive": -2260.6085689043707,
+    "size": 100
+  },
+  {
+    "anchor": 2,
+    "exact_c1": 12.24157120897406,
+    "exact_c2": -161.47558612921077,
+    "exact_sum": -149.23401492023672,
+    "receipt_exact_additive": -1327.9861592843324,
+    "size": 100
+  },
+  {
+    "anchor": 3,
+    "exact_c1": -111.20300704953198,
+    "exact_c2": -300.0,
+    "exact_sum": -411.203007049532,
+    "receipt_exact_additive": 5428.3376378759,
+    "size": 100
+  },
+  {
+    "anchor": 4,
+    "exact_c1": 113.11613367108505,
+    "exact_c2": -210.05035378093876,
+    "exact_sum": -96.93422010985373,
+    "receipt_exact_additive": -456.749207391386,
+    "size": 100
+  }
+]
+
+exec
+/bin/bash -lc "nl -ba .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | sed -n '270,320p'
+rg -n \"class Configuration|def mapping\" .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py src/mcrl -g '*.py' | sed -n '1,80p'
+nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+x=json.load(open('artifacts/v025-pilot-min-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-evaluation-manifest.json'))
+print(json.dumps(x,indent=2)[:10000])
+PY" in /home/sat/mcrl-v025-c1c2-ws
+ succeeded in 0ms:
+   270	            "unit": unit,
+   271	            "authority": dict(authority),
+   272	            "utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+   273	            "previous_record_sha256": previous,
+   274	        }
+   275	        record["record_sha256"] = digest_payload(record)
+   276	        handle.seek(0, os.SEEK_END)
+   277	        handle.write(canonical_bytes(record) + b"\n")
+   278	        handle.flush()
+   279	        os.fsync(handle.fileno())
+   280	        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+   281	    return str(record["record_sha256"])
+   282	
+   283	
+   284	def _attempt_records() -> list[dict[str, object]]:
+   285	    if not ATTEMPT_REGISTRY.is_file():
+   286	        return []
+   287	    records = [json.loads(line) for line in ATTEMPT_REGISTRY.read_text(encoding="ascii").splitlines() if line]
+   288	    previous = None
+   289	    for record in records:
+   290	        declared = record.get("record_sha256")
+   291	        unsigned = dict(record)
+   292	        unsigned.pop("record_sha256", None)
+   293	        if unsigned.get("previous_record_sha256") != previous or declared != digest_payload(unsigned):
+   294	            raise ProbeError("attempt registry hash chain is invalid")
+   295	        previous = declared
+   296	    return records
+   297	
+   298	
+   299	@dataclass(frozen=True)
+   300	class Configuration:
+   301	    configuration_id: str
+   302	    assignments: tuple[tuple[int, tuple[int, int] | None], ...]
+   303	    changed_users: int
+   304	    kind: str
+   305	
+   306	    @property
+   307	    def mapping(self) -> dict[int, tuple[int, int] | None]:
+   308	        return dict(self.assignments)
+   309	
+   310	
+   311	@dataclass(frozen=True)
+   312	class EvaluatedProfile:
+   313	    config: Configuration
+   314	    score: CellScore
+   315	    energy_components: Mapping[str, float]
+   316	    lit_beam_seconds: float
+   317	    lit_satellite_seconds: float
+   318	    acm_mode_counts: Mapping[str, int]
+   319	    se_plateau_user_steps: int
+   320	    user_step_observations: int
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:300:class Configuration:
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:307:    def mapping(self) -> dict[int, tuple[int, int] | None]:
+{
+  "artifact_label": "PILOT_NOT_CLAIM",
+  "latencies": [
+    {
+      "anchor_index": 0,
+      "catalogue_a0_count": 988,
+      "catalogue_a0_s": 6.507883743004641,
+      "catalogue_u_count": 872,
+      "catalogue_u_extra_s": 0.09211853099986911,
+      "feature_construction_s": 1.5063638690044172,
+      "physics_boundary_evaluations": 6688,
+      "s_uni_s": 4.157912180991843,
+      "total_s": 34.27771955000935,
+      "u_top10_users_by_abs_d": [
+        44,
+        55,
+        91,
+        56,
+        72,
+        24,
+        8,
+        73,
+        60,
+        35
+      ],
+      "world_id": "V025_PROBE/world/3"
+    },
+    {
+      "anchor_index": 1,
+      "catalogue_a0_count": 998,
+      "catalogue_a0_s": 4.075376544002211,
+      "catalogue_u_count": 876,
+      "catalogue_u_extra_s": 0.09167711000191048,
+      "feature_construction_s": 1.5973062470147852,
+      "physics_boundary_evaluations": 7056,
+      "s_uni_s": 4.114892165991478,
+      "total_s": 33.586224457016215,
+      "u_top10_users_by_abs_d": [
+        58,
+        1,
+        70,
+        28,
+        10,
+        21,
+        41,
+        17,
+        29,
+        82
+      ],
+      "world_id": "V025_PROBE/world/3"
+    },
+    {
+      "anchor_index": 2,
+      "catalogue_a0_count": 980,
+      "catalogue_a0_s": 228.0456075249822,
+      "catalogue_u_count": 852,
+      "catalogue_u_extra_s": 0.09400729098706506,
+      "feature_construction_s": 1.5652207880048081,
+      "physics_boundary_evaluations": 6917,
+      "s_uni_s": 4.313302124006441,
+      "total_s": 271.5495625399926,
+      "u_top10_users_by_abs_d": [
+        58,
+        1,
+        70,
+        28,
+        10,
+        21,
+        17,
+        41,
+        44,
+        55
+      ],
+      "world_id": "V025_PROBE/world/3"
+    },
+    {
+      "anchor_index": 3,
+      "catalogue_a0_count": 948,
+      "catalogue_a0_s": 21.904698614991503,
+      "catalogue_u_count": 814,
+      "catalogue_u_extra_s": 0.34345980401849374,
+      "feature_construction_s": 1.8939927979954518,
+      "physics_boundary_evaluations": 6373,
+      "s_uni_s": 4.248084211023524,
+      "total_s": 158.47837150399573,
+      "u_top10_users_by_abs_d": [
+        34,
+        83,
+        26,
+        57,
+        63,
+        11,
+        12,
+        94,
+        95,
+        51
+      ],
+      "world_id": "V025_PROBE/world/3"
+    },
+    {
+      "anchor_index": 4,
+      "catalogue_a0_count": 991,
+      "catalogue_a0_s": 6.500900661019841,
+      "catalogue_u_count": 882,
+      "catalogue_u_extra_s": 0.09774325200123712,
+      "feature_construction_s": 1.8233313279924914,
+      "physics_boundary_evaluations": 6939,
+      "s_uni_s": 4.342910772014875,
+      "total_s": 42.20420019899029,
+      "u_top10_users_by_abs_d": [
+        65,
+        97,
+        30,
+        44,
+        60,
+        49,
+        79,
+        67,
+        86,
+        18
+      ],
+      "world_id": "V025_PROBE/world/3"
+    }
+  ],
+  "phase_core_s": 420.077197348,
+  "phase_wall_s": 600.7785100500041,
+  "receipt_bytes": 151865,
+  "receipt_rows": 100,
+  "receipt_sha256": "372b1f168c901470b9d3aafd457abbdbd0d5033e0f59966b15166a328d428612",
+  "schema": "mcrl-v025-learned-c3-real-physics-pilot-v1-evaluation-manifest-v1"
+}
+
+exec
+/bin/bash -lc "nl -ba scripts/run_v025_pilot_c3.py | sed -n '1690,1810p'" in /home/sat/mcrl-v025-c1c2-ws
+ succeeded in 0ms:
+  1690	                        catalogue_anchor,
+  1691	                        catalogue,
+  1692	                        exact,
+  1693	                        models,
+  1694	                        rows,
+  1695	                        tape,
+  1696	                        step_index,
+  1697	                        exact_s0,
+  1698	                    )
+  1699	                    selected_full_catalogue = tuple({
+  1700	                        selections[(seed, "FULL")].assignments:
+  1701	                        selections[(seed, "FULL")]
+  1702	                        for seed in LEARNER_SEEDS
+  1703	                    }.values())
+  1704	                    exact.update(
+  1705	                        _exact_interactions(
+  1706	                            catalogue_anchor, incumbent, selected_full_catalogue,
+  1707	                            current, calibration,
+  1708	                        )
+  1709	                    )
+  1710	                    for seed in LEARNER_SEEDS:
+  1711	                        selections[(seed, "BASELINE")] = carrier_base
+  1712	                        selections[(seed, "S_UNI")] = u
+  1713	                    additive_configs = {
+  1714	                        row["additive_choice"].assignments: row["additive_choice"]
+  1715	                        for row in diagnostics.values()
+  1716	                    }
+  1717	                    realised.evaluate_many(
+  1718	                        tuple({
+  1719	                            **{row.assignments: row for row in selections.values()},
+  1720	                            **additive_configs,
+  1721	                        }.values())
+  1722	                    )
+  1723	                    for seed in LEARNER_SEEDS:
+  1724	                        for arm in REPORTED_ARMS:
+  1725	                            config = selections[(seed, arm)]
+  1726	                            profile = realised.evaluate(config)
+  1727	                            outcome = profile.outcome()
+  1728	                            handovers = ENGINE._physical_events(
+  1729	                                incumbent,
+  1730	                                config,
+  1731	                                cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+  1732	                            )
+  1733	                            exact_row = exact.get(config.configuration_id, {"psi": 0.0, "joint": 0.0, "changed": ()})
+  1734	                            records.append(
+  1735	                                {
+  1736	                                    "artifact_label": LABEL,
+  1737	                                    "world_id": domain,
+  1738	                                    "world_seed": tape.seed,
+  1739	                                    "anchor_index": anchor_index,
+  1740	                                    "step_index": step_index,
+  1741	                                    "carrier": carrier,
+  1742	                                    "catalogue_anchor": variant,
+  1743	                                    "learner_seed": seed,
+  1744	                                    "arm": arm,
+  1745	                                    "configuration_id": config.configuration_id,
+  1746	                                    "changed_users": config.changed_users,
+  1747	                                    "bits": profile.bits,
+  1748	                                    "joules": profile.joules,
+  1749	                                    "pooled_ee_bits_per_j": None if profile.joules == 0 else profile.bits / profile.joules,
+  1750	                                    "availability": float(outcome.useful_availability),
+  1751	                                    "handover_count": sum(event.kind in {"beam_change", "satellite_change", "reentry"} for event in handovers),
+  1752	                                    "handover_opportunities": len(handovers),
+  1753	                                    "rf_cap_hits": profile.rf_cap_hits,
+  1754	                                    "rf_transmission_observations": profile.rf_transmission_observations,
+  1755	                                    "psi_anchor_normalized": exact_row["psi"],
+  1756	                                    "joint_delta_anchor_normalized": exact_row["joint"],
+  1757	                                    "top_choice_agreement": diagnostics.get(seed, {}).get("top_choice_agreement") if arm == "FULL" else None,
+  1758	                                    "c2_tie_break": diagnostics.get(seed, {}).get("c2_tie") if arm == "FULL" else None,
+  1759	                                    "u_any_positive_joint_escape": bool(u_positive_joint_rows),
+  1760	                                    "u_positive_joint_sizes": u_positive_joint_sizes,
+  1761	                                    "s_uni_iterations": u_iterations,
+  1762	                                    "s_uni_wall_s": u_wall,
+  1763	                                    "s_uni_deadline_missed": u_missed,
+  1764	                                    "s_uni_termination_certificate": u_certificate,
+  1765	                                }
+  1766	                            )
+  1767	                        full_config = selections[(seed, "FULL")]
+  1768	                        additive_config = diagnostics[seed]["additive_choice"]
+  1769	                        base_profile = realised.evaluate(carrier_base)
+  1770	                        full_profile = realised.evaluate(full_config)
+  1771	                        additive_profile = realised.evaluate(additive_config)
+  1772	                        full_row = records[-len(REPORTED_ARMS)]
+  1773	                        v_ca_bits = full_profile.bits - additive_profile.bits
+  1774	                        v_ca_energy_bits = -float(calibration.eta_ref) * (
+  1775	                            full_profile.joules - additive_profile.joules
+  1776	                        )
+  1777	                        v_ca_phi_bits = float(calibration.kappa_bits_per_user_step) * float(
+  1778	                            ENGINE._phi_for(incumbent, full_config)
+  1779	                            - ENGINE._phi_for(incumbent, additive_config)
+  1780	                        )
+  1781	                        full_row.update({
+  1782	                            "v_ca_bits_component": v_ca_bits,
+  1783	                            "v_ca_energy_component_bits": v_ca_energy_bits,
+  1784	                            "v_ca_phi_component_bits": v_ca_phi_bits,
+  1785	                            "v_ca_net_bits": v_ca_bits + v_ca_energy_bits + v_ca_phi_bits,
+  1786	                            "additive_choice_joint_delta": exact.get(
+  1787	                                additive_config.configuration_id, {"joint": 0.0}
+  1788	                            )["joint"],
+  1789	                        })
+  1790	                        singles = []
+  1791	                        for user in sorted(carrier_base.mapping):
+  1792	                            if full_config.mapping[user] == carrier_base.mapping[user]:
+  1793	                                continue
+  1794	                            mapping = carrier_base.mapping
+  1795	                            mapping[user] = full_config.mapping[user]
+  1796	                            singleton = ENGINE._configuration(carrier_base, mapping, kind="pilot-report-singleton")
+  1797	                            realised.evaluate_many((singleton,))
+  1798	                            if singleton.configuration_id not in realised._invalid:
+  1799	                                singles.append(realised.evaluate(singleton))
+  1800	                        if singles:
+  1801	                            decomposition = matched_anchor_decomposition(
+  1802	                                base=(base_profile.outcome(),),
+  1803	                                selected=(full_profile.outcome(),),
+  1804	                                singleton_selected=tuple((row.outcome(),) for row in singles),
+  1805	                            )
+  1806	                            full_row["g_A"] = float(decomposition.g_additive)
+  1807	                            full_row["g_I"] = float(decomposition.g_interaction)
+  1808	                phase_latencies.append(
+  1809	                    {
+  1810	                        "world_id": domain,
+
+exec
+/bin/bash -lc "PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import importlib.util,sys,pathlib,json
+p=pathlib.Path('scripts/run_v025_pilot_c3.py'); s=importlib.util.spec_from_file_location('a',p);m=importlib.util.module_from_spec(s);sys.modules['a']=m;s.loader.exec_module(m)
+print('current physics',m.PHYSICS_DIGEST,'code',m.CODE_DIGEST)
+x=json.loads(open('artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-source-anchor-000.jsonl').readline())
+r=json.loads(open('artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-source-anchor-000.jsonl').readlines()[1])
+print('artifact physics',r['physics_digest'],'code',r['code_digest'])
+PY
+sha256sum .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py scripts/run_v025_pilot_c3.py" in /home/sat/mcrl-v025-c1c2-ws
+ succeeded in 1701ms:
+current physics 38e1998aa8c1f4a751bca5456ec7e900feed16c52d38504bb76d28b556130b55 code d15f2a1472d51823bd8d25f0244030509f322868c7ee1c92e26b3a574f5cd059
+artifact physics 38e1998aa8c1f4a751bca5456ec7e900feed16c52d38504bb76d28b556130b55 code 10a75f9f5529cb76ac79bf9703c99d282f203949c125d1f9096eb3a7f965f57c
+d430baf38eee7973aa56a503e905548bbf55ae4a5eb6f2435c2a2543d4786196  .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+95103bb96caaa130659fa0d509f19409574b406798a173e278a7d9dac12b7435  scripts/run_v025_pilot_c3.py
+
+exec
+/bin/bash -lc "nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json,collections
+p='artifacts/v025-pilot-min-20260909-PILOT_NOT_CLAIM/evaluation/PILOT_NOT_CLAIM-raw-receipts.jsonl'
+d=collections.defaultdict(set)
+for l in open(p):
+ x=json.loads(l)
+ if x['arm']=='FULL': d[(x['anchor_index'],x['catalogue_anchor'])].add(x['configuration_id'])
+for k,v in sorted(d.items()):print(k,len(v),[hash(x) for x in v])
+PY
+rg -n \"def _phi_for\" .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-c1c2-ws
+ succeeded in 0ms:
+(0, 'P-a0') 1 [-5015050452551724148]
+(0, 'P-u') 1 [-5015050452551724148]
+(1, 'P-a0') 1 [1062011627813037674]
+(1, 'P-u') 1 [1062011627813037674]
+(2, 'P-a0') 1 [-1621584660067797792]
+(2, 'P-u') 1 [-1621584660067797792]
+(3, 'P-a0') 1 [-7332876001505750066]
+(3, 'P-u') 1 [-7332876001505750066]
+(4, 'P-a0') 1 [-5001786508127514325]
+(4, 'P-u') 1 [-5001786508127514325]
+1164:def _phi_for(
+
+exec
+/bin/bash -lc "nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import numpy as np
+learn={0:((67.90482166101472,-21.906391145270355),(150.02001172550996,151.07800518031434)),1:((39.43960778920283,-21.787748006587996),(116.18365398414987,107.62013147582596)),2:((67.19503080699414,-3.6328924698000353),(39.64249582977204,43.238568737269404)),3:((49.09986776465877,5.511846524171176),(-1.557503833153198,-1.1154988947262174)),4:((29.36395214402083,-51.57045571790109),(155.0238357425575,145.25498447402592))}
+exact={0:(41.64731430726556,-166.3010576484521),1:(119.14793249292025,82.51343150478384),2:(12.24157120897406,-161.47558612921077),3:(-111.20300704953198,-300),4:(113.11613367108505,-210.05035378093876)}
+for a in range(5):
+ c1=np.mean(learn[a][0]);c2=np.mean(learn[a][1]);e1,e2=exact[a]
+ print(a,*(round(x,6) for x in (e1,c1,c1-e1,e2,c2,c2-e2,e1+e2,c1+c2,c1+c2-e1-e2)))
+for route in (0,1):
+ errs=[]; wrong=0
+ for a in exact:
+  for v in learn[a][route]:errs.append(v-exact[a][route]); wrong+=np.sign(v)"'!=np.sign(exact[a][route])
+ print(route,'"'bias',np.mean(errs),'mae',np.mean(np.abs(errs)),'rmse',np.sqrt(np.mean(np.array(errs)**2)),'wrong',wrong)
+errs=[];wrong=0
+for a in exact:
+ for c1,c2 in zip(*learn[a]):
+  errs.append(c1+c2-sum(exact[a]));wrong+=np.sign(c1+c2)"'!=np.sign(sum(exact[a]))
+print('"'sum','bias',np.mean(errs),'mae',np.mean(np.abs(errs)),'rmse',np.sqrt(np.mean(np.array(errs)**2)),'wrong',wrong)
+PY" in /home/sat/mcrl-v025-c1c2-ws
+ succeeded in 0ms:
+0 41.647314 22.999215 -18.648099 -166.301058 150.549008 316.850066 -124.653743 173.548224 298.201967
+1 119.147932 8.82593 -110.322003 82.513432 111.901893 29.388461 201.661364 120.727823 -80.933541
+2 12.241571 31.781069 19.539498 -161.475586 41.440532 202.916118 -149.234015 73.221601 222.455616
+3 -111.203007 27.305857 138.508864 -300 -1.336501 298.663499 -411.203007 25.969356 437.172363
+4 113.116134 -11.103252 -124.219385 -210.050354 150.13941 360.189764 -96.93422 139.036158 235.970378
+0 bias -19.028224991092287 mae 90.67396405902491 rmse 103.76519835982411 wrong 6
+1 bias 241.60158165291813 mae 241.60158165291813 rmse 268.85494278117994 wrong 6
+sum bias 222.57335666182584 mae 254.94677321238933 rmse 282.3480183812832 wrong 8
+
+codex
+The exact component replay completed and exposes a sharper pattern than the earlier combined statistic: exact C2 is strongly negative at four of five anchors, while the learned C2 is positive at four. Across ten seed-anchor cases, C2 error is one-sided upward (mean absolute error = bias = 241.60 normalized units); the learned total has the wrong sign in 8/10 cases. I’m adding a deterministic coalition-size prefix check so the report does not hide behind the fact that all committed selections had size 100.
+exec
+/bin/bash -lc "PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json,pathlib,importlib.util,sys,numpy as np
+from fractions import Fraction
+from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+from mcrl.physics_v025.tapes import build_world_tape
+from mcrl.physics_v025.targets import c2_persistence_forecast
+root=pathlib.Path('.'); spec=importlib.util.spec_from_file_location('audit_sizes',root/'scripts/run_v025_pilot_c3.py'); m=importlib.util.module_from_spec(spec);sys.modules['audit_sizes']=m;spec.loader.exec_module(m)
+out=root/'artifacts/v025-pilot-min-20260909-PILOT_NOT_CLAIM'; cp=json.load(open(out/'PILOT_NOT_CLAIM-calibration.json')); ratio=lambda n:Fraction(*cp[n]);cal=m.PilotCalibration(eta_ref=ratio('eta_ref'),lambda_bits_per_j=ratio('lambda_bits_per_j'),kappa_bits_per_user_step=ratio('kappa_bits_per_user_step'),bits_ref=ratio('bits_ref'),joules_ref=ratio('joules_ref'),users=int(cp['users']))
+recs=[]
+for line in open(out/'evaluation/PILOT_NOT_CLAIM-raw-receipts.jsonl'):
+ x=json.loads(line)
+ if x['arm']=='FULL' and x['catalogue_anchor']=='P-a0' and x['learner_seed']==6407676579069309528:recs.append(x)
+def H(payload):
+ ws=[np.array([[float.fromhex(v) for v in row] for row in a]) for a in payload['weights_hex']];bs=[np.array([float.fromhex(v) for v in a]) for a in payload['biases_hex']];act=payload['activation']
+ def f(s):
+  x=np.array(s)
+  for i,(w,b) in enumerate(zip(ws,bs)):
+   x=x@w+b
+   if i<len(ws)-1:x=np.maximum(x,0) if act=='relu' else np.tanh(x)
+  return float(x[0])
+ return f
+models={}
+for seed in (6407676579069309528,925030429265975792):
+ p=out/'checkpoints'/f'PILOT_NOT_CLAIM-seed-{seed}-FULL-epoch-0200.json';x=json.load(open(p))['model'];models[seed]=(H(x['C1']),H(x['C2']))
+print('{\"event\":\"tape_build_start\"}',flush=True);tape=build_world_tape(domain=m.EVALUATION_WORLDS[0],provider=LegacyWorldProvider(role='pilot-evaluation'),steps=8,start_time_s=0.0);print('{\"event\":\"tape_build_done\"}',flush=True)
+setting=m.ENGINE._setting('a-r0');rs=m.ENGINE.run_setting_for('a-r0'); rows=[]
+for rec in sorted(recs,key=lambda x:x['anchor_index']):
+ step=rec['anchor_index'];built=m._build_anchor_rows(tape=tape,setting=setting,run_setting=rs,calibration=cal,step_index=step,carrier=m.ENGINE.REFERENCE_CARRIERS[0],anchor_index=step,include_coalition=False,full_legal_actions=True);base=built['base'];inc=built['incumbent'];rbua=built['rows_by_user_action'];sel={}
+ for part in rec['configuration_id'][4:].split(';'):
+  u,sat,cell=part.split(':');sel[int(u)]=(int(sat),int(cell))
+ configs=[]
+ for u,ident in sorted(sel.items()):
+  mm=base.mapping;mm[u]=ident;configs.append((u,m.ENGINE._configuration(base,mm,kind='audit-selected-singleton')))
+ ev=m.ENGINE.StepEvaluator(tape,setting,step,transition_from=inc,cell_rekeyed_users=m.ENGINE._rekeyed_users(tape,step),field='nominal',run_setting=rs,boundary_indices=(0,));ev.evaluate_many((base,*[c for _,c in configs]));bp=ev.evaluate(base);bcore=Fraction(str(bp.bits))-cal.eta_ref*Fraction(str(bp.joules))+cal.kappa_bits_per_user_step*m.ENGINE._phi_for(inc,base)
+ print(json.dumps({'event':'forecast','anchor':step}),flush=True);fore,_=m.ENGINE._batched_stage2_forecasts(tape=tape,setting=setting,anchor_step=step,carrier=m.ENGINE.REFERENCE_CARRIERS[0],configs=(base,*[c for _,c in configs]),counter=m.ENGINE.EvaluationCounter(),calibration=cal,run_setting=rs);bf=fore[base.configuration_id]
+ per=[]
+ for u,c in configs:
+  p=ev.evaluate(c);c1=(Fraction(str(p.bits))-cal.eta_ref*Fraction(str(p.joules))+cal.kappa_bits_per_user_step*m.ENGINE._phi_for(inc,c)-bcore)/cal.kappa_bits_per_user_step;c2=c2_persistence_forecast(fore[c.configuration_id],bf,lambda_bits_per_j=cal.lambda_bits_per_j,eta_ref=cal.eta_ref,kappa_bits_per_user_step=cal.kappa_bits_per_user_step).normalized_total
+  a=rbua[(u,sel[u])];b=rbua[(u,base.mapping[u])]; learned={}
+  for seed,(f1,f2) in models.items(): learned[seed]=(f1(a.q1_state)-f1(b.q1_state),f2(a.q2_state)-f2(b.q2_state))
+  per.append((u,float(c1),float(c2),learned))
+ for size in (1,2,3,4,5,6,100):
+  z=per[:size];ec1=sum(x[1] for x in z);ec2=sum(x[2] for x in z)
+  for seed in models:
+   lc1=sum(x[3][seed][0] for x in z);lc2=sum(x[3][seed][1] for x in z);rows.append({'anchor':step,'size':size,'seed':seed,'exact_c1':ec1,'learned_c1':lc1,'exact_c2':ec2,'learned_c2':lc2,'exact_sum':ec1+ec2,'learned_sum':lc1+lc2})
+agg=[]
+for size in (1,2,3,4,5,6,100):
+ z=[x for x in rows if x['size']==size]
+ def mean(k):return sum(x[k] for x in z)/len(z)
+ agg.append({'size':size,'cases':len(z),'mean_exact_c1':mean('exact_c1'),'mean_learned_c1':mean('learned_c1'),'c1_bias':mean('learned_c1')-mean('exact_c1'),'mean_exact_c2':mean('exact_c2'),'mean_learned_c2':mean('learned_c2'),'c2_bias':mean('learned_c2')-mean('exact_c2'),'mean_exact_sum':mean('exact_sum'),'mean_learned_sum':mean('learned_sum'),'sum_bias':mean('learned_sum')-mean('exact_sum'),'sum_wrong_sign':sum(np.sign(x['exact_sum'])"'!=np.sign(x['"'learned_sum']) for x in z)})
+print(json.dumps({'aggregate_by_canonical_prefix_size':agg,'size100_by_anchor_seed': [x for x in rows if x['size']==100]},indent=2,sort_keys=True))
+PY" in /home/sat/mcrl-v025-c1c2-ws
+codex
+The corpus census is also complete: 176,223 rows reduce to 180 anchors, 60 timestamps, and two calendar dates. Each user-anchor contains only 9 or 10 actions because generation uses the nominal top-eight shortlist plus base/null; two required features are constant across the entire corpus (`off_axis_angle` and `missing_incumbent`).
+ exited 1 in 86340ms:
+{"event":"tape_build_start"}
+{"event":"tape_build_done"}
+{"event": "forecast", "anchor": 0}
+{"event": "forecast", "anchor": 1}
+{"event": "forecast", "anchor": 2}
+{"event": "forecast", "anchor": 3}
+{"event": "forecast", "anchor": 4}
+Traceback (most recent call last):
+  File "<stdin>", line 50, in <module>
+  File "/usr/lib/python3.13/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ~~~~~~^^^^^
+  File "/usr/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/usr/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/usr/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type int64 is not JSON serializable
+
+codex
+The coalition-size replay completed its physics work but failed only while serializing one NumPy integer in the summary. I’m rerunning the same bounded calculation with that output value cast to a native integer; no model fitting or artifact mutation is involved.
+exec
+/bin/bash -lc "PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json,pathlib,importlib.util,sys,numpy as np
+from fractions import Fraction
+from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+from mcrl.physics_v025.tapes import build_world_tape
+from mcrl.physics_v025.targets import c2_persistence_forecast
+root=pathlib.Path('.'); spec=importlib.util.spec_from_file_location('audit_sizes2',root/'scripts/run_v025_pilot_c3.py'); m=importlib.util.module_from_spec(spec);sys.modules['audit_sizes2']=m;spec.loader.exec_module(m)
+out=root/'artifacts/v025-pilot-min-20260909-PILOT_NOT_CLAIM'; cp=json.load(open(out/'PILOT_NOT_CLAIM-calibration.json')); ratio=lambda n:Fraction(*cp[n]);cal=m.PilotCalibration(eta_ref=ratio('eta_ref'),lambda_bits_per_j=ratio('lambda_bits_per_j'),kappa_bits_per_user_step=ratio('kappa_bits_per_user_step'),bits_ref=ratio('bits_ref'),joules_ref=ratio('joules_ref'),users=int(cp['users']))
+recs=[]
+for line in open(out/'evaluation/PILOT_NOT_CLAIM-raw-receipts.jsonl'):
+ x=json.loads(line)
+ if x['arm']=='FULL' and x['catalogue_anchor']=='P-a0' and x['learner_seed']==6407676579069309528:recs.append(x)
+def H(payload):
+ ws=[np.array([[float.fromhex(v) for v in row] for row in a]) for a in payload['weights_hex']];bs=[np.array([float.fromhex(v) for v in a]) for a in payload['biases_hex']];act=payload['activation']
+ def f(s):
+  x=np.array(s)
+  for i,(w,b) in enumerate(zip(ws,bs)):
+   x=x@w+b
+   if i<len(ws)-1:x=np.maximum(x,0) if act=='relu' else np.tanh(x)
+  return float(x[0])
+ return f
+models={}
+for seed in (6407676579069309528,925030429265975792):
+ x=json.load(open(out/'checkpoints'/f'PILOT_NOT_CLAIM-seed-{seed}-FULL-epoch-0200.json'))['model'];models[seed]=(H(x['C1']),H(x['C2']))
+print('{\"event\":\"tape_build_start\"}',flush=True);tape=build_world_tape(domain=m.EVALUATION_WORLDS[0],provider=LegacyWorldProvider(role='pilot-evaluation'),steps=8,start_time_s=0.0);print('{\"event\":\"tape_build_done\"}',flush=True)
+setting=m.ENGINE._setting('a-r0');rs=m.ENGINE.run_setting_for('a-r0'); rows=[]
+for rec in sorted(recs,key=lambda x:x['anchor_index']):
+ step=rec['anchor_index'];built=m._build_anchor_rows(tape=tape,setting=setting,run_setting=rs,calibration=cal,step_index=step,carrier=m.ENGINE.REFERENCE_CARRIERS[0],anchor_index=step,include_coalition=False,full_legal_actions=True);base=built['base'];inc=built['incumbent'];rbua=built['rows_by_user_action'];sel={}
+ for part in rec['configuration_id'][4:].split(';'):
+  u,sat,cell=part.split(':');sel[int(u)]=(int(sat),int(cell))
+ configs=[]
+ for u,ident in sorted(sel.items()):
+  mm=base.mapping;mm[u]=ident;configs.append((u,m.ENGINE._configuration(base,mm,kind='audit-selected-singleton')))
+ ev=m.ENGINE.StepEvaluator(tape,setting,step,transition_from=inc,cell_rekeyed_users=m.ENGINE._rekeyed_users(tape,step),field='nominal',run_setting=rs,boundary_indices=(0,));ev.evaluate_many((base,*[c for _,c in configs]));bp=ev.evaluate(base);bcore=Fraction(str(bp.bits))-cal.eta_ref*Fraction(str(bp.joules))+cal.kappa_bits_per_user_step*m.ENGINE._phi_for(inc,base)
+ fore,_=m.ENGINE._batched_stage2_forecasts(tape=tape,setting=setting,anchor_step=step,carrier=m.ENGINE.REFERENCE_CARRIERS[0],configs=(base,*[c for _,c in configs]),counter=m.ENGINE.EvaluationCounter(),calibration=cal,run_setting=rs);bf=fore[base.configuration_id];per=[]
+ for u,c in configs:
+  p=ev.evaluate(c);c1=(Fraction(str(p.bits))-cal.eta_ref*Fraction(str(p.joules))+cal.kappa_bits_per_user_step*m.ENGINE._phi_for(inc,c)-bcore)/cal.kappa_bits_per_user_step;c2=c2_persistence_forecast(fore[c.configuration_id],bf,lambda_bits_per_j=cal.lambda_bits_per_j,eta_ref=cal.eta_ref,kappa_bits_per_user_step=cal.kappa_bits_per_user_step).normalized_total;a=rbua[(u,sel[u])];b=rbua[(u,base.mapping[u])]; learned={seed:(f1(a.q1_state)-f1(b.q1_state),f2(a.q2_state)-f2(b.q2_state)) for seed,(f1,f2) in models.items()};per.append((u,float(c1),float(c2),learned))
+ for size in (1,2,3,4,5,6,100):
+  z=per[:size];ec1=sum(x[1] for x in z);ec2=sum(x[2] for x in z)
+  for seed in models:
+   lc1=sum(x[3][seed][0] for x in z);lc2=sum(x[3][seed][1] for x in z);rows.append({'anchor':step,'size':size,'seed':seed,'exact_c1':ec1,'learned_c1':lc1,'exact_c2':ec2,'learned_c2':lc2,'exact_sum':ec1+ec2,'learned_sum':lc1+lc2})
+agg=[]
+for size in (1,2,3,4,5,6,100):
+ z=[x for x in rows if x['size']==size]; mean=lambda k:sum(x[k] for x in z)/len(z)
+ agg.append({'size':size,'cases':len(z),'mean_exact_c1':mean('exact_c1'),'mean_learned_c1':mean('learned_c1'),'c1_bias':mean('learned_c1')-mean('exact_c1'),'mean_exact_c2':mean('exact_c2'),'mean_learned_c2':mean('learned_c2'),'c2_bias':mean('learned_c2')-mean('exact_c2'),'mean_exact_sum':mean('exact_sum'),'mean_learned_sum':mean('learned_sum'),'sum_bias':mean('learned_sum')-mean('exact_sum'),'sum_wrong_sign':int(sum((x['exact_sum']<0)"'!=(x['"'learned_sum']<0) for x in z))})
+print(json.dumps({'aggregate_by_canonical_prefix_size':agg,'size100_by_anchor_seed':[x for x in rows if x['size']==100]},indent=2,sort_keys=True))
+PY" in /home/sat/mcrl-v025-c1c2-ws
+codex
+The replay retry is still inside the deterministic tape build; all substantive checks are otherwise finished. The acceptance-test review confirms the formal T1/T2/T3 suite never compares learned C1 or C2 with an exact production-physics label: T1 injects decisive one-hot scores, T2 focuses on C3 and provenance, and T3 hard-codes arm outcomes in its fake evaluator.
