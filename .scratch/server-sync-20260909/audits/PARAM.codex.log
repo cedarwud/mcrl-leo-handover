@@ -7605,3 +7605,2688 @@ index 0000000000000000000000000000000000000000..d675a5a975945e0677fbc64b470e98f3
 
 codex
 The large-size probe is running on a single anchor as a smoke test. It is doing only exact nominal-boundary evaluations for the two already-declared S0 catalogue profiles and their singletons; no learner or selector policy is being executed.
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d675a5a975945e0677fbc64b470e98f3d3cc703e
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d675a5a975945e0677fbc64b470e98f3d3cc703e
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d675a5a975945e0677fbc64b470e98f3d3cc703e
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d675a5a975945e0677fbc64b470e98f3d3cc703e
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The smoke test is still in the tape/evaluator setup stage; that startup cost dominates a one-anchor run. Once the first anchor completes I’ll use its observed cost to decide whether all 180 anchors are practical or whether to use a preregistered anchor subset while preserving train/validation/test separation.
+ succeeded in 216629ms:
+{"event": "anchor", "world": "V025_PROBE/world/1", "anchor": 0, "large_rows": 2, "sizes": [100, 100], "wall_s": 2.8499429739895277}
+{"event": "complete", "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1", "artifact_label": "DIAGNOSTIC_NOT_CLAIM", "source": "/home/sat/mcrl-v025-selector-ws/artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM", "worlds": ["V025_PROBE/world/1", "V025_PROBE/world/2"], "anchors": 1, "rows": 2, "label_convention": "EXACT_SINGLETON_DIFFERENCES", "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many", "elapsed_wall_s": 215.08195206298842, "receipt_digest": "ea1e4a0b3fe1a2d79b98af597954aaf883d1b060b47252cfac5750c120030fc9"}
+
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d675a5a975945e0677fbc64b470e98f3d3cc703e
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+/bin/bash -lc "PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import sklearn
+from sklearn.ensemble import ExtraTreesRegressor
+print(sklearn.__version__)
+PY" in /home/sat/mcrl-v025-selector-ws
+ exited 1 in 0ms:
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+ModuleNotFoundError: No module named 'sklearn'
+
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d675a5a975945e0677fbc64b470e98f3d3cc703e
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+/bin/bash -lc "PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+mods=['torch','scipy','pandas']
+for m in mods:
+ try:
+  x=__import__(m); print(m, getattr(x,'__version__','yes'))
+ except Exception as e: print(m, type(e).__name__)
+PY" in /home/sat/mcrl-v025-selector-ws
+ succeeded in 1679ms:
+torch 2.13.0+cu130
+scipy ModuleNotFoundError
+pandas ModuleNotFoundError
+
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d675a5a975945e0677fbc64b470e98f3d3cc703e
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,281 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-selector-ws/scripts/build_parametrisation_comparison_large_rows.py
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f6b8baca295011a654096b3bbdeed5f648cb5496
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,311 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import random
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++SPLIT_SEED = 20260910
++
++
++def split_for(world_number: int, anchor_index: int) -> str:
++    """Predeclared 2/3, 1/6, 1/6 split over three-anchor blocks."""
++
++    blocks = list(range(30))
++    random.Random(SPLIT_SEED + world_number).shuffle(blocks)
++    block = anchor_index // 3
++    if block in set(blocks[:20]):
++        return "train"
++    if block in set(blocks[20:25]):
++        return "validation"
++    return "test"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument(
++        "--anchor-part",
++        choices=("all", "development", "train", "validation", "test"),
++        default="all",
++        help="development means train plus validation; test remains untouched",
++    )
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            split = split_for(world_number, anchor_index)
++            if args.anchor_part != "all" and not (
++                args.anchor_part == split
++                or args.anchor_part == "development" and split in {"train", "validation"}
++            ):
++                continue
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "split": split,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "anchor_part": args.anchor_part,
++        "split_seed": SPLIT_SEED,
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/scripts/build_parametrisation_comparison_large_rows.py b/scripts/build_parametrisation_comparison_large_rows.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f6b8baca295011a654096b3bbdeed5f648cb5496
+--- /dev/null
++++ b/scripts/build_parametrisation_comparison_large_rows.py
+@@ -0,0 +1,311 @@
++#!/usr/bin/env python3
++"""Build exact large-coalition rows for the parametrisation comparison.
++
++DIAGNOSTIC_NOT_CLAIM.  This reads the sealed catalogue/evaluator without
++modifying either.  It evaluates only the catalogue's already-declared S0
++top-two configurations, with a fresh evaluator whose baseline, exact
++singletons, and joint configurations all pass through ``evaluate_many``.
++No production learner or policy runner is invoked.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import importlib.util
++import json
++from pathlib import Path
++import random
++import sys
++import time
++
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.tapes import build_world_tape
++from mcrl.stagec_v025.canonical import canonical_sha256
++from mcrl.stagec_v025.shards import read_source_shard
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PILOT_PATH = ROOT / "scripts/run_v025_pilot_c3.py"
++SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++OUTPUT = ROOT / ".scratch/parametrisation-comparison/s0-large.jsonl"
++LABEL = "DIAGNOSTIC_NOT_CLAIM"
++SPLIT_SEED = 20260910
++
++
++def split_for(world_number: int, anchor_index: int) -> str:
++    """Predeclared 2/3, 1/6, 1/6 split over three-anchor blocks."""
++
++    blocks = list(range(30))
++    random.Random(SPLIT_SEED + world_number).shuffle(blocks)
++    block = anchor_index // 3
++    if block in set(blocks[:20]):
++        return "train"
++    if block in set(blocks[20:25]):
++        return "validation"
++    return "test"
++
++
++def load_pilot():
++    spec = importlib.util.spec_from_file_location("param_comparison_pilot", PILOT_PATH)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot import {PILOT_PATH}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def identity(action):
++    return None if action.is_null else (action.norad_id, action.beam_chain_id)
++
++
++def fraction_payload(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def exact_value(pilot, calibration, anchor, config, evaluator) -> Fraction:
++    profile = evaluator.evaluate(config)
++    outcome = profile.outcome(phi=pilot.ENGINE._phi_for(anchor, config))
++    eta = Fraction(str(float(calibration.eta_ref)))
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    return outcome.bits - eta * outcome.joules + kappa * outcome.phi
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output", type=Path, default=OUTPUT)
++    parser.add_argument("--world-limit", type=int)
++    parser.add_argument("--anchor-limit", type=int)
++    parser.add_argument(
++        "--anchor-part",
++        choices=("all", "development", "train", "validation", "test"),
++        default="all",
++        help="development means train plus validation; test remains untouched",
++    )
++    parser.add_argument("--overwrite", action="store_true")
++    args = parser.parse_args(argv)
++    if args.output.exists() and not args.overwrite:
++        raise SystemExit(f"refusing to overwrite {args.output}; pass --overwrite explicitly")
++
++    pilot = load_pilot()
++    manifest = json.loads((SOURCE / "PILOT_NOT_CLAIM-rows-manifest.json").read_text())
++    calibration_payload = manifest["calibration"]
++    as_fraction = lambda key: Fraction(*calibration_payload[key])
++    calibration = pilot.PilotCalibration(
++        eta_ref=as_fraction("eta_ref"),
++        lambda_bits_per_j=as_fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=as_fraction("kappa_bits_per_user_step"),
++        bits_ref=as_fraction("bits_ref"),
++        joules_ref=as_fraction("joules_ref"),
++        users=int(calibration_payload["users"]),
++        source=str(calibration_payload["source"]),
++    )
++    kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    worlds = pilot.TRAIN_WORLDS
++    if args.world_limit is not None:
++        worlds = worlds[: args.world_limit]
++
++    output_rows: list[dict[str, object]] = []
++    global_anchor = 0
++    started = time.perf_counter()
++    for world_number, domain in enumerate(worlds, start=1):
++        tape = build_world_tape(
++            domain=domain,
++            provider=LegacyWorldProvider(role="parametrisation-comparison-large-rows"),
++            steps=33,
++            start_time_s=0.0,
++        )
++        for anchor_index in range(90):
++            split = split_for(world_number, anchor_index)
++            if args.anchor_part != "all" and not (
++                args.anchor_part == split
++                or args.anchor_part == "development" and split in {"train", "validation"}
++            ):
++                continue
++            if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++                break
++            anchor_started = time.perf_counter()
++            step_index, carrier_offset = divmod(
++                anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS)
++            )
++            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
++            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++            incumbent = pilot.ENGINE._base_configuration(
++                tape, max(0, step_index - 1), carrier
++            )
++            source_path = (
++                SOURCE
++                / "rows"
++                / f"world-{world_number}"
++                / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
++            )
++            source_shard = read_source_shard(source_path)
++            rows_by_user_action = {
++                (row.user_id, identity(row.action)): row for row in source_shard.rows
++            }
++
++            catalogue, _census = pilot.ENGINE._catalogue_with_census(
++                tape,
++                step_index,
++                anchor,
++                setting=setting,
++                calibration=calibration,
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++            )
++            selected_rows = tuple(row for row in catalogue if row.kind == "s0-top-two")
++            if not selected_rows:
++                raise RuntimeError(f"anchor {domain}/{anchor_index} has no S0 top-two row")
++
++            evaluator = pilot.ENGINE.StepEvaluator(
++                tape,
++                setting,
++                step_index,
++                transition_from=incumbent,
++                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++                field="nominal",
++                counter=pilot.ENGINE.EvaluationCounter(),
++                run_setting=run_setting,
++                boundary_indices=(0,),
++            )
++            configs = {anchor.assignments: anchor}
++            singleton_for: dict[tuple[str, int], object] = {}
++            for selected in selected_rows:
++                for user in sorted(anchor.mapping):
++                    if anchor.mapping[user] == selected.mapping[user]:
++                        continue
++                    mapping = anchor.mapping
++                    mapping[user] = selected.mapping[user]
++                    singleton = pilot.ENGINE._configuration(
++                        anchor, mapping, kind="parametrisation-comparison-singleton"
++                    )
++                    configs[singleton.assignments] = singleton
++                    singleton_for[(selected.configuration_id, user)] = singleton
++                configs[selected.assignments] = selected
++            evaluator.evaluate_many(tuple(configs.values()))
++            baseline = exact_value(pilot, calibration, anchor, anchor, evaluator)
++            base_served = sum(
++                bool(value) for value in evaluator.evaluate(anchor).score.served_phy.values()
++            )
++
++            for selected in selected_rows:
++                if selected.configuration_id in evaluator._invalid:
++                    continue
++                users = tuple(
++                    user
++                    for user in sorted(anchor.mapping)
++                    if anchor.mapping[user] != selected.mapping[user]
++                )
++                singleton_differences = []
++                for user in users:
++                    singleton = singleton_for[(selected.configuration_id, user)]
++                    if singleton.configuration_id in evaluator._invalid:
++                        raise RuntimeError("S0 row has an invalid exact singleton")
++                    difference = exact_value(
++                        pilot, calibration, anchor, singleton, evaluator
++                    ) - baseline
++                    singleton_differences.append((user, difference))
++                coalition_value = exact_value(
++                    pilot, calibration, anchor, selected, evaluator
++                )
++                joint = coalition_value - baseline
++                additive = sum(
++                    (value for _user, value in singleton_differences), Fraction()
++                )
++                interaction = joint - additive
++                context = pilot._coalition_context(
++                    tape=tape,
++                    step_index=step_index,
++                    anchor=anchor,
++                    selected=selected,
++                    rows_by_user_action=rows_by_user_action,
++                )
++                selected_served = sum(
++                    bool(value)
++                    for value in evaluator.evaluate(selected).score.served_phy.values()
++                )
++                row = {
++                    "schema": "mcrl-v025-parametrisation-comparison-large-row-v1",
++                    "artifact_label": LABEL,
++                    "world_id": domain,
++                    "world_number": world_number,
++                    "anchor_index": anchor_index,
++                    "split": split,
++                    "step_index": step_index,
++                    "carrier": carrier,
++                    "configuration_id": selected.configuration_id,
++                    "coalition_size": len(users),
++                    "context": context.payload(),
++                    "objective_delta_normalized_hex": float(joint / kappa).hex(),
++                    "c1_normalized_hex": float(additive / kappa).hex(),
++                    "psi_normalized_hex": float(interaction / kappa).hex(),
++                    "exact_objective_receipt": {
++                        "encoding": "fraction-numerator-denominator",
++                        "baseline": fraction_payload(baseline),
++                        "singletons": [
++                            {"user": user, "difference": fraction_payload(value)}
++                            for user, value in singleton_differences
++                        ],
++                        "coalition": fraction_payload(coalition_value),
++                        "objective_delta": fraction_payload(joint),
++                        "psi": fraction_payload(interaction),
++                    },
++                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++                    "required_distinct_label_evaluations": len(users) + 2,
++                    "observed_distinct_label_evaluations": len(users) + 2,
++                    "base_served": base_served,
++                    "selected_served": selected_served,
++                    "service_guard": selected_served >= base_served,
++                }
++                row["row_sha256"] = canonical_sha256(row)
++                output_rows.append(row)
++
++            global_anchor += 1
++            print(
++                json.dumps(
++                    {
++                        "event": "anchor",
++                        "world": domain,
++                        "anchor": anchor_index,
++                        "large_rows": len(selected_rows),
++                        "sizes": [row.changed_users for row in selected_rows],
++                        "wall_s": time.perf_counter() - anchor_started,
++                    }
++                ),
++                flush=True,
++            )
++        if args.anchor_limit is not None and global_anchor >= args.anchor_limit:
++            break
++
++    header = {
++        "schema": "mcrl-v025-parametrisation-comparison-large-rows-v1",
++        "artifact_label": LABEL,
++        "source": str(SOURCE),
++        "worlds": list(worlds),
++        "anchors": global_anchor,
++        "rows": len(output_rows),
++        "anchor_part": args.anchor_part,
++        "split_seed": SPLIT_SEED,
++        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
++        "evaluation_path": "fresh StepEvaluator; baseline, singletons, joint all prepared by evaluate_many",
++        "elapsed_wall_s": time.perf_counter() - started,
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    encoded = "\n".join(
++        json.dumps(value, sort_keys=True, separators=(",", ":"))
++        for value in (header, *output_rows)
++    ) + "\n"
++    args.output.write_text(encoded, encoding="ascii")
++    digest = canonical_sha256({"header": header, "row_sha256": [r["row_sha256"] for r in output_rows]})
++    args.output.with_suffix(args.output.suffix + ".sha256").write_text(
++        f"{digest}  {args.output.name}\n", encoding="ascii"
++    )
++    print(json.dumps({"event": "complete", **header, "receipt_digest": digest}), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
