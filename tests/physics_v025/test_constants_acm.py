@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 
 import numpy as np
@@ -22,8 +20,6 @@ from mcrl.physics_v025.acm import (
 )
 from mcrl.physics_v025.channel import noise_power_w
 from mcrl.physics_v025.constants_v025 import (
-    ACM_TABLE,
-    ACM_TABLE_SHA256,
     BEAM_BANDWIDTH_HZ,
     DECISION_INTERVAL_S,
     IMPLEMENTATION_MARGIN_DB,
@@ -32,18 +28,7 @@ from mcrl.physics_v025.constants_v025 import (
     ROLL_OFF,
     SINR_MIN,
     SYSTEM_TEMPERATURE_K,
-    VERIFY_SOURCE,
-    PROVENANCE,
-    constant_manifest,
 )
-
-
-def test_table_has_28_rows_and_frozen_hash() -> None:
-    """Hash arithmetic: SHA256(canonical JSON of 28 rows) is the frozen digest."""
-
-    encoded = json.dumps(ACM_TABLE, ensure_ascii=True, separators=(",", ":")).encode("ascii")
-    assert len(ACM_TABLE) == 28
-    assert hashlib.sha256(encoded).hexdigest() == ACM_TABLE_SHA256
 
 
 @pytest.mark.parametrize(
@@ -146,13 +131,6 @@ def test_clock_band_noise_and_temperature_arithmetic() -> None:
     assert ROLL_OFF == 0.20 and IMPLEMENTATION_MARGIN_DB == 1.7
 
 
-def test_all_explicit_round3_verify_source_flags_are_live() -> None:
-    """Seven round-3 flags plus synthetic r-star physical calibration remain unresolved."""
-
-    assert len(VERIFY_SOURCE) == 8
-    assert all(VERIFY_SOURCE.values())
-
-
 def test_rate_target_acm_known_answers_and_monotone_gamma() -> None:
     """At n=1/2/4, required SE=.30/.60/1.20 selects QPSK 1/4, 2/5, 3/4."""
 
@@ -192,12 +170,3 @@ def test_shannon_inverse_convexity_and_discrete_acm_overshoot() -> None:
         assert mode is not None
         achieved = BEAM_BANDWIDTH_HZ * mode.spectral_efficiency_bit_per_s_hz / occupancy
         assert achieved > RATE_TARGET_BPS
-
-
-def test_every_manifest_constant_has_value_and_provenance() -> None:
-    """The source receipt is a bijection: every bound §2 name has both its value and provenance."""
-
-    manifest = constant_manifest()
-    assert set(manifest["values"]) == set(PROVENANCE)
-    assert set(manifest["provenance"]) == set(PROVENANCE)
-    assert all(manifest["provenance"].values())

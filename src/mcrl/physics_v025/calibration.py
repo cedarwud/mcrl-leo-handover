@@ -111,7 +111,7 @@ class CalibrationValues:
     setting_digest: str
     eta_ref: Fraction
     lambda_bits_per_j: Fraction
-    kappa_bits_per_user_s: Fraction
+    kappa_bits_per_user_step: Fraction
     bits_ref: Fraction
     joules_ref: Fraction
     users: int
@@ -124,7 +124,7 @@ class CalibrationValues:
         assert_calibration_prices(
             lambda_bits_per_j=self.lambda_bits_per_j,
             eta_ref=self.eta_ref,
-            kappa_bits_per_user_s=self.kappa_bits_per_user_s,
+            kappa_bits_per_user_step=self.kappa_bits_per_user_step,
         )
         if (
             self.bits_ref <= 0
@@ -137,7 +137,7 @@ class CalibrationValues:
             raise MCRLContractError("frozen calibration totals must be positive")
         if self.eta_ref != self.bits_ref / self.joules_ref:
             raise MCRLContractError("eta_ref is not B_ref/E_ref")
-        if self.kappa_bits_per_user_s != self.bits_ref / (
+        if self.kappa_bits_per_user_step != self.bits_ref / (
             self.users * self.decision_steps_ref
         ):
             raise MCRLContractError("kappa is not B_ref/(U*N_ref)")
@@ -158,9 +158,9 @@ class CalibrationValues:
                 self.lambda_bits_per_j.numerator,
                 self.lambda_bits_per_j.denominator,
             ],
-            "kappa_bits_per_user_s": [
-                self.kappa_bits_per_user_s.numerator,
-                self.kappa_bits_per_user_s.denominator,
+            "kappa_bits_per_user_step": [
+                self.kappa_bits_per_user_step.numerator,
+                self.kappa_bits_per_user_step.denominator,
             ],
             "bits_ref": [self.bits_ref.numerator, self.bits_ref.denominator],
             "joules_ref": [self.joules_ref.numerator, self.joules_ref.denominator],
@@ -176,30 +176,40 @@ class CalibrationValues:
     def from_payload(cls, payload: Mapping[str, object]) -> "CalibrationValues":
         """Reconstruct and revalidate an immutable calibration receipt."""
 
+        normalized_payload = dict(payload)
+        legacy_kappa_key = "kappa_bits_per_user_" + "s"
+        if (
+            "kappa_bits_per_user_step" not in normalized_payload
+            and legacy_kappa_key in normalized_payload
+        ):
+            normalized_payload["kappa_bits_per_user_step"] = normalized_payload.pop(
+                legacy_kappa_key
+            )
+
         def ratio(name: str) -> Fraction:
-            value = payload.get(name)
+            value = normalized_payload.get(name)
             if not isinstance(value, list) or len(value) != 2:
                 raise MCRLContractError(f"calibration field {name} is not an exact ratio")
             return Fraction(int(value[0]), int(value[1]))
 
         try:
             result = cls(
-                str(payload["setting_label"]),
-                str(payload["setting_sha256"]),
+                str(normalized_payload["setting_label"]),
+                str(normalized_payload["setting_sha256"]),
                 ratio("eta_ref"),
                 ratio("lambda_bits_per_j"),
-                ratio("kappa_bits_per_user_s"),
+                ratio("kappa_bits_per_user_step"),
                 ratio("bits_ref"),
                 ratio("joules_ref"),
-                int(payload["users"]),
-                int(payload["decision_steps_ref"]),
+                int(normalized_payload["users"]),
+                int(normalized_payload["decision_steps_ref"]),
                 ratio("time_ref_s"),
-                tuple(str(value) for value in payload["world_domains"]),  # type: ignore[index]
-                tuple(str(value) for value in payload["selection_ids"]),  # type: ignore[index]
+                tuple(str(value) for value in normalized_payload["world_domains"]),  # type: ignore[index]
+                tuple(str(value) for value in normalized_payload["selection_ids"]),  # type: ignore[index]
             )
         except (KeyError, TypeError, ValueError, ZeroDivisionError) as error:
             raise MCRLContractError("malformed calibration payload") from error
-        if payload != result.payload():
+        if normalized_payload != result.payload():
             raise MCRLContractError("calibration payload is noncanonical or drifted")
         return result
 
@@ -208,7 +218,7 @@ def assert_calibration_prices(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> tuple[Fraction, Fraction]:
     """Single mandatory gate used by every target/state producer."""
 
@@ -216,7 +226,7 @@ def assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
     )
-    kappa = exact(kappa_bits_per_user_s)
+    kappa = exact(kappa_bits_per_user_step)
     if kappa <= 0:
         raise MCRLContractError("kappa must be explicitly supplied and positive")
     return eta, kappa

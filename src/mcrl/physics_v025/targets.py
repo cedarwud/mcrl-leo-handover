@@ -132,14 +132,14 @@ def network_objective(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> Fraction:
     """F = B - eta_ref E for the whole network; Phi stays separate."""
 
     eta, _kappa = assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     return outcome.bits - eta * outcome.joules
 
@@ -157,14 +157,14 @@ def c1_difference_surplus(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> C1Label:
     """Whole-network C1 difference versus the declared default action."""
 
     eta, kappa = assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     core = (candidate.bits - default.bits) - eta * (candidate.joules - default.joules)
     # Phi_1=.5 and Phi_2=1 are prices in κ-bit units.  Dividing the physical
@@ -219,14 +219,14 @@ def project_three_offsets(
     architecture: str,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> tuple[OffsetProjection, ...]:
     """Project three physical offsets and force background re-optimisation."""
 
     assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     rows = tuple(
         evaluator(index, index * DECISION_INTERVAL_S, assignments, True)
@@ -254,7 +254,7 @@ def c2_persistence_forecast(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
     horizon_offsets: int = FORECAST_OFFSETS,
 ) -> C2Label:
     """OPS-3-style absorbing persistence with one -kappa per lost offset.
@@ -267,7 +267,7 @@ def c2_persistence_forecast(
     eta, kappa = assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     candidate_rows, default_rows = tuple(candidate), tuple(default)
     if horizon_offsets not in {1, 2, FORECAST_OFFSETS}:
@@ -321,7 +321,7 @@ def c3_lcsrs_interaction(
     f11: NetworkOutcome,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> C3Interaction:
     """Declared LC-SRS two-user interaction Psi on one network objective F."""
 
@@ -333,7 +333,7 @@ def c3_lcsrs_interaction(
             outcome,
             lambda_bits_per_j=lambda_bits_per_j,
             eta_ref=eta_ref,
-            kappa_bits_per_user_s=kappa_bits_per_user_s,
+            kappa_bits_per_user_step=kappa_bits_per_user_step,
         )
         for outcome in (f00, f10, f01, f11)
     )
@@ -359,7 +359,7 @@ def c3_set_interaction(
     outcomes_by_subset: Mapping[frozenset[int], NetworkOutcome],
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> C3SetInteraction:
     """Allocate a set interaction with exact Shapley arithmetic.
 
@@ -384,7 +384,7 @@ def c3_set_interaction(
             outcome,
             lambda_bits_per_j=lambda_bits_per_j,
             eta_ref=eta_ref,
-            kappa_bits_per_user_s=kappa_bits_per_user_s,
+            kappa_bits_per_user_step=kappa_bits_per_user_step,
         )
         for subset, outcome in outcomes_by_subset.items()
     }
@@ -427,6 +427,7 @@ class SetScoreDecomposition:
     d_by_user: tuple[tuple[int, Fraction], ...]
     interaction_bits: Fraction
     shapley_interaction_by_user: tuple[tuple[int, Fraction], ...]
+    credit_split: str
     joint_change_bits: Fraction
     phi_difference: Fraction
     c1: Fraction
@@ -445,30 +446,35 @@ def set_score_decomposition(
     outcomes_by_subset: Mapping[frozenset[int], NetworkOutcome],
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
     phi_difference: int | float | str | Fraction = 0,
 ) -> SetScoreDecomposition:
-    """Compute d_i, Psi_A and exact Shapley interaction credit.
+    """Compute the O(|A|) set decomposition and bounded reporting credit.
 
-    The complete powerset is required deliberately: a missing counterfactual
-    is an invalid certificate, never an inferred zero interaction.  For an
-    empty changed set the decomposition is the exact zero/base identity.
+    The physical decomposition needs only the empty, singleton, and complete
+    coalition outcomes.  Exact Shapley credit is a reporting-only supplement
+    when ``|A| <= 4`` and the caller supplies the complete small powerset.
+    Large coalitions never enumerate subsets and explicitly report that no
+    per-user split was computed.
     """
 
     users = tuple(sorted(int(user) for user in coalition_users))
     if len(set(users)) != len(users):
         raise MCRLContractError("set-score coalition users must be unique")
-    expected = {
-        frozenset(subset)
-        for size in range(len(users) + 1)
-        for subset in itertools.combinations(users, size)
+    sparse_required = {
+        frozenset(),
+        frozenset(users),
+        *(frozenset((user,)) for user in users),
     }
-    if set(outcomes_by_subset) != expected:
-        raise MCRLContractError("set-score decomposition needs the complete powerset")
+    supplied = set(outcomes_by_subset)
+    if not sparse_required <= supplied:
+        raise MCRLContractError(
+            "set-score decomposition needs empty, singleton, and complete outcomes"
+        )
     eta, kappa = assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     phi = exact(phi_difference)
     values = {
@@ -481,18 +487,28 @@ def set_score_decomposition(
     )
     joint = values[frozenset(users)] - base
     interaction = joint - sum((value for _user, value in d_by_user), Fraction())
+    complete_powerset = {
+        frozenset(subset)
+        for size in range(len(users) + 1)
+        for subset in itertools.combinations(users, size)
+    }
     if len(users) < 2:
         credits = tuple((user, Fraction()) for user in users)
-    else:
+        credit_split = "EXACT_TRIVIAL"
+    elif len(users) <= 4 and supplied == complete_powerset:
         allocated = c3_set_interaction(
             coalition_users=users,
             outcomes_by_subset=outcomes_by_subset,
             lambda_bits_per_j=lambda_bits_per_j,
             eta_ref=eta_ref,
-            kappa_bits_per_user_s=kappa_bits_per_user_s,
+            kappa_bits_per_user_step=kappa_bits_per_user_step,
         )
         credits = allocated.z3_by_user
-    if sum((value for _user, value in credits), Fraction()) != interaction:
+        credit_split = "EXACT_SHAPLEY_SMALL_SET"
+    else:
+        credits = ()
+        credit_split = "NOT_COMPUTED_LARGE_SET" if len(users) > 4 else "NOT_SUPPLIED_SMALL_SET"
+    if credits and sum((value for _user, value in credits), Fraction()) != interaction:
         raise MCRLContractError("set-score Shapley credits do not conserve Psi_A")
     c1 = sum((value for _user, value in d_by_user), Fraction()) / kappa
     c3 = interaction / kappa
@@ -503,6 +519,7 @@ def set_score_decomposition(
         d_by_user,
         interaction,
         credits,
+        credit_split,
         joint,
         phi,
         c1,
@@ -570,14 +587,14 @@ def assert_reward_core_identity(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> Fraction:
     """Prove sum_t(B_t-eta E_t) == B-eta E for the supplied trajectory."""
 
     eta, _kappa = assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     rows = tuple(steps)
     lhs = sum((reward_core(row, eta_ref=eta) for row in rows), Fraction())

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from typing import TYPE_CHECKING
+
+import numpy as np
 
 from .acm import RateModel
 from .architectures import (
@@ -14,6 +17,10 @@ from .architectures import (
     RadiationResult,
 )
 from .energy import EnergyReceipt, HardwareInventory, schedule_energy
+from .tapes import PrimitiveStepArrays
+
+if TYPE_CHECKING:
+    from .batch import BatchARResult
 
 
 @dataclass(frozen=True)
@@ -33,17 +40,73 @@ class ResolutionResult:
 
 
 def resolve_configuration(
-    architecture: RadiationArchitecture,
-    radiation_config: RadiationConfig,
-    geometry: Geometry,
-    rate_model: RateModel,
-    inventory: HardwareInventory,
+    architecture: RadiationArchitecture | None = None,
+    radiation_config: RadiationConfig | None = None,
+    geometry: Geometry | None = None,
+    rate_model: RateModel | None = None,
+    inventory: HardwareInventory | None = None,
     *,
-    duration_s: float,
+    duration_s: float | None = None,
     field: FieldKind = "realised",
     idle_power_w: float = 0.0,
-) -> ResolutionResult:
-    """Resolve all attempts jointly; failed attempts remain in RF and energy."""
+    batch_arrays: PrimitiveStepArrays | None = None,
+    batch_selected_rows: np.ndarray | None = None,
+    batch_chunk_size: int = 256,
+    batch_rate_target_bps: float | None = None,
+    batch_circuit_power_per_active_chain_w: float | None = None,
+    batch_boundary_indices: tuple[int, ...] = tuple(range(48)),
+) -> ResolutionResult | "BatchARResult":
+    """Resolve one scalar configuration or one dense catalogue request."""
+
+    if batch_arrays is not None or batch_selected_rows is not None:
+        if batch_arrays is None or batch_selected_rows is None:
+            raise ValueError("dense resolution needs arrays and selected rows together")
+        if any(
+            value is not None
+            for value in (architecture, radiation_config, geometry, rate_model, inventory)
+        ) or duration_s is not None:
+            raise ValueError("dense and scalar resolution inputs cannot be mixed")
+        if idle_power_w != 0.0:
+            raise ValueError("idle_power_w is a scalar-only resolution input")
+        from .batch import _evaluate_ar_tdm_catalogue_core
+
+        kwargs: dict[str, object] = {
+            "field": field,
+            "chunk_size": batch_chunk_size,
+            "boundary_indices": batch_boundary_indices,
+        }
+        if batch_rate_target_bps is not None:
+            kwargs["rate_target_bps"] = batch_rate_target_bps
+        if batch_circuit_power_per_active_chain_w is not None:
+            kwargs["circuit_power_per_active_chain_w"] = (
+                batch_circuit_power_per_active_chain_w
+            )
+        return _evaluate_ar_tdm_catalogue_core(
+            batch_arrays,
+            batch_selected_rows,
+            **kwargs,
+        )
+
+    if (
+        batch_chunk_size != 256
+        or batch_rate_target_bps is not None
+        or batch_circuit_power_per_active_chain_w is not None
+        or batch_boundary_indices != tuple(range(48))
+    ):
+        raise ValueError("batch resolution inputs require arrays and selected rows")
+
+    if any(
+        value is None
+        for value in (
+            architecture,
+            radiation_config,
+            geometry,
+            rate_model,
+            inventory,
+            duration_s,
+        )
+    ):
+        raise ValueError("scalar resolution inputs are incomplete")
 
     if not math.isfinite(duration_s) or duration_s < 0.0:
         raise ValueError("duration_s must be finite and nonnegative")

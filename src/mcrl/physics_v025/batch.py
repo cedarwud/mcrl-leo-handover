@@ -70,7 +70,7 @@ def _slot_grid(maximum_occupancy: int) -> tuple[np.ndarray, np.ndarray]:
     return (ordered[1:] - ordered[:-1], (ordered[1:] + ordered[:-1]) / 2.0)
 
 
-def evaluate_ar_tdm_catalogue(
+def _evaluate_ar_tdm_catalogue_core(
     arrays: PrimitiveStepArrays,
     selected_rows: np.ndarray,
     *,
@@ -309,9 +309,24 @@ def evaluate_ar_tdm_catalogue(
                 certificate_iterations[destination] += iteration
                 residual_max[low:high] = np.maximum(residual_max[low:high], residual)
                 valid_result[low:high] &= ~invalid
+                # Preserve the pre-stage-4c full-path endpoint exactly: both
+                # scalar and batch paths take one final fixed-point update
+                # before the target-clearance nudge.  Status classification
+                # still uses the bounded loop above.
+                final = np.minimum(
+                    BEAM_RF_CAP_W,
+                    targets
+                    * (
+                        noise
+                        + np.matmul(coupling, power[..., None])[..., 0]
+                    )
+                    / direct_nominal,
+                )
+                final = np.where(active, final, 0.0)
+                final[forced] = BEAM_RF_CAP_W
                 power = np.minimum(
                     BEAM_RF_CAP_W,
-                    np.nextafter(power * (1.0 + 2.0e-9), np.inf),
+                    np.nextafter(final * (1.0 + 2.0e-9), np.inf),
                 )
                 power = np.where(active, power, 0.0)
                 power[forced] = BEAM_RF_CAP_W
@@ -458,6 +473,34 @@ def evaluate_ar_tdm_catalogue(
             )
         )
     )
+
+
+def evaluate_ar_tdm_catalogue(
+    arrays: PrimitiveStepArrays,
+    selected_rows: np.ndarray,
+    *,
+    field: str = "realised",
+    chunk_size: int = 256,
+    rate_target_bps: float = RATE_TARGET_BPS,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+    boundary_indices: tuple[int, ...] = tuple(range(48)),
+) -> BatchARResult:
+    """Route dense catalogue resolution through the common public seam."""
+
+    from .resolution import resolve_configuration
+
+    result = resolve_configuration(
+        batch_arrays=arrays,
+        batch_selected_rows=selected_rows,
+        field=field,  # type: ignore[arg-type]
+        batch_chunk_size=chunk_size,
+        batch_rate_target_bps=rate_target_bps,
+        batch_circuit_power_per_active_chain_w=circuit_power_per_active_chain_w,
+        batch_boundary_indices=boundary_indices,
+    )
+    if not isinstance(result, BatchARResult):
+        raise MCRLContractError("dense resolver returned a scalar result")
+    return result
 
 
 __all__ = ["BatchARResult", "evaluate_ar_tdm_catalogue"]

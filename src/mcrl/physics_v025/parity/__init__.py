@@ -82,12 +82,12 @@ def _prices(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> tuple[Fraction, Fraction]:
     return assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
 
 
@@ -117,7 +117,7 @@ def declared_c3_oracle(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> C3ParityResult:
     """Independent LC-SRS Ψ oracle, adapted from the V0.23 parity suite."""
 
@@ -125,7 +125,7 @@ def declared_c3_oracle(
     price, _ = _prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     f_values = tuple(row.total_bits - price * row.energy_j for row in rows)
     # The successor whole-network C1 already carries every unilateral bit and
@@ -144,7 +144,7 @@ def production_c3(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> C3ParityResult:
     """Evaluate the same raw profiles through the production target formula."""
 
@@ -157,7 +157,7 @@ def production_c3(
         f11=_outcome(p11),
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     return C3ParityResult(
         (result.f00, result.f10, result.f01, result.f11),
@@ -179,7 +179,7 @@ def trace_declared_target_decoder_parity(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> DecoderParityTrace:
     """Cross both formulas and both decoders through actions to endpoints."""
 
@@ -188,13 +188,13 @@ def trace_declared_target_decoder_parity(
         *rows,
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     production = production_c3(
         *rows,
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     by_label = {row.label: row for row in rows}
     additive_label = f"{int(declared.lcsrs_shares[0] > 0)}{int(declared.lcsrs_shares[1] > 0)}"
@@ -227,14 +227,14 @@ def demand_cap_profiles(
     demand_cap_bits: int | float | str | Fraction,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> tuple[DecisionProfile, ...]:
     """Apply a demand cap after binding prices; a non-binding cap is invariant."""
 
     _prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     cap = exact(demand_cap_bits)
     if cap < 0:
@@ -255,7 +255,7 @@ def reoptimize_joint_by_regime(
     *,
     lambda_by_regime: Mapping[str, int | float | str | Fraction],
     eta_ref_by_regime: Mapping[str, int | float | str | Fraction],
-    kappa_bits_per_user_s_by_regime: Mapping[str, int | float | str | Fraction],
+    kappa_bits_per_user_step_by_regime: Mapping[str, int | float | str | Fraction],
 ) -> dict[str, str]:
     """Re-evaluate every atomic J candidate separately in each physics regime."""
 
@@ -263,7 +263,7 @@ def reoptimize_joint_by_regime(
         set(profiles_by_regime)
         == set(lambda_by_regime)
         == set(eta_ref_by_regime)
-        == set(kappa_bits_per_user_s_by_regime)
+        == set(kappa_bits_per_user_step_by_regime)
     ):
         raise MCRLContractError("every regime needs explicit lambda, eta, and kappa")
     choices = {}
@@ -272,7 +272,7 @@ def reoptimize_joint_by_regime(
         price, _ = _prices(
             lambda_bits_per_j=lambda_by_regime[regime],
             eta_ref=eta_ref_by_regime[regime],
-            kappa_bits_per_user_s=kappa_bits_per_user_s_by_regime[regime],
+            kappa_bits_per_user_step=kappa_bits_per_user_step_by_regime[regime],
         )
         index = min(range(4), key=lambda item: (-(rows[item].total_bits - price * rows[item].energy_j), item))
         choices[regime] = rows[index].label
@@ -284,14 +284,14 @@ def common_action_bootstrap(
     *,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> BootstrapChoice:
     """Choose one scalarised next action; never mix maxima across heads."""
 
     _prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     rows = tuple(tuple(exact(value) for value in heads) for heads in heads_by_action)
     if not rows or any(len(row) != len(rows[0]) for row in rows):
@@ -306,14 +306,14 @@ def reward_endpoint_identity(
     step_energy_j: Sequence[int | float | str | Fraction],
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> Fraction:
     """Imported parity assertion: step rewards equal the pooled endpoint core."""
 
     eta, _ = _prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     if len(step_bits) != len(step_energy_j) or not step_bits:
         raise MCRLContractError("reward parity arrays must be nonempty and equally sized")

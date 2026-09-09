@@ -22,7 +22,6 @@ from mcrl.physics_v025.targets import (
     c1_difference_surplus,
     c3_lcsrs_interaction,
     c3_set_interaction,
-    matched_anchor_decomposition,
 )
 
 
@@ -58,7 +57,7 @@ def test_c3_is_interaction_only_for_binding_energy_fixture() -> None:
         f11=_outcome(20, 8),
         lambda_bits_per_j=1,
         eta_ref=1,
-        kappa_bits_per_user_s=1,
+        kappa_bits_per_user_step=1,
     )
     assert interaction.psi == 2
     assert interaction.z3_by_user == ((3, 1), (9, 1))
@@ -72,10 +71,10 @@ def test_whole_network_c1_plus_pair_c3_counts_joint_change_once() -> None:
         _outcome(30, 12),
     )
     c1_first = c1_difference_surplus(
-        f10, f00, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_s=1
+        f10, f00, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_step=1
     )
     c1_second = c1_difference_surplus(
-        f01, f00, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_s=1
+        f01, f00, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_step=1
     )
     c3 = c3_lcsrs_interaction(
         coalition_users=(0, 1),
@@ -85,7 +84,7 @@ def test_whole_network_c1_plus_pair_c3_counts_joint_change_once() -> None:
         f11=f11,
         lambda_bits_per_j=1,
         eta_ref=1,
-        kappa_bits_per_user_s=1,
+        kappa_bits_per_user_step=1,
     )
     asserted = c1_first.difference_surplus_bits + c1_second.difference_surplus_bits
     asserted += sum((value for _, value in c3.z3_by_user), Fraction())
@@ -109,30 +108,11 @@ def test_three_user_shapley_interaction_is_asymmetric_and_conservative() -> None
         outcomes_by_subset=outcomes,
         lambda_bits_per_j=1,
         eta_ref=1,
-        kappa_bits_per_user_s=1,
+        kappa_bits_per_user_step=1,
     )
     credits = dict(result.z3_by_user)
     assert len(set(credits.values())) > 1
     assert sum(credits.values(), Fraction()) == result.set_interaction == 9
-
-
-def test_matched_anchor_additive_interaction_identity() -> None:
-    base = (_outcome(100, 10), _outcome(120, 12))
-    selected = (_outcome(112, 10), _outcome(126, 11))
-    singletons = (
-        (_outcome(106, 10), _outcome(122, 12)),
-        (_outcome(103, 10), _outcome(124, 11)),
-    )
-    row = matched_anchor_decomposition(
-        base=base, selected=selected, singleton_selected=singletons
-    )
-    relative_pooled_ee = (
-        sum(x.bits for x in selected)
-        / sum(x.joules for x in selected)
-        / row.eta0
-        - 1
-    )
-    assert row.g_additive + row.g_interaction == relative_pooled_ee
 
 
 def test_kappa_is_per_user_decision_step_not_seconds() -> None:

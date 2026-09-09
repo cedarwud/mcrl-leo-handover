@@ -1,24 +1,28 @@
-# V0.25 probe seal package — stage-4c HOLD package (2026-09-08)
+# V0.25 probe seal package — stage-4d HOLD package (2026-09-08)
 
 Status: **HOLD — not launchable and not signed.** This package is outcome-blind.
 The real provider is integrated, but the measured exact catalogue path misses
 the binding compute targets. Formal R2 manifests, allocation, calibration,
 rehearsal, and smoke were therefore not opened; `PENDING_NOT_RUN` is a blocker,
-not a wildcard. Stage 4b changes the executable package and its prospective
+not a wildcard. Stage 4d changes the executable package and its prospective
 digests only; it does not convert this HOLD into a launch signature.
 
-Stage-4c stop note: the first quarantined real `a-r0` anchor reached
-59.698283185 s in selection through partial validation (10 s limit), then
-failed closed because FULL changed all 100 users and exact v1.5 Shapley would
-require a 2^100 coalition game. Stage 1 was 36.475540816 s and batched
-three-offset forecasts were 17.759278750 s. No complete anchor or receipt was
-produced. Consequently this draft preserves every formal manifest,
-calibration, rehearsal, q, stride, and smoke field as `PENDING_NOT_RUN`.
-`V025-ENGINE-STAGE4C-REPORT-2026-09-08.md` is the timing authority. A new
-controller decision is required before any further selection approximation.
+Stage-4d stop note: the complete quarantined `V025_PROBE/world/1` real `a-r0`
+anchor finished in 34.430552590 s after the tape existed, with all 14 arms and
+a 1,004-row catalogue. Including the one-time 21.482488605 s provider build,
+the conservative one-worker total was 55.942156606 s. The row count and <=60 s
+total gate pass, but coordinator selection took 24.663217761 s against 10 s.
+The 5-boundary stage-2 forecasts dominate at 18.328741991 s and alone exceed
+the gate. O(|A|) set decomposition removes the
+old 2^100 failure: Shapley is reporting-only for |A| <=4 and large sets record
+`credit_split=NOT_COMPUTED_LARGE_SET`. Decision item 6 nevertheless keeps this
+package on HOLD. Every formal manifest, allocation, calibration, rehearsal, q,
+stride and smoke field remains `PENDING_NOT_RUN`.
+`V025-ENGINE-STAGE4D-REPORT-2026-09-08.md` is the timing authority. A new
+controller decision is required before any further stage-2 approximation.
 
 The prospective implementation schema is
-`multi-catfish-mcrl-v025-matrix-probe-v1.6-stage4c`; it is not sealed by this
+`multi-catfish-mcrl-v025-matrix-probe-v1.7-stage4d`; it is not sealed by this
 HOLD draft. The controller-owned hash-chained attempt registry is fixed at
 `/home/sat/mcrl-records/ATTEMPT-REGISTRY-2026-09.jsonl`.
 
@@ -30,7 +34,7 @@ HOLD draft. The controller-owned hash-chained attempt registry is fixed at
 - Sealed contingency ladder SHA-256: `dd0a13caef63af55abbfa99ee66dd82f349e51d37d382200ab500fa4062e4570`.
 - Coupled-solve decision SHA-256: `5d981573fece213be5a241c6f05fbecbb83c155479b90e03ba9acd84421d6ef4`.
 - Pipeline-audit-A decision SHA-256: `ff216e724d7af8789f467693c02438763e2e77ee0290a9f4ec08fe42b7f4ada6`.
-- Launcher/receipt schema: `multi-catfish-mcrl-v025-matrix-probe-v1.5-stage4b`.
+- Launcher/receipt schema: `multi-catfish-mcrl-v025-matrix-probe-v1.7-stage4d`.
 - Canonical UTF-8 cell-list SHA-256: `2c1e47637d87daf5e559e1e4b4a9afd9904dbb3bdb891bf9f4546a75c498d2f0`.
 - Launcher SHA-256: `099f8c7e3b7778a3ecd2a84ab7a86011752cae7ddfc0e4edfb9f3668ed06cb2e`.
 - Integrated provider SHA-256: `51101e98b260efae544116027fe9b726cac20fe7983755eedc7cd8ae7bcc28a6`.
@@ -40,10 +44,13 @@ HOLD draft. The controller-owned hash-chained attempt registry is fixed at
   `87e8bb4598c1212c823469f33775dc8650dbc7667c2e2623c3ef44d4ad8e7d03`.
 - a-r0 off-axis SVG SHA-256:
   `cdcd912cdc0ab6b4cff78c3c7847b68a8ee57b5c42e3172647497b23e826cf17`.
-- Dry-run declared-target/decoder/reward/set-score KAT receipt SHA-256:
+- Stage-3 dry-run KAT receipt SHA-256 (superseded; not current authority):
   `d1abddb27d90996cc7057865a2f078472012db734e4b7cf6800ecd0ee5c8da16`.
+- Stage-4d independent gate-KAT source SHA-256:
+  `efff3b0bb41882173f12ca88427133e9dd5c67081ad677b8cd08ecb6adcf2acf`
+  (`22 passed`; the full V0.25 physics suite has 167 collected cases).
 - Current code-authority aggregate SHA-256:
-  `ff672ff1e3f35d99bd0d980ca6e032d735e3f409ba78cc790b1c4721ec80de4b`.
+  `e026fc7a3fd0ddf9a6fe3d501973ec8aca09505da9e3f2f49a88963f94356297`.
 
 ## Cell order to seal
 
@@ -87,7 +94,7 @@ a′-γU-margin
 The sealed v1.3 erratum resolves v1.2's “28” typo: 25 + 6 = 31 and no
 additional labels are inferred.
 
-The stage-4c prospective launcher executes `a-r0` alone, waits for all four successful
+The stage-4d prospective launcher executes `a-r0` alone, waits for all four successful
 receipts, and only then creates `AR0-DONE`. It next queues
 `R1,R2,R3,R4,R5=a′-r0,R6=a-γ0,R7,C2-H1,C2-H2`, followed by the remaining
 inherited treatments. R1–R4 and the two C2 horizons are additional sealed run
@@ -104,7 +111,7 @@ R3     ca99b6536e3d1c93751c064411f13d533f4eba2343eb838c0f59cc2e8ac91264
 R4     90a1585df9a475e0b3be8fed8a6ecc577e0e5d752a952e2d6954fdfa766fe0cb
 R5     9fc69c513998b9cf92bd7c200885a3d3d14f43e5979195887778af76e8e35065
 R6     6904b7fcaab49bb093f06d409d79831664194ad88f23afa0aa7e7a26734c443f
-R7     PENDING_CODE_AUTHORITY_RESEAL
+R7     3685bedd3abfb4dc4ca6f363b4a396422ee2d87892ba0473faad356156a24c0b
 C2-H1  e30a31b998a065d67cb6f9288256000604372deefdd7ce330694c148091721a0
 C2-H2  8e3e490793382677d91a034f080caa34bcf2a9d27871d32fa0d458d5b4b385d2
 ```
@@ -122,6 +129,12 @@ builder records the same full identity plus role/world/learner seeds and fails
 closed unless CLAIM_PANEL plus PROBE, CALIBRATION, REHEARSAL, KAT and
 SYNTHETIC_REAL are all enumerated with role-wise disjoint TLE dates. Formal
 allocation remains `PENDING_NOT_RUN`.
+
+Prospectively, `--manifest` also writes one mode-0444, SHA-256-bound prepared
+tape per world/profile. Every formal setting-unit loads that common tape and
+re-verifies its embedded world manifest; it does not reconstruct the provider.
+Calibration constructs each calibration world/profile once and reuses the tape
+across every setting.
 
 TLE selection is the inherited per-NORAD nearest epoch from date-1/date/date+1
 at episode start with absolute age <=24 h. Future epochs are permitted. This is
@@ -145,7 +158,7 @@ Synthetic aggregate receipt digests are `7bafa6fac30cdf9ffa80f324ae73fbb87fe4e83
 
 For every cell in the exact list above, the controller signs the exact rational
 triplet in `calibration-manifest.json`: `η_ref`, `lambda_bits_per_j`, and
-`kappa_bits_per_user_s`, plus the setting digest, selected nominal-greedy
+`kappa_bits_per_user_step`, plus the setting digest, selected nominal-greedy
 configuration IDs, two calibration domains, and per-setting calibration digest.
 The manifest enforces `λ = η_ref = ΣB_ref/ΣE_ref` and
 `κ = ΣB_ref/(U·N_ref)` bits per user-step, where `N_ref` is a decision-step
@@ -204,19 +217,23 @@ a′-γU-margin η=PENDING λ=PENDING κ=PENDING
   only from those proposals. LC-SRS uses atomic `00/10/01/11` profiles and the
   declared `Ψ = F11 − F10 − F01 + F00`; `t3_energy` is absent.
 - Current catalogue-definition digest:
-  `f99f9e9d2bbbd0673a3c18239408216f198f4d8566f891166daa2b0d8b679679`.
+  `d597adc828220a78c568ca292d2822ef3a3c72e4ffad91847af3bff10594151d`.
   The controller must replace this digest if provider-owned mask semantics alter
   any catalogue input before launch.
 
 ## Stage-4 compute disposition
 
-Stage-4c measurement supersedes the stage-4 lower-bound row below for the new
-selection path, but does not clear the HOLD: catalogue 3.045519408 s, stage 1
-36.475540816 s, stage-2 forecasts 17.759278750 s, argmax 0.011712220 s, and
-partial validation 2.405937545 s, totaling 59.698283185 s before the exact
-100-user Shapley expansion. The 10 s coordinator gate fails. A complete-anchor
-total and 33-step provider amortisation are unavailable because the run stopped
-at this mandatory gate.
+Stage-4d measurement supersedes the older lower bounds. The complete anchor had
+1,004 catalogue rows and took 34.430552590 s after the tape existed. Its
+measured coordinator path was 24.663217761 s: catalogue 1.772909427 s, k=0
+stage 1 4.010991145 s, five-boundary stage-2 forecasts 18.328741991 s,
+selection 0.008175172 s and bounded validation/BASE fallback 0.542052921 s.
+S_UNI then used its separate full-legal comparator budget for 9.749503436 s,
+reported two iterations and `DEADLINE_FALLBACK_BASE`. Including the one-time
+21.482488605 s provider build gives a conservative one-worker total of
+55.942156606 s. The <=1,500 catalogue and <=60 s complete-anchor gates pass,
+but the 10 s selection gate fails. Stage 2 is the dominating phase and alone
+exceeds 10 s. Formal work remains unopened.
 
 The engine now rolls 30 steps under all three carriers (90 anchors/world) and
 records `--anchor-stride` (default 1); merge rejects mixed strides. The arm list
@@ -225,10 +242,12 @@ coordinator's Level-B whole-path deadline is 10 s on one declared worker; operat
 unit concurrency is 20. `a-r0` is completed before any exploratory setting.
 
 Every complete configuration now has the executable v1.5 set-score
-decomposition: unilateral `d_i`, set residual `Psi_A`, exact Shapley interaction
-credits, and the exact `C1+C3 = F(a_A)-F(a0)` core identity. Factor arms use the
-same catalogue/selector with exactly FULL=`C1+C2+C3`, DROP_C1=`C2+C3`,
-DROP_C2=`C1+C3`, and DROP_C3=`C1+C2`.
+decomposition: unilateral `d_i`, set residual `Psi_A`, and the exact
+`C1+C3 = F(a_A)-F(a0)` core identity from O(|A|) evaluations. Exact Shapley
+interaction credit is reporting-only for |A| <=4; larger sets record
+`NOT_COMPUTED_LARGE_SET`, and no selection or validation depends on that split.
+Factor arms use the same catalogue/selector with exactly FULL=`C1+C2+C3`,
+DROP_C1=`C2+C3`, DROP_C2=`C1+C3`, and DROP_C3=`C1+C2`.
 
 Learner experiments use a two-way date x learner-seed pigeonhole bootstrap as
 primary, with arms paired and all pooled ratios recomputed per draw. The
@@ -247,15 +266,19 @@ Pre-outcome development measurements:
 | real-provider 48-boundary step | 9.9–12.5 s | <=1 s/anchor | FAIL |
 | exact a-r0 batch, 128 rows | 4.292 s (.0335 s/row) | <=.02 s/row | FAIL |
 | exact a-r0 batch, 2,912 rows | >90 s, interrupted | <=58.24 s | FAIL |
-| current + nominal + three offsets, lower bound | >450 s/anchor | 10 s | FAIL |
+| stage-4d provider construction | 21.482 s once/world | amortised once/world | measured |
+| stage-4d catalogue | 1.773 s / 1,004 rows | <=1,500 rows | PASS |
+| stage-4d k=0 stage 1 | 4.011 s | selection subtotal | measured |
+| stage-4d five-boundary stage 2 | 18.329 s | 10 s whole selection | FAIL |
+| stage-4d coordinator | 24.663 s | <=10 s | FAIL |
+| stage-4d full-legal S_UNI comparator | 9.750 s | own <=10 s budget | PASS |
+| stage-4d complete 14-arm anchor + provider | 55.942 s | <=60 s | PASS |
 
-The formal rehearsal would exceed its 10-core-minute ceiling before completing
-three anchors, so it was not opened. Formal `q`, 31×4×90 projected cost, and
-the smallest sealable stride are `PENDING_NOT_RUN`. A rough lower bound would
-require approximately stride 10, but it is not sealed because C2 is not yet on
-the batch path. The smoke (90 anchors, or first 10 anchors) would likewise
-exceed 60 core-minutes on the current path and was not opened. No outcome was
-used to change a default, order, constant, or rule.
+The formal rehearsal was not opened because the preceding 10 s real-anchor gate
+failed. Formal `q`, the 4×90 projection at concurrency 20, and the smallest
+sealable stride are `PENDING_NOT_RUN`; no stride is inferred from a failed gate.
+The 10-anchor development smoke was likewise not opened. No outcome was used to
+change a default, order, constant, or rule.
 
 ## Rehearsal cost to seal
 
@@ -288,9 +311,11 @@ no realised fading and no future TLE beyond the declared three-offset horizon.
 S0 uses nominal top-two proposals plus frozen evacuations; S_UNI uses iterated
 exact unilateral best response; FULL/DROP share the bounded catalogue and sum
 the declared C1/C2/C3 targets with one term removed by each DROP; UNI retains
-all targets but restricts search to unilateral moves. All apply the matched
-service guard and 10-s whole-path deadline, receipt declared workers, and
-fall back to BASE.
+all targets but restricts search to unilateral moves. Coordinator set arms use
+the matched service guard and 10-s whole-path deadline and fall back to BASE on
+a miss. S_UNI uses the same guard and k=0 `F+kappa*Phi` objective but owns an
+independent 10-s comparator budget; a coordinator miss cannot discard a
+successful S_UNI result. Every receipt records the declared worker count.
 
 Admission requires: physics/integrity PASS; complete U1 census with certified
 optimum; J1 beyond BASE and beyond U_all by more than certified numerical error
@@ -298,7 +323,7 @@ under matched QoS; deployable S0 >=1%; usable-energy opportunity beyond error
 where claimed; and every retained factor's FULL-DROP oracle marginal positive
 under QoS. U1 need not exceed BASE for C3. Training uses a-r0 regardless of
 secondary-cell results. The executable merge evaluates this primary decision
-from `a-r0` only. It also reports R1–R6 certificates and decisions separately,
+from `a-r0` only. It also reports R1–R7 certificates and decisions separately,
 each labelled “in regime R_k”; these cannot change the a-r0 result. No formal
 admission gate was evaluated in this HOLD package. A nonzero coupled-solver
 update residual is not treated as an F-error bound: J1 admission fails closed
@@ -314,18 +339,18 @@ than 20 concurrent processes.
 ```bash
 install -d /home/sat/mcrl-v025-probe-launch-2026-09-08/logs /home/sat/mcrl-v025-probe-launch-2026-09-08/output
 
-nohup bash -lc 'cd /home/sat/mcrl-v025-codex-ws-engine && PYTHONPATH=src python .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py --manifest --provider mcrl.physics_v025.provider_legacy:LegacyWorldProvider --output /home/sat/mcrl-v025-probe-launch-2026-09-08/output' >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/manifest.log 2>&1 &
+nohup bash -lc 'cd /home/sat/mcrl-v025-codex-ws-engine && PYTHONPATH=src python .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py --manifest --provider mcrl.physics_v025.provider_legacy:factory --output /home/sat/mcrl-v025-probe-launch-2026-09-08/output' >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/manifest.log 2>&1 &
 
-nohup bash -lc 'cd /home/sat/mcrl-v025-codex-ws-engine && PYTHONPATH=src python .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py --calibrate --provider mcrl.physics_v025.provider_legacy:LegacyWorldProvider --output /home/sat/mcrl-v025-probe-launch-2026-09-08/output' >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/calibration.log 2>&1 &
+nohup bash -lc 'cd /home/sat/mcrl-v025-codex-ws-engine && PYTHONPATH=src python .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py --calibrate --provider mcrl.physics_v025.provider_legacy:factory --output /home/sat/mcrl-v025-probe-launch-2026-09-08/output' >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/calibration.log 2>&1 &
 
-nohup /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/probe/launch_v025_units.sh mcrl.physics_v025.provider_legacy:LegacyWorldProvider /home/sat/mcrl-v025-probe-launch-2026-09-08 20 STRIDE_PENDING >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/units-supervisor.log 2>&1 &
+nohup /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/probe/launch_v025_units.sh mcrl.physics_v025.provider_legacy:factory /home/sat/mcrl-v025-probe-launch-2026-09-08 20 STRIDE_PENDING >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/units-supervisor.log 2>&1 &
 
 nohup bash -lc 'cd /home/sat/mcrl-v025-codex-ws-engine && PYTHONPATH=src python .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py --merge --output /home/sat/mcrl-v025-probe-launch-2026-09-08/output' >/home/sat/mcrl-v025-probe-launch-2026-09-08/logs/merge.log 2>&1 &
 ```
 
 The controller runs the unit command only after both immutable manifest files
 and their sidecars exist and are signed, and runs merge only after the supervisor
-has exited successfully with all 148 immutable unit receipts present. These
+has exited successfully with all 152 immutable unit receipts present. These
 commands remain embargoed until the outstanding compute/C2 batching blockers
 are closed and a bounded formal rehearsal produces a valid q. The unit already
 contains 30 decision instants for each of three carriers (90 anchors/world), the

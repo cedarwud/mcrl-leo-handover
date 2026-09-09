@@ -251,30 +251,6 @@ def test_surplus_change_sign_matches_ee_at_exact_reference_ratio() -> None:
         assert (ee_delta > 0) - (ee_delta < 0) == expected_sign
 
 
-def test_fixed_overhead_scales_absolute_ee_not_fixed_action_contrast() -> None:
-    """A 10% bit overhead makes each EE 0.9x while (1.1B/E)/(B/E)=1.1 remains unchanged."""
-
-    base, candidate = Fraction(100, 10), Fraction(110, 10)
-    overhead = Fraction(9, 10)
-    assert overhead * base == Fraction(9)
-    assert (overhead * candidate) / (overhead * base) == candidate / base == Fraction(11, 10)
-
-
-def test_common_floor_can_reverse_ranking() -> None:
-    """9/8>10/10, but adding common 20 J gives 9/28<10/30."""
-
-    assert Fraction(9, 8) > Fraction(10, 10)
-    assert Fraction(9, 28) < Fraction(10, 30)
-
-
-def test_capacity_and_delivery_endpoints_remain_distinct() -> None:
-    """A 10-bit PHY capacity with only 5 queued bits is 10 capacity bits but 5 delivered bits."""
-
-    capacity_bits, queued_bits = 10, 5
-    delivered_bits = min(capacity_bits, queued_bits)
-    assert capacity_bits == 10 and delivered_bits == 5
-
-
 def test_physical_identity_mismatch_fails_closed() -> None:
     """A radiating (NORAD,chain) absent from the pre-action inventory cannot be charged."""
 

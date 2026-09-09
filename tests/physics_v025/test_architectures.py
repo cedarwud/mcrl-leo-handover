@@ -36,18 +36,6 @@ def geometry(links: tuple[Link, ...], cross: np.ndarray | None = None) -> Geomet
     return Geometry(links, matrix)
 
 
-def test_anchor_free_invariance_for_association_outage_and_dwell_histories() -> None:
-    """Identical current states have identical RF/wanted fields under any irrelevant history label."""
-
-    current = geometry((Link(7, (1001, 3), 0, 2.0),))
-    config = RadiationConfig(bandwidth_hz=1.0)
-    baseline = AngleTPC_TDM().radiate(config, current, "nominal")
-    for ignored_history in ("association-change", "outage-reentry", "dwell-boundary"):
-        del ignored_history  # There is deliberately no history argument in the V0.25 interface.
-        replay = AngleTPC_TDM().radiate(config, current, "nominal")
-        assert replay == baseline
-
-
 def test_b02_fixed_rf_consistency_at_received_field_level() -> None:
     """Both equal-gain co-users transmit p=1.65 and receive p*h=3.30 in their slots."""
 

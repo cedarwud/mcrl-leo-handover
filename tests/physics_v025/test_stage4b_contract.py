@@ -76,7 +76,7 @@ def test_v15_set_decomposition_and_factor_identity_are_exact() -> None:
         outcomes_by_subset={key: _outcome(value) for key, value in values.items()},
         lambda_bits_per_j=1,
         eta_ref=1,
-        kappa_bits_per_user_s=2,
+        kappa_bits_per_user_step=2,
         phi_difference=Fraction(-1, 2),
     )
     assert dict(result.d_by_user) == {0: 2, 1: 3, 2: 5}

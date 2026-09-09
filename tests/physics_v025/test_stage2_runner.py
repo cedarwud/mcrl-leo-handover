@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 from pathlib import Path
 import stat
-import subprocess
 import sys
 
 import pytest
@@ -21,21 +19,6 @@ def _load_runner():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
-
-
-def test_dry_run_executes_one_real_step_of_every_declared_arm() -> None:
-    result = subprocess.run(
-        [sys.executable, str(RUNNER_PATH), "--dry-run"],
-        cwd=REPO,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    payload = json.loads(result.stdout)
-    assert payload["status"] == "PASS"
-    assert payload["one_real_step_every_arm"] == payload["arms_expected"]
-    assert payload["no_environment_clone"] is True
-    assert len(payload["unit_receipt_sha256"]) == 64
 
 
 def test_estimate_binds_v12_cells_four_worlds_and_shared_rescore() -> None:

@@ -6,6 +6,7 @@ import importlib.util
 import inspect
 import math
 from dataclasses import replace
+from fractions import Fraction
 from pathlib import Path
 import sys
 import json
@@ -52,24 +53,24 @@ def _profiles() -> tuple[DecisionProfile, ...]:
 )
 def test_parity_producers_require_all_three_calibration_values(producer) -> None:
     signature = inspect.signature(producer)
-    for name in ("lambda_bits_per_j", "eta_ref", "kappa_bits_per_user_s"):
+    for name in ("lambda_bits_per_j", "eta_ref", "kappa_bits_per_user_step"):
         assert signature.parameters[name].default is inspect.Parameter.empty
 
 
 def test_declared_target_decoder_cross_product_reaches_physical_endpoints() -> None:
     profiles = _profiles()
     declared = declared_c3_oracle(
-        *profiles, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_s=2
+        *profiles, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_step=2
     )
     production = production_c3(
-        *profiles, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_s=2
+        *profiles, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_step=2
     )
     assert declared.unilateral_c3 == production.unilateral_c3 == (0, 0)
     assert declared.psi == production.psi == 2
     assert declared.lcsrs_shares == production.lcsrs_shares == (1, 1)
 
     trace = trace_declared_target_decoder_parity(
-        *profiles, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_s=2
+        *profiles, lambda_bits_per_j=1, eta_ref=1, kappa_bits_per_user_step=2
     )
     assert set(trace.raw_state_endpoints) == {"00", "10", "01", "11"}
     for label, endpoint in trace.raw_state_endpoints.items():
@@ -91,10 +92,10 @@ def test_whole_network_c1_leaves_no_unilateral_externality_in_c3() -> None:
         DecisionProfile.build("11", bits=(16, 22), energy_j=8, served=(True, True)),
     )
     declared = declared_c3_oracle(
-        *profiles, lambda_bits_per_j=2, eta_ref=2, kappa_bits_per_user_s=3
+        *profiles, lambda_bits_per_j=2, eta_ref=2, kappa_bits_per_user_step=3
     )
     production = production_c3(
-        *profiles, lambda_bits_per_j=2, eta_ref=2, kappa_bits_per_user_s=3
+        *profiles, lambda_bits_per_j=2, eta_ref=2, kappa_bits_per_user_step=3
     )
     assert declared == production
     assert declared.unilateral_c3 == (0, 0)
@@ -108,7 +109,7 @@ def test_nonbinding_demand_cap_and_per_regime_joint_reoptimization() -> None:
         demand_cap_bits=100,
         lambda_bits_per_j=1,
         eta_ref=1,
-        kappa_bits_per_user_s=2,
+        kappa_bits_per_user_step=2,
     )
     assert capped == profiles
     choices = reoptimize_joint_by_regime(
@@ -123,7 +124,7 @@ def test_nonbinding_demand_cap_and_per_regime_joint_reoptimization() -> None:
         },
         lambda_by_regime={"bits-first": 0.1, "energy-first": 2},
         eta_ref_by_regime={"bits-first": 0.1, "energy-first": 2},
-        kappa_bits_per_user_s_by_regime={"bits-first": 2, "energy-first": 2},
+        kappa_bits_per_user_step_by_regime={"bits-first": 2, "energy-first": 2},
     )
     assert choices == {"bits-first": "11", "energy-first": "00"}
 
@@ -133,7 +134,7 @@ def test_common_action_bootstrap_never_builds_unattainable_headwise_action() -> 
         ((10, 0), (0, 9)),
         lambda_bits_per_j=1,
         eta_ref=1,
-        kappa_bits_per_user_s=1,
+        kappa_bits_per_user_step=1,
     )
     assert result.action_index == 0
     assert result.selected_heads == (10, 0)
@@ -227,7 +228,7 @@ def test_treatment_t_receipt_reports_left_snapshot_beside_same_instant_integral(
         assert comparison["same_instant_integral"]["bits"] >= 0
 
 
-def test_h_treatment_removes_useful_time_during_candidate_scoring() -> None:
+def test_h_and_sh_treatments_change_both_rate_architecture_twins() -> None:
     runner = _runner()
     tape = runner.build_world_tape(
         domain=runner.PROBE_WORLD_DOMAINS[0],
@@ -238,17 +239,71 @@ def test_h_treatment_removes_useful_time_during_candidate_scoring() -> None:
     base = runner._base_configuration(tape, 0, "nearest-eligible")
     catalog = runner._catalogue(tape, 0, base)
     changed = next(row for row in catalog if row.changed_users == 1)
-    control = runner.StepEvaluator(
-        tape, runner._setting("a-r0"), 0, transition_from=base
-    ).evaluate(changed)
-    interrupted = runner.StepEvaluator(
-        tape, runner._setting("a-rH"), 0, transition_from=base
-    ).evaluate(changed)
-    assert interrupted.bits < control.bits
-    assert interrupted.joules == pytest.approx(control.joules)
-    assert sum(interrupted.score.useful_time_s.values()) < sum(
-        control.score.useful_time_s.values()
+    for control_name, interrupted_name in (
+        ("a-r0", "a-rH"),
+        ("a-rS", "a-rSH"),
+        ("a-γ0", "a-γH"),
+        ("a-γS", "a-γSH"),
+    ):
+        control = runner.StepEvaluator(
+            tape, runner._setting(control_name), 0, transition_from=base
+        ).evaluate(changed)
+        interrupted = runner.StepEvaluator(
+            tape, runner._setting(interrupted_name), 0, transition_from=base
+        ).evaluate(changed)
+        assert interrupted.bits < control.bits
+        assert interrupted.joules == pytest.approx(control.joules)
+        assert sum(interrupted.score.useful_time_s.values()) < sum(
+            control.score.useful_time_s.values()
+        )
+
+
+def test_all_31_settings_execute_pairwise_distinct_receipts_on_one_world_tape() -> None:
+    runner = _runner()
+
+    class CountingProvider(runner.TinySyntheticProvider):
+        constructions = 0
+
+        def __init__(self) -> None:
+            type(self).constructions += 1
+            super().__init__()
+
+    tape = runner.build_world_tape(
+        domain=runner.DEVELOPMENT_WORLD_DOMAINS[0],
+        provider=CountingProvider(),
+        steps=4,
+        start_time_s=0.0,
     )
+    receipts = []
+    for setting in runner.MATRIX_SETTINGS:
+        run_setting = runner.run_setting_for(setting.label)
+        calibration = runner.CalibrationValues(
+            run_setting.run_id,
+            run_setting.digest,
+            Fraction(10),
+            Fraction(10),
+            Fraction(50),
+            Fraction(200),
+            Fraction(20),
+            2,
+            2,
+            Fraction("60.16"),
+            runner.CALIBRATION_WORLD_DOMAINS,
+            ("fixture-world-1", "fixture-world-2"),
+        )
+        receipt = runner.run_unit(
+            setting=setting,
+            world_index=1,
+            executed_steps=1,
+            calibration=calibration,
+            run_setting=run_setting,
+            prepared_tape=tape,
+        )
+        assert receipt["anchor_count"] == 3
+        assert len(receipt["canonical_step_rows"]) == 3 * len(runner.ARMS)
+        receipts.append(receipt["receipt_sha256"])
+    assert CountingProvider.constructions == 1
+    assert len(receipts) == len(set(receipts)) == 31
 
 
 def test_rekey_estimator_is_derived_from_receipt_ledger_and_handles_no_boundary() -> None:
@@ -270,9 +325,9 @@ def test_rekey_estimator_is_derived_from_receipt_ledger_and_handles_no_boundary(
         "corrected_boundary_conditional_rekey_by_arm"
     ][runner.ALL_NEUTRAL_CONTROL]
     assert neutral == {
-        "rekeys": 2,
+        "rekeys": 3,
         "eligible_user_boundaries": 6,
-        "rate": 1 / 3,
+        "rate": 1 / 2,
         "numerator_source": "physical event ledger",
     }
 

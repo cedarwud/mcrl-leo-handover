@@ -125,7 +125,7 @@ class EncodedC2State:
     schema_sha256: str
     lambda_bits_per_j: Fraction
     eta_ref: Fraction
-    kappa_bits_per_user_s: Fraction
+    kappa_bits_per_user_step: Fraction
 
 
 def encode_c2_state(
@@ -134,14 +134,14 @@ def encode_c2_state(
     architecture: str,
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
-    kappa_bits_per_user_s: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
 ) -> EncodedC2State:
     """Normalize one action row and bind its per-setting calibration."""
 
     eta, kappa = assert_calibration_prices(
         lambda_bits_per_j=lambda_bits_per_j,
         eta_ref=eta_ref,
-        kappa_bits_per_user_s=kappa_bits_per_user_s,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
     )
     is_rate = architecture in {"a-r", "a′-r"}
     if is_rate and state.required_power_cap_margin_w is None:

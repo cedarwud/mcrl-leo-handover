@@ -11,6 +11,7 @@ import pytest
 from mcrl.errors import MCRLContractError
 from mcrl.physics_v025.calibration import (
     CalibrationObservation,
+    CalibrationValues,
     NominalConfiguration,
     assert_calibration_prices,
     freeze_setting_calibration,
@@ -198,7 +199,14 @@ def test_nominal_greedy_and_calibration_are_deterministic_per_setting() -> None:
     )
     frozen = freeze_setting_calibration(setting=setting, observations=observations)
     assert frozen.eta_ref == frozen.lambda_bits_per_j == 10
-    assert frozen.kappa_bits_per_user_s == 50
+    assert frozen.kappa_bits_per_user_step == 50
+    assert "kappa_bits_per_user_step" in frozen.payload()
+    assert "kappa_bits_per_user_s" not in frozen.payload()
+    legacy_payload = frozen.payload()
+    legacy_payload["kappa_bits_per_user_s"] = legacy_payload.pop(
+        "kappa_bits_per_user_step"
+    )
+    assert CalibrationValues.from_payload(legacy_payload) == frozen
     assert freeze_setting_calibration(setting=setting, observations=observations).digest == frozen.digest
 
 
@@ -216,7 +224,7 @@ def test_nominal_greedy_and_calibration_are_deterministic_per_setting() -> None:
 )
 def test_every_downstream_producer_has_no_default_energy_price(producer) -> None:
     signature = inspect.signature(producer)
-    for name in ("lambda_bits_per_j", "eta_ref", "kappa_bits_per_user_s"):
+    for name in ("lambda_bits_per_j", "eta_ref", "kappa_bits_per_user_step"):
         assert name in signature.parameters
         assert signature.parameters[name].default is inspect.Parameter.empty
 
@@ -225,7 +233,7 @@ def test_explicit_prices_fail_closed_on_missing_or_mismatch() -> None:
     with pytest.raises(TypeError):
         network_objective(_outcome(10, 1))
     with pytest.raises(MCRLContractError):
-        assert_calibration_prices(lambda_bits_per_j=9, eta_ref=10, kappa_bits_per_user_s=1)
+        assert_calibration_prices(lambda_bits_per_j=9, eta_ref=10, kappa_bits_per_user_step=1)
 
 
 def test_c1_is_whole_network_difference_plus_explicit_phi() -> None:
@@ -252,7 +260,7 @@ def test_c1_is_whole_network_difference_plus_explicit_phi() -> None:
         default,
         lambda_bits_per_j=5,
         eta_ref=5,
-        kappa_bits_per_user_s=1,
+        kappa_bits_per_user_step=1,
     )
     assert label.difference_surplus_bits == -9
     assert label.phi_difference == Fraction(-1, 2)
@@ -271,7 +279,7 @@ def test_c2_charges_failed_attempt_then_applies_absorbing_three_offset_penalty()
         default,
         lambda_bits_per_j=2,
         eta_ref=2,
-        kappa_bits_per_user_s=3,
+        kappa_bits_per_user_step=3,
     )
     assert label.forecast_surplus_bits == -7  # failed offset retains its +1 J attempt
     assert label.lost_offsets == 3
@@ -288,7 +296,7 @@ def test_c3_uses_declared_network_interaction_and_equal_split() -> None:
         f11=_outcome(22, 1),
         lambda_bits_per_j=5,
         eta_ref=5,
-        kappa_bits_per_user_s=3,
+        kappa_bits_per_user_step=3,
     )
     # Energy cancels: Psi = 22 - 14 - 13 + 10 = 5.
     assert interaction.psi == 5
@@ -312,7 +320,7 @@ def test_reward_core_identity_is_exact() -> None:
         rows,
         lambda_bits_per_j=4,
         eta_ref=4,
-        kappa_bits_per_user_s=2,
+        kappa_bits_per_user_step=2,
     ) == 14
 
 
@@ -334,7 +342,7 @@ def test_c2_schema_has_new_features_frozen_shape_and_price_binding() -> None:
         architecture="a-r",
         lambda_bits_per_j=10,
         eta_ref=10,
-        kappa_bits_per_user_s=3,
+        kappa_bits_per_user_step=3,
     )
     assert STATE_SHAPE == (21,)
     assert len(encoded.values) == 21

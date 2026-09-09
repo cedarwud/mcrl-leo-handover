@@ -372,7 +372,7 @@ def _solve_power(
             and max(recent_changes) < 1.0e-6
             and all(
                 right <= left + np.finfo(float).eps
-                for left, right in zip(recent_changes, recent_changes[1:], strict=True)
+                for left, right in zip(recent_changes, recent_changes[1:])
             )
         ):
             status = "CONVERGED_SLOW"
@@ -382,8 +382,11 @@ def _solve_power(
             )
     if enforce_target_clearance and power.size:
         # A monotone fixed-point sequence approaches the threshold from below.
-        # Move one negligible solver-scale step into the certified feasible
-        # half-space so the independently rounded PHY gate agrees.
+        # Preserve the established full-path endpoint by taking one final
+        # update, then move one negligible solver-scale step into the
+        # certified feasible half-space.
+        power = np.minimum(caps, targets * (noise + coupling @ power) / direct)
+        power[forced] = caps[forced]
         power = np.minimum(caps, np.nextafter(power * (1.0 + 2.0e-9), np.inf))
         power[forced] = caps[forced]
     return power, PowerCertificate(
