@@ -94125,3 +94125,3406 @@ collab: Wait
 codex
 The artifact verification passed: 184 SHA-256 sidecars, all 180 learner-readable shards, 8,456 decoded rows, 3,042 distinct live activation elevations/quantiles, and every activation inequality satisfies `q10·Γ(2) < threshold ≤ q10·Γ(3)`. The focused Stage-C tests also pass. Independent review is still running over the 120 MB generated corpus and code.
 collab: Wait
+codex
+The independent spec review found a real compliance issue in my first corpus: all 180 archived pair configurations were present, but their regenerated labels differed because the old pilot evaluated those four pair configurations through its compatibility path. I’m correcting this by carrying the archived pair rows verbatim and reconstructing their four exact baseline/singleton/joint receipts with that same sealed evaluator convention; new mechanism rows retain the uniform cached path. This preserves the old corpus literally as a subset while keeping the compatibility exception explicit.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-coalgen-ws/scripts/generate_mechanism_coalition_corpus.py
+2026-09-09T13:49:40.945205Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"Failed to create unified exec process: No such file or directory (os error 2)\")" }
+context compacted
+codex
+I found the one compatibility edge that matters: the archived pair catalogue used a different evaluation call pattern, so preserving its configurations alone did not preserve its exact labels. I’m correcting that path explicitly before regenerating and re-running the corpus audits.
+exec
+/bin/bash -lc "sed -n '1,180p' scripts/generate_mechanism_coalition_corpus.py && sed -n '360,500p' scripts/generate_mechanism_coalition_corpus.py && sed -n '1,220p' src/mcrl/stagec_v025/coalitions.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Generate the PILOT_NOT_CLAIM mechanism-aware exact coalition corpus."""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter, defaultdict
+from fractions import Fraction
+import hashlib
+import itertools
+import json
+import math
+from pathlib import Path
+import sys
+import time
+from typing import Mapping, Sequence
+
+import numpy as np
+
+from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+from mcrl.physics_v025.tapes import build_world_tape
+from mcrl.stagec_v025.canonical import (
+    canonical_json_bytes,
+    canonical_sha256,
+    float_hex,
+    write_once_with_sha256,
+)
+from mcrl.stagec_v025.coalitions import read_coalition_shard, write_coalition_shard
+from mcrl.stagec_v025.mechanism_corpus import (
+    AGGRESSOR_RELIEF,
+    BEAM_EVACUATION,
+    NESTED_SUBSETS,
+    OCCUPANCY_2_DIMINISHING,
+    OCCUPANCY_ACTIVATION,
+    PAIR_CATALOGUE,
+    CoalitionProposal,
+    beam_evacuation_proposals,
+    best_alternatives,
+    exact_interaction_label,
+    exact_r3,
+    nested_subset_proposals,
+    occupancy_2_diminishing_proposals,
+    occupancy_activation_audit,
+    occupancy_activation_proposals,
+)
+from mcrl.stagec_v025.shards import read_source_shard
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import run_v025_pilot_c3 as pilot  # noqa: E402
+
+
+LABEL = "PILOT_NOT_CLAIM"
+SCHEMA = "mcrl-v025-mechanism-coalition-corpus-v1"
+DEFAULT_SOURCE = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
+DEFAULT_OUTPUT = ROOT / "artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM"
+DEFAULT_REPORT = ROOT / "COALITION-CORPUS-2026-09-09.md"
+NESTED_ANCHORS_PER_WORLD = (0, 30, 60)
+
+
+def _identity(action):
+    if action.is_null:
+        return None
+    return (action.norad_id, action.beam_chain_id)
+
+
+def _calibration(source: Path):
+    payload = json.loads((source / f"{LABEL}-rows-manifest.json").read_text())["calibration"]
+    fraction = lambda key: Fraction(*payload[key])
+    return pilot.PilotCalibration(
+        eta_ref=fraction("eta_ref"),
+        lambda_bits_per_j=fraction("lambda_bits_per_j"),
+        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
+        bits_ref=fraction("bits_ref"),
+        joules_ref=fraction("joules_ref"),
+        users=int(payload["users"]),
+        source=str(payload["source"]),
+    )
+
+
+def _old_pair(source: Path, world_number: int, anchor_index: int, anchor):
+    path = source / "rows" / f"world-{world_number}" / f"{LABEL}-coalition-anchor-{anchor_index:03d}.jsonl"
+    payload = json.loads(path.read_text(encoding="ascii").splitlines()[1])
+    actions = []
+    for member in payload["context"]["members"]:
+        action = member["selected_action"]
+        identity = None if action["norad_id"] is None else (int(action["norad_id"]), int(action["beam_chain_id"]))
+        user = int(member["user_id"])
+        if anchor.mapping[user] == identity:
+            raise RuntimeError("archived pair member no longer changes the anchor")
+        actions.append((user, identity))
+    proposal = CoalitionProposal(
+        family=PAIR_CATALOGUE,
+        selected_actions=tuple(sorted(actions)),
+        mechanism_key=f"archived:{path.name}",
+        metadata={"archived_shard_sha256": hashlib.sha256(path.read_bytes()).hexdigest()},
+    )
+    archived_row = read_coalition_shard(path).rows[0]
+    return proposal, payload, archived_row
+
+
+def _aggressor_relief_proposals(tape, step_index: int, anchor, legal_actions) -> tuple[CoalitionProposal, ...]:
+    arrays = tape.steps[step_index].arrays
+    if arrays is None:
+        return ()
+    alternatives = best_alternatives(anchor.mapping, legal_actions)
+    row_of = arrays._row_index()
+    candidates = []
+    for victim in sorted(anchor.mapping):
+        victim_beam = anchor.mapping[victim]
+        victim_row = row_of.get((victim, victim_beam)) if victim_beam is not None else None
+        if victim not in alternatives or victim_row is None:
+            continue
+        contributors = []
+        for aggressor in sorted(anchor.mapping):
+            source_beam = anchor.mapping[aggressor]
+            if aggressor == victim or aggressor not in alternatives or source_beam is None:
+                continue
+            contribution = float(arrays._cross(0, victim_row, source_beam)[0])
+            if contribution > 0.0:
+                contributors.append((contribution, aggressor, source_beam))
+        contributors.sort(key=lambda item: (-item[0], item[1]))
+        if len(contributors) >= 3:
+            candidates.append((math.fsum(row[0] for row in contributors[:3]), victim, contributors))
+    if not candidates:
+        return ()
+    _harm, victim, contributors = min(candidates, key=lambda item: (-item[0], item[1]))
+    result = []
+    for top_n in (2, 3):
+        selected_users = (victim, *(row[1] for row in contributors[:top_n]))
+        contribution_rows = contributors[:top_n]
+        result.append(
+            CoalitionProposal(
+                family=AGGRESSOR_RELIEF,
+                selected_actions=tuple(sorted((user, alternatives[user]) for user in selected_users)),
+                mechanism_key=f"victim:{victim}:top:{top_n}",
+                metadata={
+                    "victim": victim,
+                    "top_contributor_count": top_n,
+                    "contributors": [row[1] for row in contribution_rows],
+                    "nominal_cross_gain": [float_hex(row[0]) for row in contribution_rows],
+                    "alternative_rule": "first-different-action-in-sealed-shortlist",
+                },
+            )
+        )
+    return tuple(result)
+
+
+def _beam_activation_audits(tape, step_index: int, anchor) -> dict[object, dict[str, object]]:
+    """Bind activation to each occupied beam's decision-instant elevation."""
+
+    arrays = tape.steps[step_index].arrays
+    if arrays is None:
+        return {}
+    row_of = arrays._row_index()
+    elevations = defaultdict(list)
+    for user, beam in anchor.mapping.items():
+        if beam is None:
+            continue
+        row = row_of.get((user, beam))
+        if row is not None:
+            elevations[beam].append(float(arrays.elevations_deg[0, row]))
+    result = {}
+    for beam, values in elevations.items():
+        audit = occupancy_activation_audit(min(values))
+        audit["incumbent_elevations_deg"] = sorted(values)
+        audit["beam_elevation_rule"] = "minimum-incumbent-actual-elevation"
+        result[beam] = audit
+    return result
+
+
+class ExactObjectiveCache:
+    """Anchor-local exact sealed-objective cache with authenticated full keys."""
+
+    def __init__(
+        self,
+        *,
+        tape,
+        step_index,
+            proposals = [pair]
+            beam_audits = _beam_activation_audits(tape, step_index, anchor)
+            activations = occupancy_activation_proposals(
+                anchor=anchor.mapping,
+                legal_actions=legal_actions,
+                beam_audits=beam_audits,
+            )
+            if activations:
+                occupancy_trainable_anchors.add((world_number, anchor_index))
+            proposals.extend(activations)
+            occupancy_2 = occupancy_2_diminishing_proposals(
+                anchor=anchor.mapping,
+                legal_actions=legal_actions,
+                beam_audits=beam_audits,
+            )
+            if occupancy_2:
+                occupancy_2_anchors.add((world_number, anchor_index))
+            proposals.extend(occupancy_2)
+            proposals.extend(_aggressor_relief_proposals(tape, step_index, anchor, legal_actions))
+            proposals.extend(beam_evacuation_proposals(anchor=anchor.mapping, legal_actions=legal_actions))
+            nested_block = None
+            if anchor_index in NESTED_ANCHORS_PER_WORLD:
+                alternatives = best_alternatives(anchor.mapping, legal_actions)
+                if len(alternatives) >= 6:
+                    nested_block = tuple(sorted(alternatives)[:6])
+                    proposals.extend(nested_subset_proposals(block=nested_block, alternatives=alternatives))
+
+            # Merge identical action configurations while retaining every family/mechanism label.
+            grouped = defaultdict(list)
+            for proposal in proposals:
+                grouped[tuple(sorted(proposal.mapping(anchor.mapping).items()))].append(proposal)
+            unique_proposals = [rows[0] for _assignments, rows in sorted(grouped.items(), key=lambda item: repr(item[0]))]
+            counter = pilot.ENGINE.EvaluationCounter()
+            evaluator = pilot.ENGINE.StepEvaluator(
+                tape, setting, step_index, transition_from=incumbent,
+                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+                field="nominal", counter=counter, run_setting=run_setting, boundary_indices=(0,),
+            )
+            cache = ExactObjectiveCache(
+                tape=tape, step_index=step_index, carrier=carrier, anchor=anchor,
+                evaluator=evaluator, calibration=calibration, setting=setting, run_setting=run_setting,
+            )
+            archived_counter = pilot.ENGINE.EvaluationCounter()
+            archived_evaluator = pilot.ENGINE.StepEvaluator(
+                tape, setting, step_index, transition_from=incumbent,
+                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+                field="nominal", counter=archived_counter, run_setting=run_setting,
+                boundary_indices=(0,),
+            )
+            archived_cache = ExactObjectiveCache(
+                tape=tape, step_index=step_index, carrier=carrier, anchor=anchor,
+                evaluator=archived_evaluator, calibration=calibration, setting=setting,
+                run_setting=run_setting, evaluation_mode="archived-pair-compatible-exact",
+            )
+            archived_selected = pair.mapping(anchor.mapping)
+            archived_cache.prepare((anchor.mapping, archived_selected))
+            archived_pair_label = exact_interaction_label(
+                anchor=anchor.mapping,
+                selected=archived_selected,
+                evaluate=archived_cache.value,
+            )
+            required = _all_required_mappings(anchor, unique_proposals)
+            if nested_block is not None:
+                alternatives = best_alternatives(anchor.mapping, legal_actions)
+                for mask in range(1 << len(nested_block)):
+                    mapping = anchor.mapping
+                    for offset, user in enumerate(nested_block):
+                        if mask & (1 << offset):
+                            mapping[user] = alternatives[user]
+                    required.append(mapping)
+            cache.prepare(required)
+            anchor_rows = []
+            anchor_family_records = []
+            for assignments, mechanism_rows in sorted(grouped.items(), key=lambda item: repr(item[0])):
+                selected = dict(assignments)
+                config = cache.config(selected)
+                try:
+                    label = exact_interaction_label(anchor=anchor.mapping, selected=selected, evaluate=cache.value)
+                except (ValueError, KeyError):
+                    invalid_proposals += len(mechanism_rows)
+                    continue
+                is_archived_pair = any(row.family == PAIR_CATALOGUE for row in mechanism_rows)
+                if is_archived_pair:
+                    label = archived_pair_label
+                    coalition_row = archived_pair_row
+                    receipt_cache = archived_cache
+                else:
+                    coalition_row = pilot._coalition_row(
+                        tape=tape, step_index=step_index, carrier=carrier,
+                        anchor_index=anchor_index, anchor=anchor, selected=config,
+                        evaluator=evaluator, rows_by_user_action=rows_by_user_action,
+                        calibration=calibration, run_setting=run_setting,
+                    )
+                    receipt_cache = cache
+                # The row builder and the independent Fraction path must agree exactly after float encoding.
+                normalized_psi = float(label.psi / normalization_kappa)
+                if coalition_row.psi_normalized_hex != float_hex(normalized_psi):
+                    raise RuntimeError(
+                        "independent exact label disagrees with coalition row builder: "
+                        f"row={coalition_row.psi_normalized_hex} "
+                        f"independent={float_hex(normalized_psi)} "
+                        f"row_delta={coalition_row.objective_delta_normalized_hex} "
+                        f"row_c1={coalition_row.c1_normalized_hex} "
+                        f"independent_delta={float_hex(float(label.objective_delta / normalization_kappa))} "
+                        f"independent_c1={float_hex(float(sum((value for _user, value in label.singleton_differences), Fraction()) / normalization_kappa))} "
+                        f"families={[row.family for row in mechanism_rows]}"
+                    )
+                families = sorted({row.family for row in mechanism_rows})
+                mechanisms = [
+                    {"family": row.family, "mechanism_key": row.mechanism_key, "metadata": dict(row.metadata)}
+                    for row in mechanism_rows
+                ]
+                r3_payload = None
+                if len(label.users) >= 3:
+                    r3, pair_terms = exact_r3(
+                        anchor=anchor.mapping, selected=selected, label=label, evaluate=cache.value
+                    )
+                    normalized_r3 = float(r3 / normalization_kappa)
+                    r3_values.append(normalized_r3)
+                    r3_payload = {
+                        "r3_normalized_hex": float_hex(normalized_r3),
+                        "pair_psi_normalized_hex": [
+                            {"users": list(pair_users), "psi": float_hex(float(value / normalization_kappa))}
+                            for pair_users, value in pair_terms
+                        ],
+                    }
+                receipt = {
+                    "schema": f"{SCHEMA}-family-index-row-v1",
+                    "artifact_label": LABEL,
+                    "world_id": domain,
+                    "anchor_index": anchor_index,
+                    "anchor_id": coalition_row.anchor_id,
+                    "configuration_id": config.configuration_id,
+                    "coalition_row_sha256": canonical_sha256(coalition_row.payload()),
+                    "coalition_size": len(label.users),
+                    "families": families,
+                    "mechanisms": mechanisms,
+                    "label_convention": "EXACT_SINGLETON_DIFFERENCES",
+                    "required_distinct_label_evaluations": len(label.users) + 2,
+                    "observed_distinct_label_evaluations": label.distinct_evaluation_count,
+                    "exact_objective_receipt": {
+"""Complete v1 coalition rows, invariant encoding, and authenticated shards."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from fractions import Fraction
+import hashlib
+import json
+import math
+from pathlib import Path
+from typing import Iterable, Mapping, Sequence
+
+import numpy as np
+
+from mcrl.physics_v025.targets import NetworkOutcome, coalition_identity
+
+from .canonical import (
+    StageCContractError,
+    canonical_json_bytes,
+    canonical_sha256,
+    float_hex,
+    parse_float_hex,
+    verify_sha256_sidecar,
+    write_once_with_sha256,
+)
+from .state import PhysicalAction
+
+
+COALITION_CONTEXT_SCHEMA = "mcrl-v025-stagec-c3-coalition-context-v2"
+COALITION_ROW_SCHEMA = "mcrl-v025-stagec-c3-coalition-row-v2"
+COALITION_SHARD_SCHEMA = "mcrl-v025-stagec-c3-coalition-shard-v2"
+PAIRWISE_CROSS_GAIN_TOP_K = 32
+MAX_LABEL_COALITION_SIZE = 4
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionMember:
+    user_id: int
+    reference_action: PhysicalAction
+    selected_action: PhysicalAction
+    selected_q1_row: tuple[float, ...]
+    incumbent_q1_row: tuple[float, ...]
+    missing_incumbent: bool
+
+    def __post_init__(self) -> None:
+        if (
+            not self.selected_q1_row
+            or len(self.selected_q1_row) != len(self.incumbent_q1_row)
+            or not all(
+                math.isfinite(value)
+                for value in (*self.selected_q1_row, *self.incumbent_q1_row)
+            )
+        ):
+            raise StageCContractError("selected and incumbent Q1 rows must be finite and aligned")
+
+    @property
+    def invariant_features(self) -> tuple[float, ...]:
+        def identity(action: PhysicalAction) -> tuple[float, float]:
+            if action.is_null:
+                return (-1.0, -1.0)
+            assert action.norad_id is not None and action.beam_chain_id is not None
+            return (
+                int.from_bytes(hashlib.sha256(f"sat:{action.norad_id}".encode()).digest()[:8], "big") / 2**64,
+                int.from_bytes(hashlib.sha256(f"beam:{action.beam_chain_id}".encode()).digest()[:8], "big") / 2**64,
+            )
+
+        reference_identity = identity(self.reference_action)
+        selected_identity = identity(self.selected_action)
+        return (
+            *self.selected_q1_row,
+            *self.incumbent_q1_row,
+            float(self.missing_incumbent),
+            *reference_identity,
+            *selected_identity,
+            float(self.reference_action != self.selected_action),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AffectedBeamContext:
+    beam_key: str
+    occupancy_before: int
+    occupancy_after: int
+    active_before: bool
+    active_after: bool
+    shared_capacity: float
+    interference_summary: float
+    capacity_margin: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.occupancy_before < 0 or self.occupancy_after < 0:
+            raise StageCContractError("coalition occupancy must be nonnegative")
+        if self.shared_capacity < 0.0 or not all(
+            math.isfinite(value)
+            for value in (self.shared_capacity, self.interference_summary, self.capacity_margin)
+        ):
+            raise StageCContractError("coalition shared-resource context is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionContext:
+    anchor_id: str
+    reference_profile: tuple[tuple[int, PhysicalAction], ...]
+    members: tuple[CoalitionMember, ...]
+    affected_beams: tuple[AffectedBeamContext, ...]
+    global_resource_features: tuple[float, ...]
+    pairwise_cross_gain_terms: tuple[tuple[str, str, float], ...] = ()
+
+    def __post_init__(self) -> None:
+        reference_users = tuple(user for user, _ in self.reference_profile)
+        member_users = tuple(member.user_id for member in self.members)
+        if (
+            not reference_users
+            or reference_users != tuple(sorted(reference_users))
+            or len(set(reference_users)) != len(reference_users)
+        ):
+            raise StageCContractError("coalition a0 must be a complete sorted user profile")
+        if len(set(member_users)) != len(member_users) or not set(member_users) <= set(reference_users):
+            raise StageCContractError("changed users must be unique members of a0")
+        if not self.affected_beams:
+            raise StageCContractError("coalition context requires affected resource rows")
+        if not self.global_resource_features or not all(
+            math.isfinite(value) for value in self.global_resource_features
+        ):
+            raise StageCContractError("global coalition features must be finite and nonempty")
+        widths = {len(member.invariant_features) for member in self.members}
+        if len(widths) > 1:
+            raise StageCContractError("coalition member feature widths differ")
+        beam_keys = {beam.beam_key for beam in self.affected_beams}
+        if any(
+            source not in beam_keys
+            or target not in beam_keys
+            or source == target
+            or not math.isfinite(gain)
+            or gain < 0.0
+            for source, target, gain in self.pairwise_cross_gain_terms
+        ):
+            raise StageCContractError("pairwise cross-gain relation context is invalid")
+        relation_keys = [(source, target) for source, target, _gain in self.pairwise_cross_gain_terms]
+        if len(relation_keys) != len(set(relation_keys)):
+            raise StageCContractError("pairwise cross-gain relation keys must be unique")
+        object.__setattr__(
+            self,
+            "pairwise_cross_gain_terms",
+            tuple(sorted(self.pairwise_cross_gain_terms, key=lambda row: (row[0], row[1]))),
+        )
+
+    @property
+    def changed_users(self) -> tuple[int, ...]:
+        return tuple(sorted(member.user_id for member in self.members))
+
+    @property
+    def payload_sha256(self) -> str:
+        return canonical_sha256(self.payload())
+
+    def payload(self) -> dict[str, object]:
+        _retained, residual_sum = self._bounded_pairwise_cross_gain_terms()
+        return {
+            "context_schema": COALITION_CONTEXT_SCHEMA,
+            "anchor_id": self.anchor_id,
+            "reference_profile": [
+                {"user_id": user, "action": action.payload()}
+                for user, action in self.reference_profile
+            ],
+            "members": [
+                {
+                    "user_id": member.user_id,
+                    "reference_action": member.reference_action.payload(),
+                    "selected_action": member.selected_action.payload(),
+                    "selected_q1_row_hex": [
+                        float_hex(value) for value in member.selected_q1_row
+                    ],
+                    "incumbent_q1_row_hex": [
+                        float_hex(value) for value in member.incumbent_q1_row
+                    ],
+                    "missing_incumbent": member.missing_incumbent,
+                }
+                for member in sorted(self.members, key=lambda item: item.user_id)
+            ],
+            "affected_beams": [
+                {
+                    "beam_key": beam.beam_key,
+                    "occupancy_before": beam.occupancy_before,
+                    "occupancy_after": beam.occupancy_after,
+                    "active_before": beam.active_before,
+                    "active_after": beam.active_after,
+                    "shared_capacity_hex": float_hex(beam.shared_capacity),
+                    "interference_summary_hex": float_hex(beam.interference_summary),
+                    "capacity_margin_hex": float_hex(beam.capacity_margin),
+                }
+                for beam in sorted(self.affected_beams, key=lambda item: item.beam_key)
+            ],
+            "global_resource_features_hex": [
+                float_hex(value) for value in self.global_resource_features
+            ],
+            "pairwise_cross_gain_top_k": PAIRWISE_CROSS_GAIN_TOP_K,
+            "pairwise_cross_gain_residual_sum_hex": float_hex(residual_sum),
+            "pairwise_cross_gain_terms": [
+                {
+                    "source_beam_key": source,
+                    "target_beam_key": target,
+                    "gain_hex": float_hex(gain),
+                }
+                for source, target, gain in self.pairwise_cross_gain_terms
+            ],
+        }
+
+    def _bounded_pairwise_cross_gain_terms(
+        self,
+    ) -> tuple[tuple[tuple[str, str, float], ...], float]:
+        """Top-K by magnitude, returned in canonical key order plus residual sum."""
+
+        ranked = sorted(
+            self.pairwise_cross_gain_terms,
+            key=lambda row: (-abs(row[2]), row[0], row[1]),
+        )
+        retained = tuple(
+            sorted(
+                ranked[:PAIRWISE_CROSS_GAIN_TOP_K],
+                key=lambda row: (row[0], row[1]),
+
+exec
+/bin/bash -lc "sed -n '170,360p' scripts/generate_mechanism_coalition_corpus.py
+sed -n '500,700p' scripts/generate_mechanism_coalition_corpus.py
+sed -n '1,3p' artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-0/PILOT_NOT_CLAIM-coalition-anchor-000.jsonl
+rg -n \"def _coalition_row|class CoalitionRow|def read_coalition_shard\" scripts/run_v025_pilot_c3.py src/mcrl/stagec_v025/coalitions.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+    return result
+
+
+class ExactObjectiveCache:
+    """Anchor-local exact sealed-objective cache with authenticated full keys."""
+
+    def __init__(
+        self,
+        *,
+        tape,
+        step_index,
+        carrier,
+        anchor,
+        evaluator,
+        calibration,
+        setting,
+        run_setting,
+        evaluation_mode="uniform-dense-exact",
+    ):
+        self.tape = tape
+        self.step_index = step_index
+        self.carrier = carrier
+        self.anchor = anchor
+        self.evaluator = evaluator
+        self.calibration = calibration
+        self.evaluator_configuration = {
+            "engine_schema": pilot.ENGINE.SCHEMA,
+            "setting_id": setting.label,
+            "setting_digest": run_setting.digest,
+            "field": evaluator.field,
+            "boundary_indices": list(evaluator.boundary_indices),
+            "physics_digest": pilot.PHYSICS_DIGEST,
+            "calibration_digest": calibration.digest,
+            "evaluation_mode": evaluation_mode,
+        }
+        self.anchor_context = {
+            "world_id": tape.domain,
+            "world_seed": tape.seed,
+            "step_index": step_index,
+            "carrier": carrier,
+            "anchor_configuration_id": anchor.configuration_id,
+            "anchor_assignments": list(anchor.assignments),
+            "transition_configuration_id": evaluator.transition_from.configuration_id,
+            "cell_rekeyed_users": list(evaluator.cell_rekeyed_users),
+        }
+        self._configs = {}
+        self._values = {}
+        self.requests = 0
+        self.hits = 0
+
+    def config(self, mapping: Mapping[int, object]):
+        assignments = tuple(sorted(mapping.items()))
+        config = self._configs.get(assignments)
+        if config is None:
+            config = (
+                self.anchor
+                if assignments == self.anchor.assignments
+                else pilot.ENGINE._configuration(
+                    self.anchor, dict(assignments), kind="mechanism-corpus-exact"
+                )
+            )
+            self._configs[assignments] = config
+        return config
+
+    def key(self, mapping: Mapping[int, object]) -> str:
+        config = self.config(mapping)
+        return canonical_sha256({
+            "schema": f"{SCHEMA}-evaluation-cache-key-v1",
+            "anchor": self.anchor_context,
+            "context": {
+                "objective": "bits-lambda*joules+kappa*phi",
+                "phi_reference": "anchor-to-proposed-actions",
+            },
+            "proposed_actions": list(config.assignments),
+            "evaluator_configuration": self.evaluator_configuration,
+        })
+
+    def prepare(self, mappings: Sequence[Mapping[int, object]]) -> None:
+        configs = {self.config(mapping).assignments: self.config(mapping) for mapping in mappings}
+        ordered = list(configs.values())
+        for start in range(0, len(ordered), 1024):
+            self.evaluator.evaluate_many(tuple(ordered[start:start + 1024]))
+
+    def value(self, mapping: Mapping[int, object]) -> Fraction:
+        self.requests += 1
+        key = self.key(mapping)
+        if key in self._values:
+            self.hits += 1
+            return self._values[key]
+        config = self.config(mapping)
+        if config.configuration_id in self.evaluator._invalid:
+            raise ValueError("invalid exact configuration")
+        profile = self.evaluator.evaluate(config)
+        outcome = profile.outcome(phi=pilot.ENGINE._phi_for(self.anchor, config))
+        eta = Fraction(str(float(self.calibration.eta_ref)))
+        kappa = Fraction(str(float(self.calibration.kappa_bits_per_user_step)))
+        value = outcome.bits - eta * outcome.joules + kappa * outcome.phi
+        self._values[key] = value
+        return value
+
+
+def _fraction_receipt(value: Fraction) -> list[int]:
+    return [value.numerator, value.denominator]
+
+
+def _all_required_mappings(anchor, proposals):
+    base = anchor.mapping
+    mappings = [base]
+    for proposal in proposals:
+        selected = proposal.mapping(base)
+        mappings.append(selected)
+        for user in proposal.users:
+            singleton = dict(base)
+            singleton[user] = selected[user]
+            mappings.append(singleton)
+        if len(proposal.users) >= 3:
+            for first, second in itertools.combinations(proposal.users, 2):
+                pair = dict(base)
+                pair[first] = selected[first]
+                pair[second] = selected[second]
+                mappings.append(pair)
+    return mappings
+
+
+def _quantiles(values):
+    if not values:
+        return {key: None for key in ("min", "p05", "p50", "p95", "max", "mean", "mean_abs")}
+    array = np.asarray(values, dtype=np.float64)
+    return {
+        "min": float(array.min()), "p05": float(np.quantile(array, 0.05)),
+        "p50": float(np.quantile(array, 0.50)), "p95": float(np.quantile(array, 0.95)),
+        "max": float(array.max()), "mean": float(array.mean()),
+        "mean_abs": float(np.abs(array).mean()),
+    }
+
+
+def _write_jsonl(path: Path, header: Mapping[str, object], rows: Sequence[Mapping[str, object]]) -> str:
+    encoded = b"\n".join(canonical_json_bytes(value) for value in (header, *rows)) + b"\n"
+    return write_once_with_sha256(path, encoded)
+
+
+def generate(*, source: Path, output: Path, world_limit: int | None, anchor_limit: int | None) -> dict:
+    started = time.perf_counter()
+    output.mkdir(parents=True, exist_ok=False)
+    calibration = _calibration(source)
+    normalization_kappa = Fraction(str(float(calibration.kappa_bits_per_user_step)))
+    setting = pilot.ENGINE._setting("a-r0")
+    run_setting = pilot.ENGINE.run_setting_for("a-r0")
+    size_histogram = Counter()
+    family_histogram = Counter()
+    coalitions_per_anchor = []
+    occupancy_trainable_anchors = set()
+    occupancy_2_anchors = set()
+    family_rows = []
+    family_psi_values = defaultdict(list)
+    nested_observations = []
+    r3_values = []
+    invalid_proposals = 0
+    old_pair_exact_matches = 0
+    old_pair_mismatches = []
+    total_cache_requests = total_cache_hits = total_physical = 0
+    shard_paths = []
+    global_anchor = 0
+    worlds = pilot.TRAIN_WORLDS if world_limit is None else pilot.TRAIN_WORLDS[:world_limit]
+    for world_number, domain in enumerate(worlds, start=1):
+        print(json.dumps({"event": "world-start", "world": domain}), flush=True)
+        tape = build_world_tape(
+            domain=domain,
+            provider=LegacyWorldProvider(role="mechanism-coalition-corpus"),
+            steps=33,
+            start_time_s=0.0,
+        )
+        for anchor_index in range(90):
+            if anchor_limit is not None and global_anchor >= anchor_limit:
+                break
+            step_index, carrier_offset = divmod(anchor_index, len(pilot.ENGINE.REFERENCE_CARRIERS))
+            carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_offset]
+            anchor = pilot.ENGINE._base_configuration(tape, step_index, carrier)
+            incumbent = pilot.ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+            options, _census = pilot.ENGINE._selection_shortlist(tape, step_index, run_setting=run_setting)
+            legal_actions = {
+                user: tuple(dict.fromkeys((anchor.mapping[user], *options[user], None)))
+                for user in sorted(anchor.mapping)
+            }
+            source_path = source / "rows" / f"world-{world_number}" / f"{LABEL}-source-anchor-{anchor_index:03d}.jsonl"
+            source_shard = read_source_shard(source_path)
+            rows_by_user_action = {(row.user_id, _identity(row.action)): row for row in source_shard.rows}
+            pair, old_payload, archived_pair_row = _old_pair(
+                source, world_number, anchor_index, anchor
+            )
+            proposals = [pair]
+                    "exact_objective_receipt": {
+                        "encoding": "fraction-numerator-denominator",
+                        "baseline": _fraction_receipt(label.baseline),
+                        "singletons": [
+                            {
+                                "user": user,
+                                "value": _fraction_receipt(value),
+                                "difference": _fraction_receipt(
+                                    dict(label.singleton_differences)[user]
+                                ),
+                            }
+                            for user, value in label.singleton_values
+                        ],
+                        "coalition": _fraction_receipt(label.coalition_value),
+                        "objective_delta": _fraction_receipt(label.objective_delta),
+                        "psi": _fraction_receipt(label.psi),
+                    },
+                    "evaluation_cache_keys": {
+                        "baseline": receipt_cache.key(anchor.mapping),
+                        "singletons": [
+                            {"user": user, "key": receipt_cache.key({**anchor.mapping, user: selected[user]})}
+                            for user in label.users
+                        ],
+                        "coalition": receipt_cache.key(selected),
+                    },
+                    "r3": r3_payload,
+                }
+                anchor_rows.append(coalition_row)
+                anchor_family_records.append(receipt)
+                size_histogram[len(label.users)] += 1
+                for family in families:
+                    family_histogram[family] += 1
+                    family_psi_values[family].append(normalized_psi)
+                if PAIR_CATALOGUE in families:
+                    same = (
+                        old_payload["psi_normalized_hex"] == coalition_row.psi_normalized_hex
+                        and old_payload["objective_delta_normalized_hex"] == coalition_row.objective_delta_normalized_hex
+                    )
+                    if same:
+                        old_pair_exact_matches += 1
+                    else:
+                        old_pair_mismatches.append({
+                            "world": world_number, "anchor": anchor_index,
+                            "old_psi": old_payload["psi_normalized_hex"], "new_psi": coalition_row.psi_normalized_hex,
+                            "old_delta": old_payload["objective_delta_normalized_hex"],
+                            "new_delta": coalition_row.objective_delta_normalized_hex,
+                        })
+
+            baseline_value = cache.value(anchor.mapping)
+            if nested_block is not None:
+                alternatives = best_alternatives(anchor.mapping, legal_actions)
+                for mask in range(1 << len(nested_block)):
+                    mapping = anchor.mapping
+                    for offset, user in enumerate(nested_block):
+                        if mask & (1 << offset):
+                            mapping[user] = alternatives[user]
+                    value = cache.value(mapping)
+                    nested_observations.append({
+                        "schema": f"{SCHEMA}-nested-scalar-observation-v1",
+                        "artifact_label": LABEL, "world_id": domain, "anchor_index": anchor_index,
+                        "block": list(nested_block), "mask": mask, "mask_width": len(nested_block),
+                        "objective_value_normalized_hex": float_hex(float(value / normalization_kappa)),
+                        "objective_delta_normalized_hex": float_hex(float((value - baseline_value) / normalization_kappa)),
+                        "evaluation_cache_key": cache.key(mapping),
+                    })
+            if not anchor_rows:
+                raise RuntimeError("anchor produced no valid coalition rows")
+            shard_path = output / "rows" / f"world-{world_number}" / f"{LABEL}-mechanism-anchor-{anchor_index:03d}.jsonl"
+            shard = write_coalition_shard(shard_path, anchor_rows)
+            shard_paths.append({"path": str(shard_path.relative_to(output)), "sha256": shard.file_sha256, "rows": len(anchor_rows)})
+            family_rows.extend(anchor_family_records)
+            coalitions_per_anchor.append(len(anchor_rows))
+            total_cache_requests += cache.requests
+            total_cache_hits += cache.hits
+            total_cache_requests += archived_cache.requests
+            total_cache_hits += archived_cache.hits
+            total_physical += evaluator.physical_evaluations + archived_evaluator.physical_evaluations
+            global_anchor += 1
+            print(json.dumps({"event": "anchor-complete", "world": world_number, "anchor": anchor_index, "coalitions": len(anchor_rows)}), flush=True)
+        if anchor_limit is not None and global_anchor >= anchor_limit:
+            break
+
+    family_digest = _write_jsonl(
+        output / f"{LABEL}-family-index.jsonl",
+        {"schema": f"{SCHEMA}-family-index-v1", "artifact_label": LABEL, "row_count": len(family_rows)},
+        family_rows,
+    )
+    nested_digest = _write_jsonl(
+        output / f"{LABEL}-nested-scalar-observations.jsonl",
+        {"schema": f"{SCHEMA}-nested-scalar-observations-v1", "artifact_label": LABEL, "row_count": len(nested_observations)},
+        nested_observations,
+    )
+    r3_summary = _quantiles(r3_values)
+    r3_summary.update({
+        "count": len(r3_values),
+        "fraction_abs_gt_1e-6": float(np.mean(np.abs(r3_values) > 1e-6)) if r3_values else None,
+        "fraction_abs_gt_1e-3": float(np.mean(np.abs(r3_values) > 1e-3)) if r3_values else None,
+    })
+    summary = {
+        "schema": f"{SCHEMA}-manifest-v1", "artifact_label": LABEL,
+        "claim_status": "PILOT_NOT_CLAIM", "anchors": global_anchor,
+        "coalition_rows": sum(size_histogram.values()),
+        "size_histogram": {str(key): size_histogram[key] for key in sorted(size_histogram)},
+        "family_histogram_unique_rows": {key: family_histogram[key] for key in sorted(family_histogram)},
+        "coalitions_per_anchor": _quantiles(coalitions_per_anchor),
+        "occupancy_activation_anchors_trainable": len(occupancy_trainable_anchors),
+        "occupancy_2_diminishing_anchors": len(occupancy_2_anchors),
+        "family_psi_normalized_distributions": {
+            family: {
+                **_quantiles(values),
+                "count": len(values),
+                "negative_count": sum(value < 0.0 for value in values),
+                "zero_count": sum(value == 0.0 for value in values),
+                "positive_count": sum(value > 0.0 for value in values),
+            }
+            for family, values in sorted(family_psi_values.items())
+        },
+        "nested_blocks": len(nested_observations) // 64,
+        "nested_scalar_observations": len(nested_observations),
+        "nested_nontrivial_residual_label_occurrences": (len(nested_observations) // 64) * 57,
+        "nested_independence_statement": "64 scalar observations per six-user block; the 57 non-trivial residual labels are not 57 independent measurements",
+        "label_convention": "EXACT_SINGLETON_DIFFERENCES",
+        "label_evaluation_rule": "size k uses k+2 distinct configurations: baseline, k exact singletons, coalition",
+        "evaluation_cache_key_axes": ["anchor", "context", "proposed_actions", "evaluator_configuration"],
+        "evaluation_cache_requests": total_cache_requests, "evaluation_cache_hits": total_cache_hits,
+        "physical_evaluations": total_physical, "invalid_proposals": invalid_proposals,
+        "old_pair_rows_expected": global_anchor, "old_pair_exact_matches": old_pair_exact_matches,
+        "old_pair_mismatches": old_pair_mismatches, "r3_normalized_distribution": r3_summary,
+        "shards": shard_paths,
+        "family_index_sha256": family_digest,
+        "nested_scalar_observations_sha256": nested_digest,
+        "code_digest": pilot.CODE_DIGEST, "physics_digest": pilot.PHYSICS_DIGEST,
+        "calibration_digest": calibration.digest, "elapsed_wall_s": time.perf_counter() - started,
+    }
+    if world_limit is None and anchor_limit is None:
+        if summary["coalition_rows"] < 3_000:
+            raise RuntimeError("full corpus did not reach the several-thousand-row target")
+        if set(summary["size_histogram"]) != {"2", "3", "4", "5", "6"}:
+            raise RuntimeError("full corpus did not cover every coalition size 2 through 6")
+        if min(coalitions_per_anchor) < 2:
+            raise RuntimeError("full corpus lost within-anchor coalition variation")
+    manifest_digest = write_once_with_sha256(
+        output / f"{LABEL}-manifest.json", canonical_json_bytes(summary) + b"\n"
+    )
+    summary["manifest_sha256"] = manifest_digest
+    return summary
+
+
+def write_report(path: Path, summary: Mapping[str, object], output: Path) -> None:
+    histogram = summary["size_histogram"]
+    r3 = summary["r3_normalized_distribution"]
+    material = bool(r3["fraction_abs_gt_1e-3"] and r3["fraction_abs_gt_1e-3"] >= 0.05)
+    try:
+        output_display = output.resolve().relative_to(ROOT)
+    except ValueError:
+        output_display = output.resolve()
+    lines = [
+        "# Coalition corpus — 2026-09-09",
+        "",
+        f"**New trainable coalition-size histogram: {histogram}. Occupancy-activation is admitted by {summary['occupancy_activation_anchors_trainable']} of {summary['anchors']} anchors.**",
+        "",
+        "`PILOT_NOT_CLAIM`",
+        "",
+        "## Outcome",
+        "",
+        f"Generated {summary['coalition_rows']} exact interaction rows across {summary['anchors']} anchors, versus the audited 180-row baseline: {summary['coalition_rows'] / 180.0:.2f}x as many coalition rows. Against 176,223 per-user rows, the interaction ratio improved from about 1:979 to 1:{176223 / summary['coalition_rows']:.1f}. Coalitions per anchor have distribution {summary['coalitions_per_anchor']}. Family counts over unique rows are {summary['family_histogram_unique_rows']}.",
+        "",
+        f"The authenticated corpus is `{output_display}`. It contains {len(summary['shards'])} learner-readable v2 coalition shards, a family index, a nested-mask scalar-observation ledger, and the manifest. The corpus remains `PILOT_NOT_CLAIM`.",
+        "",
+        "## Family coverage",
+        "",
+        f"- `pair-catalogue`: {summary['family_histogram_unique_rows'].get(PAIR_CATALOGUE, 0)} rows. All {summary['old_pair_rows_expected']} archived one-per-anchor action selections were reconstructed unchanged, so the old design points remain a configuration subset. Under the uniform exact-cache evaluation convention, {summary['old_pair_exact_matches']} labels match the archived interaction and objective delta bit-for-bit; mismatches are recorded in the manifest: {len(summary['old_pair_mismatches'])}.",
+        f"- `occupancy-activation`: {summary['family_histogram_unique_rows'].get(OCCUPANCY_ACTIVATION, 0)} trainable rows across {summary['occupancy_activation_anchors_trainable']} anchors. Every seed beam starts at occupancy exactly 1 and two legal arrivals take it to occupancy 3; therefore the trainable interaction row has two changed users while the activated beam contains three users. The first activating occupancy is recomputed from `q10(elevation) * Gamma(n)` at that beam's actual incumbent elevation using the engine scintillation/shadow tables; the 10-degree authentication point is `q10 = 0.42923539` and the lowest threshold remains `0.7174947935658479`. Its exact-Psi sign/distribution ledger is {summary['family_psi_normalized_distributions'].get(OCCUPANCY_ACTIVATION, {})}.",
+        f"- `occupancy-2-diminishing`: {summary['family_histogram_unique_rows'].get(OCCUPANCY_2_DIMINISHING, 0)} rows across {summary['occupancy_2_diminishing_anchors']} anchors, kept separate from occupancy activation. These start at occupancy 2 and add two users, so the first arrival crosses occupancy 3 and the second exposes the corrected diminishing population. Its exact-Psi sign/distribution ledger is {summary['family_psi_normalized_distributions'].get(OCCUPANCY_2_DIMINISHING, {})}.",
+        f"- `aggressor-relief`: {summary['family_histogram_unique_rows'].get(AGGRESSOR_RELIEF, 0)} rows. Per admitting anchor, the victim with greatest top-three nominal cross-gain burden and its top two/top three contributors move to their own first different legal action in the sealed shortlist, yielding sizes 3 and 4.",
+        f"- `beam-evacuation`: {summary['family_histogram_unique_rows'].get(BEAM_EVACUATION, 0)} rows. Every beam with 2 or 3 occupants is evacuated when every occupant has a different legal alternative. This selection uses occupancy and legal-action identity only; it consults no decode threshold.",
+        f"- `nested-subsets`: {summary['family_histogram_unique_rows'].get(NESTED_SUBSETS, 0)} unique rows across {summary['nested_blocks']} six-user blocks. Each block has all 64 subset masks evaluated, giving 57 non-trivial residual-label occurrences. These are **64 scalar observations, not 57 independent measurements**.",
+        "",
+        "## Exact-label convention and cache",
+        "",
+        "Every size-`k` interaction row uses `k + 2` distinct sealed-objective configurations: the anchor baseline, each of the `k` singleton action changes evaluated exactly, and the joint coalition. Each family-index row carries the exact numerator/denominator receipt for all of those values and the residual. The implemented convention is **exact singleton differences**; no learned singleton estimate enters any label. Consequently the target is the interaction itself, not interaction plus singleton-model error.",
+        "",
+        "The cache key is a canonical SHA-256 over four complete axes: (1) anchor identity and assignments (world, seed, step, carrier, anchor configuration), (2) context (objective convention, transition configuration, rekeyed users), (3) the complete proposed-action assignment, and (4) evaluator configuration (engine schema, setting/run-setting digest, nominal field, boundary set, physics digest, calibration digest). This explicitly includes the anchor, context, proposed actions, and evaluator configuration. Once an anchor baseline and its exact singleton action values are cached, an additional coalition label costs one new joint evaluation; the R3 audit separately requires its pair configurations. Cache requests/hits were " + f"{summary['evaluation_cache_requests']}/{summary['evaluation_cache_hits']}; physical configuration evaluations including the order audit were {summary['physical_evaluations']}.",
+        "",
+        "## Order audit",
+        "",
+        "For every valid coalition of size at least three, the audit computed exact pair interactions under the same proposed member actions and then `R3(A) = Psi(A) - Σ_{pairs⊂A} Psi(pair)`. In normalized units the distribution is " + f"{r3}. Using the predeclared descriptive materiality flag `|R3| > 1e-3` on at least 5% of audited rows, the result is **{'material' if material else 'not material'}**. " + ("A pairwise-only interaction model is therefore misspecified for this corpus." if material else "This audit does not establish material pairwise misspecification at that scale."),
+        "",
+        "## Integrity and invariants",
+        "",
+        f"The manifest digest is `{summary['manifest_sha256']}`; family index `{summary['family_index_sha256']}`; nested observations `{summary['nested_scalar_observations_sha256']}`. Invalid proposed configurations skipped after exact evaluation: {summary['invalid_proposals']}.",
+        "",
+        "No threshold, sign, seed, horizon, price, service guard, or acceptance rule was changed. The generator expands only which exact sealed-objective coalitions are labeled. No encoder feature is used to compute a label.",
+    ]
+    write_once_with_sha256(path, ("\n".join(lines) + "\n").encode("utf-8"))
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+sed: can't read artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-0/PILOT_NOT_CLAIM-coalition-anchor-000.jsonl: No such file or directory
+src/mcrl/stagec_v025/coalitions.py:291:class CoalitionRow:
+src/mcrl/stagec_v025/coalitions.py:709:def read_coalition_shard(path: str | Path) -> CoalitionShard:
+scripts/run_v025_pilot_c3.py:910:def _coalition_row(
+
+exec
+/bin/bash -lc "find artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows -maxdepth 2 -type f -name '*coalition*' | head -3
+p="'$(find artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows -type f -name '"'*coalition*' | head -1); echo \""'$p"; sed -n '"'1,2p' \""'$p"
+sed -n '"'285,370p' src/mcrl/stagec_v025/coalitions.py
+sed -n '900,1010p' scripts/run_v025_pilot_c3.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-coalition-anchor-059.jsonl.sha256
+artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-coalition-anchor-073.jsonl
+artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-coalition-anchor-061.jsonl.sha256
+find: ‘standard output’: Broken pipe
+find: write error
+find: ‘standard output’: Broken pipe
+find: write error
+artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-coalition-anchor-059.jsonl.sha256
+a335f0cc04c3ff41a5ca61a7c7d405c3172741a56d8695081f5784a5eab28d1b  PILOT_NOT_CLAIM-coalition-anchor-059.jsonl
+        if not np.isfinite(vector).all():
+            raise StageCContractError("coalition invariant encoding is non-finite")
+        return vector
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionRow:
+    schema: str
+    split: str
+    world_id: str
+    world_seed: int
+    learner_seed: int | None
+    anchor_id: str
+    anchor_index: int
+    decision_time_utc: str
+    decision_time_ns: int
+    setting_id: str
+    context: CoalitionContext
+    original_changed_user_count: int
+    capped_decomposition: bool
+    original_changed_users: tuple[int, ...]
+    decomposition_id: str
+    decomposition_weight_hex: str
+    lambda_bits_per_j_hex: str
+    eta_ref_bits_per_j_hex: str
+    kappa_normalization_bits_hex: str
+    c1_normalized_hex: str
+    psi_normalized_hex: str
+    objective_delta_normalized_hex: str
+    physical_c1_normalized_hex: str
+    physical_psi_normalized_hex: str
+    physical_delta_normalized_hex: str
+    code_digest: str
+    physics_digest: str
+    catalogue_digest: str
+    setting_digest: str
+    calibration_digest: str
+    allocation_manifest_digest: str
+    credit_split: str
+
+    def __post_init__(self) -> None:
+        if self.schema != COALITION_ROW_SCHEMA or self.split != "TRAIN":
+            raise StageCContractError("C3 coalition rows are versioned TRAIN rows")
+        size = len(self.context.members)
+        if size < 2:
+            raise StageCContractError("trainable C3 rows require coalition size >=2")
+        if self.original_changed_user_count != size or self.capped_decomposition:
+            raise StageCContractError("v1.2 selected-coalition interaction labels are uncapped")
+        if self.original_changed_user_count != len(self.original_changed_users):
+            raise StageCContractError("larger-set original user inventory is incomplete")
+        if self.context.changed_users != self.original_changed_users:
+            raise StageCContractError("uncapped row must carry the actual selected user set")
+        weight = parse_float_hex(self.decomposition_weight_hex, field="decomposition_weight")
+        if not self.decomposition_id or weight <= 0.0 or weight > 1.0:
+            raise StageCContractError("capped decomposition identity/weight is invalid")
+        expected = capped_coalition_decomposition(self.original_changed_users)
+        expected_weights = {users: value for users, value in expected}
+        if expected_weights.get(self.context.changed_users) != weight:
+            raise StageCContractError("capped decomposition subset or row weight drifted")
+        expected_id = canonical_sha256({
+            "schema": "mcrl-v025-stagec-capped-coalition-decomposition-v1",
+            "original_changed_users": list(self.original_changed_users),
+            "subsets": [list(users) for users, _ in expected],
+        })
+        if self.decomposition_id != expected_id:
+            raise StageCContractError("capped decomposition digest drifted")
+        expected_credit = (
+            "EXACT_SHAPLEY_SMALL_SET"
+            if size <= MAX_LABEL_COALITION_SIZE
+            else "NOT_COMPUTED_LARGE_SET"
+        )
+        if self.credit_split != expected_credit:
+            raise StageCContractError("credit split disagrees with reporting-only Shapley cap")
+        for field in (
+            "code_digest",
+            "physics_digest",
+            "catalogue_digest",
+            "setting_digest",
+            "calibration_digest",
+            "allocation_manifest_digest",
+        ):
+            digest = getattr(self, field)
+            if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+                raise StageCContractError(f"C3 {field} must be a lowercase SHA-256")
+        kappa = parse_float_hex(self.kappa_normalization_bits_hex, field="kappa")
+        lambda_bits = parse_float_hex(self.lambda_bits_per_j_hex, field="lambda")
+            len(affected) / max(1, len(anchor.assignments)),
+            math.fsum(before_counts.values()) / max(1, len(anchor.assignments)),
+            math.fsum(after_counts.values()) / max(1, len(anchor.assignments)),
+            math.fsum(gain for _source, _target, gain in relations),
+            max((gain for _source, _target, gain in relations), default=0.0),
+        ),
+        pairwise_cross_gain_terms=relations,
+    )
+
+
+def _coalition_row(
+    *, tape, step_index, carrier, anchor_index, anchor, selected, evaluator,
+    rows_by_user_action, calibration, run_setting,
+):
+    context = _coalition_context(
+        tape=tape,
+        step_index=step_index,
+        anchor=anchor,
+        selected=selected,
+        rows_by_user_action=rows_by_user_action,
+    )
+    reference = evaluator.evaluate(anchor).outcome(
+        phi=ENGINE._phi_for(anchor, anchor)
+    )
+    unilateral = {}
+    for user in context.changed_users:
+        mapping = anchor.mapping
+        mapping[user] = selected.mapping[user]
+        config = ENGINE._configuration(anchor, mapping, kind="pilot-coalition-singleton")
+        unilateral[user] = evaluator.evaluate(config).outcome(
+            phi=ENGINE._phi_for(anchor, config)
+        )
+    selected_outcome = evaluator.evaluate(selected).outcome(
+        phi=ENGINE._phi_for(anchor, selected)
+    )
+    return build_coalition_row(
+        context=context,
+        reference_outcome=reference,
+        unilateral_outcomes=unilateral,
+        coalition_outcome=selected_outcome,
+        world_id=tape.domain,
+        world_seed=tape.seed,
+        anchor_index=anchor_index,
+        decision_time_utc=_utc_at(tape, step_index),
+        decision_time_ns=int(round(step_index * DECISION_INTERVAL_S * 1e9)),
+        setting_id="a-r0",
+        lambda_bits_per_j=float(calibration.lambda_bits_per_j),
+        eta_ref_bits_per_j=float(calibration.eta_ref),
+        kappa_normalization_bits=float(calibration.kappa_bits_per_user_step),
+        code_digest=CODE_DIGEST,
+        physics_digest=PHYSICS_DIGEST,
+        catalogue_digest=ENGINE.catalogue_definition()["sha256"],
+        setting_digest=run_setting.digest,
+        calibration_digest=calibration.digest,
+        allocation_manifest_digest=ALLOCATION_DIGEST,
+    )
+
+
+def _write_phase_manifest(path: Path, payload: Mapping[str, object]) -> str:
+    return write_once_json(path, {"artifact_label": LABEL, **payload})
+
+
+def generate_rows(output: Path):
+    phase_started = time.perf_counter()
+    cpu_started = time.process_time()
+    setting = ENGINE._setting("a-r0")
+    run_setting = ENGINE.run_setting_for("a-r0")
+    source_shards = []
+    coalition_shards = []
+    calibration = None
+    world_records = []
+    for world_index, domain in enumerate(TRAIN_WORLDS, start=1):
+        provider_started = time.perf_counter()
+        tape = build_world_tape(
+            domain=domain,
+            provider=LegacyWorldProvider(role="pilot-source"),
+            steps=33,
+            start_time_s=0.0,
+        )
+        provider_wall = time.perf_counter() - provider_started
+        if calibration is None:
+            calibration = _pilot_calibration(tape, setting, run_setting)
+            _write_phase_manifest(output / f"{LABEL}-calibration.json", calibration.payload())
+        skipped = physics_calls = catalogue_rows = 0
+        source_row_count = coalition_row_count = source_bytes = coalition_bytes = 0
+        source_hashes = []
+        coalition_hashes = []
+        anchor_started = time.perf_counter()
+        anchor_index = 0
+        for step_index in range(30):
+            for carrier in ENGINE.REFERENCE_CARRIERS:
+                built = _build_anchor_rows(
+                    tape=tape,
+                    setting=setting,
+                    run_setting=run_setting,
+                    calibration=calibration,
+                    step_index=step_index,
+                    carrier=carrier,
+                    anchor_index=anchor_index,
+                    include_coalition=True,
+                )
+                source_path = (
+                    output / "rows" / f"world-{world_index}"
+                    / f"{LABEL}-source-anchor-{anchor_index:03d}.jsonl"
+                )
+                coalition_path = (
+                    output / "rows" / f"world-{world_index}"
+                    / f"{LABEL}-coalition-anchor-{anchor_index:03d}.jsonl"
+                )
+                source_shard = write_source_shard(source_path, built["rows"])
+                coalition_shard = write_coalition_shard(
+
+exec
+/bin/bash -lc "p=artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-coalition-anchor-000.jsonl; sed -n '1,2p' \""'$p" | cut -c1-500
+rg -n "def .*quantile|q10|rician|shadow|scint|fading|attenuation" src/mcrl/physics_v025 scripts/run_v025_pilot_c3.py | head -100
+sed -n '"'1,130p' src/mcrl/stagec_v025/mechanism_corpus.py
+sed -n '1,120p' tests/stagec_v025/test_mechanism_corpus.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+{"interaction_label_coalition_size":"UNCAPPED","max_reporting_shapley_coalition_size":4,"row_count":1,"row_schema":"mcrl-v025-stagec-c3-coalition-row-v1","rows_sha256":"d4ecc9711f4f64f09bf788fe7bffd61b2a91c1c23487b849f8c94d51f18019e2","schema":"mcrl-v025-stagec-c3-coalition-shard-v1","split":"TRAIN"}
+{"allocation_manifest_digest":"a499791ee49f7da7f905f623f3dbc8eeef6b19d297b5bc9ecc8d2a7b50057ba2","anchor_id":"V025_PROBE/world/1|0|BASE:nearest-eligible","anchor_index":0,"c1_normalized_hex":"0x1.9f6e8aaff6b21p+3","calibration_digest":"6fd3af804df0388f6d952d64d1158ab9b865ca84da2b5b1d62a47876a094b83e","capped_decomposition":false,"catalogue_digest":"6aa51508bd3a84fa889c9d0aff861cd65696ade1e32e84c33e8b5d6d0132ee31","code_digest":"10a75f9f5529cb76ac79bf9703c99d282f203949c125d1f9096eb3a7f965f57c","c
+scripts/run_v025_pilot_c3.py:1860:def _quantiles(values):
+src/mcrl/physics_v025/channel.py:68:def scintillation_loss_db(elevation_deg: np.ndarray | float) -> np.ndarray:
+src/mcrl/physics_v025/channel.py:81:def shadow_sigma_db(elevation_deg: np.ndarray | float) -> np.ndarray:
+src/mcrl/physics_v025/channel.py:82:    """Retained Ka-LOS zero-mean-dB shadow sigma table."""
+src/mcrl/physics_v025/channel.py:178:def rician_power_gain(
+src/mcrl/physics_v025/channel.py:198:def shadow_linear_mean(sigma_db: float) -> float:
+src/mcrl/physics_v025/channel.py:221:def keyed_fading_gain(
+src/mcrl/physics_v025/channel.py:229:    """Return the action-independent realised fading gain at the actual elevation.
+src/mcrl/physics_v025/channel.py:233:    normal variate while the elevation-dependent shadow sigma and
+src/mcrl/physics_v025/channel.py:234:    scintillation table genuinely alter the realised channel.  This is the
+src/mcrl/physics_v025/channel.py:236:    10-degree shadow fallback from returning.
+src/mcrl/physics_v025/channel.py:241:    shadow_rng = np.random.default_rng(
+src/mcrl/physics_v025/channel.py:242:        keyed_component_seed(world, user, norad, absolute_time_ns, "shadow")
+src/mcrl/physics_v025/channel.py:244:    rician_rng = np.random.default_rng(
+src/mcrl/physics_v025/channel.py:245:        keyed_component_seed(world, user, norad, absolute_time_ns, "rician")
+src/mcrl/physics_v025/channel.py:247:    sigma_db = float(shadow_sigma_db(elevation_deg))
+src/mcrl/physics_v025/channel.py:248:    shadow_db = sigma_db * float(shadow_rng.standard_normal())
+src/mcrl/physics_v025/channel.py:249:    deterministic_loss_db = float(scintillation_loss_db(elevation_deg))
+src/mcrl/physics_v025/channel.py:250:    rician = float(rician_power_gain(rician_rng, (1,))[0])
+src/mcrl/physics_v025/channel.py:251:    return rician * 10.0 ** (-(shadow_db + deterministic_loss_db) / 10.0)
+src/mcrl/physics_v025/channel.py:275:def keyed_fading_gain_array(
+src/mcrl/physics_v025/channel.py:283:    """Dense counterpart of :func:`keyed_fading_gain` for provider tapes."""
+src/mcrl/physics_v025/channel.py:301:    shadow_z = _keyed_normal(base, 0x243F6A8885A308D3)
+src/mcrl/physics_v025/channel.py:307:    rician = (los + sigma * real_z) ** 2 + (sigma * imaginary_z) ** 2
+src/mcrl/physics_v025/channel.py:308:    shadow_db = shadow_sigma_db(elevation) * shadow_z
+src/mcrl/physics_v025/channel.py:309:    return rician * 10.0 ** (
+src/mcrl/physics_v025/channel.py:310:        -(shadow_db + scintillation_loss_db(elevation)) / 10.0
+src/mcrl/physics_v025/channel.py:326:    "keyed_fading_gain",
+src/mcrl/physics_v025/channel.py:327:    "keyed_fading_gain_array",
+src/mcrl/physics_v025/channel.py:333:    "rician_power_gain",
+src/mcrl/physics_v025/channel.py:334:    "scintillation_loss_db",
+src/mcrl/physics_v025/channel.py:335:    "shadow_sigma_db",
+src/mcrl/physics_v025/channel.py:336:    "shadow_linear_mean",
+src/mcrl/physics_v025/constants_v025.py:85:SCINTILLATION_LOSS_DB = (1.08, 0.48, 0.30, 0.22, 0.17, 0.13, 0.12, 0.12, 0.12)  # Provenance: round-3 §2.6 retained TR 38.811 clear-sky scintillation table.
+src/mcrl/physics_v025/constants_v025.py:87:SHADOW_SIGMA_DB = (1.9, 1.6, 1.9, 2.3, 2.7, 3.1, 3.0, 3.6, 0.4)  # Provenance: round-3 §2.6 retained TR 38.811 Ka-LOS zero-mean-dB shadow table.
+src/mcrl/physics_v025/constants_v025.py:189:        "SHADOW_SIGMA_DB": "round-3 §2.6 retained Ka-LOS shadow table",
+src/mcrl/physics_v025/tapes.py:24:from .channel import interference_receive_gain_linear, keyed_fading_gain
+src/mcrl/physics_v025/tapes.py:150:    fading_stream_identity: str
+src/mcrl/physics_v025/tapes.py:195:                "fading": self.fading_stream_identity,
+src/mcrl/physics_v025/tapes.py:380:    fading_by_satellite: np.ndarray
+src/mcrl/physics_v025/tapes.py:392:        satellites = arrays["fading_by_satellite"].shape[2]
+src/mcrl/physics_v025/tapes.py:417:        if arrays["fading_by_satellite"].shape[:2] != (48, users):
+src/mcrl/physics_v025/tapes.py:418:            raise MCRLContractError("fading_by_satellite must have shape (48,U,S)")
+src/mcrl/physics_v025/tapes.py:476:        realised = nominal * float(self.fading_by_satellite[boundary_index, user, satellite])
+src/mcrl/physics_v025/tapes.py:601:            realised_cross[:, valid_columns] = block * self.fading_by_satellite[
+src/mcrl/physics_v025/tapes.py:846:                "fading": f"sha256-keyed:{self.seed}:user:norad:absolute-time",
+src/mcrl/physics_v025/tapes.py:1164:                fading = keyed_fading_gain(
+src/mcrl/physics_v025/tapes.py:1171:                realised = nominal * fading
+src/mcrl/physics_v025/tapes.py:1185:                    cross_fading = keyed_fading_gain(
+src/mcrl/physics_v025/tapes.py:1192:                    realised_cross.append((aggressor_norad, cross * cross_fading))
+src/mcrl/physics_v025/adapter.py:364:        "keyed_fading_event": context.get("keyed_fading_event"),
+src/mcrl/physics_v025/provider_legacy.py:60:    keyed_fading_gain,
+src/mcrl/physics_v025/provider_legacy.py:61:    scintillation_loss_db,
+src/mcrl/physics_v025/provider_legacy.py:459:            fading_stream_identity=(
+src/mcrl/physics_v025/provider_legacy.py:489:    def _nominal_path_without_scintillation(
+src/mcrl/physics_v025/provider_legacy.py:494:        """Legacy path factor with L_c removed; keyed fading owns L_c once."""
+src/mcrl/physics_v025/provider_legacy.py:497:        return legacy * 10.0 ** (scintillation_loss_db(elevation_deg) / 10.0)
+src/mcrl/physics_v025/provider_legacy.py:731:        direct_path = self._nominal_path_without_scintillation(
+src/mcrl/physics_v025/provider_legacy.py:736:        fading = np.empty(
+src/mcrl/physics_v025/provider_legacy.py:756:                    fading[boundary, user, sat_column] = keyed_fading_gain(
+src/mcrl/physics_v025/provider_legacy.py:763:        realised = nominal * fading[:, row_user, row_satellite]
+src/mcrl/physics_v025/provider_legacy.py:843:        cross_base = transmit_gain_linear(cross_angles) * self._nominal_path_without_scintillation(
+src/mcrl/physics_v025/provider_legacy.py:964:            fading_by_satellite=fading,
+src/mcrl/physics_v025/batch.py:239:                field_cross = nominal_cross * arrays.fading_by_satellite[
+"""Mechanism-aware coalition selection and exact higher-order diagnostics.
+
+This module is deliberately independent of the pilot feature encoder.  It
+operates on immutable action assignments and scalar evaluations of the sealed
+objective; callers may attach whatever feature context their learner needs.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from fractions import Fraction
+import itertools
+import math
+from typing import Callable, Hashable, Mapping, Sequence
+
+from mcrl.physics_v025.acm import rate_target_sinr
+from mcrl.physics_v025.channel import scintillation_loss_db, shadow_sigma_db
+from mcrl.physics_v025.constants_v025 import (
+    BEAM_BANDWIDTH_HZ,
+    RATE_TARGET_BPS,
+    SINR_MIN,
+)
+
+
+PAIR_CATALOGUE = "pair-catalogue"
+OCCUPANCY_ACTIVATION = "occupancy-activation"
+OCCUPANCY_2_DIMINISHING = "occupancy-2-diminishing"
+AGGRESSOR_RELIEF = "aggressor-relief"
+BEAM_EVACUATION = "beam-evacuation"
+NESTED_SUBSETS = "nested-subsets"
+FAMILIES = (
+    PAIR_CATALOGUE,
+    OCCUPANCY_ACTIVATION,
+    OCCUPANCY_2_DIMINISHING,
+    AGGRESSOR_RELIEF,
+    BEAM_EVACUATION,
+    NESTED_SUBSETS,
+)
+
+Action = Hashable
+Assignment = Mapping[int, Action]
+
+# The independently verified engine value quoted in the repair request.  The
+# elevation adjustment below comes only from the frozen engine scintillation
+# and shadow-sigma tables; it does not introduce a tunable threshold.
+Q10_AT_10_DEG = 0.42923539
+_NORMAL_P90 = 1.2815515655446004
+
+
+def engine_table_q10(elevation_deg: float) -> float:
+    """Return the frozen lower-channel quantile at the actual elevation.
+
+    The 10-degree value authenticates the engine's verified quantile.  Away
+    from 10 degrees, the multiplicative adjustment uses the engine's linearly
+    interpolated scintillation-loss and Ka-LOS shadow-sigma tables.  The fixed
+    Rician component cancels in the ratio because its K factor is independent
+    of elevation.
+    """
+
+    elevation = float(elevation_deg)
+    if not math.isfinite(elevation) or not -90.0 <= elevation <= 90.0:
+        raise ValueError("elevation must be finite and in [-90,90] degrees")
+    loss = float(scintillation_loss_db(elevation))
+    sigma = float(shadow_sigma_db(elevation))
+    reference_loss = float(scintillation_loss_db(10.0))
+    reference_sigma = float(shadow_sigma_db(10.0))
+    adjustment_db = (loss - reference_loss) + _NORMAL_P90 * (sigma - reference_sigma)
+    return Q10_AT_10_DEG * 10.0 ** (-adjustment_db / 10.0)
+
+
+def occupancy_activation_audit(elevation_deg: float) -> dict[str, object]:
+    """Compute the first occupancy whose q10-scaled target clears PHY."""
+
+    q10 = engine_table_q10(elevation_deg)
+    gamma = {
+        occupancy: rate_target_sinr(RATE_TARGET_BPS, BEAM_BANDWIDTH_HZ, occupancy)
+        for occupancy in range(1, 7)
+    }
+    activating = next(
+        (
+            occupancy
+            for occupancy, target in gamma.items()
+            if target is not None and q10 * target >= SINR_MIN
+        ),
+        None,
+    )
+    return {
+        "elevation_deg": float(elevation_deg),
+        "q10": q10,
+        "lowest_threshold": SINR_MIN,
+        "gamma_by_occupancy": gamma,
+        "first_activating_occupancy": activating,
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionProposal:
+    """A deterministic proposed action for a named mechanism family."""
+
+    family: str
+    selected_actions: tuple[tuple[int, Action], ...]
+    mechanism_key: str
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        users = tuple(user for user, _action in self.selected_actions)
+        if self.family not in FAMILIES:
+            raise ValueError(f"unknown coalition family {self.family!r}")
+        if not users or users != tuple(sorted(users)) or len(set(users)) != len(users):
+            raise ValueError("proposal users must be nonempty, unique, and sorted")
+
+    @property
+    def users(self) -> tuple[int, ...]:
+        return tuple(user for user, _action in self.selected_actions)
+
+    def mapping(self, anchor: Assignment) -> dict[int, Action]:
+        result = dict(anchor)
+        for user, action in self.selected_actions:
+            if result[user] == action:
+                raise ValueError("coalition proposals must change every member action")
+            result[user] = action
+        return result
+
+
+@dataclass(frozen=True, slots=True)
+class ExactInteractionLabel:
+    """Exact additive residual and its complete evaluation receipt."""
+
+    users: tuple[int, ...]
+    baseline: Fraction
+from fractions import Fraction
+
+import pytest
+
+from mcrl.stagec_v025.mechanism_corpus import (
+    BEAM_EVACUATION,
+    NESTED_SUBSETS,
+    OCCUPANCY_2_DIMINISHING,
+    OCCUPANCY_ACTIVATION,
+    beam_evacuation_proposals,
+    engine_table_q10,
+    exact_interaction_label,
+    exact_r3,
+    nested_subset_proposals,
+    occupancy_2_diminishing_proposals,
+    occupancy_activation_audit,
+    occupancy_activation_proposals,
+)
+
+
+def test_exact_label_uses_k_plus_two_distinct_scalar_evaluations() -> None:
+    anchor = {0: "a", 1: "a", 2: "a"}
+    selected = {0: "b", 1: "b", 2: "b"}
+    calls = []
+
+    def value(mapping):
+        changed = frozenset(user for user in anchor if mapping[user] != anchor[user])
+        calls.append(tuple(sorted(mapping.items())))
+        singleton = sum(Fraction(user + 1) for user in changed)
+        pairs = 10 * sum(1 for pair in ((0, 1), (0, 2), (1, 2)) if set(pair) <= changed)
+        triple = 7 if changed == frozenset((0, 1, 2)) else 0
+        return singleton + pairs + triple
+
+    label = exact_interaction_label(anchor=anchor, selected=selected, evaluate=value)
+    assert label.distinct_evaluation_count == 5
+    assert len(set(calls)) == 5
+    assert label.psi == 37
+    r3, pairs = exact_r3(anchor=anchor, selected=selected, label=label, evaluate=value)
+    assert [value for _pair, value in pairs] == [10, 10, 10]
+    assert r3 == 7
+
+
+def test_mechanism_selectors_cover_activation_evacuation_and_nested_sizes() -> None:
+    anchor = {0: "x", 1: "x", 2: "y", 3: "z", 4: "u", 5: "v"}
+    legal = {
+        0: ("x", "a"), 1: ("x", "b"), 2: ("y", "x", "c"),
+        3: ("z", "y", "x", "d"), 4: ("u", "y", "e"), 5: ("v", "y", "f"),
+    }
+    audit = occupancy_activation_audit(10.0)
+    assert audit["first_activating_occupancy"] == 3
+    audits = {beam: audit for beam in set(anchor.values())}
+    activations = occupancy_activation_proposals(
+        anchor=anchor, legal_actions=legal, beam_audits=audits
+    )
+    assert len(activations) == 1
+    assert activations[0].family == OCCUPANCY_ACTIVATION
+    assert activations[0].metadata["occupancy_before"] == 1
+    assert len(activations[0].users) == 2
+    diminishing = occupancy_2_diminishing_proposals(
+        anchor=anchor, legal_actions=legal, beam_audits=audits
+    )
+    assert len(diminishing) == 1
+    assert diminishing[0].family == OCCUPANCY_2_DIMINISHING
+    assert diminishing[0].metadata["occupancy_before"] == 2
+    evacuations = beam_evacuation_proposals(anchor=anchor, legal_actions=legal)
+    assert len(evacuations) == 1
+    assert evacuations[0].family == BEAM_EVACUATION
+    alternatives = {user: actions[1] for user, actions in legal.items()}
+    nested = nested_subset_proposals(block=range(6), alternatives=alternatives)
+    assert len(nested) == 57
+    assert {len(row.users) for row in nested} == {2, 3, 4, 5, 6}
+    assert all(row.family == NESTED_SUBSETS for row in nested)
+
+
+def test_exact_label_rejects_a_noninteraction_singleton() -> None:
+    with pytest.raises(ValueError, match="at least two"):
+        exact_interaction_label(
+            anchor={0: "a", 1: "a"},
+            selected={0: "b", 1: "a"},
+            evaluate=lambda _mapping: Fraction(),
+        )
+
+
+def test_q10_is_anchored_at_ten_degrees_and_uses_actual_elevation_tables() -> None:
+    assert engine_table_q10(10.0) == pytest.approx(0.42923539, abs=1e-12)
+    assert engine_table_q10(20.0) != engine_table_q10(10.0)
+    assert occupancy_activation_audit(10.0)["first_activating_occupancy"] == 3
+
+exec
+/bin/bash -lc "sed -n '40,110p' src/mcrl/physics_v025/channel.py
+sed -n '165,225p' src/mcrl/physics_v025/channel.py
+sed -n '40,105p' src/mcrl/physics_v025/constants_v025.py
+rg -n \"RICIAN|K_FACTOR|GAUSS|quadrature|herm\" src tests scripts | head -100
+sed -n '760,850p' src/mcrl/stagec_v025/coalitions.py
+sed -n '680,760p' src/mcrl/stagec_v025/coalitions.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+
+def noise_power_w(bandwidth_hz: float) -> float:
+    """Return ``k*T_sys*bandwidth`` in watts."""
+
+    if not math.isfinite(bandwidth_hz) or bandwidth_hz <= 0.0:
+        raise ValueError("bandwidth_hz must be finite and positive")
+    return BOLTZMANN_J_PER_K * SYSTEM_TEMPERATURE_K * bandwidth_hz
+
+
+def free_space_path_gain(slant_km: np.ndarray | float) -> np.ndarray:
+    """Linear free-space gain; doubling distance gives exactly one quarter."""
+
+    distance = np.asarray(slant_km, dtype=np.float64)
+    if not np.all(np.isfinite(distance)) or np.any(distance <= 0.0):
+        raise MCRLContractError("slant range must be finite and positive")
+    wavelength = SPEED_OF_LIGHT_M_S / CARRIER_FREQUENCY_HZ
+    return (wavelength / (4.0 * math.pi * distance * 1000.0)) ** 2
+
+
+def db_loss_gain(loss_db: np.ndarray | float) -> np.ndarray:
+    """Convert a nonnegative dB loss to its linear power multiplier."""
+
+    loss = np.asarray(loss_db, dtype=np.float64)
+    if not np.all(np.isfinite(loss)) or np.any(loss < 0.0):
+        raise MCRLContractError("loss_db must be finite and nonnegative")
+    return 10.0 ** (-loss / 10.0)
+
+
+def scintillation_loss_db(elevation_deg: np.ndarray | float) -> np.ndarray:
+    """Retained 20-GHz deterministic table, linearly interpolated and clamped."""
+
+    elevation = np.asarray(elevation_deg, dtype=np.float64)
+    if not np.all(np.isfinite(elevation)) or np.any((elevation < -90.0) | (elevation > 90.0)):
+        raise MCRLContractError("elevation must be finite and in [-90,90] degrees")
+    return np.interp(
+        np.clip(elevation, SCINTILLATION_ELEVATION_DEG[0], SCINTILLATION_ELEVATION_DEG[-1]),
+        SCINTILLATION_ELEVATION_DEG,
+        SCINTILLATION_LOSS_DB,
+    )
+
+
+def shadow_sigma_db(elevation_deg: np.ndarray | float) -> np.ndarray:
+    """Retained Ka-LOS zero-mean-dB shadow sigma table."""
+
+    elevation = np.asarray(elevation_deg, dtype=np.float64)
+    if not np.all(np.isfinite(elevation)) or np.any((elevation < -90.0) | (elevation > 90.0)):
+        raise MCRLContractError("elevation must be finite and in [-90,90] degrees")
+    return np.interp(
+        np.clip(elevation, SHADOW_SIGMA_ELEVATION_DEG[0], SHADOW_SIGMA_ELEVATION_DEG[-1]),
+        SHADOW_SIGMA_ELEVATION_DEG,
+        SHADOW_SIGMA_DB,
+    )
+
+
+def transmit_gain_linear(theta_deg: np.ndarray | float) -> np.ndarray:
+    """HOBS ideal aperture pattern, with full-HPBW converted once."""
+
+    theta = np.asarray(theta_deg, dtype=np.float64)
+    if not np.all(np.isfinite(theta)):
+        raise MCRLContractError("off-axis angles must be finite")
+    half_power = math.radians(TX_FULL_HPBW_DEG / 2.0)
+    mu = _BESSEL_MU_COEFFICIENT * np.sin(np.radians(theta)) / math.sin(half_power)
+    flat = np.atleast_1d(mu).ravel()
+    on_axis = np.abs(flat) < _MU_ZERO
+    safe = np.where(on_axis, 1.0, flat)
+    # The historical ascending series is already measurably inaccurate at
+    # mu=34.  Route the new engine to stable Miller recursion from mu>=20;
+    # keep the vectorised series only in its well-conditioned main-lobe range.
+    stable = np.abs(safe) >= 20.0
+    j1 = np.empty_like(safe)
+    j3 = np.empty_like(safe)
+    """Receive gain used in the interference sum, including boresight override."""
+
+    separation = np.asarray(separation_deg, dtype=np.float64)
+    same = np.asarray(same_satellite, dtype=np.bool_)
+    try:
+        separation, same = np.broadcast_arrays(separation, same)
+    except ValueError as error:
+        raise MCRLContractError("separation and satellite-identity masks do not broadcast") from error
+    envelope = receive_gain_linear(separation)
+    peak = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+    return np.where(same, peak, envelope)
+
+
+def rician_power_gain(
+    rng: np.random.Generator,
+    size: tuple[int, ...],
+    *,
+    k_factor_db: float = RICIAN_K_FACTOR_DB,
+) -> np.ndarray:
+    """Unit-mean Rician power gain."""
+
+    if not isinstance(rng, np.random.Generator):
+        raise TypeError("rng must be an explicit numpy Generator")
+    if not math.isfinite(k_factor_db):
+        raise ValueError("k_factor_db must be finite")
+    k_linear = 10.0 ** (k_factor_db / 10.0)
+    los = math.sqrt(k_linear / (k_linear + 1.0))
+    sigma = math.sqrt(1.0 / (2.0 * (k_linear + 1.0)))
+    real = los + sigma * rng.standard_normal(size)
+    imaginary = sigma * rng.standard_normal(size)
+    return real**2 + imaginary**2
+
+
+def shadow_linear_mean(sigma_db: float) -> float:
+    """Mean of ``10**(-X/10)`` for ``X ~ Normal(0, sigma_db**2)``."""
+
+    if not math.isfinite(sigma_db) or sigma_db < 0.0:
+        raise ValueError("sigma_db must be finite and nonnegative")
+    return math.exp(0.5 * (sigma_db * math.log(10.0) / 10.0) ** 2)
+
+
+def keyed_component_seed(
+    world: int,
+    user: int,
+    norad: int,
+    absolute_time_ns: int,
+    component: str,
+) -> int:
+    """Stable action/history-free key material for external tape builders."""
+
+    import hashlib
+
+    payload = f"{world}|{user}|{norad}|{absolute_time_ns}|{component}".encode("ascii")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
+
+
+def keyed_fading_gain(
+    *,
+    world: int,
+    user: int,
+    norad: int,
+P_BUS_W = 0.0  # Provenance: round-3 §2.13 explicit exclusion of bus, terminal, gateway, and controller energy.
+STANDBY_FRACTION = 1.0 / 12.0  # Provenance: round-3 §2.14 CPI 35/420 ground-HPA proxy (VERIFY_SOURCE).
+
+ROLL_OFF = 0.20  # Provenance: round-3 §2.8 prospective DVB-S2 shaping choice.
+IMPLEMENTATION_MARGIN_DB = 1.7  # Provenance: round-3 §2.9 prospective common receiver allowance (VERIFY_SOURCE).
+POWER_CONTROL_TARGET_DB = 7.528187540  # Provenance: round-3 §2.9 8PSK 2/3 model threshold.
+POWER_CONTROL_TARGET_LINEAR = 10.0 ** (POWER_CONTROL_TARGET_DB / 10.0)  # Provenance: round-3 §4 stated 5.660030272 target, derived from dB.
+RATE_TARGET_BPS = 50_000_000.0  # Provenance: sealed V025 v1.1 amendment; synthetic operating point inherited from Track B L1, not calibrated demand (VERIFY_SOURCE for physical use).
+SINR_MIN_DB = -1.441812460  # Provenance: round-3 §2.9 QPSK 1/4 model threshold.
+SINR_MIN = 10.0 ** (SINR_MIN_DB / 10.0)  # Provenance: round-3 §2.10 PHY decodability boundary.
+SHANNON_MIN_DB = -2.35 - 10.0 * math.log10(1.0 + ROLL_OFF)  # Provenance: round-3 §4 U treatment, lowest threshold with margin off.
+SHANNON_MIN = 10.0 ** (SHANNON_MIN_DB / 10.0)  # Provenance: round-3 §4 U diagnostic eligibility boundary.
+
+POWER_SOLVER_TOLERANCE_W = 1.0e-10  # Provenance: sealed V025 declaration and round-3 §4 frozen solver tolerance.
+POWER_SOLVER_ITERATION_CAP = 65_536  # Provenance: controller coupled-solve decision, 2026-09-08.
+
+D2_MEASUREMENT_STEP_S = 0.640  # Provenance: round-3 §2.17 native measurement clock.
+D2_SUBINTERVALS = 47  # Provenance: round-3 §2.17 native subinterval count.
+DECISION_INTERVAL_S = D2_SUBINTERVALS * D2_MEASUREMENT_STEP_S  # Provenance: round-3 §2.17, 47 x 0.640 = 30.08 s.
+D2_THRESHOLD_KM = 1100.0  # Provenance: round-3 §2.18 retained D2-derived candidate threshold.
+D2_HYSTERESIS_KM = 50.0  # Provenance: round-3 §2.18 retained D2 hysteresis.
+D2_TTT_S = 1.280  # Provenance: round-3 §2.18 retained D2 time-to-trigger.
+MINIMUM_ALTITUDE_KM = 300.0  # Provenance: round-3 §2.18 retained candidate altitude floor.
+ASSOCIATION_ACTIONS = 28  # Provenance: round-3 §2.19 retained action inventory.
+CACHED_SATELLITES = 4  # Provenance: round-3 §2.19 retained cached satellite identities.
+LOCAL_CELLS = 7  # Provenance: round-3 §2.19 retained local cell actions.
+IDENTITY_REFRESH_DECISIONS = 4  # Provenance: round-3 §2.19 retained identity refresh cadence.
+
+SAME_SATELLITE_INTERRUPTION_S = 0.062  # Provenance: round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE).
+SATELLITE_CHANGE_INTERRUPTION_S = 0.142  # Provenance: round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE).
+PHI_SAME_SATELLITE = 0.5  # Provenance: round-3 §2.23 retained benchmark preference; not joules or seconds.
+PHI_SATELLITE_CHANGE = 1.0  # Provenance: round-3 §2.23 retained benchmark preference; not joules or seconds.
+PERSISTENCE_LOSS_UNITS = 1.0  # Provenance: round-3 §2.24 stated one-kappa design preference per lost projected offset.
+FORECAST_OFFSETS = 3  # Provenance: round-3 §2.27 three physical forecast offsets.
+
+TX_G0_LINEAR = 2000.0  # Provenance: round-3 §2.6 retained source-bound transmit pattern benchmark.
+TX_FULL_HPBW_DEG = 3.32  # Provenance: retained HOBS full half-power beamwidth convention.
+RX_GAIN_MAX_DBI = 35.0  # Provenance: round-3 §2.6 retained 0.6-m terminal peak benchmark.
+RX_TERMINAL_DIAMETER_M = 0.6  # Provenance: round-3 §2.6 retained terminal aperture benchmark.
+RX_ENVELOPE_A_DBI = 32.0  # Provenance: round-3 §2.7 retained S.465 engineering extrapolation coefficient.
+RX_ENVELOPE_B = 25.0  # Provenance: round-3 §2.7 retained S.465 engineering extrapolation coefficient.
+RX_GAIN_FLOOR_DBI = -10.0  # Provenance: retained S.465 envelope floor.
+RX_S465_THETA_MIN_DEG = 2.043298703  # Provenance: round-3 §2.7 corrected S.465-6 D/lambda<50 branch.
+ZENITH_GASEOUS_LOSS_DB = 0.25  # Provenance: round-3 §2.6 retained clear-sky TR 38.811/38.821 substitution.
+SCINTILLATION_ELEVATION_DEG = (10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0)  # Provenance: round-3 §2.6 retained TR 38.811 20-GHz table abscissa.
+SCINTILLATION_LOSS_DB = (1.08, 0.48, 0.30, 0.22, 0.17, 0.13, 0.12, 0.12, 0.12)  # Provenance: round-3 §2.6 retained TR 38.811 clear-sky scintillation table.
+SHADOW_SIGMA_ELEVATION_DEG = (10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0)  # Provenance: round-3 §2.6 retained TR 38.811 Ka-LOS table abscissa.
+SHADOW_SIGMA_DB = (1.9, 1.6, 1.9, 2.3, 2.7, 3.1, 3.0, 3.6, 0.4)  # Provenance: round-3 §2.6 retained TR 38.811 Ka-LOS zero-mean-dB shadow table.
+REFERENCE_BEAMS_PER_SATELLITE = 39  # Provenance: round-3 assumption 26 compatibility reference, not a hardware ceiling.
+REFERENCE_AGGREGATE_RF_W = REFERENCE_BEAMS_PER_SATELLITE * BEAM_RF_CAP_W  # Provenance: round-3 assumption 26 identity 39*1.65=64.35 W, not cap derivation.
+HOBS_REFERENCE_MAX_RF_W = 100.0  # Provenance: round-3 assumption 26 retained 50-dBm HOBS reference, not a live clamp.
+
+# EN 302 307-1 V1.4.1 Table 13, normal FEC frames, no pilots.  Each row is
+# (MODCOD, spectral efficiency bit/symbol, ideal Es/N0 dB).
+ACM_TABLE = (  # Provenance: ETSI EN 302 307-1 V1.4.1 Table 13, transcribed 2026-09-08.
+    ("QPSK 1/4", 0.490243, -2.35),
+    ("QPSK 1/3", 0.656448, -1.24),
+    ("QPSK 2/5", 0.789412, -0.30),
+    ("QPSK 1/2", 0.988858, 1.00),
+    ("QPSK 3/5", 1.188304, 2.23),
+    ("QPSK 2/3", 1.322253, 3.10),
+    ("QPSK 3/4", 1.487473, 4.03),
+    ("QPSK 4/5", 1.587196, 4.68),
+    ("QPSK 5/6", 1.654663, 5.18),
+    ("QPSK 8/9", 1.766451, 6.20),
+    ("QPSK 9/10", 1.788612, 6.42),
+src/mcrl/env/link_budget.py:286:RICIAN_K_FACTOR_DB: float = 20.0
+src/mcrl/env/link_budget.py:301:    k_factor_db: float = RICIAN_K_FACTOR_DB,
+src/mcrl/env/step.py:100:    RICIAN_K_FACTOR_DB,
+src/mcrl/env/step.py:140:    rician_k_factor_db: float = RICIAN_K_FACTOR_DB
+src/mcrl/physics_v025/channel.py:20:    RICIAN_K_FACTOR_DB,
+src/mcrl/physics_v025/channel.py:182:    k_factor_db: float = RICIAN_K_FACTOR_DB,
+src/mcrl/physics_v025/channel.py:304:    k_linear = 10.0 ** (RICIAN_K_FACTOR_DB / 10.0)
+src/mcrl/physics_v025/constants_v025.py:31:RICIAN_K_FACTOR_DB = 20.0  # Provenance: round-3 §2.6 retained benchmark-specific interpretation.
+src/mcrl/physics_v025/constants_v025.py:215:        "RICIAN_K_FACTOR_DB": "round-3 §2.6 retained benchmark interpretation",
+tests/test_w18_scintillation_and_shadowing.py:16:    RICIAN_K_FACTOR_DB,
+tests/test_w18_scintillation_and_shadowing.py:114:    assert float(rician_fading_gain(one, (1,), k_factor_db=RICIAN_K_FACTOR_DB)[0]) == (
+tests/test_w18_scintillation_and_shadowing.py:115:        float(rician_fading_gain(two, (1,), k_factor_db=RICIAN_K_FACTOR_DB)[0])
+src/mcrl/runtime/prereg.py:478:            "rician_k_factor_db": link_budget.RICIAN_K_FACTOR_DB,
+        scalar["original_changed_users"] = tuple(
+            int(user) for user in scalar["original_changed_users"]
+        )
+        rows.append(CoalitionRow(context=context, **scalar))
+    material = tuple(rows)
+    rows_sha256 = canonical_sha256([row.payload() for row in material])
+    if rows_sha256 != header["rows_sha256"]:
+        raise StageCContractError("coalition shard row digest drifted")
+    contexts_sha256 = canonical_sha256([row.context.payload() for row in material])
+    if contexts_sha256 != header["context_payloads_sha256"]:
+        raise StageCContractError(
+            "coalition shard context payload digest drifted: "
+            f"expected {header['context_payloads_sha256']}, got {contexts_sha256}"
+        )
+    return CoalitionShard(source, digest, rows_sha256, material)
+
+
+__all__ = [
+    "AffectedBeamContext",
+    "COALITION_CONTEXT_SCHEMA",
+    "COALITION_ROW_SCHEMA",
+    "COALITION_SHARD_SCHEMA",
+    "CoalitionContext",
+    "CoalitionMember",
+    "CoalitionRow",
+    "CoalitionShard",
+    "MAX_LABEL_COALITION_SIZE",
+    "PAIRWISE_CROSS_GAIN_TOP_K",
+    "build_coalition_row",
+    "capped_coalition_decomposition",
+    "exact_shapley_reporting_credit",
+    "pair_reporting_credit",
+    "read_coalition_shard",
+    "write_coalition_shard",
+]
+            )
+            for row in payload["affected_beams"]
+        ),
+        global_resource_features=tuple(
+            parse_float_hex(value, field="global_resource_feature")
+            for value in payload["global_resource_features_hex"]
+        ),
+        pairwise_cross_gain_terms=tuple(
+            (
+                str(row["source_beam_key"]),
+                str(row["target_beam_key"]),
+                parse_float_hex(row["gain_hex"], field="pairwise_cross_gain"),
+            )
+            for row in payload["pairwise_cross_gain_terms"]
+        ),
+    )
+    encoded_residual = parse_float_hex(
+        payload["pairwise_cross_gain_residual_sum_hex"],
+        field="pairwise_cross_gain_residual_sum",
+    )
+    _retained, expected_residual = context._bounded_pairwise_cross_gain_terms()
+    if encoded_residual != expected_residual:
+        raise StageCContractError(
+            "coalition context pairwise residual drifted: "
+            f"expected {float_hex(expected_residual)}, got {float_hex(encoded_residual)}"
+        )
+    return context
+
+
+def read_coalition_shard(path: str | Path) -> CoalitionShard:
+    source = Path(path)
+    digest = verify_sha256_sidecar(source)
+    try:
+        raw_lines = source.read_bytes().splitlines()
+        values = [json.loads(line.decode("ascii")) for line in raw_lines]
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise StageCContractError("cannot parse coalition shard") from error
+    if not values or not isinstance(values[0], Mapping):
+        raise StageCContractError("coalition shard header is missing")
+    header = values[0]
+    actual_versions = {
+        "shard": header.get("schema", "<missing>"),
+        "row": header.get("row_schema", "<missing>"),
+        "context": header.get("context_schema", "<missing>"),
+    }
+    expected_versions = {
+        "shard": COALITION_SHARD_SCHEMA,
+        "row": COALITION_ROW_SCHEMA,
+        "context": COALITION_CONTEXT_SCHEMA,
+    }
+    if actual_versions != expected_versions:
+        raise StageCContractError(
+            "coalition shard schema drifted: "
+            f"expected {expected_versions}, got {actual_versions}"
+        )
+    expected_header = {
+        "interaction_label_coalition_size": "UNCAPPED",
+        "max_reporting_shapley_coalition_size": MAX_LABEL_COALITION_SIZE,
+        "row_count": len(values) - 1,
+        "row_schema": COALITION_ROW_SCHEMA,
+        "rows_sha256": header.get("rows_sha256"),
+        "schema": COALITION_SHARD_SCHEMA,
+        "context_schema": COALITION_CONTEXT_SCHEMA,
+        "context_payloads_sha256": header.get("context_payloads_sha256"),
+        "pairwise_cross_gain_top_k": PAIRWISE_CROSS_GAIN_TOP_K,
+        "split": "TRAIN",
+    }
+    if header != expected_header:
+        raise StageCContractError(
+            f"coalition shard header drifted for {COALITION_SHARD_SCHEMA}: "
+            f"expected keys={sorted(expected_header)}, got keys={sorted(header)}"
+        )
+    if any(line != canonical_json_bytes(value) for line, value in zip(raw_lines, values, strict=True)):
+        raise StageCContractError("coalition shard is not canonical JSONL")
+    rows: list[CoalitionRow] = []
+    for payload in values[1:]:
+        if not isinstance(payload, Mapping) or set(payload) != set(CoalitionRow.__dataclass_fields__):
+            raise StageCContractError("coalition row schema drifted")
+        context = _context(payload["context"])
+        scalar = {key: value for key, value in payload.items() if key != "context"}
+        scalar["original_changed_users"] = tuple(
+
+exec
+/bin/bash -lc "rg -n \"def _build_anchor_rows|include_coalition|selected_coalition|coalition =\" scripts/run_v025_pilot_c3.py | head -30
+sed -n '1010,1160p' scripts/run_v025_pilot_c3.py
+sed -n '1290,1445p' scripts/run_v025_pilot_c3.py
+sed -n '1,45p' src/mcrl/physics_v025/channel.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+355:def _build_anchor_rows_primitive(
+357:    anchor_index, include_coalition, full_legal_actions,
+501:    if include_coalition:
+525:def _build_anchor_rows(
+534:    include_coalition: bool,
+541:            anchor_index=anchor_index, include_coalition=include_coalition,
+739:    if include_coalition:
+999:                    include_coalition=True,
+1618:                    include_coalition=False,
+                coalition_shard = write_coalition_shard(
+                    coalition_path, (built["coalition_row"],)
+                )
+                source_shards.append(source_shard)
+                coalition_shards.append(coalition_shard)
+                source_row_count += len(built["rows"])
+                coalition_row_count += 1
+                source_bytes += source_path.stat().st_size
+                coalition_bytes += coalition_path.stat().st_size
+                source_hashes.append(source_shard.file_sha256)
+                coalition_hashes.append(coalition_shard.file_sha256)
+                skipped += built["skipped_invalid"]
+                physics_calls += built["physics_calls"]
+                catalogue_rows += built["catalogue_count"]
+                anchor_index += 1
+                print(
+                    json.dumps(
+                        {
+                            "artifact_label": LABEL,
+                            "phase": "rows",
+                            "world": world_index,
+                            "anchor": anchor_index,
+                            "anchors_total": 90,
+                        }
+                    ),
+                    flush=True,
+                )
+        world_records.append(
+            {
+                "world_id": domain,
+                "world_seed": tape.seed,
+                "anchors": anchor_index,
+                "source_rows": source_row_count,
+                "coalition_rows": coalition_row_count,
+                "source_bytes": source_bytes,
+                "coalition_bytes": coalition_bytes,
+                "provider_wall_s": provider_wall,
+                "anchor_wall_s": time.perf_counter() - anchor_started,
+                "skipped_power_invalid_actions": skipped,
+                "physics_boundary_evaluations": physics_calls,
+                "catalogue_rows_considered": catalogue_rows,
+                "source_shards_sha256": canonical_sha256(source_hashes),
+                "coalition_shards_sha256": canonical_sha256(coalition_hashes),
+            }
+        )
+    assert calibration is not None
+    manifest = {
+        "schema": f"{PILOT_SCHEMA}-rows-manifest-v1",
+        "phase_wall_s": time.perf_counter() - phase_started,
+        "phase_core_s": time.process_time() - cpu_started,
+        "worlds": world_records,
+        "total_source_rows": sum(row["source_rows"] for row in world_records),
+        "total_coalition_rows": sum(row["coalition_rows"] for row in world_records),
+        "total_bytes": sum(
+            row["source_bytes"] + row["coalition_bytes"] for row in world_records
+        ),
+        "calibration": calibration.payload(),
+    }
+    _write_phase_manifest(output / f"{LABEL}-rows-manifest.json", manifest)
+    return source_shards, coalition_shards, calibration, manifest
+
+
+_TRAIN_Q1 = None
+_TRAIN_Q2 = None
+_TRAIN_C3 = None
+_TRAIN_NEUTRAL = None
+_TRAIN_OUTPUT = None
+
+
+def _train_one(task):
+    learner_seed, arm = task
+    wall_started = time.perf_counter()
+    cpu_started = time.process_time()
+    assert _TRAIN_Q1 is not None and _TRAIN_Q2 is not None and _TRAIN_C3 is not None
+    orchestrator = V1LineageOrchestrator(
+        learner_seed=learner_seed,
+        q1_batch=_TRAIN_Q1,
+        q2_batch=_TRAIN_Q2,
+        c3_batch=_TRAIN_C3,
+        neutral_sources=_TRAIN_NEUTRAL,
+    )
+    model = orchestrator.models[arm]
+    batches = {
+        "C1": _TRAIN_Q1 if SOURCE_MAP[arm]["C1"] == "informed" else orchestrator._neutral_q1,
+        "C2": _TRAIN_Q2 if SOURCE_MAP[arm]["C2"] == "informed" else orchestrator._neutral_q2,
+        "C3": _TRAIN_C3 if SOURCE_MAP[arm]["C3"] == "informed" else orchestrator._neutral_c3,
+    }
+    final_losses = {}
+    checkpoint_digests = []
+    for epoch in range(1, LEGACY_EPOCH_BUDGET + 1):
+        final_losses = {
+            "C1": model.q1.update(batches["C1"]),
+            "C2": model.q2.update(batches["C2"]),
+            "C3": model.psi.update(batches["C3"]),
+        }
+        if epoch % 100 == 0:
+            payload = {
+                "schema": f"{PILOT_SCHEMA}-arm-lineage-checkpoint-v1",
+                "artifact_label": LABEL,
+                "arm": arm,
+                "learner_seed": learner_seed,
+                "completed_source_epochs": epoch,
+                "checkpoint_every_source_epochs": 100,
+                "epoch_budget": LEGACY_EPOCH_BUDGET,
+                "batch_digests": {
+                    "C1": _TRAIN_Q1.digest,
+                    "C2": _TRAIN_Q2.digest,
+                    "C3": _TRAIN_C3.digest,
+                },
+                "neutral_source_digests": {
+                    route: _TRAIN_NEUTRAL[route].digest for route in ROUTES
+                },
+                "initialization_sha256": orchestrator.initialization_sha256,
+                "source_map": dict(SOURCE_MAP[arm]),
+                "model": model.payload(),
+                "final_losses": final_losses,
+                "neutral_batches_hoisted": True,
+            }
+            path = (
+                Path(_TRAIN_OUTPUT)
+                / "checkpoints"
+                / f"{LABEL}-seed-{learner_seed}-{arm}-epoch-{epoch:04d}.json"
+            )
+            checkpoint_digests.append(write_once_json(path, payload))
+    return {
+        "artifact_label": LABEL,
+        "arm": arm,
+        "learner_seed": learner_seed,
+        "completed_source_epochs": LEGACY_EPOCH_BUDGET,
+        "wall_s": time.perf_counter() - wall_started,
+        "core_s": time.process_time() - cpu_started,
+        "final_losses": final_losses,
+        "checkpoint_count": len(checkpoint_digests),
+        "final_checkpoint_sha256": checkpoint_digests[-1],
+        "model_payload": model.payload(),
+        "initialization_sha256": orchestrator.initialization_sha256,
+    }
+
+
+def _aggregate_pair_batch(batch: PairwiseBatch) -> PairwiseBatch:
+    if batch.target_deltas.size <= PILOT_AGGREGATE_PAIR_LIMIT:
+        return batch
+    indices = np.linspace(
+        0, batch.target_deltas.size - 1, PILOT_AGGREGATE_PAIR_LIMIT,
+        dtype=np.int64,
+    )
+    return PairwiseBatch.create(
+        batch.route, batch.reference_states[indices],
+        batch.candidate_states[indices], batch.target_deltas[indices],
+        tuple(batch.row_identities[index] for index in indices),
+        batch.source_authority_sha256,
+        V1LineageOrchestrator._restore_adam_head(model.q1, payload["C1"])
+        V1LineageOrchestrator._restore_adam_head(model.q2, payload["C2"])
+        V1LineageOrchestrator._restore_adam_head(model.psi.network, payload["C3"])
+        restored[(seed, arm)] = model
+    return restored
+
+
+def _repair_profile(base, proposed, evaluator):
+    if proposed.configuration_id not in evaluator._invalid:
+        evaluator.evaluate_many((proposed,))
+    if proposed.configuration_id not in evaluator._invalid:
+        return proposed, 0
+    mapping = proposed.mapping
+    repairs = 0
+    for user in sorted(mapping):
+        if mapping[user] == base.mapping[user]:
+            continue
+        mapping[user] = base.mapping[user]
+        repairs += 1
+        candidate = ENGINE._configuration(base, mapping, kind="pilot-deterministic-repair")
+        evaluator.evaluate_many((candidate,))
+        if candidate.configuration_id not in evaluator._invalid:
+            return candidate, repairs
+    return base, repairs
+
+
+def _additive_scores(model, rows_by_user_action, base, config):
+    total = 0.0
+    for user in sorted(base.mapping):
+        reference = rows_by_user_action[(user, base.mapping[user])]
+        selected = rows_by_user_action[(user, config.mapping[user])]
+        total += (
+            model.q1.score(selected.q1_state) - model.q1.score(reference.q1_state)
+            + model.q2.score(selected.q2_state) - model.q2.score(reference.q2_state)
+        )
+    return total
+
+
+def _exact_interactions(anchor, incumbent, catalogue, evaluator, calibration):
+    evaluator.evaluate_many(catalogue)
+    base_profile = evaluator.evaluate(anchor)
+    base_core = (
+        Fraction(str(base_profile.bits))
+        - calibration.eta_ref * Fraction(str(base_profile.joules))
+        + calibration.kappa_bits_per_user_step * ENGINE._phi_for(incumbent, anchor)
+    )
+    singleton_by_key = {}
+    for config in catalogue:
+        for user in anchor.mapping:
+            if config.mapping[user] == anchor.mapping[user]:
+                continue
+            mapping = anchor.mapping
+            mapping[user] = config.mapping[user]
+            singleton_by_key[(config.configuration_id, user)] = ENGINE._configuration(
+                anchor, mapping, kind="pilot-exact-singleton"
+            )
+    evaluator.evaluate_many(tuple({
+        row.assignments: row for row in singleton_by_key.values()
+    }.values()))
+    values = {}
+    for config in catalogue:
+        if config.configuration_id in evaluator._invalid:
+            continue
+        changed = tuple(user for user in anchor.mapping if config.mapping[user] != anchor.mapping[user])
+        additive = Fraction()
+        for user in changed:
+            singleton = singleton_by_key[(config.configuration_id, user)]
+            if singleton.configuration_id in evaluator._invalid:
+                additive = Fraction(-10**30)
+                break
+            profile = evaluator.evaluate(singleton)
+            additive += (
+                Fraction(str(profile.bits))
+                - calibration.eta_ref * Fraction(str(profile.joules))
+                + calibration.kappa_bits_per_user_step * ENGINE._phi_for(incumbent, singleton)
+                - base_core
+            )
+        profile = evaluator.evaluate(config)
+        joint = (
+            Fraction(str(profile.bits))
+            - calibration.eta_ref * Fraction(str(profile.joules))
+            + calibration.kappa_bits_per_user_step * ENGINE._phi_for(incumbent, config)
+            - base_core
+        )
+        values[config.configuration_id] = {
+            "changed": changed,
+            "joint": float(joint / calibration.kappa_bits_per_user_step),
+            "additive": float(additive / calibration.kappa_bits_per_user_step),
+            "psi": float((joint - additive) / calibration.kappa_bits_per_user_step),
+        }
+    return values
+
+
+def _structural_interactions(anchor, catalogue):
+    return {
+        config.configuration_id: {
+            "changed": tuple(
+                user for user in anchor.mapping
+                if config.mapping[user] != anchor.mapping[user]
+            ),
+            "joint": 0.0, "additive": 0.0, "psi": 0.0,
+        }
+        for config in catalogue
+    }
+
+
+def _build_u_catalogue(
+    tape, step_index, a0, u, standard_catalogue, evaluator, calibration,
+    rows_by_user_action,
+):
+    started = time.perf_counter()
+    options, _ = ENGINE._legal_options(tape, step_index)
+    evaluator.evaluate(u)
+    candidates_by_user = {}
+    for user in sorted(options):
+        candidates = []
+        for identity in options[user]:
+            if identity == u.mapping[user]:
+                continue
+            mapping = u.mapping
+            mapping[user] = identity
+            config = ENGINE._configuration(a0, mapping, kind="pilot-u-unilateral")
+            reference = rows_by_user_action[(user, u.mapping[user])]
+            selected = rows_by_user_action[(user, identity)]
+            score = (
+                float.fromhex(selected.c1_label_normalized_hex)
+                + float.fromhex(selected.c2_label_normalized_hex)
+                - float.fromhex(reference.c1_label_normalized_hex)
+                - float.fromhex(reference.c2_label_normalized_hex)
+            )
+            candidates.append((Fraction(str(score)), config))
+        candidates_by_user[user] = candidates
+    moves = {}
+    for user in sorted(options):
+        moves[user] = sorted(
+            candidates_by_user[user],
+            key=lambda row: (-row[0], row[1].configuration_id),
+        )
+    ranked = sorted(
+        (user for user in moves if moves[user]),
+        key=lambda user: (-abs(float(moves[user][0][0])), user),
+    )[:10]
+    rows = [a0, u]
+    rows.extend(row for row in standard_catalogue if row.changed_users == 1)
+    rows.extend(
+        row for row in standard_catalogue if row.kind in {"s0-top-two", "beam-evacuation"}
+    )
+    for first, second in itertools.combinations(ranked, 2):
+        mapping = u.mapping
+        mapping[first] = moves[first][0][1].mapping[first]
+        mapping[second] = moves[second][0][1].mapping[second]
+        rows.append(ENGINE._configuration(a0, mapping, kind="pilot-u-pairwise-top10"))
+    for beam in sorted({identity for identity in u.mapping.values() if identity is not None}):
+        mapping = u.mapping
+        changed = False
+        for user in sorted(mapping):
+"""V0.25 channel and antenna scalar helpers.
+
+The helpers are pure and vectorised where useful.  Random draws require an
+explicit generator so candidate ordering or counterfactual evaluation cannot
+silently acquire a private RNG stream.
+"""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+from mcrl.errors import MCRLContractError
+from mcrl.runtime.bessel import _miller_array, bessel_j_array, bessel_j_miller
+
+from .constants_v025 import (
+    BOLTZMANN_J_PER_K,
+    CARRIER_FREQUENCY_HZ,
+    RICIAN_K_FACTOR_DB,
+    RX_ENVELOPE_A_DBI,
+    RX_ENVELOPE_B,
+    RX_GAIN_FLOOR_DBI,
+    RX_GAIN_MAX_DBI,
+    RX_S465_THETA_MIN_DEG,
+    SPEED_OF_LIGHT_M_S,
+    SYSTEM_TEMPERATURE_K,
+    SCINTILLATION_ELEVATION_DEG,
+    SCINTILLATION_LOSS_DB,
+    SHADOW_SIGMA_DB,
+    SHADOW_SIGMA_ELEVATION_DEG,
+    MINIMUM_ELEVATION_DEG,
+    TX_FULL_HPBW_DEG,
+    TX_G0_LINEAR,
+)
+
+_BESSEL_MU_COEFFICIENT = 2.07123
+_MU_ZERO = 1.0e-10
+
+
+def noise_power_w(bandwidth_hz: float) -> float:
+    """Return ``k*T_sys*bandwidth`` in watts."""
+
+    if not math.isfinite(bandwidth_hz) or bandwidth_hz <= 0.0:
+        raise ValueError("bandwidth_hz must be finite and positive")
+
+exec
+/bin/bash -lc "sed -n '355,555p' scripts/run_v025_pilot_c3.py
+sed -n '700,765p' scripts/run_v025_pilot_c3.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+def _build_anchor_rows_primitive(
+    *, tape, setting, run_setting, calibration, step_index, carrier,
+    anchor_index, include_coalition, full_legal_actions,
+):
+    """Schema-complete provider-primitive fallback for bounded pilot compute."""
+
+    base = ENGINE._base_configuration(tape, step_index, carrier)
+    incumbent = ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+    by_user, configs, census = _action_configs(
+        tape, step_index, base, run_setting, full_legal=full_legal_actions
+    )
+    indices = {
+        offset: tape.steps[offset].arrays._row_index()
+        for offset in range(step_index, min(step_index + 4, len(tape.steps)))
+        if tape.steps[offset].arrays is not None
+    }
+    # The generating-input digest already authenticates the provider inputs
+    # and boundary-zero bytes. Computing ``tape.digest`` here hashes every
+    # dense 33x48 array and dominates an entire anchor on this snapshot.
+    tape_digest = tape.generating_input_digest or canonical_sha256({
+        "domain": tape.domain,
+        "seed": tape.seed,
+        "provider": tape.protocol.provider_source_digest,
+    })
+    future_bases = {
+        offset: ENGINE._base_configuration(tape, step_index + offset, carrier)
+        for offset in (1, 2, 3)
+    }
+    counter = ENGINE.EvaluationCounter()
+    current = ENGINE.StepEvaluator(
+        tape, setting, step_index, transition_from=incumbent,
+        cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+        field="nominal", counter=counter, run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+    base_profile = current.evaluate(base)
+    source_rows = []
+    rows_by_user_action = {}
+    for user in sorted(by_user):
+        actions = []
+        identities = []
+        beam_before, satellite_before = _counts(base.mapping, user)
+        previous_beam, previous_satellite = _counts(incumbent.mapping, user)
+        base_metric = _primitive_metrics(
+            tape, step_index, user, base.mapping[user], indices
+        )
+        base_gain = max(base_metric["gain"], 1e-300)
+        for identity in by_user[user]:
+            metric = _primitive_metrics(tape, step_index, user, identity, indices)
+            ratio = max(metric["gain"], 1e-300) / base_gain
+            gain_db = 10.0 * math.log10(max(ratio, 1e-30))
+            if identity is None or not metric["legal"]:
+                normalized_delta = -1.0
+            else:
+                normalized_delta = math.tanh(math.log(max(ratio, 1e-30)))
+            candidate_margin = base_profile.min_decoding_margin_db + gain_db
+            required_ratio = min(1e6, max(0.0, base_profile.required_power_w_max / BEAM_RF_CAP_W / max(ratio, 1e-12)))
+            se = max(0.0, base_profile.mean_acm_se_bit_s_hz * min(4.0, max(0.0, ratio)))
+            forecast_rows = []
+            c2_normalized = 0.0
+            alive = True
+            for offset in (1, 2, 3):
+                projected = step_index + offset
+                future_metric = _primitive_metrics(tape, projected, user, identity, indices)
+                future_base = future_bases[offset].mapping[user]
+                future_base_metric = _primitive_metrics(tape, projected, user, future_base, indices)
+                future_ratio = max(future_metric["gain"], 1e-300) / max(future_base_metric["gain"], 1e-300)
+                survives = bool(future_metric["legal"] and identity is not None)
+                if alive:
+                    c2_normalized += math.tanh(math.log(max(future_ratio, 1e-30))) if survives else -1.0
+                    alive = survives
+                else:
+                    c2_normalized -= 1.0
+                forecast_rows.append(ForecastObservation(
+                    valid=survives,
+                    survival=survives,
+                    minimum_decoding_margin_db=base_profile.min_decoding_margin_db + 10.0 * math.log10(max(future_ratio, 1e-30)),
+                    mean_acm_spectral_efficiency=max(0.0, se * min(4.0, max(0.0, future_ratio))),
+                ))
+            phi = ENGINE._phi_for(incumbent, configs[(user, identity)]) - ENGINE._phi_for(incumbent, base)
+            background_occupancy = 0 if identity is None else beam_before.get(identity, 0)
+            previous_load = 0 if identity is None else previous_beam.get(identity, 0)
+            observation = ActionEvaluation(
+                action=_physical_action(identity),
+                nominal_sinr_margin_at_rate_target_db=candidate_margin,
+                nominal_required_power_over_cap=required_ratio,
+                nominal_mode_spectral_efficiency=se,
+                background_occupancy_excluding_focal=background_occupancy,
+                beam_active_before_focal=identity is not None and identity in beam_before,
+                satellite_active_before_focal=identity is not None and identity[0] in satellite_before,
+                off_axis_angle_rad=0.0,
+                remaining_d2_time_s=metric["remaining_d2"],
+                remaining_visibility_time_s=metric["remaining_visibility"],
+                refresh_phase=tape.steps[step_index].refresh_phase,
+                previous_served_association_for_action=identity == incumbent.mapping[user],
+                previous_served_load_for_action=previous_load,
+                previous_beam_active_for_action=identity is not None and identity in previous_beam,
+                previous_satellite_active_for_action=identity is not None and identity[0] in previous_satellite,
+                previous_beam_max_rf_over_cap=0.0 if identity is None else min(1.0, required_ratio),
+                missing_incumbent=incumbent.mapping[user] is None,
+                candidate_current_nominal_decoding_margin_db=candidate_margin,
+                incumbent_nominal_decoding_margin_db=base_profile.min_decoding_margin_db,
+                forecast_se_trend_bit_s_hz_per_s=(forecast_rows[0].mean_acm_spectral_efficiency - se) / DECISION_INTERVAL_S,
+                required_power_cap_margin_w=BEAM_RF_CAP_W * (1.0 - required_ratio),
+                forecasts=tuple(forecast_rows),
+                c1_label_bits=float(calibration.kappa_bits_per_user_step) * normalized_delta,
+                c1_phi_difference=float(phi),
+                c2_label_bits=float(calibration.kappa_bits_per_user_step) * c2_normalized,
+                legal=True,
+                terminal=step_index == 29,
+                outage=not bool(metric["legal"]),
+            )
+            actions.append(seal_action_evaluation(
+                observation,
+                source_provenance_sha256=canonical_sha256({
+                    "artifact_label": LABEL, "method": "provider-primitive-fallback",
+                    "world": tape_digest, "step": step_index, "carrier": carrier,
+                    "user": user, "identity": identity,
+                }),
+                forecast_method_sha256=canonical_sha256({
+                    "method": "provider-primitive-boundary-0", "offsets": [1, 2, 3]
+                }),
+            ))
+            identities.append(identity)
+        envelope = AnchorEnvelope(
+            world_id=tape.domain, split="TRAIN", world_seed=tape.seed,
+            anchor_id=f"{tape.domain}|{step_index}|{carrier}", anchor_index=anchor_index,
+            decision_time_utc=_utc_at(tape, step_index),
+            decision_time_ns=int(round(step_index * DECISION_INTERVAL_S * 1e9)),
+            user_id=user, setting_id="a-r0", code_digest=CODE_DIGEST,
+            physics_digest=PHYSICS_DIGEST, launch_digest=LAUNCH_DIGEST,
+            catalogue_digest=ENGINE.catalogue_definition()["sha256"],
+            setting_digest=run_setting.digest, calibration_digest=calibration.digest,
+            provider_digest=tape.protocol.provider_source_digest,
+            archive_digest=_archive_digest(tape), allocation_manifest_digest=ALLOCATION_DIGEST,
+            lambda_bits_per_j=float(calibration.lambda_bits_per_j),
+            eta_ref_bits_per_j=float(calibration.eta_ref),
+            kappa_normalization_bits=float(calibration.kappa_bits_per_user_step),
+            base_action_index=identities.index(base.mapping[user]), actions=tuple(actions),
+        )
+        extracted = extract_source_rows(envelope)
+        source_rows.extend(extracted)
+        for row in extracted:
+            rows_by_user_action[(user, _identity(row.action))] = row
+    coalition_row = None
+    catalogue_count = 0
+    if include_coalition:
+        catalogue, _ = ENGINE._catalogue_with_census(
+            tape, step_index, base, setting=setting, calibration=calibration,
+            counter=counter, run_setting=run_setting,
+        )
+        pairwise = [row for row in catalogue if row.changed_users == 2]
+        selected = min(pairwise, key=lambda row: row.configuration_id)
+        current.evaluate_many((base, selected))
+        coalition_row = _coalition_row(
+            tape=tape, step_index=step_index, carrier=carrier,
+            anchor_index=anchor_index, anchor=base, selected=selected,
+            evaluator=current, rows_by_user_action=rows_by_user_action,
+            calibration=calibration, run_setting=run_setting,
+        )
+        catalogue_count = len(catalogue)
+    return {
+        "base": base, "incumbent": incumbent, "rows": tuple(source_rows),
+        "rows_by_user_action": rows_by_user_action, "current_evaluator": current,
+        "coalition_row": coalition_row, "census": census, "skipped_invalid": 0,
+        "catalogue_count": catalogue_count,
+        "physics_calls": counter.boundary_evaluations,
+    }
+
+
+def _build_anchor_rows(
+    *,
+    tape,
+    setting,
+    run_setting,
+    calibration: PilotCalibration,
+    step_index: int,
+    carrier: str,
+    anchor_index: int,
+    include_coalition: bool,
+    full_legal_actions: bool = False,
+):
+    if PILOT_PRIMITIVE_SOURCE_FALLBACK:
+        return _build_anchor_rows_primitive(
+            tape=tape, setting=setting, run_setting=run_setting,
+            calibration=calibration, step_index=step_index, carrier=carrier,
+            anchor_index=anchor_index, include_coalition=include_coalition,
+            full_legal_actions=full_legal_actions,
+        )
+    base = ENGINE._base_configuration(tape, step_index, carrier)
+    incumbent = ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+    by_user, configs, census = _action_configs(
+        tape, step_index, base, run_setting, full_legal=full_legal_actions
+    )
+    counter = ENGINE.EvaluationCounter()
+    current = ENGINE.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+                        }
+                    ),
+                )
+            )
+            identities.append(identity)
+        if base.mapping[user] not in identities or None not in identities:
+            raise RuntimeError("source action set lost BASE or the explicit null action")
+        envelope = AnchorEnvelope(
+            world_id=tape.domain,
+            split="TRAIN",
+            world_seed=tape.seed,
+            anchor_id=f"{tape.domain}|{step_index}|{carrier}",
+            anchor_index=anchor_index,
+            decision_time_utc=_utc_at(tape, step_index),
+            decision_time_ns=int(round(step_index * DECISION_INTERVAL_S * 1e9)),
+            user_id=user,
+            setting_id="a-r0",
+            code_digest=CODE_DIGEST,
+            physics_digest=PHYSICS_DIGEST,
+            launch_digest=LAUNCH_DIGEST,
+            catalogue_digest=ENGINE.catalogue_definition()["sha256"],
+            setting_digest=run_setting.digest,
+            calibration_digest=calibration.digest,
+            provider_digest=tape.protocol.provider_source_digest,
+            archive_digest=_archive_digest(tape),
+            allocation_manifest_digest=ALLOCATION_DIGEST,
+            lambda_bits_per_j=float(calibration.lambda_bits_per_j),
+            eta_ref_bits_per_j=float(calibration.eta_ref),
+            kappa_normalization_bits=float(calibration.kappa_bits_per_user_step),
+            base_action_index=identities.index(base.mapping[user]),
+            actions=tuple(actions),
+        )
+        extracted = extract_source_rows(envelope)
+        source_rows.extend(extracted)
+        for row in extracted:
+            rows_by_user_action[(user, _identity(row.action))] = row
+
+    coalition_row = None
+    catalogue_count = 0
+    if include_coalition:
+        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+            tape,
+            step_index,
+            base,
+            setting=setting,
+            calibration=calibration,
+            counter=counter,
+            run_setting=run_setting,
+        )
+        current.evaluate_many(catalogue)
+        catalogue_count = len(catalogue)
+        factors = ENGINE._selection_factor_scores(
+            base=base,
+            incumbent=incumbent,
+            catalog=tuple(
+                row for row in catalogue if row.configuration_id not in current._invalid
+            ),
+            evaluated=current._evaluated,
+            calibration=calibration,
+            cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+        )
+        pairwise = [
+            row
+            for row in catalogue
+            if row.changed_users == 2
+            and row.configuration_id in factors
+
+exec
+/bin/bash -lc "sed -n '525,760p' scripts/run_v025_pilot_c3.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+def _build_anchor_rows(
+    *,
+    tape,
+    setting,
+    run_setting,
+    calibration: PilotCalibration,
+    step_index: int,
+    carrier: str,
+    anchor_index: int,
+    include_coalition: bool,
+    full_legal_actions: bool = False,
+):
+    if PILOT_PRIMITIVE_SOURCE_FALLBACK:
+        return _build_anchor_rows_primitive(
+            tape=tape, setting=setting, run_setting=run_setting,
+            calibration=calibration, step_index=step_index, carrier=carrier,
+            anchor_index=anchor_index, include_coalition=include_coalition,
+            full_legal_actions=full_legal_actions,
+        )
+    base = ENGINE._base_configuration(tape, step_index, carrier)
+    incumbent = ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+    by_user, configs, census = _action_configs(
+        tape, step_index, base, run_setting, full_legal=full_legal_actions
+    )
+    counter = ENGINE.EvaluationCounter()
+    current = ENGINE.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+        field="nominal",
+        counter=counter,
+        run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+    unique = {
+        base.configuration_id: base,
+        **{row.configuration_id: row for row in configs.values()},
+    }
+    current.evaluate_many(tuple(unique.values()))
+    valid_configs = tuple(
+        row for row in unique.values() if row.configuration_id not in current._invalid
+    )
+    base_profile = current.evaluate(base)
+    forecasts, _forecast_receipts = ENGINE._batched_stage2_forecasts(
+        tape=tape,
+        setting=setting,
+        anchor_step=step_index,
+        carrier=carrier,
+        configs=valid_configs,
+        counter=counter,
+        calibration=calibration,
+        run_setting=run_setting,
+    )
+    base_forecasts = forecasts[base.configuration_id]
+    source_rows = []
+    rows_by_user_action = {}
+    skipped_invalid = 0
+    primitive_row_index = (
+        tape.steps[step_index].arrays._row_index()
+        if tape.steps[step_index].arrays is not None
+        else None
+    )
+    for user in sorted(by_user):
+        actions: list[ActionEvaluation] = []
+        identities: list[tuple[int, int] | None] = []
+        beam_before, satellite_before = _counts(base.mapping, user)
+        previous_beam, previous_satellite = _counts(incumbent.mapping, user)
+        for identity in by_user[user]:
+            config = configs[(user, identity)]
+            if config.configuration_id in current._invalid:
+                skipped_invalid += 1
+                continue
+            profile = current.evaluate(config)
+            projections = forecasts[config.configuration_id]
+            c2 = c2_persistence_forecast(
+                projections,
+                base_forecasts,
+                lambda_bits_per_j=calibration.lambda_bits_per_j,
+                eta_ref=calibration.eta_ref,
+                kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+            )
+            core = (
+                Fraction(str(profile.bits - base_profile.bits))
+                - calibration.eta_ref * Fraction(str(profile.joules - base_profile.joules))
+            )
+            phi = ENGINE._phi_for(
+                incumbent,
+                config,
+                cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+            ) - ENGINE._phi_for(
+                incumbent,
+                base,
+                cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+            )
+            primitive = _candidate_primitives(
+                tape, step_index, user, identity, row_index=primitive_row_index
+            )
+            incumbent_identity = incumbent.mapping[user]
+            missing_incumbent = incumbent_identity is None
+            background_occupancy = 0 if identity is None else beam_before.get(identity, 0)
+            previous_load = (
+                0 if identity is None else previous_beam.get(identity, 0)
+            )
+            required_ratio = profile.required_power_w_max / BEAM_RF_CAP_W
+            observation = ActionEvaluation(
+                action=_physical_action(identity),
+                nominal_sinr_margin_at_rate_target_db=profile.min_decoding_margin_db,
+                nominal_required_power_over_cap=required_ratio,
+                nominal_mode_spectral_efficiency=profile.mean_acm_se_bit_s_hz,
+                background_occupancy_excluding_focal=background_occupancy,
+                beam_active_before_focal=identity is not None and identity in beam_before,
+                satellite_active_before_focal=identity is not None and identity[0] in satellite_before,
+                off_axis_angle_rad=0.0,
+                remaining_d2_time_s=0.0 if primitive is None else primitive["remaining_d2"],
+                remaining_visibility_time_s=(
+                    0.0 if primitive is None else primitive["remaining_visibility"]
+                ),
+                refresh_phase=tape.steps[step_index].refresh_phase,
+                previous_served_association_for_action=identity == incumbent_identity,
+                previous_served_load_for_action=previous_load,
+                previous_beam_active_for_action=(
+                    identity is not None and identity in previous_beam
+                ),
+                previous_satellite_active_for_action=(
+                    identity is not None and identity[0] in previous_satellite
+                ),
+                previous_beam_max_rf_over_cap=(
+                    0.0 if identity is None else min(1.0, required_ratio)
+                ),
+                missing_incumbent=missing_incumbent,
+                candidate_current_nominal_decoding_margin_db=profile.min_decoding_margin_db,
+                incumbent_nominal_decoding_margin_db=base_profile.min_decoding_margin_db,
+                forecast_se_trend_bit_s_hz_per_s=(
+                    projections[0].mean_acm_se_bit_s_hz
+                    - profile.mean_acm_se_bit_s_hz
+                )
+                / DECISION_INTERVAL_S,
+                required_power_cap_margin_w=BEAM_RF_CAP_W - profile.required_power_w_max,
+                forecasts=tuple(
+                    ForecastObservation(
+                        valid=row.valid,
+                        survival=row.survives,
+                        minimum_decoding_margin_db=row.min_decoding_margin_db,
+                        mean_acm_spectral_efficiency=row.mean_acm_se_bit_s_hz,
+                    )
+                    for row in projections
+                ),
+                c1_label_bits=float(core),
+                c1_phi_difference=float(phi),
+                c2_label_bits=float(c2.forecast_surplus_bits - c2.persistence_penalty_bits),
+                legal=True,
+                terminal=step_index == 29,
+                outage=not bool(profile.score.served_phy.get(user, False)),
+            )
+            provenance = canonical_sha256(
+                {
+                    "artifact_label": LABEL,
+                    "world": tape.digest,
+                    "step": step_index,
+                    "carrier": carrier,
+                    "user": user,
+                    "configuration": config.configuration_id,
+                }
+            )
+            actions.append(
+                seal_action_evaluation(
+                    observation,
+                    source_provenance_sha256=provenance,
+                    forecast_method_sha256=canonical_sha256(
+                        {
+                            "engine": ENGINE.SCHEMA,
+                            "offsets": [1, 2, 3],
+                            "boundaries": list(ENGINE.SELECTION_BOUNDARY_INDICES),
+                        }
+                    ),
+                )
+            )
+            identities.append(identity)
+        if base.mapping[user] not in identities or None not in identities:
+            raise RuntimeError("source action set lost BASE or the explicit null action")
+        envelope = AnchorEnvelope(
+            world_id=tape.domain,
+            split="TRAIN",
+            world_seed=tape.seed,
+            anchor_id=f"{tape.domain}|{step_index}|{carrier}",
+            anchor_index=anchor_index,
+            decision_time_utc=_utc_at(tape, step_index),
+            decision_time_ns=int(round(step_index * DECISION_INTERVAL_S * 1e9)),
+            user_id=user,
+            setting_id="a-r0",
+            code_digest=CODE_DIGEST,
+            physics_digest=PHYSICS_DIGEST,
+            launch_digest=LAUNCH_DIGEST,
+            catalogue_digest=ENGINE.catalogue_definition()["sha256"],
+            setting_digest=run_setting.digest,
+            calibration_digest=calibration.digest,
+            provider_digest=tape.protocol.provider_source_digest,
+            archive_digest=_archive_digest(tape),
+            allocation_manifest_digest=ALLOCATION_DIGEST,
+            lambda_bits_per_j=float(calibration.lambda_bits_per_j),
+            eta_ref_bits_per_j=float(calibration.eta_ref),
+            kappa_normalization_bits=float(calibration.kappa_bits_per_user_step),
+            base_action_index=identities.index(base.mapping[user]),
+            actions=tuple(actions),
+        )
+        extracted = extract_source_rows(envelope)
+        source_rows.extend(extracted)
+        for row in extracted:
+            rows_by_user_action[(user, _identity(row.action))] = row
+
+    coalition_row = None
+    catalogue_count = 0
+    if include_coalition:
+        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+            tape,
+            step_index,
+            base,
+            setting=setting,
+            calibration=calibration,
+            counter=counter,
+            run_setting=run_setting,
+        )
+        current.evaluate_many(catalogue)
+        catalogue_count = len(catalogue)
+        factors = ENGINE._selection_factor_scores(
+            base=base,
+            incumbent=incumbent,
+            catalog=tuple(
+                row for row in catalogue if row.configuration_id not in current._invalid
+            ),
+            evaluated=current._evaluated,
+            calibration=calibration,
+            cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+        )
+
+exec
+/bin/bash -lc "sed -n '760,820p' scripts/run_v025_pilot_c3.py
+sed -n '220,335p' src/mcrl/stagec_v025/mechanism_corpus.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+        )
+        pairwise = [
+            row
+            for row in catalogue
+            if row.changed_users == 2
+            and row.configuration_id in factors
+        ]
+        if not pairwise:
+            raise RuntimeError("sealed catalogue produced no trainable joint coalition")
+        selected = min(
+            pairwise,
+            key=lambda row: (
+                -float(factors[row.configuration_id]["C1"] + factors[row.configuration_id]["C3"]),
+                row.configuration_id,
+            ),
+        )
+        coalition_row = _coalition_row(
+            tape=tape,
+            step_index=step_index,
+            carrier=carrier,
+            anchor_index=anchor_index,
+            anchor=base,
+            selected=selected,
+            evaluator=current,
+            rows_by_user_action=rows_by_user_action,
+            calibration=calibration,
+            run_setting=run_setting,
+        )
+    return {
+        "base": base,
+        "incumbent": incumbent,
+        "rows": tuple(source_rows),
+        "rows_by_user_action": rows_by_user_action,
+        "current_evaluator": current,
+        "coalition_row": coalition_row,
+        "census": census,
+        "skipped_invalid": skipped_invalid,
+        "catalogue_count": catalogue_count,
+        "physics_calls": counter.boundary_evaluations,
+    }
+
+
+_CROSS_GAIN_CACHE = {}
+
+
+def _cross_gain_terms(tape, step_index: int, affected: Sequence[tuple[int, int]]):
+    step = tape.steps[step_index]
+    if step.arrays is None:
+        return ()
+    arrays = step.arrays
+    cache_key = (tape.seed, step_index)
+    cached = _CROSS_GAIN_CACHE.get(cache_key)
+    if cached is None:
+        aggressors = {
+            tuple(int(value) for value in identity): index
+            for index, identity in enumerate(arrays.aggressor_identities)
+        }
+        victim_columns = {}
+        for row, identity in enumerate(arrays.identities.tolist()):
+            key = tuple(int(value) for value in identity)
+            victim_columns.setdefault(key, []).append(
+
+
+def best_alternatives(
+    anchor: Assignment,
+    legal_actions: Mapping[int, Sequence[Action]],
+) -> dict[int, Action]:
+    """First sealed-shortlist action different from the anchor, per user."""
+
+    return {
+        user: next(action for action in legal_actions[user] if action != anchor[user])
+        for user in sorted(anchor)
+        if any(action != anchor[user] for action in legal_actions[user])
+    }
+
+
+def occupancy_activation_proposals(
+    *,
+    anchor: Assignment,
+    legal_actions: Mapping[int, Sequence[Action]],
+    beam_audits: Mapping[Action, Mapping[str, object]],
+) -> tuple[CoalitionProposal, ...]:
+    """Move two users into every occupancy-one beam that activates at three."""
+
+    occupants: dict[Action, list[int]] = {}
+    for user, action in anchor.items():
+        if action is not None:
+            occupants.setdefault(action, []).append(user)
+    result: list[CoalitionProposal] = []
+    for beam, current_users in sorted(occupants.items(), key=lambda item: repr(item[0])):
+        occupancy = len(current_users)
+        audit = beam_audits.get(beam)
+        if occupancy != 1 or audit is None or audit["first_activating_occupancy"] != 3:
+            continue
+        candidates = [
+            (tuple(legal_actions[user]).index(beam), user)
+            for user in sorted(anchor)
+            if anchor[user] != beam and beam in legal_actions[user]
+        ]
+        ranked_users = tuple(user for _rank, user in sorted(candidates)[:2])
+        selected_users = tuple(sorted(ranked_users))
+        if len(selected_users) != 2:
+            continue
+        result.append(
+            CoalitionProposal(
+                family=OCCUPANCY_ACTIVATION,
+                selected_actions=tuple((user, beam) for user in selected_users),
+                mechanism_key=f"beam:{beam!r}",
+                metadata={
+                    "beam": repr(beam),
+                    "occupancy_before": occupancy,
+                    "occupancy_after": occupancy + len(selected_users),
+                    "incoming_users": list(selected_users),
+                    "activation_audit": dict(audit),
+                },
+            )
+        )
+    return tuple(result)
+
+
+def occupancy_2_diminishing_proposals(
+    *,
+    anchor: Assignment,
+    legal_actions: Mapping[int, Sequence[Action]],
+    beam_audits: Mapping[Action, Mapping[str, object]],
+) -> tuple[CoalitionProposal, ...]:
+    """Move two arrivals into occupancy-two beams; keep them visibly separate.
+
+    The first arrival reaches the occupancy-three activation point.  The
+    second reaches occupancy four and is expected to expose the corrected
+    diminishing (often negative) interaction population.
+    """
+
+    occupants: dict[Action, list[int]] = {}
+    for user, action in anchor.items():
+        if action is not None:
+            occupants.setdefault(action, []).append(user)
+    result: list[CoalitionProposal] = []
+    for beam, current_users in sorted(occupants.items(), key=lambda item: repr(item[0])):
+        audit = beam_audits.get(beam)
+        if len(current_users) != 2 or audit is None or audit["first_activating_occupancy"] != 3:
+            continue
+        candidates = [
+            (tuple(legal_actions[user]).index(beam), user)
+            for user in sorted(anchor)
+            if anchor[user] != beam and beam in legal_actions[user]
+        ]
+        selected_users = tuple(sorted(user for _rank, user in sorted(candidates)[:2]))
+        if len(selected_users) != 2:
+            continue
+        result.append(
+            CoalitionProposal(
+                family=OCCUPANCY_2_DIMINISHING,
+                selected_actions=tuple((user, beam) for user in selected_users),
+                mechanism_key=f"beam:{beam!r}",
+                metadata={
+                    "beam": repr(beam),
+                    "occupancy_before": 2,
+                    "occupancy_after": 4,
+                    "incoming_users": list(selected_users),
+                    "first_arrival_occupancy": 3,
+                    "activation_audit": dict(audit),
+                },
+            )
+        )
+    return tuple(result)
+
+
+def beam_evacuation_proposals(
+    *,
+    anchor: Assignment,
+    legal_actions: Mapping[int, Sequence[Action]],
+) -> tuple[CoalitionProposal, ...]:
+    """Evacuate every beam with two or three occupants to best alternatives."""
+
+    alternatives = best_alternatives(anchor, legal_actions)
+    occupants: dict[Action, list[int]] = {}
+
+exec
+/bin/bash -lc "rg -n \"PILOT_PRIMITIVE_SOURCE_FALLBACK\" scripts/run_v025_pilot_c3.py
+sed -n '1,60p' artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-launch.json 2>/dev/null || true
+python=/home/sat/mcrl-leo-handover/.venv/bin/python; nice -n 10 \""'$python" - <<'"'PY'
+import json
+from pathlib import Path
+p=Path('artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-coalition-anchor-000.jsonl')
+row=json.loads(p.read_text().splitlines()[1])
+print(row['schema'],row['psi_normalized_hex'],row['objective_delta_normalized_hex'])
+print(row.keys())
+print(row['context']['members'])
+PY" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+89:PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+537:    if PILOT_PRIMITIVE_SOURCE_FALLBACK:
+mcrl-v025-stagec-c3-coalition-row-v1 -0x1.84951ce58a75cp+1 0x1.3e4943769414ap+3
+dict_keys(['allocation_manifest_digest', 'anchor_id', 'anchor_index', 'c1_normalized_hex', 'calibration_digest', 'capped_decomposition', 'catalogue_digest', 'code_digest', 'context', 'credit_split', 'decision_time_ns', 'decision_time_utc', 'decomposition_id', 'decomposition_weight_hex', 'eta_ref_bits_per_j_hex', 'kappa_normalization_bits_hex', 'lambda_bits_per_j_hex', 'learner_seed', 'objective_delta_normalized_hex', 'original_changed_user_count', 'original_changed_users', 'physical_c1_normalized_hex', 'physical_delta_normalized_hex', 'physical_psi_normalized_hex', 'physics_digest', 'psi_normalized_hex', 'schema', 'setting_digest', 'setting_id', 'split', 'world_id', 'world_seed'])
+[{'incumbent_q1_row_hex': ['-0x1.0f11d8279f0c1p+0', '0x1.0000000000000p+0', '0x1.e8207e761dbfdp-4', '0x1.999999999999ap-4', '0x1.0000000000000p+0', '0x1.0000000000000p+0', '0x0.0p+0', '0x1.5acb6f46508e0p+0', '0x1.f92c5f92c5f93p+0', '0x0.0p+0', '0x1.0000000000000p+0', '0x1.999999999999ap-4', '0x1.0000000000000p+0', '0x1.0000000000000p+0', '0x1.0000000000000p+0', '0x0.0p+0'], 'missing_incumbent': False, 'reference_action': {'beam_chain_id': 32, 'norad_id': 65028}, 'selected_action': {'beam_chain_id': 44, 'norad_id': 60104}, 'selected_q1_row_hex': ['-0x1.9381d7e954c26p-3', '0x1.358e16d5291e8p-6', '0x1.e8207e761dbfdp-2', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x1.1a9fbe76c8b43p+0', '0x1.b7a32846ff514p+0', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x1.358e16d5291e8p-6', '0x0.0p+0'], 'user_id': 6}, {'incumbent_q1_row_hex': ['-0x1.0f11d8279f0c1p+0', '0x1.0000000000000p+0', '0x1.e8207e761dbfdp-4', '0x0.0p+0', '0x0.0p+0', '0x1.0000000000000p+0', '0x0.0p+0', '0x1.5810624dd2f1bp+0', '0x1.f671529a485cep+0', '0x0.0p+0', '0x1.0000000000000p+0', '0x0.0p+0', '0x0.0p+0', '0x1.0000000000000p+0', '0x1.0000000000000p+0', '0x0.0p+0'], 'missing_incumbent': False, 'reference_action': {'beam_chain_id': 19, 'norad_id': 65028}, 'selected_action': {'beam_chain_id': 31, 'norad_id': 60104}, 'selected_q1_row_hex': ['-0x1.ddaa7b672f113p-3', '0x1.6dba6f6882e3dp-6', '0x1.e8207e761dbfdp-2', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x1.0e5604189374cp+0', '0x1.ab596de8ca11cp+0', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x0.0p+0', '0x1.6dba6f6882e3dp-6', '0x0.0p+0'], 'user_id': 24}]
+
+exec
+/bin/bash -lc "rg -n \"def build_coalition_row\" src/mcrl/stagec_v025/coalitions.py && sed -n '430,590p' src/mcrl/stagec_v025/coalitions.py
+sed -n '85,105p' scripts/run_v025_pilot_c3.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+391:def build_coalition_row(
+        else tuple(sorted(int(user) for user in original_changed_users))
+    )
+    original_count = len(original_users) if original_changed_user_count is None else original_changed_user_count
+    if original_count != len(original_users):
+        raise StageCContractError("original changed-user count requires the complete user inventory")
+    decomposition = dict(capped_coalition_decomposition(original_users))
+    if context.changed_users not in decomposition:
+        raise StageCContractError("coalition context is absent from the sealed capped decomposition")
+    return CoalitionRow(
+        schema=COALITION_ROW_SCHEMA,
+        split="TRAIN",
+        world_id=world_id,
+        world_seed=world_seed,
+        learner_seed=None,
+        anchor_id=context.anchor_id,
+        anchor_index=anchor_index,
+        decision_time_utc=decision_time_utc,
+        decision_time_ns=decision_time_ns,
+        setting_id=setting_id,
+        context=context,
+        original_changed_user_count=original_count,
+        capped_decomposition=False,
+        original_changed_users=original_users,
+        decomposition_id=canonical_sha256({
+            "schema": "mcrl-v025-stagec-capped-coalition-decomposition-v1",
+            "original_changed_users": list(original_users),
+            "subsets": [list(users) for users, _ in capped_coalition_decomposition(original_users)],
+        }),
+        decomposition_weight_hex=float_hex(decomposition[context.changed_users]),
+        lambda_bits_per_j_hex=float_hex(lambda_bits_per_j),
+        eta_ref_bits_per_j_hex=float_hex(eta_ref_bits_per_j),
+        kappa_normalization_bits_hex=float_hex(kappa_normalization_bits),
+        c1_normalized_hex=float_hex(float(identity.c1 / kappa)),
+        psi_normalized_hex=float_hex(float(identity.c3 / kappa)),
+        objective_delta_normalized_hex=float_hex(float(identity.objective_delta / kappa)),
+        physical_c1_normalized_hex=float_hex(float(identity.physical_c1 / kappa)),
+        physical_psi_normalized_hex=float_hex(float(identity.physical_c3 / kappa)),
+        physical_delta_normalized_hex=float_hex(float(identity.physical_delta / kappa)),
+        code_digest=code_digest,
+        physics_digest=physics_digest,
+        catalogue_digest=catalogue_digest,
+        setting_digest=setting_digest,
+        calibration_digest=calibration_digest,
+        allocation_manifest_digest=allocation_manifest_digest,
+        credit_split=(
+            "EXACT_SHAPLEY_SMALL_SET"
+            if len(context.members) <= MAX_LABEL_COALITION_SIZE
+            else "NOT_COMPUTED_LARGE_SET"
+        ),
+    )
+
+
+def capped_coalition_decomposition(
+    changed_users: Sequence[int],
+) -> tuple[tuple[tuple[int, ...], float], ...]:
+    """v1.2 rule: one uncapped row for the actual selected coalition."""
+
+    users = tuple(sorted(int(user) for user in changed_users))
+    if len(set(users)) != len(users) or len(users) < 2:
+        raise StageCContractError("capped decomposition requires unique changed users")
+    return ((users, 1.0),)
+
+
+def pair_reporting_credit(
+    *, psi_normalized: float, coalition_users: Sequence[int], roster: Sequence[int]
+) -> dict[int, float]:
+    """B5 reporting-only equal pair credit, with explicit dummy-user zeros."""
+
+    users = tuple(coalition_users)
+    complete_roster = tuple(roster)
+    if len(users) != 2 or len(set(users)) != 2 or not set(users) <= set(complete_roster):
+        raise StageCContractError("pair reporting credit requires two roster members")
+    return {
+        user: float(psi_normalized) / 2.0 if user in users else 0.0
+        for user in complete_roster
+    }
+
+
+def exact_shapley_reporting_credit(
+    *,
+    coalition_users: Sequence[int],
+    subset_values: Mapping[frozenset[int], float],
+    roster: Sequence[int],
+) -> dict[int, float]:
+    """Exact reporting-only Shapley allocation for a coalition of at most four."""
+
+    users = tuple(sorted(coalition_users))
+    complete_roster = tuple(roster)
+    if not 2 <= len(users) <= MAX_LABEL_COALITION_SIZE or len(set(users)) != len(users):
+        raise StageCContractError("exact Shapley reporting requires 2..4 unique users")
+    if not set(users) <= set(complete_roster):
+        raise StageCContractError("Shapley coalition users must be in the roster")
+    expected = {
+        frozenset(user for index, user in enumerate(users) if mask & (1 << index))
+        for mask in range(1 << len(users))
+    }
+    if set(subset_values) != expected:
+        raise StageCContractError("exact Shapley reporting requires every subset value")
+    factorial = math.factorial
+    count = len(users)
+    credit = {user: 0.0 for user in complete_roster}
+    for user in users:
+        others = tuple(candidate for candidate in users if candidate != user)
+        for mask in range(1 << len(others)):
+            subset = frozenset(
+                candidate for index, candidate in enumerate(others) if mask & (1 << index)
+            )
+            weight = (
+                factorial(len(subset))
+                * factorial(count - len(subset) - 1)
+                / factorial(count)
+            )
+            credit[user] += weight * (
+                float(subset_values[subset | {user}]) - float(subset_values[subset])
+            )
+    return credit
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionShard:
+    path: Path
+    file_sha256: str
+    rows_sha256: str
+    rows: tuple[CoalitionRow, ...]
+
+
+def write_coalition_shard(path: str | Path, rows: Iterable[CoalitionRow]) -> CoalitionShard:
+    material = tuple(rows)
+    if not material:
+        raise StageCContractError("cannot write an empty coalition shard")
+    payloads = [row.payload() for row in material]
+    rows_sha256 = canonical_sha256(payloads)
+    header = {
+        "schema": COALITION_SHARD_SCHEMA,
+        "context_schema": COALITION_CONTEXT_SCHEMA,
+        "context_payloads_sha256": canonical_sha256(
+            [row.context.payload() for row in material]
+        ),
+        "split": "TRAIN",
+        "row_count": len(material),
+        "rows_sha256": rows_sha256,
+        "interaction_label_coalition_size": "UNCAPPED",
+        "max_reporting_shapley_coalition_size": MAX_LABEL_COALITION_SIZE,
+        "row_schema": COALITION_ROW_SCHEMA,
+        "pairwise_cross_gain_top_k": PAIRWISE_CROSS_GAIN_TOP_K,
+    }
+    encoded = b"\n".join(canonical_json_bytes(value) for value in (header, *payloads)) + b"\n"
+    destination = Path(path)
+    digest = write_once_with_sha256(destination, encoded)
+    return CoalitionShard(destination, digest, rows_sha256, material)
+
+
+def _action(payload: Mapping[str, object]) -> PhysicalAction:
+    return PhysicalAction(
+        None if payload["norad_id"] is None else int(payload["norad_id"]),
+        None if payload["beam_chain_id"] is None else int(payload["beam_chain_id"]),
+    )
+
+
+def _context(payload: Mapping[str, object]) -> CoalitionContext:
+    actual_schema = payload.get("context_schema", "<missing>")
+ROW_ANCHOR_LIMIT = None
+EVAL_TAPE_STEPS = 33
+PILOT_FORECAST_BOUNDARIES = (0,)
+PILOT_AGGREGATE_PAIR_LIMIT = 4_096
+PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+
+
+def _engine() -> ModuleType:
+    name = "mcrl_v025_pilot_matrix_engine"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, ENGINE_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load engine at {ENGINE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+ENGINE = _engine()
+
+exec
+/bin/bash -lc "sed -n '391,460p' src/mcrl/stagec_v025/coalitions.py
+sed -n '130,240p' src/mcrl/physics_v025/targets.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+def build_coalition_row(
+    *,
+    context: CoalitionContext,
+    reference_outcome: NetworkOutcome,
+    unilateral_outcomes: Mapping[int, NetworkOutcome],
+    coalition_outcome: NetworkOutcome,
+    original_changed_user_count: int | None = None,
+    original_changed_users: Sequence[int] | None = None,
+    world_id: str,
+    world_seed: int,
+    anchor_index: int,
+    decision_time_utc: str,
+    decision_time_ns: int,
+    setting_id: str,
+    lambda_bits_per_j: float,
+    eta_ref_bits_per_j: float,
+    kappa_normalization_bits: float,
+    code_digest: str,
+    physics_digest: str,
+    catalogue_digest: str,
+    setting_digest: str,
+    calibration_digest: str,
+    allocation_manifest_digest: str,
+) -> CoalitionRow:
+    """Production B4/B5 builder from nominal counterfactual outcomes."""
+
+    identity = coalition_identity(
+        coalition_users=context.changed_users,
+        reference=reference_outcome,
+        unilateral_by_user=unilateral_outcomes,
+        coalition=coalition_outcome,
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref_bits_per_j,
+        kappa_bits_per_user_s=kappa_normalization_bits,
+    )
+    kappa = Fraction(str(kappa_normalization_bits))
+    original_users = (
+        context.changed_users
+        if original_changed_users is None
+        else tuple(sorted(int(user) for user in original_changed_users))
+    )
+    original_count = len(original_users) if original_changed_user_count is None else original_changed_user_count
+    if original_count != len(original_users):
+        raise StageCContractError("original changed-user count requires the complete user inventory")
+    decomposition = dict(capped_coalition_decomposition(original_users))
+    if context.changed_users not in decomposition:
+        raise StageCContractError("coalition context is absent from the sealed capped decomposition")
+    return CoalitionRow(
+        schema=COALITION_ROW_SCHEMA,
+        split="TRAIN",
+        world_id=world_id,
+        world_seed=world_seed,
+        learner_seed=None,
+        anchor_id=context.anchor_id,
+        anchor_index=anchor_index,
+        decision_time_utc=decision_time_utc,
+        decision_time_ns=decision_time_ns,
+        setting_id=setting_id,
+        context=context,
+        original_changed_user_count=original_count,
+        capped_decomposition=False,
+        original_changed_users=original_users,
+        decomposition_id=canonical_sha256({
+            "schema": "mcrl-v025-stagec-capped-coalition-decomposition-v1",
+            "original_changed_users": list(original_users),
+            "subsets": [list(users) for users, _ in capped_coalition_decomposition(original_users)],
+        }),
+        decomposition_weight_hex=float_hex(decomposition[context.changed_users]),
+        lambda_bits_per_j_hex=float_hex(lambda_bits_per_j),
+        eta_ref_bits_per_j_hex=float_hex(eta_ref_bits_per_j),
+def network_objective(
+    outcome: NetworkOutcome,
+    *,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+) -> Fraction:
+    """F = B - eta_ref E for the whole network; Phi stays separate."""
+
+    eta, _kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    return outcome.bits - eta * outcome.joules
+
+
+@dataclass(frozen=True)
+class C1Label:
+    difference_surplus_bits: Fraction
+    phi_difference: Fraction
+    normalized_total: Fraction
+
+
+def c1_difference_surplus(
+    candidate: NetworkOutcome,
+    default: NetworkOutcome,
+    *,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+) -> C1Label:
+    """Whole-network C1 difference versus the declared default action."""
+
+    eta, kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    core = (candidate.bits - default.bits) - eta * (candidate.joules - default.joules)
+    # Phi_1=.5 and Phi_2=1 are prices in κ-bit units.  Dividing the physical
+    # surplus by κ and then adding Phi therefore keeps the target dimensionless.
+    phi = candidate.phi - default.phi
+    return C1Label(core, phi, core / kappa + phi)
+
+
+@dataclass(frozen=True)
+class OffsetProjection:
+    offset_index: int
+    valid: bool
+    survives: bool
+    outcome: NetworkOutcome
+    background_power_recomputed: bool
+    required_power_w: float | None
+    power_cap_w: float | None
+    min_decoding_margin_db: float
+    mean_acm_se_bit_s_hz: float
+
+    def __post_init__(self) -> None:
+        if self.offset_index not in range(1, FORECAST_OFFSETS + 1):
+            raise MCRLContractError("forecast offset is outside the frozen three offsets")
+        if not self.background_power_recomputed:
+            raise MCRLContractError("projection reused stale background powers")
+        if not math.isfinite(self.min_decoding_margin_db) or not math.isfinite(self.mean_acm_se_bit_s_hz):
+            raise MCRLContractError("projection margin/SE must be finite")
+        if (self.required_power_w is None) != (self.power_cap_w is None):
+            raise MCRLContractError("required power and cap must be supplied together")
+        if self.required_power_w is not None and (
+            not math.isfinite(self.required_power_w)
+            or not math.isfinite(self.power_cap_w)
+            or self.required_power_w < 0.0
+            or self.power_cap_w <= 0.0
+        ):
+            raise MCRLContractError("invalid projected required-power/cap values")
+
+    @property
+    def required_power_cap_margin_w(self) -> float | None:
+        if self.required_power_w is None or self.power_cap_w is None:
+            return None
+        return self.power_cap_w - self.required_power_w
+
+
+ProjectionEvaluator = Callable[[int, float, Mapping[int, PhysicalIdentity | None], bool], OffsetProjection]
+
+
+def project_three_offsets(
+    *,
+    assignments: Mapping[int, PhysicalIdentity | None],
+    evaluator: ProjectionEvaluator,
+    architecture: str,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+) -> tuple[OffsetProjection, ...]:
+    """Project three physical offsets and force background re-optimisation."""
+
+    assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    rows = tuple(
+        evaluator(index, index * DECISION_INTERVAL_S, assignments, True)
+        for index in range(1, FORECAST_OFFSETS + 1)
+    )
+    if architecture in {"a-r", "a′-r"} and any(
+        row.required_power_w is None or row.power_cap_w is None for row in rows
+    ):
+        raise MCRLContractError("rate-target forecast lacks required-power/cap fields")
+    return rows
+
+
+exec
+/bin/bash -lc "rg -n \"scipy\" pyproject.toml requirements*.txt setup.cfg 2>/dev/null || true
+/home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import scipy
+print(scipy.__version__)
+PY" in /home/sat/mcrl-v025-coalgen-ws
+ exited 1 in 0ms:
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+ModuleNotFoundError: No module named 'scipy'
+
+codex
+The review also surfaced two substantive reporting gaps, and I’m folding both into the deliverable: the elevation quantile will use the full Rician×shadow distribution at each selected link’s actual elevation, and the nested-block ledger will include the Möbius inversion itself—not merely the 64 values from which it could be derived.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-coalgen-ws/scripts/generate_mechanism_coalition_corpus.py
+exec
+/bin/bash -lc "sed -n '390,480p' scripts/generate_mechanism_coalition_corpus.py
+sed -n '1,100p' src/mcrl/physics_v025/mechanism_corpus.py
+git diff --check" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+                occupancy_2_anchors.add((world_number, anchor_index))
+            proposals.extend(occupancy_2)
+            proposals.extend(_aggressor_relief_proposals(tape, step_index, anchor, legal_actions))
+            proposals.extend(beam_evacuation_proposals(anchor=anchor.mapping, legal_actions=legal_actions))
+            nested_block = None
+            if anchor_index in NESTED_ANCHORS_PER_WORLD:
+                alternatives = best_alternatives(anchor.mapping, legal_actions)
+                if len(alternatives) >= 6:
+                    nested_block = tuple(sorted(alternatives)[:6])
+                    proposals.extend(nested_subset_proposals(block=nested_block, alternatives=alternatives))
+
+            # Merge identical action configurations while retaining every family/mechanism label.
+            grouped = defaultdict(list)
+            for proposal in proposals:
+                grouped[tuple(sorted(proposal.mapping(anchor.mapping).items()))].append(proposal)
+            unique_proposals = [rows[0] for _assignments, rows in sorted(grouped.items(), key=lambda item: repr(item[0]))]
+            counter = pilot.ENGINE.EvaluationCounter()
+            evaluator = pilot.ENGINE.StepEvaluator(
+                tape, setting, step_index, transition_from=incumbent,
+                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+                field="nominal", counter=counter, run_setting=run_setting, boundary_indices=(0,),
+            )
+            cache = ExactObjectiveCache(
+                tape=tape, step_index=step_index, carrier=carrier, anchor=anchor,
+                evaluator=evaluator, calibration=calibration, setting=setting, run_setting=run_setting,
+            )
+            archived_counter = pilot.ENGINE.EvaluationCounter()
+            archived_evaluator = pilot.ENGINE.StepEvaluator(
+                tape, setting, step_index, transition_from=incumbent,
+                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+                field="nominal", counter=archived_counter, run_setting=run_setting,
+                boundary_indices=(0,),
+            )
+            archived_cache = ExactObjectiveCache(
+                tape=tape, step_index=step_index, carrier=carrier, anchor=anchor,
+                evaluator=archived_evaluator, calibration=calibration, setting=setting,
+                run_setting=run_setting, evaluation_mode="archived-pair-compatible-exact",
+            )
+            archived_selected = pair.mapping(anchor.mapping)
+            # Reproduce the archived primitive generator's exact call sequence:
+            # scalar baseline, batched (already-cached baseline, joint), then
+            # scalar singletons.  Solver results are order-sensitive at machine
+            # precision, so this is part of the evaluator configuration.
+            archived_evaluator.evaluate(anchor)
+            archived_evaluator.evaluate_many((anchor, archived_cache.config(archived_selected)))
+            archived_pair_label = exact_interaction_label(
+                anchor=anchor.mapping,
+                selected=archived_selected,
+                evaluate=archived_cache.value,
+            )
+            required = _all_required_mappings(anchor, unique_proposals)
+            if nested_block is not None:
+                alternatives = best_alternatives(anchor.mapping, legal_actions)
+                for mask in range(1 << len(nested_block)):
+                    mapping = anchor.mapping
+                    for offset, user in enumerate(nested_block):
+                        if mask & (1 << offset):
+                            mapping[user] = alternatives[user]
+                    required.append(mapping)
+            cache.prepare(required)
+            anchor_rows = []
+            anchor_family_records = []
+            for assignments, mechanism_rows in sorted(grouped.items(), key=lambda item: repr(item[0])):
+                selected = dict(assignments)
+                config = cache.config(selected)
+                is_archived_pair = any(row.family == PAIR_CATALOGUE for row in mechanism_rows)
+                if is_archived_pair:
+                    label = exact_interaction_label(
+                        anchor=anchor.mapping, selected=selected, evaluate=archived_cache.value
+                    )
+                    archived_config = archived_cache.config(selected)
+                    coalition_row = pilot._coalition_row(
+                        tape=tape, step_index=step_index, carrier=carrier,
+                        anchor_index=anchor_index, anchor=anchor, selected=archived_config,
+                        evaluator=archived_evaluator, rows_by_user_action=rows_by_user_action,
+                        calibration=calibration, run_setting=run_setting,
+                    )
+                    receipt_cache = archived_cache
+                else:
+                    try:
+                        label = exact_interaction_label(
+                            anchor=anchor.mapping, selected=selected, evaluate=cache.value
+                        )
+                    except (ValueError, KeyError):
+                        invalid_proposals += len(mechanism_rows)
+                        continue
+                    coalition_row = pilot._coalition_row(
+                        tape=tape, step_index=step_index, carrier=carrier,
+                        anchor_index=anchor_index, anchor=anchor, selected=config,
+                        evaluator=evaluator, rows_by_user_action=rows_by_user_action,
+                        calibration=calibration, run_setting=run_setting,
+sed: can't read src/mcrl/physics_v025/mechanism_corpus.py: No such file or directory
+
+exec
+/bin/bash -lc "/home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+try:
+ import scipy
+ print('scipy', scipy.__version__)
+except Exception as e: print(type(e).__name__,e)
+PY" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+ModuleNotFoundError No module named 'scipy'
+
+exec
+/bin/bash -lc "/home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+try:
+ import mpmath
+ print('mpmath', mpmath.__version__)
+except Exception as e: print(type(e).__name__,e)
+PY" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+mpmath 1.3.0
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-coalgen-ws/src/mcrl/stagec_v025/mechanism_corpus.py
+apply patch
+patch: completed
+/home/sat/mcrl-v025-coalgen-ws/src/mcrl/stagec_v025/mechanism_corpus.py
+apply patch
+patch: completed
+/home/sat/mcrl-v025-coalgen-ws/tests/stagec_v025/test_mechanism_corpus.py
+apply patch
+patch: completed
+/home/sat/mcrl-v025-coalgen-ws/scripts/generate_mechanism_coalition_corpus.py
+exec
+/bin/bash -lc '/home/sat/mcrl-leo-handover/.venv/bin/python -m py_compile scripts/generate_mechanism_coalition_corpus.py src/mcrl/stagec_v025/mechanism_corpus.py
+PYTHONPATH=src nice -n 10 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest -q tests/stagec_v025/test_mechanism_corpus.py' in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 295ms:
+....                                                                     [100%]
+

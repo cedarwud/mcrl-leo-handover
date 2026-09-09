@@ -9336,3 +9336,799 @@ curl: (6) Could not resolve host: www.etsi.org
 
 web search: 
 web search: Mendonca "satellite" "35 dBi" ...
+exec
+/bin/bash -lc "nice -n 15 rg -n --hidden --glob '*.md' --glob '*.bib' --glob '*.py' --glob '"'!*.log'"' --glob '"'!archive/**'"' 'Mendon[çc]|MENDON' /home/sat/mcrl-v025-codex-ws-engine/docs /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v023-controller-handoff-20260907 /home/sat/mcrl-v025-codex-ws-engine/src" in /home/sat/mcrl-v025-provenance-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-codex-ws-engine/docs/W24-REPLY-STATUS-2026-08-23.md:108:而我們引的終端(Mendonça 2025,0.6 m)給的是 **2.50°**。
+/home/sat/mcrl-v025-codex-ws-engine/src/mcrl/env/antenna.py:139:# Receive pattern (ITU-R S.465-6 recommends 2, + Mendonça et al. 2025)
+/home/sat/mcrl-v025-codex-ws-engine/src/mcrl/env/antenna.py:149:"""**P'** — Mendonça et al., IEEE OJ-COMS 2025, 0.6 m terminal (C8 closed)."""
+/home/sat/mcrl-v025-codex-ws-engine/src/mcrl/env/antenna.py:165:"""``D`` — **P'**, the Ka VSAT reflector diameter (Mendonça et al. 2025).
+/home/sat/mcrl-v025-codex-ws-engine/docs/PREREG-DRAFT.md:209:G_R,max             35 dBi                                 (P', Mendonca 2025)
+
+web search: 
+web search: Mendonca satellite "Open Journal" 2025 antenna ...
+exec
+/bin/bash -lc 'nice -n 15 cat /home/sat/mcrl-v025-codex-ws-engine/docs/decisions/ADR-002-proposed-hobs-primary-geometry.md' in /home/sat/mcrl-v025-provenance-ws
+ succeeded in 0ms:
+# ADR-002: Proposed HOBS-equation primary geometry
+
+## Status
+
+Proposed. This record fixes the interpretation recommended for independent
+review, but it has no runtime, preregistration, checkpoint, Catfish, or training
+authority. The current frozen preregistration remains immutable.
+
+## Date
+
+2026-08-26
+
+## Context
+
+The Catfish design-data gate cannot admit treatment outcomes until antenna
+geometry is independent of mechanism success. The current MCRL implementation
+and completed episode-8999 checkpoint use a narrower convention than the
+literal HOBS antenna equation.
+
+The source is Chen et al., *Energy-Efficient Joint Handover and Beam Switching
+Scheme for Multi-LEO Networks*, IEEE VTC2024-Spring,
+DOI `10.1109/VTC2024-Spring62846.2024.10683088`. The audited local PDF has
+SHA-256
+`1b2a8eda4647c4f7b68f8ffb08347aaa9cde18ae32b7d6af84d68f827a0f3089`.
+
+HOBS equation (3) defines
+
+```text
+mu(theta) = 2.07123 * sin(theta) / sin(theta_3dB)
+```
+
+and calls `theta_3dB` the 3 dB half-power beamwidth angle. Table I gives
+`theta_3dB = 0.058 rad`. HOBS does not explicitly say whether that number is a
+one-sided angle or a full angular span. Direct substitution gives
+
+```text
+F(mu = 2.07123) = 0.5000004083 = -3.010296 dB.
+```
+
+Therefore the source equation places the reported parameter at a half-power
+boundary. Interpreting the pattern argument as off-boresight angle yields the
+following derived, one-sided reading:
+
+```text
+theta_hp_one_sided = 0.058 rad = 3.3231552118 deg
+HPBW_full          = 0.116 rad = 6.6463104235 deg.
+```
+
+The current MCRL API instead registers `THETA_3DB_DEG = 3.32` as the full HPBW
+and halves it in both the antenna pattern and cell-radius function. It therefore
+places the half-power point at `1.66 deg`. Under the current pattern,
+`F(3.32 deg) = 0.0423687`, not one half.
+
+The completed checkpoint is bound to preregistration digest
+`3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4`,
+whose byte SHA-256 is
+`8bf13e289e18d663699a39c778dfe5af5b7538781c08b42bf5d085776cd44543`.
+That record explicitly stores full HPBW `3.32 deg`, passes half of it to the
+pattern, uses `G0 = 2000`, and freezes 39 pointing cells. The episode-8999
+checkpoint SHA-256 is
+`e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`.
+
+## Proposed decision
+
+### 1. Use unambiguous names at every boundary
+
+No new interface may use bare `theta_3dB` without a convention field. The
+geometry bundle must carry both:
+
+```text
+theta_hp_one_sided_rad
+hpbw_full_rad = 2 * theta_hp_one_sided_rad
+```
+
+Degree representations are derived reporting values, not independent inputs.
+
+### 2. Make the literal HOBS equation the primary angle convention
+
+The proposed primary geometry uses:
+
+```text
+theta_hp_one_sided_rad = 0.058
+hpbw_full_rad          = 0.116
+hpbw_full_deg          = 6.6463104235
+```
+
+If the existing full-HPBW API is retained, it receives `6.6463104235 deg` and
+halves exactly once internally. The source value must never be halved twice.
+
+The current convention becomes the named sensitivity arm:
+
+```text
+legacy_narrow_hpbw_full_deg          = 3.32
+legacy_narrow_theta_hp_one_sided_deg = 1.66
+```
+
+### 3. Couple the primary cell lattice to the one-sided angle
+
+For the existing earth-fixed hexagonal lattice:
+
+```text
+cell_radius(h) = h * tan(0.058)
+pitch(h)       = sqrt(3) * cell_radius(h).
+```
+
+At the current grid-freeze altitude `h = 483 km`, this gives:
+
+```text
+cell_radius = 28.0454553590 km
+pitch       = 48.5761536032 km.
+```
+
+Using the current crop, one guard ring, service-area sample, and deterministic
+total ordering produces a 37-cell guarded lattice. The first 13 receipt-selected
+cells
+`[9, 10, 11, 12, 16, 17, 18, 19, 20, 24, 25, 26, 27]` cover
+`0.9976853446` of the 200 x 90 km service-area sample; 12 cover only
+`0.9434976096`. These are provisional reproducible measurements, not a new
+preregistration. A future accepted freeze must regenerate and store the exact
+IDs and algorithm/source digests.
+
+The proposed live geometry remains the complete 37-cell guarded lattice. The
+13-cell set is a **receipt-only coverage summary** under the existing
+deterministic coverage rule; it does not filter runtime cell identities,
+anchors, neighbours, observations, or actions. A later decision to make a
+finite selected set constrain runtime would require a separate ADR and matched
+runtime tests. The local action width remains four satellite slots times seven
+local anchor/neighbour beam slots, or 28 actions per user.
+
+### 4. Do not silently retain the old gain normalization
+
+HOBS Table I also lists `G0 = 40 dBi` and the text `10c/f_c rad` for aperture.
+That text does not unambiguously establish a physical radius or diameter. Under
+either interpretation, however, the reported gain and aperture cannot be
+reconciled with aperture efficiency at or below one: the stated gain would
+require efficiency `2.5330` if `10 lambda` is a radius, or `10.1321` if it is a
+diameter. Thus table-literal `G0 = 10000` is a source-reproduction diagnostic,
+not a provenance-closed physical primary.
+
+The live code documents an aperture-efficiency range of `0.639--0.645` and uses
+an aperture/beamwidth relation with the narrower full HPBW to obtain the rounded
+legacy value `G0 = 2000`. If that same relation and legacy normalization are
+held conditionally while the full HPBW doubles, `D/lambda` halves and gain is
+approximately quartered. This produces the conditional candidate:
+
+```text
+G0_conditional_linear ~= 500
+G0_conditional_dBi    ~= 26.99 dBi.
+```
+
+This is a derived MCRL candidate, not a value reported by HOBS and not yet the
+primary. The exact aperture relation, efficiency source, and meaning of the
+HOBS aperture field require independent closure. The candidate set is:
+
+- `G0 ~= 500`: conditional same-relation candidate;
+- `G0 = 2000`: width-only sensitivity that holds the current link-budget
+  normalization; and
+- `G0 = 10000`: HOBS-table-literal diagnostic with the aperture inconsistency
+  explicitly disclosed.
+
+No outcome may be used to choose among these gain normalizations. Independent
+source/physics review and an explicit controller ruling are required before the
+primary gain is accepted. Until then, `G0_primary = UNRESOLVED`.
+
+### 5. Reclassify existing evidence, do not invalidate it
+
+The episode-8999 checkpoint and all measurements bound to its preregistration
+remain valid evidence for the legacy-narrow sensitivity geometry. They are not
+a matched reference for the proposed primary geometry. Running that checkpoint
+under changed antenna/lattice physics would be a domain-shift sensitivity test,
+not a primary baseline.
+
+## Alternatives considered
+
+### Keep full HPBW 3.32 degrees as HOBS-faithful primary
+
+Rejected as a source claim. It contradicts HOBS equation (3), where the stated
+parameter itself lands at the half-power point. Retained as legacy sensitivity.
+
+### Use HOBS Table I gain 40 dBi unchanged
+
+Rejected as the physical primary because it requires aperture efficiency above
+one under either legal radius/diameter reading. Retained only as a literal-table
+diagnostic.
+
+### Widen the beam but keep G0 = 2000 as the primary
+
+Not selected. It would hold link-budget normalization while changing beamwidth
+and therefore requires explicit sensitivity labeling. It remains a candidate
+only until the gain-normalization gate is independently closed.
+
+### Select geometry by whichever Catfish result is strongest
+
+Rejected. It leaks treatment outcomes into the physical model and invalidates
+the mechanism comparison.
+
+## Consequences
+
+- No existing Catfish effect size transfers from the legacy-narrow geometry to
+  the proposed primary.
+- The current 39-cell preregistration receipt cannot be reused: the proposed
+  wide geometry generates a 37-cell guarded live lattice. Its 13-cell
+  receipt-only coverage summary does not constrain runtime candidates.
+- Antenna gain, interference, candidate overlap, beam load, handover frequency,
+  and angle-aware EE/power sensitivity can all change together.
+- A new matched Main reference checkpoint is required before primary-geometry
+  treatment development or validation. That later retraining is heavy work and
+  belongs on the Ubuntu server; this ADR does not authorize it.
+- Legacy checkpoint probes may continue only when labelled
+  `legacy_narrow_sensitivity`.
+
+## Required acceptance gates
+
+1. Independent review confirms the HOBS equation/table interpretation and
+   identifies a sourced aperture/gain relation and efficiency range.
+2. A controller selects the primary gain normalization without seeing Catfish
+   treatment outcomes; `G0 ~= 500` is not privileged before that ruling.
+3. Runtime implementation exposes the two angle fields and a named geometry
+   stratum; it does not overwrite the frozen legacy constants in place.
+4. Runtime and receipt semantics are tested separately: runtime uses the full
+   guarded lattice, while any receipt-selected coverage subset is audit-only.
+5. Absolute tests establish `F(3.323155 deg) = 0.5`, the 483/550 km radius and
+   pitch anchors, exact pointing-cell IDs/count/coverage, guard completeness,
+   units, RNG, and resume parity.
+6. A new preregistration and matched reference checkpoint are sealed before any
+   primary-geometry design or validation seed is opened.
+
+exec
+/bin/bash -lc 'nice -n 15 cat /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/probe/build_off_axis_figure.py' in /home/sat/mcrl-v025-provenance-ws
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Build the sealed a-r0 off-axis required-power / pooled-EE figure."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+import numpy as np
+
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[2]
+sys.path.insert(0, str(REPO / "src"))
+
+from mcrl.physics_v025.adapter import build_shared_tape, score_setting  # noqa: E402
+from mcrl.physics_v025.architectures import Geometry, Link  # noqa: E402
+from mcrl.physics_v025.channel import transmit_gain_linear  # noqa: E402
+from mcrl.physics_v025.energy import HardwareInventory  # noqa: E402
+from mcrl.physics_v025.matrix import MATRIX_SETTINGS, run_setting_for  # noqa: E402
+from mcrl.physics_v025.tapes import canonical_bytes, digest_payload  # noqa: E402
+
+
+ANGLES_DEG = (0.0, 0.5, 1.0, 1.5, 2.0)
+PATH_FACTOR_WITHOUT_TX_GAIN = 5.0e-16
+BEAM = (99_999, 0)
+
+
+def off_axis_rows() -> list[dict[str, object]]:
+    setting = next(row for row in MATRIX_SETTINGS if row.label == "a-r0")
+    rows = []
+    for angle in ANGLES_DEG:
+        gain = float(transmit_gain_linear(angle)) * PATH_FACTOR_WITHOUT_TX_GAIN
+        geometry = Geometry(
+            (Link(0, BEAM, 0, gain, gain),),
+            np.zeros((1, 1), dtype=np.float64),
+            np.zeros((1, 1), dtype=np.float64),
+        )
+        tape = build_shared_tape(
+            "a-r",
+            tuple((index * 0.640, geometry) for index in range(48)),
+            HardwareInventory.fixed((BEAM,)),
+            roster=(0,),
+        )
+        score = score_setting(tape, setting)
+        power = max(
+            transmission.rf_power_w
+            for boundary in tape.integrated
+            for slot in boundary.radiation.slots
+            for transmission in slot.transmissions
+        )
+        rows.append(
+            {
+                "off_axis_deg": angle,
+                "required_power_w": power,
+                "pooled_ee_bits_per_j": sum(score.bits.values()) / score.joules,
+                "rate_target_feasible": all(score.rate_target_feasible.values()),
+            }
+        )
+    if not all(
+        left["required_power_w"] < right["required_power_w"]
+        and left["pooled_ee_bits_per_j"] > right["pooled_ee_bits_per_j"]
+        for left, right in zip(rows, rows[1:])
+    ):
+        raise RuntimeError("a-r0 off-axis KAT is not strictly power/EE discriminating")
+    return rows
+
+
+def _points(values: list[float], *, x0: float, y0: float, width: float, height: float) -> str:
+    low, high = min(values), max(values)
+    return " ".join(
+        f"{x0 + index * width / (len(values) - 1):.2f},{y0 + height - (value - low) * height / (high - low):.2f}"
+        for index, value in enumerate(values)
+    )
+
+
+def _path(values: list[float], *, x0: float, y0: float, width: float, height: float) -> str:
+    return "M" + " L".join(_points(values, x0=x0, y0=y0, width=width, height=height).split())
+
+
+def _filled_segments(
+    values: list[float], *, x0: float, y0: float, width: float, height: float, color: str
+) -> str:
+    points = [tuple(float(part) for part in point.split(",")) for point in _points(
+        values, x0=x0, y0=y0, width=width, height=height
+    ).split()]
+    return "".join(
+        f'<polygon points="{ax:.2f},{ay-1.5:.2f} {bx:.2f},{by-1.5:.2f} {bx:.2f},{by+1.5:.2f} {ax:.2f},{ay+1.5:.2f}" fill="{color}"/>'
+        for (ax, ay), (bx, by) in zip(points, points[1:])
+    )
+
+
+def svg(rows: list[dict[str, object]]) -> str:
+    power = [float(row["required_power_w"]) for row in rows]
+    ee = [float(row["pooled_ee_bits_per_j"]) / 1.0e6 for row in rows]
+    angle_labels = "".join(
+        f'<text x="{95 + i * 290 / 4:.2f}" y="424" text-anchor="middle">{angle:g}</text>'
+        for i, angle in enumerate(ANGLES_DEG)
+    )
+    angle_labels += "".join(
+        f'<text x="{535 + i * 290 / 4:.2f}" y="424" text-anchor="middle">{angle:g}</text>'
+        for i, angle in enumerate(ANGLES_DEG)
+    )
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500" viewBox="0 0 900 500">
+  <rect id="background" width="900" height="500" fill="#ffffff"/>
+  <g id="title" font-family="DejaVu Sans, sans-serif" fill="#172033">
+    <text x="450" y="32" text-anchor="middle" font-size="18" font-weight="700">a-r0 off-axis physics KAT</text>
+    <text x="450" y="54" text-anchor="middle" font-size="11">Single-user controlled fixture; all inputs fixed except transmit off-axis angle</text>
+  </g>
+  <g id="axes" fill="#25324a">
+    <rect x="94.5" y="90" width="1" height="310"/><rect x="95" y="399.5" width="290" height="1"/>
+    <rect x="534.5" y="90" width="1" height="310"/><rect x="535" y="399.5" width="290" height="1"/>
+  </g>
+  <g id="grid" fill="#d8dee9">
+    <rect x="95" y="244.5" width="290" height="1"/><rect x="535" y="244.5" width="290" height="1"/>
+  </g>
+  <g id="power-series" fill="none">
+    {_filled_segments(power, x0=95, y0=105, width=290, height=280, color="#b6422c")}
+  </g>
+  <g id="ee-series" fill="none">
+    {_filled_segments(ee, x0=535, y0=105, width=290, height=280, color="#176b87")}
+  </g>
+  <g id="data-points" fill="#ffffff" stroke-width="2.5">
+    {''.join(f'<circle cx="{95+i*290/4:.2f}" cy="{105+280-(value-min(power))*280/(max(power)-min(power)):.2f}" r="4" fill="#b6422c"/>' for i, value in enumerate(power))}
+    {''.join(f'<circle cx="{535+i*290/4:.2f}" cy="{105+280-(value-min(ee))*280/(max(ee)-min(ee)):.2f}" r="4" fill="#176b87"/>' for i, value in enumerate(ee))}
+  </g>
+  <g id="labels" font-family="DejaVu Sans, sans-serif" fill="#172033" font-size="11">
+    <text x="240" y="80" text-anchor="middle" font-size="14" font-weight="700">Required RF power</text>
+    <text x="680" y="80" text-anchor="middle" font-size="14" font-weight="700">Realised pooled EE</text>
+    <text x="240" y="452" text-anchor="middle">Off-axis angle (deg)</text>
+    <text x="680" y="452" text-anchor="middle">Off-axis angle (deg)</text>
+    <text transform="translate(28 245) rotate(-90)" text-anchor="middle">Required power (W)</text>
+    <text transform="translate(468 245) rotate(-90)" text-anchor="middle">Pooled EE (Mbit/J)</text>
+    {angle_labels}
+    <text x="103" y="112">{max(power):.3f}</text><text x="103" y="382">{min(power):.3f}</text>
+    <text x="543" y="112">{max(ee):.2f}</text><text x="543" y="382">{min(ee):.2f}</text>
+  </g>
+  <g id="caption" font-family="DejaVu Sans, sans-serif" fill="#4a5568" font-size="10">
+    <text x="450" y="482" text-anchor="middle">Quantitative positions are generated from the sealed a-r0 rate-target power solve and endpoint energy accounting.</text>
+  </g>
+</svg>'''
+
+
+def main() -> int:
+    output = HERE / "figures"
+    output.mkdir(parents=True, exist_ok=True)
+    rows = off_axis_rows()
+    svg_path = output / "a-r0-off-axis-power-ee.svg"
+    svg_path.write_text(svg(rows), encoding="utf-8")
+    svg_digest = hashlib.sha256(svg_path.read_bytes()).hexdigest()
+    receipt = {
+        "schema": "mcrl-v025-a-r0-off-axis-kat-v1",
+        "status": "PASS",
+        "setting": run_setting_for("a-r0").payload(),
+        "setting_sha256": run_setting_for("a-r0").digest,
+        "controlled": {
+            "users": 1,
+            "beam": list(BEAM),
+            "path_factor_without_tx_gain": PATH_FACTOR_WITHOUT_TX_GAIN,
+            "boundaries": 48,
+            "interference": "none",
+        },
+        "varied": "transmit_off_axis_angle_deg",
+        "rows": rows,
+        "identities": {
+            "required_power_strictly_increases": True,
+            "pooled_ee_strictly_decreases": True,
+        },
+        "figure": str(svg_path.relative_to(REPO)),
+        "figure_sha256": svg_digest,
+        "figure_status": "TECHNICAL_PRECHECK_COMPLETE_HUMAN_VISUAL_PENDING",
+    }
+    receipt["receipt_sha256"] = digest_payload(receipt)
+    receipt_path = output / "a-r0-off-axis-kat.json"
+    receipt_path.write_bytes(canonical_bytes(receipt) + b"\n")
+    for path in (svg_path, receipt_path):
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        Path(str(path) + ".sha256").write_text(f"{digest}  {path.name}\n", encoding="ascii")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+exec
+/bin/bash -lc "nice -n 15 sed -n '34,110p' /home/sat/mcrl-v025-provenance-ws/rf-source-notes.md" in /home/sat/mcrl-v025-provenance-ws
+ succeeded in 0ms:
+No constants or source files were modified. All arithmetic used only Python's standard math library through the user-specified interpreter with `-B` and `nice -n 15`.
+
+## Independent follow-up: HOBS beamwidth provenance
+
+Read-only extraction of the supplied local HOBS PDF confirmed Eq.3 on page2 and TableI on page6. Eq.3 is `mu(theta)=2.07123*sin(theta)/sin(theta_3dB)`, theta is the boresight angle, and the table gives theta_3dB=0.058rad. Its pattern therefore places the half-power boundary at about3.323155deg from boresight: the corresponding full span is about6.646310deg. V0.25 instead labels3.32deg a full HPBW and halves it, placing half power at1.66deg. This is a definition mismatch with the literal HOBS equation, not rounding. `NARROWER_IN_SOURCE` can describe the symbol's meaning (one-sided offset versus full angular span), while the resulting beam is physically wider in the source.
+
+The legacy `env/antenna.py` header states that the project **registered**3.32deg as full HPBW. That is evidence of a project convention, not evidence HOBS uses it. The distinction is already documented in [proposed ADR-002](/home/sat/mcrl-v025-codex-ws-engine/docs/decisions/ADR-002-proposed-hobs-primary-geometry.md): its Context explicitly identifies the mismatch; its Alternatives rejects full3.32deg as a HOBS-faithful source claim while permitting it as a legacy sensitivity. Status is **Proposed**, so this ADR does not authorize geometry changes. It does establish that the current constants comment “retained HOBS full half-power beamwidth convention” is not supported by HOBS, even though the numerical project geometry itself has been declared and frozen. Report both facts; neither silently repairs nor silently source-verifies the current width.
+
+HOBS source identity: Chen et al., *Energy-Efficient Joint Handover and Beam Switching Scheme for Multi-LEO Networks*, IEEE VTC2024-Spring, [DOI10.1109/VTC2024-Spring62846.2024.10683088](https://doi.org/10.1109/VTC2024-Spring62846.2024.10683088). Local PDF inspected: `.scratch/chinese-word-v023-lcsrs-20260905-r2/references-pdf/[04]_Energy_Efficient_Joint_Handover_and_Beam_Switching_S.pdf`. No source or geometry was changed.
+
+codex
+The constant and embedded-number inventory is complete. The declared PA efficiency has the largest smooth effect on absolute energy: halving it nearly doubles the one-beam energy total. The clearest unresolved source attribution is the HOBS beamwidth convention. I’ll use an existing off-axis figure as an arithmetic sensitivity example and keep that separate from network-wide effect estimates.
+exec
+/bin/bash -lc "nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -B - <<'PY'
+from pathlib import Path
+import mpmath as m, math, json, ast
+m.mp.dps=40
+root=Path('/home/sat/mcrl-v025-codex-ws-engine')
+x=json.loads((root/'.scratch/multi-catfish-v025-physics-successor/probe/figures/a-r0-off-axis-kat.json').read_text())
+t=ast.parse((root/'src/mcrl/physics_v025/constants_v025.py').read_text())
+acm=ast.literal_eval(next(n.value for n in t.body if isinstance(n,ast.Assign) and n.targets[0].id=='ACM_TABLE'))
+noise=1.380649e-23*(150+290*(10**.12-1))*500e6/3; ps=1.65*10**.5
+for width in (1.66,3.32,6.64):
+ mu=m.mpf('2.07123')*m.sin(m.radians(2))/m.sin(m.radians(width/2))
+ rel=float((m.besselj(1,mu)/(2*mu)+36*m.besselj(3,mu)/mu**3)**2)
+ h=2000*5e-16*rel
+ required=10**(-1.441812460/10)*noise/h
+ p=min(1.65,required*(1+2e-9)); sinr=p*h/noise
+ elig=[r for r in acm if sinr>=10**((r[2]+1.7-10*math.log10(1.2))/10)]
+ mode=max(elig,key=lambda r:r[1],default=None)
+ bits_s=0 if mode is None else mode[1]/1.2*500e6/3
+ dc=math.sqrt(p*ps)/.35+.538
+ print('figure2deg',width,'shape',rel,'uncapped_p',required,'p',p,'sinr_db',10*math.log10(sinr),'mode',mode,'E',dc*30.08,'EE',bits_s/dc,'Eratio_to_published',(dc*30.08)/(math.sqrt(x['rows'][-1]['required_power_w']*ps)/.35+.538)/30.08)
+for nf in (.6,1.2,2.4):
+ temp=150+290*(10**(nf/10)-1)
+ print('NF',nf,'temp',temp,'temp_ratio',temp/(150+290*(10**.12-1)))
+print('roundoff thresholds',[(r[0],r[2]+1.7-10*math.log10(1.2)) for r in (acm[0],acm[12],acm[-1])])
+print('margin factors',10**(-.85/10),10**(1.7/10))
+print('standbyfloor',1.65/144,'additive_eta',ps/(ps/.35+math.sqrt(1.65*ps)/.35/12))
+print('noisefactor change 0.12',150+290*(10**.06-1),150+290*(10**.24-1))
+PY" in /home/sat/mcrl-v025-provenance-ws
+ succeeded in 0ms:
+figure2deg 1.66 shape 0.005399624978272301 uncapped_p 74.08506434187996 p 1.65 sinr_db -17.964279641823918 mode None E 268.35322194014805 EE 0.0 Eratio_to_published 1.2021186860602717
+figure2deg 3.32 shape 0.3596211046249255 uncapped_p 1.1123695433685603 p 1.1123695455932994 sinr_db -1.4418124513141104 mode ('QPSK 1/4', 0.490243, -2.35) E 223.2335501077914 EE 9174814.046195766 Eratio_to_published 0.9999999999999999
+figure2deg 6.64 shape 0.7816849780764504 uncapped_p 0.5117554707546161 p 0.5117554717781271 sinr_db -1.4418124513141095 mode ('QPSK 1/4', 0.490243, -2.35) E 156.62051327956664 EE 13076999.099442475 Eratio_to_published 0.7015993483234946
+NF 0.6 temp 192.964550234096 temp_ratio 0.7964051463169748
+NF 1.2 temp 242.29445418135805 temp_ratio 1.0
+NF 2.4 temp 363.96224033731886 temp_ratio 1.502148456377347
+roundoff thresholds [('QPSK 1/4', -1.4418124604762483), ('8PSK 2/3', 7.528187539523752), ('32APSK 9/10', 16.958187539523752)]
+margin factors 0.8222426499470712 1.4791083881682074
+standbyfloor 0.011458333333333333 additive_eta 0.3343325811071576
+noisefactor change 0.12 192.964550234096 363.96224033731886
+
+exec
+/bin/bash -lc "nice -n 15 rg -n '12.*chain|chain.*12' /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor --glob '*.md'" in /home/sat/mcrl-v025-provenance-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PROVIDER-2026-09-08.md:15:11. **T7 detail:** the same-satellite co-colour term carries the legacy P-10 peak-receive-gain override (eq. 3.12a); with per-chain keys the engine reproduces it; a KAT compares one victim's total interference (same-satellite + cross-satellite) against the legacy helper at the decision instant.
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-COMPUTE-BUDGET-2026-09-08.md:3:Source: provider v1 report — with the Python-object tape, the 57 525-chain cross-product inventory and the unbatched runner, the measured cost is 12.63 s per anchor of provider acquisition, 4.66 s per 48-boundary catalogue row, q ≈ 0.308, ≈ 182 868 core-hours for the plan (budget: 160). This is an engineering failure of the current implementation, not a property of the physics; the decisions below fix the implementation first and only then thin the plan, in a pre-declared order.
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4-REPORT-2026-09-08.md:45:  sensitivity standby census is 12 chains per represented satellite.
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PIPELINE-AUDITS-CD-2026-09-08.md:15:11. **Standby inventory (D-N3, provider T3/D4; ENGINE):** for the P_idle sensitivity each satellite carries a declared 12-RF-chain census (`VERIFY_SOURCE`; matches the f = 1/12 sensitivity); idle chains = 12 − active beams (≥ 0); the primary P_idle = 0 is unaffected; standby no longer depends on the realisable-cell count.
+
+exec
+/bin/bash -lc "nice -n 15 sed -n '135,180p' /home/sat/mcrl-v025-codex-ws-engine/src/mcrl/physics_v025/resolution.py" in /home/sat/mcrl-v025-provenance-ws
+ succeeded in 0ms:
+                    rates[transmission.user_id] += (
+                        slot.fraction
+                        * transmission.bandwidth_hz
+                        * transmission.realised_outcome.credited_spectral_efficiency_bit_per_s_hz
+                    )
+                else:
+                    rates[transmission.user_id] += slot.fraction * rate_model.rate_bps(
+                        transmission.sinr, transmission.bandwidth_hz
+                    )
+            # No branch edits radiation: an unsuccessful attempt continues to
+            # interfere and consume exactly the energy already scheduled.
+    energy = schedule_energy(
+        inventory,
+        (
+            (slot.fraction, dict(slot.beam_rf_w))
+            for slot in radiation.slots
+        ),
+        duration_s=duration_s,
+        idle_power_w=idle_power_w,
+    )
+    bits = {user: rate * duration_s for user, rate in rates.items()}
+    complete = {
+        user: allocated_fraction[user] > 0.0
+        and math.isclose(served_fraction[user], allocated_fraction[user], rel_tol=0.0, abs_tol=1.0e-15)
+        for user in rates
+    }
+    return ResolutionResult(
+        radiation,
+        rates,
+        bits,
+        served_fraction,
+        complete,
+        radiation.rate_target_attained,
+        radiation.per_user_rate_target_feasible,
+        energy,
+    )
+
+
+__all__ = ["ResolutionResult", "resolve_configuration"]
+
+exec
+/bin/bash -lc "nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -B - <<'PY'
+from pathlib import Path
+import ast,hashlib
+r=Path('/home/sat/mcrl-v025-codex-ws-engine/src/mcrl/physics_v025')
+t=ast.parse((r/'constants_v025.py').read_text()); names=[n.targets[0].id for n in t.body if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and n.targets[0].id"'!='"'__all__']; print('declarations',len(names))
+for fname in ('constants_v025.py','acm.py','channel.py','energy.py','architectures.py','batch.py'):
+ print(fname,hashlib.sha256((r/fname).read_bytes()).hexdigest())
+PY" in /home/sat/mcrl-v025-provenance-ws
+ succeeded in 0ms:
+declarations 72
+constants_v025.py 7863e136423bfac77a0c710d95f9e8b3fe36b928c0dc1ef1bb3b2f69a0ab1112
+acm.py 8ccccc90b2217b275c58b09e443332569b967f896a1c01ae26951abc8b03e90d
+channel.py 9f29bb063e8e2ce6898ede1a567b638bb0a14e02e1f97616bf3d87ef422d396e
+energy.py c33dd94892cefc29da8edba8942ee46d80fb9dbba629c6c1de030f741f5e5c38
+architectures.py 2836f5a76e437782c9edbbbadb9368b9c40acd3f46f0311aeafd6de6c6804ae1
+batch.py f43ee35da08f123d21eda9f6b1ab64b0792ed0149a5dcc489a7f6a68cbf72e34
+
+web search: 
+web search: site.etsi.org "Tinterrupt" "142" "intra-satellite" ...
+apply patch
+patch: completed
+/home/sat/mcrl-v025-provenance-ws/CONSTANT-PROVENANCE-2026-09-09.md
+diff --git a/CONSTANT-PROVENANCE-2026-09-09.md b/CONSTANT-PROVENANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6ec79b0fc6ef54eabbd3d32662c662b7070203be
+--- /dev/null
++++ b/CONSTANT-PROVENANCE-2026-09-09.md
+@@ -0,0 +1,111 @@
++| Priority | Symbol and declared value | Stated provenance | What the source actually says | Semantic match | Verdict | Factor-of-two sensitivity |
++|---|---|---|---|---|---|---|
++| 1 | `TX_FULL_HPBW_DEG = 3.32°` | “retained HOBS full half-power beamwidth convention” | HOBS Eq. (3) uses `sin(θ3dB)` in the denominator; Table I gives `θ3dB = 0.058 rad`. Substitution puts half power at that **off-axis angle**, not half that angle. [HOBS, pp. 2, 6][HOBS] | The engine registers a full span and divides it by two. Its declared geometry is reproducible, but calling that convention HOBS-derived is unsupported. `NARROWER` describes the source symbol’s one-sided meaning; the resulting source beam is physically wider. | `NARROWER_IN_SOURCE` | At fixed 2° off-axis, halving/doubling the declared full width changes normalized gain from 0.359621 to 0.005400/0.781685. The existing isolated fixture’s RF becomes cap-bound/0.511755 W instead of 1.112370 W; EE becomes 0/+42.53%. Interference, coverage, modes and policy comparisons can also move. |
++| 2 | Remaining operational allowance: approximately `20 s`, exactly `30.08 − 10 = 20.08 s` | Contract v1 §F2: “the rest of the 30.08 s interval reserved for sensing/transport/validation/commit” | This is a local reservation. No cited measurement, procedure budget or component decomposition establishes the required duration of those operations. | A declared reserve is legitimate; attributing sufficient operational time to those functions is not verified. | `UNSOURCED` for the operational attribution | Multiplying the **needed** 20.08 s by ½/2 leaves 20.04/−10.08 s for compute in a fixed 30.08 s cycle. Deadline feasibility can change completely; this is not a multiplier on PHY energy or bits. No latency distribution was assumed. |
++| 3 | `SATELLITE_CHANGE_INTERRUPTION_S = 0.142 s` | “round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE)” | The local citation points to TS 38.133 V18.13.0 Annex A.14.2.1.9.2–.3: reportedly electronic-VSAT inter-satellite **test interruption**, distinct from 152 ms including RRC delay. The primary pages could not be retrieved here. | Application is explicitly `DECLARED` and conditional. The numerical standards anchor remains independently unverified in this audit. | `UNVERIFIABLE_HERE` for the source anchor | Primary interruption-off setting: zero effect. In interruption-on settings, 71/284 ms removes half/twice the constant-rate blackout bits; one event per 30.08 s changes useful-time loss by −0.2360/+0.4721 percentage points. Scheduled energy stays unchanged. |
++| 4 | `SAME_SATELLITE_INTERRUPTION_S = 0.062 s` | “round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE)” | The local citation points to TS 38.133 V18.13.0 Annex A.14.2.1.7.3: reportedly intra-satellite FR2-NTN **cell-handover test interruption**, distinct from 72 ms including RRC delay. Primary pages unavailable here. | Application is explicitly `DECLARED`; neither an arbitrary beam switch nor a measured end-to-end outage has been source-verified. | `UNVERIFIABLE_HERE` for the source anchor | Primary: zero. In interruption-on settings, 31/124 ms changes one event’s useful-time loss by −0.1031/+0.2061 percentage points per 30.08 s; bits follow blackout rate and overlap, energy does not. |
++
++The reported result with the largest directly calculable exposure to the first item is the **2° endpoint of the existing off-axis power/EE figure**. Its recorded 1.112370 W and 9.174814 Mbit/J become, by isolated-link arithmetic with every other fixture input held fixed, 1.65 W and **zero decodable bits/zero EE** when width is halved, or 0.511755 W and **13.076999 Mbit/J (+42.53%)** when width is doubled. Energy changes from 223.233550 J to 268.353222/156.620513 J. This is a sensitivity of the recorded, unreserved single-user fixture, not a rerun of the current quantile-controlled network or an estimate of FULL-versus-DROP gains. Network-wide changes cannot be quantified from constants alone. [Recorded figure receipt][FIG]
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09. Read-only source examination and arithmetic; **no simulation, test suite, production engine import, random draw, training or replay was run**. The source checkout is `/home/sat/mcrl-v025-codex-ws-engine`, HEAD `75c5c78cac3833e5a3100bf948211023d0de228c`. File hashes below identify the actual examined bytes, including the possibility of an existing dirty checkout. No replacement values are proposed.
++
++The lead table contains every adverse or unavailable **source verdict** in this audit. Its ordering is by conditional exposure, not an invented empirical ranking across incomparable quantities. The timing attribution has no direct PHY effect but can invalidate deployment timing. Numerical solver assurance is a separate formula finding below: its constants are declared algorithm choices, yet its slow certificate does not bound solution error.
++
++`MATCHES` means that the number and the cited source’s definition agree for the stated component or benchmark. It does not mean calibrated flight hardware. `DECLARED` means an explicit model, engineering or computational choice; a source may substantiate an ingredient without substantiating its transplant. `UNVERIFIABLE_HERE` distinguishes inaccessible evidence from no evidence. An assertion in `PROVENANCE`, `VERIFY_SOURCE`, a test, or an older review was treated as a claim to trace, never as independent source confirmation.
++
++**Sensitivity convention.** Unless stated otherwise, each row changes that declared numeric quantity to ½/2 of its value, holding geometry, assignments and unrelated constants fixed, and propagating its intended algebraic dependants. For dB-valued quantities this means halving/doubling the **dB number**, not ±3.0103 dB; the distinction is explicit where material. Discrete counts may make a hypothetical input invalid. For a fixed trajectory, if a component contributes energy fraction `s`, multiplying that component by `f` gives `E′/E = 1 + (f−1)s` and `EE′/EE = 1/[1+(f−1)s]`, provided bits do not change. In an isolated, uncapped link at fixed target, `p ∝ N/g` and PA supply `∝ √p`; coupled links have no universal percentage bound. Modes, cap hits, outages, selection and trajectories can change discontinuously. Those caveats apply to every local sensitivity below.
++
++**What the primary sources establish.**
++
++| Evidence | Verified source definition and its limit |
++|---|---|
++| SI | Speed of light in vacuum and Boltzmann constant have exactly the declared SI values, with no uncertainty. [BIPM defining constants][SI] |
++| DVB-S2 | Table 13 has 28 normal-frame, no-pilot entries: efficiency per symbol and ideal AWGN `Es/N0` at quasi-error-free PER `10⁻⁷`. The test assumes perfect synchronization/carrier recovery, no phase noise and 50 LDPC iterations. These are not a measured universal hard-decoding law in satellite interference. The project declares that abstraction. [EN 302 307-1 V1.4.1, §6, p. 36][DVB] |
++| Common margin | 1.7 dB is the upper reported **32APSK AWGN implementation loss**; the source reports different ranges by constellation and treats nonlinear satellite degradation separately. Its test roll-off is 35%. A common 1.7 dB at the project’s 20% roll-off is a declared adoption. [BO.1784-1, Attachment 1 to Annex 1, §1][BO] |
++| RF/baseband | You et al. separate PA supply from the RF chain. The 338 mW chain sum is DAC 300 + mixer 19 + low-pass filter 14 + baseband amplifier 5 mW. `P_BB = 200 mW` is digital baseband precoder power. Neither supplies all payload/platform overhead. The Ku-band paper uses different PA parameters; it does not source this engine’s 0.35 or 5.2178 W. [You, Table II][YOU1], [You, Eqs. 12–15 and numerical setup][YOU2] |
++| Standby proxy | CPI specifies whole ground Ka-band SSPA/BUC prime power: 420 VA typical at linear rated output, 35 VA muted, with 48 VDC input. This is not a per-spacecraft-PA bias measurement. The ratio is real; transferring it to a chain is declared. [CPI MKT-497, p. 2][CPI] |
++| Terminal/noise | TR 38.821’s Ka VSAT simulation table gives 0.6 m, 150 K and 1.2 dB, with a 39.7 dBi receive-gain entry. The engine deliberately combines those noise parameters with another benchmark’s 35 dBi peak. These are not one measured terminal’s complete specification. [TR 38.821, Table 6.1.1.1-3][TR821] |
++| Receive peak | Mendonça et al. explicitly use 35 dBi maximum/boresight receive gain and 0.6 m DUT diameter at 19.5 GHz. The peak coefficient matches. Their receive-pattern construction is not thereby imported. The legacy explanation “39.7 dBi ideal derated” is not established by that paper. [Mendonça, Eq. 7 and §IV, pp. 6782, 6786][MENDONCA] |
++| Atmosphere/shadow | TR 38.811’s scintillation entries are a Toulouse 20 GHz, circular-polarization, 99%-nonexceedance attenuation baseline, adopted for system simulations above 6 GHz; not average random loss. The shadow values are zero-mean Gaussian **dB standard deviations for suburban/rural Ka-band LOS**. The standard uses nearest reference elevation; the engine explicitly interpolates and clamps. [TR 38.811, Tables 6.6.6.2.1-1 and 6.6.2-3][TR811] |
++| Gas | The 0.25 dB zenith value is derived from the rounded SC6 clear-sky 0.5 dB at 30° using the standard’s cosecant law. It is a calibration substitution, not a universal atmospheric constant. [TR 38.821, Tables 6.1.3.2-1/6.1.3.3-1][TR821], [TR 38.811, §6.6.4][TR811] |
++| Receive envelope | S.465-6 is an interference/coordination reference envelope when measured patterns are unavailable: `32−25log10 θ` over its specified angular domain and −10 dBi beyond 48°. It does not supply the near-axis pattern or this terminal’s peak. [S.465-6, recommends 2][S465] |
++
++The latest applicable [v1.8 amendment][V18] matters: it explicitly calls 0.35 **saturation efficiency**, calls the satellite term a **processing increment**, limits the energy boundary to specified partial-payload components, and calls 50 Mbit/s a **power-control setpoint**. Therefore the known RF/baseband and PA cases are not reclassified as silently universal hardware claims. The source’s narrower original meaning is recorded, while the currently declared adoption receives `DECLARED`. The HOBS attribution is different: the current comment still asserts a HOBS full-width convention. Its mismatch was also documented in [proposed ADR-002][ADR2]; that proposal is not authority to change the current geometry.
++
++**Complete declarations in [constants_v025.py][C].** Provenance quotations below are from the source comments or its machine-readable dictionary; “R3” in explanatory text means the [round-3 declaration][R3]. Derived decimals are displayed without replacing the declared expressions.
++
++| Symbol and value as declared | Stated provenance | What the source actually says | Semantic match | Verdict | Sensitivity, ½ / 2 |
++|---|---|---|---|---|---|
++| `ENGINE_VERSION = "V025-ANGLE-RATE-TPC-TDM-ACM-STAGE2"` | “sealed V025 priority declaration identity” | Local version identity. | Reproducibility label, not physics. | `DECLARED` | No numeric perturbation; changing it changes receipts, not equations. |
++| `REFERENCE_ARCHITECTURE = "b"` | “sealed V025 declared reference” | Fixed-RF TDM reference. | Explicit selection. | `DECLARED` | Categorical; changing it changes comparator/calibration, no factor-two interpretation. |
++| `PRIMARY_ARCHITECTURE = "a-r"` | “sealed V025 declared primary” | v1.1 chooses rate-target TDM. | Explicit selection. | `DECLARED` | Categorical; changes the estimand. |
++| `SENSITIVITY_ARCHITECTURE = "a′-r"` | “sealed V025 architectural sensitivity” | v1.1 chooses rate-target FDM sensitivity. | Explicit selection. | `DECLARED` | Categorical; alters bandwidth, interference and summed RF. |
++| `CARRIER_FREQUENCY_HZ = 20.0e9` | “round-3 §2.6 retained 20-GHz benchmark” | A Ka downlink benchmark; TR 38.821 uses 20 GHz. | Source frequency matches; the complete combined link is a project model. | `DECLARED` | At fixed antenna gains, free-space gain ×4/¼, isolated required RF ×¼/4, PA ×½/2. Band-specific tables cannot physically be assumed unchanged. |
++| `SPEED_OF_LIGHT_M_S = 299_792_458.0` | “SI exact definition of the speed of light.” | Exact vacuum speed. [SI][SI] | Exact definition. | `MATCHES` | Deliberate unit-error exercise: path gain ×¼/4, required RF ×4/¼, PA ×2/½. |
++| `TOTAL_BANDWIDTH_HZ = 500.0e6` | “round-3 §2.5 retained 500-MHz benchmark” | R3 chooses total occupied bandwidth; it is not HOBS Table I’s 100 MHz. | Explicit retained scenario. | `DECLARED` | Beam bandwidth/noise ×½/2; fixed-mode bits likewise. Rate-target occupancy ceiling 6/24 instead of 12; target modes and powers can jump. |
++| `FREQUENCY_REUSE = 3` | “round-3 §2.5 retained reuse-3 benchmark” | Earth-fixed three-colour allocation, ideal orthogonality and closed interference field are assumptions. | No universal reuse prescription. | `DECLARED` | Literal 1.5 invalid as colour count; 6 halves per-colour bandwidth/noise and changes cochannel topology. No smooth network estimate. |
++| `BEAM_BANDWIDTH_HZ = TOTAL_BANDWIDTH_HZ / FREQUENCY_REUSE` ≈ `166.666667 MHz` | “round-3 §2.5 500/3 MHz per colour” | Arithmetic of the chosen occupied bandwidth. | Correct quotient, declared architecture. | `DECLARED` | 83.333/333.333 MHz: noise and fixed-mode bits ×½/2; rate-target modes change as above. |
++| `BOLTZMANN_J_PER_K = 1.380649e-23` | “2019 SI exact Boltzmann constant.” | Exact `k` in J/K. [SI][SI] | Exact definition. | `MATCHES` | Noise ×½/2; isolated required RF ×½/2 and PA ×0.7071/1.4142; fixed-RF SINR changes oppositely. |
++| `ANTENNA_TEMPERATURE_K = 150.0` | “round-3 §2.6 retained TR 38.821 Ka VSAT benchmark.” | Simulation antenna noise temperature, not ambient temperature. [TR821][TR821] | Same noise input and units. | `MATCHES` | System temperature/noise ×0.6905/1.6191; uncapped RF follows, PA ×0.8309/1.2724. |
++| `REFERENCE_TEMPERATURE_K = 290.0` | “round-3 §2.6 retained reference temperature.” | Conventional noise-factor reference in the receiver-temperature conversion. | Correct reference role, not satellite physical temperature. | `MATCHES` | System temperature/noise ×0.8095/1.3809; required RF follows and PA takes square root. |
++| `RECEIVER_NOISE_FIGURE_DB = 1.2` | “round-3 §2.6 retained TR 38.821 Ka VSAT benchmark.” | Receiver noise figure, not loss applied to the whole signal path. [TR821][TR821] | Correct declared value; **not wired into the derived expression** in this file. | `MATCHES` | Changing this symbol alone: **zero**. Intended 0.6/2.4 dB yields `Tsys = 192.9646/363.9622 K`, noise ×0.7964/1.5021. See embedded `0.12`. |
++| `SYSTEM_TEMPERATURE_K = 150 + 290*(10.0**0.12 − 1)` ≈ `242.294454 K` | “round-3 §2.6 150+290*(10^0.12-1)” | Antenna temperature plus receiver equivalent noise temperature. | Correct at frozen NF; duplicate exponent is a dependency hazard. | `MATCHES` | Direct Tsys change: noise/RF ×½/2, PA ×0.7071/1.4142 before caps. |
++| `RICIAN_K_FACTOR_DB = 20.0` | “round-3 §2.6 retained benchmark interpretation” | Legacy code explicitly interprets an earlier `φ = 20 dB` as Rician K; no flight estimate is established. | Declared LOS/scatter ratio `K=100`, unit-mean Rician power. | `DECLARED` | Literal 10/40 dB gives K=10/10000 and power-gain coefficient of variation ≈0.417/0.0141 instead of 0.1404. Modes/outages and quantile reserve move, not nominal RF. |
++| `MINIMUM_ELEVATION_DEG = 10.0` | “round-3 §2.18 live visibility contract.” | Chosen live visibility floor. | Explicit eligibility condition. | `DECLARED` | 5°/20° expands/contracts visibility; step availability, candidates and interference can change from absent to present. No population percentage without geometry. |
++| `BEAM_RF_CAP_W = 1.65` | “round-3 §2.2 inherited benchmark; not measured flight hardware (VERIFY_SOURCE).” | R3 explicitly retains an engineering operating point. | Not a measured beam limit or a derivation from 100 W. | `DECLARED` | 0.825/3.30 W shifts cap-limited link budgets by ∓3.0103 dB. With back-off held and derived psat propagated, fixed-cap PA supply ×½/2; at unchanged unsaturated RF PA ×0.7071/1.4142. |
++| `PA_OUTPUT_BACKOFF_DB = 5.0` | “round-3 §2.2 inherited engineering PA assumption (VERIFY_SOURCE).” | Chosen cap-to-saturation ratio, not a second radiated-power penalty. | Explicit engineering assumption. | `DECLARED` | 2.5/10 dB changes psat by ×0.5623/3.1623 and PA supply at fixed RF by ×0.7499/1.7783. RF/SINR unchanged. |
++| `PA_SATURATION_POWER_W = BEAM_RF_CAP_W * 10**(PA_OUTPUT_BACKOFF_DB/10)` = `5.217758139 W` | “round-3 §2.2: 1.65*10^(5/10)” | Derived saturation output in the chosen PA abstraction. | Arithmetic correct; not a datasheet value. | `DECLARED` | Independent psat ×½/2 makes PA energy ×0.7071/1.4142 and efficiency ×1.4142/0.7071; RF/bits unchanged. |
++| `PA_MAX_EFFICIENCY = 0.35` | “round-3 §2.2 engineering PA assumption; VERIFY_SOURCE” | v1.8 explicitly defines saturation RF/DC efficiency. You’s papers do not establish 0.35 for this hardware. | Correct declared meaning; cap efficiency is 0.196819, not 0.35. | `DECLARED` | 0.175/0.70 makes PA energy ×2/½. One cap-powered beam/satellite: total energy +93.97%/−46.98%, EE −48.45%/+88.62%, bits fixed. |
++| `CIRCUIT_POWER_PER_CHAIN_W = 0.338` | “round-3 §2.12 retained You et al. component sum; beam-to-chain mapping is assumed (VERIFY_SOURCE).” | DAC+mixer+LPF+baseband-amplifier power, PA separate. [You][YOU1] | Number/component match; one switchable beam-chain transplant is declared, not whole payload circuitry. | `DECLARED` | 0.169/0.676 W: cap fixture energy −1.894%/+3.789%, EE +1.931%/−3.650%. At 0.014244 W RF, EE +14.72%/−20.42%. Extinction comparisons depend on chain activity. |
++| `BASEBAND_POWER_PER_ACTIVE_SATELLITE_W = 0.200` | “round-3 §2.12 retained You et al. component coefficient (VERIFY_SOURCE).” | Digital baseband precoder power. [You][YOU2] | Number matches; v1.8 declares a common processing increment, not all shared satellite overhead. | `DECLARED` | 0.100/0.400 W per active satellite: cap fixture energy −1.121%/+2.242%, EE +1.134%/−2.193%; at 0.014244 W RF, EE +8.22%/−13.18%. |
++| `P_BUS_W = 0.0` | “round-3 §2.13 explicit exclusion of bus, terminal, gateway, and controller energy.” | Boundary exclusion, not physically zero bus demand. | Explicit partial-payload metric. | `DECLARED` | Multiplying zero leaves zero; cannot test omitted overhead with a multiplicative perturbation. An additive common energy can change policy ranking when bits differ. |
++| `STANDBY_FRACTION = 1.0 / 12.0` | “round-3 §2.14 CPI 35/420 ground-HPA proxy (VERIFY_SOURCE).” | Whole assembly mute/linear prime-power ratio. [CPI][CPI] | Ratio matches; flight-chain transfer is explicitly a proxy. | `DECLARED` | Idle 0.349305/1.397220 W; dark-chain energy ×½/2, active-floor crossover RF ×¼/4. Primary idle-off setting unchanged. |
++| `ROLL_OFF = 0.20` | “round-3 §2.8 prospective DVB-S2 shaping choice.” | 0.20 is an allowed DVB-S2 roll-off. [DVB][DVB] | Explicit shaping choice; occupied bandwidth is `(1+α)Rs`. | `DECLARED` | 0.10/0.40 scales SE and linear model thresholds by 1.0909/0.8571. 0.40 is outside this DVB-S2 option set. Mode/cap effects require consistent target recomputation. |
++| `IMPLEMENTATION_MARGIN_DB = 1.7` | “round-3 §2.9 prospective common receiver allowance (VERIFY_SOURCE).” | Upper 32APSK AWGN implementation loss, not all-modulation/all-impairment loss. [BO][BO] | Source ingredient matches; common adoption explicitly declared. | `DECLARED` | 0.85/3.4 dB scales thresholds and isolated target RF by 0.82224/1.47911; PA ×0.9068/1.2162. This is not fading reserve when power follows the same threshold. |
++| `POWER_CONTROL_TARGET_DB = 7.528187540` | “round-3 §2.9 8PSK 2/3 model threshold.” | `6.62+1.7−10log10(1.2)` rounded. | Correct chosen gamma-target anchor; a-r uses occupancy-dependent modes instead. | `DECLARED` | In gamma architectures, 3.76409/15.05638 dB scales target/RF by ≈0.4203/5.6600, before caps; a-r unaffected by this fixed target. |
++| `POWER_CONTROL_TARGET_LINEAR = 10**(POWER_CONTROL_TARGET_DB/10)` ≈ `5.660030272` | “round-3 §4 target derived from dB” | Standard power-ratio conversion. | Correct derivation of declared target. | `DECLARED` | Direct linear ×½/2 scales isolated gamma-control RF likewise and PA by √½/√2; coupled feasibility may change. |
++| `RATE_TARGET_BPS = 50_000_000.0` | “sealed V025 v1.1 synthetic Track B L1 operating point; VERIFY_SOURCE for physical use” | v1.8: power-control setpoint; full-buffer achieved PHY throughput can exceed or miss it. | No delivered-rate or demand guarantee. | `DECLARED` | 25/100 Mbit/s changes maximum feasible occupancy from 12 to 24/6. At occupancy 4, target moves from QPSK 3/4 to QPSK 2/5 / 16APSK 3/4: isolated RF ×0.369/4.149, before cap. |
++| `SINR_MIN_DB = -1.441812460` | “round-3 §2.9 QPSK 1/4 model threshold.” | Lowest ideal threshold plus common margin and shaping conversion. | Correct rounded model boundary, not raw ETSI Es/N0. | `DECLARED` | Literal −0.720906/−2.883625 dB scales the floor by 1.1806/0.7175; metadata floor and independently derived mode thresholds must be distinguished. |
++| `SINR_MIN = 10**(SINR_MIN_DB/10)` ≈ `0.7174947935` | “round-3 §2.10 PHY decodability boundary.” | Linear value of chosen lowest-mode boundary. | Correct rounded conversion; a few parts in 10¹⁰ above first-mode value. | `DECLARED` | Direct ×½/2 shifts floor ∓3.0103 dB. `served_phy`, target clearance and diagnostic eligibility change; causal decode still checks m_tx’s own threshold. |
++| `SHANNON_MIN_DB = -2.35 − 10*log10(1+ROLL_OFF)` ≈ `−3.141812460` | “round-3 §4 U treatment, lowest threshold with margin off.” | Project U diagnostic eligibility choice, not a Shannon-law minimum. | Correct declared cutoff. | `DECLARED` | Literal half/double dB scales cutoff by ≈1.4359/0.4851. Primary ACM unchanged; U loses/gains eligible links. |
++| `SHANNON_MIN = 10**(SHANNON_MIN_DB/10)` ≈ `0.4850880405` | “round-3 §4 margin-off U eligibility boundary” | Derived diagnostic cutoff. | Explicit U convention. | `DECLARED` | Direct ×½/2 shifts U cutoff ∓3.0103 dB; rates of still-eligible links unchanged by cutoff alone. |
++| `POWER_SOLVER_TOLERANCE_W = 1.0e-10` | “sealed V025 declaration and round-3 §4 frozen solver tolerance.” | Absolute successive-update stopping threshold, plus a separate relative alternative. | Declared numerical precision, not a solution-error guarantee. | `DECLARED` | 5e−11/2e−10 W may change iterations, endpoint ties and certificate status. Error can be much larger when coupling is ill-conditioned. |
++| `POWER_SOLVER_ITERATION_CAP = 65_536` | “controller coupled-solve decision, 2026-09-08.” | Bounded work with a slow-acceptance branch. | Matches controller choice; exhaustion is not proof of convergence. | `DECLARED` | 32768/131072 can change valid/slow/invalid status. Closed-form example below gives 0.03224/0.12285 W instead of 0.06343 W, true answer 1 W. |
++| `D2_MEASUREMENT_STEP_S = 0.640` | “round-3 §2.17 native measurement clock.” | Retained project measurement clock. | Not a universally mandated decision period. | `DECLARED` | 0.320/1.280 s with 47 intervals yields 15.04/60.16 s; fixed sampled rates/powers give bits/joules ×½/2 and unchanged EE, but physical geometry and timing change if resampled. |
++| `D2_SUBINTERVALS = 47` | “round-3 §2.17 native subinterval count.” | 47 intervals require 48 boundary samples. | Explicit integration choice. | `DECLARED` | 23.5 is invalid count; 94 doubles horizon if step fixed. Refining a fixed horizon has no universal trapezoid-error factor at discontinuities. Batch also embeds 47/48. |
++| `DECISION_INTERVAL_S = D2_SUBINTERVALS * D2_MEASUREMENT_STEP_S` = `30.08` | “round-3 §2.17, 47 x 0.640 = 30.08 s.” | Exact arithmetic of two declared settings. | Correct identity; no independent physical source for choosing it. | `DECLARED` | 15.04/60.16 s scales fixed-rate bits/energy together. Changing this symbol alone does not retime batch’s embedded `47*0.640`; contracts may reject inconsistency. |
++| `D2_THRESHOLD_KM = 1100.0` | “round-3 §2.18 retained D2-derived candidate threshold.” | Chosen candidate-side distance gate; not the complete standardized D2 event. | Explicit benchmark gate. | `DECLARED` | 550/2200 km changes eligibility windows abruptly. At those distance scales alone path power differs by ×4/¼, but selected populations are not fixed. |
++| `D2_HYSTERESIS_KM = 50.0` | “round-3 §2.18 retained D2 hysteresis.” | Chosen Schmitt-latch hysteresis. | Explicit state rule. | `DECLARED` | 25/100 km changes latch persistence and candidates; timing approximately distance change divided by local range rate, undefined at zero range rate. |
++| `D2_TTT_S = 1.280` | “round-3 §2.18 retained D2 time-to-trigger.” | Project TTT, two native ticks. | Explicit gate timing. | `DECLARED` | 0.640/2.560 s gives one/four ticks; candidate onset changes −0.640/+1.280 s when a crossing persists. |
++| `MINIMUM_ALTITUDE_KM = 300.0` | “round-3 §2.18 retained altitude floor.” | Candidate filter. | Not Earth or orbital physics constant. | `DECLARED` | 150/600 km; a 550-km shell survives the former and is excluded by the latter, potentially eliminating its service. |
++| `ASSOCIATION_ACTIONS = 28` | “round-3 §2.19 retained action inventory.” | Four cached satellites times seven local cells. | Action count, **not ACM mode count**. | `DECLARED` | 14/56 changes action space/schema; not directly proportional bits or energy. |
++| `CACHED_SATELLITES = 4` | “round-3 §2.19 retained cached satellite identities.” | Cache restriction. | Not physical satellite count. | `DECLARED` | 2/8 changes coverage choices and search work; may alter service or fail fixed shapes. |
++| `LOCAL_CELLS = 7` | “round-3 §2.19 retained local cell actions.” | Anchor and local-neighbour action inventory. | Not satellite hardware census. | `DECLARED` | 3.5 invalid; 14 changes neighbourhood/schema and choice set, not a smooth power multiplier. |
++| `IDENTITY_REFRESH_DECISIONS = 4` | “round-3 §2.19 retained identity refresh cadence.” | Cache refresh every 120.32 s, not minimum residence. | Correct declared role. | `DECLARED` | 2/8 gives 60.16/240.64 s identity retention; candidates/churn change. |
++| `SAME_SATELLITE_INTERRUPTION_S = 0.062` | “round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE).” | Claimed TS 38.133 test anchor not retrieved independently. | Conditional adoption declared; source verification remains open. | `UNVERIFIABLE_HERE` | Lead-table row 4; no primary effect, blackout-bit/time sensitivity only. |
++| `SATELLITE_CHANGE_INTERRUPTION_S = 0.142` | “round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE).” | Claimed electronic-terminal test anchor not retrieved independently. | Conditional adoption declared; source verification remains open. | `UNVERIFIABLE_HERE` | Lead-table row 3; no primary effect, blackout-bit/time sensitivity only. |
++| `PHI_SAME_SATELLITE = 0.5` | “round-3 §2.23 retained benchmark preference; not joules or seconds.” | Dimensionless preference weight. | Explicit design choice. | `DECLARED` | 0.25/1 scales that score penalty ×½/2; selected actions can change, direct physical event energy does not. |
++| `PHI_SATELLITE_CHANGE = 1.0` | “round-3 §2.23 retained benchmark preference; not joules or seconds.” | Dimensionless preference weight. | Explicit design choice. | `DECLARED` | 0.5/2 scales that score term; no direct joule/time conversion. |
++| `PERSISTENCE_LOSS_UNITS = 1.0` | “round-3 §2.24 stated one-kappa design preference per lost projected offset.” | Disutility per lost forecast offset. | Preference, not energy. | `DECLARED` | 0.5/2 scales the loss score; selector/proposal changes are discrete. |
++| `FORECAST_OFFSETS = 3` | “round-3 §2.27 three physical forecast offsets.” | Physical forecast length independent of scored horizon. | Explicit model choice. | `DECLARED` | 1.5 invalid; 6 doubles offsets/work and possible accumulated losses. Not an automatic doubling of immediate EE. |
++| `TX_G0_LINEAR = 2000.0` | “round-3 §2.6 retained source-bound transmit pattern benchmark.” | Local ruling C-14 deliberately rejects HOBS’s 40 dBi and adopts an aperture-based rounded normalization. | Declared synthetic normalization; neither HOBS’s peak nor calibrated antenna gain. | `DECLARED` | Peak/direct/cross gain ×½/2; isolated uncapped RF ×2/½, PA ×√2/√½. Joint cochannel S/I is unchanged by uniform gain scaling at fixed powers, noise is not. |
++| `TX_FULL_HPBW_DEG = 3.32` | “retained HOBS full half-power beamwidth convention.” | HOBS’s formula locates half power at its tabulated angle. | Project full-width convention is frozen but its HOBS attribution fails. | `NARROWER_IN_SOURCE` | Lead-table row 1. At 1.66° gain is −13.740/−0.734 dB after width ½/2, versus −3.010 dB now. |
++| `RX_GAIN_MAX_DBI = 35.0` | “round-3 §2.6 retained 0.6-m terminal peak benchmark.” | Mendonça’s maximum boresight gain. [Mendonça][MENDONCA] | Same coefficient meaning; benchmark transfer to 20 GHz declared. | `MATCHES` | Literal 17.5/70 dBi gives linear gain ×0.01778/3162.28; isolated required RF ×56.23/0.0003162 before caps. A physical linear-gain factor two would instead be ±3.0103 dB. |
++| `RX_TERMINAL_DIAMETER_M = 0.6` | “round-3 §2.6 retained terminal aperture benchmark.” | Source DUT/VSAT diameter. [Mendonça][MENDONCA] | Diameter matches; this engine independently fixes peak/envelope. | `MATCHES` | Changing this symbol alone: zero in these channel helpers, whose theta_min and peak are frozen. Recomputed S.465 boundary would be ≈4.35°/1.249°; an aperture model would also change peak, but this one does not derive it. |
++| `RX_ENVELOPE_A_DBI = 32.0` | “round-3 §2.7 retained S.465 engineering extrapolation coefficient.” | S.465 envelope intercept, with limited angular domain. | Source branch matches; near-axis extension explicitly declared. | `MATCHES` | 16/64 dBi shifts unclipped envelope −16/+32 dB, multiplier 0.02512/1584.89; peak/floor clipping limits it. Cross-satellite interference and SINR can change sharply. |
++| `RX_ENVELOPE_B = 25.0` | “round-3 §2.7 retained S.465 engineering extrapolation coefficient.” | dB-per-decade off-axis slope. | Correct coefficient; not a linear gain multiplier. | `MATCHES` | 12.5/50 makes unclipped gain relative to baseline `θ^1.25 / θ^−2.5`; at 10° +12.5/−25 dB before clips. |
++| `RX_GAIN_FLOOR_DBI = -10.0` | “retained S.465 envelope floor.” | −10 dBi far-angle continuation. | Value matches; code’s clipping joins slightly before 48°. | `MATCHES` | −5/−20 dBi makes floor-region interference ×3.162/0.1; same-satellite boresight override unchanged. |
++| `RX_S465_THETA_MIN_DEG = 2.043298703` | “round-3 §2.7 corrected S.465-6 D/lambda<50 branch.” | `max(2°,114(D/λ)^−1.09)` for D/λ<50. | Correct arithmetic. Branches implement the same analytic envelope on either side, so threshold alone changes no result. | `MATCHES` | 1.02165/4.08660°: **zero numerical gain sensitivity** in current helper; domain metadata changes. |
++| `ZENITH_GASEOUS_LOSS_DB = 0.25` | “round-3 §2.6 retained clear-sky TR 38.811/38.821 substitution.” | Rounded SC6-derived zenith calibration. | Declared atmospheric extrapolation, arithmetic verified. | `DECLARED` | 0.125/0.50 dB: at zenith path gain ×1.0292/0.9441; at 10° ×1.1803/0.7178. Required isolated RF changes inversely, PA by square root. |
++| `SCINTILLATION_ELEVATION_DEG = (10,20,30,40,50,60,70,80,90)` | “round-3 §2.6 retained TR 38.811 20-GHz table abscissa.” | Reference elevation grid. | Exact table grid; interpolation is a separate model choice. | `MATCHES` | Grid scaling shifts loss lookup, not geometry. At 30°: half-grid selects original 60° loss 0.13 dB; double-grid interpolates original 15° loss 0.78 dB, versus 0.30 dB. |
++| `SCINTILLATION_LOSS_DB = (1.08,.48,.30,.22,.17,.13,.12,.12,.12)` | “round-3 §2.6 retained TR 38.811 clear-sky scintillation table.” | Baseline attenuation quantiles, not stochastic mean loss. | Same deterministic-margin meaning; scope limited to cited baseline. | `MATCHES` | Half/double all dB losses: at 10° fading factor ×1.1324/0.7798; at 90° ×1.0139/0.9727. Quantile mode reserve and realised decode move, nominal RF does not. |
++| `SHADOW_SIGMA_ELEVATION_DEG = (10,20,30,40,50,60,70,80,90)` | “round-3 §2.6 retained TR 38.811 Ka-LOS table abscissa.” | Suburban/rural LOS reference grid. | Exact grid; interpolation/clamping is project behaviour. | `MATCHES` | At 90° half-grid clamps to σ=0.4; double-grid gives σ=2.5 instead of 0.4 dB. Different shadow spread/quantile can change service completely near a threshold. |
++| `SHADOW_SIGMA_DB = (1.9,1.6,1.9,2.3,2.7,3.1,3.0,3.6,0.4)` | “round-3 §2.6 retained TR 38.811 Ka-LOS zero-mean-dB shadow table.” | Zero-mean Gaussian dB standard deviations; 80°/90° entries really are 3.6/0.4. | Numbers and variable match; not unit-mean linear fading. | `MATCHES` | At σ=3.6, half/double gives linear shadow means 1.08969/3.95212 versus 1.40996, despite unchanged zero dB median. Variance/quantile/outage change strongly; nominal RF fixed. |
++| `REFERENCE_BEAMS_PER_SATELLITE = 39` | “round-3 assumption 26 compatibility reference, not a hardware ceiling.” | Legacy coverage/inventory reference; HOBS Table I says 37. | Explicit local reference, no hardware assertion. | `DECLARED` | 19.5 invalid count; 78 changes reference arithmetic only, not live radiation/cap. |
++| `REFERENCE_AGGREGATE_RF_W = REFERENCE_BEAMS_PER_SATELLITE * BEAM_RF_CAP_W` = `64.35` | “round-3 assumption 26 identity 39*1.65=64.35 W, not cap derivation.” | Compatibility multiplication. | Correct declared identity, not source-derived beam power. | `DECLARED` | 32.175/128.7 W as a direct reference edit: no live RF/energy change. |
++| `HOBS_REFERENCE_MAX_RF_W = 100.0` | “round-3 assumption 26 retained 50-dBm HOBS reference, not a live clamp.” | HOBS Table I’s per-LEO maximum transmit power, 50 dBm. | Exact conversion/reference meaning. | `MATCHES` | 50/200 W changes reference comparison only; no live clamp. |
++| `ACM_TABLE =` 28 triples listed below | “ETSI EN 302 307-1 V1.4.1 Table 13, transcribed 2026-09-08.” | Ideal thresholds and frame-adjusted efficiency per symbol. | All 28 pairs independently checked; local hard decoding is declared abstraction. | `MATCHES` | Efficiency values ×½/2 scale same-mode bits likewise and shift target occupancy to 6/24; threshold perturbations alter selection/decode/caps. Per-entry rule below. |
++| `ACM_TABLE_SHA256 = 4463331e621d778f4aa97d60ed5726c1e02bcf791e2be7b134ec29eace631627` | “frozen SHA-256 of the canonical ASCII ACM_TABLE transcription above.” | Digest of compact ASCII JSON of the code tuple. | Independently recomputed below. It proves bytes, not physics. | `MATCHES` | Categorical hash; any changed digest alone causes import-time rejection. |
++| `VERIFY_SOURCE = MappingProxyType({...})`, eight values all `True` | “round-3 §2 explicit hardware/proxy applicability flags.” | Flags for cap, PA curve/backoff, chain mapping, payload mapping, standby proxy, interruption mapping, common margin and rate calibration. | Explicit unvalidated-applicability metadata. | `DECLARED` | Boolean, no factor-two physics. Turning a flag off would remove disclosure, not validate a source. |
++| `PROVENANCE = MappingProxyType({...})` | “stage-1 constants-manifest contract.” | Registry of names and claims corresponding to this table. | Claim index, not external evidence. | `DECLARED` | Text mapping; metadata only. |
++
+
+diff --git a/CONSTANT-PROVENANCE-2026-09-09.md b/CONSTANT-PROVENANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6ec79b0fc6ef54eabbd3d32662c662b7070203be
+--- /dev/null
++++ b/CONSTANT-PROVENANCE-2026-09-09.md
+@@ -0,0 +1,111 @@
++| Priority | Symbol and declared value | Stated provenance | What the source actually says | Semantic match | Verdict | Factor-of-two sensitivity |
++|---|---|---|---|---|---|---|
++| 1 | `TX_FULL_HPBW_DEG = 3.32°` | “retained HOBS full half-power beamwidth convention” | HOBS Eq. (3) uses `sin(θ3dB)` in the denominator; Table I gives `θ3dB = 0.058 rad`. Substitution puts half power at that **off-axis angle**, not half that angle. [HOBS, pp. 2, 6][HOBS] | The engine registers a full span and divides it by two. Its declared geometry is reproducible, but calling that convention HOBS-derived is unsupported. `NARROWER` describes the source symbol’s one-sided meaning; the resulting source beam is physically wider. | `NARROWER_IN_SOURCE` | At fixed 2° off-axis, halving/doubling the declared full width changes normalized gain from 0.359621 to 0.005400/0.781685. The existing isolated fixture’s RF becomes cap-bound/0.511755 W instead of 1.112370 W; EE becomes 0/+42.53%. Interference, coverage, modes and policy comparisons can also move. |
++| 2 | Remaining operational allowance: approximately `20 s`, exactly `30.08 − 10 = 20.08 s` | Contract v1 §F2: “the rest of the 30.08 s interval reserved for sensing/transport/validation/commit” | This is a local reservation. No cited measurement, procedure budget or component decomposition establishes the required duration of those operations. | A declared reserve is legitimate; attributing sufficient operational time to those functions is not verified. | `UNSOURCED` for the operational attribution | Multiplying the **needed** 20.08 s by ½/2 leaves 20.04/−10.08 s for compute in a fixed 30.08 s cycle. Deadline feasibility can change completely; this is not a multiplier on PHY energy or bits. No latency distribution was assumed. |
++| 3 | `SATELLITE_CHANGE_INTERRUPTION_S = 0.142 s` | “round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE)” | The local citation points to TS 38.133 V18.13.0 Annex A.14.2.1.9.2–.3: reportedly electronic-VSAT inter-satellite **test interruption**, distinct from 152 ms including RRC delay. The primary pages could not be retrieved here. | Application is explicitly `DECLARED` and conditional. The numerical standards anchor remains independently unverified in this audit. | `UNVERIFIABLE_HERE` for the source anchor | Primary interruption-off setting: zero effect. In interruption-on settings, 71/284 ms removes half/twice the constant-rate blackout bits; one event per 30.08 s changes useful-time loss by −0.2360/+0.4721 percentage points. Scheduled energy stays unchanged. |
++| 4 | `SAME_SATELLITE_INTERRUPTION_S = 0.062 s` | “round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE)” | The local citation points to TS 38.133 V18.13.0 Annex A.14.2.1.7.3: reportedly intra-satellite FR2-NTN **cell-handover test interruption**, distinct from 72 ms including RRC delay. Primary pages unavailable here. | Application is explicitly `DECLARED`; neither an arbitrary beam switch nor a measured end-to-end outage has been source-verified. | `UNVERIFIABLE_HERE` for the source anchor | Primary: zero. In interruption-on settings, 31/124 ms changes one event’s useful-time loss by −0.1031/+0.2061 percentage points per 30.08 s; bits follow blackout rate and overlap, energy does not. |
++
++The reported result with the largest directly calculable exposure to the first item is the **2° endpoint of the existing off-axis power/EE figure**. Its recorded 1.112370 W and 9.174814 Mbit/J become, by isolated-link arithmetic with every other fixture input held fixed, 1.65 W and **zero decodable bits/zero EE** when width is halved, or 0.511755 W and **13.076999 Mbit/J (+42.53%)** when width is doubled. Energy changes from 223.233550 J to 268.353222/156.620513 J. This is a sensitivity of the recorded, unreserved single-user fixture, not a rerun of the current quantile-controlled network or an estimate of FULL-versus-DROP gains. Network-wide changes cannot be quantified from constants alone. [Recorded figure receipt][FIG]
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09. Read-only source examination and arithmetic; **no simulation, test suite, production engine import, random draw, training or replay was run**. The source checkout is `/home/sat/mcrl-v025-codex-ws-engine`, HEAD `75c5c78cac3833e5a3100bf948211023d0de228c`. File hashes below identify the actual examined bytes, including the possibility of an existing dirty checkout. No replacement values are proposed.
++
++The lead table contains every adverse or unavailable **source verdict** in this audit. Its ordering is by conditional exposure, not an invented empirical ranking across incomparable quantities. The timing attribution has no direct PHY effect but can invalidate deployment timing. Numerical solver assurance is a separate formula finding below: its constants are declared algorithm choices, yet its slow certificate does not bound solution error.
++
++`MATCHES` means that the number and the cited source’s definition agree for the stated component or benchmark. It does not mean calibrated flight hardware. `DECLARED` means an explicit model, engineering or computational choice; a source may substantiate an ingredient without substantiating its transplant. `UNVERIFIABLE_HERE` distinguishes inaccessible evidence from no evidence. An assertion in `PROVENANCE`, `VERIFY_SOURCE`, a test, or an older review was treated as a claim to trace, never as independent source confirmation.
++
++**Sensitivity convention.** Unless stated otherwise, each row changes that declared numeric quantity to ½/2 of its value, holding geometry, assignments and unrelated constants fixed, and propagating its intended algebraic dependants. For dB-valued quantities this means halving/doubling the **dB number**, not ±3.0103 dB; the distinction is explicit where material. Discrete counts may make a hypothetical input invalid. For a fixed trajectory, if a component contributes energy fraction `s`, multiplying that component by `f` gives `E′/E = 1 + (f−1)s` and `EE′/EE = 1/[1+(f−1)s]`, provided bits do not change. In an isolated, uncapped link at fixed target, `p ∝ N/g` and PA supply `∝ √p`; coupled links have no universal percentage bound. Modes, cap hits, outages, selection and trajectories can change discontinuously. Those caveats apply to every local sensitivity below.
++
++**What the primary sources establish.**
++
++| Evidence | Verified source definition and its limit |
++|---|---|
++| SI | Speed of light in vacuum and Boltzmann constant have exactly the declared SI values, with no uncertainty. [BIPM defining constants][SI] |
++| DVB-S2 | Table 13 has 28 normal-frame, no-pilot entries: efficiency per symbol and ideal AWGN `Es/N0` at quasi-error-free PER `10⁻⁷`. The test assumes perfect synchronization/carrier recovery, no phase noise and 50 LDPC iterations. These are not a measured universal hard-decoding law in satellite interference. The project declares that abstraction. [EN 302 307-1 V1.4.1, §6, p. 36][DVB] |
++| Common margin | 1.7 dB is the upper reported **32APSK AWGN implementation loss**; the source reports different ranges by constellation and treats nonlinear satellite degradation separately. Its test roll-off is 35%. A common 1.7 dB at the project’s 20% roll-off is a declared adoption. [BO.1784-1, Attachment 1 to Annex 1, §1][BO] |
++| RF/baseband | You et al. separate PA supply from the RF chain. The 338 mW chain sum is DAC 300 + mixer 19 + low-pass filter 14 + baseband amplifier 5 mW. `P_BB = 200 mW` is digital baseband precoder power. Neither supplies all payload/platform overhead. The Ku-band paper uses different PA parameters; it does not source this engine’s 0.35 or 5.2178 W. [You, Table II][YOU1], [You, Eqs. 12–15 and numerical setup][YOU2] |
++| Standby proxy | CPI specifies whole ground Ka-band SSPA/BUC prime power: 420 VA typical at linear rated output, 35 VA muted, with 48 VDC input. This is not a per-spacecraft-PA bias measurement. The ratio is real; transferring it to a chain is declared. [CPI MKT-497, p. 2][CPI] |
++| Terminal/noise | TR 38.821’s Ka VSAT simulation table gives 0.6 m, 150 K and 1.2 dB, with a 39.7 dBi receive-gain entry. The engine deliberately combines those noise parameters with another benchmark’s 35 dBi peak. These are not one measured terminal’s complete specification. [TR 38.821, Table 6.1.1.1-3][TR821] |
++| Receive peak | Mendonça et al. explicitly use 35 dBi maximum/boresight receive gain and 0.6 m DUT diameter at 19.5 GHz. The peak coefficient matches. Their receive-pattern construction is not thereby imported. The legacy explanation “39.7 dBi ideal derated” is not established by that paper. [Mendonça, Eq. 7 and §IV, pp. 6782, 6786][MENDONCA] |
++| Atmosphere/shadow | TR 38.811’s scintillation entries are a Toulouse 20 GHz, circular-polarization, 99%-nonexceedance attenuation baseline, adopted for system simulations above 6 GHz; not average random loss. The shadow values are zero-mean Gaussian **dB standard deviations for suburban/rural Ka-band LOS**. The standard uses nearest reference elevation; the engine explicitly interpolates and clamps. [TR 38.811, Tables 6.6.6.2.1-1 and 6.6.2-3][TR811] |
++| Gas | The 0.25 dB zenith value is derived from the rounded SC6 clear-sky 0.5 dB at 30° using the standard’s cosecant law. It is a calibration substitution, not a universal atmospheric constant. [TR 38.821, Tables 6.1.3.2-1/6.1.3.3-1][TR821], [TR 38.811, §6.6.4][TR811] |
++| Receive envelope | S.465-6 is an interference/coordination reference envelope when measured patterns are unavailable: `32−25log10 θ` over its specified angular domain and −10 dBi beyond 48°. It does not supply the near-axis pattern or this terminal’s peak. [S.465-6, recommends 2][S465] |
++
++The latest applicable [v1.8 amendment][V18] matters: it explicitly calls 0.35 **saturation efficiency**, calls the satellite term a **processing increment**, limits the energy boundary to specified partial-payload components, and calls 50 Mbit/s a **power-control setpoint**. Therefore the known RF/baseband and PA cases are not reclassified as silently universal hardware claims. The source’s narrower original meaning is recorded, while the currently declared adoption receives `DECLARED`. The HOBS attribution is different: the current comment still asserts a HOBS full-width convention. Its mismatch was also documented in [proposed ADR-002][ADR2]; that proposal is not authority to change the current geometry.
++
++**Complete declarations in [constants_v025.py][C].** Provenance quotations below are from the source comments or its machine-readable dictionary; “R3” in explanatory text means the [round-3 declaration][R3]. Derived decimals are displayed without replacing the declared expressions.
++
++| Symbol and value as declared | Stated provenance | What the source actually says | Semantic match | Verdict | Sensitivity, ½ / 2 |
++|---|---|---|---|---|---|
++| `ENGINE_VERSION = "V025-ANGLE-RATE-TPC-TDM-ACM-STAGE2"` | “sealed V025 priority declaration identity” | Local version identity. | Reproducibility label, not physics. | `DECLARED` | No numeric perturbation; changing it changes receipts, not equations. |
++| `REFERENCE_ARCHITECTURE = "b"` | “sealed V025 declared reference” | Fixed-RF TDM reference. | Explicit selection. | `DECLARED` | Categorical; changing it changes comparator/calibration, no factor-two interpretation. |
++| `PRIMARY_ARCHITECTURE = "a-r"` | “sealed V025 declared primary” | v1.1 chooses rate-target TDM. | Explicit selection. | `DECLARED` | Categorical; changes the estimand. |
++| `SENSITIVITY_ARCHITECTURE = "a′-r"` | “sealed V025 architectural sensitivity” | v1.1 chooses rate-target FDM sensitivity. | Explicit selection. | `DECLARED` | Categorical; alters bandwidth, interference and summed RF. |
++| `CARRIER_FREQUENCY_HZ = 20.0e9` | “round-3 §2.6 retained 20-GHz benchmark” | A Ka downlink benchmark; TR 38.821 uses 20 GHz. | Source frequency matches; the complete combined link is a project model. | `DECLARED` | At fixed antenna gains, free-space gain ×4/¼, isolated required RF ×¼/4, PA ×½/2. Band-specific tables cannot physically be assumed unchanged. |
++| `SPEED_OF_LIGHT_M_S = 299_792_458.0` | “SI exact definition of the speed of light.” | Exact vacuum speed. [SI][SI] | Exact definition. | `MATCHES` | Deliberate unit-error exercise: path gain ×¼/4, required RF ×4/¼, PA ×2/½. |
++| `TOTAL_BANDWIDTH_HZ = 500.0e6` | “round-3 §2.5 retained 500-MHz benchmark” | R3 chooses total occupied bandwidth; it is not HOBS Table I’s 100 MHz. | Explicit retained scenario. | `DECLARED` | Beam bandwidth/noise ×½/2; fixed-mode bits likewise. Rate-target occupancy ceiling 6/24 instead of 12; target modes and powers can jump. |
++| `FREQUENCY_REUSE = 3` | “round-3 §2.5 retained reuse-3 benchmark” | Earth-fixed three-colour allocation, ideal orthogonality and closed interference field are assumptions. | No universal reuse prescription. | `DECLARED` | Literal 1.5 invalid as colour count; 6 halves per-colour bandwidth/noise and changes cochannel topology. No smooth network estimate. |
++| `BEAM_BANDWIDTH_HZ = TOTAL_BANDWIDTH_HZ / FREQUENCY_REUSE` ≈ `166.666667 MHz` | “round-3 §2.5 500/3 MHz per colour” | Arithmetic of the chosen occupied bandwidth. | Correct quotient, declared architecture. | `DECLARED` | 83.333/333.333 MHz: noise and fixed-mode bits ×½/2; rate-target modes change as above. |
++| `BOLTZMANN_J_PER_K = 1.380649e-23` | “2019 SI exact Boltzmann constant.” | Exact `k` in J/K. [SI][SI] | Exact definition. | `MATCHES` | Noise ×½/2; isolated required RF ×½/2 and PA ×0.7071/1.4142; fixed-RF SINR changes oppositely. |
++| `ANTENNA_TEMPERATURE_K = 150.0` | “round-3 §2.6 retained TR 38.821 Ka VSAT benchmark.” | Simulation antenna noise temperature, not ambient temperature. [TR821][TR821] | Same noise input and units. | `MATCHES` | System temperature/noise ×0.6905/1.6191; uncapped RF follows, PA ×0.8309/1.2724. |
++| `REFERENCE_TEMPERATURE_K = 290.0` | “round-3 §2.6 retained reference temperature.” | Conventional noise-factor reference in the receiver-temperature conversion. | Correct reference role, not satellite physical temperature. | `MATCHES` | System temperature/noise ×0.8095/1.3809; required RF follows and PA takes square root. |
++| `RECEIVER_NOISE_FIGURE_DB = 1.2` | “round-3 §2.6 retained TR 38.821 Ka VSAT benchmark.” | Receiver noise figure, not loss applied to the whole signal path. [TR821][TR821] | Correct declared value; **not wired into the derived expression** in this file. | `MATCHES` | Changing this symbol alone: **zero**. Intended 0.6/2.4 dB yields `Tsys = 192.9646/363.9622 K`, noise ×0.7964/1.5021. See embedded `0.12`. |
++| `SYSTEM_TEMPERATURE_K = 150 + 290*(10.0**0.12 − 1)` ≈ `242.294454 K` | “round-3 §2.6 150+290*(10^0.12-1)” | Antenna temperature plus receiver equivalent noise temperature. | Correct at frozen NF; duplicate exponent is a dependency hazard. | `MATCHES` | Direct Tsys change: noise/RF ×½/2, PA ×0.7071/1.4142 before caps. |
++| `RICIAN_K_FACTOR_DB = 20.0` | “round-3 §2.6 retained benchmark interpretation” | Legacy code explicitly interprets an earlier `φ = 20 dB` as Rician K; no flight estimate is established. | Declared LOS/scatter ratio `K=100`, unit-mean Rician power. | `DECLARED` | Literal 10/40 dB gives K=10/10000 and power-gain coefficient of variation ≈0.417/0.0141 instead of 0.1404. Modes/outages and quantile reserve move, not nominal RF. |
++| `MINIMUM_ELEVATION_DEG = 10.0` | “round-3 §2.18 live visibility contract.” | Chosen live visibility floor. | Explicit eligibility condition. | `DECLARED` | 5°/20° expands/contracts visibility; step availability, candidates and interference can change from absent to present. No population percentage without geometry. |
++| `BEAM_RF_CAP_W = 1.65` | “round-3 §2.2 inherited benchmark; not measured flight hardware (VERIFY_SOURCE).” | R3 explicitly retains an engineering operating point. | Not a measured beam limit or a derivation from 100 W. | `DECLARED` | 0.825/3.30 W shifts cap-limited link budgets by ∓3.0103 dB. With back-off held and derived psat propagated, fixed-cap PA supply ×½/2; at unchanged unsaturated RF PA ×0.7071/1.4142. |
++| `PA_OUTPUT_BACKOFF_DB = 5.0` | “round-3 §2.2 inherited engineering PA assumption (VERIFY_SOURCE).” | Chosen cap-to-saturation ratio, not a second radiated-power penalty. | Explicit engineering assumption. | `DECLARED` | 2.5/10 dB changes psat by ×0.5623/3.1623 and PA supply at fixed RF by ×0.7499/1.7783. RF/SINR unchanged. |
++| `PA_SATURATION_POWER_W = BEAM_RF_CAP_W * 10**(PA_OUTPUT_BACKOFF_DB/10)` = `5.217758139 W` | “round-3 §2.2: 1.65*10^(5/10)” | Derived saturation output in the chosen PA abstraction. | Arithmetic correct; not a datasheet value. | `DECLARED` | Independent psat ×½/2 makes PA energy ×0.7071/1.4142 and efficiency ×1.4142/0.7071; RF/bits unchanged. |
++| `PA_MAX_EFFICIENCY = 0.35` | “round-3 §2.2 engineering PA assumption; VERIFY_SOURCE” | v1.8 explicitly defines saturation RF/DC efficiency. You’s papers do not establish 0.35 for this hardware. | Correct declared meaning; cap efficiency is 0.196819, not 0.35. | `DECLARED` | 0.175/0.70 makes PA energy ×2/½. One cap-powered beam/satellite: total energy +93.97%/−46.98%, EE −48.45%/+88.62%, bits fixed. |
++| `CIRCUIT_POWER_PER_CHAIN_W = 0.338` | “round-3 §2.12 retained You et al. component sum; beam-to-chain mapping is assumed (VERIFY_SOURCE).” | DAC+mixer+LPF+baseband-amplifier power, PA separate. [You][YOU1] | Number/component match; one switchable beam-chain transplant is declared, not whole payload circuitry. | `DECLARED` | 0.169/0.676 W: cap fixture energy −1.894%/+3.789%, EE +1.931%/−3.650%. At 0.014244 W RF, EE +14.72%/−20.42%. Extinction comparisons depend on chain activity. |
++| `BASEBAND_POWER_PER_ACTIVE_SATELLITE_W = 0.200` | “round-3 §2.12 retained You et al. component coefficient (VERIFY_SOURCE).” | Digital baseband precoder power. [You][YOU2] | Number matches; v1.8 declares a common processing increment, not all shared satellite overhead. | `DECLARED` | 0.100/0.400 W per active satellite: cap fixture energy −1.121%/+2.242%, EE +1.134%/−2.193%; at 0.014244 W RF, EE +8.22%/−13.18%. |
++| `P_BUS_W = 0.0` | “round-3 §2.13 explicit exclusion of bus, terminal, gateway, and controller energy.” | Boundary exclusion, not physically zero bus demand. | Explicit partial-payload metric. | `DECLARED` | Multiplying zero leaves zero; cannot test omitted overhead with a multiplicative perturbation. An additive common energy can change policy ranking when bits differ. |
++| `STANDBY_FRACTION = 1.0 / 12.0` | “round-3 §2.14 CPI 35/420 ground-HPA proxy (VERIFY_SOURCE).” | Whole assembly mute/linear prime-power ratio. [CPI][CPI] | Ratio matches; flight-chain transfer is explicitly a proxy. | `DECLARED` | Idle 0.349305/1.397220 W; dark-chain energy ×½/2, active-floor crossover RF ×¼/4. Primary idle-off setting unchanged. |
++| `ROLL_OFF = 0.20` | “round-3 §2.8 prospective DVB-S2 shaping choice.” | 0.20 is an allowed DVB-S2 roll-off. [DVB][DVB] | Explicit shaping choice; occupied bandwidth is `(1+α)Rs`. | `DECLARED` | 0.10/0.40 scales SE and linear model thresholds by 1.0909/0.8571. 0.40 is outside this DVB-S2 option set. Mode/cap effects require consistent target recomputation. |
++| `IMPLEMENTATION_MARGIN_DB = 1.7` | “round-3 §2.9 prospective common receiver allowance (VERIFY_SOURCE).” | Upper 32APSK AWGN implementation loss, not all-modulation/all-impairment loss. [BO][BO] | Source ingredient matches; common adoption explicitly declared. | `DECLARED` | 0.85/3.4 dB scales thresholds and isolated target RF by 0.82224/1.47911; PA ×0.9068/1.2162. This is not fading reserve when power follows the same threshold. |
++| `POWER_CONTROL_TARGET_DB = 7.528187540` | “round-3 §2.9 8PSK 2/3 model threshold.” | `6.62+1.7−10log10(1.2)` rounded. | Correct chosen gamma-target anchor; a-r uses occupancy-dependent modes instead. | `DECLARED` | In gamma architectures, 3.76409/15.05638 dB scales target/RF by ≈0.4203/5.6600, before caps; a-r unaffected by this fixed target. |
++| `POWER_CONTROL_TARGET_LINEAR = 10**(POWER_CONTROL_TARGET_DB/10)` ≈ `5.660030272` | “round-3 §4 target derived from dB” | Standard power-ratio conversion. | Correct derivation of declared target. | `DECLARED` | Direct linear ×½/2 scales isolated gamma-control RF likewise and PA by √½/√2; coupled feasibility may change. |
++| `RATE_TARGET_BPS = 50_000_000.0` | “sealed V025 v1.1 synthetic Track B L1 operating point; VERIFY_SOURCE for physical use” | v1.8: power-control setpoint; full-buffer achieved PHY throughput can exceed or miss it. | No delivered-rate or demand guarantee. | `DECLARED` | 25/100 Mbit/s changes maximum feasible occupancy from 12 to 24/6. At occupancy 4, target moves from QPSK 3/4 to QPSK 2/5 / 16APSK 3/4: isolated RF ×0.369/4.149, before cap. |
++| `SINR_MIN_DB = -1.441812460` | “round-3 §2.9 QPSK 1/4 model threshold.” | Lowest ideal threshold plus common margin and shaping conversion. | Correct rounded model boundary, not raw ETSI Es/N0. | `DECLARED` | Literal −0.720906/−2.883625 dB scales the floor by 1.1806/0.7175; metadata floor and independently derived mode thresholds must be distinguished. |
++| `SINR_MIN = 10**(SINR_MIN_DB/10)` ≈ `0.7174947935` | “round-3 §2.10 PHY decodability boundary.” | Linear value of chosen lowest-mode boundary. | Correct rounded conversion; a few parts in 10¹⁰ above first-mode value. | `DECLARED` | Direct ×½/2 shifts floor ∓3.0103 dB. `served_phy`, target clearance and diagnostic eligibility change; causal decode still checks m_tx’s own threshold. |
++| `SHANNON_MIN_DB = -2.35 − 10*log10(1+ROLL_OFF)` ≈ `−3.141812460` | “round-3 §4 U treatment, lowest threshold with margin off.” | Project U diagnostic eligibility choice, not a Shannon-law minimum. | Correct declared cutoff. | `DECLARED` | Literal half/double dB scales cutoff by ≈1.4359/0.4851. Primary ACM unchanged; U loses/gains eligible links. |
++| `SHANNON_MIN = 10**(SHANNON_MIN_DB/10)` ≈ `0.4850880405` | “round-3 §4 margin-off U eligibility boundary” | Derived diagnostic cutoff. | Explicit U convention. | `DECLARED` | Direct ×½/2 shifts U cutoff ∓3.0103 dB; rates of still-eligible links unchanged by cutoff alone. |
++| `POWER_SOLVER_TOLERANCE_W = 1.0e-10` | “sealed V025 declaration and round-3 §4 frozen solver tolerance.” | Absolute successive-update stopping threshold, plus a separate relative alternative. | Declared numerical precision, not a solution-error guarantee. | `DECLARED` | 5e−11/2e−10 W may change iterations, endpoint ties and certificate status. Error can be much larger when coupling is ill-conditioned. |
++| `POWER_SOLVER_ITERATION_CAP = 65_536` | “controller coupled-solve decision, 2026-09-08.” | Bounded work with a slow-acceptance branch. | Matches controller choice; exhaustion is not proof of convergence. | `DECLARED` | 32768/131072 can change valid/slow/invalid status. Closed-form example below gives 0.03224/0.12285 W instead of 0.06343 W, true answer 1 W. |
++| `D2_MEASUREMENT_STEP_S = 0.640` | “round-3 §2.17 native measurement clock.” | Retained project measurement clock. | Not a universally mandated decision period. | `DECLARED` | 0.320/1.280 s with 47 intervals yields 15.04/60.16 s; fixed sampled rates/powers give bits/joules ×½/2 and unchanged EE, but physical geometry and timing change if resampled. |
++| `D2_SUBINTERVALS = 47` | “round-3 §2.17 native subinterval count.” | 47 intervals require 48 boundary samples. | Explicit integration choice. | `DECLARED` | 23.5 is invalid count; 94 doubles horizon if step fixed. Refining a fixed horizon has no universal trapezoid-error factor at discontinuities. Batch also embeds 47/48. |
++| `DECISION_INTERVAL_S = D2_SUBINTERVALS * D2_MEASUREMENT_STEP_S` = `30.08` | “round-3 §2.17, 47 x 0.640 = 30.08 s.” | Exact arithmetic of two declared settings. | Correct identity; no independent physical source for choosing it. | `DECLARED` | 15.04/60.16 s scales fixed-rate bits/energy together. Changing this symbol alone does not retime batch’s embedded `47*0.640`; contracts may reject inconsistency. |
++| `D2_THRESHOLD_KM = 1100.0` | “round-3 §2.18 retained D2-derived candidate threshold.” | Chosen candidate-side distance gate; not the complete standardized D2 event. | Explicit benchmark gate. | `DECLARED` | 550/2200 km changes eligibility windows abruptly. At those distance scales alone path power differs by ×4/¼, but selected populations are not fixed. |
++| `D2_HYSTERESIS_KM = 50.0` | “round-3 §2.18 retained D2 hysteresis.” | Chosen Schmitt-latch hysteresis. | Explicit state rule. | `DECLARED` | 25/100 km changes latch persistence and candidates; timing approximately distance change divided by local range rate, undefined at zero range rate. |
++| `D2_TTT_S = 1.280` | “round-3 §2.18 retained D2 time-to-trigger.” | Project TTT, two native ticks. | Explicit gate timing. | `DECLARED` | 0.640/2.560 s gives one/four ticks; candidate onset changes −0.640/+1.280 s when a crossing persists. |
++| `MINIMUM_ALTITUDE_KM = 300.0` | “round-3 §2.18 retained altitude floor.” | Candidate filter. | Not Earth or orbital physics constant. | `DECLARED` | 150/600 km; a 550-km shell survives the former and is excluded by the latter, potentially eliminating its service. |
++| `ASSOCIATION_ACTIONS = 28` | “round-3 §2.19 retained action inventory.” | Four cached satellites times seven local cells. | Action count, **not ACM mode count**. | `DECLARED` | 14/56 changes action space/schema; not directly proportional bits or energy. |
++| `CACHED_SATELLITES = 4` | “round-3 §2.19 retained cached satellite identities.” | Cache restriction. | Not physical satellite count. | `DECLARED` | 2/8 changes coverage choices and search work; may alter service or fail fixed shapes. |
++| `LOCAL_CELLS = 7` | “round-3 §2.19 retained local cell actions.” | Anchor and local-neighbour action inventory. | Not satellite hardware census. | `DECLARED` | 3.5 invalid; 14 changes neighbourhood/schema and choice set, not a smooth power multiplier. |
++| `IDENTITY_REFRESH_DECISIONS = 4` | “round-3 §2.19 retained identity refresh cadence.” | Cache refresh every 120.32 s, not minimum residence. | Correct declared role. | `DECLARED` | 2/8 gives 60.16/240.64 s identity retention; candidates/churn change. |
++| `SAME_SATELLITE_INTERRUPTION_S = 0.062` | “round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE).” | Claimed TS 38.133 test anchor not retrieved independently. | Conditional adoption declared; source verification remains open. | `UNVERIFIABLE_HERE` | Lead-table row 4; no primary effect, blackout-bit/time sensitivity only. |
++| `SATELLITE_CHANGE_INTERRUPTION_S = 0.142` | “round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE).” | Claimed electronic-terminal test anchor not retrieved independently. | Conditional adoption declared; source verification remains open. | `UNVERIFIABLE_HERE` | Lead-table row 3; no primary effect, blackout-bit/time sensitivity only. |
++| `PHI_SAME_SATELLITE = 0.5` | “round-3 §2.23 retained benchmark preference; not joules or seconds.” | Dimensionless preference weight. | Explicit design choice. | `DECLARED` | 0.25/1 scales that score penalty ×½/2; selected actions can change, direct physical event energy does not. |
++| `PHI_SATELLITE_CHANGE = 1.0` | “round-3 §2.23 retained benchmark preference; not joules or seconds.” | Dimensionless preference weight. | Explicit design choice. | `DECLARED` | 0.5/2 scales that score term; no direct joule/time conversion. |
++| `PERSISTENCE_LOSS_UNITS = 1.0` | “round-3 §2.24 stated one-kappa design preference per lost projected offset.” | Disutility per lost forecast offset. | Preference, not energy. | `DECLARED` | 0.5/2 scales the loss score; selector/proposal changes are discrete. |
++| `FORECAST_OFFSETS = 3` | “round-3 §2.27 three physical forecast offsets.” | Physical forecast length independent of scored horizon. | Explicit model choice. | `DECLARED` | 1.5 invalid; 6 doubles offsets/work and possible accumulated losses. Not an automatic doubling of immediate EE. |
++| `TX_G0_LINEAR = 2000.0` | “round-3 §2.6 retained source-bound transmit pattern benchmark.” | Local ruling C-14 deliberately rejects HOBS’s 40 dBi and adopts an aperture-based rounded normalization. | Declared synthetic normalization; neither HOBS’s peak nor calibrated antenna gain. | `DECLARED` | Peak/direct/cross gain ×½/2; isolated uncapped RF ×2/½, PA ×√2/√½. Joint cochannel S/I is unchanged by uniform gain scaling at fixed powers, noise is not. |
++| `TX_FULL_HPBW_DEG = 3.32` | “retained HOBS full half-power beamwidth convention.” | HOBS’s formula locates half power at its tabulated angle. | Project full-width convention is frozen but its HOBS attribution fails. | `NARROWER_IN_SOURCE` | Lead-table row 1. At 1.66° gain is −13.740/−0.734 dB after width ½/2, versus −3.010 dB now. |
++| `RX_GAIN_MAX_DBI = 35.0` | “round-3 §2.6 retained 0.6-m terminal peak benchmark.” | Mendonça’s maximum boresight gain. [Mendonça][MENDONCA] | Same coefficient meaning; benchmark transfer to 20 GHz declared. | `MATCHES` | Literal 17.5/70 dBi gives linear gain ×0.01778/3162.28; isolated required RF ×56.23/0.0003162 before caps. A physical linear-gain factor two would instead be ±3.0103 dB. |
++| `RX_TERMINAL_DIAMETER_M = 0.6` | “round-3 §2.6 retained terminal aperture benchmark.” | Source DUT/VSAT diameter. [Mendonça][MENDONCA] | Diameter matches; this engine independently fixes peak/envelope. | `MATCHES` | Changing this symbol alone: zero in these channel helpers, whose theta_min and peak are frozen. Recomputed S.465 boundary would be ≈4.35°/1.249°; an aperture model would also change peak, but this one does not derive it. |
++| `RX_ENVELOPE_A_DBI = 32.0` | “round-3 §2.7 retained S.465 engineering extrapolation coefficient.” | S.465 envelope intercept, with limited angular domain. | Source branch matches; near-axis extension explicitly declared. | `MATCHES` | 16/64 dBi shifts unclipped envelope −16/+32 dB, multiplier 0.02512/1584.89; peak/floor clipping limits it. Cross-satellite interference and SINR can change sharply. |
++| `RX_ENVELOPE_B = 25.0` | “round-3 §2.7 retained S.465 engineering extrapolation coefficient.” | dB-per-decade off-axis slope. | Correct coefficient; not a linear gain multiplier. | `MATCHES` | 12.5/50 makes unclipped gain relative to baseline `θ^1.25 / θ^−2.5`; at 10° +12.5/−25 dB before clips. |
++| `RX_GAIN_FLOOR_DBI = -10.0` | “retained S.465 envelope floor.” | −10 dBi far-angle continuation. | Value matches; code’s clipping joins slightly before 48°. | `MATCHES` | −5/−20 dBi makes floor-region interference ×3.162/0.1; same-satellite boresight override unchanged. |
++| `RX_S465_THETA_MIN_DEG = 2.043298703` | “round-3 §2.7 corrected S.465-6 D/lambda<50 branch.” | `max(2°,114(D/λ)^−1.09)` for D/λ<50. | Correct arithmetic. Branches implement the same analytic envelope on either side, so threshold alone changes no result. | `MATCHES` | 1.02165/4.08660°: **zero numerical gain sensitivity** in current helper; domain metadata changes. |
++| `ZENITH_GASEOUS_LOSS_DB = 0.25` | “round-3 §2.6 retained clear-sky TR 38.811/38.821 substitution.” | Rounded SC6-derived zenith calibration. | Declared atmospheric extrapolation, arithmetic verified. | `DECLARED` | 0.125/0.50 dB: at zenith path gain ×1.0292/0.9441; at 10° ×1.1803/0.7178. Required isolated RF changes inversely, PA by square root. |
++| `SCINTILLATION_ELEVATION_DEG = (10,20,30,40,50,60,70,80,90)` | “round-3 §2.6 retained TR 38.811 20-GHz table abscissa.” | Reference elevation grid. | Exact table grid; interpolation is a separate model choice. | `MATCHES` | Grid scaling shifts loss lookup, not geometry. At 30°: half-grid selects original 60° loss 0.13 dB; double-grid interpolates original 15° loss 0.78 dB, versus 0.30 dB. |
++| `SCINTILLATION_LOSS_DB = (1.08,.48,.30,.22,.17,.13,.12,.12,.12)` | “round-3 §2.6 retained TR 38.811 clear-sky scintillation table.” | Baseline attenuation quantiles, not stochastic mean loss. | Same deterministic-margin meaning; scope limited to cited baseline. | `MATCHES` | Half/double all dB losses: at 10° fading factor ×1.1324/0.7798; at 90° ×1.0139/0.9727. Quantile mode reserve and realised decode move, nominal RF does not. |
++| `SHADOW_SIGMA_ELEVATION_DEG = (10,20,30,40,50,60,70,80,90)` | “round-3 §2.6 retained TR 38.811 Ka-LOS table abscissa.” | Suburban/rural LOS reference grid. | Exact grid; interpolation/clamping is project behaviour. | `MATCHES` | At 90° half-grid clamps to σ=0.4; double-grid gives σ=2.5 instead of 0.4 dB. Different shadow spread/quantile can change service completely near a threshold. |
++| `SHADOW_SIGMA_DB = (1.9,1.6,1.9,2.3,2.7,3.1,3.0,3.6,0.4)` | “round-3 §2.6 retained TR 38.811 Ka-LOS zero-mean-dB shadow table.” | Zero-mean Gaussian dB standard deviations; 80°/90° entries really are 3.6/0.4. | Numbers and variable match; not unit-mean linear fading. | `MATCHES` | At σ=3.6, half/double gives linear shadow means 1.08969/3.95212 versus 1.40996, despite unchanged zero dB median. Variance/quantile/outage change strongly; nominal RF fixed. |
++| `REFERENCE_BEAMS_PER_SATELLITE = 39` | “round-3 assumption 26 compatibility reference, not a hardware ceiling.” | Legacy coverage/inventory reference; HOBS Table I says 37. | Explicit local reference, no hardware assertion. | `DECLARED` | 19.5 invalid count; 78 changes reference arithmetic only, not live radiation/cap. |
++| `REFERENCE_AGGREGATE_RF_W = REFERENCE_BEAMS_PER_SATELLITE * BEAM_RF_CAP_W` = `64.35` | “round-3 assumption 26 identity 39*1.65=64.35 W, not cap derivation.” | Compatibility multiplication. | Correct declared identity, not source-derived beam power. | `DECLARED` | 32.175/128.7 W as a direct reference edit: no live RF/energy change. |
++| `HOBS_REFERENCE_MAX_RF_W = 100.0` | “round-3 assumption 26 retained 50-dBm HOBS reference, not a live clamp.” | HOBS Table I’s per-LEO maximum transmit power, 50 dBm. | Exact conversion/reference meaning. | `MATCHES` | 50/200 W changes reference comparison only; no live clamp. |
++| `ACM_TABLE =` 28 triples listed below | “ETSI EN 302 307-1 V1.4.1 Table 13, transcribed 2026-09-08.” | Ideal thresholds and frame-adjusted efficiency per symbol. | All 28 pairs independently checked; local hard decoding is declared abstraction. | `MATCHES` | Efficiency values ×½/2 scale same-mode bits likewise and shift target occupancy to 6/24; threshold perturbations alter selection/decode/caps. Per-entry rule below. |
++| `ACM_TABLE_SHA256 = 4463331e621d778f4aa97d60ed5726c1e02bcf791e2be7b134ec29eace631627` | “frozen SHA-256 of the canonical ASCII ACM_TABLE transcription above.” | Digest of compact ASCII JSON of the code tuple. | Independently recomputed below. It proves bytes, not physics. | `MATCHES` | Categorical hash; any changed digest alone causes import-time rejection. |
++| `VERIFY_SOURCE = MappingProxyType({...})`, eight values all `True` | “round-3 §2 explicit hardware/proxy applicability flags.” | Flags for cap, PA curve/backoff, chain mapping, payload mapping, standby proxy, interruption mapping, common margin and rate calibration. | Explicit unvalidated-applicability metadata. | `DECLARED` | Boolean, no factor-two physics. Turning a flag off would remove disclosure, not validate a source. |
++| `PROVENANCE = MappingProxyType({...})` | “stage-1 constants-manifest contract.” | Registry of names and claims corresponding to this table. | Claim index, not external evidence. | `DECLARED` | Text mapping; metadata only. |
++
+
