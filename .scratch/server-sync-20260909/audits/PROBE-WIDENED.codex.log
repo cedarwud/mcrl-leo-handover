@@ -1,1 +1,219 @@
 Reading additional input from stdin...
+OpenAI Codex v0.151.0
+--------
+workdir: /home/sat/mcrl-v025-probe-ws-widened
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08565-0eb0-76e2-a7dd-157c87871cec
+--------
+user
+# WIDENED interaction-existence arm (PROBE_NOT_CLAIM)
+
+Read the sealed declarations in `/home/sat/mcrl-records/decisions/` first, specifically `V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md` and its `-AMENDMENT-1-` companion. They are there; do not look in `/home/sat/mcrl-hub`. It states exactly what this arm is and why widening an existence search is admissible. Follow it literally.
+
+## Setup
+The workspace `/home/sat/mcrl-v025-probe-ws-widened` is already prepared for you: it is a clean
+`git archive` of engine commit `75c5c78c` ("Finish V0.25 stage 4h physics gate"), which carries the
+corrected causal ACM, with the three existence-probe scripts copied in. Verify before starting:
+`src/mcrl/physics_v025/acm.py` md5 starts `aa58aeeb`, `resolution.py` `e0b1cc50`, `batch.py` `3677d530`;
+`probe/run_v025_matrix_probe.py` is 277,997 bytes with 30 occurrences of `fading_quantile_alpha`.
+If any of that is wrong, stop and report.
+
+Build every world and calibration tape **fresh inside this workspace**; never link or copy one from
+another workspace, because `tapes.py` and `provider_legacy.py` differ between trees. Point the
+calibration cache at a directory inside this workspace that starts empty: the cache is keyed on regime
+name alone with no physics digest and would otherwise silently load pre-fix prices. Raise
+`--uni-budget-s` until `u` is genuinely certified and report the certification rate; an uncertified `u`
+destroys the premise that every legal single move is non-improving there.
+
+Python `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`. Never write into
+`/home/sat/mcrl-leo-handover` or its venv, `/home/sat/mcrl-hub`, `/home/sat/mcrl-v025-codex-ws-engine`,
+`/home/sat/mcrl-v025-probe-ws-acm2`, `/home/sat/mcrl-v025-witness-ws`, or `src/mcrl/env/`.
+
+## What to add to `analyse_anchor_from` in `probe/probe_interaction_existence.py`
+Keep every existing candidate family exactly as it is. **Add** these four, each tagged with its own `kind` string so the census can be read per family:
+
+1. `pairwise-marginal` — the ten users with the **smallest** `|d_i^u|` among those with a legal move, all pairs, each contributing their **top four** ranked options.
+2. `pairwise-straddle` — one user from the smallest-`|d_i|` ten and one from the largest-`|d_i|` ten, all such pairs, top four options each.
+3. `vacate-and-fill` — for each active beam `b`: identify the occupant of `b` whose `|d_i|` is smallest (the most nearly indifferent), and the non-occupant whose best legal option is `b` and whose `d_i` is most negative (the most blocked). Move the first out to their best alternative and the second in to `b`. One candidate per beam.
+4. `triples-marginal` — all triples among the **five** smallest-`|d_i|` users, each contributing their top two options.
+5. `aggressor-coalition` — **the best-aimed family; do this one first if time is short.** A headroom diagnostic verified against the sealed receipt found that 91.1 % of infeasible user-steps are interference-limited, that 98.9 % of interference comes from an adjacent beam on the victim's own satellite, and that removing a victim's single strongest aggressor restores feasibility for 76.4 % of them. The remaining **23.6 % need two or more aggressors relieved**, and that is the signature of a super-additive interaction: each aggressor alone changes nothing, both together cross the decode threshold. Where one aggressor suffices the benefit already sits in that aggressor's own marginal and belongs to C1, so the multi-aggressor tail is the actual candidate territory. For each interference-limited victim **not** restored by removing its top-1 aggressor alone, build: the victim plus its top-2 aggressors, the victim plus its top-3, and the aggressors-only versions of each without the victim moving. Move every coalition member to its own best legal alternative, in every combination.
+
+## What must not change
+No threshold, sign, seed, horizon, λ, κ, η_ref, service guard, or acceptance rule. The service guard `served >= base_served` stays. The `Psi` decomposition stays. The certified-`u` procedure stays. You are only enlarging the candidate set.
+
+## Report
+`/home/sat/mcrl-v023-codex-audits/parallel-20260909/PROBE-WIDENED-REPORT-2026-09-09.md`, printed as your final message. Per regime and **per candidate family**: improving-move count under `G` and under `F`, the positive-`Psi` census independent of improvement, the max `Psi_A^u` with its coalition size and family, and the number of candidates evaluated. State the total search budget so a null reads as budget-limited. Add an HONEST LIMITS paragraph reproducing the declaration's final section. Label everything `PROBE_NOT_CLAIM`. Never pool these results with the original neighbourhood's.
+
+Regimes: `a-r0`, `R1`, `R3`, `R4`, `R6`, `R7`. Six concurrent processes maximum, `nice -n 10`. Budget 3 wall hours. If a regime crashes, report the traceback and continue with the others.
+codex
+I’ll first verify the sealed declarations and the exact workspace fingerprints. If any required fingerprint fails, I’ll stop without modifying or running the probe. I’ll keep all artifacts and fresh caches inside this workspace, then run the six regimes with no more than six `nice -n 10` processes.
+exec
+/bin/bash -lc "cat /home/sat/.codex/skills/keep-scope-small/SKILL.md && printf '\\n=== DECISION ===\\n' && cat /home/sat/mcrl-records/decisions/V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md && printf '\\n=== AMENDMENT ===\\n' && cat /home/sat/mcrl-records/decisions/V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09-AMENDMENT-1-*.md" in /home/sat/mcrl-v025-probe-ws-widened
+ exited 1 in 0ms:
+---
+name: keep-scope-small
+description: Keep small tasks from accumulating optional work without reducing required outcomes. Use when user says only, minimal, or avoid overengineering; names a narrow target; or invokes this skill. Necessary supporting changes and tests remain in scope.
+---
+
+# Keep scope small
+
+Do the **minimum sufficient** work. Locality never outranks completeness.
+
+## Choose the mode
+
+Use **Strict** automatically for explicit invocation or boundary:
+only, answer first, do not continue;
+read-only or audit-only;
+a stated fixed write boundary;
+or a stop gate, checkpoint, thin wrapper, or minimal request. Ask before
+crossing it. Otherwise use **Guarded**.
+
+## Lock the slice
+
+Lock **Outcome**; write-only **Mutation boundary**; **Proof**; **Stop**.
+
+Supporting work is necessary only when omission makes the deliverable incorrect
+or incomplete, violates an existing contract, or invalidates required proof.
+Future reuse, generalization, convenience, speculative hardening, and
+compatibility outside an existing contract are new outcomes.
+
+After each added request, relock. If work changes class, creates a subsystem,
+or materially raises cost, stop; state surface and cost; ask before continuing.
+
+## Execute directly
+
+- Edit the canonical source and required projections. Use one writer; read-only
+  investigation never expands mutation scope.
+- Proceed across files, tests, or specialists when this test passes.
+- A review finding does not authorize expansion. Run affected targeted tests
+  during iteration; after the last material change run each mandatory gate
+  once. No reviewer-on-reviewer loop without unresolved concrete risk.
+- Preserve unrelated WIP; defer optional cleanup and hardening.
+
+## Complexity tripwire
+
+Stop when supporting work introduces a state machine or lifecycle, transaction,
+journal, crash recovery, concurrency protocol, general parser, dependency,
+public API, or effort comparable to the primary feature. State necessity,
+surface, and cost. Proceed only after approval unless this was the original
+primary outcome.
+
+## Stop
+
+When proof passes, report and stop. Keep installation, commit, and push
+separate.
+
+=== DECISION ===
+# Controller decision — the probe's candidate neighbourhood has a mechanism-specific blind spot; declare a widened arm
+Recorded 2026-09-09, server clock 06:25 UTC. **No regime has reported a verdict.** Recorded before any probe outcome exists, from reading the instrument's source, not its results.
+
+## What the probe searches
+`probe_interaction_existence.py` re-anchors at a certified iterated unilateral optimum `u` and enumerates a bounded joint neighbourhood of three kinds:
+
+1. `pairwise-topK-top2` — pairs drawn from the top `PAIRWISE_TOP_K_USERS = 10` users, each contributing one of their top `TOP_PROPOSALS = 2` legal options. About 180 candidates per anchor.
+2. `beam-evacuation` — one complete evacuation set per active beam.
+3. `s0-top-two` — two complete profiles assembled from every user's rank-r single-user proposal.
+
+The top-K users are selected by `sorted(d_best, key=lambda user: (-abs(d_best[user]), user))`.
+
+## The blind spot
+At a certified unilateral optimum every legal single move is non-improving, so `d_i^u <= 0` for all `i`. Ranking by `-abs(d_i)` therefore selects the ten users whose best available single move is the **most harmful**, and excludes the users whose `d_i` sits closest to zero.
+
+The canonical positive-interaction coalition in this physics runs the other way. A congestion-relief swap needs:
+* a user who is **nearly indifferent** between two beams, so vacating costs almost nothing. Small `|d_i|`. Excluded by the current ranking.
+* a user who is **blocked** and whose own best legal move is badly degraded. Large `|d_i|`. Included.
+
+The pair that constitutes the swap therefore straddles the ranking, and only one half of it is enumerated. Compounding this, the pairwise family draws only each user's **top two** options by the coordinator objective, while the vacating half of a swap moves to an option that is, by construction, *not* among their best.
+
+The search is thus concentrated where theory says the interaction is least likely to be, and thin exactly where it is most likely to be.
+
+## Why widening the search is admissible here, and is not goalpost-moving
+The probe asks an **existence** question: does any joint move from `u` carry `Psi_A^u > 0` while remaining service-guarded?
+
+* A positive answer is a **constructive existence proof**. A specific configuration either exhibits a positive interaction term and an improved guarded objective, or it does not. Enlarging the search cannot manufacture one.
+* A null answer is only ever "none within the searched neighbourhood and budget". Enlarging the neighbourhood makes a null **stronger**, never weaker.
+
+Search breadth is therefore not a parameter that can be tuned toward a desired conclusion, unlike a threshold or a margin. This declaration changes no threshold, sign, seed, horizon, λ, κ, η_ref, acceptance rule or claim condition, and creates no new gate.
+
+## Decision
+1. The two running probes are **not modified and not killed**. The pre-fix arm and the corrected-ACM arm both complete under the original neighbourhood.
+2. A third arm, `WIDENED`, is declared now and runs on the corrected physics when a compute slot frees. It **adds** candidate families and removes none:
+   * `pairwise-marginal` — pairs drawn from the ten users with the **smallest** `|d_i^u|`, each contributing their top four options.
+   * `pairwise-straddle` — pairs formed by taking one user from the smallest-`|d_i|` ten and one from the largest-`|d_i|` ten, which is the shape the swap argument predicts.
+   * `vacate-and-fill` — for each active beam, one candidate that moves the beam's most nearly indifferent occupant out and moves in the blocked user whose best legal option is that beam.
+   * `triples-marginal` — triples among the five smallest-`|d_i|` users, to test whether interaction needs a coalition larger than two.
+3. The `WIDENED` arm reports the same census as the original: certified-`u` status, improving-move counts under both `G` and `F`, the positive-`Psi` census independent of improvement, coalition sizes, and the search budget, so that a null remains readable as budget-limited.
+4. Results are reported **per arm and never pooled** with the original neighbourhood. The original arm's null or positive stands on its own record.
+
+## Honest statement of what this cannot fix
+Even the widened neighbourhood is a bounded local search around one anchor point. A null across all three arms means "no improving joint move was found within the declared families and budget at the certified unilateral optimum". It does not prove that no such move exists anywhere in the configuration space, and no report from this probe may say that it does.
+
+=== AMENDMENT ===
+cat: '/home/sat/mcrl-records/decisions/V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09-AMENDMENT-1-*.md': No such file or directory
+
+codex
+The base declaration is present and confirms the widened arm is an existence search, not a claim change. The amendment glob did not match its actual filename, so I’m resolving that filename only within the sealed decisions directory before proceeding. The strict scope boundary is locked to the probe script, workspace-local generated inputs/cache/results, and the requested external report.
+exec
+/bin/bash -lc "find /home/sat/mcrl-records/decisions -maxdepth 1 -type f -name '*PROBE*NEIGHBOURHOOD*AMENDMENT*' -printf '%f\\n'" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 0ms:
+V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-AMENDMENT-1-2026-09-09.sha256
+V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-AMENDMENT-1-2026-09-09.md
+
+exec
+/bin/bash -lc "cat /home/sat/mcrl-records/decisions/V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-AMENDMENT-1-2026-09-09.md && md5sum src/mcrl/physics_v025/acm.py src/mcrl/physics_v025/resolution.py src/mcrl/physics_v025/batch.py && stat -c '%s %n' probe/run_v025_matrix_probe.py && rg -o 'fading_quantile_alpha' probe/run_v025_matrix_probe.py | wc -l && git status --short && git rev-parse HEAD && git log -1 --format='%s'" in /home/sat/mcrl-v025-probe-ws-widened
+ exited 1 in 0ms:
+# Amendment 1 to the probe-neighbourhood declaration — a fifth candidate family, aimed by the headroom diagnostic
+Recorded 2026-09-09, server clock about 08:40 UTC. **No probe has reported a verdict.** The evidence below is a physics diagnostic, not a C3 result: it measures where infeasibility comes from, and says nothing about whether any coordination scheme succeeds.
+
+The parent record is `V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md`, which declared four added families. This adds a fifth. It removes none.
+
+## What the diagnostic found
+`HEADROOM-CEILING-2026-09-09.md`, verified against the sealed stage-4h receipt to the unit across all 140 arm-anchors, on `V025_SMOKE/world/1`, 14,000 user-steps:
+
+| finding | value |
+|---|---:|
+| infeasible user-steps that are interference-limited | 91.110 % |
+| infeasible user-steps that are noise-limited | 8.680 % |
+| user-steps that are mode-infeasible at their occupancy | 0.000 % |
+| interference arriving from the same satellite, adjacent beam | 98.879 % |
+| share of a victim's interference carried by its single strongest aggressor | 74.251 % |
+| interference-limited population restored by removing the **top-1** aggressor alone | 76.444 % |
+
+## The inference that aims the new family
+Removing the single strongest aggressor restores feasibility for 76.444 % of the interference-limited population. **The complement is the point.** For the remaining 23.556 %, removing the strongest aggressor alone is **not** enough. Those victims need two or more aggressors relieved before they cross their decode threshold.
+
+That is the exact signature of a super-additive interaction. Moving aggressor A alone changes nothing for the victim, moving aggressor B alone changes nothing, and moving both together crosses the threshold. The individual marginals are zero or negative while the joint move is positive, so the difference lands entirely in the interaction term.
+
+Note carefully what this does **not** say. Where removing one aggressor suffices, the benefit is already captured in that aggressor's own marginal `d_i`, because the score is evaluated on the whole network. Single-aggressor relief is C1's, not C3's. C3's candidate territory is specifically the multi-aggressor tail.
+
+## The fifth family
+`aggressor-coalition`. For each victim transmission that is interference-limited and **not** restored by removing its top-1 aggressor alone:
+
+* form the coalition of the victim and its top-2 aggressors, and separately the victim and its top-3;
+* move each aggressor to its own best legal alternative beam, and the victim to its own best legal alternative, in every combination of the coalition's members;
+* also include the aggressors-only coalitions, without the victim moving, since the victim may need no move of its own.
+
+Report this family's census separately, as the parent declaration requires of every family, and never pooled with the others.
+
+## Why this is admissible and is not tuning
+The same argument as the parent record. The probe asks an **existence** question. A positive answer is a constructive proof exhibiting a specific configuration, so enlarging the search cannot manufacture one. A null answer is always "none found within the searched neighbourhood and budget", so enlarging the neighbourhood makes a null stronger, never weaker.
+
+The selecting evidence is a diagnostic of where infeasibility originates in the physics. It is not a probe outcome, it is not an arm comparison, and no probe has reported. No threshold, sign, seed, horizon, λ, κ, η_ref, service guard or acceptance rule changes, and this creates no gate.
+
+## Correction to two numbers I had been quoting
+The diagnostic corrects the controller's own framing, and the corrections are recorded here rather than quietly adopted:
+* the evaluation holds **14,000** user-steps, not 28,000; the infeasible share is unchanged at 40.814 %;
+* the `NO_MODE` share over the full 14-arm census is **76.5551 %**, not 62 %. The 62 % figure was one arm at one anchor.
+
+## One engine observation carried forward, not adjudicated here
+The diagnostic reports that two different feasibility conventions appear inside a single receipt: configurations scored through the dense batch path use a chunk-wide refined slot grid and take feasibility as an OR across slots within a boundary, 50 of 140 arm-anchors, while the scalar object path uses its own slot partition, takes an AND across slots, and applies a `Γ·(1 − 1e-10)` tolerance, 90 of 140. That is recorded as an observation. It is not adjudicated by this amendment and it does not block the probe.
+aa58aeeb83c59e55caebac490adeef1c  src/mcrl/physics_v025/acm.py
+e0b1cc50532aa7a8a044b366bbdcf1bc  src/mcrl/physics_v025/resolution.py
+3677d530f3487fa8ac97305277f4f0f7  src/mcrl/physics_v025/batch.py
+stat: cannot statx 'probe/run_v025_matrix_probe.py': No such file or directory
+
