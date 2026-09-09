@@ -4281,3 +4281,383 @@ def run_variant(variant_name: str, output: Path, resume: bool = False) -> dict:
         if anchor_id in completed:
             continue
 
+exec
+/bin/bash -lc "sha256sum /home/sat/mcrl-v025-harness-ws/harness/anytime.py /home/sat/mcrl-v025-harness-ws/harness/reseeded_span.py .scratch/beamwidth/run_beamwidth_network.py .scratch/beamwidth/strict_clearance_adapter.py; /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+for p in [Path('.scratch/beamwidth/sweep-one-sided-1.66.json'),Path('.scratch/beamwidth/strict-margin-sweep-one-sided-1.66.json')]:
+ d=json.loads(p.read_text())
+ print(p)
+ print(d.keys())
+ print(d['anchors'][0].keys())
+ print(d['anchors'][0]['committed'].keys())
+ print(d['anchors'][0]['committed']['UNILATERAL'].keys())
+ print(d['anchors'][0]['anchor_id'], d['anchors'][0]['world_sha256'])
+PY
+sed -n '762,940p' .scratch/beamwidth/run_beamwidth_network.py; sed -n '1098,1195p' .scratch/beamwidth/run_beamwidth_network.py" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+003bdee1df908fddf652f2f8069c31a6297a7f7178bbb83338d09b3f4add9928  /home/sat/mcrl-v025-harness-ws/harness/anytime.py
+78367ea81862d8ac10b4c6ebb373dcd251fab274578fe7844a34bc213ba4e69e  /home/sat/mcrl-v025-harness-ws/harness/reseeded_span.py
+8aa37ebf1e444d1d9c335cad510cdb5ee4c32dd5143bb56e7cc85937b62ed985  .scratch/beamwidth/run_beamwidth_network.py
+390ac38a10e4dbf9908ba5b2ec4bbd50fb8f87527ae3dfe4c702b04011d06c88  .scratch/beamwidth/strict_clearance_adapter.py
+.scratch/beamwidth/sweep-one-sided-1.66.json
+dict_keys(['anchors', 'beamwidth_diagnostic', 'claim_ceiling', 'committed_endpoint', 'learner_used', 'probe_source_sha256', 'process_limit', 'processes_used', 'python', 'python_version', 'receipt_sha256', 'schema', 'selection_objective', 'service_guard', 'source_commit', 'source_tree', 'summary', 'synthetic_self_test', 'ten_second_deadline', 'test_split_opened', 'thread_environment', 'wall_seconds', 'worlds'])
+dict_keys(['anchor_id', 'committed', 'committed_physical_boundary_evaluations', 'committed_unique_configuration_evaluations', 'selection', 'step_index', 'tle_date', 'training_seed', 'wall_seconds', 'world_domain', 'world_index', 'world_sha256'])
+dict_keys(['BASELINE', 'ORACLE_SET', 'UNILATERAL'])
+dict_keys(['bits', 'configuration_id', 'ee_bit_per_j', 'interference_structure', 'joules', 'relative_ee_gain_over_BASELINE', 'served_count'])
+V025_PROBE_R2/world/1:step/0 e9371dbf11eacf4f2a3fa9f65c34d917f1c7c56ae7cb7c34d1a18906600e0900
+.scratch/beamwidth/strict-margin-sweep-one-sided-1.66.json
+dict_keys(['anchors', 'beamwidth_diagnostic', 'claim_ceiling', 'clearance_implementation', 'committed_endpoint', 'learner_used', 'margin_batch_source_sha256', 'probe_source_sha256', 'process_limit', 'processes_used', 'provisioning_definition', 'provisioning_rule', 'python', 'python_version', 'receipt_sha256', 'schema', 'selection_objective', 'service_guard', 'source_commit', 'source_tree', 'strict_clearance_source_sha256', 'summary', 'synthetic_self_test', 'ten_second_deadline', 'test_split_opened', 'thread_environment', 'wall_seconds', 'worlds'])
+dict_keys(['anchor_id', 'committed', 'committed_physical_boundary_evaluations', 'committed_unique_configuration_evaluations', 'selection', 'step_index', 'tle_date', 'training_seed', 'wall_seconds', 'world_domain', 'world_index', 'world_sha256'])
+dict_keys(['BASELINE', 'ORACLE_SET', 'UNILATERAL'])
+dict_keys(['bits', 'configuration_id', 'ee_bit_per_j', 'interference_structure', 'joules', 'm_tx_counts', 'rate_target_attained_count', 'relative_ee_gain_over_BASELINE', 'rf_cap_hits', 'rf_transmission_observations', 'served_count'])
+V025_PROBE_R2/world/1:step/0 e9371dbf11eacf4f2a3fa9f65c34d917f1c7c56ae7cb7c34d1a18906600e0900
+def evaluate_anchor(*, tape, world_index: int, step_index: int, pool=None) -> dict[str, object]:
+    setting = probe._setting("a-r0")
+    run_setting = probe.run_setting_for("a-r0")
+    base = probe._base_configuration(tape, step_index, "nearest-eligible")
+    selection = ParallelSelectionEvaluator(tape, step_index, base, pool)
+    started = time.perf_counter()
+    coordinate = coordinate_optimum(
+        tape=tape,
+        step_index=step_index,
+        base=base,
+        evaluator=selection,
+    )
+    unilateral = coordinate.selected
+    before_joint_evaluations = selection.physical_evaluations
+    candidates, aliases, family_counts = build_joint_candidates(
+        tape=tape,
+        step_index=step_index,
+        base=base,
+        unilateral=unilateral,
+        best_alternatives=coordinate.best_alternatives,
+    )
+    selection.evaluate_many(candidates)
+    base_profile = selection.evaluate(base)
+    unilateral_profile = selection.evaluate(unilateral)
+    guard = served(base_profile)
+    best = unilateral
+    best_profile = unilateral_profile
+    for candidate in candidates:
+        profile = selection._evaluated.get(candidate.configuration_id)
+        if profile is None or served(profile) < guard:
+            continue
+        value = objective(profile)
+        best_value = objective(best_profile)
+        if value > best_value or (
+            value == best_value
+            and best is not unilateral
+            and candidate.configuration_id < best.configuration_id
+        ):
+            best, best_profile = candidate, profile
+
+    coalition_users = tuple(
+        user
+        for user in sorted(unilateral.mapping)
+        if unilateral.mapping[user] != best.mapping[user]
+    )
+    psi = Fraction()
+    singleton_sum = Fraction()
+    if coalition_users:
+        for user in coalition_users:
+            mapping = unilateral.mapping
+            mapping[user] = best.mapping[user]
+            singleton = _configuration(base, mapping, "oracle-singleton-component")
+            singleton_profile = selection.evaluate(singleton)
+            singleton_sum += objective(singleton_profile) - objective(unilateral_profile)
+        psi = (
+            objective(best_profile)
+            - objective(unilateral_profile)
+            - singleton_sum
+        )
+
+    committed_counter = probe.EvaluationCounter()
+    committed = probe.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=base,
+        field="realised",
+        counter=committed_counter,
+        run_setting=run_setting,
+        boundary_indices=tuple(range(48)),
+        fading_quantile_alpha=0.10,
+    )
+    unique = {
+        row.configuration_id: row for row in (base, unilateral, best)
+    }
+    committed.evaluate_many(tuple(unique.values()))
+
+    profiles = {
+        "BASELINE": committed.evaluate(base),
+        "UNILATERAL": committed.evaluate(unilateral),
+        "ORACLE_SET": committed.evaluate(best),
+    }
+    structure = {
+        "BASELINE": interference_structure(
+            tape=tape, step_index=step_index, selected=base
+        ),
+        "UNILATERAL": interference_structure(
+            tape=tape, step_index=step_index, selected=unilateral
+        ),
+        "ORACLE_SET": interference_structure(
+            tape=tape, step_index=step_index, selected=best
+        ),
+    }
+    chosen_aliases = aliases.get(best.assignments, ())
+    qualifying = bool(coalition_users) and objective(best_profile) > objective(
+        unilateral_profile
+    )
+    row = {
+        "anchor_id": f"V025_PROBE_R2/world/{world_index}:step/{step_index}",
+        "world_index": world_index,
+        "world_domain": tape.domain,
+        "world_sha256": tape.digest,
+        "tle_date": tape.tle_date,
+        "training_seed": tape.training_seed,
+        "step_index": step_index,
+        "selection": {
+            "field": "realised",
+            "boundary_indices": [0],
+            "held_snapshot_seconds": 30.08,
+            "eta_ref": frac_payload(ETA_REF),
+            "baseline_served_guard": guard,
+            "unilateral_iterations": coordinate.iterations,
+            "unilateral_passes": coordinate.passes,
+            "unilateral_terminal_certified": True,
+            "unilateral_candidate_comparisons": coordinate.candidate_comparisons,
+            "joint_catalogue_unique": len(candidates),
+            "joint_catalogue_aliases": sum(len(value) for value in aliases.values()),
+            "joint_family_unique_counts": family_counts,
+            "qualifying_coalition_existed": qualifying,
+            "selected_coalition_size": len(coalition_users) if qualifying else 0,
+            "selected_coalition_users": list(coalition_users) if qualifying else [],
+            "selected_candidate_aliases": list(chosen_aliases) if qualifying else [],
+            "selected_joint_served": served(best_profile),
+            "selected_joint_F_gain_bits": float(
+                objective(best_profile) - objective(unilateral_profile)
+            ),
+            "selected_singleton_sum_bits": float(singleton_sum),
+            "selected_Psi_A_bits": float(psi),
+            "selected_Psi_A_exact": frac_payload(psi),
+            "unique_selection_configuration_evaluations": selection.physical_evaluations,
+            "unilateral_unique_evaluations_before_joint": before_joint_evaluations,
+            "new_joint_unique_evaluations": (
+                selection.physical_evaluations - before_joint_evaluations
+            ),
+            "selection_physical_boundary_evaluations": selection.physical_evaluations,
+        },
+        "committed": {
+            name: {
+                "configuration_id": profile.config.configuration_id,
+                "bits": profile.bits,
+                "joules": profile.joules,
+                "ee_bit_per_j": ratio(profile.bits, profile.joules),
+                "served_count": served(profile),
+                "rate_target_attained_count": sum(
+                    bool(value)
+                    for value in (profile.score.rate_target_attained or {}).values()
+                ),
+                "rf_cap_hits": profile.rf_cap_hits,
+                "rf_transmission_observations": profile.rf_transmission_observations,
+                "m_tx_counts": dict(profile.m_tx_counts),
+                "interference_structure": structure[name],
+            }
+            for name, profile in profiles.items()
+        },
+        "committed_unique_configuration_evaluations": len(unique),
+        "committed_physical_boundary_evaluations": committed_counter.boundary_evaluations,
+        "wall_seconds": time.perf_counter() - started,
+    }
+    row["committed"]["ORACLE_SET"]["relative_ee_gain_over_UNILATERAL"] = relative_gain(
+        row["committed"]["ORACLE_SET"]["ee_bit_per_j"],
+        row["committed"]["UNILATERAL"]["ee_bit_per_j"],
+    )
+    row["committed"]["UNILATERAL"]["relative_ee_gain_over_BASELINE"] = relative_gain(
+        row["committed"]["UNILATERAL"]["ee_bit_per_j"],
+        row["committed"]["BASELINE"]["ee_bit_per_j"],
+    )
+    if served(best_profile) < guard:
+        raise RuntimeError("ORACLE_SET violated the literal selection-time service guard")
+    if objective(best_profile) < objective(unilateral_profile):
+        raise RuntimeError("ORACLE_SET is worse than its included UNILATERAL reference")
+    return row
+
+
+def _git(*args: str) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=REPO, text=True, encoding="utf-8"
+    ).strip()
+
+
+def run(
+    *,
+    worlds: int,
+    anchors_per_world: int,
+    synthetic: bool,
+    one_sided_hp_deg: float,
+    provisioning_rule: str,
+) -> dict[str, object]:
+    from mcrl.physics_v025.provider_legacy import factory as real_factory
+
+    if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+        raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
+        raise RuntimeError(
+            "diagnostic one-sided half-power angle must be one of "
+            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
+        )
+    full_hpbw_deg = 2.0 * one_sided_hp_deg
+    # Runtime-only diagnostic override.  The imported function resolves this
+    # module global at call time; no source or constant file is edited.
+    channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+    if provisioning_rule not in {"sealed", "margin", "margin-strict"}:
+        raise RuntimeError(
+            "provisioning rule must be sealed, margin, or margin-strict"
+        )
+    global PROVISIONING_RULE
+    PROVISIONING_RULE = provisioning_rule
+    if provisioning_rule == "margin":
+        probe.evaluate_ar_tdm_catalogue = margin_batch.evaluate_ar_tdm_catalogue
+    elif provisioning_rule == "margin-strict":
+        probe.evaluate_ar_tdm_catalogue = (
+            strict_clearance_adapter.evaluate_ar_tdm_catalogue
+        )
+    else:
+        probe.evaluate_ar_tdm_catalogue = __import__(
+            "mcrl.physics_v025.batch", fromlist=["evaluate_ar_tdm_catalogue"]
+        ).evaluate_ar_tdm_catalogue
+    started = time.perf_counter()
+    anchors = []
+    world_rows = []
+    for world_index in range(1, worlds + 1):
+        domain = (
+            probe.SYNTHETIC_WORLD_DOMAINS[world_index - 1]
+            if synthetic
+            else probe.PROBE_WORLD_DOMAINS[world_index - 1]
+        )
+        provider = probe.TinySyntheticProvider(users=3) if synthetic else real_factory()
+        world_started = time.perf_counter()
+        tape = probe.build_world_tape(
+            domain=domain,
+            provider=provider,
+            steps=anchors_per_world,
+            start_time_s=0.0,
+        )
+        world_rows.append(
+            {
+                "world_index": world_index,
+                "domain": domain,
+                "world_sha256": tape.digest,
+                "tle_date": tape.tle_date,
+                "training_seed": tape.training_seed,
+                "construction_wall_seconds": time.perf_counter() - world_started,
+            }
+        )
+        global _WORKER_TAPE
+        _WORKER_TAPE = tape
+        pool_context = None
+        if not synthetic:
+            if "fork" not in mp.get_all_start_methods():
+                raise RuntimeError("exact parallel selector requires POSIX fork")
+            pool_context = mp.get_context("fork").Pool(SELECTION_WORKERS)
+        try:
+            for step_index in range(anchors_per_world):
+                row = evaluate_anchor(
+                    tape=tape,
+                    world_index=world_index,
+                    step_index=step_index,
+                    pool=pool_context,
+                )
+                anchors.append(row)
+                print(
+                    json.dumps(
+                        {
+                            "anchor": row["anchor_id"],
+                            "unilateral_iterations": row["selection"]["unilateral_iterations"],
+                            "joint_candidates": row["selection"]["joint_catalogue_unique"],
+                            "qualifying": row["selection"]["qualifying_coalition_existed"],
+                            "oracle_ee_gain_pct": (
+                                None
+                                if row["committed"]["ORACLE_SET"]["relative_ee_gain_over_UNILATERAL"] is None
+                                else 100.0
+                                * row["committed"]["ORACLE_SET"]["relative_ee_gain_over_UNILATERAL"]
+                            ),
+                            "wall_seconds": row["wall_seconds"],
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+
+exec
+/bin/bash -lc "/home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+for p in ['.scratch/beamwidth/sealed-diagnostics-one-sided-1.66.json','.scratch/beamwidth/sweep-one-sided-1.66.json']:
+ d=json.load(open(p))
+ print(p, d['anchors'][0]['committed']['BASELINE'].keys())
+ print(d['anchors'][0]['committed']['UNILATERAL'])
+PY" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+.scratch/beamwidth/sealed-diagnostics-one-sided-1.66.json dict_keys(['bits', 'configuration_id', 'ee_bit_per_j', 'interference_structure', 'joules', 'm_tx_counts', 'rate_target_attained_count', 'rf_cap_hits', 'rf_transmission_observations', 'served_count'])
+{'bits': 82429324078.09525, 'configuration_id': 'CFG:0:59189:50;1:59189:64;2:59189:48;3:59189:50;4:68348:39;5:59189:37;6:68348:51;7:59189:37;8:68340:43;9:68340:31;10:68348:42;11:59189:50;12:59189:37;13:68105:15;14:59189:64;15:68340:54;16:68340:43;17:68348:40;18:68340:54;19:68348:39;20:59189:38;21:59189:64;22:68340:18;23:68340:54;24:68340:31;25:68348:51;26:68340:18;27:68348:28;28:68340:31;29:59189:37;30:68340:20;31:68105:15;32:59189:38;33:68348:51;34:59189:64;35:68348:42;36:68340:54;37:68348:41;38:68348:40;39:59189:50;40:68105:14;41:68348:40;42:59189:38;43:59189:50;44:59189:48;45:68340:54;46:68105:15;47:59189:48;48:59189:50;49:68340:31;50:59189:48;51:68340:54;52:59189:48;53:68105:15;54:68348:51;55:68348:39;56:68348:40;57:68105:14;58:68348:42;59:68340:18;60:59189:50;61:59189:37;62:68340:20;63:68340:43;64:59189:64;65:68348:42;66:68340:43;67:68340:54;68:68348:42;69:68348:40;70:68348:66;71:68348:41;72:68340:20;73:68105:14;74:68340:20;75:68105:14;76:68348:5;77:68348:28;78:68340:43;79:68340:54;80:68348:39;81:68340:31;82:68348:5;83:68340:31;84:59189:38;85:68348:28;86:68105:15;87:68348:5;88:68105:15;89:68348:42;90:68340:43;91:68340:43;92:59189:37;93:68348:41;94:68105:14;95:68348:39;96:68348:51;97:59189:64;98:68340:18;99:68348:41', 'ee_bit_per_j': 31358500.509404767, 'interference_structure': {'boundary_observations': 48, 'cap_binding_boundaries': 48, 'definition': 'infeasible under physical cross-gain and feasible at every boundary when cross-gain alone is zeroed', 'infeasible_user_steps': 21, 'interference_limited_user_steps': 14, 'max_beam_occupancy': 8, 'mean_beam_occupancy': 5.0, 'no_eligible_mode_boundaries': 48, 'occupancy_sum': 4800, 'occupied_beam_boundary_observations': 960, 'user_steps': 100, 'weighted_top1_interference_w': 1.1247398745590354e-10, 'weighted_total_interference_w': 1.2372936938605407e-10}, 'joules': 2628.611787523889, 'm_tx_counts': {'8PSK 2/3': 44, '8PSK 3/5': 1437, 'NO_MODE': 1478, 'QPSK 1/2': 1027, 'QPSK 1/3': 1324, 'QPSK 1/4': 1893, 'QPSK 2/3': 4317, 'QPSK 2/5': 2823, 'QPSK 3/4': 1118, 'QPSK 3/5': 4026, 'QPSK 4/5': 1342, 'QPSK 5/6': 243, 'QPSK 9/10': 48}, 'rate_target_attained_count': 0, 'relative_ee_gain_over_BASELINE': 6.684603958637618, 'rf_cap_hits': 1214, 'rf_transmission_observations': 21120, 'served_count': 98}
+.scratch/beamwidth/sweep-one-sided-1.66.json dict_keys(['bits', 'configuration_id', 'ee_bit_per_j', 'interference_structure', 'joules', 'served_count'])
+{'bits': 82429324078.09525, 'configuration_id': 'CFG:0:59189:50;1:59189:64;2:59189:48;3:59189:50;4:68348:39;5:59189:37;6:68348:51;7:59189:37;8:68340:43;9:68340:31;10:68348:42;11:59189:50;12:59189:37;13:68105:15;14:59189:64;15:68340:54;16:68340:43;17:68348:40;18:68340:54;19:68348:39;20:59189:38;21:59189:64;22:68340:18;23:68340:54;24:68340:31;25:68348:51;26:68340:18;27:68348:28;28:68340:31;29:59189:37;30:68340:20;31:68105:15;32:59189:38;33:68348:51;34:59189:64;35:68348:42;36:68340:54;37:68348:41;38:68348:40;39:59189:50;40:68105:14;41:68348:40;42:59189:38;43:59189:50;44:59189:48;45:68340:54;46:68105:15;47:59189:48;48:59189:50;49:68340:31;50:59189:48;51:68340:54;52:59189:48;53:68105:15;54:68348:51;55:68348:39;56:68348:40;57:68105:14;58:68348:42;59:68340:18;60:59189:50;61:59189:37;62:68340:20;63:68340:43;64:59189:64;65:68348:42;66:68340:43;67:68340:54;68:68348:42;69:68348:40;70:68348:66;71:68348:41;72:68340:20;73:68105:14;74:68340:20;75:68105:14;76:68348:5;77:68348:28;78:68340:43;79:68340:54;80:68348:39;81:68340:31;82:68348:5;83:68340:31;84:59189:38;85:68348:28;86:68105:15;87:68348:5;88:68105:15;89:68348:42;90:68340:43;91:68340:43;92:59189:37;93:68348:41;94:68105:14;95:68348:39;96:68348:51;97:59189:64;98:68340:18;99:68348:41', 'ee_bit_per_j': 31358500.509404767, 'interference_structure': {'definition': 'infeasible under physical cross-gain and feasible at every boundary when cross-gain alone is zeroed', 'infeasible_user_steps': 21, 'interference_limited_user_steps': 14, 'user_steps': 100, 'weighted_top1_interference_w': 1.1247398745590354e-10, 'weighted_total_interference_w': 1.2372936938605407e-10}, 'joules': 2628.611787523889, 'relative_ee_gain_over_BASELINE': 6.684603958637618, 'served_count': 98}
+
+exec
+/bin/bash -lc "/home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+for p in ['.scratch/beamwidth/strict-margin-sweep-one-sided-1.66.json','.scratch/beamwidth/strict-margin-sweep-one-sided-6.65.json','.scratch/beamwidth/sweep-one-sided-1.66.json']:
+ d=json.load(open(p)); print(p, d['wall_seconds'], [round(a['wall_seconds'],1) for a in d['anchors']])
+PY" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+.scratch/beamwidth/strict-margin-sweep-one-sided-1.66.json 712.5939009640133 [41.7, 51.0, 59.0, 92.2, 57.3, 44.9, 55.5, 214.5]
+.scratch/beamwidth/strict-margin-sweep-one-sided-6.65.json 1360.4580514550034 [173.5, 193.1, 191.0, 40.7, 144.7, 155.1, 232.8, 130.9]
+.scratch/beamwidth/sweep-one-sided-1.66.json 487.3794126879948 [54.9, 45.3, 51.9, 77.9, 46.3, 38.0, 43.6, 69.2]
+
+exec
+/bin/bash -lc "/home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json,hashlib
+for p in ['.scratch/beamwidth/sealed-diagnostics-one-sided-1.66.json','.scratch/beamwidth/strict-margin-sweep-one-sided-1.66.json']:
+ d=json.load(open(p)); h=d.pop('receipt_sha256',None); a=hashlib.sha256(json.dumps(d,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode('ascii')).hexdigest(); print(p,h,a,h==a)
+PY" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+.scratch/beamwidth/sealed-diagnostics-one-sided-1.66.json None f8b3beb822c3b382a102e8ebaa6e299578a99b5c0017e9875963d768d4e0ea2c False
+.scratch/beamwidth/strict-margin-sweep-one-sided-1.66.json d1678aeff139f2d97f9882ac1a1a85f018f35d2b663a512c5ace981297f95cd1 d1678aeff139f2d97f9882ac1a1a85f018f35d2b663a512c5ace981297f95cd1 True
+
+exec
+/bin/bash -lc "env PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import importlib.util,sys
+from pathlib import Path
+sys.path.insert(0,'/home/sat/mcrl-v025-harness-ws')
+spec=importlib.util.spec_from_file_location('beam_runner',Path('.scratch/beamwidth/run_beamwidth_network.py'))
+m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)
+from harness.anytime import first_improvement_unilateral
+from harness.reseeded_span import _joint_from_seed,_committed_profiles,_committed_metric
+print(first_improvement_unilateral.__module__, _joint_from_seed.__module__, m.DECLARED_ONE_SIDED_HP_DEG)
+PY" in /home/sat/mcrl-v025-beam-ws
+ exited 1 in 92ms:
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/run_beamwidth_network.py", line 62, in <module>
+    import margin_batch
+ModuleNotFoundError: No module named 'margin_batch'
+
+exec
+/bin/bash -lc "env PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import importlib.util,sys
+from pathlib import Path
+sys.path.insert(0,str(Path('.scratch/beamwidth').resolve())); sys.path.insert(0,'/home/sat/mcrl-v025-harness-ws')
+spec=importlib.util.spec_from_file_location('beam_runner',Path('.scratch/beamwidth/run_beamwidth_network.py'))
+m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)
+from harness.anytime import first_improvement_unilateral
+from harness.reseeded_span import _joint_from_seed,_committed_profiles,_committed_metric
+print(first_improvement_unilateral.__module__, _joint_from_seed.__module__, m.DECLARED_ONE_SIDED_HP_DEG)
+PY" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 65ms:
+harness.anytime harness.reseeded_span (1.66, 2.4, 3.32, 4.5, 6.65)
+
+codex
+The adapter boundary is now clear: each new anchor will call the harness’s imported first-improvement function, pass its terminal fixed point into the harness’s imported reseeding/joint routine, and commit `U_first` and `J_from_first` independently across all 48 boundaries. The standing `U_best` and `J_from_best` metrics will remain verbatim from the already validated sealed/strict receipts, with configuration and world digests checked before accepting a new row.
