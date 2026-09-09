@@ -5487,3 +5487,2440 @@ def _physical_events(
         for user, identity in after.assignments
     )
 
+codex
+The baseline is already the requested post-repair copy with a fresh repository (`corpus regeneration baseline`), so repeating the destructive copy/init sequence would erase that landed repair. I’m treating that setup step as already satisfied. The existing corpus and source shards are present: 180 anchors and one archived pair row per anchor. I’ll preserve each archived pair selection by configuration, regenerate its exact label under the current schema, and verify its numerical interaction against the archived row.
+exec
+/bin/bash -lc "nice -n 10 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+from pathlib import Path
+from mcrl.stagec_v025.shards import read_source_shard
+from mcrl.stagec_v025.coalitions import read_coalition_shard
+for reader,path in [
+(read_source_shard, Path('artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-source-anchor-000.jsonl')),
+(read_coalition_shard, Path('artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1/PILOT_NOT_CLAIM-coalition-anchor-000.jsonl'))]:
+    try:
+        x=reader(path); print(reader.__name__, 'OK', len(x.rows))
+    except Exception as e:
+        print(reader.__name__, type(e).__name__, str(e))
+PY" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 196ms:
+read_source_shard OK 992
+read_coalition_shard StageCContractError coalition shard schema drifted: expected {'shard': 'mcrl-v025-stagec-c3-coalition-shard-v2', 'row': 'mcrl-v025-stagec-c3-coalition-row-v2', 'context': 'mcrl-v025-stagec-c3-coalition-context-v2'}, got {'shard': 'mcrl-v025-stagec-c3-coalition-shard-v1', 'row': 'mcrl-v025-stagec-c3-coalition-row-v1', 'context': '<missing>'}
+
+exec
+/bin/bash -lc "rg -n '"'^class SourceRow|def read_source_shard|SOURCE_ROW_SCHEMA'"' src/mcrl/stagec_v025/{state,shards}.py && sed -n '280,430p' src/mcrl/stagec_v025/state.py && sed -n '1,180p' src/mcrl/stagec_v025/shards.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+src/mcrl/stagec_v025/shards.py:240:def read_source_shard(path: str | Path) -> SourceShard:
+src/mcrl/stagec_v025/state.py:232:class SourceRow:
+        payload = asdict(self)
+        payload["action"] = self.action.payload()
+        payload["action_mask"] = list(self.action_mask)
+        payload["q1_state"] = [float_hex(value) for value in self.q1_state]
+        payload["q2_state"] = [float_hex(value) for value in self.q2_state]
+        return payload
+
+
+def _normalize(raw: Sequence[float], specs: Sequence[FeatureSpec]) -> tuple[float, ...]:
+    if len(raw) != len(specs):
+        raise StageCContractError("state field count disagrees with schema")
+    result = tuple(float(value) / spec.scale for value, spec in zip(raw, specs, strict=True))
+    if not all(math.isfinite(value) for value in result):
+        raise StageCContractError("state values must be finite")
+    return result
+
+
+def kappa_normalization_bits(kappa_bits_per_user_s: float) -> float:
+    """Controller-sealed conversion from calibration rate to one user-step."""
+
+    value = float(kappa_bits_per_user_s)
+    if not math.isfinite(value) or value <= 0.0:
+        raise StageCContractError("kappa bits/user-second must be positive and finite")
+    return value * DECISION_INTERVAL_S
+
+
+def _validate_anchor(anchor: PerAnchorEvaluation) -> None:
+    if anchor.split != "TRAIN":
+        raise StageCContractError("Stage C source construction is TRAIN-only")
+    if not anchor.actions:
+        raise StageCContractError("anchor must carry at least the explicit null action")
+    if not 0 <= anchor.base_action_index < len(anchor.actions):
+        raise StageCContractError("base_action_index is outside the action table")
+    if not anchor.actions[anchor.base_action_index].legal:
+        raise StageCContractError("BASE action must be legal")
+    if not any(item.legal and item.action.is_null for item in anchor.actions):
+        raise StageCContractError("anchor must include an explicit legal null action")
+    if (
+        not math.isfinite(anchor.kappa_normalization_bits)
+        or anchor.kappa_normalization_bits <= 0.0
+    ):
+        raise StageCContractError("normalization kappa must be a positive bit scale")
+    if (
+        not math.isfinite(anchor.lambda_bits_per_j)
+        or anchor.lambda_bits_per_j <= 0.0
+        or anchor.lambda_bits_per_j != anchor.eta_ref_bits_per_j
+    ):
+        raise StageCContractError("lambda and eta_ref must be identical")
+    if anchor.anchor_index < 0 or anchor.decision_time_ns < 0:
+        raise StageCContractError("anchor indices/times must be nonnegative")
+    identities = [item.action for item in anchor.actions]
+    if len(set(identities)) != len(identities):
+        raise StageCContractError("anchor has duplicate physical actions")
+    for field in (
+        "code_digest",
+        "physics_digest",
+        "launch_digest",
+        "catalogue_digest",
+        "setting_digest",
+        "calibration_digest",
+        "provider_digest",
+        "archive_digest",
+        "allocation_manifest_digest",
+    ):
+        digest = getattr(anchor, field)
+        if (
+            len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise StageCContractError(f"{field} must be a lowercase SHA-256")
+    try:
+        parsed = datetime.fromisoformat(anchor.decision_time_utc.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise StageCContractError("decision_time_utc must be RFC3339") from error
+    if parsed.tzinfo is None:
+        raise StageCContractError("decision_time_utc must include a timezone")
+
+
+def extract_source_rows(anchor: PerAnchorEvaluation) -> tuple[SourceRow, ...]:
+    """Turn one engine adapter output into authenticated per-action rows."""
+
+    _validate_anchor(anchor)
+    legal_mask = tuple(bool(item.legal) for item in anchor.actions)
+    rows: list[SourceRow] = []
+    for action_index, item in enumerate(anchor.actions):
+        if not item.legal:
+            continue
+        if len(item.forecasts) != 3:
+            raise StageCContractError("Q2 requires exactly three forecast offsets")
+        for field in (
+            "source_provenance_sha256",
+            "forecast_method_sha256",
+            "visible_primitives_sha256",
+        ):
+            value = getattr(item, field)
+            if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+                raise StageCContractError(f"action {field} is not bound")
+        if item.visible_primitives_sha256 != canonical_sha256(_action_visible_payload(item)):
+            raise StageCContractError("dependency-allowlist provenance does not match consumed values")
+        if item.future_tle_access != "declared_forecast_horizon_only":
+            raise StageCContractError("future TLE access exceeds the declared horizon")
+        if item.tle_provenance not in {
+            "nearest_epoch_retrospective_benchmark",
+            "causal_ephemeris_available_by_decision_time",
+        }:
+            raise StageCContractError("TLE provenance is undeclared")
+        if (
+            item.refresh_phase not in range(4)
+            or item.background_occupancy_excluding_focal < 0
+            or item.previous_served_load_for_action < 0
+            or item.remaining_d2_time_s < 0.0
+            or item.remaining_visibility_time_s < 0.0
+            or item.nominal_required_power_over_cap < 0.0
+            or item.previous_beam_max_rf_over_cap < 0.0
+        ):
+            raise StageCContractError("action state violates range invariants")
+        q1_raw = (
+            item.nominal_sinr_margin_at_rate_target_db,
+            item.nominal_required_power_over_cap,
+            item.nominal_mode_spectral_efficiency,
+            float(item.background_occupancy_excluding_focal),
+            float(item.beam_active_before_focal),
+            float(item.satellite_active_before_focal),
+            item.off_axis_angle_rad,
+            item.remaining_d2_time_s,
+            item.remaining_visibility_time_s,
+            float(item.refresh_phase),
+            float(item.previous_served_association_for_action),
+            float(item.previous_served_load_for_action),
+            float(item.previous_beam_active_for_action),
+            float(item.previous_satellite_active_for_action),
+            item.previous_beam_max_rf_over_cap,
+            float(item.missing_incumbent),
+        )
+        q2_raw: list[float] = [
+            item.candidate_current_nominal_decoding_margin_db,
+            item.forecast_se_trend_bit_s_hz_per_s,
+            item.remaining_d2_time_s,
+            item.remaining_visibility_time_s,
+            float(item.refresh_phase),
+            float(item.background_occupancy_excluding_focal),
+            float(item.beam_active_before_focal),
+            float(item.satellite_active_before_focal),
+            item.required_power_cap_margin_w,
+            float(item.missing_incumbent),
+        ]
+        for forecast in item.forecasts:
+            q2_raw.extend(
+                (
+                    float(forecast.valid),
+                    float(forecast.survival),
+"""Authenticated TRAIN-only JSONL source shards."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from typing import Iterable, Mapping
+
+from .canonical import (
+    StageCContractError,
+    canonical_json_bytes,
+    canonical_sha256,
+    parse_float_hex,
+    verify_sha256_sidecar,
+    write_once_with_sha256,
+)
+from .state import (
+    PhysicalAction,
+    Q1_FEATURES,
+    Q1_SCHEMA_SHA256,
+    Q2_FEATURES,
+    Q2_SCHEMA_SHA256,
+    ROW_SCHEMA_VERSION,
+    SourceRow,
+)
+
+
+SHARD_SCHEMA_VERSION = "mcrl-v025-stagec-source-shard-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class SourceShard:
+    path: Path
+    file_sha256: str
+    rows_sha256: str
+    rows: tuple[SourceRow, ...]
+
+
+def _parse_digest(value: object, *, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(char not in "0123456789abcdef" for char in value)
+    ):
+        raise StageCContractError(f"{field} must be a lowercase SHA-256")
+    return value
+
+
+def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
+    expected = {
+        "schema", "split", "world_id", "world_seed", "learner_seed", "anchor_id",
+        "anchor_index", "decision_time_utc", "decision_time_ns", "user_id",
+        "action_index", "action", "reference_action", "action_mask", "q1_state",
+        "q2_state", "incumbent_context_nominal_decoding_margin_db_hex",
+        "q1_schema_sha256", "q2_schema_sha256", "setting_id",
+        "code_digest", "physics_digest", "launch_digest", "catalogue_digest",
+        "setting_digest", "calibration_digest",
+        "provider_digest", "archive_digest",
+        "allocation_manifest_digest", "lambda_bits_per_j_hex", "eta_ref_bits_per_j_hex",
+        "kappa_normalization_bits_hex", "c1_label_bits_hex", "c1_phi_difference_hex", "c2_label_bits_hex",
+        "c1_label_normalized_hex", "c2_label_normalized_hex",
+        "source_provenance_sha256", "forecast_method_sha256", "visible_primitives_sha256",
+        "tle_provenance", "future_tle_access", "terminal", "null_action", "outage",
+    }
+    if set(payload) != expected:
+        raise StageCContractError("source row schema drifted")
+    action = payload["action"]
+    if not isinstance(action, Mapping) or set(action) != {"norad_id", "beam_chain_id"}:
+        raise StageCContractError("source row physical action schema drifted")
+    q1 = payload["q1_state"]
+    q2 = payload["q2_state"]
+    mask = payload["action_mask"]
+    if not isinstance(q1, list) or not isinstance(q2, list) or not isinstance(mask, list):
+        raise StageCContractError("source row arrays must be JSON lists")
+    if len(q1) != len(Q1_FEATURES) or len(q2) != len(Q2_FEATURES):
+        raise StageCContractError("source row state vector dimension drifted")
+    if not mask or any(not isinstance(value, bool) for value in mask):
+        raise StageCContractError("source row action mask must contain booleans")
+    float_fields = (
+        "incumbent_context_nominal_decoding_margin_db_hex",
+        "lambda_bits_per_j_hex", "eta_ref_bits_per_j_hex", "kappa_normalization_bits_hex",
+        "c1_label_bits_hex", "c1_phi_difference_hex", "c2_label_bits_hex",
+        "c1_label_normalized_hex", "c2_label_normalized_hex",
+    )
+    for field in float_fields:
+        parse_float_hex(payload[field], field=field)
+    row = SourceRow(
+        schema=str(payload["schema"]),
+        split=str(payload["split"]),
+        world_id=str(payload["world_id"]),
+        world_seed=int(payload["world_seed"]),
+        learner_seed=None if payload["learner_seed"] is None else int(payload["learner_seed"]),
+        anchor_id=str(payload["anchor_id"]),
+        anchor_index=int(payload["anchor_index"]),
+        decision_time_utc=str(payload["decision_time_utc"]),
+        decision_time_ns=int(payload["decision_time_ns"]),
+        user_id=int(payload["user_id"]),
+        action_index=int(payload["action_index"]),
+        action=PhysicalAction(
+            None if action["norad_id"] is None else int(action["norad_id"]),
+            None if action["beam_chain_id"] is None else int(action["beam_chain_id"]),
+        ),
+        reference_action=bool(payload["reference_action"]),
+        action_mask=tuple(bool(value) for value in mask),
+        q1_state=tuple(parse_float_hex(value, field="q1_state") for value in q1),
+        q2_state=tuple(parse_float_hex(value, field="q2_state") for value in q2),
+        incumbent_context_nominal_decoding_margin_db_hex=str(
+            payload["incumbent_context_nominal_decoding_margin_db_hex"]
+        ),
+        q1_schema_sha256=str(payload["q1_schema_sha256"]),
+        q2_schema_sha256=str(payload["q2_schema_sha256"]),
+        setting_id=str(payload["setting_id"]),
+        code_digest=str(payload["code_digest"]),
+        physics_digest=str(payload["physics_digest"]),
+        launch_digest=str(payload["launch_digest"]),
+        catalogue_digest=str(payload["catalogue_digest"]),
+        setting_digest=str(payload["setting_digest"]),
+        calibration_digest=str(payload["calibration_digest"]),
+        provider_digest=str(payload["provider_digest"]),
+        archive_digest=str(payload["archive_digest"]),
+        allocation_manifest_digest=str(payload["allocation_manifest_digest"]),
+        lambda_bits_per_j_hex=str(payload["lambda_bits_per_j_hex"]),
+        eta_ref_bits_per_j_hex=str(payload["eta_ref_bits_per_j_hex"]),
+        kappa_normalization_bits_hex=str(payload["kappa_normalization_bits_hex"]),
+        c1_label_bits_hex=str(payload["c1_label_bits_hex"]),
+        c1_phi_difference_hex=str(payload["c1_phi_difference_hex"]),
+        c2_label_bits_hex=str(payload["c2_label_bits_hex"]),
+        c1_label_normalized_hex=str(payload["c1_label_normalized_hex"]),
+        c2_label_normalized_hex=str(payload["c2_label_normalized_hex"]),
+        source_provenance_sha256=str(payload["source_provenance_sha256"]),
+        forecast_method_sha256=str(payload["forecast_method_sha256"]),
+        visible_primitives_sha256=str(payload["visible_primitives_sha256"]),
+        tle_provenance=str(payload["tle_provenance"]),
+        future_tle_access=str(payload["future_tle_access"]),
+        terminal=bool(payload["terminal"]),
+        null_action=bool(payload["null_action"]),
+        outage=bool(payload["outage"]),
+    )
+    if row.schema != ROW_SCHEMA_VERSION or row.split != "TRAIN":
+        raise StageCContractError("source shard contains a non-TRAIN or unsupported row")
+    if row.q1_schema_sha256 != Q1_SCHEMA_SHA256 or row.q2_schema_sha256 != Q2_SCHEMA_SHA256:
+        raise StageCContractError("source row state schema digest drifted")
+    for field in (
+        "code_digest", "physics_digest", "launch_digest", "catalogue_digest",
+        "setting_digest", "calibration_digest",
+        "provider_digest", "archive_digest",
+        "allocation_manifest_digest",
+        "source_provenance_sha256", "forecast_method_sha256", "visible_primitives_sha256",
+    ):
+        _parse_digest(getattr(row, field), field=field)
+    if (
+        row.tle_provenance
+        not in {
+            "nearest_epoch_retrospective_benchmark",
+            "causal_ephemeris_available_by_decision_time",
+        }
+        or row.future_tle_access != "declared_forecast_horizon_only"
+    ):
+        raise StageCContractError("source row TLE provenance/access drifted")
+    if row.null_action != row.action.is_null:
+        raise StageCContractError("null-action flag disagrees with physical identity")
+    if (
+        row.action_index < 0
+        or row.action_index >= len(row.action_mask)
+        or not row.action_mask[row.action_index]
+    ):
+        raise StageCContractError("source row action index is absent or masked")
+    if row.reference_action and not row.action_mask[row.action_index]:
+        raise StageCContractError("source row BASE action is masked")
+    lambda_bits_per_j = parse_float_hex(
+        row.lambda_bits_per_j_hex, field="lambda_bits_per_j_hex"
+    )
+    eta_ref_bits_per_j = parse_float_hex(
+        row.eta_ref_bits_per_j_hex, field="eta_ref_bits_per_j_hex"
+    )
+    kappa = parse_float_hex(
+        row.kappa_normalization_bits_hex,
+        field="kappa_normalization_bits_hex",
+    )
+
+codex
+The implementation will keep mechanism selection deterministic and unlearned: legal alternatives come from the engine’s sealed shortlist ordering, exact objective values come only from the sealed nominal evaluator, and every interaction label subtracts exact singleton evaluations. I’m also separating the trainable C3 shards from a family index and the nested-mask scalar-observation ledger, so the existing learner format stays valid while family provenance and the “64 observations, not 57 independent measurements” distinction remain explicit.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-coalgen-ws/src/mcrl/stagec_v025/mechanism_corpus.py
+/home/sat/mcrl-v025-coalgen-ws/tests/stagec_v025/test_mechanism_corpus.py
+diff --git a/src/mcrl/stagec_v025/mechanism_corpus.py b/src/mcrl/stagec_v025/mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d0dbfa10ff7ca789ec4304225fc9f0a1b82ac58
+--- /dev/null
++++ b/src/mcrl/stagec_v025/mechanism_corpus.py
+@@ -0,0 +1,276 @@
++"""Mechanism-aware coalition selection and exact higher-order diagnostics.
++
++This module is deliberately independent of the pilot feature encoder.  It
++operates on immutable action assignments and scalar evaluations of the sealed
++objective; callers may attach whatever feature context their learner needs.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from fractions import Fraction
++import itertools
++from typing import Callable, Hashable, Mapping, Sequence
++
++
++PAIR_CATALOGUE = "pair-catalogue"
++OCCUPANCY_ACTIVATION = "occupancy-activation"
++AGGRESSOR_RELIEF = "aggressor-relief"
++BEAM_EVACUATION = "beam-evacuation"
++NESTED_SUBSETS = "nested-subsets"
++FAMILIES = (
++    PAIR_CATALOGUE,
++    OCCUPANCY_ACTIVATION,
++    AGGRESSOR_RELIEF,
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++)
++
++Action = Hashable
++Assignment = Mapping[int, Action]
++
++
++@dataclass(frozen=True, slots=True)
++class CoalitionProposal:
++    """A deterministic proposed action for a named mechanism family."""
++
++    family: str
++    selected_actions: tuple[tuple[int, Action], ...]
++    mechanism_key: str
++    metadata: Mapping[str, object] = field(default_factory=dict)
++
++    def __post_init__(self) -> None:
++        users = tuple(user for user, _action in self.selected_actions)
++        if self.family not in FAMILIES:
++            raise ValueError(f"unknown coalition family {self.family!r}")
++        if not users or users != tuple(sorted(users)) or len(set(users)) != len(users):
++            raise ValueError("proposal users must be nonempty, unique, and sorted")
++
++    @property
++    def users(self) -> tuple[int, ...]:
++        return tuple(user for user, _action in self.selected_actions)
++
++    def mapping(self, anchor: Assignment) -> dict[int, Action]:
++        result = dict(anchor)
++        for user, action in self.selected_actions:
++            if result[user] == action:
++                raise ValueError("coalition proposals must change every member action")
++            result[user] = action
++        return result
++
++
++@dataclass(frozen=True, slots=True)
++class ExactInteractionLabel:
++    """Exact additive residual and its complete evaluation receipt."""
++
++    users: tuple[int, ...]
++    baseline: Fraction
++    singleton_values: tuple[tuple[int, Fraction], ...]
++    coalition_value: Fraction
++    singleton_differences: tuple[tuple[int, Fraction], ...]
++    objective_delta: Fraction
++    psi: Fraction
++    distinct_evaluation_count: int
++
++
++def exact_interaction_label(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> ExactInteractionLabel:
++    """Evaluate baseline, every exact singleton, and the joint configuration.
++
++    A size-k label necessarily authenticates k+2 distinct configurations.
++    Learned singleton predictions are never accepted by this interface.
++    """
++
++    users = tuple(sorted(user for user in anchor if anchor[user] != selected[user]))
++    if len(users) < 2:
++        raise ValueError("interaction labels require at least two changed users")
++    baseline = evaluate(anchor)
++    singleton_values: list[tuple[int, Fraction]] = []
++    identities = {tuple(sorted(anchor.items()))}
++    for user in users:
++        mapping = dict(anchor)
++        mapping[user] = selected[user]
++        identity = tuple(sorted(mapping.items()))
++        if identity in identities:
++            raise ValueError("singleton evaluation is not distinct from baseline")
++        identities.add(identity)
++        singleton_values.append((user, evaluate(mapping)))
++    selected_identity = tuple(sorted(selected.items()))
++    if selected_identity in identities:
++        raise ValueError("coalition evaluation is not distinct from baseline/singletons")
++    identities.add(selected_identity)
++    coalition_value = evaluate(selected)
++    singleton_differences = tuple(
++        (user, value - baseline) for user, value in singleton_values
++    )
++    objective_delta = coalition_value - baseline
++    psi = objective_delta - sum(
++        (difference for _user, difference in singleton_differences), Fraction()
++    )
++    if len(identities) != len(users) + 2:
++        raise AssertionError("exact interaction receipt lost a required evaluation")
++    return ExactInteractionLabel(
++        users=users,
++        baseline=baseline,
++        singleton_values=tuple(singleton_values),
++        coalition_value=coalition_value,
++        singleton_differences=singleton_differences,
++        objective_delta=objective_delta,
++        psi=psi,
++        distinct_evaluation_count=len(identities),
++    )
++
++
++def exact_r3(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    label: ExactInteractionLabel,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> tuple[Fraction, tuple[tuple[tuple[int, int], Fraction], ...]]:
++    """Return R3(A)=Psi(A)-sum_{pairs in A} Psi(pair), exactly."""
++
++    if len(label.users) < 3:
++        raise ValueError("R3 is defined here only for coalitions of size >=3")
++    singleton = dict(label.singleton_values)
++    pair_terms: list[tuple[tuple[int, int], Fraction]] = []
++    for first, second in itertools.combinations(label.users, 2):
++        mapping = dict(anchor)
++        mapping[first] = selected[first]
++        mapping[second] = selected[second]
++        pair_value = evaluate(mapping)
++        pair_psi = (
++            pair_value
++            - label.baseline
++            - (singleton[first] - label.baseline)
++            - (singleton[second] - label.baseline)
++        )
++        pair_terms.append(((first, second), pair_psi))
++    return (
++        label.psi - sum((value for _pair, value in pair_terms), Fraction()),
++        tuple(pair_terms),
++    )
++
++
++def best_alternatives(
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> dict[int, Action]:
++    """First sealed-shortlist action different from the anchor, per user."""
++
++    return {
++        user: next(action for action in legal_actions[user] if action != anchor[user])
++        for user in sorted(anchor)
++        if any(action != anchor[user] for action in legal_actions[user])
++    }
++
++
++def occupancy_activation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Move the minimum available users into every beam at occupancy one/two.
++
++    Occupancy-two activations are returned as singleton mechanism observations;
++    callers exclude them from an interaction-training shard because an exact
++    singleton has no interaction residual.  Occupancy-one activations are
++    trainable pairs and cross the same occupancy-three threshold.
++    """
++
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result: list[CoalitionProposal] = []
++    for beam, current_users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        occupancy = len(current_users)
++        if occupancy not in (1, 2):
++            continue
++        needed = 3 - occupancy
++        candidates = [
++            (tuple(legal_actions[user]).index(beam), user)
++            for user in sorted(anchor)
++            if anchor[user] != beam and beam in legal_actions[user]
++        ]
++        selected_users = tuple(user for _rank, user in sorted(candidates)[:needed])
++        if len(selected_users) != needed:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=OCCUPANCY_ACTIVATION,
++                selected_actions=tuple((user, beam) for user in selected_users),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={
++                    "beam": repr(beam),
++                    "occupancy_before": occupancy,
++                    "occupancy_after": 3,
++                    "incoming_users": list(selected_users),
++                },
++            )
++        )
++    return tuple(result)
++
++
++def beam_evacuation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Evacuate every beam with two or three occupants to best alternatives."""
++
++    alternatives = best_alternatives(anchor, legal_actions)
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result = []
++    for beam, users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        if len(users) not in (2, 3) or any(user not in alternatives for user in users):
++            continue
++        result.append(
++            CoalitionProposal(
++                family=BEAM_EVACUATION,
++                selected_actions=tuple((user, alternatives[user]) for user in sorted(users)),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={"beam": repr(beam), "occupancy_before": len(users), "occupancy_after": 0},
++            )
++        )
++    return tuple(result)
++
++
++def nested_subset_proposals(
++    *,
++    block: Sequence[int],
++    alternatives: Mapping[int, Action],
++) -> tuple[CoalitionProposal, ...]:
++    """Every non-trivial subset of one five/six-user alternative block."""
++
++    users = tuple(sorted(int(user) for user in block))
++    if len(users) not in (5, 6) or len(set(users)) != len(users):
++        raise ValueError("nested subset blocks must contain five or six unique users")
++    if not set(users) <= set(alternatives):
++        raise ValueError("every nested-block user requires a legal alternative")
++    result = []
++    for mask in range(1 << len(users)):
++        selected = tuple(
++            (user, alternatives[user])
++            for offset, user in enumerate(users)
++            if mask & (1 << offset)
++        )
++        if len(selected) < 2:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=NESTED_SUBSETS,
++                selected_actions=selected,
++                mechanism_key=f"block:{','.join(map(str, users))}:mask:{mask:0{len(users)}b}",
++                metadata={"block": list(users), "mask": mask, "scalar_observation_count": 1 << len(users)},
++            )
++        )
++    return tuple(result)
++
+diff --git a/tests/stagec_v025/test_mechanism_corpus.py b/tests/stagec_v025/test_mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..929ce3aed42fcf50da10a890c54e8dcfc460eb34
+--- /dev/null
++++ b/tests/stagec_v025/test_mechanism_corpus.py
+@@ -0,0 +1,63 @@
++from fractions import Fraction
++
++import pytest
++
++from mcrl.stagec_v025.mechanism_corpus import (
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++    OCCUPANCY_ACTIVATION,
++    beam_evacuation_proposals,
++    exact_interaction_label,
++    exact_r3,
++    nested_subset_proposals,
++    occupancy_activation_proposals,
++)
++
++
++def test_exact_label_uses_k_plus_two_distinct_scalar_evaluations() -> None:
++    anchor = {0: "a", 1: "a", 2: "a"}
++    selected = {0: "b", 1: "b", 2: "b"}
++    calls = []
++
++    def value(mapping):
++        changed = frozenset(user for user in anchor if mapping[user] != anchor[user])
++        calls.append(tuple(sorted(mapping.items())))
++        singleton = sum(Fraction(user + 1) for user in changed)
++        pairs = 10 * sum(1 for pair in ((0, 1), (0, 2), (1, 2)) if set(pair) <= changed)
++        triple = 7 if changed == frozenset((0, 1, 2)) else 0
++        return singleton + pairs + triple
++
++    label = exact_interaction_label(anchor=anchor, selected=selected, evaluate=value)
++    assert label.distinct_evaluation_count == 5
++    assert len(set(calls)) == 5
++    assert label.psi == 37
++    r3, pairs = exact_r3(anchor=anchor, selected=selected, label=label, evaluate=value)
++    assert [value for _pair, value in pairs] == [10, 10, 10]
++    assert r3 == 7
++
++
++def test_mechanism_selectors_cover_activation_evacuation_and_nested_sizes() -> None:
++    anchor = {0: "x", 1: "x", 2: "y", 3: "z", 4: "u", 5: "v"}
++    legal = {
++        0: ("x", "a"), 1: ("x", "b"), 2: ("y", "x", "c"),
++        3: ("z", "y", "d"), 4: ("u", "y", "e"), 5: ("v", "y", "f"),
++    }
++    activations = occupancy_activation_proposals(anchor=anchor, legal_actions=legal)
++    assert any(row.family == OCCUPANCY_ACTIVATION and len(row.users) == 2 for row in activations)
++    evacuations = beam_evacuation_proposals(anchor=anchor, legal_actions=legal)
++    assert len(evacuations) == 1
++    assert evacuations[0].family == BEAM_EVACUATION
++    alternatives = {user: actions[1] for user, actions in legal.items()}
++    nested = nested_subset_proposals(block=range(6), alternatives=alternatives)
++    assert len(nested) == 57
++    assert {len(row.users) for row in nested} == {2, 3, 4, 5, 6}
++    assert all(row.family == NESTED_SUBSETS for row in nested)
++
++
++def test_exact_label_rejects_a_noninteraction_singleton() -> None:
++    with pytest.raises(ValueError, match="at least two"):
++        exact_interaction_label(
++            anchor={0: "a", 1: "a"},
++            selected={0: "b", 1: "a"},
++            evaluate=lambda _mapping: Fraction(),
++        )
+
+diff --git a/src/mcrl/stagec_v025/mechanism_corpus.py b/src/mcrl/stagec_v025/mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d0dbfa10ff7ca789ec4304225fc9f0a1b82ac58
+--- /dev/null
++++ b/src/mcrl/stagec_v025/mechanism_corpus.py
+@@ -0,0 +1,276 @@
++"""Mechanism-aware coalition selection and exact higher-order diagnostics.
++
++This module is deliberately independent of the pilot feature encoder.  It
++operates on immutable action assignments and scalar evaluations of the sealed
++objective; callers may attach whatever feature context their learner needs.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from fractions import Fraction
++import itertools
++from typing import Callable, Hashable, Mapping, Sequence
++
++
++PAIR_CATALOGUE = "pair-catalogue"
++OCCUPANCY_ACTIVATION = "occupancy-activation"
++AGGRESSOR_RELIEF = "aggressor-relief"
++BEAM_EVACUATION = "beam-evacuation"
++NESTED_SUBSETS = "nested-subsets"
++FAMILIES = (
++    PAIR_CATALOGUE,
++    OCCUPANCY_ACTIVATION,
++    AGGRESSOR_RELIEF,
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++)
++
++Action = Hashable
++Assignment = Mapping[int, Action]
++
++
++@dataclass(frozen=True, slots=True)
++class CoalitionProposal:
++    """A deterministic proposed action for a named mechanism family."""
++
++    family: str
++    selected_actions: tuple[tuple[int, Action], ...]
++    mechanism_key: str
++    metadata: Mapping[str, object] = field(default_factory=dict)
++
++    def __post_init__(self) -> None:
++        users = tuple(user for user, _action in self.selected_actions)
++        if self.family not in FAMILIES:
++            raise ValueError(f"unknown coalition family {self.family!r}")
++        if not users or users != tuple(sorted(users)) or len(set(users)) != len(users):
++            raise ValueError("proposal users must be nonempty, unique, and sorted")
++
++    @property
++    def users(self) -> tuple[int, ...]:
++        return tuple(user for user, _action in self.selected_actions)
++
++    def mapping(self, anchor: Assignment) -> dict[int, Action]:
++        result = dict(anchor)
++        for user, action in self.selected_actions:
++            if result[user] == action:
++                raise ValueError("coalition proposals must change every member action")
++            result[user] = action
++        return result
++
++
++@dataclass(frozen=True, slots=True)
++class ExactInteractionLabel:
++    """Exact additive residual and its complete evaluation receipt."""
++
++    users: tuple[int, ...]
++    baseline: Fraction
++    singleton_values: tuple[tuple[int, Fraction], ...]
++    coalition_value: Fraction
++    singleton_differences: tuple[tuple[int, Fraction], ...]
++    objective_delta: Fraction
++    psi: Fraction
++    distinct_evaluation_count: int
++
++
++def exact_interaction_label(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> ExactInteractionLabel:
++    """Evaluate baseline, every exact singleton, and the joint configuration.
++
++    A size-k label necessarily authenticates k+2 distinct configurations.
++    Learned singleton predictions are never accepted by this interface.
++    """
++
++    users = tuple(sorted(user for user in anchor if anchor[user] != selected[user]))
++    if len(users) < 2:
++        raise ValueError("interaction labels require at least two changed users")
++    baseline = evaluate(anchor)
++    singleton_values: list[tuple[int, Fraction]] = []
++    identities = {tuple(sorted(anchor.items()))}
++    for user in users:
++        mapping = dict(anchor)
++        mapping[user] = selected[user]
++        identity = tuple(sorted(mapping.items()))
++        if identity in identities:
++            raise ValueError("singleton evaluation is not distinct from baseline")
++        identities.add(identity)
++        singleton_values.append((user, evaluate(mapping)))
++    selected_identity = tuple(sorted(selected.items()))
++    if selected_identity in identities:
++        raise ValueError("coalition evaluation is not distinct from baseline/singletons")
++    identities.add(selected_identity)
++    coalition_value = evaluate(selected)
++    singleton_differences = tuple(
++        (user, value - baseline) for user, value in singleton_values
++    )
++    objective_delta = coalition_value - baseline
++    psi = objective_delta - sum(
++        (difference for _user, difference in singleton_differences), Fraction()
++    )
++    if len(identities) != len(users) + 2:
++        raise AssertionError("exact interaction receipt lost a required evaluation")
++    return ExactInteractionLabel(
++        users=users,
++        baseline=baseline,
++        singleton_values=tuple(singleton_values),
++        coalition_value=coalition_value,
++        singleton_differences=singleton_differences,
++        objective_delta=objective_delta,
++        psi=psi,
++        distinct_evaluation_count=len(identities),
++    )
++
++
++def exact_r3(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    label: ExactInteractionLabel,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> tuple[Fraction, tuple[tuple[tuple[int, int], Fraction], ...]]:
++    """Return R3(A)=Psi(A)-sum_{pairs in A} Psi(pair), exactly."""
++
++    if len(label.users) < 3:
++        raise ValueError("R3 is defined here only for coalitions of size >=3")
++    singleton = dict(label.singleton_values)
++    pair_terms: list[tuple[tuple[int, int], Fraction]] = []
++    for first, second in itertools.combinations(label.users, 2):
++        mapping = dict(anchor)
++        mapping[first] = selected[first]
++        mapping[second] = selected[second]
++        pair_value = evaluate(mapping)
++        pair_psi = (
++            pair_value
++            - label.baseline
++            - (singleton[first] - label.baseline)
++            - (singleton[second] - label.baseline)
++        )
++        pair_terms.append(((first, second), pair_psi))
++    return (
++        label.psi - sum((value for _pair, value in pair_terms), Fraction()),
++        tuple(pair_terms),
++    )
++
++
++def best_alternatives(
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> dict[int, Action]:
++    """First sealed-shortlist action different from the anchor, per user."""
++
++    return {
++        user: next(action for action in legal_actions[user] if action != anchor[user])
++        for user in sorted(anchor)
++        if any(action != anchor[user] for action in legal_actions[user])
++    }
++
++
++def occupancy_activation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Move the minimum available users into every beam at occupancy one/two.
++
++    Occupancy-two activations are returned as singleton mechanism observations;
++    callers exclude them from an interaction-training shard because an exact
++    singleton has no interaction residual.  Occupancy-one activations are
++    trainable pairs and cross the same occupancy-three threshold.
++    """
++
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result: list[CoalitionProposal] = []
++    for beam, current_users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        occupancy = len(current_users)
++        if occupancy not in (1, 2):
++            continue
++        needed = 3 - occupancy
++        candidates = [
++            (tuple(legal_actions[user]).index(beam), user)
++            for user in sorted(anchor)
++            if anchor[user] != beam and beam in legal_actions[user]
++        ]
++        selected_users = tuple(user for _rank, user in sorted(candidates)[:needed])
++        if len(selected_users) != needed:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=OCCUPANCY_ACTIVATION,
++                selected_actions=tuple((user, beam) for user in selected_users),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={
++                    "beam": repr(beam),
++                    "occupancy_before": occupancy,
++                    "occupancy_after": 3,
++                    "incoming_users": list(selected_users),
++                },
++            )
++        )
++    return tuple(result)
++
++
++def beam_evacuation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Evacuate every beam with two or three occupants to best alternatives."""
++
++    alternatives = best_alternatives(anchor, legal_actions)
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result = []
++    for beam, users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        if len(users) not in (2, 3) or any(user not in alternatives for user in users):
++            continue
++        result.append(
++            CoalitionProposal(
++                family=BEAM_EVACUATION,
++                selected_actions=tuple((user, alternatives[user]) for user in sorted(users)),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={"beam": repr(beam), "occupancy_before": len(users), "occupancy_after": 0},
++            )
++        )
++    return tuple(result)
++
++
++def nested_subset_proposals(
++    *,
++    block: Sequence[int],
++    alternatives: Mapping[int, Action],
++) -> tuple[CoalitionProposal, ...]:
++    """Every non-trivial subset of one five/six-user alternative block."""
++
++    users = tuple(sorted(int(user) for user in block))
++    if len(users) not in (5, 6) or len(set(users)) != len(users):
++        raise ValueError("nested subset blocks must contain five or six unique users")
++    if not set(users) <= set(alternatives):
++        raise ValueError("every nested-block user requires a legal alternative")
++    result = []
++    for mask in range(1 << len(users)):
++        selected = tuple(
++            (user, alternatives[user])
++            for offset, user in enumerate(users)
++            if mask & (1 << offset)
++        )
++        if len(selected) < 2:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=NESTED_SUBSETS,
++                selected_actions=selected,
++                mechanism_key=f"block:{','.join(map(str, users))}:mask:{mask:0{len(users)}b}",
++                metadata={"block": list(users), "mask": mask, "scalar_observation_count": 1 << len(users)},
++            )
++        )
++    return tuple(result)
++
+diff --git a/tests/stagec_v025/test_mechanism_corpus.py b/tests/stagec_v025/test_mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..929ce3aed42fcf50da10a890c54e8dcfc460eb34
+--- /dev/null
++++ b/tests/stagec_v025/test_mechanism_corpus.py
+@@ -0,0 +1,63 @@
++from fractions import Fraction
++
++import pytest
++
++from mcrl.stagec_v025.mechanism_corpus import (
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++    OCCUPANCY_ACTIVATION,
++    beam_evacuation_proposals,
++    exact_interaction_label,
++    exact_r3,
++    nested_subset_proposals,
++    occupancy_activation_proposals,
++)
++
++
++def test_exact_label_uses_k_plus_two_distinct_scalar_evaluations() -> None:
++    anchor = {0: "a", 1: "a", 2: "a"}
++    selected = {0: "b", 1: "b", 2: "b"}
++    calls = []
++
++    def value(mapping):
++        changed = frozenset(user for user in anchor if mapping[user] != anchor[user])
++        calls.append(tuple(sorted(mapping.items())))
++        singleton = sum(Fraction(user + 1) for user in changed)
++        pairs = 10 * sum(1 for pair in ((0, 1), (0, 2), (1, 2)) if set(pair) <= changed)
++        triple = 7 if changed == frozenset((0, 1, 2)) else 0
++        return singleton + pairs + triple
++
++    label = exact_interaction_label(anchor=anchor, selected=selected, evaluate=value)
++    assert label.distinct_evaluation_count == 5
++    assert len(set(calls)) == 5
++    assert label.psi == 37
++    r3, pairs = exact_r3(anchor=anchor, selected=selected, label=label, evaluate=value)
++    assert [value for _pair, value in pairs] == [10, 10, 10]
++    assert r3 == 7
++
++
++def test_mechanism_selectors_cover_activation_evacuation_and_nested_sizes() -> None:
++    anchor = {0: "x", 1: "x", 2: "y", 3: "z", 4: "u", 5: "v"}
++    legal = {
++        0: ("x", "a"), 1: ("x", "b"), 2: ("y", "x", "c"),
++        3: ("z", "y", "d"), 4: ("u", "y", "e"), 5: ("v", "y", "f"),
++    }
++    activations = occupancy_activation_proposals(anchor=anchor, legal_actions=legal)
++    assert any(row.family == OCCUPANCY_ACTIVATION and len(row.users) == 2 for row in activations)
++    evacuations = beam_evacuation_proposals(anchor=anchor, legal_actions=legal)
++    assert len(evacuations) == 1
++    assert evacuations[0].family == BEAM_EVACUATION
++    alternatives = {user: actions[1] for user, actions in legal.items()}
++    nested = nested_subset_proposals(block=range(6), alternatives=alternatives)
++    assert len(nested) == 57
++    assert {len(row.users) for row in nested} == {2, 3, 4, 5, 6}
++    assert all(row.family == NESTED_SUBSETS for row in nested)
++
++
++def test_exact_label_rejects_a_noninteraction_singleton() -> None:
++    with pytest.raises(ValueError, match="at least two"):
++        exact_interaction_label(
++            anchor={0: "a", 1: "a"},
++            selected={0: "b", 1: "a"},
++            evaluate=lambda _mapping: Fraction(),
++        )
+
+exec
+/bin/bash -lc 'nice -n 10 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest -q tests/stagec_v025/test_mechanism_corpus.py' in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 179ms:
+...                                                                      [100%]
+
+diff --git a/src/mcrl/stagec_v025/mechanism_corpus.py b/src/mcrl/stagec_v025/mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d0dbfa10ff7ca789ec4304225fc9f0a1b82ac58
+--- /dev/null
++++ b/src/mcrl/stagec_v025/mechanism_corpus.py
+@@ -0,0 +1,276 @@
++"""Mechanism-aware coalition selection and exact higher-order diagnostics.
++
++This module is deliberately independent of the pilot feature encoder.  It
++operates on immutable action assignments and scalar evaluations of the sealed
++objective; callers may attach whatever feature context their learner needs.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from fractions import Fraction
++import itertools
++from typing import Callable, Hashable, Mapping, Sequence
++
++
++PAIR_CATALOGUE = "pair-catalogue"
++OCCUPANCY_ACTIVATION = "occupancy-activation"
++AGGRESSOR_RELIEF = "aggressor-relief"
++BEAM_EVACUATION = "beam-evacuation"
++NESTED_SUBSETS = "nested-subsets"
++FAMILIES = (
++    PAIR_CATALOGUE,
++    OCCUPANCY_ACTIVATION,
++    AGGRESSOR_RELIEF,
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++)
++
++Action = Hashable
++Assignment = Mapping[int, Action]
++
++
++@dataclass(frozen=True, slots=True)
++class CoalitionProposal:
++    """A deterministic proposed action for a named mechanism family."""
++
++    family: str
++    selected_actions: tuple[tuple[int, Action], ...]
++    mechanism_key: str
++    metadata: Mapping[str, object] = field(default_factory=dict)
++
++    def __post_init__(self) -> None:
++        users = tuple(user for user, _action in self.selected_actions)
++        if self.family not in FAMILIES:
++            raise ValueError(f"unknown coalition family {self.family!r}")
++        if not users or users != tuple(sorted(users)) or len(set(users)) != len(users):
++            raise ValueError("proposal users must be nonempty, unique, and sorted")
++
++    @property
++    def users(self) -> tuple[int, ...]:
++        return tuple(user for user, _action in self.selected_actions)
++
++    def mapping(self, anchor: Assignment) -> dict[int, Action]:
++        result = dict(anchor)
++        for user, action in self.selected_actions:
++            if result[user] == action:
++                raise ValueError("coalition proposals must change every member action")
++            result[user] = action
++        return result
++
++
++@dataclass(frozen=True, slots=True)
++class ExactInteractionLabel:
++    """Exact additive residual and its complete evaluation receipt."""
++
++    users: tuple[int, ...]
++    baseline: Fraction
++    singleton_values: tuple[tuple[int, Fraction], ...]
++    coalition_value: Fraction
++    singleton_differences: tuple[tuple[int, Fraction], ...]
++    objective_delta: Fraction
++    psi: Fraction
++    distinct_evaluation_count: int
++
++
++def exact_interaction_label(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> ExactInteractionLabel:
++    """Evaluate baseline, every exact singleton, and the joint configuration.
++
++    A size-k label necessarily authenticates k+2 distinct configurations.
++    Learned singleton predictions are never accepted by this interface.
++    """
++
++    users = tuple(sorted(user for user in anchor if anchor[user] != selected[user]))
++    if len(users) < 2:
++        raise ValueError("interaction labels require at least two changed users")
++    baseline = evaluate(anchor)
++    singleton_values: list[tuple[int, Fraction]] = []
++    identities = {tuple(sorted(anchor.items()))}
++    for user in users:
++        mapping = dict(anchor)
++        mapping[user] = selected[user]
++        identity = tuple(sorted(mapping.items()))
++        if identity in identities:
++            raise ValueError("singleton evaluation is not distinct from baseline")
++        identities.add(identity)
++        singleton_values.append((user, evaluate(mapping)))
++    selected_identity = tuple(sorted(selected.items()))
++    if selected_identity in identities:
++        raise ValueError("coalition evaluation is not distinct from baseline/singletons")
++    identities.add(selected_identity)
++    coalition_value = evaluate(selected)
++    singleton_differences = tuple(
++        (user, value - baseline) for user, value in singleton_values
++    )
++    objective_delta = coalition_value - baseline
++    psi = objective_delta - sum(
++        (difference for _user, difference in singleton_differences), Fraction()
++    )
++    if len(identities) != len(users) + 2:
++        raise AssertionError("exact interaction receipt lost a required evaluation")
++    return ExactInteractionLabel(
++        users=users,
++        baseline=baseline,
++        singleton_values=tuple(singleton_values),
++        coalition_value=coalition_value,
++        singleton_differences=singleton_differences,
++        objective_delta=objective_delta,
++        psi=psi,
++        distinct_evaluation_count=len(identities),
++    )
++
++
++def exact_r3(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    label: ExactInteractionLabel,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> tuple[Fraction, tuple[tuple[tuple[int, int], Fraction], ...]]:
++    """Return R3(A)=Psi(A)-sum_{pairs in A} Psi(pair), exactly."""
++
++    if len(label.users) < 3:
++        raise ValueError("R3 is defined here only for coalitions of size >=3")
++    singleton = dict(label.singleton_values)
++    pair_terms: list[tuple[tuple[int, int], Fraction]] = []
++    for first, second in itertools.combinations(label.users, 2):
++        mapping = dict(anchor)
++        mapping[first] = selected[first]
++        mapping[second] = selected[second]
++        pair_value = evaluate(mapping)
++        pair_psi = (
++            pair_value
++            - label.baseline
++            - (singleton[first] - label.baseline)
++            - (singleton[second] - label.baseline)
++        )
++        pair_terms.append(((first, second), pair_psi))
++    return (
++        label.psi - sum((value for _pair, value in pair_terms), Fraction()),
++        tuple(pair_terms),
++    )
++
++
++def best_alternatives(
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> dict[int, Action]:
++    """First sealed-shortlist action different from the anchor, per user."""
++
++    return {
++        user: next(action for action in legal_actions[user] if action != anchor[user])
++        for user in sorted(anchor)
++        if any(action != anchor[user] for action in legal_actions[user])
++    }
++
++
++def occupancy_activation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Move the minimum available users into every beam at occupancy one/two.
++
++    Occupancy-two activations are returned as singleton mechanism observations;
++    callers exclude them from an interaction-training shard because an exact
++    singleton has no interaction residual.  Occupancy-one activations are
++    trainable pairs and cross the same occupancy-three threshold.
++    """
++
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result: list[CoalitionProposal] = []
++    for beam, current_users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        occupancy = len(current_users)
++        if occupancy not in (1, 2):
++            continue
++        needed = 3 - occupancy
++        candidates = [
++            (tuple(legal_actions[user]).index(beam), user)
++            for user in sorted(anchor)
++            if anchor[user] != beam and beam in legal_actions[user]
++        ]
++        selected_users = tuple(user for _rank, user in sorted(candidates)[:needed])
++        if len(selected_users) != needed:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=OCCUPANCY_ACTIVATION,
++                selected_actions=tuple((user, beam) for user in selected_users),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={
++                    "beam": repr(beam),
++                    "occupancy_before": occupancy,
++                    "occupancy_after": 3,
++                    "incoming_users": list(selected_users),
++                },
++            )
++        )
++    return tuple(result)
++
++
++def beam_evacuation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Evacuate every beam with two or three occupants to best alternatives."""
++
++    alternatives = best_alternatives(anchor, legal_actions)
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result = []
++    for beam, users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        if len(users) not in (2, 3) or any(user not in alternatives for user in users):
++            continue
++        result.append(
++            CoalitionProposal(
++                family=BEAM_EVACUATION,
++                selected_actions=tuple((user, alternatives[user]) for user in sorted(users)),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={"beam": repr(beam), "occupancy_before": len(users), "occupancy_after": 0},
++            )
++        )
++    return tuple(result)
++
++
++def nested_subset_proposals(
++    *,
++    block: Sequence[int],
++    alternatives: Mapping[int, Action],
++) -> tuple[CoalitionProposal, ...]:
++    """Every non-trivial subset of one five/six-user alternative block."""
++
++    users = tuple(sorted(int(user) for user in block))
++    if len(users) not in (5, 6) or len(set(users)) != len(users):
++        raise ValueError("nested subset blocks must contain five or six unique users")
++    if not set(users) <= set(alternatives):
++        raise ValueError("every nested-block user requires a legal alternative")
++    result = []
++    for mask in range(1 << len(users)):
++        selected = tuple(
++            (user, alternatives[user])
++            for offset, user in enumerate(users)
++            if mask & (1 << offset)
++        )
++        if len(selected) < 2:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=NESTED_SUBSETS,
++                selected_actions=selected,
++                mechanism_key=f"block:{','.join(map(str, users))}:mask:{mask:0{len(users)}b}",
++                metadata={"block": list(users), "mask": mask, "scalar_observation_count": 1 << len(users)},
++            )
++        )
++    return tuple(result)
++
+diff --git a/tests/stagec_v025/test_mechanism_corpus.py b/tests/stagec_v025/test_mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..929ce3aed42fcf50da10a890c54e8dcfc460eb34
+--- /dev/null
++++ b/tests/stagec_v025/test_mechanism_corpus.py
+@@ -0,0 +1,63 @@
++from fractions import Fraction
++
++import pytest
++
++from mcrl.stagec_v025.mechanism_corpus import (
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++    OCCUPANCY_ACTIVATION,
++    beam_evacuation_proposals,
++    exact_interaction_label,
++    exact_r3,
++    nested_subset_proposals,
++    occupancy_activation_proposals,
++)
++
++
++def test_exact_label_uses_k_plus_two_distinct_scalar_evaluations() -> None:
++    anchor = {0: "a", 1: "a", 2: "a"}
++    selected = {0: "b", 1: "b", 2: "b"}
++    calls = []
++
++    def value(mapping):
++        changed = frozenset(user for user in anchor if mapping[user] != anchor[user])
++        calls.append(tuple(sorted(mapping.items())))
++        singleton = sum(Fraction(user + 1) for user in changed)
++        pairs = 10 * sum(1 for pair in ((0, 1), (0, 2), (1, 2)) if set(pair) <= changed)
++        triple = 7 if changed == frozenset((0, 1, 2)) else 0
++        return singleton + pairs + triple
++
++    label = exact_interaction_label(anchor=anchor, selected=selected, evaluate=value)
++    assert label.distinct_evaluation_count == 5
++    assert len(set(calls)) == 5
++    assert label.psi == 37
++    r3, pairs = exact_r3(anchor=anchor, selected=selected, label=label, evaluate=value)
++    assert [value for _pair, value in pairs] == [10, 10, 10]
++    assert r3 == 7
++
++
++def test_mechanism_selectors_cover_activation_evacuation_and_nested_sizes() -> None:
++    anchor = {0: "x", 1: "x", 2: "y", 3: "z", 4: "u", 5: "v"}
++    legal = {
++        0: ("x", "a"), 1: ("x", "b"), 2: ("y", "x", "c"),
++        3: ("z", "y", "d"), 4: ("u", "y", "e"), 5: ("v", "y", "f"),
++    }
++    activations = occupancy_activation_proposals(anchor=anchor, legal_actions=legal)
++    assert any(row.family == OCCUPANCY_ACTIVATION and len(row.users) == 2 for row in activations)
++    evacuations = beam_evacuation_proposals(anchor=anchor, legal_actions=legal)
++    assert len(evacuations) == 1
++    assert evacuations[0].family == BEAM_EVACUATION
++    alternatives = {user: actions[1] for user, actions in legal.items()}
++    nested = nested_subset_proposals(block=range(6), alternatives=alternatives)
++    assert len(nested) == 57
++    assert {len(row.users) for row in nested} == {2, 3, 4, 5, 6}
++    assert all(row.family == NESTED_SUBSETS for row in nested)
++
++
++def test_exact_label_rejects_a_noninteraction_singleton() -> None:
++    with pytest.raises(ValueError, match="at least two"):
++        exact_interaction_label(
++            anchor={0: "a", 1: "a"},
++            selected={0: "b", 1: "a"},
++            evaluate=lambda _mapping: Fraction(),
++        )
+
+exec
+/bin/bash -lc 'rg -n "cross_base_nominal|row_user_column|identity_.*column" src/mcrl/physics_v025 .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | head -120' in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:390:            int(arrays.users[int(arrays.row_user_column[row])])
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:434:            user = int(arrays.users[int(arrays.row_user_column[row])])
+src/mcrl/physics_v025/tapes.py:358:    row_user_column: np.ndarray
+src/mcrl/physics_v025/tapes.py:379:    cross_base_nominal: np.ndarray
+src/mcrl/physics_v025/tapes.py:399:        for name in ("row_user_column", "legacy_action_index", "colors", "row_wanted_slot"):
+src/mcrl/physics_v025/tapes.py:415:        if arrays["cross_base_nominal"].shape != (48, users, aggressors):
+src/mcrl/physics_v025/tapes.py:416:            raise MCRLContractError("cross_base_nominal must have shape (48,U,A)")
+src/mcrl/physics_v025/tapes.py:424:        if np.any(arrays["row_user_column"] < 0) or np.any(arrays["row_user_column"] >= users):
+src/mcrl/physics_v025/tapes.py:442:            (int(self.users[int(self.row_user_column[row])]),
+src/mcrl/physics_v025/tapes.py:469:        user = int(self.row_user_column[victim_row])
+src/mcrl/physics_v025/tapes.py:473:            self.cross_base_nominal[boundary_index, user, aggressor_index]
+src/mcrl/physics_v025/tapes.py:509:                    user_id=int(self.users[int(self.row_user_column[row])]),
+src/mcrl/physics_v025/tapes.py:575:            users = self.row_user_column[victim_rows]
+src/mcrl/physics_v025/tapes.py:579:            base_cross = self.cross_base_nominal[
+src/mcrl/physics_v025/tapes.py:609:                    int(self.users[int(self.row_user_column[row])]),
+src/mcrl/physics_v025/tapes.py:968:        user = int(arrays.users[int(arrays.row_user_column[row])])
+src/mcrl/physics_v025/provider_legacy.py:942:            row_user_column=row_user,
+src/mcrl/physics_v025/provider_legacy.py:963:            cross_base_nominal=cross_base,
+src/mcrl/physics_v025/batch.py:223:            base_cross = arrays.cross_base_nominal[
+
+diff --git a/src/mcrl/stagec_v025/mechanism_corpus.py b/src/mcrl/stagec_v025/mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d0dbfa10ff7ca789ec4304225fc9f0a1b82ac58
+--- /dev/null
++++ b/src/mcrl/stagec_v025/mechanism_corpus.py
+@@ -0,0 +1,276 @@
++"""Mechanism-aware coalition selection and exact higher-order diagnostics.
++
++This module is deliberately independent of the pilot feature encoder.  It
++operates on immutable action assignments and scalar evaluations of the sealed
++objective; callers may attach whatever feature context their learner needs.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from fractions import Fraction
++import itertools
++from typing import Callable, Hashable, Mapping, Sequence
++
++
++PAIR_CATALOGUE = "pair-catalogue"
++OCCUPANCY_ACTIVATION = "occupancy-activation"
++AGGRESSOR_RELIEF = "aggressor-relief"
++BEAM_EVACUATION = "beam-evacuation"
++NESTED_SUBSETS = "nested-subsets"
++FAMILIES = (
++    PAIR_CATALOGUE,
++    OCCUPANCY_ACTIVATION,
++    AGGRESSOR_RELIEF,
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++)
++
++Action = Hashable
++Assignment = Mapping[int, Action]
++
++
++@dataclass(frozen=True, slots=True)
++class CoalitionProposal:
++    """A deterministic proposed action for a named mechanism family."""
++
++    family: str
++    selected_actions: tuple[tuple[int, Action], ...]
++    mechanism_key: str
++    metadata: Mapping[str, object] = field(default_factory=dict)
++
++    def __post_init__(self) -> None:
++        users = tuple(user for user, _action in self.selected_actions)
++        if self.family not in FAMILIES:
++            raise ValueError(f"unknown coalition family {self.family!r}")
++        if not users or users != tuple(sorted(users)) or len(set(users)) != len(users):
++            raise ValueError("proposal users must be nonempty, unique, and sorted")
++
++    @property
++    def users(self) -> tuple[int, ...]:
++        return tuple(user for user, _action in self.selected_actions)
++
++    def mapping(self, anchor: Assignment) -> dict[int, Action]:
++        result = dict(anchor)
++        for user, action in self.selected_actions:
++            if result[user] == action:
++                raise ValueError("coalition proposals must change every member action")
++            result[user] = action
++        return result
++
++
++@dataclass(frozen=True, slots=True)
++class ExactInteractionLabel:
++    """Exact additive residual and its complete evaluation receipt."""
++
++    users: tuple[int, ...]
++    baseline: Fraction
++    singleton_values: tuple[tuple[int, Fraction], ...]
++    coalition_value: Fraction
++    singleton_differences: tuple[tuple[int, Fraction], ...]
++    objective_delta: Fraction
++    psi: Fraction
++    distinct_evaluation_count: int
++
++
++def exact_interaction_label(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> ExactInteractionLabel:
++    """Evaluate baseline, every exact singleton, and the joint configuration.
++
++    A size-k label necessarily authenticates k+2 distinct configurations.
++    Learned singleton predictions are never accepted by this interface.
++    """
++
++    users = tuple(sorted(user for user in anchor if anchor[user] != selected[user]))
++    if len(users) < 2:
++        raise ValueError("interaction labels require at least two changed users")
++    baseline = evaluate(anchor)
++    singleton_values: list[tuple[int, Fraction]] = []
++    identities = {tuple(sorted(anchor.items()))}
++    for user in users:
++        mapping = dict(anchor)
++        mapping[user] = selected[user]
++        identity = tuple(sorted(mapping.items()))
++        if identity in identities:
++            raise ValueError("singleton evaluation is not distinct from baseline")
++        identities.add(identity)
++        singleton_values.append((user, evaluate(mapping)))
++    selected_identity = tuple(sorted(selected.items()))
++    if selected_identity in identities:
++        raise ValueError("coalition evaluation is not distinct from baseline/singletons")
++    identities.add(selected_identity)
++    coalition_value = evaluate(selected)
++    singleton_differences = tuple(
++        (user, value - baseline) for user, value in singleton_values
++    )
++    objective_delta = coalition_value - baseline
++    psi = objective_delta - sum(
++        (difference for _user, difference in singleton_differences), Fraction()
++    )
++    if len(identities) != len(users) + 2:
++        raise AssertionError("exact interaction receipt lost a required evaluation")
++    return ExactInteractionLabel(
++        users=users,
++        baseline=baseline,
++        singleton_values=tuple(singleton_values),
++        coalition_value=coalition_value,
++        singleton_differences=singleton_differences,
++        objective_delta=objective_delta,
++        psi=psi,
++        distinct_evaluation_count=len(identities),
++    )
++
++
++def exact_r3(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    label: ExactInteractionLabel,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> tuple[Fraction, tuple[tuple[tuple[int, int], Fraction], ...]]:
++    """Return R3(A)=Psi(A)-sum_{pairs in A} Psi(pair), exactly."""
++
++    if len(label.users) < 3:
++        raise ValueError("R3 is defined here only for coalitions of size >=3")
++    singleton = dict(label.singleton_values)
++    pair_terms: list[tuple[tuple[int, int], Fraction]] = []
++    for first, second in itertools.combinations(label.users, 2):
++        mapping = dict(anchor)
++        mapping[first] = selected[first]
++        mapping[second] = selected[second]
++        pair_value = evaluate(mapping)
++        pair_psi = (
++            pair_value
++            - label.baseline
++            - (singleton[first] - label.baseline)
++            - (singleton[second] - label.baseline)
++        )
++        pair_terms.append(((first, second), pair_psi))
++    return (
++        label.psi - sum((value for _pair, value in pair_terms), Fraction()),
++        tuple(pair_terms),
++    )
++
++
++def best_alternatives(
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> dict[int, Action]:
++    """First sealed-shortlist action different from the anchor, per user."""
++
++    return {
++        user: next(action for action in legal_actions[user] if action != anchor[user])
++        for user in sorted(anchor)
++        if any(action != anchor[user] for action in legal_actions[user])
++    }
++
++
++def occupancy_activation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Move the minimum available users into every beam at occupancy one/two.
++
++    Occupancy-two activations are returned as singleton mechanism observations;
++    callers exclude them from an interaction-training shard because an exact
++    singleton has no interaction residual.  Occupancy-one activations are
++    trainable pairs and cross the same occupancy-three threshold.
++    """
++
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result: list[CoalitionProposal] = []
++    for beam, current_users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        occupancy = len(current_users)
++        if occupancy not in (1, 2):
++            continue
++        needed = 3 - occupancy
++        candidates = [
++            (tuple(legal_actions[user]).index(beam), user)
++            for user in sorted(anchor)
++            if anchor[user] != beam and beam in legal_actions[user]
++        ]
++        selected_users = tuple(user for _rank, user in sorted(candidates)[:needed])
++        if len(selected_users) != needed:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=OCCUPANCY_ACTIVATION,
++                selected_actions=tuple((user, beam) for user in selected_users),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={
++                    "beam": repr(beam),
++                    "occupancy_before": occupancy,
++                    "occupancy_after": 3,
++                    "incoming_users": list(selected_users),
++                },
++            )
++        )
++    return tuple(result)
++
++
++def beam_evacuation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Evacuate every beam with two or three occupants to best alternatives."""
++
++    alternatives = best_alternatives(anchor, legal_actions)
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result = []
++    for beam, users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        if len(users) not in (2, 3) or any(user not in alternatives for user in users):
++            continue
++        result.append(
++            CoalitionProposal(
++                family=BEAM_EVACUATION,
++                selected_actions=tuple((user, alternatives[user]) for user in sorted(users)),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={"beam": repr(beam), "occupancy_before": len(users), "occupancy_after": 0},
++            )
++        )
++    return tuple(result)
++
++
++def nested_subset_proposals(
++    *,
++    block: Sequence[int],
++    alternatives: Mapping[int, Action],
++) -> tuple[CoalitionProposal, ...]:
++    """Every non-trivial subset of one five/six-user alternative block."""
++
++    users = tuple(sorted(int(user) for user in block))
++    if len(users) not in (5, 6) or len(set(users)) != len(users):
++        raise ValueError("nested subset blocks must contain five or six unique users")
++    if not set(users) <= set(alternatives):
++        raise ValueError("every nested-block user requires a legal alternative")
++    result = []
++    for mask in range(1 << len(users)):
++        selected = tuple(
++            (user, alternatives[user])
++            for offset, user in enumerate(users)
++            if mask & (1 << offset)
++        )
++        if len(selected) < 2:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=NESTED_SUBSETS,
++                selected_actions=selected,
++                mechanism_key=f"block:{','.join(map(str, users))}:mask:{mask:0{len(users)}b}",
++                metadata={"block": list(users), "mask": mask, "scalar_observation_count": 1 << len(users)},
++            )
++        )
++    return tuple(result)
++
+diff --git a/tests/stagec_v025/test_mechanism_corpus.py b/tests/stagec_v025/test_mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..929ce3aed42fcf50da10a890c54e8dcfc460eb34
+--- /dev/null
++++ b/tests/stagec_v025/test_mechanism_corpus.py
+@@ -0,0 +1,63 @@
++from fractions import Fraction
++
++import pytest
++
++from mcrl.stagec_v025.mechanism_corpus import (
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++    OCCUPANCY_ACTIVATION,
++    beam_evacuation_proposals,
++    exact_interaction_label,
++    exact_r3,
++    nested_subset_proposals,
++    occupancy_activation_proposals,
++)
++
++
++def test_exact_label_uses_k_plus_two_distinct_scalar_evaluations() -> None:
++    anchor = {0: "a", 1: "a", 2: "a"}
++    selected = {0: "b", 1: "b", 2: "b"}
++    calls = []
++
++    def value(mapping):
++        changed = frozenset(user for user in anchor if mapping[user] != anchor[user])
++        calls.append(tuple(sorted(mapping.items())))
++        singleton = sum(Fraction(user + 1) for user in changed)
++        pairs = 10 * sum(1 for pair in ((0, 1), (0, 2), (1, 2)) if set(pair) <= changed)
++        triple = 7 if changed == frozenset((0, 1, 2)) else 0
++        return singleton + pairs + triple
++
++    label = exact_interaction_label(anchor=anchor, selected=selected, evaluate=value)
++    assert label.distinct_evaluation_count == 5
++    assert len(set(calls)) == 5
++    assert label.psi == 37
++    r3, pairs = exact_r3(anchor=anchor, selected=selected, label=label, evaluate=value)
++    assert [value for _pair, value in pairs] == [10, 10, 10]
++    assert r3 == 7
++
++
++def test_mechanism_selectors_cover_activation_evacuation_and_nested_sizes() -> None:
++    anchor = {0: "x", 1: "x", 2: "y", 3: "z", 4: "u", 5: "v"}
++    legal = {
++        0: ("x", "a"), 1: ("x", "b"), 2: ("y", "x", "c"),
++        3: ("z", "y", "d"), 4: ("u", "y", "e"), 5: ("v", "y", "f"),
++    }
++    activations = occupancy_activation_proposals(anchor=anchor, legal_actions=legal)
++    assert any(row.family == OCCUPANCY_ACTIVATION and len(row.users) == 2 for row in activations)
++    evacuations = beam_evacuation_proposals(anchor=anchor, legal_actions=legal)
++    assert len(evacuations) == 1
++    assert evacuations[0].family == BEAM_EVACUATION
++    alternatives = {user: actions[1] for user, actions in legal.items()}
++    nested = nested_subset_proposals(block=range(6), alternatives=alternatives)
++    assert len(nested) == 57
++    assert {len(row.users) for row in nested} == {2, 3, 4, 5, 6}
++    assert all(row.family == NESTED_SUBSETS for row in nested)
++
++
++def test_exact_label_rejects_a_noninteraction_singleton() -> None:
++    with pytest.raises(ValueError, match="at least two"):
++        exact_interaction_label(
++            anchor={0: "a", 1: "a"},
++            selected={0: "b", 1: "a"},
++            evaluate=lambda _mapping: Fraction(),
++        )
+
+exec
+/bin/bash -lc "sed -n '340,490p' src/mcrl/physics_v025/tapes.py && sed -n '200,255p' src/mcrl/physics_v025/batch.py && sed -n '900,975p' src/mcrl/physics_v025/provider_legacy.py" in /home/sat/mcrl-v025-coalgen-ws
+ succeeded in 0ms:
+            "candidates": [row.payload() for row in self.candidates],
+            "cell_rekeyed_users": list(self.cell_rekeyed_users),
+        }
+
+
+@dataclass(frozen=True)
+class PrimitiveStepArrays:
+    """One 48-boundary step in compact, immutable NumPy form.
+
+    Cross-gain storage is factorised by victim user, wanted-satellite slot,
+    and physical aggressor.  This preserves the exact per-chain quantity
+    without materialising millions of Python tuples.  Object boundaries are
+    generated only by :meth:`boundary_view`, the audit/KAT compatibility
+    seam; engine geometry is assembled directly from these arrays.
+    """
+
+    absolute_time_s: np.ndarray
+    users: np.ndarray
+    row_user_column: np.ndarray
+    legacy_action_index: np.ndarray
+    identities: np.ndarray
+    colors: np.ndarray
+    elevations_deg: np.ndarray
+    d2_entry_elevations_deg: np.ndarray
+    slants_km: np.ndarray
+    d2_distances_km: np.ndarray
+    visible: np.ndarray
+    d2_eligible: np.ndarray
+    cell_reachable: np.ndarray
+    nominal_gain: np.ndarray
+    realised_gain: np.ndarray
+    remaining_visibility_s: np.ndarray
+    remaining_d2_s: np.ndarray
+    visibility_right_censored: np.ndarray
+    d2_right_censored: np.ndarray
+    aggressor_identities: np.ndarray
+    aggressor_colors: np.ndarray
+    aggressor_satellite_column: np.ndarray
+    row_wanted_slot: np.ndarray
+    cross_base_nominal: np.ndarray
+    fading_by_satellite: np.ndarray
+    receive_gain_by_wanted_slot: np.ndarray
+
+    def __post_init__(self) -> None:
+        arrays = {
+            name: np.asarray(getattr(self, name))
+            for name in self.__dataclass_fields__
+        }
+        times = arrays["absolute_time_s"]
+        rows = arrays["identities"].shape[0]
+        users = arrays["users"].shape[0]
+        aggressors = arrays["aggressor_identities"].shape[0]
+        satellites = arrays["fading_by_satellite"].shape[2]
+        if times.shape != (D2_SUBINTERVALS + 1,):
+            raise MCRLContractError("step arrays need exactly 48 boundary times")
+        if arrays["identities"].shape != (rows, 2):
+            raise MCRLContractError("step identities must have shape (R,2)")
+        if arrays["aggressor_identities"].shape != (aggressors, 2):
+            raise MCRLContractError("aggressor identities must have shape (A,2)")
+        for name in ("row_user_column", "legacy_action_index", "colors", "row_wanted_slot"):
+            if arrays[name].shape != (rows,):
+                raise MCRLContractError(f"{name} must have shape (R,)")
+        for name in (
+            "elevations_deg", "d2_entry_elevations_deg", "slants_km",
+            "d2_distances_km", "visible", "d2_eligible", "cell_reachable",
+            "nominal_gain", "realised_gain", "remaining_visibility_s",
+            "remaining_d2_s", "visibility_right_censored",
+            "d2_right_censored",
+        ):
+            if arrays[name].shape != (D2_SUBINTERVALS + 1, rows):
+                raise MCRLContractError(f"{name} must have shape (48,R)")
+        if arrays["aggressor_colors"].shape != (aggressors,):
+            raise MCRLContractError("aggressor_colors must have shape (A,)")
+        if arrays["aggressor_satellite_column"].shape != (aggressors,):
+            raise MCRLContractError("aggressor satellite columns must have shape (A,)")
+        if arrays["cross_base_nominal"].shape != (48, users, aggressors):
+            raise MCRLContractError("cross_base_nominal must have shape (48,U,A)")
+        if arrays["fading_by_satellite"].shape[:2] != (48, users):
+            raise MCRLContractError("fading_by_satellite must have shape (48,U,S)")
+        slots = arrays["receive_gain_by_wanted_slot"].shape[2]
+        if arrays["receive_gain_by_wanted_slot"].shape != (48, users, slots, satellites):
+            raise MCRLContractError(
+                "receive_gain_by_wanted_slot must have shape (48,U,L,S)"
+            )
+        if np.any(arrays["row_user_column"] < 0) or np.any(arrays["row_user_column"] >= users):
+            raise MCRLContractError("row user column is outside the user array")
+        if np.any(arrays["aggressor_satellite_column"] < 0) or np.any(
+            arrays["aggressor_satellite_column"] >= satellites
+        ):
+            raise MCRLContractError("aggressor satellite column is invalid")
+        if not np.all(np.isfinite(times)):
+            raise MCRLContractError("step boundary times must be finite")
+        for name, value in arrays.items():
+            frozen = np.array(value, copy=True)
+            frozen.setflags(write=False)
+            object.__setattr__(self, name, frozen)
+
+    def __len__(self) -> int:
+        return D2_SUBINTERVALS + 1
+
+    def _row_index(self) -> dict[tuple[int, BeamIdentity], int]:
+        return {
+            (int(self.users[int(self.row_user_column[row])]),
+             (int(identity[0]), int(identity[1]))): row
+            for row, identity in enumerate(self.identities)
+        }
+
+    def _aggressor_index(self) -> dict[BeamIdentity, int]:
+        return {
+            (int(identity[0]), int(identity[1])): index
+            for index, identity in enumerate(self.aggressor_identities)
+        }
+
+    def _cross(self, boundary_index: int, victim_row: int, aggressor: BeamIdentity) -> tuple[float, float]:
+        aggressor_index = self._aggressor_index().get(aggressor)
+        if aggressor_index is None:
+            return 0.0, 0.0
+        return self._cross_at_index(boundary_index, victim_row, aggressor_index)
+
+    def _cross_at_index(
+        self, boundary_index: int, victim_row: int, aggressor_index: int
+    ) -> tuple[float, float]:
+        aggressor = tuple(
+            int(value) for value in self.aggressor_identities[aggressor_index]
+        )
+        if tuple(int(value) for value in self.identities[victim_row]) == aggressor:
+            return 0.0, 0.0
+        if int(self.colors[victim_row]) != int(self.aggressor_colors[aggressor_index]):
+            return 0.0, 0.0
+        user = int(self.row_user_column[victim_row])
+        wanted_slot = int(self.row_wanted_slot[victim_row])
+        satellite = int(self.aggressor_satellite_column[aggressor_index])
+        nominal = float(
+            self.cross_base_nominal[boundary_index, user, aggressor_index]
+            * self.receive_gain_by_wanted_slot[boundary_index, user, wanted_slot, satellite]
+        )
+        realised = nominal * float(self.fading_by_satellite[boundary_index, user, satellite])
+        return nominal, realised
+
+    def boundary_view(self, boundary_index: int) -> PrimitiveBoundary:
+        """Materialise the expensive object view only for audit/KAT callers."""
+
+        if type(boundary_index) is not int or not 0 <= boundary_index < len(self):
+            raise MCRLContractError("boundary index must be in 0..47")
+        aggressors = [
+            (int(identity[0]), int(identity[1]))
+            for identity in self.aggressor_identities
+        ]
+        rows: list[PrimitiveCandidate] = []
+        for row, raw_identity in enumerate(self.identities):
+            identity = (int(raw_identity[0]), int(raw_identity[1]))
+        aggressor_norad = arrays.identities[safe_rows, 0]
+        previous_rate = previous_decode = previous_energy = None
+
+        previous_boundary = None
+        for boundary in boundary_indices:
+            live = valid_assignment & arrays.visible[boundary, safe_rows] \
+                & arrays.d2_eligible[boundary, safe_rows] \
+                & arrays.cell_reachable[boundary, safe_rows]
+            same_beam = beam_code[:, :, None] == beam_code[:, None, :]
+            occupancy = np.sum(same_beam & live[:, None, :], axis=2)
+            maximum = int(np.max(occupancy, initial=1))
+            fractions, midpoints = _slot_grid(maximum)
+            boundary_rate = np.zeros((count, users), dtype=np.float64)
+            boundary_decode = np.zeros((count, users), dtype=np.bool_)
+            boundary_feasible = np.zeros((count, users), dtype=np.bool_)
+            boundary_energy = np.zeros((count, 3), dtype=np.float64)
+            rank = np.sum(same_beam & live[:, None, :] & lower_user, axis=2)
+            direct_nominal = arrays.nominal_gain[boundary, safe_rows]
+            direct_field = (
+                direct_nominal
+                if field == "nominal"
+                else arrays.realised_gain[boundary, safe_rows]
+            )
+            base_cross = arrays.cross_base_nominal[
+                boundary,
+                user_axis[None, :, None],
+                safe_aggressor[:, None, :],
+            ]
+            receive = arrays.receive_gain_by_wanted_slot[
+                boundary,
+                user_axis[None, :, None],
+                wanted_slot[:, :, None],
+                aggressor_satellite[:, None, :],
+            ]
+            nominal_cross = base_cross * receive
+            colour_mask = victim_color[:, :, None] == aggressor_color[:, None, :]
+            available_aggressor = aggressor[:, None, :] >= 0
+            nominal_cross *= colour_mask & ~same_beam & available_aggressor
+            if field == "realised":
+                field_cross = nominal_cross * arrays.fading_by_satellite[
+                    boundary,
+                    user_axis[None, :, None],
+                    aggressor_satellite[:, None, :],
+                ]
+            else:
+                field_cross = nominal_cross
+
+            for fraction, midpoint in zip(fractions, midpoints, strict=True):
+                active = live & (rank == np.floor(midpoint * occupancy).astype(np.int64))
+                active_pair = active[:, :, None] & active[:, None, :]
+                coupling = nominal_cross * active_pair
+                targets = gamma[np.minimum(occupancy, users)]
+                forced = active & np.isnan(targets)
+                targets = np.nan_to_num(targets, nan=1.0)
+                power = np.zeros((count, users), dtype=np.float64)
+                residual = np.full(count, math.inf, dtype=np.float64)
+        d2_censored = np.zeros_like(visibility_duration, dtype=bool)
+        for user in range(users.size):
+            user_position = state.user_ecef_km[user]
+            user_up_vector = user_position / np.linalg.norm(user_position)
+            for slot in range(wanted_slots):
+                norad = int(window_norads[user, slot])
+                if norad < 0:
+                    continue
+                sat_column = satellite_column[norad]
+                future_delta = horizon_positions[:, sat_column] - user_position
+                future_slant = np.linalg.norm(future_delta, axis=1)
+                future_elevation = np.degrees(
+                    np.arcsin(
+                        np.clip(
+                            (future_delta @ user_up_vector) / future_slant,
+                            -1.0,
+                            1.0,
+                        )
+                    )
+                )
+                visible_mask = future_elevation >= MINIMUM_ELEVATION_DEG
+                release_mask = (
+                    future_slant - D2_HYSTERESIS_KM <= D2_THRESHOLD_KM
+                )
+                for boundary_index in range(48):
+                    stop = boundary_index + _FUTURE_INTERVALS + 1
+                    vis_window = visible_mask[boundary_index:stop]
+                    d2_window = release_mask[boundary_index:stop]
+                    if bool(visible_mask[boundary_index]):
+                        failures = np.flatnonzero(~vis_window)
+                        visibility_censored[boundary_index, user, slot] = failures.size == 0
+                        count = _FUTURE_INTERVALS if failures.size == 0 else int(failures[0])
+                        visibility_duration[boundary_index, user, slot] = count * D2_MEASUREMENT_STEP_S
+                    if d2_slots[boundary_index, user, slot]:
+                        failures = np.flatnonzero(~d2_window)
+                        d2_censored[boundary_index, user, slot] = failures.size == 0
+                        count = _FUTURE_INTERVALS if failures.size == 0 else int(failures[0])
+                        d2_duration[boundary_index, user, slot] = count * D2_MEASUREMENT_STEP_S
+
+        return PrimitiveStepArrays(
+            absolute_time_s=times,
+            users=users,
+            row_user_column=row_user,
+            legacy_action_index=row_action,
+            identities=identities,
+            colors=colors,
+            elevations_deg=elevations,
+            d2_entry_elevations_deg=entry,
+            slants_km=slants,
+            d2_distances_km=slants,
+            visible=visible,
+            d2_eligible=d2_eligible,
+            cell_reachable=cell_reachable,
+            nominal_gain=nominal,
+            realised_gain=realised,
+            remaining_visibility_s=visibility_duration[:, row_user, row_slot],
+            remaining_d2_s=d2_duration[:, row_user, row_slot],
+            visibility_right_censored=visibility_censored[:, row_user, row_slot],
+            d2_right_censored=d2_censored[:, row_user, row_slot],
+            aggressor_identities=aggressor_identities,
+            aggressor_colors=aggressor_colors,
+            aggressor_satellite_column=aggressor_satellite,
+            row_wanted_slot=row_slot,
+            cross_base_nominal=cross_base,
+            fading_by_satellite=fading,
+            receive_gain_by_wanted_slot=receive_gain,
+        )
+
+    def provider_source_sha256(self) -> str:
+        return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+    def boundary(
+        self,
+        *,
+        world_seed: int,
+        step_index: int,
+
+diff --git a/src/mcrl/stagec_v025/mechanism_corpus.py b/src/mcrl/stagec_v025/mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d0dbfa10ff7ca789ec4304225fc9f0a1b82ac58
+--- /dev/null
++++ b/src/mcrl/stagec_v025/mechanism_corpus.py
+@@ -0,0 +1,276 @@
++"""Mechanism-aware coalition selection and exact higher-order diagnostics.
++
++This module is deliberately independent of the pilot feature encoder.  It
++operates on immutable action assignments and scalar evaluations of the sealed
++objective; callers may attach whatever feature context their learner needs.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from fractions import Fraction
++import itertools
++from typing import Callable, Hashable, Mapping, Sequence
++
++
++PAIR_CATALOGUE = "pair-catalogue"
++OCCUPANCY_ACTIVATION = "occupancy-activation"
++AGGRESSOR_RELIEF = "aggressor-relief"
++BEAM_EVACUATION = "beam-evacuation"
++NESTED_SUBSETS = "nested-subsets"
++FAMILIES = (
++    PAIR_CATALOGUE,
++    OCCUPANCY_ACTIVATION,
++    AGGRESSOR_RELIEF,
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++)
++
++Action = Hashable
++Assignment = Mapping[int, Action]
++
++
++@dataclass(frozen=True, slots=True)
++class CoalitionProposal:
++    """A deterministic proposed action for a named mechanism family."""
++
++    family: str
++    selected_actions: tuple[tuple[int, Action], ...]
++    mechanism_key: str
++    metadata: Mapping[str, object] = field(default_factory=dict)
++
++    def __post_init__(self) -> None:
++        users = tuple(user for user, _action in self.selected_actions)
++        if self.family not in FAMILIES:
++            raise ValueError(f"unknown coalition family {self.family!r}")
++        if not users or users != tuple(sorted(users)) or len(set(users)) != len(users):
++            raise ValueError("proposal users must be nonempty, unique, and sorted")
++
++    @property
++    def users(self) -> tuple[int, ...]:
++        return tuple(user for user, _action in self.selected_actions)
++
++    def mapping(self, anchor: Assignment) -> dict[int, Action]:
++        result = dict(anchor)
++        for user, action in self.selected_actions:
++            if result[user] == action:
++                raise ValueError("coalition proposals must change every member action")
++            result[user] = action
++        return result
++
++
++@dataclass(frozen=True, slots=True)
++class ExactInteractionLabel:
++    """Exact additive residual and its complete evaluation receipt."""
++
++    users: tuple[int, ...]
++    baseline: Fraction
++    singleton_values: tuple[tuple[int, Fraction], ...]
++    coalition_value: Fraction
++    singleton_differences: tuple[tuple[int, Fraction], ...]
++    objective_delta: Fraction
++    psi: Fraction
++    distinct_evaluation_count: int
++
++
++def exact_interaction_label(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> ExactInteractionLabel:
++    """Evaluate baseline, every exact singleton, and the joint configuration.
++
++    A size-k label necessarily authenticates k+2 distinct configurations.
++    Learned singleton predictions are never accepted by this interface.
++    """
++
++    users = tuple(sorted(user for user in anchor if anchor[user] != selected[user]))
++    if len(users) < 2:
++        raise ValueError("interaction labels require at least two changed users")
++    baseline = evaluate(anchor)
++    singleton_values: list[tuple[int, Fraction]] = []
++    identities = {tuple(sorted(anchor.items()))}
++    for user in users:
++        mapping = dict(anchor)
++        mapping[user] = selected[user]
++        identity = tuple(sorted(mapping.items()))
++        if identity in identities:
++            raise ValueError("singleton evaluation is not distinct from baseline")
++        identities.add(identity)
++        singleton_values.append((user, evaluate(mapping)))
++    selected_identity = tuple(sorted(selected.items()))
++    if selected_identity in identities:
++        raise ValueError("coalition evaluation is not distinct from baseline/singletons")
++    identities.add(selected_identity)
++    coalition_value = evaluate(selected)
++    singleton_differences = tuple(
++        (user, value - baseline) for user, value in singleton_values
++    )
++    objective_delta = coalition_value - baseline
++    psi = objective_delta - sum(
++        (difference for _user, difference in singleton_differences), Fraction()
++    )
++    if len(identities) != len(users) + 2:
++        raise AssertionError("exact interaction receipt lost a required evaluation")
++    return ExactInteractionLabel(
++        users=users,
++        baseline=baseline,
++        singleton_values=tuple(singleton_values),
++        coalition_value=coalition_value,
++        singleton_differences=singleton_differences,
++        objective_delta=objective_delta,
++        psi=psi,
++        distinct_evaluation_count=len(identities),
++    )
++
++
++def exact_r3(
++    *,
++    anchor: Assignment,
++    selected: Assignment,
++    label: ExactInteractionLabel,
++    evaluate: Callable[[Mapping[int, Action]], Fraction],
++) -> tuple[Fraction, tuple[tuple[tuple[int, int], Fraction], ...]]:
++    """Return R3(A)=Psi(A)-sum_{pairs in A} Psi(pair), exactly."""
++
++    if len(label.users) < 3:
++        raise ValueError("R3 is defined here only for coalitions of size >=3")
++    singleton = dict(label.singleton_values)
++    pair_terms: list[tuple[tuple[int, int], Fraction]] = []
++    for first, second in itertools.combinations(label.users, 2):
++        mapping = dict(anchor)
++        mapping[first] = selected[first]
++        mapping[second] = selected[second]
++        pair_value = evaluate(mapping)
++        pair_psi = (
++            pair_value
++            - label.baseline
++            - (singleton[first] - label.baseline)
++            - (singleton[second] - label.baseline)
++        )
++        pair_terms.append(((first, second), pair_psi))
++    return (
++        label.psi - sum((value for _pair, value in pair_terms), Fraction()),
++        tuple(pair_terms),
++    )
++
++
++def best_alternatives(
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> dict[int, Action]:
++    """First sealed-shortlist action different from the anchor, per user."""
++
++    return {
++        user: next(action for action in legal_actions[user] if action != anchor[user])
++        for user in sorted(anchor)
++        if any(action != anchor[user] for action in legal_actions[user])
++    }
++
++
++def occupancy_activation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Move the minimum available users into every beam at occupancy one/two.
++
++    Occupancy-two activations are returned as singleton mechanism observations;
++    callers exclude them from an interaction-training shard because an exact
++    singleton has no interaction residual.  Occupancy-one activations are
++    trainable pairs and cross the same occupancy-three threshold.
++    """
++
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result: list[CoalitionProposal] = []
++    for beam, current_users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        occupancy = len(current_users)
++        if occupancy not in (1, 2):
++            continue
++        needed = 3 - occupancy
++        candidates = [
++            (tuple(legal_actions[user]).index(beam), user)
++            for user in sorted(anchor)
++            if anchor[user] != beam and beam in legal_actions[user]
++        ]
++        selected_users = tuple(user for _rank, user in sorted(candidates)[:needed])
++        if len(selected_users) != needed:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=OCCUPANCY_ACTIVATION,
++                selected_actions=tuple((user, beam) for user in selected_users),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={
++                    "beam": repr(beam),
++                    "occupancy_before": occupancy,
++                    "occupancy_after": 3,
++                    "incoming_users": list(selected_users),
++                },
++            )
++        )
++    return tuple(result)
++
++
++def beam_evacuation_proposals(
++    *,
++    anchor: Assignment,
++    legal_actions: Mapping[int, Sequence[Action]],
++) -> tuple[CoalitionProposal, ...]:
++    """Evacuate every beam with two or three occupants to best alternatives."""
++
++    alternatives = best_alternatives(anchor, legal_actions)
++    occupants: dict[Action, list[int]] = {}
++    for user, action in anchor.items():
++        if action is not None:
++            occupants.setdefault(action, []).append(user)
++    result = []
++    for beam, users in sorted(occupants.items(), key=lambda item: repr(item[0])):
++        if len(users) not in (2, 3) or any(user not in alternatives for user in users):
++            continue
++        result.append(
++            CoalitionProposal(
++                family=BEAM_EVACUATION,
++                selected_actions=tuple((user, alternatives[user]) for user in sorted(users)),
++                mechanism_key=f"beam:{beam!r}",
++                metadata={"beam": repr(beam), "occupancy_before": len(users), "occupancy_after": 0},
++            )
++        )
++    return tuple(result)
++
++
++def nested_subset_proposals(
++    *,
++    block: Sequence[int],
++    alternatives: Mapping[int, Action],
++) -> tuple[CoalitionProposal, ...]:
++    """Every non-trivial subset of one five/six-user alternative block."""
++
++    users = tuple(sorted(int(user) for user in block))
++    if len(users) not in (5, 6) or len(set(users)) != len(users):
++        raise ValueError("nested subset blocks must contain five or six unique users")
++    if not set(users) <= set(alternatives):
++        raise ValueError("every nested-block user requires a legal alternative")
++    result = []
++    for mask in range(1 << len(users)):
++        selected = tuple(
++            (user, alternatives[user])
++            for offset, user in enumerate(users)
++            if mask & (1 << offset)
++        )
++        if len(selected) < 2:
++            continue
++        result.append(
++            CoalitionProposal(
++                family=NESTED_SUBSETS,
++                selected_actions=selected,
++                mechanism_key=f"block:{','.join(map(str, users))}:mask:{mask:0{len(users)}b}",
++                metadata={"block": list(users), "mask": mask, "scalar_observation_count": 1 << len(users)},
++            )
++        )
++    return tuple(result)
++
+diff --git a/tests/stagec_v025/test_mechanism_corpus.py b/tests/stagec_v025/test_mechanism_corpus.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..929ce3aed42fcf50da10a890c54e8dcfc460eb34
+--- /dev/null
++++ b/tests/stagec_v025/test_mechanism_corpus.py
+@@ -0,0 +1,63 @@
++from fractions import Fraction
++
++import pytest
++
++from mcrl.stagec_v025.mechanism_corpus import (
++    BEAM_EVACUATION,
++    NESTED_SUBSETS,
++    OCCUPANCY_ACTIVATION,
++    beam_evacuation_proposals,
++    exact_interaction_label,
++    exact_r3,
++    nested_subset_proposals,
++    occupancy_activation_proposals,
++)
++
++
++def test_exact_label_uses_k_plus_two_distinct_scalar_evaluations() -> None:
++    anchor = {0: "a", 1: "a", 2: "a"}
++    selected = {0: "b", 1: "b", 2: "b"}
++    calls = []
++
++    def value(mapping):
++        changed = frozenset(user for user in anchor if mapping[user] != anchor[user])
++        calls.append(tuple(sorted(mapping.items())))
++        singleton = sum(Fraction(user + 1) for user in changed)
++        pairs = 10 * sum(1 for pair in ((0, 1), (0, 2), (1, 2)) if set(pair) <= changed)
++        triple = 7 if changed == frozenset((0, 1, 2)) else 0
++        return singleton + pairs + triple
++
++    label = exact_interaction_label(anchor=anchor, selected=selected, evaluate=value)
++    assert label.distinct_evaluation_count == 5
++    assert len(set(calls)) == 5
++    assert label.psi == 37
++    r3, pairs = exact_r3(anchor=anchor, selected=selected, label=label, evaluate=value)
++    assert [value for _pair, value in pairs] == [10, 10, 10]
++    assert r3 == 7
++
++
++def test_mechanism_selectors_cover_activation_evacuation_and_nested_sizes() -> None:
++    anchor = {0: "x", 1: "x", 2: "y", 3: "z", 4: "u", 5: "v"}
++    legal = {
++        0: ("x", "a"), 1: ("x", "b"), 2: ("y", "x", "c"),
++        3: ("z", "y", "d"), 4: ("u", "y", "e"), 5: ("v", "y", "f"),
++    }
++    activations = occupancy_activation_proposals(anchor=anchor, legal_actions=legal)
++    assert any(row.family == OCCUPANCY_ACTIVATION and len(row.users) == 2 for row in activations)
++    evacuations = beam_evacuation_proposals(anchor=anchor, legal_actions=legal)
++    assert len(evacuations) == 1
++    assert evacuations[0].family == BEAM_EVACUATION
++    alternatives = {user: actions[1] for user, actions in legal.items()}
++    nested = nested_subset_proposals(block=range(6), alternatives=alternatives)
++    assert len(nested) == 57
++    assert {len(row.users) for row in nested} == {2, 3, 4, 5, 6}
++    assert all(row.family == NESTED_SUBSETS for row in nested)
++
++
++def test_exact_label_rejects_a_noninteraction_singleton() -> None:
++    with pytest.raises(ValueError, match="at least two"):
++        exact_interaction_label(
++            anchor={0: "a", 1: "a"},
++            selected={0: "b", 1: "a"},
++            evaluate=lambda _mapping: Fraction(),
++        )
+

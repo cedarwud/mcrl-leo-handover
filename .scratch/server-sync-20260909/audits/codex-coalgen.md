@@ -11,7 +11,7 @@ Two consequences: the learner has never seen a **three-user** coalition, which i
 Replace the fixed-size-two, one-per-anchor rule with a **mechanism-aware, multi-coalition** generator. Per anchor produce a set of coalitions that includes, and labels by family:
 
 1. **`pair-catalogue`** — the existing size-two selections, kept unchanged so the old corpus remains a subset and results stay comparable.
-2. **`occupancy-activation`** — for each beam at occupancy 1 or 2, the coalition that moves in enough users to reach occupancy 3. At 10 degrees elevation the engine's quantile is `q10 = 0.42923539` against a lowest threshold of `0.7174947935`, so `q*Gamma(n)` clears only at occupancy 3. **This is the family the whole exercise exists for; make sure it is present and say how many anchors admit one.**
+2. **`occupancy-activation`** — for each beam at occupancy exactly 1, the coalition that moves in enough users to reach occupancy 3. At 10 degrees elevation the engine's quantile is `q10 = 0.42923539` against a lowest threshold of `0.7174947935`, so `q*Gamma(n)` clears only at occupancy 3. **This is the family the whole exercise exists for; make sure it is present and say how many anchors admit one.**
 3. **`aggressor-relief`** — a victim plus its top two, and separately top three, interference contributors, moved to their own best legal alternatives.
 4. **`beam-evacuation`** — every occupant of a beam with 2 or 3 occupants moving out, since the per-chain circuit power is saved only when the beam empties. This family needs no decode threshold at all.
 5. **`nested-subsets`** — for a small number of anchors, take one block of five or six users and evaluate **every subset mask** with non-members held at the anchor. For six users that is 64 evaluations yielding 57 non-trivial residual labels and every Mobius coefficient inside the block. Report these as what they are: 64 scalar observations, **not** 57 independent measurements.
@@ -32,3 +32,15 @@ Workspace `/home/sat/mcrl-v025-coalgen-ws`: build it with `cp -a /home/sat/mcrl-
 Change no threshold, sign, seed, horizon, price, service guard or acceptance rule. Expanding which coalitions are labelled is a coverage repair, not a change to the method: the labels are exact evaluations of the sealed objective either way.
 
 Write `COALITION-CORPUS-2026-09-09.md` in the workspace root and print it as your final message. Lead with the new size histogram and the count of anchors that admit an occupancy-activation coalition.
+
+## CORRECTION issued after this task started, apply it
+The targeting criterion is **starting occupancy exactly 1**, not "1 or 2". A verified witness shows the sign of the interaction depends on the starting occupancy:
+
+* start at occupancy 1, two arrivals are needed to activate the beam: `Psi = +1.962 Gb`;
+* start at occupancy 2, one arrival already activates it, so the second is diminishing: `Psi = -0.778 Gb`.
+
+Coalitions seeded from occupancy-2 beams therefore contribute **negative** interaction, the opposite of what is wanted. Build them from occupancy-1 beams. You may still include occupancy-2 cases, but label them as a separate family and report them separately so the negative population is visible rather than mixed in.
+
+For context: in the census, occupancy 1 accounts for 5,760 of 10,848 beams, that is 53.1 %, so this is the largest bucket and not a corner case.
+
+Compute the activation threshold from the engine tables at each beam's actual elevation rather than from the 10-degree constant, since the quantile varies with elevation.

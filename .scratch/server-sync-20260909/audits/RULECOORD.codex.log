@@ -18001,3 +18001,3236 @@ def run_unit(
         ),
         "successor_usable_energy_range": _summarize_energy_range(steps),
 
+exec
+/bin/bash -lc 'rg -n "''^def (_objective|_s_uni_select|_anchor_qos_noninferior|_rank|network_objective|_phi_for|_arm_row|_energy_fields)" .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '"'1760,1990p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '2140,2290p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '2520,2780p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '2890,3105p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-rule-ws
+ succeeded in 0ms:
+1230:def _energy_fields(
+1770:def _objective(
+1792:def _phi_for(
+2152:def _rank_for_arm(
+2681:def _s_uni_select(
+2923:def _arm_row(
+3055:def _anchor_qos_noninferior(
+            )
+        )
+    frozen = freeze_setting_calibration(setting=setting, observations=observations)
+    return replace(
+        frozen,
+        setting_label=run_setting.run_id,
+        setting_digest=run_setting.digest,
+    )
+
+
+def _objective(
+    profile: EvaluatedProfile | SelectionProfile,
+    calibration: CalibrationValues,
+) -> Fraction:
+    if isinstance(profile, SelectionProfile):
+        return Fraction(str(profile.bits)) - calibration.eta_ref * Fraction(
+            str(profile.joules)
+        )
+    return network_objective(
+        profile.outcome(),
+        lambda_bits_per_j=calibration.lambda_bits_per_j,
+        eta_ref=calibration.eta_ref,
+        kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+    )
+
+
+def _best(
+    rows: Iterable[EvaluatedProfile], calibration: CalibrationValues
+) -> EvaluatedProfile:
+    return min(rows, key=lambda row: (-_objective(row, calibration), row.config.configuration_id))
+
+
+def _phi_for(
+    base: Configuration,
+    candidate: Configuration,
+    *,
+    cell_rekeyed_users: Iterable[int] = (),
+) -> Fraction:
+    return phi_qos(
+        _physical_events(
+            base, candidate, cell_rekeyed_users=cell_rekeyed_users
+        )
+    )
+
+
+def _forecast_rows(
+    *,
+    tape: ExogenousWorldTape,
+    setting: PhysicsSetting,
+    anchor_step: int,
+    config: Configuration,
+    carrier: str,
+    counter: EvaluationCounter,
+    focal_user: int,
+    run_setting: SealedRunSetting | None = None,
+) -> tuple[OffsetProjection, ...]:
+    rows = []
+    for offset in range(1, 4):
+        projected_step = anchor_step + offset
+        base = _base_configuration(tape, projected_step, carrier)
+        # Persist physical identities; Geometry is rebuilt at the projected boundary.
+        persisted = Configuration(config.configuration_id, config.assignments, config.changed_users, config.kind)
+        evaluator = StepEvaluator(
+            tape,
+            setting,
+            projected_step,
+            transition_from=base,
+            cell_rekeyed_users=_rekeyed_users(tape, projected_step),
+            field="margin",
+            fading_quantile_alpha=0.10,
+            counter=counter,
+            run_setting=run_setting,
+        )
+        try:
+            result = evaluator.evaluate(persisted)
+            valid = True
+        except (MCRLContractError, ProbeError):
+            result = None
+            valid = False
+        required, cap = 0.0, BEAM_RF_CAP_W
+        margins = []
+        ses = []
+        if valid and result is not None:
+            required, cap = evaluator.required_power(result.config)
+            shared = evaluator._shared[result.config.configuration_id]
+            model = rate_model(setting.rate)
+            for boundary in shared.integrated:  # type: ignore[attr-defined]
+                for slot in boundary.radiation.slots:
+                    for tx in slot.transmissions:
+                        margins.append(
+                            -100.0
+                            if tx.m_tx is None
+                            else 10.0 * math.log10(tx.sinr) - tx.m_tx.threshold_db
+                        )
+                        ses.append(
+                            tx.realised_outcome.credited_spectral_efficiency_bit_per_s_hz
+                            if setting.rate == "ACM" and tx.realised_outcome is not None
+                            else model.rate_bps(tx.sinr, tx.bandwidth_hz)
+                            / tx.bandwidth_hz
+                        )
+            survives = bool(result.score.served_phy.get(focal_user, False))
+            outcome = result.outcome()
+        else:
+            survives = False
+            outcome = NetworkOutcome.build(
+                bits=0,
+                joules=0,
+                phi=0,
+                decoding_availability=0,
+                useful_availability=0,
+            )
+        rows.append(
+            OffsetProjection(
+                offset,
+                valid,
+                survives,
+                outcome,
+                True,
+                required if setting.architecture in {"a-r", "a′-r"} else None,
+                cap if setting.architecture in {"a-r", "a′-r"} else None,
+                min(margins, default=-math.inf) if margins else -100.0,
+                math.fsum(ses) / len(ses) if ses else 0.0,
+            )
+        )
+    return tuple(rows)
+
+
+def _factor_scores(
+    *,
+    tape: ExogenousWorldTape,
+    setting: PhysicsSetting,
+    step_index: int,
+    carrier: str,
+    base: Configuration,
+    incumbent: Configuration,
+    catalog: Sequence[Configuration],
+    evaluated: Mapping[str, EvaluatedProfile],
+    calibration: CalibrationValues,
+    counter: EvaluationCounter,
+) -> tuple[
+    dict[str, dict[tuple[int, tuple[int, int] | None], Fraction]],
+    Fraction,
+    int,
+]:
+    base_profile = evaluated[base.configuration_id]
+    result = {name: {} for name in ("C1", "C2", "C3")}
+    for config in catalog:
+        if config.changed_users != 1:
+            continue
+        user = next(
+            user for user, identity in config.assignments if dict(base.assignments)[user] != identity
+        )
+        identity = dict(config.assignments)[user]
+        c1 = c1_difference_surplus(
+            evaluated[config.configuration_id].outcome(
+                phi=_phi_for(
+                    incumbent,
+                    config,
+                    cell_rekeyed_users=_rekeyed_users(tape, step_index),
+                )
+            ),
+            base_profile.outcome(
+                phi=_phi_for(
+                    incumbent,
+                    base,
+                    cell_rekeyed_users=_rekeyed_users(tape, step_index),
+                )
+            ),
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=calibration.eta_ref,
+            kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+        )
+        result["C1"][(user, identity)] = c1.normalized_total
+        candidate_forecast = _forecast_rows(
+            tape=tape,
+            setting=setting,
+            anchor_step=step_index,
+            config=config,
+            carrier=carrier,
+            counter=counter,
+            focal_user=user,
+        )
+        default_forecast = _forecast_rows(
+            tape=tape,
+            setting=setting,
+            anchor_step=step_index,
+            config=base,
+            carrier=carrier,
+            counter=counter,
+            focal_user=user,
+        )
+        c2 = c2_persistence_forecast(
+            candidate_forecast,
+            default_forecast,
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=calibration.eta_ref,
+            kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+        )
+        result["C2"][(user, identity)] = c2.normalized_total
+    users = tuple(user for user, _ in base.assignments)
+    interaction_sum = Fraction()
+    interaction_count = 0
+    for user0, user1 in itertools.combinations(users, 2):
+        uni0 = [row for row in catalog if row.changed_users == 1 and dict(row.assignments)[user0] != dict(base.assignments)[user0]]
+        uni1 = [row for row in catalog if row.changed_users == 1 and dict(row.assignments)[user1] != dict(base.assignments)[user1]]
+        for first in uni0:
+            for second in uni1:
+                merged_map = dict(base.assignments)
+                merged_map[user0] = dict(first.assignments)[user0]
+                merged_map[user1] = dict(second.assignments)[user1]
+                joint = next((row for row in catalog if row.mapping == merged_map), None)
+                if joint is None:
+                    continue
+                interaction = c3_lcsrs_interaction(
+                    coalition_users=(user0, user1),
+                    f00=base_profile.outcome(),
+                    f10=evaluated[first.configuration_id].outcome(),
+                    f01=evaluated[second.configuration_id].outcome(),
+                    f11=evaluated[joint.configuration_id].outcome(),
+                    lambda_bits_per_j=calibration.lambda_bits_per_j,
+                    eta_ref=calibration.eta_ref,
+                    kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+                )
+                interaction_sum += interaction.psi
+                interaction_count += 1
+                for user, z3 in interaction.z3_by_user:
+                    identity = merged_map[user]
+                    old = result["C3"].get((user, identity))
+                    normalized = z3 / calibration.kappa_bits_per_user_step
+                    if old is None or normalized > old:
+                        result["C3"][(user, identity)] = normalized
+        catalog=catalog,
+        factors=factors,
+        primary_names=primary_names,
+        use_c2=use_c2,
+    )[0]
+
+
+def _relative_tie(left: Fraction, right: Fraction) -> bool:
+    scale = max(Fraction(1), abs(left), abs(right))
+    return abs(left - right) <= SELECTION_TIE_RELATIVE_TOLERANCE * scale
+
+
+def _rank_for_arm(
+    *,
+    catalog: Sequence[Configuration],
+    factors: Mapping[str, Mapping[str, object]],
+    primary_names: Sequence[str],
+    use_c2: bool,
+) -> tuple[Configuration, ...]:
+    values = {
+        row.configuration_id: (
+            sum(
+                (
+                    Fraction(factors[row.configuration_id][name])
+                    for name in primary_names
+                ),
+                Fraction(),
+            ),
+            Fraction(factors[row.configuration_id]["C2"]),
+        )
+        for row in catalog
+    }
+
+    def compare(left: Configuration, right: Configuration) -> int:
+        left_primary, left_c2 = values[left.configuration_id]
+        right_primary, right_c2 = values[right.configuration_id]
+        if not _relative_tie(left_primary, right_primary):
+            return -1 if left_primary > right_primary else 1
+        if use_c2 and not _relative_tie(left_c2, right_c2):
+            return -1 if left_c2 > right_c2 else 1
+        return (left.configuration_id > right.configuration_id) - (
+            left.configuration_id < right.configuration_id
+        )
+
+    return tuple(sorted(catalog, key=cmp_to_key(compare)))
+
+
+def _selection_factor_scores(
+    *,
+    base: Configuration,
+    incumbent: Configuration,
+    catalog: Sequence[Configuration],
+    evaluated: Mapping[str, EvaluatedProfile | SelectionProfile],
+    calibration: CalibrationValues,
+    cell_rekeyed_users: Iterable[int] = (),
+) -> dict[str, dict[str, object]]:
+    """Configuration-local C1/C3 on the sealed coarse selection grid.
+
+    C3 is never reduced to a per-(user, action) maximum.  Each row owns its
+    own joint residual, so evacuation and proposal rows are scored as atomic
+    coalitions.  Shapley credits are attached when the complete coalition
+    game is evaluated for the committed row.
+    """
+
+    base_profile = evaluated[base.configuration_id]
+    base_map = base.mapping
+    base_core = Fraction(str(base_profile.bits)) - calibration.eta_ref * Fraction(
+        str(base_profile.joules)
+    )
+    result: dict[str, dict[str, object]] = {}
+    for config in catalog:
+        changed = tuple(
+            user
+            for user in sorted(base_map)
+            if config.mapping[user] != base_map[user]
+        )
+        d_rows = []
+        for user in changed:
+            mapping = dict(base_map)
+            mapping[user] = config.mapping[user]
+            singleton = _configuration(base, mapping, kind="selection-singleton")
+            profile = evaluated[singleton.configuration_id]
+            value = Fraction(str(profile.bits)) - calibration.eta_ref * Fraction(
+                str(profile.joules)
+            )
+            d_rows.append((user, value - base_core))
+        profile = evaluated[config.configuration_id]
+        joint = (
+            Fraction(str(profile.bits))
+            - calibration.eta_ref * Fraction(str(profile.joules))
+            - base_core
+        )
+        additive = sum((value for _user, value in d_rows), Fraction())
+        psi = joint - additive
+        phi = _phi_for(
+            incumbent, config, cell_rekeyed_users=cell_rekeyed_users
+        ) - _phi_for(
+            incumbent, base, cell_rekeyed_users=cell_rekeyed_users
+        )
+        result[config.configuration_id] = {
+            "C1": additive / calibration.kappa_bits_per_user_step + phi,
+            "C2": Fraction(),
+            "C3": psi / calibration.kappa_bits_per_user_step,
+            "d_by_user": tuple(d_rows),
+            "psi_A": psi,
+            "shapley_interaction_by_user": (),
+            "joint_change_bits": joint,
+            "c1_physical_core": additive / calibration.kappa_bits_per_user_step,
+            "phi_difference": phi,
+        }
+    return result
+
+
+def _projection_from_profile(
+    *,
+    offset: int,
+    profile: EvaluatedProfile | None,
+    survives: bool,
+) -> OffsetProjection:
+    if profile is not None:
+        opportunities = max(1, len(profile.score.bits)) * DECISION_INTERVAL_S
+        compact_outcome = NetworkOutcome.build(
+            bits=sum(
+                (Fraction(str(value)) for value in profile.score.bits.values()),
+                Fraction(),
+            ),
+            joules=profile.joules,
+            phi=0,
+            decoding_availability=min(
+                1.0,
+                max(
+                    0.0,
+                    math.fsum(profile.score.decoding_time_s.values())
+                    / opportunities,
+                ),
+            ),
+            useful_availability=min(
+                1.0,
+                max(
+                    0.0,
+                    math.fsum(profile.score.useful_time_s.values())
+                    / opportunities,
+                ),
+            ),
+        )
+    else:
+        compact_outcome = NetworkOutcome.build(
+            bits=0,
+            joules=0,
+            phi=0,
+            decoding_availability=0,
+        )
+        margin_delta = float(
+            _objective(margin.evaluate(continuation), calibration)
+            - _objective(margin.evaluate(immediate), calibration)
+        )
+        realised_delta = float(
+            _objective(realised.evaluate(continuation), calibration)
+            - _objective(realised.evaluate(immediate), calibration)
+        )
+        rows.append(
+            {
+                "offset": offset,
+                "valid": True,
+                "predicted_margin_coarse_delta_bits": coarse_delta,
+                "margin_48_boundary_delta_bits": margin_delta,
+                "realised_48_boundary_delta_bits": realised_delta,
+                "integration_error_bits": margin_delta - coarse_delta,
+                "fading_error_bits": realised_delta - margin_delta,
+                "total_forecast_error_bits": realised_delta - coarse_delta,
+                "sign_agrees": (
+                    coarse_delta == 0.0
+                    or realised_delta == 0.0
+                    or math.copysign(1.0, coarse_delta)
+                    == math.copysign(1.0, realised_delta)
+                ),
+            }
+        )
+    return {
+        "comparison": "DROP_C2 immediate deterministic choice vs FULL C2 tie-break choice",
+        "rows": rows,
+        "valid": all(row["valid"] and row.get("sign_agrees", True) for row in rows),
+        "integration_and_fading_errors_separated": True,
+    }
+
+
+def _committed_set_decomposition(
+    *,
+    base: Configuration,
+    selected: Configuration,
+    incumbent: Configuration,
+    evaluator: StepEvaluator,
+    calibration: CalibrationValues,
+    cell_rekeyed_users: Iterable[int] = (),
+) -> tuple[object, tuple[EvaluatedProfile, ...]]:
+    """Evaluate O(|A|) set terms and optional small-set Shapley reporting."""
+
+    base_map = base.mapping
+    changed = tuple(
+        user for user in sorted(base_map) if selected.mapping[user] != base_map[user]
+    )
+    required_subsets = {frozenset(), frozenset(changed)} | {
+        frozenset((user,)) for user in changed
+    }
+    subsets = (
+        {
+            frozenset(subset)
+            for size in range(len(changed) + 1)
+            for subset in itertools.combinations(changed, size)
+        }
+        if 1 < len(changed) <= 4
+        else required_subsets
+    )
+    configs: list[tuple[frozenset[int], Configuration]] = []
+    for subset in sorted(subsets, key=lambda row: (len(row), tuple(sorted(row)))):
+        mapping = dict(base_map)
+        for user in subset:
+            mapping[user] = selected.mapping[user]
+        configs.append((subset, _configuration(base, mapping, kind="committed-sparse-set")))
+    evaluator.evaluate_many([config for _subset, config in configs])
+    outcomes = {
+        subset: evaluator.evaluate(config).outcome()
+        for subset, config in configs
+    }
+    decomposition = set_score_decomposition(
+        coalition_users=changed,
+        outcomes_by_subset=outcomes,
+        lambda_bits_per_j=calibration.lambda_bits_per_j,
+        eta_ref=calibration.eta_ref,
+        kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+        phi_difference=(
+            _phi_for(incumbent, selected, cell_rekeyed_users=cell_rekeyed_users)
+            - _phi_for(incumbent, base, cell_rekeyed_users=cell_rekeyed_users)
+        ),
+    )
+    singletons = tuple(
+        evaluator.evaluate(config)
+        for subset, config in configs
+        if len(subset) == 1
+    )
+    return decomposition, singletons
+
+
+def _independent_proposal(
+    *,
+    base: Configuration,
+    catalog: Sequence[Configuration],
+    factors: Mapping[str, Mapping[tuple[int, tuple[int, int] | None], Fraction]],
+    include: Sequence[str],
+) -> Configuration:
+    assignments = dict(base.assignments)
+    for user in sorted(assignments):
+        candidates = []
+        for config in catalog:
+            if config.changed_users != 1:
+                continue
+            identity = dict(config.assignments)[user]
+            if identity == assignments[user]:
+                continue
+            score = sum((factors[name].get((user, identity), Fraction()) for name in include), Fraction())
+            candidates.append((score, identity))
+        if candidates:
+            score, identity = min(candidates, key=lambda row: (-row[0], row[1]))
+            if score > 0:
+                assignments[user] = identity
+    return next(
+        (row for row in catalog if row.mapping == assignments),
+        base,
+    )
+
+
+def _set_select(
+    *,
+    catalog: Sequence[Configuration],
+    evaluated: Mapping[str, EvaluatedProfile],
+    factors: Mapping[str, Mapping[tuple[int, tuple[int, int] | None], Fraction]],
+    include: Sequence[str],
+    base: Configuration,
+    calibration: CalibrationValues,
+) -> Configuration:
+    del evaluated, calibration
+    base_map = dict(base.assignments)
+    scored = []
+    for config in catalog:
+        bonus = Fraction()
+        for user, identity in config.assignments:
+            if identity == base_map[user]:
+                continue
+            bonus += sum((factors[name].get((user, identity), Fraction()) for name in include), Fraction())
+        # Factor arms compare only the declared target sum.  Exact F is
+        # reserved for the U1/J1/union ceiling arms and S_UNI comparator.
+        scored.append((bonus, config.configuration_id, config))
+    return min(scored, key=lambda row: (-row[0], row[1]))[2]
+
+
+def _unilateral_factor_select(
+    *,
+    base: Configuration,
+    catalog: Sequence[Configuration],
+    factors: Mapping[str, Mapping[tuple[int, tuple[int, int] | None], Fraction]],
+) -> Configuration:
+    candidates = [base] + [row for row in catalog if row.changed_users == 1]
+    return _set_select(
+        catalog=candidates,
+        evaluated={},
+        factors=factors,
+        include=("C1", "C2", "C3"),
+        base=base,
+        calibration=None,  # type: ignore[arg-type]
+    )
+
+
+def _s_uni_select(
+    *,
+    base: Configuration,
+    incumbent: Configuration,
+    tape: ExogenousWorldTape,
+    step_index: int,
+    evaluator: StepEvaluator,
+    calibration: CalibrationValues,
+    compute_budget_s: float,
+    run_setting: SealedRunSetting,
+    cell_rekeyed_users: Iterable[int] = (),
+) -> tuple[Configuration, int, float, bool, str]:
+    """Information-matched exact single-user best response to convergence."""
+
+    started = time.perf_counter()
+    # Evaluation calls are non-preemptible.  Reserve enough wall time for the
+    # final in-flight candidate and receipt bookkeeping so the arm stays
+    # inside its declared comparator budget.
+    deadline_at = started + max(0.0, compute_budget_s - S_UNI_BUDGET_GUARD_S)
+    options, _census = _legal_options(tape, step_index)
+    current = base
+    iterations = 0
+    previous_batch_wall_s = 0.0
+    base_profile = evaluator.evaluate(base)
+    base_served = sum(base_profile.score.served_phy.values())
+
+    def coordinator_k0_objective(
+        config: Configuration, profile: EvaluatedProfile
+    ) -> Fraction:
+        # C1+C3 at k=0 is (F(config)-F(base))/kappa plus the
+        # incumbent-relative Phi difference.  The omitted base constants do
+        # not affect ranking, so this is exactly the coordinator objective in
+        # physical bit units.
+        return _objective(profile, calibration) + (
+            calibration.kappa_bits_per_user_step
+            * _phi_for(
+                incumbent,
+                config,
+                cell_rekeyed_users=cell_rekeyed_users,
+            )
+        )
+
+    while True:
+        if time.perf_counter() >= deadline_at:
+            return (
+                base,
+                iterations,
+                time.perf_counter() - started,
+                True,
+                "DEADLINE_FALLBACK_BASE",
+            )
+        current_profile = evaluator.evaluate(current)
+        best = current
+        best_value = coordinator_k0_objective(current, current_profile)
+        candidates = []
+        for user in sorted(options):
+            for identity in options[user]:
+                if identity == current.mapping[user]:
+                    continue
+                mapping = current.mapping
+                mapping[user] = identity
+                candidates.append(
+                    _configuration(base, mapping, kind="s-uni-iterate")
+                )
+        for offset in range(0, len(candidates), SELECTION_STAGE2_M):
+            remaining_s = deadline_at - time.perf_counter()
+            if remaining_s <= max(0.25, previous_batch_wall_s):
+                return (
+                    base,
+                    iterations,
+                    time.perf_counter() - started,
+                    True,
+                    "DEADLINE_FALLBACK_BASE",
+                )
+            batch_started = time.perf_counter()
+            evaluator.evaluate_many(
+                candidates[offset : offset + SELECTION_STAGE2_M]
+            )
+            previous_batch_wall_s = max(
+                previous_batch_wall_s,
+                time.perf_counter() - batch_started,
+            )
+            if time.perf_counter() >= deadline_at:
+                return (
+                    base,
+                    iterations,
+                    time.perf_counter() - started,
+                    True,
+                    "DEADLINE_FALLBACK_BASE",
+                )
+        for candidate in candidates:
+            if candidate.configuration_id in getattr(evaluator, "_invalid", ()):
+                continue
+            profile = evaluator.evaluate(candidate)
+            if sum(profile.score.served_phy.values()) < base_served:
+                continue
+            value = coordinator_k0_objective(candidate, profile)
+            if value > best_value or (
+                value == best_value and candidate.configuration_id < best.configuration_id
+            ):
+        row
+        for row in catalog
+        if row.changed_users > 1
+        and all(
+            any(dict(proposal.assignments)[user] == identity for proposal in unilateral if proposal.configuration_id in top_ids)
+            for user, identity in row.assignments
+            if identity != dict(base.assignments)[user]
+        )
+    )
+    nominal = nominal_greedy_reference(
+        _nominal_configuration(row, nominal_profiles[row.configuration_id]) for row in allowed
+    )
+    nominal_all = nominal_greedy_reference(
+        _nominal_configuration(row, nominal_profiles[row.configuration_id]) for row in catalog
+    )
+    return (
+        next(row for row in allowed if row.configuration_id == nominal.configuration_id),
+        tuple(sorted(set(top_ids))),
+        next(row for row in catalog if row.configuration_id == nominal_all.configuration_id),
+    )
+
+
+def _rate_tail(bits: Mapping[int, float]) -> dict[str, float]:
+    rates = np.asarray([value / DECISION_INTERVAL_S for value in bits.values()], dtype=np.float64)
+    if rates.size == 0:
+        return {"p05_bps": 0.0, "p50_bps": 0.0, "p95_bps": 0.0}
+    return {
+        "p05_bps": float(np.quantile(rates, 0.05)),
+        "p50_bps": float(np.quantile(rates, 0.50)),
+        "p95_bps": float(np.quantile(rates, 0.95)),
+    }
+
+
+def _arm_row(
+    *,
+    arm: str,
+    profile: EvaluatedProfile,
+    base: Configuration,
+    cell_rekeyed_users: Iterable[int],
+    previously_served_users: Iterable[int],
+    elapsed_s: float,
+) -> dict[str, object]:
+    users = max(1, len(base.assignments))
+    opportunity = users * DECISION_INTERVAL_S
+    events = _physical_events(
+        base,
+        profile.config,
+        cell_rekeyed_users=cell_rekeyed_users,
+        previously_served_users=previously_served_users,
+    )
+    phi = phi_qos(events)
+    handover_count = sum(
+        event.kind in {"beam_change", "satellite_change", "cell_rekey"} for event in events
+    )
+    complete = sum(
+        math.isclose(
+            float(profile.score.decoding_time_s.get(user, 0.0)),
+            DECISION_INTERVAL_S,
+            rel_tol=0.0,
+            abs_tol=1.0e-9,
+        )
+        for user, _identity in base.assignments
+    )
+    partial = sum(
+        float(profile.score.decoding_time_s.get(user, 0.0)) > 0.0
+        for user, _identity in base.assignments
+    )
+    useful_user_seconds = math.fsum(profile.score.useful_time_s.values())
+    return {
+        "arm": arm,
+        "configuration_id": profile.config.configuration_id,
+        "bits": profile.bits,
+        "joules": profile.joules,
+        "pooled_ee_bits_per_j": None if profile.joules == 0 else profile.bits / profile.joules,
+        "energy": dict(profile.energy_components),
+        "lit_beam_seconds": profile.lit_beam_seconds,
+        "lit_satellite_seconds": profile.lit_satellite_seconds,
+        "decoding_availability": math.fsum(profile.score.decoding_time_s.values()) / opportunity,
+        "useful_availability": math.fsum(profile.score.useful_time_s.values()) / opportunity,
+        "partial_service_availability": partial / users,
+        "complete_service_availability": complete / users,
+        "complete_service_user_steps": complete,
+        "full_roster_user_steps": users,
+        "qos_additive": {
+            "availability_served": useful_user_seconds,
+            "availability_opportunities": opportunity,
+            "handover_events": handover_count,
+            "handover_opportunities": users,
+            "phi_cost_numerator": -float(phi),
+            "phi_cost_denominator": users,
+        },
+        "phi_signalling_qos_preference": float(phi),
+        "phi_priced_handover_cost_per_user_step": -float(phi) / users,
+        "handover_rate_per_user_decision": handover_count / users,
+        "rate_tail": _rate_tail(profile.score.bits),
+        "served_PHY": profile.score.served_phy,
+        "rate_target_attained": profile.score.rate_target_attained,
+        "rate_target_feasible": profile.score.rate_target_feasible,
+        "rate_target_attainment_by_boundary": profile.score.rate_target_attainment_by_boundary,
+        "acm_mode_counts": dict(profile.acm_mode_counts),
+        "acm_causal_objects": {
+            "m_target_counts": dict(profile.m_target_counts or {}),
+            "m_tx_counts": dict(profile.m_tx_counts or {}),
+            "realised_outcome": {
+                "decoded": profile.realised_decode_successes,
+                "outage": profile.realised_decode_failures,
+            },
+            "emission_granularity": "per arm user-step transmission census",
+        },
+        "required_power_w_max": profile.required_power_w_max,
+        "min_decoding_margin_db": profile.min_decoding_margin_db,
+        "mean_acm_se_bit_s_hz": profile.mean_acm_se_bit_s_hz,
+        "rf_cap_hits": profile.rf_cap_hits,
+        "rf_transmission_observations": profile.rf_transmission_observations,
+        "certificate_status": profile.certificate_status,
+        "certificate_iterations": profile.certificate_iterations,
+        "treatment_t_same_instant_comparison": profile.treatment_t_same_instant_comparison,
+        "changed_users": profile.config.changed_users,
+        "handovers": {
+            kind: sum(event.kind == kind for event in events)
+            for kind in ("beam_change", "satellite_change", "cell_rekey", "initial_entry", "reentry", "exit")
+        },
+        "prior_current_identities": [
+            {
+                "user_id": user,
+                "prior": None if base.mapping[user] is None else list(base.mapping[user]),
+                "current": (
+                    None
+                    if profile.config.mapping[user] is None
+                    else list(profile.config.mapping[user])
+                ),
+                "event_type": next(event.kind for event in events if event.user_id == user),
+            }
+            for user, _identity in base.assignments
+        ],
+        "decision_time_s": elapsed_s,
+    }
+
+
+def _anchor_qos_metrics(
+    profile: EvaluatedProfile,
+    incumbent: Configuration,
+    *,
+    cell_rekeyed_users: Iterable[int],
+    previously_served_users: Iterable[int] = (),
+) -> dict[str, float]:
+    users = max(1, len(incumbent.assignments))
+    events = _physical_events(
+        incumbent,
+        profile.config,
+        cell_rekeyed_users=cell_rekeyed_users,
+        previously_served_users=previously_served_users,
+    )
+    return {
+        "availability": math.fsum(profile.score.useful_time_s.values())
+        / (users * DECISION_INTERVAL_S),
+        "handover_rate": sum(
+            event.kind in {"beam_change", "satellite_change", "cell_rekey"}
+            for event in events
+        )
+        / users,
+        "phi_cost": max(0.0, -float(phi_qos(events))) / users,
+    }
+
+
+def _anchor_qos_noninferior(
+    candidate: EvaluatedProfile,
+    comparators: Sequence[EvaluatedProfile],
+    incumbent: Configuration,
+    *,
+    cell_rekeyed_users: Iterable[int],
+    previously_served_users: Iterable[int] = (),
+) -> tuple[bool, dict[str, object]]:
+    candidate_qos = _anchor_qos_metrics(
+        candidate,
+        incumbent,
+        cell_rekeyed_users=cell_rekeyed_users,
+        previously_served_users=previously_served_users,
+    )
+
+    def relative(numerator: float, denominator: float) -> float | None:
+        if denominator > 0.0:
+            return numerator / denominator - 1.0
+        return 0.0 if numerator == 0.0 else None
+
+    rows = {}
+    passed = True
+    for comparator in comparators:
+        comparator_qos = _anchor_qos_metrics(
+            comparator,
+            incumbent,
+            cell_rekeyed_users=cell_rekeyed_users,
+            previously_served_users=previously_served_users,
+        )
+        certificate = {
+            "availability_delta": candidate_qos["availability"]
+            - comparator_qos["availability"],
+            "handover_rate_relative_change": relative(
+                candidate_qos["handover_rate"], comparator_qos["handover_rate"]
+            ),
+            "phi_cost_relative_change": relative(
+                candidate_qos["phi_cost"], comparator_qos["phi_cost"]
+            ),
+        }
+        handover_relative = certificate["handover_rate_relative_change"]
+        phi_relative = certificate["phi_cost_relative_change"]
+        certificate["pass"] = (
+            certificate["availability_delta"] > -0.005
+            and handover_relative is not None
+            and handover_relative < 0.05
+            and phi_relative is not None
+            and phi_relative < 0.05
+        )
+        passed &= bool(certificate["pass"])
+        rows[comparator.config.configuration_id] = certificate
+    return passed, {"candidate": candidate_qos, "comparators": rows}
+
+exec
+/bin/bash -lc "sed -n '2680,2775p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '3440,3690p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '3690,3950p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-rule-ws
+ succeeded in 0ms:
+
+def _s_uni_select(
+    *,
+    base: Configuration,
+    incumbent: Configuration,
+    tape: ExogenousWorldTape,
+    step_index: int,
+    evaluator: StepEvaluator,
+    calibration: CalibrationValues,
+    compute_budget_s: float,
+    run_setting: SealedRunSetting,
+    cell_rekeyed_users: Iterable[int] = (),
+) -> tuple[Configuration, int, float, bool, str]:
+    """Information-matched exact single-user best response to convergence."""
+
+    started = time.perf_counter()
+    # Evaluation calls are non-preemptible.  Reserve enough wall time for the
+    # final in-flight candidate and receipt bookkeeping so the arm stays
+    # inside its declared comparator budget.
+    deadline_at = started + max(0.0, compute_budget_s - S_UNI_BUDGET_GUARD_S)
+    options, _census = _legal_options(tape, step_index)
+    current = base
+    iterations = 0
+    previous_batch_wall_s = 0.0
+    base_profile = evaluator.evaluate(base)
+    base_served = sum(base_profile.score.served_phy.values())
+
+    def coordinator_k0_objective(
+        config: Configuration, profile: EvaluatedProfile
+    ) -> Fraction:
+        # C1+C3 at k=0 is (F(config)-F(base))/kappa plus the
+        # incumbent-relative Phi difference.  The omitted base constants do
+        # not affect ranking, so this is exactly the coordinator objective in
+        # physical bit units.
+        return _objective(profile, calibration) + (
+            calibration.kappa_bits_per_user_step
+            * _phi_for(
+                incumbent,
+                config,
+                cell_rekeyed_users=cell_rekeyed_users,
+            )
+        )
+
+    while True:
+        if time.perf_counter() >= deadline_at:
+            return (
+                base,
+                iterations,
+                time.perf_counter() - started,
+                True,
+                "DEADLINE_FALLBACK_BASE",
+            )
+        current_profile = evaluator.evaluate(current)
+        best = current
+        best_value = coordinator_k0_objective(current, current_profile)
+        candidates = []
+        for user in sorted(options):
+            for identity in options[user]:
+                if identity == current.mapping[user]:
+                    continue
+                mapping = current.mapping
+                mapping[user] = identity
+                candidates.append(
+                    _configuration(base, mapping, kind="s-uni-iterate")
+                )
+        for offset in range(0, len(candidates), SELECTION_STAGE2_M):
+            remaining_s = deadline_at - time.perf_counter()
+            if remaining_s <= max(0.25, previous_batch_wall_s):
+                return (
+                    base,
+                    iterations,
+                    time.perf_counter() - started,
+                    True,
+                    "DEADLINE_FALLBACK_BASE",
+                )
+            batch_started = time.perf_counter()
+            evaluator.evaluate_many(
+                candidates[offset : offset + SELECTION_STAGE2_M]
+            )
+            previous_batch_wall_s = max(
+                previous_batch_wall_s,
+                time.perf_counter() - batch_started,
+            )
+            if time.perf_counter() >= deadline_at:
+                return (
+                    base,
+                    iterations,
+                    time.perf_counter() - started,
+                    True,
+                    "DEADLINE_FALLBACK_BASE",
+                )
+        for candidate in candidates:
+            if candidate.configuration_id in getattr(evaluator, "_invalid", ()):
+                continue
+            profile = evaluator.evaluate(candidate)
+            if sum(profile.score.served_phy.values()) < base_served:
+
+def execute_step(
+    *,
+    tape: ExogenousWorldTape,
+    setting: PhysicsSetting,
+    step_index: int,
+    carrier: str,
+    calibration: CalibrationValues,
+    counter: EvaluationCounter,
+    incumbent: Configuration | None = None,
+    c2_horizon_offsets: int = 3,
+    run_setting: SealedRunSetting | None = None,
+    selection_workers: int = DECLARED_WORKERS,
+    selection_boundary_indices: tuple[int, ...] = SELECTION_BOUNDARY_INDICES,
+    selection_stage2_m: int = SELECTION_STAGE2_M,
+    selection_fading_quantile_alpha: float | None = 0.10,
+    previously_served_users: Iterable[int] | None = None,
+) -> dict[str, object]:
+    if type(selection_workers) is not int or selection_workers < 1:
+        raise ProbeError("selection_workers must be a positive integer")
+    if not selection_boundary_indices or any(
+        type(index) is not int or not 0 <= index < 48
+        for index in selection_boundary_indices
+    ):
+        raise ProbeError("selection boundary indices must be nonempty indices in 0..47")
+    anchor_started = time.perf_counter()
+    decision_started = anchor_started
+    deadline_at = decision_started + DECISION_DEADLINE_S
+    phase: dict[str, float] = {}
+    counter_start = counter.boundary_evaluations
+    active_run = run_setting_for(setting.label) if run_setting is None else run_setting
+    base = _base_configuration(tape, step_index, carrier)
+    incumbent = base if incumbent is None else incumbent
+    cell_rekeys = _rekeyed_users(tape, step_index)
+    previously_served = (
+        _previously_served_users(tape, step_index, carrier)
+        if previously_served_users is None
+        else tuple(sorted(set(int(user) for user in previously_served_users)))
+    )
+    selection_dependency_sha256 = _assert_selection_dependencies(
+        _selection_dependencies(
+            tape=tape,
+            incumbent=incumbent,
+            setting=setting,
+            calibration=calibration,
+            run_setting=active_run,
+            step_index=step_index,
+            carrier=carrier,
+            cell_rekeyed_users=cell_rekeys,
+            previously_served_users=previously_served,
+        )
+    )
+
+    started = time.perf_counter()
+    quantile_bins = _prewarm_selection_quantiles(
+        tape,
+        anchor_step=step_index,
+        boundary_indices=selection_boundary_indices,
+        alpha=selection_fading_quantile_alpha,
+    )
+    phase["fading_quantile_cache"] = time.perf_counter() - started
+    phase["fading_quantile_cache_bins"] = quantile_bins
+
+    started = time.perf_counter()
+    catalog, catalogue_census = _catalogue_with_census(
+        tape,
+        step_index,
+        base,
+        setting=setting,
+        calibration=calibration,
+        counter=counter,
+        run_setting=active_run,
+    )
+    if catalogue_census["catalogue_mode"] != "complete-cartesian" and len(catalog) > CATALOGUE_CAP:
+        raise ProbeError(
+            f"selection shortlist row-count gate failed: {len(catalog)} > {CATALOGUE_CAP}"
+        )
+    phase["catalogue"] = time.perf_counter() - started
+    phase["catalogue_row_count"] = len(catalog)
+
+    parallel_used = (
+        selection_workers > 1 and len(catalog) >= PARALLEL_MINIMUM_ROWS
+    )
+    evaluation_workers = selection_workers if parallel_used else 1
+    pool = _open_selection_pool(
+        workers=evaluation_workers,
+        tape=tape,
+        setting=setting,
+        step_index=step_index,
+        carrier=carrier,
+        incumbent=incumbent,
+        cell_rekeys=cell_rekeys,
+        previously_served_users=previously_served,
+        calibration=calibration,
+        run_setting=active_run,
+        selection_alpha=selection_fading_quantile_alpha,
+    )
+    started = time.perf_counter()
+    selection_evaluator = StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=cell_rekeys,
+        previously_served_users=previously_served,
+        field=(
+            "nominal"
+            if selection_fading_quantile_alpha is None
+            else "margin"
+        ),
+        counter=counter,
+        run_setting=active_run,
+        boundary_indices=(0,),
+        fading_quantile_alpha=selection_fading_quantile_alpha,
+    )
+    stage1_profiles, stage1_invalid, stage1_shards = _parallel_stage1_profiles(
+        pool=pool,
+        configs=catalog,
+        workers=evaluation_workers,
+        serial_evaluator=selection_evaluator,
+        counter=counter,
+    )
+    selection_evaluator._invalid.update(stage1_invalid)
+    catalog = tuple(
+        row
+        for row in catalog
+        if row.configuration_id not in selection_evaluator._invalid
+    )
+    if base.configuration_id not in stage1_profiles:
+        raise ProbeError("BASE has an invalid selection-time power certificate")
+    factors = _selection_factor_scores(
+        base=base,
+        incumbent=incumbent,
+        catalog=catalog,
+        evaluated=stage1_profiles,
+        calibration=calibration,
+        cell_rekeyed_users=cell_rekeys,
+    )
+    base_selection = stage1_profiles[base.configuration_id]
+    base_served = base_selection.served_count
+    service_guarded = tuple(
+        row
+        for row in catalog
+        if stage1_profiles[row.configuration_id].served_count
+        >= base_served
+    )
+    unilateral_configs = tuple(row for row in catalog if row.changed_users == 1)
+    joint_configs = tuple(row for row in catalog if row.changed_users > 1)
+    u1 = _best(
+        (base_selection, *(stage1_profiles[row.configuration_id] for row in unilateral_configs)),
+        calibration,
+    )
+    j1 = _best(
+        (base_selection, *(stage1_profiles[row.configuration_id] for row in joint_configs)),
+        calibration,
+    )
+    union = _best(stage1_profiles.values(), calibration)
+    phase["stage1_scores"] = time.perf_counter() - started
+
+    started = time.perf_counter()
+    mandatory_ids = {
+        base.configuration_id,
+        *(
+            row.configuration_id
+            for row in catalog
+            if row.kind in {"s0-top-two", "beam-evacuation"}
+        ),
+    }
+    incumbent_match = next(
+        (row for row in catalog if row.assignments == incumbent.assignments), None
+    )
+    if incumbent_match is not None:
+        mandatory_ids.add(incumbent_match.configuration_id)
+    stage2, stage2_shortlist_diagnostic = _stage2_shortlist(
+        catalog=catalog,
+        factors=factors,
+        mandatory_ids=mandatory_ids,
+        stage2_m=selection_stage2_m,
+    )
+    forecasts, forecast_receipts, stage2_shards = _parallel_stage2_forecasts(
+        pool=pool,
+        tape=tape,
+        setting=setting,
+        anchor_step=step_index,
+        carrier=carrier,
+        configs=stage2,
+        counter=counter,
+        calibration=calibration,
+        run_setting=active_run,
+        workers=evaluation_workers,
+        boundary_indices=selection_boundary_indices,
+        fading_quantile_alpha=selection_fading_quantile_alpha,
+    )
+    _attach_stage2_c2(
+        factors=factors,
+        forecasts=forecasts,
+        base=base,
+        calibration=calibration,
+        horizon_offsets=c2_horizon_offsets,
+    )
+    c2_tie_diagnostic = _c2_tie_diagnostic(
+        catalog=stage2,
+        factors=factors,
+    )
+    stage2 = tuple(row for row in stage2 if row.configuration_id in forecasts)
+    stage2_top1_diagnostic = _stage2_top1_diagnostic(
+        stage1_top1_configuration=str(
+            stage2_shortlist_diagnostic["stage1_top1_configuration"]
+        ),
+        stage2_catalog=stage2,
+        factors=factors,
+    )
+    phase["stage2_forecasts"] = time.perf_counter() - started
+
+    started = time.perf_counter()
+    guarded_stage2 = tuple(row for row in stage2 if row in service_guarded)
+    if base not in guarded_stage2:
+        guarded_stage2 = (base, *guarded_stage2)
+    s0_candidates = tuple(
+        row
+        for row in guarded_stage2
+        if row.kind in {"reference", "s0-top-two", "beam-evacuation"}
+    )
+    if not s0_candidates:
+        s0_candidates = (base,)
+    s0 = nominal_greedy_reference(
+        _nominal_configuration(row, stage1_profiles[row.configuration_id])
+        for row in s0_candidates
+    )
+    s0_config = next(row for row in s0_candidates if row.configuration_id == s0.configuration_id)
+    nominal_all = nominal_greedy_reference(
+        _nominal_configuration(row, stage1_profiles[row.configuration_id])
+        for row in catalog
+    )
+    nominal_control = next(
+        row for row in catalog if row.configuration_id == nominal_all.configuration_id
+    )
+    selections = {
+        "E1_U1": u1.config,
+        "E1_J1": j1.config,
+        "UNION_CATALOGUE_OPTIMUM": union.config,
+        "S0_DEPLOYABLE": s0_config,
+        "FULL": _set_score_select(catalog=guarded_stage2, factors=factors, include=("C1", "C2", "C3")),
+        "DROP_C1": _set_score_select(catalog=guarded_stage2, factors=factors, include=("C2", "C3")),
+        "DROP_C2": _set_score_select(catalog=guarded_stage2, factors=factors, include=("C1", "C3")),
+        "DROP_C3": _set_score_select(catalog=guarded_stage2, factors=factors, include=("C1", "C2")),
+        "UNI": _set_score_select(
+            catalog=(base, *tuple(row for row in guarded_stage2 if row.changed_users == 1)),
+            factors=factors,
+            include=("C1", "C2", "C3"),
+        ),
+        ),
+        "S_UNI": base,
+        ALL_NEUTRAL_CONTROL: base,
+        "NULL": base,
+        "RANDOM_FEASIBLE": catalog[int(tape.seed + step_index) % len(catalog)],
+        "NOMINAL_GREEDY": nominal_control,
+    }
+    phase["selection"] = time.perf_counter() - started
+
+    # A miss detected before committed validation atomically selects BASE for
+    # every deployable arm.  Reserve the measured k=0 per-configuration cost
+    # for the immutable 48-boundary validation so a large coalition cannot
+    # start a non-preemptible solve that is already certain to miss the clock.
+    elapsed_before_validation = time.perf_counter() - decision_started
+    changed_full = selections["FULL"].changed_users
+    decomposition_rows = (
+        2**changed_full
+        if 1 < changed_full <= 4
+        else changed_full + 2
+        if changed_full
+        else 1
+    )
+    validation_rows = len(
+        {row.configuration_id for row in selections.values()}
+    ) + decomposition_rows
+    observed_stage1_seconds_per_boundary_row = phase["stage1_scores"] / max(
+        1, len(catalog)
+    )
+    validation_reserve_s = (
+        observed_stage1_seconds_per_boundary_row * validation_rows * 48
+    )
+    deadline_missed = (
+        elapsed_before_validation >= DECISION_DEADLINE_S
+        or elapsed_before_validation + validation_reserve_s
+        >= DECISION_DEADLINE_S
+    )
+    pre_fallback = {name: row.configuration_id for name, row in selections.items()}
+    selections = apply_deadline_fallback(selections, base=base, missed=deadline_missed)
+
+    unique_selected = tuple(
+        {row.configuration_id: row for row in selections.values()}.values()
+    )
+    started = time.perf_counter()
+    if pool is not None:
+        validation_future = pool.submit(
+            _selection_worker_validate,
+            (unique_selected, selections["FULL"], j1.config, u1.config),
+        )
+        (
+            validated_profiles,
+            committed_decomposition,
+            singleton_profiles,
+            base_decomposition,
+            validation_evaluations,
+        ) = validation_future.result()
+        counter.boundary_evaluations += validation_evaluations
+        evaluated = {
+            profile.config.configuration_id: profile
+            for profile in validated_profiles
+        }
+        evaluator = None
+        s_uni_future = None
+    else:
+        s_uni_future = None
+        evaluator = StepEvaluator(
+            tape,
+            setting,
+            step_index,
+            transition_from=incumbent,
+            cell_rekeyed_users=cell_rekeys,
+            previously_served_users=previously_served,
+            counter=counter,
+            run_setting=active_run,
+        )
+        evaluator.evaluate_many(unique_selected)
+        if base.configuration_id not in evaluator._evaluated:
+            raise ProbeError("BASE has an invalid committed-profile power certificate")
+        committed_decomposition, singleton_profiles = _committed_set_decomposition(
+            base=base,
+            selected=selections["FULL"],
+            incumbent=incumbent,
+            evaluator=evaluator,
+            calibration=calibration,
+            cell_rekeyed_users=cell_rekeys,
+        )
+        base_decomposition, _ = _committed_set_decomposition(
+            base=base,
+            selected=base,
+            incumbent=incumbent,
+            evaluator=evaluator,
+            calibration=calibration,
+            cell_rekeyed_users=cell_rekeys,
+        )
+        evaluated = dict(evaluator._evaluated)
+    phase["validation"] = time.perf_counter() - started
+    selection_wall_s = time.perf_counter() - decision_started
+    if selection_wall_s > DECISION_DEADLINE_S and not deadline_missed:
+        deadline_missed = True
+        selections = apply_deadline_fallback(selections, base=base, missed=True)
+        committed_decomposition = base_decomposition
+        singleton_profiles = ()
+
+    if s_uni_future is not None:
+        (
+            s_uni,
+            s_uni_iterations,
+            s_uni_wall_s,
+            s_uni_missed,
+            s_uni_termination,
+            s_uni_profile,
+            s_uni_evaluations,
+        ) = s_uni_future.result()
+        counter.boundary_evaluations += s_uni_evaluations
+        pool.shutdown(wait=True)
+        evaluated[s_uni_profile.config.configuration_id] = s_uni_profile
+    elif pool is not None:
+        (
+            s_uni,
+            s_uni_iterations,
+            s_uni_wall_s,
+            s_uni_missed,
+            s_uni_termination,
+            s_uni_profile,
+            s_uni_evaluations,
+        ) = pool.submit(
+            _selection_worker_s_uni, S_UNI_COMPUTE_BUDGET_S
+        ).result()
+        counter.boundary_evaluations += s_uni_evaluations
+        pool.shutdown(wait=True)
+        evaluated[s_uni_profile.config.configuration_id] = s_uni_profile
+    else:
+        assert evaluator is not None
+        s_uni, s_uni_iterations, s_uni_wall_s, s_uni_missed, s_uni_termination = (
+            _s_uni_select(
+                base=base,
+                incumbent=incumbent,
+                tape=tape,
+                step_index=step_index,
+                evaluator=selection_evaluator,
+                calibration=calibration,
+                compute_budget_s=S_UNI_COMPUTE_BUDGET_S,
+                run_setting=active_run,
+                cell_rekeyed_users=cell_rekeys,
+            )
+        )
+        evaluator.evaluate(s_uni if not s_uni_missed else base)
+        evaluated.update(evaluator._evaluated)
+    phase["s_uni_comparator"] = s_uni_wall_s
+    pre_fallback["S_UNI"] = s_uni.configuration_id
+    # S_UNI is an independently budgeted comparator.  A coordinator miss
+    # cannot discard a successful comparator result.
+    selections["S_UNI"] = s_uni if not s_uni_missed else base
+    c2_diagnostic_started = time.perf_counter()
+    configuration_by_id = {row.configuration_id: row for row in catalog}
+    c2_forecast_certificate = _c2_forecast_validity_certificate(
+        tape=tape,
+        setting=setting,
+        anchor_step=step_index,
+        carrier=carrier,
+        immediate=configuration_by_id[pre_fallback["DROP_C2"]],
+        continuation=configuration_by_id[pre_fallback["FULL"]],
+        forecasts=forecasts,
+        calibration=calibration,
+        run_setting=active_run,
+    )
+    c2_forecast_certificate["tie_diagnostic"] = c2_tie_diagnostic
+    phase["c2_forecast_validity_diagnostic"] = (
+        time.perf_counter() - c2_diagnostic_started
+    )
+    base_profile = evaluated[base.configuration_id]
+    full_profile = evaluated[selections["FULL"].configuration_id]
+    range_diagnostic = _usable_energy_range_step(
+        selected=full_profile,
+        base=base,
+        base_profile=base_profile,
+        evaluated=evaluated,
+    )
+    selected_full_factors = factors.get(
+        selections["FULL"].configuration_id,
+        factors[base.configuration_id],
+    )
+    selected_full_factors = {
+        **selected_full_factors,
+        "committed_d_by_user": committed_decomposition.d_by_user,
+        "committed_psi_A": committed_decomposition.interaction_bits,
+        "committed_shapley_interaction_by_user": committed_decomposition.shapley_interaction_by_user,
+        "credit_split": committed_decomposition.credit_split,
+        "committed_joint_change_bits": committed_decomposition.joint_change_bits,
+    }
+    solver_residual_w_max = max(
+        row.score.certificate_residual_w for row in evaluated.values()
+    )
+    # An update residual is not, without a contraction proof, an upper bound
+    # on fixed-point error or on threshold-sensitive F.  Only an exactly fixed
+    # floating-point update certifies zero here; all other cases fail closed
+    # until the solver exports independently proved F bounds.
+    certified_numerical_error_bits = (
+        0.0 if solver_residual_w_max == 0.0 else None
+    )
+    exact_j1 = evaluated[j1.config.configuration_id]
+    exact_u1 = evaluated[u1.config.configuration_id]
+    j1_objective_margin_bits = float(
+        _objective(exact_j1, calibration) - _objective(exact_u1, calibration)
+    )
+    j1_matched_qos, j1_qos_certificate = _anchor_qos_noninferior(
+        exact_j1,
+        (base_profile, exact_u1),
+        incumbent,
+        cell_rekeyed_users=cell_rekeys,
+        previously_served_users=previously_served,
+    )
+    genuine_multi_user_witness = (
+        j1.config.changed_users > 1
+        and j1_matched_qos
+        and certified_numerical_error_bits is not None
+        and j1_objective_margin_bits > certified_numerical_error_bits
+    )
+    additive_interaction = None
+    if (
+        not deadline_missed
+        and singleton_profiles
+        and base_profile.bits > 0.0
+        and base_profile.joules > 0.0
+        and full_profile.joules > 0.0
+    ):
+        matched = matched_anchor_decomposition(
+            base=(base_profile.outcome(),),
+            selected=(full_profile.outcome(),),
+            singleton_selected=tuple((row.outcome(),) for row in singleton_profiles),
+        )
+        additive_interaction = {
+            "reference": "a0 pooled EE at this matched anchor",
+            "sign_convention": "positive improves F=B-eta0*E relative to a0",
+            "A_bits": float(matched.additive),
+            "I_bits": float(matched.interaction),
+            "delta_joint_bits": float(matched.joint_change),
+            "g_A": float(matched.g_additive),
+            "g_I": float(matched.g_interaction),
+        }
+    else:
+        additive_interaction = {
+            "reference": "a0 pooled EE at this matched anchor",
+            "sign_convention": "positive improves F=B-eta0*E relative to a0",
+            "A_bits": 0.0,
+            "I_bits": 0.0,
+            "delta_joint_bits": 0.0,
+            "g_A": 0.0,
+            "g_I": 0.0,
+        }
+
+    ledger_started = time.perf_counter()
+    arm_rows = []
+    opening_state = {
+        "world_domain": tape.domain,
+        "world_sha256": tape.digest,
+        "step_index": step_index,
+        "carrier": carrier,
+        "incumbent_assignments": incumbent.assignments,
+        "previously_served_users": previously_served,
+        "selection_dependency_sha256": selection_dependency_sha256,
+        "dependency_allowlist": list(SELECTION_DEPENDENCY_ALLOWLIST),
+
+exec
+/bin/bash -lc "sed -n '2725,2815p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '4000,4130p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '260,360p' src/mcrl/physics_v025/tapes.py
+sed -n '70,180p' src/mcrl/physics_v025/batch.py
+sed -n '180,380p' src/mcrl/physics_v025/batch.py
+sed -n '380,605p' src/mcrl/physics_v025/batch.py" in /home/sat/mcrl-v025-rule-ws
+ succeeded in 0ms:
+            return (
+                base,
+                iterations,
+                time.perf_counter() - started,
+                True,
+                "DEADLINE_FALLBACK_BASE",
+            )
+        current_profile = evaluator.evaluate(current)
+        best = current
+        best_value = coordinator_k0_objective(current, current_profile)
+        candidates = []
+        for user in sorted(options):
+            for identity in options[user]:
+                if identity == current.mapping[user]:
+                    continue
+                mapping = current.mapping
+                mapping[user] = identity
+                candidates.append(
+                    _configuration(base, mapping, kind="s-uni-iterate")
+                )
+        for offset in range(0, len(candidates), SELECTION_STAGE2_M):
+            remaining_s = deadline_at - time.perf_counter()
+            if remaining_s <= max(0.25, previous_batch_wall_s):
+                return (
+                    base,
+                    iterations,
+                    time.perf_counter() - started,
+                    True,
+                    "DEADLINE_FALLBACK_BASE",
+                )
+            batch_started = time.perf_counter()
+            evaluator.evaluate_many(
+                candidates[offset : offset + SELECTION_STAGE2_M]
+            )
+            previous_batch_wall_s = max(
+                previous_batch_wall_s,
+                time.perf_counter() - batch_started,
+            )
+            if time.perf_counter() >= deadline_at:
+                return (
+                    base,
+                    iterations,
+                    time.perf_counter() - started,
+                    True,
+                    "DEADLINE_FALLBACK_BASE",
+                )
+        for candidate in candidates:
+            if candidate.configuration_id in getattr(evaluator, "_invalid", ()):
+                continue
+            profile = evaluator.evaluate(candidate)
+            if sum(profile.score.served_phy.values()) < base_served:
+                continue
+            value = coordinator_k0_objective(candidate, profile)
+            if value > best_value or (
+                value == best_value and candidate.configuration_id < best.configuration_id
+            ):
+                best, best_value = candidate, value
+        if best.assignments == current.assignments:
+            return (
+                current,
+                iterations,
+                time.perf_counter() - started,
+                False,
+                "NO_IMPROVING_LEGAL_UNILATERAL",
+            )
+        current = best
+        iterations += 1
+
+
+def _stage2_shortlist(
+    *,
+    catalog: Sequence[Configuration],
+    factors: Mapping[str, Mapping[str, object]],
+    mandatory_ids: set[str],
+    stage2_m: int = SELECTION_STAGE2_M,
+) -> tuple[tuple[Configuration, ...], dict[str, object]]:
+    """Build the production top-M surface from k=0 scores only."""
+
+    if type(stage2_m) is not int or stage2_m < 1:
+        raise ProbeError("stage-2 M must be a positive integer")
+    rankings = {
+        arm: _rank_for_arm(
+            catalog=catalog,
+            factors=factors,
+            primary_names=components,
+            use_c2=arm != "DROP_C2",
+        )
+        for arm, components in ARM_PRIMARY_COMPONENTS.items()
+    }
+    stage2_ids = set(mandatory_ids)
+    for ranking in rankings.values():
+            else 0
+        ),
+        "arms": arm_rows,
+        "c2_forecast_certificate": c2_forecast_certificate,
+        "e1_certificate": {
+            "candidate_census_complete": True,
+            **catalogue_census,
+            "candidate_count": len(catalog),
+            "unilateral_count": len(unilateral_configs),
+            "joint_count": len(joint_configs),
+            "u1_configuration": u1.config.configuration_id,
+            "j1_configuration": j1.config.configuration_id,
+            "union_configuration": union.config.configuration_id,
+            "genuine_multi_user_witness": genuine_multi_user_witness,
+            "j1_beyond_base_and_u_all": genuine_multi_user_witness,
+            "j1_objective_margin_bits": j1_objective_margin_bits,
+            "certified_numerical_error_bits": certified_numerical_error_bits,
+            "certified_numerical_error_status": (
+                "EXACT_FIXED_POINT"
+                if certified_numerical_error_bits is not None
+                else "UNAVAILABLE_FAIL_CLOSED"
+            ),
+            "matched_qos_noninferior": j1_matched_qos,
+            "matched_qos_certificate": j1_qos_certificate,
+            "u_all_configuration": u1.config.configuration_id,
+            "solver_residual_w_max": solver_residual_w_max,
+        },
+        "s0_certificate": {
+            "nominal_information_only": True,
+            "top_two_proposal_ids": sorted(
+                row.configuration_id for row in catalog if row.kind == "s0-top-two"
+            ),
+            "evacuation_decoder": "frozen-complete-top2-combinations-v1",
+        },
+        "non_additive_interaction_bits": float(
+            committed_decomposition.interaction_bits
+        ),
+        "non_additive_interaction_count": int(
+            selections["FULL"].changed_users > 1
+        ),
+        "catalogue_interaction_sum_bits": float(interaction_sum),
+        "catalogue_interaction_configuration_count": interaction_count,
+        "factor_arm_formulas": {
+            "FULL": "primary C1_m+C3_m; secondary C2",
+            "DROP_C1": "primary C3_m; secondary C2",
+            "DROP_C2": "primary C1_m+C3_m; secondary configuration_id",
+            "DROP_C3": "primary C1_m; secondary C2",
+            "same_keys_for_ranking_pruning_guards_and_ties": True,
+        },
+        "selected_full_set_score": {
+            name: (
+                float(value)
+                if isinstance(value, Fraction)
+                else value
+                if isinstance(value, (int, float, str, bool)) or value is None
+                else [[user, float(credit)] for user, credit in value]
+            )
+            for name, value in selected_full_factors.items()
+        },
+        "matched_anchor_decomposition": additive_interaction,
+        "decomposition_contract": {
+            "selection_time": "F_m at decision/forecast grid; d_i^m, Psi_A^m and V_CA only",
+            "outcome": "realised 48-boundary F; labels, credit split and endpoint certificates only",
+            "mixed": False,
+            "interaction_labels_uncapped": True,
+            "shapley_split_max_coalition_size": 4,
+        },
+        "forecast_margin_schema": f"{SCHEMA}-forecast-margin-row-v1",
+        "forecast_margin_rows": list(forecast_receipts),
+        "certificate_distribution": dict(sorted(certificate_distribution.items())),
+        "service_guard": {
+            "rule": "served-user count must not decrease versus BASE",
+            "applied_arms": list(SET_LEVEL_ARMS),
+            "not_applied_arms": [arm for arm in ARMS if arm not in SET_LEVEL_ARMS],
+        },
+        "opening_state_certificate": {
+            **opening_state,
+            "sha256": opening_state_sha256,
+            "identical_across_all_arms": len(
+                {row["opening_state_sha256"] for row in arm_rows}
+            ) == 1,
+        },
+        "selection_approximations": {
+            "causal_margin_adjusted_nominal_information_only": True,
+            "fading_quantile_alpha": selection_fading_quantile_alpha,
+            "c2_tie_diagnostic": c2_tie_diagnostic,
+            "stage1_boundary_indices": [0],
+            "selection_boundary_indices": list(selection_boundary_indices),
+            "stage2_M": selection_stage2_m,
+            "stage2_count": len(stage2),
+            "validation_reserve_s": validation_reserve_s,
+            "elapsed_before_validation_s": elapsed_before_validation,
+            "parallel_execution": parallel_used,
+            "deterministic_sharding": "catalogue-index-mod-worker-count",
+            "stage1_shards": list(stage1_shards),
+            "stage2_shards": list(stage2_shards),
+            "pre_fallback_selections": pre_fallback,
+            **stage2_top1_diagnostic,
+            "committed_endpoint_boundaries": 48,
+        },
+        "coordinator": {
+            "deadline_s": DECISION_DEADLINE_S,
+            "declared_worker_count": selection_workers,
+            "effective_worker_count": evaluation_workers,
+            "whole_path_wall_s": selection_wall_s,
+            "deadline_missed": deadline_missed,
+            "fallback": "BASE" if deadline_missed else None,
+            "s_uni_iterations": s_uni_iterations,
+            "s_uni_wall_s": s_uni_wall_s,
+            "s_uni_compute_budget_s": S_UNI_COMPUTE_BUDGET_S,
+            "s_uni_termination_certificate": s_uni_termination,
+        },
+        "phase_seconds": phase,
+        "successor_usable_energy_range": range_diagnostic,
+        "physical_boundary_evaluations": counter.boundary_evaluations - counter_start,
+    }
+
+
+def _summarize_energy_range(steps: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    rows = [step["successor_usable_energy_range"] for step in steps]
+    mode_counts: dict[str, int] = {}
+    by_beam: dict[str, float] = {}
+    for row in rows:
+        for name, count in row["selected_acm_mode_counts"].items():  # type: ignore[union-attr]
+            mode_counts[str(name)] = mode_counts.get(str(name), 0) + int(count)
+        for beam, value in row["best_feasible_reassignment_dc_energy_change_j_by_beam"].items():  # type: ignore[union-attr]
+            by_beam[str(beam)] = max(by_beam.get(str(beam), -math.inf), float(value))
+    plateau = sum(int(row["se_plateau_user_steps"]) for row in rows)
+    users = sum(int(row["user_step_observations"]) for row in rows)
+    cap_hits = sum(int(row["rf_cap_hits"]) for row in rows)
+    rf = sum(int(row["rf_transmission_observations"]) for row in rows)
+        if len(keys) != len(set(keys)):
+            raise MCRLContractError("boundary has duplicate user/physical candidates")
+        if tuple(sorted(set(self.cell_rekeyed_users))) != self.cell_rekeyed_users:
+            raise MCRLContractError("cell re-key users must be unique and sorted")
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "absolute_time_s": _f(self.absolute_time_s),
+            "candidates": [row.payload() for row in self.candidates],
+            "cell_rekeyed_users": list(self.cell_rekeyed_users),
+        }
+
+
+@dataclass(frozen=True)
+class PrimitiveStepArrays:
+    """One 48-boundary step in compact, immutable NumPy form.
+
+    Cross-gain storage is factorised by victim user, wanted-satellite slot,
+    and physical aggressor.  This preserves the exact per-chain quantity
+    without materialising millions of Python tuples.  Object boundaries are
+    generated only by :meth:`boundary_view`, the audit/KAT compatibility
+    seam; engine geometry is assembled directly from these arrays.
+    """
+
+    absolute_time_s: np.ndarray
+    users: np.ndarray
+    row_user_column: np.ndarray
+    legacy_action_index: np.ndarray
+    identities: np.ndarray
+    colors: np.ndarray
+    elevations_deg: np.ndarray
+    d2_entry_elevations_deg: np.ndarray
+    slants_km: np.ndarray
+    d2_distances_km: np.ndarray
+    visible: np.ndarray
+    d2_eligible: np.ndarray
+    cell_reachable: np.ndarray
+    nominal_gain: np.ndarray
+    realised_gain: np.ndarray
+    remaining_visibility_s: np.ndarray
+    remaining_d2_s: np.ndarray
+    visibility_right_censored: np.ndarray
+    d2_right_censored: np.ndarray
+    aggressor_identities: np.ndarray
+    aggressor_colors: np.ndarray
+    aggressor_satellite_column: np.ndarray
+    row_wanted_slot: np.ndarray
+    cross_base_nominal: np.ndarray
+    fading_by_satellite: np.ndarray
+    receive_gain_by_wanted_slot: np.ndarray
+
+    def __post_init__(self) -> None:
+        arrays = {
+            name: np.asarray(getattr(self, name))
+            for name in self.__dataclass_fields__
+        }
+        times = arrays["absolute_time_s"]
+        rows = arrays["identities"].shape[0]
+        users = arrays["users"].shape[0]
+        aggressors = arrays["aggressor_identities"].shape[0]
+        satellites = arrays["fading_by_satellite"].shape[2]
+        if times.shape != (D2_SUBINTERVALS + 1,):
+            raise MCRLContractError("step arrays need exactly 48 boundary times")
+        if arrays["identities"].shape != (rows, 2):
+            raise MCRLContractError("step identities must have shape (R,2)")
+        if arrays["aggressor_identities"].shape != (aggressors, 2):
+            raise MCRLContractError("aggressor identities must have shape (A,2)")
+        for name in ("row_user_column", "legacy_action_index", "colors", "row_wanted_slot"):
+            if arrays[name].shape != (rows,):
+                raise MCRLContractError(f"{name} must have shape (R,)")
+        for name in (
+            "elevations_deg", "d2_entry_elevations_deg", "slants_km",
+            "d2_distances_km", "visible", "d2_eligible", "cell_reachable",
+            "nominal_gain", "realised_gain", "remaining_visibility_s",
+            "remaining_d2_s", "visibility_right_censored",
+            "d2_right_censored",
+        ):
+            if arrays[name].shape != (D2_SUBINTERVALS + 1, rows):
+                raise MCRLContractError(f"{name} must have shape (48,R)")
+        if arrays["aggressor_colors"].shape != (aggressors,):
+            raise MCRLContractError("aggressor_colors must have shape (A,)")
+        if arrays["aggressor_satellite_column"].shape != (aggressors,):
+            raise MCRLContractError("aggressor satellite columns must have shape (A,)")
+        if arrays["cross_base_nominal"].shape != (48, users, aggressors):
+            raise MCRLContractError("cross_base_nominal must have shape (48,U,A)")
+        if arrays["fading_by_satellite"].shape[:2] != (48, users):
+            raise MCRLContractError("fading_by_satellite must have shape (48,U,S)")
+        slots = arrays["receive_gain_by_wanted_slot"].shape[2]
+        if arrays["receive_gain_by_wanted_slot"].shape != (48, users, slots, satellites):
+            raise MCRLContractError(
+                "receive_gain_by_wanted_slot must have shape (48,U,L,S)"
+            )
+        if np.any(arrays["row_user_column"] < 0) or np.any(arrays["row_user_column"] >= users):
+            raise MCRLContractError("row user column is outside the user array")
+        if np.any(arrays["aggressor_satellite_column"] < 0) or np.any(
+            arrays["aggressor_satellite_column"] >= satellites
+        ):
+            raise MCRLContractError("aggressor satellite column is invalid")
+        if not np.all(np.isfinite(times)):
+            raise MCRLContractError("step boundary times must be finite")
+        for name, value in arrays.items():
+    boundaries = {0.0, 1.0}
+    for occupancy in range(1, maximum_occupancy + 1):
+        boundaries.update(index / occupancy for index in range(1, occupancy))
+    ordered = np.asarray(sorted(boundaries), dtype=np.float64)
+    return (ordered[1:] - ordered[:-1], (ordered[1:] + ordered[:-1]) / 2.0)
+
+
+def _evaluate_ar_tdm_catalogue_core(
+    arrays: PrimitiveStepArrays,
+    selected_rows: np.ndarray,
+    *,
+    field: str = "realised",
+    chunk_size: int = 256,
+    rate_target_bps: float = RATE_TARGET_BPS,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+    boundary_indices: tuple[int, ...] = tuple(range(48)),
+    fading_quantile_alpha: float | None = None,
+) -> BatchARResult:
+    """Evaluate ``C x U`` selected candidate-row indices without row objects.
+
+    A row index of ``-1`` is the explicit null action.  The common rational
+    TDM partition is an exact refinement of every configuration's scalar slot
+    partition, so splitting a constant slot cannot alter rates or energy.
+    """
+
+    rows_all = np.asarray(selected_rows, dtype=np.int64)
+    if rows_all.ndim != 2 or rows_all.shape[1] != arrays.users.size:
+        raise MCRLContractError("selected_rows must have shape (configurations, users)")
+    if field not in {"nominal", "margin", "realised"}:
+        raise MCRLContractError("batch field must be nominal, margin, or realised")
+    if fading_quantile_alpha is not None and (
+        not math.isfinite(fading_quantile_alpha)
+        or not 0.0 < fading_quantile_alpha < 1.0
+    ):
+        raise MCRLContractError("fading quantile alpha must lie strictly in (0,1)")
+    if field == "margin" and fading_quantile_alpha is None:
+        raise MCRLContractError("margin field requires a fading quantile alpha")
+    if (
+        not boundary_indices
+        or tuple(sorted(set(boundary_indices))) != boundary_indices
+        or boundary_indices[0] < 0
+        or boundary_indices[-1] >= 48
+    ):
+        raise MCRLContractError("boundary indices must be unique, ordered, and in 0..47")
+    configurations, users = rows_all.shape
+    modes = ACM_MODES
+    thresholds = np.asarray([row.threshold_linear for row in modes])
+    efficiencies = np.asarray([row.spectral_efficiency_bit_per_s_hz for row in modes])
+    gamma = np.asarray(
+        [0.0]
+        + [
+            np.nan if rate_target_sinr(rate_target_bps, BEAM_BANDWIDTH_HZ, n) is None
+            else float(rate_target_sinr(rate_target_bps, BEAM_BANDWIDTH_HZ, n))
+            for n in range(1, users + 1)
+        ],
+        dtype=np.float64,
+    )
+    target_mode_index = np.asarray(
+        [0]
+        + [
+            0
+            if rate_target_mode(rate_target_bps, BEAM_BANDWIDTH_HZ, n) is None
+            else ACM_MODES.index(
+                rate_target_mode(rate_target_bps, BEAM_BANDWIDTH_HZ, n)
+            )
+            + 1
+            for n in range(1, users + 1)
+        ],
+        dtype=np.int64,
+    )
+    noise = noise_power_w(BEAM_BANDWIDTH_HZ)
+    bits = np.zeros((configurations, users), dtype=np.float64)
+    decoding = np.zeros_like(bits)
+    feasible_all = np.ones((configurations, users), dtype=np.bool_)
+    residual_max = np.zeros(configurations, dtype=np.float64)
+    components = np.zeros((configurations, 3), dtype=np.float64)
+    mode_counts = np.zeros((configurations, len(modes) + 1), dtype=np.int64)
+    target_mode_counts = np.zeros_like(mode_counts)
+    transmitted_mode_counts = np.zeros_like(mode_counts)
+    realised_decode_successes = np.zeros(configurations, dtype=np.int64)
+    realised_decode_failures = np.zeros(configurations, dtype=np.int64)
+    plateau = np.ones((configurations, users), dtype=np.bool_)
+    seen = np.zeros((configurations, users), dtype=np.bool_)
+    transmissions = np.zeros(configurations, dtype=np.int64)
+    cap_hits = np.zeros(configurations, dtype=np.int64)
+    valid_result = np.ones(configurations, dtype=np.bool_)
+    # 0=INVALID, 1=CONVERGED, 2=CONVERGED_SLOW.  A configuration receives
+    # the worst certificate observed over its slots and selected boundaries.
+    certificate_status = np.ones(configurations, dtype=np.int8)
+    certificate_iterations = np.zeros(configurations, dtype=np.int64)
+    max_rf_power_w = np.zeros(configurations, dtype=np.float64)
+    min_decoding_margin_db = np.full(configurations, np.inf, dtype=np.float64)
+    acm_se_sum = np.zeros(configurations, dtype=np.float64)
+    acm_se_count = np.zeros(configurations, dtype=np.int64)
+    row_to_aggressor = {
+        (int(identity[0]), int(identity[1])): index
+        for index, identity in enumerate(arrays.aggressor_identities)
+    }
+    row_aggressor = np.asarray(
+        [
+            row_to_aggressor.get((int(identity[0]), int(identity[1])), -1)
+            for identity in arrays.identities
+        ],
+        dtype=np.int64,
+    )
+    beam_code_of = {
+        identity: index
+        for index, identity in enumerate(
+            sorted({(int(row[0]), int(row[1])) for row in arrays.identities.tolist()})
+        )
+    }
+    }
+    row_beam_code = np.asarray(
+        [
+            beam_code_of[(int(identity[0]), int(identity[1]))]
+            for identity in arrays.identities
+        ],
+        dtype=np.int64,
+    )
+    # Keep rare high-occupancy evacuation profiles out of ordinary chunks;
+    # otherwise one such row forces every neighbouring unilateral through a
+    # much finer universal rational slot grid.
+    initial_maximum = np.zeros(configurations, dtype=np.int64)
+    for config_index, selected in enumerate(rows_all):
+        selected_codes = row_beam_code[selected[selected >= 0]]
+        if selected_codes.size:
+            initial_maximum[config_index] = int(
+                np.max(np.unique(selected_codes, return_counts=True)[1])
+            )
+    order = np.argsort(initial_maximum, kind="stable")
+    inverse_order = np.argsort(order)
+    rows_all = rows_all[order]
+    satellite_of = {
+        int(identity[0]): int(column)
+        for identity, column in zip(
+            arrays.aggressor_identities,
+            arrays.aggressor_satellite_column,
+            strict=True,
+        )
+    }
+    row_satellite = np.asarray(
+        [satellite_of.get(int(identity[0]), 0) for identity in arrays.identities],
+        dtype=np.int64,
+    )
+    user_axis = np.arange(users, dtype=np.int64)
+    lower_user = user_axis[None, None, :] < user_axis[None, :, None]
+    # Quantiles belong to immutable candidate rows, not configurations.  Build
+    # each boundary's row table once and gather from it in every catalogue
+    # chunk; recomputing unique bins over C x U selections dominated the real
+    # four-worker gate despite every scalar quantile already being cached.
+    quantile_by_boundary = (
+        {}
+        if fading_quantile_alpha is None
+        else {
+            boundary: fading_product_quantile_array(
+                arrays.elevations_deg[boundary], fading_quantile_alpha
+            )
+            for boundary in boundary_indices
+        }
+    )
+
+    for low in range(0, configurations, chunk_size):
+        high = min(configurations, low + chunk_size)
+        selected = rows_all[low:high]
+        count = high - low
+        valid_assignment = selected >= 0
+        safe_rows = np.maximum(selected, 0)
+        aggressor = row_aggressor[safe_rows]
+        safe_aggressor = np.maximum(aggressor, 0)
+        beam_code = row_beam_code[safe_rows]
+        victim_color = arrays.colors[safe_rows]
+        wanted_slot = arrays.row_wanted_slot[safe_rows]
+        aggressor_color = victim_color
+        aggressor_satellite = row_satellite[safe_rows]
+        aggressor_norad = arrays.identities[safe_rows, 0]
+        previous_rate = previous_decode = previous_energy = None
+
+        previous_boundary = None
+        for boundary in boundary_indices:
+            live = valid_assignment & arrays.visible[boundary, safe_rows] \
+                & arrays.d2_eligible[boundary, safe_rows] \
+                & arrays.cell_reachable[boundary, safe_rows]
+            same_beam = beam_code[:, :, None] == beam_code[:, None, :]
+            occupancy = np.sum(same_beam & live[:, None, :], axis=2)
+            maximum = int(np.max(occupancy, initial=1))
+            fractions, midpoints = _slot_grid(maximum)
+            boundary_rate = np.zeros((count, users), dtype=np.float64)
+            boundary_decode = np.zeros((count, users), dtype=np.bool_)
+            boundary_feasible = np.zeros((count, users), dtype=np.bool_)
+            boundary_energy = np.zeros((count, 3), dtype=np.float64)
+            rank = np.sum(same_beam & live[:, None, :] & lower_user, axis=2)
+            direct_nominal = arrays.nominal_gain[boundary, safe_rows]
+            quantile = (
+                np.ones_like(direct_nominal, dtype=np.float64)
+                if fading_quantile_alpha is None
+                else quantile_by_boundary[boundary][safe_rows]
+            )
+            direct_field = (
+                direct_nominal
+                if field == "nominal"
+                else direct_nominal * quantile
+                if field == "margin"
+                else arrays.realised_gain[boundary, safe_rows]
+            )
+            base_cross = arrays.cross_base_nominal[
+                boundary,
+                user_axis[None, :, None],
+                safe_aggressor[:, None, :],
+            ]
+            receive = arrays.receive_gain_by_wanted_slot[
+                boundary,
+                user_axis[None, :, None],
+                wanted_slot[:, :, None],
+                aggressor_satellite[:, None, :],
+            ]
+            nominal_cross = base_cross * receive
+            colour_mask = victim_color[:, :, None] == aggressor_color[:, None, :]
+            available_aggressor = aggressor[:, None, :] >= 0
+            nominal_cross *= colour_mask & ~same_beam & available_aggressor
+            if field == "realised":
+                field_cross = nominal_cross * arrays.fading_by_satellite[
+                    boundary,
+                    user_axis[None, :, None],
+                    aggressor_satellite[:, None, :],
+                ]
+            else:
+                field_cross = nominal_cross
+
+            for fraction, midpoint in zip(fractions, midpoints, strict=True):
+                active = live & (rank == np.floor(midpoint * occupancy).astype(np.int64))
+                active_pair = active[:, :, None] & active[:, None, :]
+                coupling = nominal_cross * active_pair
+                targets = gamma[np.minimum(occupancy, users)]
+                forced = active & np.isnan(targets)
+                targets = np.nan_to_num(targets, nan=1.0)
+                power = np.zeros((count, users), dtype=np.float64)
+                residual = np.full(count, math.inf, dtype=np.float64)
+                done = np.zeros(count, dtype=np.bool_)
+                invalid = np.zeros(count, dtype=np.bool_)
+                recent_changes: list[np.ndarray] = []
+                for iteration in range(1, POWER_SOLVER_ITERATION_CAP + 1):
+                    interference = np.matmul(coupling, power[..., None])[..., 0]
+                    updated = np.minimum(
+                        BEAM_RF_CAP_W,
+                        targets * (noise + interference) / direct_nominal,
+                    )
+                    updated = np.where(active, updated, 0.0)
+                    updated[forced] = BEAM_RF_CAP_W
+                    bad = ~np.all(np.isfinite(updated), axis=1) | np.any(
+                        updated + POWER_SOLVER_TOLERANCE_W < power, axis=1
+                    )
+                    invalid |= bad
+                    change = np.abs(updated - power)
+                    next_residual = np.max(change, axis=1)
+                    relative = np.max(
+                        change
+                        / np.maximum(np.abs(updated), np.finfo(float).tiny),
+                        axis=1,
+                    )
+                    newly_done = (~invalid) & (
+                        (next_residual <= POWER_SOLVER_TOLERANCE_W)
+                        | (relative <= 1.0e-9)
+                    )
+                    active_solver = ~(done | invalid)
+                    power = np.where(active_solver[:, None], updated, power)
+                    residual = np.where(active_solver, next_residual, residual)
+                    done |= newly_done
+                    recent_changes.append(next_residual.copy())
+                    if len(recent_changes) > 1_000:
+                        recent_changes.pop(0)
+                    if bool(np.all(done | invalid)):
+                        break
+                slow = np.zeros(count, dtype=np.bool_)
+                unfinished = ~(done | invalid)
+                if np.any(unfinished) and len(recent_changes) == 1_000:
+                    history = np.stack(recent_changes, axis=0)
+                    monotone = np.all(
+                        history[1:] <= history[:-1] + np.finfo(float).eps,
+                        axis=0,
+                    )
+                    slow = unfinished & (np.max(history, axis=0) < 1.0e-6) & monotone
+                    done |= slow
+                invalid |= ~done
+                slot_status = np.where(invalid, 0, np.where(slow, 2, 1)).astype(np.int8)
+                destination = slice(low, high)
+                certificate_status[destination] = np.where(
+                    (certificate_status[destination] == 0) | (slot_status == 0),
+                    0,
+                    np.maximum(certificate_status[destination], slot_status),
+                )
+                certificate_iterations[destination] += iteration
+                residual_max[low:high] = np.maximum(residual_max[low:high], residual)
+                valid_result[low:high] &= ~invalid
+                # Preserve the pre-stage-4c full-path endpoint exactly: both
+                # scalar and batch paths take one final fixed-point update
+                # before the target-clearance nudge.  Status classification
+                # still uses the bounded loop above.
+                final = np.minimum(
+                    BEAM_RF_CAP_W,
+                    targets
+                    * (
+                        noise
+                        + np.matmul(coupling, power[..., None])[..., 0]
+                    )
+                    / direct_nominal,
+                )
+                final = np.where(active, final, 0.0)
+                final[forced] = BEAM_RF_CAP_W
+                power = np.minimum(
+                    BEAM_RF_CAP_W,
+                    np.nextafter(final * (1.0 + 2.0e-9), np.inf),
+                )
+                )
+                power = np.where(active, power, 0.0)
+                power[forced] = BEAM_RF_CAP_W
+                realised_interference = np.matmul(
+                    field_cross * active_pair, power[..., None]
+                )[..., 0]
+                sinr = np.where(
+                    active,
+                    power * direct_field / (noise + realised_interference),
+                    0.0,
+                )
+                safe_sinr = np.maximum(sinr, np.finfo(float).tiny)
+                max_rf_power_w[low:high] = np.maximum(
+                    max_rf_power_w[low:high], np.max(power, axis=1)
+                )
+                nominal_interference = np.matmul(
+                    nominal_cross * active_pair, power[..., None]
+                )[..., 0]
+                nominal_sinr = np.where(
+                    active,
+                    power * direct_nominal / (noise + nominal_interference),
+                    0.0,
+                )
+                predicted_sinr = nominal_sinr * quantile
+                eligible_tx_modes = (
+                    predicted_sinr[:, :, None] >= thresholds[None, None, :]
+                )
+                mode_index = np.argmax(
+                    np.where(
+                        eligible_tx_modes,
+                        efficiencies[None, None, :],
+                        -1.0,
+                    ),
+                    axis=2,
+                )
+                has_tx_mode = np.any(eligible_tx_modes, axis=2)
+                transmitted_threshold = thresholds[mode_index]
+                served = active & has_tx_mode & (sinr >= transmitted_threshold)
+                chosen_efficiency = efficiencies[mode_index]
+                slot_rate = np.where(served, chosen_efficiency * BEAM_BANDWIDTH_HZ, 0.0)
+                active_margin = np.where(
+                    active & has_tx_mode,
+                    10.0 * np.log10(safe_sinr)
+                    - 10.0 * np.log10(transmitted_threshold),
+                    np.where(active, -math.inf, np.inf),
+                )
+                min_decoding_margin_db[low:high] = np.minimum(
+                    min_decoding_margin_db[low:high],
+                    np.min(active_margin, axis=1),
+                )
+                acm_se_sum[low:high] += np.sum(
+                    np.where(active & served, chosen_efficiency, 0.0), axis=1
+                )
+                acm_se_count[low:high] += np.sum(active, axis=1)
+                boundary_rate += fraction * slot_rate
+                boundary_decode |= served
+                nominal_sinr = np.where(
+                    active,
+                    power
+                    * direct_nominal
+                    / (
+                        noise
+                        + np.matmul(coupling, power[..., None])[..., 0]
+                    ),
+                    0.0,
+                )
+                boundary_feasible |= active & ~forced & (nominal_sinr >= targets)
+                flat_config, flat_user = np.nonzero(active)
+                flat_modes = np.where(
+                    served[flat_config, flat_user],
+                    mode_index[flat_config, flat_user] + 1,
+                    0,
+                )
+                np.add.at(mode_counts[low:high], (flat_config, flat_modes), 1)
+                flat_tx_modes = np.where(
+                    has_tx_mode[flat_config, flat_user],
+                    mode_index[flat_config, flat_user] + 1,
+                    0,
+                )
+                np.add.at(
+                    transmitted_mode_counts[low:high],
+                    (flat_config, flat_tx_modes),
+                    1,
+                )
+                flat_target_modes = target_mode_index[
+                    occupancy[flat_config, flat_user]
+                ]
+                np.add.at(
+                    target_mode_counts[low:high],
+                    (flat_config, flat_target_modes),
+                    1,
+                )
+                realised_decode_successes[low:high] += np.sum(served, axis=1)
+                realised_decode_failures[low:high] += np.sum(
+                    active & ~served, axis=1
+                )
+                seen[low:high] |= active
+                top_mode_index = int(np.argmax(efficiencies))
+                plateau[low:high] &= ~active | (mode_index == top_mode_index)
+                transmissions[low:high] += np.sum(active, axis=1)
+                cap_hits[low:high] += np.sum(
+                    active & (power >= BEAM_RF_CAP_W - 1.0e-9), axis=1
+                )
+                pa_w = np.sum(
+                    np.where(
+                        active & (power > 0.0),
+                        np.sqrt(power * PA_SATURATION_POWER_W) / PA_MAX_EFFICIENCY,
+                        0.0,
+                    ),
+                    axis=1,
+                )
+                circuit_w = np.sum(active & (power > 0.0), axis=1) * circuit_power_per_active_chain_w
+                same_sat = aggressor_norad[:, :, None] == aggressor_norad[:, None, :]
+                earlier_active_sat = np.any(
+                    same_sat & (active[:, None, :] & lower_user), axis=2
+                )
+                active_satellites = np.sum(active & ~earlier_active_sat, axis=1)
+                boundary_energy += fraction * np.stack(
+                    (
+                        pa_w,
+                        circuit_w,
+                        active_satellites * BASEBAND_POWER_PER_ACTIVE_SATELLITE_W,
+                    ),
+                    axis=1,
+                )
+
+            # The scalar roster path records a missing in-step transmission as
+            # infeasible, rather than silently dropping that user.
+            feasible_all[low:high] &= boundary_feasible
+            if previous_rate is not None and previous_boundary is not None:
+                elapsed_s = (boundary - previous_boundary) * D2_MEASUREMENT_STEP_S
+                bits[low:high] += 0.5 * (previous_rate + boundary_rate) * elapsed_s
+                decoding[low:high] += 0.5 * (
+                    previous_decode.astype(np.float64) + boundary_decode.astype(np.float64)
+                ) * elapsed_s
+                components[low:high] += 0.5 * (previous_energy + boundary_energy) * elapsed_s
+            previous_rate = boundary_rate
+            previous_decode = boundary_decode
+            previous_energy = boundary_energy
+            previous_boundary = boundary
+
+        # A one-boundary nominal snapshot is a decision-instant score held
+        # over the decision interval.  Multi-boundary grids use trapezoids.
+        if len(boundary_indices) == 1 and previous_rate is not None:
+            duration_s = 47 * D2_MEASUREMENT_STEP_S
+            bits[low:high] += previous_rate * duration_s
+            decoding[low:high] += previous_decode.astype(np.float64) * duration_s
+            components[low:high] += previous_energy * duration_s
+
+    joules = np.sum(components, axis=1)
+    attained = bits >= rate_target_bps * (47 * D2_MEASUREMENT_STEP_S)
+    return BatchARResult(
+        *(
+            _readonly(value)
+            for value in (
+                bits[inverse_order],
+                joules[inverse_order],
+                components[inverse_order, 0],
+                components[inverse_order, 1],
+                components[inverse_order, 2],
+                decoding[inverse_order],
+                feasible_all[inverse_order],
+                attained[inverse_order],
+                residual_max[inverse_order],
+                mode_counts[inverse_order],
+                target_mode_counts[inverse_order],
+                transmitted_mode_counts[inverse_order],
+                realised_decode_successes[inverse_order],
+                realised_decode_failures[inverse_order],
+                np.sum(plateau & seen, axis=1)[inverse_order],
+                transmissions[inverse_order],
+                cap_hits[inverse_order],
+                valid_result[inverse_order],
+                certificate_status[inverse_order],
+                certificate_iterations[inverse_order],
+                max_rf_power_w[inverse_order],
+                np.where(
+                    np.isfinite(min_decoding_margin_db[inverse_order]),
+                    min_decoding_margin_db[inverse_order],
+                    -100.0,
+                ),
+                np.divide(
+                    acm_se_sum[inverse_order],
+                    acm_se_count[inverse_order],
+                    out=np.zeros(configurations, dtype=np.float64),
+                    where=acm_se_count[inverse_order] > 0,
+                ),
+            )
+        )
+    )
+
+
+def evaluate_ar_tdm_catalogue(
+    arrays: PrimitiveStepArrays,
+    selected_rows: np.ndarray,
+    *,
+    field: str = "realised",
+    chunk_size: int = 256,
+    rate_target_bps: float = RATE_TARGET_BPS,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+    boundary_indices: tuple[int, ...] = tuple(range(48)),
+    fading_quantile_alpha: float | None = None,
+) -> BatchARResult:
+    """Route dense catalogue resolution through the common public seam."""
+
+    from .resolution import resolve_configuration
+
+    result = resolve_configuration(
+        batch_arrays=arrays,
+        batch_selected_rows=selected_rows,
+        field=field,  # type: ignore[arg-type]
+        batch_chunk_size=chunk_size,
+        batch_rate_target_bps=rate_target_bps,
+        batch_circuit_power_per_active_chain_w=circuit_power_per_active_chain_w,
+        batch_boundary_indices=boundary_indices,
+        batch_fading_quantile_alpha=fading_quantile_alpha,
+    )
+    if not isinstance(result, BatchARResult):
+        raise MCRLContractError("dense resolver returned a scalar result")
+    return result
+
+
+__all__ = ["BatchARResult", "evaluate_ar_tdm_catalogue"]
+
+exec
+/bin/bash -lc "rg -n \"def geometry_for|def boundary_view|class ExogenousWorldTape|class PrimitiveStep\" src/mcrl/physics_v025/tapes.py
+sed -n '430,590p' src/mcrl/physics_v025/tapes.py
+sed -n '700,900p' src/mcrl/physics_v025/tapes.py
+sed -n '1,180p' src/mcrl/physics_v025/channel.py
+sed -n '1,190p' src/mcrl/physics_v025/acm.py" in /home/sat/mcrl-v025-rule-ws
+ succeeded in 0ms:
+274:class PrimitiveStepArrays:
+407:    def boundary_view(self, boundary_index: int) -> PrimitiveBoundary:
+663:class ExogenousWorldTape:
+789:    def geometry_for(
+            realised_norad: dict[int, float] = {}
+            for (norad, _cell), gain in nominal_identity:
+                nominal_norad[norad] = nominal_norad.get(norad, 0.0) + gain
+            for (norad, _cell), gain in realised_identity:
+                realised_norad[norad] = realised_norad.get(norad, 0.0) + gain
+            rows.append(
+                PrimitiveCandidate(
+                    user_id=int(self.users[int(self.row_user_column[row])]),
+                    identity=identity,
+                    color=int(self.colors[row]),
+                    elevation_deg=float(self.elevations_deg[boundary_index, row]),
+                    d2_entry_elevation_deg=float(self.d2_entry_elevations_deg[boundary_index, row]),
+                    slant_km=float(self.slants_km[boundary_index, row]),
+                    d2_distance_km=float(self.d2_distances_km[boundary_index, row]),
+                    visible=bool(self.visible[boundary_index, row]),
+                    d2_eligible=bool(self.d2_eligible[boundary_index, row]),
+                    nominal_gain=float(self.nominal_gain[boundary_index, row]),
+                    realised_gain=float(self.realised_gain[boundary_index, row]),
+                    nominal_cross_gain_by_norad=tuple(sorted(nominal_norad.items())),
+                    realised_cross_gain_by_norad=tuple(sorted(realised_norad.items())),
+                    remaining_visibility_s=float(self.remaining_visibility_s[boundary_index, row]),
+                    remaining_d2_s=float(self.remaining_d2_s[boundary_index, row]),
+                    cell_reachable=bool(self.cell_reachable[boundary_index, row]),
+                    nominal_cross_gain_by_identity=tuple(nominal_identity),
+                    realised_cross_gain_by_identity=tuple(realised_identity),
+                    visibility_right_censored=bool(self.visibility_right_censored[boundary_index, row]),
+                    d2_right_censored=bool(self.d2_right_censored[boundary_index, row]),
+                )
+            )
+        return PrimitiveBoundary(float(self.absolute_time_s[boundary_index]), tuple(rows))
+
+    def geometry_at(
+        self,
+        *,
+        boundary_index: int,
+        assignments: Mapping[int, BeamIdentity | None],
+    ) -> Geometry:
+        """Build selected geometry directly from arrays and physical keys."""
+
+        row_of = self._row_index()
+        selected: list[int] = []
+        identities: list[BeamIdentity] = []
+        for user in sorted(assignments):
+            identity = assignments[user]
+            if identity is None:
+                continue
+            try:
+                row = row_of[(user, identity)]
+            except KeyError:
+                raise MCRLContractError("assignment is absent from the exogenous tape") from None
+            legal_now = (
+                bool(self.visible[boundary_index, row])
+                and bool(self.d2_eligible[boundary_index, row])
+                and bool(self.cell_reachable[boundary_index, row])
+            )
+            if boundary_index == 0 and not legal_now:
+                raise MCRLContractError("assignment is not legal at the decision instant")
+            if not legal_now:
+                # Live in-step legality: the chain stops radiating and decoding
+                # at the first boundary where either physical mask is lost.
+                continue
+            selected.append(row)
+            identities.append(identity)
+        aggressor_of = self._aggressor_index()
+        victim_rows = np.asarray(selected, dtype=np.int64)
+        physical_columns = np.asarray(
+            [aggressor_of.get(identity, -1) for identity in identities],
+            dtype=np.int64,
+        )
+        nominal_cross = np.zeros((len(selected), len(selected)), dtype=np.float64)
+        realised_cross = np.zeros_like(nominal_cross)
+        valid_columns = physical_columns >= 0
+        if victim_rows.size and np.any(valid_columns):
+            users = self.row_user_column[victim_rows]
+            wanted_slots = self.row_wanted_slot[victim_rows]
+            physical = physical_columns[valid_columns]
+            satellites = self.aggressor_satellite_column[physical]
+            base_cross = self.cross_base_nominal[
+                boundary_index,
+                users[:, None],
+                physical[None, :],
+            ]
+            receive = self.receive_gain_by_wanted_slot[
+                boundary_index,
+                users[:, None],
+                wanted_slots[:, None],
+                satellites[None, :],
+            ]
+            block = base_cross * receive
+            color_mask = (
+                self.colors[victim_rows, None]
+                == self.aggressor_colors[physical][None, :]
+            )
+            identity_mask = (
+                self.identities[victim_rows, None, :]
+                != self.aggressor_identities[physical][None, :, :]
+            ).any(axis=2)
+            block = np.where(color_mask & identity_mask, block, 0.0)
+            nominal_cross[:, valid_columns] = block
+            realised_cross[:, valid_columns] = block * self.fading_by_satellite[
+                boundary_index,
+                users[:, None],
+                satellites[None, :],
+            ]
+        return Geometry(
+            tuple(
+                Link(
+                    int(self.users[int(self.row_user_column[row])]),
+                    identities[index],
+                    int(self.colors[row]),
+                    float(self.nominal_gain[boundary_index, row]),
+                    float(self.realised_gain[boundary_index, row]),
+                    float(self.elevations_deg[boundary_index, row]),
+                )
+                for index, row in enumerate(selected)
+            ),
+            nominal_cross,
+            realised_cross,
+        )
+
+
+@dataclass(frozen=True)
+class StepTape:
+    step_index: int
+    refresh_phase: int
+    boundaries: tuple[PrimitiveBoundary, ...] = ()
+    arrays: PrimitiveStepArrays | None = None
+
+    def __post_init__(self) -> None:
+        if (self.arrays is None) == (len(self.boundaries) == 0):
+            raise MCRLContractError(
+                "step tape needs exactly one of object boundaries or compact arrays"
+            )
+        times = (
+            np.asarray([boundary.absolute_time_s for boundary in self.boundaries])
+            if self.arrays is None
+            else self.arrays.absolute_time_s
+        )
+        if times.shape != (D2_SUBINTERVALS + 1,):
+            raise MCRLContractError("each step tape needs t plus 47 boundary samples")
+        start = float(times[0])
+        for index, actual in enumerate(times):
+            expected = start + index * D2_MEASUREMENT_STEP_S
+            if not math.isclose(float(actual), expected, abs_tol=1e-12):
+                raise MCRLContractError("D2 samples are not aligned to t + k*0.640, k=0..47")
+        if not 0 <= self.refresh_phase < IDENTITY_REFRESH_DECISIONS:
+            raise MCRLContractError("refresh phase is outside the frozen four-decision cadence")
+
+    def boundary_at(self, boundary_index: int) -> PrimitiveBoundary:
+        if self.arrays is not None:
+            return self.arrays.boundary_view(boundary_index)
+        return self.boundaries[boundary_index]
+
+    @property
+    def boundary_count(self) -> int:
+        return D2_SUBINTERVALS + 1
+
+    def payload(self) -> dict[str, object]:
+        if self.arrays is not None:
+            # Full sub-boundary arrays are intentionally not JSON-serialized.
+            # The compact input digest binds their generator and the k=0 bytes.
+        colors: dict[BeamIdentity, int] = {}
+        for step in self.steps:
+            if step.arrays is not None:
+                iterator = (
+                    (
+                        (int(identity[0]), int(identity[1])),
+                        int(step.arrays.colors[index]),
+                    )
+                    for index, identity in enumerate(step.arrays.identities)
+                )
+            else:
+                iterator = (
+                    (row.identity, row.color)
+                    for row in step.boundaries[0].candidates
+                )
+            for identity, color in iterator:
+                old = colors.setdefault(identity, color)
+                if old != color:
+                    raise MCRLContractError("one beam-chain carried multiple reuse colours")
+
+    @property
+    def inventory_digest(self) -> str:
+        return digest_payload([list(identity) for identity in self.inventory.chains])
+
+    @property
+    def tape_digest(self) -> str:
+        if self.generating_input_digest is not None:
+            return self.generating_input_digest
+        return digest_payload([step.payload() for step in self.steps])
+
+    @property
+    def layout_digest(self) -> str:
+        return digest_payload([user.payload() for user in self.user_layout])
+
+    @property
+    def carrier_digest(self) -> str:
+        return digest_payload([row.payload() for row in self.carriers])
+
+    @property
+    def tle_files(self) -> tuple[tuple[str, str], ...]:
+        """Compatibility view; ownership is the mandatory protocol output."""
+
+        return self.protocol.tle_files
+
+    @property
+    def digest(self) -> str:
+        return digest_payload(self.manifest())
+
+    def manifest(self) -> dict[str, object]:
+        return {
+            "schema": "mcrl-v025-exogenous-world-tape-v1",
+            "domain": self.domain,
+            "seed": self.seed,
+            "split": self.split,
+            "start_utc": self.protocol.start_utc,
+            "cluster": {"tle_date": self.tle_date, "training_seed": self.training_seed},
+            "steps": len(self.steps),
+            "samples_per_interval": D2_SUBINTERVALS + 1,
+            "subintervals_per_interval": D2_SUBINTERVALS,
+            "inventory_sha256": self.inventory_digest,
+            "layout_sha256": self.layout_digest,
+            "tape_sha256": self.tape_digest,
+            "carriers_sha256": self.carrier_digest,
+            "reference_policies": reference_policy_manifest(),
+            "candidate_refresh_period_n": CANDIDATE_REFRESH_N,
+            "visibility_elevation_deg": _f(MINIMUM_ELEVATION_DEG),
+            "d2_entry_elevation_deg_by_candidate": True,
+            "cross_gain_key": "(NORAD,cell_id)",
+            "boundary_storage": "numpy-float64",
+            "tle_files": [list(row) for row in self.protocol.tle_files],
+            "split_rule_sha256": self.protocol.split_rule_digest,
+            "provider_source_sha256": self.protocol.provider_source_digest,
+            "provider_protocol": self.protocol.payload(),
+            "stream_identities": {
+                "mobility": f"seed-sequence:{self.seed}:child-1",
+                "fading": f"sha256-keyed:{self.seed}:user:norad:absolute-time",
+            },
+            "step_user_layout_sha256": (
+                None
+                if not self.step_user_layouts
+                else digest_payload(
+                    [
+                        [row.payload() for row in layout]
+                        for layout in self.step_user_layouts
+                    ]
+                )
+            ),
+        }
+
+    def geometry_for(
+        self,
+        *,
+        step_index: int,
+        assignments: Mapping[int, BeamIdentity | None],
+    ) -> tuple[tuple[float, Geometry], ...]:
+        """Materialize one selected configuration without mutating the tape."""
+
+        step = self.steps[step_index]
+        if step.arrays is not None:
+            return tuple(
+                (
+                    float(step.arrays.absolute_time_s[boundary_index]),
+                    step.arrays.geometry_at(
+                        boundary_index=boundary_index,
+                        assignments=assignments,
+                    ),
+                )
+                for boundary_index in range(step.boundary_count)
+            )
+        result: list[tuple[float, Geometry]] = []
+        for boundary_index, boundary in enumerate(step.boundaries):
+            by_key = {(row.user_id, row.identity): row for row in boundary.candidates}
+            chosen = []
+            for user in sorted(assignments):
+                identity = assignments[user]
+                if identity is None:
+                    continue
+                try:
+                    row = by_key[(user, identity)]
+                except KeyError:
+                    raise MCRLContractError("assignment is absent from the exogenous tape") from None
+                if boundary_index == 0 and not row.legal:
+                    raise MCRLContractError("assignment is not visible and D2-eligible")
+                if not row.legal:
+                    continue
+                chosen.append(row)
+            nominal_cross = np.zeros((len(chosen), len(chosen)), dtype=np.float64)
+            realised_cross = np.zeros_like(nominal_cross)
+            for victim_index, victim in enumerate(chosen):
+                nominal_map = (
+                    dict(victim.nominal_cross_gain_by_identity)
+                    if victim.nominal_cross_gain_by_identity
+                    else dict(victim.nominal_cross_gain_by_norad)
+                )
+                realised_map = (
+                    dict(victim.realised_cross_gain_by_identity)
+                    if victim.realised_cross_gain_by_identity
+                    else dict(victim.realised_cross_gain_by_norad)
+                )
+                for aggressor_index, aggressor in enumerate(chosen):
+                    if victim_index == aggressor_index:
+                        continue
+                    key: object = (
+                        aggressor.identity
+                        if victim.nominal_cross_gain_by_identity
+                        else aggressor.identity[0]
+                    )
+                    nominal_cross[victim_index, aggressor_index] = nominal_map.get(key, 0.0)
+                    realised_cross[victim_index, aggressor_index] = realised_map.get(key, 0.0)
+            geometry = Geometry(
+                tuple(
+                    Link(
+                        row.user_id,
+                        row.identity,
+                        row.color,
+                        row.nominal_gain,
+                        row.realised_gain,
+                        row.elevation_deg,
+                    )
+                    for row in chosen
+                ),
+                nominal_cross,
+                realised_cross,
+            )
+            result.append((boundary.absolute_time_s, geometry))
+        return tuple(result)
+
+
+class PrimitiveWorldProvider(Protocol):
+    """Server injection seam. Returned values must contain primitives only."""
+
+    def inventory(self, *, world_seed: int) -> Iterable[BeamIdentity]: ...
+
+    def cluster_identity(self, *, world_seed: int) -> tuple[str, int]: ...
+
+    def protocol_outputs(self, *, world_seed: int) -> ProviderProtocolOutputs: ...
+
+    def user_layout(self, *, world_seed: int) -> Iterable[UserLayout]: ...
+
+    def boundary(
+        self, *, world_seed: int, step_index: int, boundary_index: int, absolute_time_s: float
+    ) -> PrimitiveBoundary: ...
+
+
+def _legal_by_user(boundary: PrimitiveBoundary) -> dict[int, tuple[PrimitiveCandidate, ...]]:
+    result: dict[int, list[PrimitiveCandidate]] = {}
+    for row in boundary.candidates:
+        if row.legal:
+            result.setdefault(row.user_id, []).append(row)
+    return {user: tuple(sorted(rows, key=lambda row: (row.slant_km, row.identity))) for user, rows in result.items()}
+
+
+def _legal_arrays_by_user(step: StepTape) -> dict[int, tuple[tuple[float, BeamIdentity], ...]]:
+    assert step.arrays is not None
+    arrays = step.arrays
+    result: dict[int, list[tuple[float, BeamIdentity]]] = {}
+    legal = arrays.visible[0] & arrays.d2_eligible[0] & arrays.cell_reachable[0]
+    for row in np.flatnonzero(legal).tolist():
+        user = int(arrays.users[int(arrays.row_user_column[row])])
+        identity = tuple(int(value) for value in arrays.identities[row])
+        result.setdefault(user, []).append((float(arrays.slants_km[0, row]), identity))
+"""V0.25 channel and antenna scalar helpers.
+
+The helpers are pure and vectorised where useful.  Random draws require an
+explicit generator so candidate ordering or counterfactual evaluation cannot
+silently acquire a private RNG stream.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+import hashlib
+import math
+
+import numpy as np
+
+from mcrl.errors import MCRLContractError
+from mcrl.runtime.bessel import _miller_array, bessel_j_array, bessel_j_miller
+
+from .constants_v025 import (
+    BOLTZMANN_J_PER_K,
+    CARRIER_FREQUENCY_HZ,
+    RICIAN_K_FACTOR_DB,
+    RX_ENVELOPE_A_DBI,
+    RX_ENVELOPE_B,
+    RX_GAIN_FLOOR_DBI,
+    RX_GAIN_MAX_DBI,
+    RX_S465_THETA_MIN_DEG,
+    SPEED_OF_LIGHT_M_S,
+    SYSTEM_TEMPERATURE_K,
+    SCINTILLATION_ELEVATION_DEG,
+    SCINTILLATION_LOSS_DB,
+    SHADOW_SIGMA_DB,
+    SHADOW_SIGMA_ELEVATION_DEG,
+    MINIMUM_ELEVATION_DEG,
+    TX_FULL_HPBW_DEG,
+    TX_G0_LINEAR,
+)
+
+_BESSEL_MU_COEFFICIENT = 2.07123
+_MU_ZERO = 1.0e-10
+FADING_QUANTILE_DRAWS = 200_000
+FADING_QUANTILE_ELEVATION_BIN_DEG = 0.5
+FADING_QUANTILE_DERIVATION_DOMAIN = "V025_FADING_PRODUCT_QUANTILE/v1"
+
+
+def noise_power_w(bandwidth_hz: float) -> float:
+    """Return ``k*T_sys*bandwidth`` in watts."""
+
+    if not math.isfinite(bandwidth_hz) or bandwidth_hz <= 0.0:
+        raise ValueError("bandwidth_hz must be finite and positive")
+    return BOLTZMANN_J_PER_K * SYSTEM_TEMPERATURE_K * bandwidth_hz
+
+
+def free_space_path_gain(slant_km: np.ndarray | float) -> np.ndarray:
+    """Linear free-space gain; doubling distance gives exactly one quarter."""
+
+    distance = np.asarray(slant_km, dtype=np.float64)
+    if not np.all(np.isfinite(distance)) or np.any(distance <= 0.0):
+        raise MCRLContractError("slant range must be finite and positive")
+    wavelength = SPEED_OF_LIGHT_M_S / CARRIER_FREQUENCY_HZ
+    return (wavelength / (4.0 * math.pi * distance * 1000.0)) ** 2
+
+
+def db_loss_gain(loss_db: np.ndarray | float) -> np.ndarray:
+    """Convert a nonnegative dB loss to its linear power multiplier."""
+
+    loss = np.asarray(loss_db, dtype=np.float64)
+    if not np.all(np.isfinite(loss)) or np.any(loss < 0.0):
+        raise MCRLContractError("loss_db must be finite and nonnegative")
+    return 10.0 ** (-loss / 10.0)
+
+
+def scintillation_loss_db(elevation_deg: np.ndarray | float) -> np.ndarray:
+    """Retained 20-GHz deterministic table, linearly interpolated and clamped."""
+
+    elevation = np.asarray(elevation_deg, dtype=np.float64)
+    if not np.all(np.isfinite(elevation)) or np.any((elevation < -90.0) | (elevation > 90.0)):
+        raise MCRLContractError("elevation must be finite and in [-90,90] degrees")
+    return np.interp(
+        np.clip(elevation, SCINTILLATION_ELEVATION_DEG[0], SCINTILLATION_ELEVATION_DEG[-1]),
+        SCINTILLATION_ELEVATION_DEG,
+        SCINTILLATION_LOSS_DB,
+    )
+
+
+def shadow_sigma_db(elevation_deg: np.ndarray | float) -> np.ndarray:
+    """Retained Ka-LOS zero-mean-dB shadow sigma table."""
+
+    elevation = np.asarray(elevation_deg, dtype=np.float64)
+    if not np.all(np.isfinite(elevation)) or np.any((elevation < -90.0) | (elevation > 90.0)):
+        raise MCRLContractError("elevation must be finite and in [-90,90] degrees")
+    return np.interp(
+        np.clip(elevation, SHADOW_SIGMA_ELEVATION_DEG[0], SHADOW_SIGMA_ELEVATION_DEG[-1]),
+        SHADOW_SIGMA_ELEVATION_DEG,
+        SHADOW_SIGMA_DB,
+    )
+
+
+def transmit_gain_linear(theta_deg: np.ndarray | float) -> np.ndarray:
+    """HOBS ideal aperture pattern, with full-HPBW converted once."""
+
+    theta = np.asarray(theta_deg, dtype=np.float64)
+    if not np.all(np.isfinite(theta)):
+        raise MCRLContractError("off-axis angles must be finite")
+    half_power = math.radians(TX_FULL_HPBW_DEG / 2.0)
+    mu = _BESSEL_MU_COEFFICIENT * np.sin(np.radians(theta)) / math.sin(half_power)
+    flat = np.atleast_1d(mu).ravel()
+    on_axis = np.abs(flat) < _MU_ZERO
+    safe = np.where(on_axis, 1.0, flat)
+    # The historical ascending series is already measurably inaccurate at
+    # mu=34.  Route the new engine to stable Miller recursion from mu>=20;
+    # keep the vectorised series only in its well-conditioned main-lobe range.
+    stable = np.abs(safe) >= 20.0
+    j1 = np.empty_like(safe)
+    j3 = np.empty_like(safe)
+    if np.any(~stable):
+        series_rows = bessel_j_array((1, 3), safe[~stable])
+        j1[~stable] = series_rows[0]
+        j3[~stable] = series_rows[1]
+    if np.any(stable):
+        stable_values = safe[stable]
+        stable_rows = _miller_array((1, 3), np.abs(stable_values))
+        signs = np.where(stable_values < 0.0, -1.0, 1.0)
+        j1[stable] = stable_rows[0] * signs
+        j3[stable] = stable_rows[1] * signs
+    bracket = j1 / (2.0 * safe) + 36.0 * j3 / safe**3
+    result = TX_G0_LINEAR * bracket**2
+    result[on_axis] = TX_G0_LINEAR
+    return result.reshape(theta.shape)
+
+
+def receive_gain_dbi(separation_deg: np.ndarray | float) -> np.ndarray:
+    """S.465-6 envelope with the declared near-axis approximation.
+
+    For this terminal ``D/lambda < 50`` and the applicable lower boundary is
+    2.043298703 degrees.  S.465-6 supplies ``32 - 25 log10(theta)`` from that
+    boundary to 48 degrees and the -10 dBi continuation thereafter.  Below
+    the boundary V0.25 deliberately extends the same analytic envelope up to
+    the independently sourced 35 dBi terminal peak.  That last branch is an
+    engineering approximation, not a prescription of S.465-6.
+    """
+
+    separation = np.asarray(separation_deg, dtype=np.float64)
+    if not np.all(np.isfinite(separation)) or np.any(separation < 0.0):
+        raise MCRLContractError("receive separations must be finite and nonnegative")
+    with np.errstate(divide="ignore"):
+        near_axis_approximation = RX_ENVELOPE_A_DBI - RX_ENVELOPE_B * np.log10(
+            np.maximum(separation, 1.0e-12)
+        )
+        s465_envelope = RX_ENVELOPE_A_DBI - RX_ENVELOPE_B * np.log10(
+            np.maximum(separation, RX_S465_THETA_MIN_DEG)
+        )
+    result = np.where(
+        separation < RX_S465_THETA_MIN_DEG,
+        near_axis_approximation,
+        s465_envelope,
+    )
+    return np.clip(result, RX_GAIN_FLOOR_DBI, RX_GAIN_MAX_DBI)
+
+
+def receive_gain_linear(separation_deg: np.ndarray | float) -> np.ndarray:
+    return 10.0 ** (receive_gain_dbi(separation_deg) / 10.0)
+
+
+def interference_receive_gain_linear(
+    separation_deg: np.ndarray | float,
+    *,
+    same_satellite: np.ndarray | bool,
+) -> np.ndarray:
+    """Receive gain used in the interference sum, including boresight override."""
+
+    separation = np.asarray(separation_deg, dtype=np.float64)
+    same = np.asarray(same_satellite, dtype=np.bool_)
+    try:
+        separation, same = np.broadcast_arrays(separation, same)
+    except ValueError as error:
+        raise MCRLContractError("separation and satellite-identity masks do not broadcast") from error
+    envelope = receive_gain_linear(separation)
+    peak = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+    return np.where(same, peak, envelope)
+"""V0.25 DVB-S2 ACM selection and the separately named U diagnostic."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import math
+from typing import Protocol
+
+from mcrl.errors import MCRLContractError
+
+from .constants_v025 import (
+    ACM_TABLE,
+    IMPLEMENTATION_MARGIN_DB,
+    ROLL_OFF,
+    SHANNON_MIN,
+    SINR_MIN,
+)
+
+
+@dataclass(frozen=True)
+class ACMMode:
+    name: str
+    efficiency_bit_per_symbol: float
+    ideal_esn0_db: float
+    spectral_efficiency_bit_per_s_hz: float
+    threshold_db: float
+    threshold_linear: float
+
+
+@dataclass(frozen=True)
+class ACMRealisedOutcome:
+    """Decode result for a preselected transmitted mode."""
+
+    decoded: bool
+    realised_sinr_linear: float
+    credited_spectral_efficiency_bit_per_s_hz: float
+
+
+def _mode(row: tuple[str, float, float]) -> ACMMode:
+    name, efficiency, ideal = row
+    spectral_efficiency = efficiency / (1.0 + ROLL_OFF)
+    threshold_db = ideal + IMPLEMENTATION_MARGIN_DB - 10.0 * math.log10(1.0 + ROLL_OFF)
+    return ACMMode(
+        name,
+        efficiency,
+        ideal,
+        spectral_efficiency,
+        threshold_db,
+        10.0 ** (threshold_db / 10.0),
+    )
+
+
+ACM_MODES = tuple(_mode(row) for row in ACM_TABLE)
+
+
+def served_phy(sinr_linear: float, *, allocated: bool = True) -> bool:
+    """The service endpoint: allocated and at or above the lowest threshold."""
+
+    if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+        raise MCRLContractError("SINR must be finite and nonnegative")
+    return bool(allocated and sinr_linear >= SINR_MIN)
+
+
+def select_mode(sinr_linear: float) -> ACMMode | None:
+    """Select the eligible mode with greatest efficiency, not table position."""
+
+    if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+        raise MCRLContractError("SINR must be finite and nonnegative")
+    eligible = [mode for mode in ACM_MODES if sinr_linear >= mode.threshold_linear]
+    return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
+
+
+def select_transmitted_mode(
+    nominal_sinr_linear: float, fading_product_quantile: float
+) -> ACMMode | None:
+    """Choose ``m_tx`` from the causal margin-adjusted nominal view."""
+
+    if (
+        not math.isfinite(fading_product_quantile)
+        or fading_product_quantile <= 0.0
+    ):
+        raise MCRLContractError("fading product quantile must be finite and positive")
+    return select_mode(nominal_sinr_linear * fading_product_quantile)
+
+
+def decode_transmitted_mode(
+    mode: ACMMode | None, realised_sinr_linear: float
+) -> ACMRealisedOutcome:
+    """Credit the transmitted mode iff realised SINR clears its threshold."""
+
+    if not math.isfinite(realised_sinr_linear) or realised_sinr_linear < 0.0:
+        raise MCRLContractError("SINR must be finite and nonnegative")
+    decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
+    return ACMRealisedOutcome(
+        decoded,
+        realised_sinr_linear,
+        0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz,
+    )
+
+
+def select_mode_margin_off(sinr_linear: float) -> ACMMode | None:
+    """Greatest-efficiency ACM mode with only the common 1.7-dB margin removed."""
+
+    if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+        raise MCRLContractError("SINR must be finite and nonnegative")
+    eligible = [
+        mode
+        for mode in ACM_MODES
+        if sinr_linear >= 10.0 ** ((mode.threshold_db - IMPLEMENTATION_MARGIN_DB) / 10.0)
+    ]
+    return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
+
+
+def rate_target_mode(
+    rate_target_bps: float,
+    full_bandwidth_hz: float,
+    occupancy: int,
+) -> ACMMode | None:
+    """Return the lowest-threshold frozen ACM mode that meets ``r*``.
+
+    For TDM, ``full_bandwidth_hz / occupancy`` is effective airtime
+    bandwidth.  For FDM it is the physical sub-band bandwidth.  Both therefore
+    implement the sealed ``Gamma_r(n_b)`` definition with one helper.
+    """
+
+    if not math.isfinite(rate_target_bps) or rate_target_bps <= 0.0:
+        raise MCRLContractError("rate target must be finite and positive")
+    if not math.isfinite(full_bandwidth_hz) or full_bandwidth_hz <= 0.0:
+        raise MCRLContractError("full bandwidth must be finite and positive")
+    if type(occupancy) is not int or occupancy < 1:
+        raise MCRLContractError("occupancy must be a positive exact integer")
+    required_se = rate_target_bps * occupancy / full_bandwidth_hz
+    eligible = [
+        mode
+        for mode in ACM_MODES
+        if mode.spectral_efficiency_bit_per_s_hz >= required_se
+    ]
+    return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
+
+
+def rate_target_sinr(
+    rate_target_bps: float,
+    full_bandwidth_hz: float,
+    occupancy: int,
+) -> float | None:
+    """Return ``Gamma_r(n_b)`` or ``None`` when the ACM table cannot meet it."""
+
+    mode = rate_target_mode(rate_target_bps, full_bandwidth_hz, occupancy)
+    if mode is None:
+        return None
+    # The separately frozen PHY service floor is rounded at its declared dB
+    # precision and is a few parts in 1e10 above the derived first-mode value.
+    # A controller target must clear both gates to avoid reporting a nominally
+    # selected QPSK 1/4 mode as unserved.
+    return max(mode.threshold_linear, SINR_MIN)
+
+
+class RateModel(Protocol):
+    name: str
+
+    def rate_bps(self, sinr_linear: float, bandwidth_hz: float) -> float: ...
+
+    def served(self, sinr_linear: float, *, allocated: bool = True) -> bool: ...
+
+
+@dataclass(frozen=True)
+class ACMRate:
+    """Capped, margin-bearing DVB-S2 ACM model."""
+
+    name: str = "ACM"
+
+    def rate_bps(self, sinr_linear: float, bandwidth_hz: float) -> float:
+        if not math.isfinite(bandwidth_hz) or bandwidth_hz <= 0.0:
+            raise MCRLContractError("bandwidth must be finite and positive")
+        if not served_phy(sinr_linear):
+            return 0.0
+        mode = select_mode(sinr_linear)
+        return 0.0 if mode is None else bandwidth_hz * mode.spectral_efficiency_bit_per_s_hz
+
+    def served(self, sinr_linear: float, *, allocated: bool = True) -> bool:
+        return served_phy(sinr_linear, allocated=allocated)
+
+
+@dataclass(frozen=True)
+class UncappedShannonDiagnosticRate:
+    """Treatment U: uncapped Shannon rate with the common margin removed.
+
+    This is a diagnostic upper bound, not an ACM profile and not eligible as
+    the primary model.  Its allocation boundary is the lowest ideal table
+    threshold after the symbol-rate/bandwidth conversion, with margin off.
+
+codex
+The correct attribution seam is now clear from the engine: UNILATERAL is the exact C1-style single-user fixed point; RULE will begin from that same fixed point and add one set-level candidate, so RULE−UNILATERAL isolates coordination. Candidate acceptance will use the unchanged sealed objective (`B − eta_ref·E` plus the existing handover/QoS term) and the existing no-served-count-loss guard, both on the full 48-boundary realised engine. The 10-second timing will cover only the set-level rule decision, matching the coordinator budget rather than charging it for the comparator’s unilateral preprocessing.
+exec
+/bin/bash -lc "nice -n 10 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+from mcrl.physics_v025.channel import fading_product_quantile
+from mcrl.physics_v025.acm import ACM_MODES, rate_target_sinr
+from mcrl.physics_v025.constants_v025 import RATE_TARGET_BPS, BEAM_BANDWIDTH_HZ
+floor=min(m.threshold_linear for m in ACM_MODES)
+for elev in range(10,91,5):
+ q=fading_product_quantile(elev,.10)
+ vals=[]
+ for n in range(1,14):
+  g=rate_target_sinr(RATE_TARGET_BPS,BEAM_BANDWIDTH_HZ,n)
+  if g is not None and q*g>=floor:
+   vals.append(n)
+ print(elev, q, vals[0] if vals else None)
+print('floor',floor)
+for n in range(1,14): print(n,rate_target_sinr(RATE_TARGET_BPS,BEAM_BANDWIDTH_HZ,n))
+PY" in /home/sat/mcrl-v025-rule-ws
+ succeeded in 212ms:
+10 0.4292353892300352 3
+15 0.479320563282367 3
+20 0.5343184753095428 3
+25 0.5228667301337858 3
+30 0.5121043759970921 3
+35 0.4895225918177769 3
+40 0.46632501473238036 3
+45 0.44207583339309064 3
+50 0.4201721015143752 3
+55 0.39895435894542397 3
+60 0.3782337514442185 3
+65 0.3837856055964293 3
+70 0.3897517726879958 3
+75 0.35587569422442833 3
+80 0.32888503544661307 4
+85 0.5185717626175546 3
+90 0.7749486236990524 2
+floor 0.7174947934871672
+1 0.7174947935658479
+2 1.1503202205024041
+3 2.059770120846775
+4 3.1175882356004445
+5 5.660030271809871
+6 7.617610345585419
+7 9.723413475508023
+8 12.936558416317352
+9 17.857421676000484
+10 23.11100087209867
+11 33.023169521286626
+12 45.68974707673782
+13 None
+
+codex
+The activation threshold is not constant: using the engine’s own `q₀.₁(elevation)` and ACM table, the required occupancy is 3 over most elevations, rises to 4 around the 80° quantile bin, and falls to 2 near 90°. I’ll report the exact elevations observed at the evaluated anchors rather than only this grid check.
+
+I’m now timing one full-realised anchor before finalizing the runner. This determines whether exact batched scoring of every unilateral neighbor is feasible within the two-hour run budget; it does not change the 10-second coordinator budget.
+exec
+/bin/bash -lc "nice -n 10 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import hashlib, importlib.util, json, pickle, time
+from pathlib import Path
+p=Path('.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py')
+s=importlib.util.spec_from_file_location('probe',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
+tp=Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/world-tapes/r2-world-1.pickle')
+t=time.perf_counter()
+with tp.open('rb') as f: tape=pickle.load(f)
+print('load',time.perf_counter()-t,tape.domain,len(tape.steps),flush=True)
+setting=m._setting('a-r0'); rs=m.run_setting_for('a-r0')
+base=m._base_configuration(tape,0,'nearest-eligible'); inc=base
+opts,_=m._legal_options(tape,0)
+cs=[]
+for u in sorted(opts):
+ for ident in opts[u]:
+  if ident "'!= base.mapping[u]:
+   mp=base.mapping; mp[u]=ident; cs.append(m._configuration(base,mp,kind='"'bench'))
+ev=m.StepEvaluator(tape,setting,0,transition_from=inc,run_setting=rs)
+t=time.perf_counter(); ev.evaluate_many((base,*cs)); print('eval',len(cs)+1,time.perf_counter()-t,'valid',len(ev._evaluated),flush=True)
+PY" in /home/sat/mcrl-v025-rule-ws
+ exited 1 in 100ms:
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/sat/mcrl-v025-rule-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py", line 417, in <module>
+    @dataclass(frozen=True)
+     ~~~~~~~~~^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/dataclasses.py", line 1295, in wrap
+    return _process_class(cls, init, repr, eq, order, unsafe_hash,
+                          frozen, match_args, kw_only, slots,
+                          weakref_slot)
+  File "/usr/lib/python3.13/dataclasses.py", line 997, in _process_class
+    and _is_type(type, cls, dataclasses, dataclasses.KW_ONLY,
+        ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 _is_kw_only))):
+                 ^^^^^^^^^^^^
+  File "/usr/lib/python3.13/dataclasses.py", line 757, in _is_type
+    ns = sys.modules.get(cls.__module__).__dict__
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute '__dict__'. Did you mean: '__dir__'?
+
+exec
+/bin/bash -lc "nice -n 10 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import importlib.util, pickle, sys, time
+from pathlib import Path
+p=Path('.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py')
+s=importlib.util.spec_from_file_location('probe',p); m=importlib.util.module_from_spec(s); sys.modules[s.name]=m; s.loader.exec_module(m)
+tp=Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/world-tapes/r2-world-1.pickle')
+t=time.perf_counter()
+with tp.open('rb') as f: tape=pickle.load(f)
+print('load',time.perf_counter()-t,tape.domain,len(tape.steps),flush=True)
+setting=m._setting('a-r0'); rs=m.run_setting_for('a-r0')
+base=m._base_configuration(tape,0,'nearest-eligible'); inc=base
+opts,_=m._legal_options(tape,0)
+cs=[]
+for u in sorted(opts):
+ for ident in opts[u]:
+  if ident "'!= base.mapping[u]:
+   mp=base.mapping; mp[u]=ident; cs.append(m._configuration(base,mp,kind='"'bench'))
+ev=m.StepEvaluator(tape,setting,0,transition_from=inc,run_setting=rs)
+t=time.perf_counter(); ev.evaluate_many((base,*cs)); print('eval',len(cs)+1,time.perf_counter()-t,'valid',len(ev._evaluated),flush=True)
+PY" in /home/sat/mcrl-v025-rule-ws
+codex
+The sealed tape loads cleanly and cheaply via streaming pickle. The first exact full-endpoint neighborhood benchmark is still running after 30 seconds, so UNILATERAL—not the rule—is the expensive arm. I’m letting this one benchmark finish to choose a bounded batching strategy that remains exact and keeps the overall evaluation within the requested two-hour budget.
+codex
+The exact neighborhood is CPU-heavy on the single exposed core; there is no hang or I/O wait, but a naïve 20-anchor fixed-point run would consume most of the budget. I’m preserving exactness and will reduce redundant work by caching every evaluated assignment across fixed-point iterations and sharing the UNILATERAL terminal evaluation with RULE. No candidate pruning or approximation will be introduced.
+exec
+/bin/bash -lc "ps -o pid,ppid,etime,pcpu,pmem,rss,vsz,cmd -p 66940 --ppid 66940; pgrep -af 'python -' | head -20" in /home/sat/mcrl-v025-rule-ws
+ succeeded in 0ms:
+    PID    PPID     ELAPSED %CPU %MEM   RSS    VSZ CMD
+1 codex-linux-sandbox --sandbox-policy-cwd /home/sat/mcrl-v025-rule-ws --command-cwd /home/sat/mcrl-v025-rule-ws --permission-profile {"type":"managed","file_system":{"type":"restricted","entries":[{"path":{"type":"special","value":{"kind":"root"}},"access":"read"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-rule-ws"},"access":"write"},{"path":{"type":"special","value":{"kind":"slash_tmp"}},"access":"write"},{"path":{"type":"special","value":{"kind":"tmpdir"}},"access":"write"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-rule-ws/.git"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-rule-ws/.agents"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-rule-ws/.codex"},"access":"read","missing_path_behavior":"skip"}]},"network":"restricted"} --apply-seccomp-then-exec -- /bin/bash -c __CODEX_SNAPSHOT_OVERRIDE_SET_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS+x}" __CODEX_SNAPSHOT_OVERRIDE_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS-}" __CODEX_SNAPSHOT_OVERRIDE_SET_1="${CODEX_PERMISSION_PROFILE+x}" __CODEX_SNAPSHOT_OVERRIDE_1="${CODEX_PERMISSION_PROFILE-}" __CODEX_SNAPSHOT_OVERRIDE_SET_2="${CODEX_PLUGIN_METRICS_OUTPUT+x}" __CODEX_SNAPSHOT_OVERRIDE_2="${CODEX_PLUGIN_METRICS_OUTPUT-}" __CODEX_SNAPSHOT_OVERRIDE_SET_3="${CODEX_SESSION_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_3="${CODEX_SESSION_ID-}" __CODEX_SNAPSHOT_OVERRIDE_SET_4="${CODEX_THREAD_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_4="${CODEX_THREAD_ID-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0="${ALL_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_0="${ALL_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1="${BUNDLE_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_1="${BUNDLE_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2="${BUNDLE_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_2="${BUNDLE_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3="${BUNDLE_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_3="${BUNDLE_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4="${BUNDLE_SSL_CA_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_4="${BUNDLE_SSL_CA_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5="${CARGO_HTTP_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_5="${CARGO_HTTP_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6="${CODEX_CA_CERTIFICATE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_6="${CODEX_CA_CERTIFICATE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8="${CODEX_NETWORK_PROXY_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_8="${CODEX_NETWORK_PROXY_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9="${CODEX_NETWORK_PROXY_ATTRIBUTION+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_9="${CODEX_NETWORK_PROXY_ATTRIBUTION-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12="${CURL_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_12="${CURL_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13="${DOCKER_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_13="${DOCKER_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14="${DOCKER_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_14="${DOCKER_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15="${ELECTRON_GET_USE_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_15="${ELECTRON_GET_USE_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16="${FTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_16="${FTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17="${GIT_SSL_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_17="${GIT_SSL_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18="${HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_18="${HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19="${HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_19="${HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20="${NODE_EXTRA_CA_CERTS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_20="${NODE_EXTRA_CA_CERTS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21="${NODE_USE_ENV_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_21="${NODE_USE_ENV_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22="${NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_22="${NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23="${NPM_CONFIG_CAFILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_23="${NPM_CONFIG_CAFILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24="${NPM_CONFIG_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_24="${NPM_CONFIG_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25="${NPM_CONFIG_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_25="${NPM_CONFIG_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26="${NPM_CONFIG_NOPROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_26="${NPM_CONFIG_NOPROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27="${NPM_CONFIG_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_27="${NPM_CONFIG_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28="${PIP_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_28="${PIP_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29="${PIP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_29="${PIP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30="${REQUESTS_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_30="${REQUESTS_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31="${SSL_CERT_FILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_31="${SSL_CERT_FILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32="${WSS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_32="${WSS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33="${WS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_33="${WS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34="${YARN_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_34="${YARN_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35="${YARN_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_35="${YARN_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36="${YARN_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_36="${YARN_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37="${all_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_37="${all_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38="${ftp_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_38="${ftp_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39="${http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_39="${http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40="${https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_40="${https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41="${no_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_41="${no_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42="${npm_config_cafile+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_42="${npm_config_cafile-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43="${npm_config_http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_43="${npm_config_http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44="${npm_config_https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_44="${npm_config_https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45="${npm_config_noproxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_45="${npm_config_noproxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46="${npm_config_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_46="${npm_config_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47="${ws_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_47="${ws_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48="${wss_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_48="${wss_proxy-}" __CODEX_SNAPSHOT_PROXY_ENV_SET="${CODEX_NETWORK_PROXY_ACTIVE+x}"  if . '/home/sat/.codex/shell_snapshots/01a0860a-8a29-70a2-9df8-6af4534717fe.1788955232815209277.sh' >/dev/null 2>&1; then :; fi  if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_0}" ]; then export CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS="${__CODEX_SNAPSHOT_OVERRIDE_0}"; else unset CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_1}" ]; then export CODEX_PERMISSION_PROFILE="${__CODEX_SNAPSHOT_OVERRIDE_1}"; else unset CODEX_PERMISSION_PROFILE; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_2}" ]; then export CODEX_PLUGIN_METRICS_OUTPUT="${__CODEX_SNAPSHOT_OVERRIDE_2}"; else unset CODEX_PLUGIN_METRICS_OUTPUT; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_3}" ]; then export CODEX_SESSION_ID="${__CODEX_SNAPSHOT_OVERRIDE_3}"; else unset CODEX_SESSION_ID; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_4}" ]; then export CODEX_THREAD_ID="${__CODEX_SNAPSHOT_OVERRIDE_4}"; else unset CODEX_THREAD_ID; fi if [ -n "$__CODEX_SNAPSHOT_PROXY_ENV_SET" ] || [ -n "${CODEX_NETWORK_PROXY_ACTIVE+x}" ]; then if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0}" ]; then export ALL_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_0}"; else unset ALL_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1}" ]; then export BUNDLE_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_1}"; else unset BUNDLE_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2}" ]; then export BUNDLE_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_2}"; else unset BUNDLE_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3}" ]; then export BUNDLE_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_3}"; else unset BUNDLE_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4}" ]; then export BUNDLE_SSL_CA_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_4}"; else unset BUNDLE_SSL_CA_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5}" ]; then export CARGO_HTTP_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_5}"; else unset CARGO_HTTP_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6}" ]; then export CODEX_CA_CERTIFICATE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_6}"; else unset CODEX_CA_CERTIFICATE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7}" ]; then export CODEX_NETWORK_ALLOW_LOCAL_BINDING="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_7}"; else unset CODEX_NETWORK_ALLOW_LOCAL_BINDING; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8}" ]; then export CODEX_NETWORK_PROXY_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_8}"; else unset CODEX_NETWORK_PROXY_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9}" ]; then export CODEX_NETWORK_PROXY_ATTRIBUTION="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_9}"; else unset CODEX_NETWORK_PROXY_ATTRIBUTION; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10}" ]; then export CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_10}"; else unset CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11}" ]; then export CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_11}"; else unset CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12}" ]; then export CURL_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_12}"; else unset CURL_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13}" ]; then export DOCKER_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_13}"; else unset DOCKER_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14}" ]; then export DOCKER_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_14}"; else unset DOCKER_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15}" ]; then export ELECTRON_GET_USE_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_15}"; else unset ELECTRON_GET_USE_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16}" ]; then export FTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_16}"; else unset FTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17}" ]; then export GIT_SSL_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_17}"; else unset GIT_SSL_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18}" ]; then export HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_18}"; else unset HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19}" ]; then export HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_19}"; else unset HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20}" ]; then export NODE_EXTRA_CA_CERTS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_20}"; else unset NODE_EXTRA_CA_CERTS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21}" ]; then export NODE_USE_ENV_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_21}"; else unset NODE_USE_ENV_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22}" ]; then export NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_22}"; else unset NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23}" ]; then export NPM_CONFIG_CAFILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_23}"; else unset NPM_CONFIG_CAFILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24}" ]; then export NPM_CONFIG_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_24}"; else unset NPM_CONFIG_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25}" ]; then export NPM_CONFIG_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_25}"; else unset NPM_CONFIG_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26}" ]; then export NPM_CONFIG_NOPROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_26}"; else unset NPM_CONFIG_NOPROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27}" ]; then export NPM_CONFIG_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_27}"; else unset NPM_CONFIG_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28}" ]; then export PIP_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_28}"; else unset PIP_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29}" ]; then export PIP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_29}"; else unset PIP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30}" ]; then export REQUESTS_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_30}"; else unset REQUESTS_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31}" ]; then export SSL_CERT_FILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_31}"; else unset SSL_CERT_FILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32}" ]; then export WSS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_32}"; else unset WSS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33}" ]; then export WS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_33}"; else unset WS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34}" ]; then export YARN_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_34}"; else unset YARN_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35}" ]; then export YARN_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_35}"; else unset YARN_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36}" ]; then export YARN_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_36}"; else unset YARN_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37}" ]; then export all_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_37}"; else unset all_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38}" ]; then export ftp_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_38}"; else unset ftp_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39}" ]; then export http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_39}"; else unset http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40}" ]; then export https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_40}"; else unset https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41}" ]; then export no_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_41}"; else unset no_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42}" ]; then export npm_config_cafile="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_42}"; else unset npm_config_cafile; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43}" ]; then export npm_config_http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_43}"; else unset npm_config_http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44}" ]; then export npm_config_https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_44}"; else unset npm_config_https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45}" ]; then export npm_config_noproxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_45}"; else unset npm_config_noproxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46}" ]; then export npm_config_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_46}"; else unset npm_config_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47}" ]; then export ws_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_47}"; else unset ws_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48}" ]; then export wss_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_48}"; else unset wss_proxy; fi fi if [ -n "${PATH:-}" ]; then export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path':"$PATH"; else export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path'; fi  exec '/bin/bash' -c 'ps -o pid,ppid,etime,pcpu,pmem,rss,vsz,cmd -p 66940 --ppid 66940; pgrep -af '"'"'python -'"'"' | head -20'
+2 /bin/bash -c ps -o pid,ppid,etime,pcpu,pmem,rss,vsz,cmd -p 66940 --ppid 66940; pgrep -af 'python -' | head -20
+
+ exited 130 in 270400ms:
+load 0.8873782400041819 V025_PROBE_R2/world/1 33
+
