@@ -962,7 +962,14 @@ def _validate_committed_serially(
     full: Configuration,
     j1: Configuration,
     u1: Configuration,
-) -> tuple[tuple[EvaluatedProfile, ...], object, tuple[EvaluatedProfile, ...], object, int]:
+) -> tuple[
+    tuple[EvaluatedProfile, ...],
+    object,
+    tuple[EvaluatedProfile, ...],
+    object,
+    int,
+    StepEvaluator,
+]:
     """Recompute the committed validation in this process.
 
     Used only to rebuild the receipt after a worker is lost to the host; the
@@ -1008,6 +1015,7 @@ def _validate_committed_serially(
         singletons,
         base_decomposition,
         counter.boundary_evaluations,
+        evaluator,
     )
 
 
@@ -4210,7 +4218,8 @@ def execute_step(
                 # The committed decision is already fixed at the deadline; the
                 # receipt data is recovered in this process so that a worker
                 # lost to the host (out of memory, external kill) degrades the
-                # audit trail's latency and not its content.
+                # audit trail's latency and not its content.  The remaining
+                # worker-side stages fall back to the serial path below.
                 pool = None
                 (
                     validated_profiles,
@@ -4218,6 +4227,7 @@ def execute_step(
                     singleton_profiles,
                     base_decomposition,
                     validation_evaluations,
+                    recovered_evaluator,
                 ) = _validate_committed_serially(
                     tape=tape,
                     setting=setting,
@@ -4238,7 +4248,7 @@ def execute_step(
             profile.config.configuration_id: profile
             for profile in validated_profiles
         }
-        evaluator = None
+        evaluator = recovered_evaluator if pool is None else None
         s_uni_future = None
     else:
         s_uni_future = None
