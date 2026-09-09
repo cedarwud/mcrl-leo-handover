@@ -48,3 +48,13 @@ Coalitions seeded from occupancy-2 beams therefore contribute **negative** inter
 For context: in the census, occupancy 1 accounts for 5,760 of 10,848 beams, that is 53.1 %, so this is the largest bucket and not a corner case.
 
 Compute the activation threshold from the engine tables at each beam's actual elevation rather than from the 10-degree constant, since the quantile varies with elevation.
+
+## Scope reduction, after a first attempt produced nothing in three hours
+The previous attempt spent three hours writing test scaffolding and produced no result. **Completion beats completeness.** Reduce scope until it finishes:
+
+* **10 anchors is enough**, not 20. Say how many you covered.
+* Implement **only the occupancy-activation rule** first, and only extend to beam evacuation and aggressor relief if it is already finished and time remains. Occupancy activation is the mechanism with the strongest evidence: it is admitted at 180 of 180 anchors in the rebuilt corpus and does not depend on the disputed per-chain circuit constant.
+* **Do not write a test suite.** A single script that builds candidates, scores them with the real evaluator, and prints a table is the deliverable. Correctness comes from using the production evaluator, not from unit tests around your own scaffolding.
+* If you have partial results at any point, write them to the report file immediately and keep extending it, rather than saving everything for the end.
+
+Report the three pooled energy-efficiency figures, the RULE-over-UNILATERAL gain, the served counts, and the per-anchor decision wall time against the 10 second budget. Anything beyond that is optional.

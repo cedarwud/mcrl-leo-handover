@@ -33,3 +33,6 @@ Workspace `/home/sat/mcrl-v025-c1c2suff-ws`: `cp -a /home/sat/mcrl-v025-c1c2-ws`
 Change no threshold, sign, seed, horizon, price, service guard or acceptance rule. Adding a test that can fail is not a change to the acceptance criteria; it is the enforcement the criteria already assume.
 
 Write `C1C2-SUFFICIENCY-2026-09-09.md` in the workspace root and print it as your final message. Lead with whether a collision was found for C1 and for C2, then the regression witness result.
+
+## Report file name, restated because a previous attempt did not produce it
+Write your findings to a file named **exactly** `C1C2-SUFFICIENCY-2026-09-09.md` in the workspace root. That workspace was copied from an earlier audit and may contain unrelated reports; **do not edit or extend any of them**, and do not treat any existing file as your output. Create the named file fresh. If you finish without creating it, the run counts as failed regardless of what you print.
