@@ -885,3 +885,2405 @@ codex
 Nine minutes elapsed. The process is still live and has emitted only `F.`; that means at least one Stage-C test completed and failed, and the next test is the likely long-running point.
 codex
 The Stage-C baseline has reached ten minutes without completing. I’ll allow two more minutes, then interrupt and record a timeout/incomplete baseline so the remaining checks can still be performed within the stated budget.
+codex
+Eleven minutes elapsed, still no progress. One minute remains before I classify this untouched Stage-C run as non-completing within the audit cap.
+ exited 130 in 838565ms:
+F.
+codex
+The untouched Stage-C baseline did not complete in 12 minutes and was interrupted (shell exit 130), after producing one failure and one pass marker. I’ll now collect its inventory separately, inspect the captured failure, and run the physics subset untouched. The final report will distinguish completed counts from an incomplete/timed-out run rather than manufacture a green summary.
+exec
+/bin/bash -lc "sed -n '1,260p' .scratch/harness-audit-2026-09-09/baseline-stagec.log
+PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025 --collect-only -q" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 137ms:
+tests/stagec_v025/test_contract_v1_acceptance.py: 3
+tests/stagec_v025/test_stagec_pipeline.py: 12
+
+
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/physics_v025 -ra > .scratch/harness-audit-2026-09-09/baseline-physics.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/baseline-physics.log
+sed -n '"'1,320p' .scratch/harness-audit-2026-09-09/baseline-physics.log
+exit \""'$audit_status"' in /home/sat/mcrl-v025-harness-ws
+codex
+The physics baseline is running unchanged with output redirected to its evidence log, so silence here is expected. It is the only active test process.
+codex
+The physics subset is still active after roughly 90 seconds. I’m letting it complete and will report its exact pytest summary and exit status from the captured log.
+ exited 1 in 160930ms:
+........................................................................ [ 43%]
+........F.....FFF............F.......................................... [ 86%]
+.......................                                                  [100%]
+=================================== FAILURES ===================================
+_________ test_inventory_is_exact_realisable_union_and_standby_energy __________
+
+real_world = (<mcrl.physics_v025.provider_legacy.LegacyWorldProvider object at 0x7cf8852a6120>, <mcrl.env.scenario.ScenarioDriver o... 4436.24382143,  4072.2844397 ]]), ...), datetime.datetime(2026, 1, 7, 9, 3, 56, 800000, tzinfo=datetime.timezone.utc))
+
+    def test_inventory_is_exact_realisable_union_and_standby_energy(real_world) -> None:
+        provider, _driver, decisions, _users, _start = real_world
+        expected = set()
+        for candidate in decisions:
+            norads = np.repeat(candidate.window_norad_ids, NUM_BEAM_SLOTS, axis=1)
+            cells = np.tile(candidate.dwell.neighborhood_cell_ids, (1, NUM_SATELLITE_SLOTS))
+            for user, action in zip(*np.nonzero(candidate.masks), strict=True):
+                expected.add((int(norads[user, action]), int(cells[user, action])))
+        inventory = tuple(provider.inventory(world_seed=WORLD_SEED))
+>       assert set(inventory) == expected
+E       AssertionError: assert {(46080, 4), ...6080, 9), ...} == {(46366, 3), ...6366, 8), ...}
+E         
+E         Extra items in the left set:
+E         (46080, 21)
+E         (46080, 30)
+E         (64214, 72)
+E         (46080, 39)
+E         (46080, 48)...
+E         
+E         ...Full output truncated (339 lines hidden), use '-vv' to show
+
+tests/physics_v025/test_provider_legacy.py:305: AssertionError
+______ test_canonical_horizon_is_invariant_to_requested_rehearsal_length _______
+
+real_world = (<mcrl.physics_v025.provider_legacy.LegacyWorldProvider object at 0x7cf8852a6120>, <mcrl.env.scenario.ScenarioDriver o... 4436.24382143,  4072.2844397 ]]), ...), datetime.datetime(2026, 1, 7, 9, 3, 56, 800000, tzinfo=datetime.timezone.utc))
+
+    def test_canonical_horizon_is_invariant_to_requested_rehearsal_length(real_world) -> None:
+        provider, _driver, _decisions, _users, _start = real_world
+        short = LegacyWorldProvider(steps=3); long = LegacyWorldProvider(steps=31)
+        expected = tuple(provider.inventory(world_seed=WORLD_SEED))
+        assert tuple(short.inventory(world_seed=WORLD_SEED)) == expected == tuple(long.inventory(world_seed=WORLD_SEED))
+>       assert short.manifest_input_digest(world_seed=WORLD_SEED) == long.manifest_input_digest(world_seed=WORLD_SEED)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'LegacyWorldProvider' object has no attribute 'manifest_input_digest'
+
+tests/physics_v025/test_provider_legacy.py:369: AttributeError
+_____ test_manifest_and_boundary_arrays_are_deterministic_across_processes _____
+
+    def test_manifest_and_boundary_arrays_are_deterministic_across_processes() -> None:
+        script = """
+    import hashlib, json
+    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+    from mcrl.physics_v025.tapes import seed_from_domain
+    p=LegacyWorldProvider(steps=3); s=seed_from_domain('V025_PROBE/world/1')
+    a=p.step_arrays(world_seed=s, step_index=5, start_time_s=17.0); h=hashlib.sha256()
+    for k in (17,47):
+        for value in (a.identities, a.elevations_deg[k], a.slants_km[k], a.nominal_gain[k], a.realised_gain[k], a.visible[k], a.d2_eligible[k]):
+            h.update(value.tobytes(order='C'))
+    print(json.dumps({'manifest': p.manifest_input_digest(world_seed=s), 'arrays': h.hexdigest()}))
+    """
+        env = dict(os.environ); env["PYTHONPATH"] = "src"; command = [sys.executable, "-c", script]
+>       first = json.loads(subprocess.check_output(command, cwd=Path.cwd(), env=env, text=True))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/physics_v025/test_provider_legacy.py:385: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.13/subprocess.py:472: in check_output
+    return run(*popenargs, stdout=PIPE, timeout=timeout, check=True,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = False, timeout = None, check = True
+popenargs = (['/home/sat/mcrl-leo-handover/.venv/bin/python', '-c', "\nimport hashlib, json\nfrom mcrl.physics_v025.provider_legac...ytes(order='C'))\nprint(json.dumps({'manifest': p.manifest_input_digest(world_seed=s), 'arrays': h.hexdigest()}))\n"],)
+kwargs = {'stdout': -1, 'cwd': PosixPath('/home/sat/mcrl-v025-harness-ws'), 'env': {'PYTHONPATH': 'src', 'SHELL': '/bin/bash', 'CODEX_MANAGED_PACKAGE_ROOT': '/home/sat/.npm-global/lib/node_modules/@openai/codex', 'COLORTERM': '', ...}, 'text': True}
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['/home/sat/mcrl-leo-handover/.venv/bin/python', '-c', "\nimport hashlib, json\nfrom mcrl.physics_v025.provider_legacy import LegacyWorldProvider\nfrom mcrl.physics_v025.tapes import seed_from_domain\np=LegacyWorldProvider(steps=3); s=seed_from_domain('V025_PROBE/world/1')\na=p.step_arrays(world_seed=s, step_index=5, start_time_s=17.0); h=hashlib.sha256()\nfor k in (17,47):\n    for value in (a.identities, a.elevations_deg[k], a.slants_km[k], a.nominal_gain[k], a.realised_gain[k], a.visible[k], a.d2_eligible[k]):\n        h.update(value.tobytes(order='C'))\nprint(json.dumps({'manifest': p.manifest_input_digest(world_seed=s), 'arrays': h.hexdigest()}))\n"]' returned non-zero exit status 1.
+
+/usr/lib/python3.13/subprocess.py:577: CalledProcessError
+----------------------------- Captured stderr call -----------------------------
+Traceback (most recent call last):
+  File "<string>", line 10, in <module>
+    print(json.dumps({'manifest': p.manifest_input_digest(world_seed=s), 'arrays': h.hexdigest()}))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'LegacyWorldProvider' object has no attribute 'manifest_input_digest'
+__________ test_build_world_tape_uses_array_storage_and_input_digest ___________
+
+real_world = (<mcrl.physics_v025.provider_legacy.LegacyWorldProvider object at 0x7cf8852a6120>, <mcrl.env.scenario.ScenarioDriver o... 4436.24382143,  4072.2844397 ]]), ...), datetime.datetime(2026, 1, 7, 9, 3, 56, 800000, tzinfo=datetime.timezone.utc))
+
+    def test_build_world_tape_uses_array_storage_and_input_digest(real_world) -> None:
+        provider, _driver, _decisions, _users, _start = real_world
+        tape = build_world_tape(domain=WORLD_DOMAIN, provider=provider, steps=1, start_time_s=41.0)
+        assert tape.steps[0].arrays is not None and tape.steps[0].boundaries == ()
+        assert tape.steps[0].arrays.absolute_time_s[0] == 41.0
+>       assert tape.tape_digest == provider.manifest_input_digest(world_seed=WORLD_SEED)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'LegacyWorldProvider' object has no attribute 'manifest_input_digest'
+
+tests/physics_v025/test_provider_legacy.py:395: AttributeError
+_ test_every_downstream_producer_has_no_default_energy_price[c2_persistence_forecast] _
+
+producer = <function c2_persistence_forecast at 0x7cf97210c900>
+
+    @pytest.mark.parametrize(
+        "producer",
+        [
+            network_objective,
+            c1_difference_surplus,
+            c2_persistence_forecast,
+            c3_lcsrs_interaction,
+            project_three_offsets,
+            assert_reward_core_identity,
+            encode_c2_state,
+        ],
+    )
+    def test_every_downstream_producer_has_no_default_energy_price(producer) -> None:
+        signature = inspect.signature(producer)
+        for name in ("lambda_bits_per_j", "eta_ref", "kappa_bits_per_user_step"):
+            assert name in signature.parameters
+>           assert signature.parameters[name].default is inspect.Parameter.empty
+E           assert None is <class 'inspect._empty'>
+E            +  where None = <Parameter "kappa_bits_per_user_step: 'int | float | str | Fraction | None' = None">.default
+E            +  and   <class 'inspect._empty'> = <class 'inspect.Parameter'>.empty
+E            +    where <class 'inspect.Parameter'> = inspect.Parameter
+
+tests/physics_v025/test_stage2_tapes_targets_state.py:229: AssertionError
+=========================== short test summary info ============================
+FAILED tests/physics_v025/test_provider_legacy.py::test_inventory_is_exact_realisable_union_and_standby_energy
+FAILED tests/physics_v025/test_provider_legacy.py::test_canonical_horizon_is_invariant_to_requested_rehearsal_length
+FAILED tests/physics_v025/test_provider_legacy.py::test_manifest_and_boundary_arrays_are_deterministic_across_processes
+FAILED tests/physics_v025/test_provider_legacy.py::test_build_world_tape_uses_array_storage_and_input_digest
+FAILED tests/physics_v025/test_stage2_tapes_targets_state.py::test_every_downstream_producer_has_no_default_energy_price[c2_persistence_forecast]
+5 failed, 162 passed in 160.50s (0:02:40)
+
+HARNESS_EXIT_STATUS=1
+
+codex
+The untouched physics baseline completed: 167 collected, 162 passed, 5 failed, 0 skipped, 0 xfailed, 0 errors, exit 1. The failures are substantive API/contract mismatches, not harness infrastructure errors. Next I’m mapping the 15 Stage-C test names so I can isolate the slow test and recover per-test baseline outcomes without changing code.
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025 --collect-only -vv' in /home/sat/mcrl-v025-harness-ws
+ succeeded in 139ms:
+collected 15 items
+
+<Dir mcrl-v025-harness-ws>
+  <Dir tests>
+    <Dir stagec_v025>
+      <Module test_contract_v1_acceptance.py>
+        <Function test_T1_exhaustive_decomposition_and_intervention>
+        <Function test_T2_information_twins_reversal_and_additive_placebo>
+        <Function test_T3_crossed_cluster_real_merger_coverage_and_power>
+      <Module test_stagec_pipeline.py>
+        <Function test_synthetic_end_to_end_twelve_seeds_six_arms>
+        <Function test_golden_tape_to_row_all_q1_q2_fields_and_authorities>
+        <Function test_noncontiguous_disconnected_partial_service_roster_is_preserved>
+        <Function test_all_temporal_event_identities_are_derived_from_committed_history>
+        <Function test_unequal_energy_kat_uses_pooled_ratios_not_mean_world_ratios>
+        <Function test_two_user_independent_argmax_cannot_commit_jointly_infeasible_profile>
+        <Function test_deployment_validation_exception_commits_base_atomically>
+        <Function test_drop_arms_retain_and_update_all_heads>
+        <Function test_summary_mutation_is_rejected_even_when_receipt_hash_is_recomputed>
+        <Function test_checkpoint_cadence_and_authenticated_resume>
+        <Function test_train_assertion_rejects_non_train_anchor>
+        <Function test_shard_boundary_recomputes_dimensions_masks_and_labels>
+
+========================= 15 tests collected in 0.13s ==========================
+
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025/test_contract_v1_acceptance.py -x -vv -ra > .scratch/harness-audit-2026-09-09/baseline-stagec-first-failure.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/baseline-stagec-first-failure.log
+sed -n '"'1,260p' .scratch/harness-audit-2026-09-09/baseline-stagec-first-failure.log
+exit \""'$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 139ms:
+============================= test session starts ==============================
+platform linux -- Python 3.13.3, pytest-9.1.1, pluggy-1.6.0 -- /home/sat/mcrl-leo-handover/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/sat/mcrl-v025-harness-ws
+configfile: pyproject.toml
+collecting ... collected 3 items
+
+tests/stagec_v025/test_contract_v1_acceptance.py::test_T1_exhaustive_decomposition_and_intervention FAILED [ 33%]
+
+=================================== FAILURES ===================================
+______________ test_T1_exhaustive_decomposition_and_intervention _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-sat/pytest-121/test_T1_exhaustive_decompositi0')
+
+    
+    
+    def test_T1_exhaustive_decomposition_and_intervention(tmp_path) -> None:
+        synergy = _coalition_row("synergy")
+        antagonistic = _coalition_row("antagonistic")
+        additive = _coalition_row("additive")
+    
+        # Exact B4 identity with nonzero Phi charged once, and the second physical
+        # identity without Phi.  Values are normalized by kappa=2.
+        assert float.fromhex(synergy.c1_normalized_hex) == -1.0
+        assert float.fromhex(synergy.psi_normalized_hex) == 2.0
+        assert float.fromhex(synergy.objective_delta_normalized_hex) == 1.0
+        assert float.fromhex(synergy.physical_c1_normalized_hex) == -0.5
+        assert float.fromhex(synergy.physical_psi_normalized_hex) == 2.5
+        assert float.fromhex(synergy.physical_delta_normalized_hex) == 2.0
+        assert float.fromhex(antagonistic.psi_normalized_hex) == -1.0
+        assert float.fromhex(additive.psi_normalized_hex) == 0.0
+        # Exhaust all 2^3 profiles at each of the three hand-computed steps.  User
+        # 2 is a dummy, so toggling only that bit never changes F or Psi.
+        joint_f = {"additive": -2.0, "synergy": 2.0, "antagonistic": -4.0}
+        for kind, profile in product(joint_f, product((0, 1), repeat=3)):
+            u0, u1, dummy = profile
+            value = joint_f[kind] if u0 and u1 else -float(u0 + u1)
+            without_dummy = (u0, u1, 0)
+            value_without_dummy = (
+                joint_f[kind]
+                if without_dummy[0] and without_dummy[1]
+                else -float(without_dummy[0] + without_dummy[1])
+            )
+            assert value == value_without_dummy
+            psi = value - (-float(u0)) - (-float(u1))
+            assert psi == (joint_f[kind] + 2.0 if u0 and u1 else 0.0)
+        assert kappa_normalization_bits(2.0) == pytest.approx(60.16)
+        reporting_credit = pair_reporting_credit(
+            psi_normalized=2.0, coalition_users=(0, 1), roster=(0, 1, 2)
+        )
+        assert reporting_credit == {0: 1.0, 1: 1.0, 2: 0.0}
+        shapley = exact_shapley_reporting_credit(
+            coalition_users=(0, 1),
+            subset_values={
+                frozenset(): 0.0,
+                frozenset({0}): -1.0,
+                frozenset({1}): -1.0,
+                frozenset({0, 1}): 2.0,
+            },
+            roster=(0, 1, 2),
+        )
+        assert shapley == {0: 1.0, 1: 1.0, 2: 0.0}
+        dummy_row = _coalition_row("synergy", tmp_count=3, members=(0, 1, 2))
+>       assert float.fromhex(dummy_row.psi_normalized_hex) == 2.0
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../mcrl-v025-pilot-ws/tests/stagec_v025/test_contract_v1_acceptance.py:386: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../mcrl-v025-pilot-ws/tests/stagec_v025/test_contract_v1_acceptance.py:170: in _coalition_row
+    "additive": _outcome(physical_f=-2.0, phi=0.0),      # F=-2
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+context = CoalitionContext(anchor_id='information-twin-anchor', reference_profile=((0, PhysicalAction(norad_id=None, beam_chain_...0.5, 0.5), pairwise_cross_gain_terms=(('beam-a', 'victim', 0.7), ('beam-b', 'victim', 0.1), ('beam-c', 'victim', 0.1)))
+reference_outcome = NetworkOutcome(bits=Fraction(100, 1), joules=Fraction(100, 1), phi=Fraction(0, 1), decoding_availability=Fraction(1, 1), useful_availability=Fraction(1, 1), per_user_bits=())
+unilateral_outcomes = {0: NetworkOutcome(bits=Fraction(100, 1), joules=Fraction(100, 1), phi=Fraction(-1, 2), decoding_availability=Fraction...0, 1), phi=Fraction(0, 1), decoding_availability=Fraction(1, 1), useful_availability=Fraction(1, 1), per_user_bits=())}
+coalition_outcome = NetworkOutcome(bits=Fraction(104, 1), joules=Fraction(100, 1), phi=Fraction(-1, 1), decoding_availability=Fraction(1, 1), useful_availability=Fraction(1, 1), per_user_bits=())
+original_changed_user_count = 5, original_changed_users = (0, 1, 2, 3, 4)
+world_id = 'synthetic/synergy/0x1.0000000000000p+0', world_seed = 11
+anchor_index = 0, decision_time_utc = '2026-01-01T00:00:00Z'
+decision_time_ns = 0, setting_id = 'synthetic', lambda_bits_per_j = 1.0
+eta_ref_bits_per_j = 1.0, kappa_normalization_bits = 2.0
+code_digest = '51d46c80dca591555644ae79edfc1155e80fea2af9a9c5ac9715925b0c501ad1'
+physics_digest = '2d9ce88a0462211cd1d304ec768d006d92ef4f406fe4c2e7afe7fc08ca672399'
+catalogue_digest = 'dc62cb78a2544368328b432c7d5c9e4d872ab0f16897f493127c591ed8413213'
+setting_digest = '038539a2252dcbeccf6cc34d8ed94469fc7dcd0051c420fe5b7c9fc7342e227a'
+calibration_digest = 'eefcfa26a8fa80cbaeea19acfe22beeb8eb28f2d0168b8699eebfc8485b98c6a'
+allocation_manifest_digest = 'b22bc64335d20b2a575693599c93a437b0b9c202cbf0c847d05afe49f3aeee82'
+
+    def build_coalition_row(
+        *,
+        context: CoalitionContext,
+        reference_outcome: NetworkOutcome,
+        unilateral_outcomes: Mapping[int, NetworkOutcome],
+        coalition_outcome: NetworkOutcome,
+        original_changed_user_count: int | None = None,
+        original_changed_users: Sequence[int] | None = None,
+        world_id: str,
+        world_seed: int,
+        anchor_index: int,
+        decision_time_utc: str,
+        decision_time_ns: int,
+        setting_id: str,
+        lambda_bits_per_j: float,
+        eta_ref_bits_per_j: float,
+        kappa_normalization_bits: float,
+        code_digest: str,
+        physics_digest: str,
+        catalogue_digest: str,
+        setting_digest: str,
+        calibration_digest: str,
+        allocation_manifest_digest: str,
+    ) -> CoalitionRow:
+        """Production B4/B5 builder from nominal counterfactual outcomes."""
+    
+        identity = coalition_identity(
+            coalition_users=context.changed_users,
+            reference=reference_outcome,
+            unilateral_by_user=unilateral_outcomes,
+            coalition=coalition_outcome,
+            lambda_bits_per_j=lambda_bits_per_j,
+            eta_ref=eta_ref_bits_per_j,
+            kappa_bits_per_user_s=kappa_normalization_bits,
+        )
+        kappa = Fraction(str(kappa_normalization_bits))
+        original_users = (
+            context.changed_users
+            if original_changed_users is None
+            else tuple(sorted(int(user) for user in original_changed_users))
+        )
+        original_count = len(original_users) if original_changed_user_count is None else original_changed_user_count
+        if original_count != len(original_users):
+            raise StageCContractError("original changed-user count requires the complete user inventory")
+        decomposition = dict(capped_coalition_decomposition(original_users))
+        if context.changed_users not in decomposition:
+>           raise StageCContractError("coalition context is absent from the sealed capped decomposition")
+E           mcrl.stagec_v025.canonical.StageCContractError: coalition context is absent from the sealed capped decomposition
+
+src/mcrl/stagec_v025/coalitions.py:428: StageCContractError
+=========================== short test summary info ============================
+FAILED tests/stagec_v025/test_contract_v1_acceptance.py::test_T1_exhaustive_decomposition_and_intervention
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+============================== 1 failed in 0.13s ===============================
+
+HARNESS_EXIT_STATUS=1
+
+exec
+/bin/bash -lc "PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -c 'import mcrl; print(mcrl.__file__)'
+readlink -f tests/stagec_v025/test_contract_v1_acceptance.py
+ls -li tests/stagec_v025/test_contract_v1_acceptance.py /home/sat/mcrl-v025-pilot-ws/tests/stagec_v025/test_contract_v1_acceptance.py
+rg -n '"'^def test_'"' tests/physics_v025 tests/stagec_v025
+rg -n 'def (.*coalition|.*score|.*service|.*guard)|"'^class '"' src/mcrl/stagec_v025 src/mcrl/physics_v025 | head -240" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-harness-ws/src/mcrl/__init__.py
+/home/sat/mcrl-v025-harness-ws/tests/stagec_v025/test_contract_v1_acceptance.py
+ 87985219 -rw-rw-r-- 1 sat sat 46960 Sep  9 11:37 /home/sat/mcrl-v025-pilot-ws/tests/stagec_v025/test_contract_v1_acceptance.py
+108035619 -rw-rw-r-- 1 sat sat 46059 Sep  9 11:19 tests/stagec_v025/test_contract_v1_acceptance.py
+tests/stagec_v025/test_stagec_pipeline.py:63:def test_synthetic_end_to_end_twelve_seeds_six_arms(tmp_path: Path) -> None:
+tests/stagec_v025/test_stagec_pipeline.py:102:def test_golden_tape_to_row_all_q1_q2_fields_and_authorities() -> None:
+tests/stagec_v025/test_stagec_pipeline.py:168:def test_noncontiguous_disconnected_partial_service_roster_is_preserved() -> None:
+tests/stagec_v025/test_stagec_pipeline.py:205:def test_all_temporal_event_identities_are_derived_from_committed_history() -> None:
+tests/stagec_v025/test_stagec_pipeline.py:252:def test_unequal_energy_kat_uses_pooled_ratios_not_mean_world_ratios() -> None:
+tests/stagec_v025/test_stagec_pipeline.py:270:def test_two_user_independent_argmax_cannot_commit_jointly_infeasible_profile() -> None:
+tests/stagec_v025/test_stagec_pipeline.py:319:def test_deployment_validation_exception_commits_base_atomically() -> None:
+tests/stagec_v025/test_stagec_pipeline.py:364:def test_drop_arms_retain_and_update_all_heads(tmp_path: Path) -> None:
+tests/stagec_v025/test_stagec_pipeline.py:391:def test_summary_mutation_is_rejected_even_when_receipt_hash_is_recomputed(
+tests/stagec_v025/test_stagec_pipeline.py:446:def test_checkpoint_cadence_and_authenticated_resume(tmp_path: Path) -> None:
+tests/stagec_v025/test_stagec_pipeline.py:461:def test_train_assertion_rejects_non_train_anchor() -> None:
+tests/stagec_v025/test_stagec_pipeline.py:469:def test_shard_boundary_recomputes_dimensions_masks_and_labels(
+tests/physics_v025/test_integration_matrix.py:41:def test_rate_t_integral_and_terminal_snapshot_known_answers() -> None:
+tests/physics_v025/test_integration_matrix.py:51:def test_round1_two_second_time_fixture() -> None:
+tests/physics_v025/test_integration_matrix.py:60:def test_explicit_duplicate_time_discontinuity_avoids_cross_jump_area() -> None:
+tests/physics_v025/test_integration_matrix.py:74:def test_interruption_is_union_clipped_once_and_keeps_rf_draw() -> None:
+tests/physics_v025/test_integration_matrix.py:94:def test_d2_visibility_and_dwell_arithmetic() -> None:
+tests/physics_v025/test_integration_matrix.py:117:def test_matrix_exact_sealed_order_digests_and_no_baseline_relabel() -> None:
+tests/physics_v025/test_integration_matrix.py:137:def test_matrix_rejects_undeclared_factorial_corner() -> None:
+tests/physics_v025/test_integration_matrix.py:146:def test_estimate_exposes_v12_cells_and_240_equivalent_shared_plan() -> None:
+tests/physics_v025/test_integration_matrix.py:158:def test_shared_tape_rescores_standby_handover_and_u_without_reradiation() -> None:
+tests/physics_v025/test_integration_matrix.py:185:def test_rate_target_cell_reports_target_and_phy_status_separately() -> None:
+tests/physics_v025/test_integration_matrix.py:211:def test_track_b_dependency_injection_hook_returns_bound_profile() -> None:
+tests/stagec_v025/test_contract_v1_acceptance.py:337:def test_T1_exhaustive_decomposition_and_intervention(tmp_path) -> None:
+tests/stagec_v025/test_contract_v1_acceptance.py:632:def test_T2_information_twins_reversal_and_additive_placebo(tmp_path) -> None:
+tests/stagec_v025/test_contract_v1_acceptance.py:942:def test_T3_crossed_cluster_real_merger_coverage_and_power(tmp_path) -> None:
+tests/physics_v025/test_stage2_runner.py:24:def test_estimate_binds_v12_cells_four_worlds_and_shared_rescore() -> None:
+tests/physics_v025/test_stage2_runner.py:33:def test_cluster_bootstrap_recomputes_pooled_ratio_not_mean_world_ee() -> None:
+tests/physics_v025/test_stage2_runner.py:47:def test_unit_receipt_is_complete_and_write_once(tmp_path: Path) -> None:
+tests/physics_v025/test_stage4b_contract.py:63:def test_v15_set_decomposition_and_factor_identity_are_exact() -> None:
+tests/physics_v025/test_stage4b_contract.py:89:def test_regimes_are_sealed_after_31_and_launch_order_is_binding() -> None:
+tests/physics_v025/test_stage4b_contract.py:144:def test_qos_counts_pool_inside_draw_and_intervals_differ_by_estimator() -> None:
+tests/physics_v025/test_stage4b_contract.py:169:def test_zero_bit_cluster_keeps_primary_and_undefines_log_supplement() -> None:
+tests/physics_v025/test_stage4b_contract.py:178:def test_admission_reads_a_r0_only_and_always_reports_regime_separately() -> None:
+tests/physics_v025/test_stage4b_contract.py:207:def test_provider_protocol_and_33_step_tape_are_mandatory() -> None:
+tests/physics_v025/test_stage4b_contract.py:253:def test_score_setting_wires_left_right_discontinuities() -> None:
+tests/physics_v025/test_stage4b_contract.py:286:def test_sealed_off_axis_kat_uses_a_r0_and_changes_power_and_ee() -> None:
+tests/physics_v025/test_provider_legacy.py:102:def test_decision_geometry_and_scintillation_free_nominal_match_legacy(real_world, step0) -> None:
+tests/physics_v025/test_provider_legacy.py:126:def test_scintillation_is_applied_exactly_once_against_hand_budget(elevation: float) -> None:
+tests/physics_v025/test_provider_legacy.py:152:def test_forward_boundary_ecef_matches_direct_sgp4(real_world, boundary_index: int) -> None:
+tests/physics_v025/test_provider_legacy.py:163:def test_mask_is_nonvacuous_and_matches_legacy_at_decision(real_world, step0) -> None:
+tests/physics_v025/test_provider_legacy.py:185:def test_entry_elevation_and_d2_distance_use_legacy_slant_definition(step0) -> None:
+tests/physics_v025/test_provider_legacy.py:194:def test_aggressor_uses_own_cell_boresight_at_one_and_two_rings(real_world, step0) -> None:
+tests/physics_v025/test_provider_legacy.py:249:def test_per_chain_colour_filter_and_same_satellite_p10_match_legacy(real_world, step0) -> None:
+tests/physics_v025/test_provider_legacy.py:296:def test_inventory_is_exact_realisable_union_and_standby_energy(real_world) -> None:
+tests/physics_v025/test_provider_legacy.py:318:def test_fixed_forward_horizon_has_explicit_right_censoring(step0) -> None:
+tests/physics_v025/test_provider_legacy.py:329:def test_user_motion_is_recorded_per_step_and_user_count_is_sourced(real_world) -> None:
+tests/physics_v025/test_provider_legacy.py:337:def test_exact_train_timestamp_and_test_date_rejection(real_world) -> None:
+tests/physics_v025/test_provider_legacy.py:349:def test_unhealthy_propagation_fails_closed() -> None:
+tests/physics_v025/test_provider_legacy.py:356:def test_nonzero_origin_and_forward_prime_seam_have_no_backward_jump(real_world) -> None:
+tests/physics_v025/test_provider_legacy.py:364:def test_canonical_horizon_is_invariant_to_requested_rehearsal_length(real_world) -> None:
+tests/physics_v025/test_provider_legacy.py:372:def test_manifest_and_boundary_arrays_are_deterministic_across_processes() -> None:
+tests/physics_v025/test_provider_legacy.py:390:def test_build_world_tape_uses_array_storage_and_input_digest(real_world) -> None:
+tests/physics_v025/test_provider_legacy.py:401:def test_tle_split_and_provider_source_hashes_are_recorded(real_world) -> None:
+tests/physics_v025/test_architectures.py:39:def test_b02_fixed_rf_consistency_at_received_field_level() -> None:
+tests/physics_v025/test_architectures.py:51:def test_tdm_union_boundaries_and_deterministic_user_order() -> None:
+tests/physics_v025/test_architectures.py:70:def test_tdm_and_fdm_synthetic_noise_rate_fixture() -> None:
+tests/physics_v025/test_architectures.py:99:def test_interference_partition_excludes_serving_and_off_colour() -> None:
+tests/physics_v025/test_architectures.py:120:def test_slot_consistent_interference_changes_with_tdm_aggressor() -> None:
+tests/physics_v025/test_architectures.py:135:def test_memoryless_isolated_power_halves_when_gain_doubles() -> None:
+tests/physics_v025/test_architectures.py:147:def test_coupled_power_convergence_saturation_and_failure_certificate() -> None:
+tests/physics_v025/test_architectures.py:180:def test_fdm_per_user_and_sum_caps() -> None:
+tests/physics_v025/test_architectures.py:192:def test_nominal_power_realised_decode_can_fail_without_pruning_attempt() -> None:
+tests/physics_v025/test_architectures.py:218:def test_nominal_control_power_is_field_invariant_but_realised_bits_need_not_be() -> None:
+tests/physics_v025/test_architectures.py:232:def test_geometry_copies_and_freezes_caller_arrays() -> None:
+tests/physics_v025/test_architectures.py:243:def test_rate_target_cap_marks_infeasible_but_keeps_phy_bits_and_energy() -> None:
+tests/physics_v025/test_architectures.py:272:def test_rate_target_no_mode_forces_cap_without_invalidating_solver() -> None:
+tests/physics_v025/test_architectures.py:287:def test_no_mode_cap_attempt_still_interferes_costs_pa_and_is_not_served() -> None:
+tests/physics_v025/test_architectures.py:333:def test_rate_target_tdm_slot_pa_and_fdm_summed_rf_fixture() -> None:
+tests/physics_v025/test_architectures.py:364:def test_rate_target_angle_gain_halving_doubles_power_below_cap() -> None:
+tests/physics_v025/test_architectures.py:378:def test_rate_target_coupled_solve_clears_discrete_threshold() -> None:
+tests/physics_v025/test_architectures.py:400:def test_near_unit_spectral_radius_converges_to_analytic_fixed_point() -> None:
+tests/physics_v025/test_architectures.py:415:def test_jointly_unattainable_rate_targets_converge_at_cap() -> None:
+tests/physics_v025/test_architectures.py:436:def test_nonfinite_coupled_update_is_invalid() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:87:def test_project_and_calibration_seed_domains_are_exact_and_disjoint() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:96:def test_tape_has_exact_47_interval_boundaries_and_fixed_manifests() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:121:def test_actual_elevation_changes_shadow_statistics_with_same_keys() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:142:def test_s465_three_angles_match_independent_piecewise_formula() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:164:def test_power_and_bits_trapezoids_match_linear_closed_forms() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:182:def test_nominal_greedy_and_calibration_are_deterministic_per_setting() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:225:def test_every_downstream_producer_has_no_default_energy_price(producer) -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:232:def test_explicit_prices_fail_closed_on_missing_or_mismatch() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:239:def test_c1_is_whole_network_difference_plus_explicit_phi() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:270:def test_c2_charges_failed_attempt_then_applies_absorbing_three_offset_penalty() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:290:def test_c3_uses_declared_network_interaction_and_equal_split() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:306:def test_reward_core_identity_is_exact() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:327:def test_c2_schema_has_new_features_frozen_shape_and_price_binding() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:355:def test_transition_ledger_uses_norad_and_chain_not_cell_slot() -> None:
+tests/physics_v025/test_stage4_contract.py:51:def test_c3_is_interaction_only_for_binding_energy_fixture() -> None:
+tests/physics_v025/test_stage4_contract.py:66:def test_whole_network_c1_plus_pair_c3_counts_joint_change_once() -> None:
+tests/physics_v025/test_stage4_contract.py:94:def test_three_user_shapley_interaction_is_asymmetric_and_conservative() -> None:
+tests/physics_v025/test_stage4_contract.py:118:def test_kappa_is_per_user_decision_step_not_seconds() -> None:
+tests/physics_v025/test_stage4_contract.py:145:def test_qos_gate_can_fail_only_availability_margin() -> None:
+tests/physics_v025/test_stage4_contract.py:169:def test_world_separation_rejects_provider_date_layout_collision() -> None:
+tests/physics_v025/test_contract_discriminators.py:23:def test_full_network_difference_surplus_not_focal_only() -> None:
+tests/physics_v025/test_contract_discriminators.py:51:def test_cap_boundary_and_39_beam_reference_are_not_a_derivation() -> None:
+tests/physics_v025/test_contract_discriminators.py:59:def test_phi_preferences_are_distinct_and_not_energy_components() -> None:
+tests/physics_v025/test_contract_discriminators.py:68:def test_additive_accounting_fixture_and_receipt_mutation_detection() -> None:
+tests/physics_v025/test_contract_discriminators.py:78:def test_inventory_and_world_identity_duplicates_fail() -> None:
+tests/physics_v025/test_contract_discriminators.py:87:def test_deadline_fallback_is_frozen_base() -> None:
+tests/physics_v025/test_channel_legacy.py:24:def test_propagation_quarter_power_and_ten_db_loss() -> None:
+tests/physics_v025/test_channel_legacy.py:32:def test_transmit_gain_absolute_anchors() -> None:
+tests/physics_v025/test_channel_legacy.py:40:def test_receive_pattern_and_correct_s465_branch() -> None:
+tests/physics_v025/test_channel_legacy.py:49:def test_rician_unit_mean_and_db_shadow_linear_mean() -> None:
+tests/physics_v025/test_channel_legacy.py:59:def test_action_history_free_component_key() -> None:
+tests/physics_v025/test_channel_legacy.py:71:def test_bessel_accuracy_around_mu_34() -> None:
+tests/physics_v025/test_channel_legacy.py:84:def test_old_system_and_recurrence_outputs_unchanged() -> None:
+tests/physics_v025/test_energy_endpoint.py:32:def test_one_beam_cap_joules_and_user_deduplication() -> None:
+tests/physics_v025/test_energy_endpoint.py:45:def test_pa_known_values_efficiency_and_cap_boundary() -> None:
+tests/physics_v025/test_energy_endpoint.py:56:def test_consolidation_fixture_reduces_ee_by_1p5466_percent() -> None:
+tests/physics_v025/test_energy_endpoint.py:70:def test_idle_switching_uses_declared_twelve_chain_satellite_census() -> None:
+tests/physics_v025/test_energy_endpoint.py:87:def test_lit_beam_and_first_satellite_monotonicity() -> None:
+tests/physics_v025/test_energy_endpoint.py:98:def test_circuit_baseband_and_old_default_one_beam_fixture() -> None:
+tests/physics_v025/test_energy_endpoint.py:118:def test_handover_count_invariance_and_exact_extension_difference() -> None:
+tests/physics_v025/test_energy_endpoint.py:130:def test_tdm_pa_averaging_precedes_nonlinearity() -> None:
+tests/physics_v025/test_energy_endpoint.py:144:def test_declared_tdm_pa_identity_at_point_one_and_one_point_six_watts() -> None:
+tests/physics_v025/test_energy_endpoint.py:159:def test_circuit_and_baseband_are_per_chain_and_satellite_not_per_user() -> None:
+tests/physics_v025/test_energy_endpoint.py:195:def test_exact_pooling_duplicate_and_all_dark_disposition() -> None:
+tests/physics_v025/test_energy_endpoint.py:215:def test_reward_endpoint_identity_and_pricing_fixture() -> None:
+tests/physics_v025/test_energy_endpoint.py:228:def test_lambda_eta_parity_requires_both_explicit_and_equal() -> None:
+tests/physics_v025/test_energy_endpoint.py:240:def test_surplus_change_sign_matches_ee_at_exact_reference_ratio() -> None:
+tests/physics_v025/test_energy_endpoint.py:254:def test_physical_identity_mismatch_fails_closed() -> None:
+tests/physics_v025/test_constants_acm.py:42:def test_profile_anchor_unit_conversion(name: str, expected_se: float, expected_threshold_db: float) -> None:
+tests/physics_v025/test_constants_acm.py:50:def test_three_published_profile_anchors() -> None:
+tests/physics_v025/test_constants_acm.py:63:def test_acm_ceiling_and_greatest_efficiency_selection() -> None:
+tests/physics_v025/test_constants_acm.py:74:def test_service_boundary_is_inclusive_and_adjacent_float_below_fails() -> None:
+tests/physics_v025/test_constants_acm.py:83:def test_two_user_acm_bits_apply_airtime_rolloff_and_duration_once() -> None:
+tests/physics_v025/test_constants_acm.py:93:def test_uncapped_shannon_is_separately_named_margin_off_diagnostic() -> None:
+tests/physics_v025/test_constants_acm.py:103:def test_v12_split_u_separates_cap_and_margin() -> None:
+tests/physics_v025/test_constants_acm.py:120:def test_clock_band_noise_and_temperature_arithmetic() -> None:
+tests/physics_v025/test_constants_acm.py:134:def test_rate_target_acm_known_answers_and_monotone_gamma() -> None:
+tests/physics_v025/test_constants_acm.py:159:def test_shannon_inverse_convexity_and_discrete_acm_overshoot() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:54:def test_parity_producers_require_all_three_calibration_values(producer) -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:60:def test_declared_target_decoder_cross_product_reaches_physical_endpoints() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:87:def test_whole_network_c1_leaves_no_unilateral_externality_in_c3() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:105:def test_nonbinding_demand_cap_and_per_regime_joint_reoptimization() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:132:def test_common_action_bootstrap_never_builds_unattainable_headwise_action() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:145:def test_probe_dry_run_wires_formula_decoder_and_reward_endpoint_parity() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:175:def test_shortlist_is_a_superset_and_receipts_report_zero_misses() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:184:def test_shortlist_census_detects_a_legal_candidate_exclusion() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:206:def test_receipt_has_successor_usable_energy_range_diagnostic() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:221:def test_treatment_t_receipt_reports_left_snapshot_beside_same_instant_integral() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:231:def test_h_and_sh_treatments_change_both_rate_architecture_twins() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:261:def test_all_31_settings_execute_pairwise_distinct_receipts_on_one_world_tape() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:309:def test_rekey_estimator_is_derived_from_receipt_ledger_and_handles_no_boundary() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:360:def test_three_uncertainty_intervals_finite_and_delta_agrees_on_iid_blocks() -> None:
+tests/physics_v025/test_stage3_parity_uncertainty.py:377:def test_pooled_ratio_and_paired_log_intervals_are_distinct() -> None:
+tests/physics_v025/test_stage4d_gate.py:117:def test_large_set_decomposition_is_linear_and_has_no_credit_split() -> None:
+tests/physics_v025/test_stage4d_gate.py:135:def test_small_set_shapley_is_reporting_only_and_exact() -> None:
+tests/physics_v025/test_stage4d_gate.py:154:def test_full_48_boundary_endpoint_matches_frozen_stage4b_bits() -> None:
+tests/physics_v025/test_stage4d_gate.py:166:def test_batch_and_scalar_slow_certificates_agree(monkeypatch: pytest.MonkeyPatch) -> None:
+tests/physics_v025/test_stage4d_gate.py:186:def test_two_stage_top_m_reports_agreement_and_miss() -> None:
+tests/physics_v025/test_stage4d_gate.py:226:def test_stage1_is_k0_stage2_is_five_boundaries_and_rows_are_bounded() -> None:
+tests/physics_v025/test_stage4d_gate.py:259:def test_s_uni_searches_full_legal_set_and_receipts_termination(
+tests/physics_v025/test_stage4d_gate.py:305:def test_s_uni_uses_incumbent_relative_phi_in_k0_objective(
+tests/physics_v025/test_stage4d_gate.py:358:def test_matched_anchor_ledger_emits_all_five_physical_event_kinds() -> None:
+tests/physics_v025/test_stage4d_gate.py:393:def test_reuse_mask_is_reciprocal_and_chain_colour_is_unique() -> None:
+tests/physics_v025/test_stage4d_gate.py:414:def test_zero_legal_user_is_null_in_every_nonbase_catalogue_row() -> None:
+tests/physics_v025/test_stage4d_gate.py:450:def test_conformance_rejects_opening_dependency_mutation() -> None:
+tests/physics_v025/test_stage4d_gate.py:464:def test_reaggregation_rejects_payload_mutation_even_with_rehashed_row() -> None:
+tests/physics_v025/test_stage4d_gate.py:477:def test_reaggregation_recomputes_every_distribution_and_rekey_summary() -> None:
+tests/physics_v025/test_stage4d_gate.py:511:def test_nonformal_and_smoke_world_indices_fail_closed() -> None:
+tests/physics_v025/test_stage4d_gate.py:529:def test_formal_world_tape_is_built_once_and_reused_across_settings(
+tests/physics_v025/test_stage4d_gate.py:568:def test_visibility_crossing_uses_the_exact_ten_degree_floor() -> None:
+tests/physics_v025/test_stage4d_gate.py:585:def test_invalid_forecast_row_has_negative_margins_without_constructor_error() -> None:
+tests/physics_v025/test_stage4d_gate.py:596:def test_live_legality_stops_at_boundary_17_for_visibility_and_d2() -> None:
+tests/physics_v025/test_stage4d_gate.py:616:def test_committed_48_boundary_trajectories_match_scalar_resolution() -> None:
+tests/physics_v025/test_stage4d_gate.py:649:def test_dense_and_scalar_evaluation_enter_through_common_resolver(
+tests/physics_v025/test_stage4d_gate.py:680:def test_common_resolver_rejects_mixed_mode_arguments() -> None:
+src/mcrl/physics_v025/calibration.py:19:class NominalConfiguration:
+src/mcrl/physics_v025/calibration.py:62:class CalibrationObservation:
+src/mcrl/physics_v025/calibration.py:109:class CalibrationValues:
+src/mcrl/physics_v025/calibration.py:279:class CalibrationRegistry:
+src/mcrl/physics_v025/energy.py:46:class HardwareInventory:
+src/mcrl/physics_v025/energy.py:65:class EnergyInterval:
+src/mcrl/physics_v025/energy.py:71:class EnergyReceipt:
+src/mcrl/physics_v025/integration.py:28:class BoundarySample:
+src/mcrl/physics_v025/integration.py:38:class InterruptionEvent:
+src/mcrl/physics_v025/integration.py:45:class IntegrationReceipt:
+src/mcrl/physics_v025/targets.py:37:class HandoverEvent:
+src/mcrl/physics_v025/targets.py:85:class NetworkOutcome:
+src/mcrl/physics_v025/targets.py:148:class C1Label:
+src/mcrl/physics_v025/targets.py:177:class OffsetProjection:
+src/mcrl/physics_v025/targets.py:243:class C2Label:
+src/mcrl/physics_v025/targets.py:314:class C3Interaction:
+src/mcrl/physics_v025/targets.py:356:class C3SetInteraction:
+src/mcrl/physics_v025/targets.py:425:class SetScoreDecomposition:
+src/mcrl/physics_v025/targets.py:451:def set_score_decomposition(
+src/mcrl/physics_v025/targets.py:539:class MatchedAnchorDecomposition:
+src/mcrl/physics_v025/targets.py:550:class CoalitionIdentity:
+src/mcrl/physics_v025/targets.py:568:def coalition_identity(
+src/mcrl/physics_v025/provider_legacy.py:96:class _StepState:
+src/mcrl/physics_v025/provider_legacy.py:108:class _WorldState:
+src/mcrl/physics_v025/provider_legacy.py:143:class _TrainOnlyArchive(TleArchive):
+src/mcrl/physics_v025/provider_legacy.py:178:class LegacyWorldProvider:
+src/mcrl/physics_v025/batch.py:37:class BatchARResult:
+src/mcrl/physics_v025/endpoint.py:33:class StepEndpoint:
+src/mcrl/physics_v025/endpoint.py:80:class EndpointTotals:
+src/mcrl/physics_v025/tapes.py:117:class UserLayout:
+src/mcrl/physics_v025/tapes.py:131:class ProviderAttestation:
+src/mcrl/physics_v025/tapes.py:212:class PrimitiveCandidate:
+src/mcrl/physics_v025/tapes.py:325:class PrimitiveBoundary:
+src/mcrl/physics_v025/tapes.py:346:class PrimitiveStepArrays:
+src/mcrl/physics_v025/tapes.py:623:class StepTape:
+src/mcrl/physics_v025/tapes.py:675:class CarrierAction:
+src/mcrl/physics_v025/tapes.py:692:class ProviderProtocolOutputs:
+src/mcrl/physics_v025/tapes.py:734:class ExogenousWorldTape:
+src/mcrl/physics_v025/tapes.py:938:class PrimitiveWorldProvider(Protocol):
+src/mcrl/physics_v025/tapes.py:1022:class _CarrierOption:
+src/mcrl/physics_v025/tapes.py:1114:class TinySyntheticProvider:
+src/mcrl/physics_v025/resolution.py:27:class ResolutionResult:
+src/mcrl/physics_v025/adapter.py:40:class RadiationBoundary:
+src/mcrl/physics_v025/adapter.py:46:class SharedArchitectureTape:
+src/mcrl/physics_v025/adapter.py:56:class CellScore:
+src/mcrl/physics_v025/adapter.py:155:def _rescore_boundary(
+src/mcrl/physics_v025/adapter.py:233:def score_setting(
+src/mcrl/physics_v025/acm.py:21:class ACMMode:
+src/mcrl/physics_v025/acm.py:121:class RateModel(Protocol):
+src/mcrl/physics_v025/acm.py:130:class ACMRate:
+src/mcrl/physics_v025/acm.py:148:class UncappedShannonDiagnosticRate:
+src/mcrl/physics_v025/acm.py:174:class UncappedShannonMarginKeptRate:
+src/mcrl/physics_v025/acm.py:196:class CappedACMMarginOffRate:
+src/mcrl/physics_v025/state_v025.py:72:class ForecastOffsetState:
+src/mcrl/physics_v025/state_v025.py:91:class C2ActionState:
+src/mcrl/physics_v025/state_v025.py:123:class EncodedC2State:
+src/mcrl/stagec_v025/canonical.py:18:class StageCContractError(RuntimeError):
+src/mcrl/physics_v025/parity/__init__.py:21:class DecisionProfile:
+src/mcrl/physics_v025/parity/__init__.py:51:class C3ParityResult:
+src/mcrl/physics_v025/parity/__init__.py:59:class ExecutedEndpoint:
+src/mcrl/physics_v025/parity/__init__.py:67:class DecoderParityTrace:
+src/mcrl/physics_v025/parity/__init__.py:75:class BootstrapChoice:
+src/mcrl/stagec_v025/learner.py:71:class PairwiseBatch:
+src/mcrl/stagec_v025/learner.py:264:class LinearHead:
+src/mcrl/stagec_v025/learner.py:271:    def score(self, state: Sequence[float]) -> float:
+src/mcrl/stagec_v025/learner.py:296:class ThreeRouteModel:
+src/mcrl/stagec_v025/learner.py:302:    def score(self, route: Route, state: Sequence[float]) -> float:
+src/mcrl/stagec_v025/learner.py:325:class LineageOrchestrator:
+src/mcrl/stagec_v025/learner.py:488:class NeutralSourceDefinition:
+src/mcrl/stagec_v025/learner.py:544:class CoalitionBatch:
+src/mcrl/stagec_v025/learner.py:653:class AdamMLPHead:
+src/mcrl/stagec_v025/learner.py:726:    def score(self, state: Sequence[float]) -> float:
+src/mcrl/stagec_v025/learner.py:822:class AdamSetInteractionHead:
+src/mcrl/stagec_v025/learner.py:829:    def score(self, context: CoalitionContext) -> float:
+src/mcrl/stagec_v025/learner.py:848:class SetInteractionHead:
+src/mcrl/stagec_v025/learner.py:871:    def score(self, context: CoalitionContext) -> float:
+src/mcrl/stagec_v025/learner.py:925:class V1ThreeRouteModel:
+src/mcrl/stagec_v025/learner.py:936:    def score(self, route: Route, state: Sequence[float]) -> float:
+src/mcrl/stagec_v025/learner.py:962:class V1LineageOrchestrator:
+src/mcrl/stagec_v025/interfaces.py:19:class HeadsInformation:
+src/mcrl/stagec_v025/interfaces.py:107:class ReferenceProfiles:
+src/mcrl/stagec_v025/interfaces.py:119:class CatalogueProfile:
+src/mcrl/stagec_v025/interfaces.py:137:class NominalProfileOutput:
+src/mcrl/stagec_v025/interfaces.py:157:class CoordinatorInformation:
+src/mcrl/stagec_v025/interfaces.py:208:class ArmInformationInterface:
+src/mcrl/physics_v025/architectures.py:30:class Link:
+src/mcrl/physics_v025/architectures.py:55:class Geometry:
+src/mcrl/physics_v025/architectures.py:110:class RadiationConfig:
+src/mcrl/physics_v025/architectures.py:133:class PowerCertificate:
+src/mcrl/physics_v025/architectures.py:146:class Transmission:
+src/mcrl/physics_v025/architectures.py:170:class RadiationSlot:
+src/mcrl/physics_v025/architectures.py:183:class RadiationResult:
+src/mcrl/physics_v025/architectures.py:257:class RadiationArchitecture(Protocol):
+src/mcrl/physics_v025/architectures.py:472:class FixedRF:
+src/mcrl/physics_v025/architectures.py:512:class AngleTPC_TDM:
+src/mcrl/physics_v025/architectures.py:559:class AngleTPC_FDM:
+src/mcrl/physics_v025/architectures.py:663:class AngleRateTPC_TDM:
+src/mcrl/physics_v025/architectures.py:737:class AngleRateTPC_FDM:
+src/mcrl/stagec_v025/merge.py:47:class AdditiveTotals:
+src/mcrl/physics_v025/matrix.py:20:class PhysicsSetting:
+src/mcrl/physics_v025/matrix.py:108:class SealedRunSetting:
+src/mcrl/stagec_v025/experiments.py:18:class LearnedNeutralSourceExperiment:
+src/mcrl/stagec_v025/experiments.py:36:class OracleFactorScoreRemovalExperiment:
+src/mcrl/stagec_v025/experiments.py:52:class CheckpointKnockoutExperiment:
+src/mcrl/stagec_v025/experiments.py:71:class ArchitectureRemovalExperiment:
+src/mcrl/stagec_v025/experiments.py:97:class BoundExperiment:
+src/mcrl/stagec_v025/coalitions.py:37:class CoalitionMember:
+src/mcrl/stagec_v025/coalitions.py:80:class AffectedBeamContext:
+src/mcrl/stagec_v025/coalitions.py:101:class CoalitionContext:
+src/mcrl/stagec_v025/coalitions.py:282:class CoalitionRow:
+src/mcrl/stagec_v025/coalitions.py:382:def build_coalition_row(
+src/mcrl/stagec_v025/coalitions.py:473:def capped_coalition_decomposition(
+src/mcrl/stagec_v025/coalitions.py:540:class CoalitionShard:
+src/mcrl/stagec_v025/coalitions.py:547:def write_coalition_shard(path: str | Path, rows: Iterable[CoalitionRow]) -> CoalitionShard:
+src/mcrl/stagec_v025/coalitions.py:706:def read_coalition_shard(path: str | Path) -> CoalitionShard:
+src/mcrl/stagec_v025/shards.py:33:class SourceShard:
+src/mcrl/stagec_v025/state.py:20:class FeatureSpec:
+src/mcrl/stagec_v025/state.py:94:class PhysicalAction:
+src/mcrl/stagec_v025/state.py:111:class ForecastObservation:
+src/mcrl/stagec_v025/state.py:119:class ActionEvaluation:
+src/mcrl/stagec_v025/state.py:203:class PerAnchorEvaluation(Protocol):
+src/mcrl/stagec_v025/state.py:232:class SourceRow:
+src/mcrl/stagec_v025/deployment.py:25:class UserActionTable:
+src/mcrl/stagec_v025/deployment.py:44:class ResolvedProfile:
+src/mcrl/stagec_v025/deployment.py:52:class DeploymentDecision:
+src/mcrl/stagec_v025/deployment.py:66:class SelectorDecision:
+src/mcrl/stagec_v025/deployment.py:79:class CoordinatorHook(Protocol):
+src/mcrl/stagec_v025/deployment.py:89:def learned_c3_score(
+src/mcrl/stagec_v025/deployment.py:233:class DeploymentAdapter:
+src/mcrl/stagec_v025/deployment.py:503:class ProfileSelector:
+src/mcrl/stagec_v025/deployment.py:627:    def _additive_score(
+src/mcrl/stagec_v025/synthetic.py:75:class SyntheticAnchor:
+src/mcrl/stagec_v025/synthetic.py:219:class TinySyntheticEvaluator:
+src/mcrl/stagec_v025/synthetic.py:417:    def coalition_context(
+src/mcrl/stagec_v025/synthetic.py:452:def _synthetic_coalition_batch(
+src/mcrl/stagec_v025/evaluation.py:41:class AllocationUnit:
+src/mcrl/stagec_v025/evaluation.py:75:class AllocationManifest:
+src/mcrl/stagec_v025/evaluation.py:270:class AttemptRegistry:
+src/mcrl/stagec_v025/evaluation.py:370:class StepOutcome:
+src/mcrl/stagec_v025/evaluation.py:394:class InitialTemporalState:
+src/mcrl/stagec_v025/evaluation.py:400:class InitialTemporalStateProvider(Protocol):
+src/mcrl/stagec_v025/evaluation.py:406:class UnitEvaluator(Protocol):
+src/mcrl/stagec_v025/evaluation.py:617:class EvaluationRunner:
+
+exec
+/bin/bash -lc "rg -n \"coalition.*feature|feature.*coalition|service.*guard|guard.*service|score_decomposition|decomposition\" src/mcrl/stagec_v025 src/mcrl/physics_v025 tests/stagec_v025 tests/physics_v025
+rg -n \"read_text|read_bytes|open\\(|np\\.load|numpy\\.load|torch\\.load|pickle\\.load|load_checkpoint|read_.*shard|fromfile|loadtxt|genfromtxt|fixture|checkpoint|feature\" tests/stagec_v025 tests/physics_v025" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+tests/physics_v025/test_stage4b_contract.py:36:from mcrl.physics_v025.targets import NetworkOutcome, set_score_decomposition
+tests/physics_v025/test_stage4b_contract.py:63:def test_v15_set_decomposition_and_factor_identity_are_exact() -> None:
+tests/physics_v025/test_stage4b_contract.py:74:    result = set_score_decomposition(
+src/mcrl/stagec_v025/synthetic.py:354:                service_guard=lambda _candidate: True,
+src/mcrl/stagec_v025/synthetic.py:380:                service_guard=lambda _candidate: True,
+tests/stagec_v025/test_contract_v1_acceptance.py:33:    capped_coalition_decomposition,
+tests/stagec_v025/test_contract_v1_acceptance.py:337:def test_T1_exhaustive_decomposition_and_intervention(tmp_path) -> None:
+tests/stagec_v025/test_contract_v1_acceptance.py:387:    assert capped.capped_decomposition is True
+tests/stagec_v025/test_contract_v1_acceptance.py:388:    assert float.fromhex(capped.decomposition_weight_hex) == pytest.approx(0.2)
+tests/stagec_v025/test_contract_v1_acceptance.py:389:    decomposition = capped_coalition_decomposition(tuple(range(5)))
+tests/stagec_v025/test_contract_v1_acceptance.py:390:    assert tuple(users for users, _weight in decomposition) == tuple(
+tests/stagec_v025/test_contract_v1_acceptance.py:395:        for users, _weight in decomposition
+tests/stagec_v025/test_contract_v1_acceptance.py:397:    assert len({row.decomposition_id for row in capped_rows}) == 1
+tests/stagec_v025/test_contract_v1_acceptance.py:398:    assert sum(float.fromhex(row.decomposition_weight_hex) for row in capped_rows) == pytest.approx(1.0)
+tests/stagec_v025/test_contract_v1_acceptance.py:447:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:453:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:465:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:494:            service_guard=lambda profile: True, model=route_model,
+tests/stagec_v025/test_contract_v1_acceptance.py:668:        service_guard=lambda profile: True, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:686:            service_guard=lambda profile: True, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:842:        service_guard=lambda profile: True,
+tests/stagec_v025/test_contract_v1_acceptance.py:867:        jointly_legal=lambda profile: True, service_guard=lambda profile: True,
+tests/stagec_v025/test_contract_v1_acceptance.py:876:        jointly_legal=lambda profile: True, service_guard=lambda profile: True,
+tests/physics_v025/test_stage4d_gate.py:41:from mcrl.physics_v025.targets import NetworkOutcome, set_score_decomposition
+tests/physics_v025/test_stage4d_gate.py:117:def test_large_set_decomposition_is_linear_and_has_no_credit_split() -> None:
+tests/physics_v025/test_stage4d_gate.py:121:    result = set_score_decomposition(
+tests/physics_v025/test_stage4d_gate.py:142:    result = set_score_decomposition(
+src/mcrl/stagec_v025/deployment.py:59:    service_guard_passed: bool
+src/mcrl/stagec_v025/deployment.py:392:                service_guard_passed=True,
+src/mcrl/stagec_v025/deployment.py:654:        service_guard: Callable[[Profile], bool],
+src/mcrl/stagec_v025/deployment.py:684:        if not jointly_legal(base_profile) or not service_guard(base_profile):
+src/mcrl/stagec_v025/deployment.py:700:                        if not jointly_legal(candidate) or not service_guard(candidate):
+src/mcrl/stagec_v025/deployment.py:718:            if len(profile) != len(tables) or not jointly_legal(profile) or not service_guard(profile):
+src/mcrl/stagec_v025/deployment.py:743:        service_guard = kwargs.get("service_guard")
+src/mcrl/stagec_v025/deployment.py:747:            or not callable(service_guard)
+src/mcrl/stagec_v025/deployment.py:749:            or not service_guard(base_profile)
+src/mcrl/stagec_v025/coalitions.py:125:            raise StageCContractError("global coalition features must be finite and nonempty")
+src/mcrl/stagec_v025/coalitions.py:128:            raise StageCContractError("coalition member feature widths differ")
+src/mcrl/stagec_v025/coalitions.py:244:                raise StageCContractError("coalition member feature width drifted")
+src/mcrl/stagec_v025/coalitions.py:295:    capped_decomposition: bool
+src/mcrl/stagec_v025/coalitions.py:297:    decomposition_id: str
+src/mcrl/stagec_v025/coalitions.py:298:    decomposition_weight_hex: str
+src/mcrl/stagec_v025/coalitions.py:322:        if self.original_changed_user_count != size or self.capped_decomposition:
+src/mcrl/stagec_v025/coalitions.py:328:        weight = parse_float_hex(self.decomposition_weight_hex, field="decomposition_weight")
+src/mcrl/stagec_v025/coalitions.py:329:        if not self.decomposition_id or weight <= 0.0 or weight > 1.0:
+src/mcrl/stagec_v025/coalitions.py:330:            raise StageCContractError("capped decomposition identity/weight is invalid")
+src/mcrl/stagec_v025/coalitions.py:331:        expected = capped_coalition_decomposition(self.original_changed_users)
+src/mcrl/stagec_v025/coalitions.py:334:            raise StageCContractError("capped decomposition subset or row weight drifted")
+src/mcrl/stagec_v025/coalitions.py:336:            "schema": "mcrl-v025-stagec-capped-coalition-decomposition-v1",
+src/mcrl/stagec_v025/coalitions.py:340:        if self.decomposition_id != expected_id:
+src/mcrl/stagec_v025/coalitions.py:341:            raise StageCContractError("capped decomposition digest drifted")
+src/mcrl/stagec_v025/coalitions.py:426:    decomposition = dict(capped_coalition_decomposition(original_users))
+src/mcrl/stagec_v025/coalitions.py:427:    if context.changed_users not in decomposition:
+src/mcrl/stagec_v025/coalitions.py:428:        raise StageCContractError("coalition context is absent from the sealed capped decomposition")
+src/mcrl/stagec_v025/coalitions.py:442:        capped_decomposition=False,
+src/mcrl/stagec_v025/coalitions.py:444:        decomposition_id=canonical_sha256({
+src/mcrl/stagec_v025/coalitions.py:445:            "schema": "mcrl-v025-stagec-capped-coalition-decomposition-v1",
+src/mcrl/stagec_v025/coalitions.py:447:            "subsets": [list(users) for users, _ in capped_coalition_decomposition(original_users)],
+src/mcrl/stagec_v025/coalitions.py:449:        decomposition_weight_hex=float_hex(decomposition[context.changed_users]),
+src/mcrl/stagec_v025/coalitions.py:473:def capped_coalition_decomposition(
+src/mcrl/stagec_v025/coalitions.py:480:        raise StageCContractError("capped decomposition requires unique changed users")
+src/mcrl/stagec_v025/coalitions.py:779:    "capped_coalition_decomposition",
+src/mcrl/physics_v025/targets.py:426:    """Executable v1.5 decomposition of one complete changed-user set.
+src/mcrl/physics_v025/targets.py:451:def set_score_decomposition(
+src/mcrl/physics_v025/targets.py:460:    """Compute the O(|A|) set decomposition and bounded reporting credit.
+src/mcrl/physics_v025/targets.py:462:    The physical decomposition needs only the empty, singleton, and complete
+src/mcrl/physics_v025/targets.py:480:            "set-score decomposition needs empty, singleton, and complete outcomes"
+src/mcrl/physics_v025/targets.py:621:def matched_anchor_decomposition(
+src/mcrl/physics_v025/targets.py:627:    """Pooled matched-anchor A/I decomposition with no clipping."""
+src/mcrl/physics_v025/targets.py:704:    "set_score_decomposition",
+src/mcrl/physics_v025/targets.py:707:    "matched_anchor_decomposition",
+tests/physics_v025/test_integration_matrix.py:51:def test_round1_two_second_time_fixture() -> None:
+tests/physics_v025/test_contract_discriminators.py:68:def test_additive_accounting_fixture_and_receipt_mutation_detection() -> None:
+tests/stagec_v025/test_stagec_pipeline.py:38:from mcrl.stagec_v025.shards import read_source_shard, write_source_shard
+tests/stagec_v025/test_stagec_pipeline.py:51:def _training_fixture(tmp_path: Path) -> tuple[LineageOrchestrator, object]:
+tests/stagec_v025/test_stagec_pipeline.py:58:    reopened = read_source_shard(shard.path)
+tests/stagec_v025/test_stagec_pipeline.py:106:    assert [feature.name for feature in Q1_FEATURES] == [
+tests/stagec_v025/test_stagec_pipeline.py:365:    orchestrator, _ = _training_fixture(tmp_path)
+tests/stagec_v025/test_stagec_pipeline.py:384:    checkpoint = orchestrator.checkpoint_payload()
+tests/stagec_v025/test_stagec_pipeline.py:385:    assert checkpoint["completed_source_epochs"] == 1
+tests/stagec_v025/test_stagec_pipeline.py:386:    assert checkpoint["route_update_count"] == 3
+tests/stagec_v025/test_stagec_pipeline.py:387:    assert all(set(checkpoint["arms"][arm]) == set(ROUTES) for arm in LEARNED_ARMS)
+tests/stagec_v025/test_stagec_pipeline.py:388:    assert checkpoint["zero_bootstrap"] is True
+tests/stagec_v025/test_stagec_pipeline.py:446:def test_checkpoint_cadence_and_authenticated_resume(tmp_path: Path) -> None:
+tests/stagec_v025/test_stagec_pipeline.py:447:    orchestrator, _ = _training_fixture(tmp_path)
+tests/stagec_v025/test_stagec_pipeline.py:448:    checkpoint_directory = tmp_path / "checkpoints"
+tests/stagec_v025/test_stagec_pipeline.py:449:    orchestrator.train(100, checkpoint_directory=checkpoint_directory)
+tests/stagec_v025/test_stagec_pipeline.py:450:    checkpoint = checkpoint_directory / "learner-101-epoch-000100.json"
+tests/stagec_v025/test_stagec_pipeline.py:451:    assert checkpoint.is_file()
+tests/stagec_v025/test_stagec_pipeline.py:452:    assert checkpoint.with_name(checkpoint.name + ".sha256").is_file()
+tests/stagec_v025/test_stagec_pipeline.py:454:    clone, _ = _training_fixture(tmp_path / "second")
+tests/stagec_v025/test_stagec_pipeline.py:455:    clone.load_checkpoint(checkpoint)
+tests/stagec_v025/test_stagec_pipeline.py:458:    assert clone.checkpoint_payload()["arms"] == orchestrator.checkpoint_payload()["arms"]
+tests/physics_v025/test_provider_legacy.py:58:@pytest.fixture(scope="module")
+tests/physics_v025/test_provider_legacy.py:83:@pytest.fixture(scope="module")
+tests/physics_v025/test_provider_legacy.py:408:    assert provider.provider_source_sha256() == hashlib.sha256(source.read_bytes()).hexdigest()
+tests/physics_v025/test_stage3_parity_uncertainty.py:292:            ("fixture-world-1", "fixture-world-2"),
+tests/physics_v025/test_stage4_contract.py:51:def test_c3_is_interaction_only_for_binding_energy_fixture() -> None:
+tests/physics_v025/test_constants_acm.py:1:"""Independent arithmetic fixtures for the frozen ACM/constants surface."""
+tests/physics_v025/test_stage2_tapes_targets_state.py:327:def test_c2_schema_has_new_features_frozen_shape_and_price_binding() -> None:
+tests/physics_v025/test_stage2_tapes_targets_state.py:350:    serialized = str(manifest["action_features"])
+tests/stagec_v025/test_contract_v1_acceptance.py:36:    read_coalition_shard,
+tests/stagec_v025/test_contract_v1_acceptance.py:123:        # weak aggressors.  No scalar feature below discloses the distribution.
+tests/stagec_v025/test_contract_v1_acceptance.py:155:        global_resource_features=(0.5, 0.5, 0.5),
+tests/stagec_v025/test_contract_v1_acceptance.py:272:    orchestrator.bind_checkpoint_identity()
+tests/stagec_v025/test_contract_v1_acceptance.py:424:    reopened = read_coalition_shard(shard.path)
+tests/stagec_v025/test_contract_v1_acceptance.py:458:        "mcrl-v025-checkpoint-knockout-v1",
+tests/stagec_v025/test_contract_v1_acceptance.py:459:        model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:468:        model_checkpoint_sha256=model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:488:            model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:500:            "mcrl-v025-checkpoint-knockout-v1", route_model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:505:            model_checkpoint_sha256=route_model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:518:    assert orchestrator.checkpoint_payload()["source_map"]["DROP_C3"]["C3"] == "neutral"
+tests/stagec_v025/test_contract_v1_acceptance.py:519:    orchestrator.train(99, checkpoint_directory=tmp_path / "checkpoints")
+tests/stagec_v025/test_contract_v1_acceptance.py:520:    checkpoint_path = tmp_path / "checkpoints" / "learner-101-epoch-000100.json"
+tests/stagec_v025/test_contract_v1_acceptance.py:521:    assert checkpoint_path.exists()
+tests/stagec_v025/test_contract_v1_acceptance.py:526:    resumed.load_checkpoint(checkpoint_path)
+tests/stagec_v025/test_contract_v1_acceptance.py:528:    assert resumed.checkpoint_payload() == orchestrator.checkpoint_payload()
+tests/stagec_v025/test_contract_v1_acceptance.py:530:        model.checkpoint_sha256 for model in resumed.models.values()
+tests/stagec_v025/test_contract_v1_acceptance.py:531:    } == {orchestrator.models["FULL"].checkpoint_sha256}
+tests/stagec_v025/test_contract_v1_acceptance.py:548:            "mcrl-v025-checkpoint-knockout-v1", _digest("checkpoint"), ("C1", "C2", "C3"), True
+tests/stagec_v025/test_contract_v1_acceptance.py:560:        "checkpoint_knockout", "architecture_removal_named_not_run",
+tests/stagec_v025/test_contract_v1_acceptance.py:568:        experiment_checkpoint_sha256=knockout_binding.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:673:        model_checkpoint_sha256=model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:687:            coalition_context=laundered, model_checkpoint_sha256=model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:692:    # builder, so changing them cannot affect current features/actions.
+tests/stagec_v025/test_contract_v1_acceptance.py:805:        model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:835:            global_resource_features=(1.0, 0.0, 0.0),
+tests/stagec_v025/test_contract_v1_acceptance.py:871:        model_checkpoint_sha256=placebo_model.checkpoint_sha256,
+tests/stagec_v025/test_contract_v1_acceptance.py:936:        experiment_checkpoint_sha256=_T3_BINDING.checkpoint_sha256,
+tests/physics_v025/test_stage4b_contract.py:294:    receipt = json.loads((FIGURE_BUILDER.parent / "figures/a-r0-off-axis-kat.json").read_text())
+tests/physics_v025/test_architectures.py:70:def test_tdm_and_fdm_synthetic_noise_rate_fixture() -> None:
+tests/physics_v025/test_architectures.py:333:def test_rate_target_tdm_slot_pa_and_fdm_summed_rf_fixture() -> None:
+tests/physics_v025/test_energy_endpoint.py:56:def test_consolidation_fixture_reduces_ee_by_1p5466_percent() -> None:
+tests/physics_v025/test_energy_endpoint.py:98:def test_circuit_baseband_and_old_default_one_beam_fixture() -> None:
+tests/physics_v025/test_energy_endpoint.py:215:def test_reward_endpoint_identity_and_pricing_fixture() -> None:
+
+codex
+The package-path check resolves correctly to `/home/sat/mcrl-v025-harness-ws/src/mcrl/__init__.py`, not the editable-install source. I’m starting five isolated assertion probes on tests that were baseline-passing in physics (plus one focused Stage-C selection test), restoring each immediately after its run.
+exec
+/bin/bash -lc "sed -n '55,95p' tests/physics_v025/test_stage4b_contract.py
+sed -n '296,320p' tests/physics_v025/test_stage2_tapes_targets_state.py
+sed -n '138,164p' tests/physics_v025/test_stage4_contract.py
+sed -n '260,285p' tests/stagec_v025/test_stagec_pipeline.py
+sed -n '246,266p' tests/physics_v025/test_energy_endpoint.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+        bits=value + 100,
+        joules=100,
+        phi=0,
+        decoding_availability=1,
+        useful_availability=1,
+    )
+
+
+def test_v15_set_decomposition_and_factor_identity_are_exact() -> None:
+    values = {
+        frozenset(): 0,
+        frozenset({0}): 2,
+        frozenset({1}): 3,
+        frozenset({2}): 5,
+        frozenset({0, 1}): 8,
+        frozenset({0, 2}): 11,
+        frozenset({1, 2}): 13,
+        frozenset({0, 1, 2}): 25,
+    }
+    result = set_score_decomposition(
+        coalition_users=(0, 1, 2),
+        outcomes_by_subset={key: _outcome(value) for key, value in values.items()},
+        lambda_bits_per_j=1,
+        eta_ref=1,
+        kappa_bits_per_user_step=2,
+        phi_difference=Fraction(-1, 2),
+    )
+    assert dict(result.d_by_user) == {0: 2, 1: 3, 2: 5}
+    assert result.interaction_bits == 15
+    assert sum(dict(result.shapley_interaction_by_user).values(), Fraction()) == 15
+    assert result.c1 + result.c3 == Fraction(25, 2)
+    assert result.factor_c1 == result.c1 - Fraction(1, 2)
+
+
+def test_regimes_are_sealed_after_31_and_launch_order_is_binding() -> None:
+    assert [row.run_id for row in ALL_SEALED_RUN_SETTINGS[:31]] == [
+        row.label for row in MATRIX_SETTINGS
+    ]
+    assert [row.run_id for row in REGIME_RUN_SETTINGS] == ["R1", "R2", "R3", "R4", "R7"]
+    assert len({row.digest for row in ALL_SEALED_RUN_SETTINGS}) == len(ALL_SEALED_RUN_SETTINGS)
+    assert [row.run_id for row in LAUNCH_RUN_ORDER[:10]] == [
+        f11=_outcome(22, 1),
+        lambda_bits_per_j=5,
+        eta_ref=5,
+        kappa_bits_per_user_step=3,
+    )
+    # Energy cancels: Psi = 22 - 14 - 13 + 10 = 5.
+    assert interaction.psi == 5
+    assert dict(interaction.z3_by_user) == {0: Fraction(5, 2), 1: Fraction(5, 2)}
+
+
+def test_reward_core_identity_is_exact() -> None:
+    rows = [
+        StepEndpoint.build(
+            bits=bits,
+            joules=joules,
+            decoding_user_seconds=1,
+            useful_user_seconds=1,
+            opportunity_user_seconds=1,
+            complete_service_user_steps=1,
+            user_steps=1,
+        )
+        for bits, joules in ((10, 1), (20, 3))
+    ]
+    assert assert_reward_core_identity(
+        rows,
+        time_s=30.08,
+    )
+    assert first == 100
+    assert doubled_time == first
+    assert doubled_bits == 2 * first
+
+
+def test_qos_gate_can_fail_only_availability_margin() -> None:
+    runner = _runner()
+    rows = tuple(
+        {
+            "full_bits": 101.0,
+            "full_joules": 100.0,
+            "comparator_bits": 100.0,
+            "comparator_joules": 100.0,
+            "full_qos": 0.89,
+            "comparator_qos": 0.90,
+            "full_phi_cost_per_user_step": 1.0,
+            "comparator_phi_cost_per_user_step": 1.0,
+            "full_handover_rate": 1.0,
+            "comparator_handover_rate": 1.0,
+        }
+        for _ in range(4)
+    )
+    result = runner.pooled_ratio_cluster_bootstrap(rows, draws=128, seed=9)
+    assert result["qos_availability_lower_95"] < -0.005
+    assert result["phi_priced_handover_cost_relative_upper_95"] == 0
+    assert _metrics(
+        AdditiveTotals(bits=0.0, joules=1.0),
+        AdditiveTotals(bits=1.0, joules=1.0),
+    )["ee_relative"] == -1.0
+    assert _metrics(
+        AdditiveTotals(bits=1.0, joules=1.0),
+        AdditiveTotals(bits=0.0, joules=1.0),
+    )["ee_relative"] is None
+
+
+def test_two_user_independent_argmax_cannot_commit_jointly_infeasible_profile() -> None:
+    q1_dimension = len(Q1_FEATURES)
+    q2_dimension = len(Q2_FEATURES)
+    c3_dimension = q1_dimension + q2_dimension
+    model = ThreeRouteModel(
+        {
+            "C1": LinearHead(np.ones(q1_dimension), 0.0),
+            "C2": LinearHead(np.ones(q2_dimension), 0.0),
+            "C3": LinearHead(np.zeros(c3_dimension), 0.0),
+        }
+    )
+    tables = tuple(
+        UserActionTable(
+            user_id=user,
+            actions=(
+                PhysicalAction(100 + user, 10 + user),
+        surplus_delta = reward_core(endpoint(bits, 10), eta_ref=eta) - reward_core(
+            endpoint(100, 10), eta_ref=eta
+        )
+        ee_delta = Fraction(bits, 10) - reference_ee
+        assert (surplus_delta > 0) - (surplus_delta < 0) == expected_sign
+        assert (ee_delta > 0) - (ee_delta < 0) == expected_sign
+
+
+def test_physical_identity_mismatch_fails_closed() -> None:
+    """A radiating (NORAD,chain) absent from the pre-action inventory cannot be charged."""
+
+    with pytest.raises(MCRLContractError):
+        interval_energy(
+            HardwareInventory.fixed(((1, 1),)),
+            EnergyInterval(1.0, {(2, 1): 1.65}),
+        )
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_stage4b_contract.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/physics_v025/test_stage4b_contract.py::test_v15_set_decomposition_and_factor_identity_are_exact -q > .scratch/harness-audit-2026-09-09/probe-1.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/probe-1.log
+tail -40 .scratch/harness-audit-2026-09-09/probe-1.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 270ms:
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_v15_set_decomposition_and_factor_identity_are_exact ___________
+
+    def test_v15_set_decomposition_and_factor_identity_are_exact() -> None:
+>       assert False, "harness probe"
+E       AssertionError: harness probe
+E       assert False
+
+tests/physics_v025/test_stage4b_contract.py:64: AssertionError
+=========================== short test summary info ============================
+FAILED tests/physics_v025/test_stage4b_contract.py::test_v15_set_decomposition_and_factor_identity_are_exact
+
+HARNESS_EXIT_STATUS=1
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_stage4b_contract.py
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_stage2_tapes_targets_state.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/physics_v025/test_stage2_tapes_targets_state.py::test_reward_core_identity_is_exact -q > .scratch/harness-audit-2026-09-09/probe-2.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/probe-2.log
+tail -40 .scratch/harness-audit-2026-09-09/probe-2.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 119ms:
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______________________ test_reward_core_identity_is_exact ______________________
+
+    def test_reward_core_identity_is_exact() -> None:
+>       assert False, "harness probe"
+E       AssertionError: harness probe
+E       assert False
+
+tests/physics_v025/test_stage2_tapes_targets_state.py:307: AssertionError
+=========================== short test summary info ============================
+FAILED tests/physics_v025/test_stage2_tapes_targets_state.py::test_reward_core_identity_is_exact
+
+HARNESS_EXIT_STATUS=1
+
+codex
+Two probes are complete and both surfaced exactly as `AssertionError: harness probe` with exit status 1: the set decomposition test and the reward-core identity test. Each edit is being removed before the next probe.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_stage2_tapes_targets_state.py
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_stage4_contract.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/physics_v025/test_stage4_contract.py::test_qos_gate_can_fail_only_availability_margin -q > .scratch/harness-audit-2026-09-09/probe-3.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/probe-3.log
+tail -40 .scratch/harness-audit-2026-09-09/probe-3.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 84ms:
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_qos_gate_can_fail_only_availability_margin ________________
+
+    def test_qos_gate_can_fail_only_availability_margin() -> None:
+>       assert False, "harness probe"
+E       AssertionError: harness probe
+E       assert False
+
+tests/physics_v025/test_stage4_contract.py:146: AssertionError
+=========================== short test summary info ============================
+FAILED tests/physics_v025/test_stage4_contract.py::test_qos_gate_can_fail_only_availability_margin
+
+HARNESS_EXIT_STATUS=1
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_stage4_contract.py
+/home/sat/mcrl-v025-harness-ws/tests/stagec_v025/test_stagec_pipeline.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025/test_stagec_pipeline.py::test_two_user_independent_argmax_cannot_commit_jointly_infeasible_profile -q > .scratch/harness-audit-2026-09-09/probe-4.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/probe-4.log
+tail -40 .scratch/harness-audit-2026-09-09/probe-4.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 203ms:
+F                                                                        [100%]
+=================================== FAILURES ===================================
+__ test_two_user_independent_argmax_cannot_commit_jointly_infeasible_profile ___
+
+    def test_two_user_independent_argmax_cannot_commit_jointly_infeasible_profile() -> None:
+>       assert False, "harness probe"
+E       AssertionError: harness probe
+E       assert False
+
+tests/stagec_v025/test_stagec_pipeline.py:271: AssertionError
+=========================== short test summary info ============================
+FAILED tests/stagec_v025/test_stagec_pipeline.py::test_two_user_independent_argmax_cannot_commit_jointly_infeasible_profile
+
+HARNESS_EXIT_STATUS=1
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_energy_endpoint.py
+/home/sat/mcrl-v025-harness-ws/tests/stagec_v025/test_stagec_pipeline.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/physics_v025/test_energy_endpoint.py::test_physical_identity_mismatch_fails_closed -q > .scratch/harness-audit-2026-09-09/probe-5.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/probe-5.log
+tail -40 .scratch/harness-audit-2026-09-09/probe-5.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 107ms:
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_physical_identity_mismatch_fails_closed _________________
+
+    def test_physical_identity_mismatch_fails_closed() -> None:
+        """A radiating (NORAD,chain) absent from the pre-action inventory cannot be charged."""
+    
+>       assert False, "harness probe"
+E       AssertionError: harness probe
+E       assert False
+
+tests/physics_v025/test_energy_endpoint.py:257: AssertionError
+=========================== short test summary info ============================
+FAILED tests/physics_v025/test_energy_endpoint.py::test_physical_identity_mismatch_fails_closed
+
+HARNESS_EXIT_STATUS=1
+
+codex
+All five failure probes are now confirmed visible with nonzero exit status. I’m restoring the fifth edit, then mutating one helper at a time in the three named scientific paths; each mutation will be judged against the smallest relevant test subset, with the exact affected tests and exit code recorded.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_energy_endpoint.py
+exec
+/bin/bash -lc "sed -n '90,270p' src/mcrl/stagec_v025/coalitions.py
+sed -n '440,535p' src/mcrl/physics_v025/targets.py
+sed -n '620,770p' src/mcrl/stagec_v025/deployment.py
+sed -n '320,470p' tests/stagec_v025/test_contract_v1_acceptance.py
+sed -n '620,720p' tests/stagec_v025/test_contract_v1_acceptance.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+    def __post_init__(self) -> None:
+        if self.occupancy_before < 0 or self.occupancy_after < 0:
+            raise StageCContractError("coalition occupancy must be nonnegative")
+        if self.shared_capacity < 0.0 or not all(
+            math.isfinite(value)
+            for value in (self.shared_capacity, self.interference_summary, self.capacity_margin)
+        ):
+            raise StageCContractError("coalition shared-resource context is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionContext:
+    anchor_id: str
+    reference_profile: tuple[tuple[int, PhysicalAction], ...]
+    members: tuple[CoalitionMember, ...]
+    affected_beams: tuple[AffectedBeamContext, ...]
+    global_resource_features: tuple[float, ...]
+    pairwise_cross_gain_terms: tuple[tuple[str, str, float], ...] = ()
+
+    def __post_init__(self) -> None:
+        reference_users = tuple(user for user, _ in self.reference_profile)
+        member_users = tuple(member.user_id for member in self.members)
+        if (
+            not reference_users
+            or reference_users != tuple(sorted(reference_users))
+            or len(set(reference_users)) != len(reference_users)
+        ):
+            raise StageCContractError("coalition a0 must be a complete sorted user profile")
+        if len(set(member_users)) != len(member_users) or not set(member_users) <= set(reference_users):
+            raise StageCContractError("changed users must be unique members of a0")
+        if not self.affected_beams:
+            raise StageCContractError("coalition context requires affected resource rows")
+        if not self.global_resource_features or not all(
+            math.isfinite(value) for value in self.global_resource_features
+        ):
+            raise StageCContractError("global coalition features must be finite and nonempty")
+        widths = {len(member.invariant_features) for member in self.members}
+        if len(widths) > 1:
+            raise StageCContractError("coalition member feature widths differ")
+        beam_keys = {beam.beam_key for beam in self.affected_beams}
+        if any(
+            source not in beam_keys
+            or target not in beam_keys
+            or source == target
+            or not math.isfinite(gain)
+            or gain < 0.0
+            for source, target, gain in self.pairwise_cross_gain_terms
+        ):
+            raise StageCContractError("pairwise cross-gain relation context is invalid")
+        relation_keys = [(source, target) for source, target, _gain in self.pairwise_cross_gain_terms]
+        if len(relation_keys) != len(set(relation_keys)):
+            raise StageCContractError("pairwise cross-gain relation keys must be unique")
+        object.__setattr__(
+            self,
+            "pairwise_cross_gain_terms",
+            tuple(sorted(self.pairwise_cross_gain_terms, key=lambda row: (row[0], row[1]))),
+        )
+
+    @property
+    def changed_users(self) -> tuple[int, ...]:
+        return tuple(sorted(member.user_id for member in self.members))
+
+    def payload(self) -> dict[str, object]:
+        _retained, residual_sum = self._bounded_pairwise_cross_gain_terms()
+        return {
+            "context_schema": COALITION_CONTEXT_SCHEMA,
+            "anchor_id": self.anchor_id,
+            "reference_profile": [
+                {"user_id": user, "action": action.payload()}
+                for user, action in self.reference_profile
+            ],
+            "members": [
+                {
+                    "user_id": member.user_id,
+                    "reference_action": member.reference_action.payload(),
+                    "selected_action": member.selected_action.payload(),
+                    "selected_q1_row_hex": [
+                        float_hex(value) for value in member.selected_q1_row
+                    ],
+                    "incumbent_q1_row_hex": [
+                        float_hex(value) for value in member.incumbent_q1_row
+                    ],
+                    "missing_incumbent": member.missing_incumbent,
+                }
+                for member in sorted(self.members, key=lambda item: item.user_id)
+            ],
+            "affected_beams": [
+                {
+                    "beam_key": beam.beam_key,
+                    "occupancy_before": beam.occupancy_before,
+                    "occupancy_after": beam.occupancy_after,
+                    "active_before": beam.active_before,
+                    "active_after": beam.active_after,
+                    "shared_capacity_hex": float_hex(beam.shared_capacity),
+                    "interference_summary_hex": float_hex(beam.interference_summary),
+                    "capacity_margin_hex": float_hex(beam.capacity_margin),
+                }
+                for beam in sorted(self.affected_beams, key=lambda item: item.beam_key)
+            ],
+            "global_resource_features_hex": [
+                float_hex(value) for value in self.global_resource_features
+            ],
+            "pairwise_cross_gain_top_k": PAIRWISE_CROSS_GAIN_TOP_K,
+            "pairwise_cross_gain_residual_sum_hex": float_hex(residual_sum),
+            "pairwise_cross_gain_terms": [
+                {
+                    "source_beam_key": source,
+                    "target_beam_key": target,
+                    "gain_hex": float_hex(gain),
+                }
+                for source, target, gain in self.pairwise_cross_gain_terms
+            ],
+        }
+
+    def _bounded_pairwise_cross_gain_terms(
+        self,
+    ) -> tuple[tuple[tuple[str, str, float], ...], float]:
+        """Top-K by magnitude, returned in canonical key order plus residual sum."""
+
+        ranked = sorted(
+            self.pairwise_cross_gain_terms,
+            key=lambda row: (-abs(row[2]), row[0], row[1]),
+        )
+        retained = tuple(sorted(ranked[:PAIRWISE_CROSS_GAIN_TOP_K], key=lambda row: (row[0], row[1])))
+        residual_sum = math.fsum(row[2] for row in ranked[PAIRWISE_CROSS_GAIN_TOP_K:])
+        return retained, residual_sum
+
+    def pairwise_cross_gain_vector(self) -> np.ndarray:
+        """Fixed-width ordered pair block used by the interaction encoder."""
+
+        retained, residual_sum = self._bounded_pairwise_cross_gain_terms()
+        block = np.zeros((PAIRWISE_CROSS_GAIN_TOP_K, 4), dtype=np.float64)
+        for index, (source, target, gain) in enumerate(retained):
+            block[index] = (
+                int.from_bytes(hashlib.sha256(source.encode()).digest()[:8], "big") / 2**64,
+                int.from_bytes(hashlib.sha256(target.encode()).digest()[:8], "big") / 2**64,
+                gain,
+                1.0,
+            )
+        return np.concatenate((block.reshape(-1), np.asarray([residual_sum])))
+
+    def invariant_vector(self, *, member_width: int) -> np.ndarray:
+        """DeepSets-style deterministic encoding; IDs/order are not features."""
+
+        if len(self.members) <= 1:
+            # Empty and singleton values are hard anchored by the head, but a
+            # stable vector remains useful for schema and KAT checks.
+            member_matrix = np.zeros((1, member_width), dtype=np.float64)
+        else:
+            member_matrix = np.asarray(
+                [member.invariant_features for member in self.members],
+                dtype=np.float64,
+            )
+            if member_matrix.shape[1] != member_width:
+                raise StageCContractError("coalition member feature width drifted")
+        beams = tuple(sorted(self.affected_beams, key=lambda beam: beam.beam_key))
+        beam_features = np.asarray([
+            [
+                beam.occupancy_before,
+                beam.occupancy_after,
+                float(beam.active_after) - float(beam.active_before),
+                beam.shared_capacity,
+                beam.interference_summary,
+                beam.capacity_margin,
+                1.0,
+            ]
+            for beam in beams
+        ], dtype=np.float64)
+        beam_pool = np.concatenate(
+            (
+                beam_features.sum(axis=0),
+                beam_features.max(axis=0),
+                beam_features.min(axis=0),
+                beam_features.mean(axis=0),
+            )
+        )
+        vector = np.concatenate(
+            (
+                np.asarray([float(len(self.members))], dtype=np.float64),
+                member_matrix.sum(axis=0),
+                member_matrix.max(axis=0),
+    phi_difference: Fraction
+    c1: Fraction
+    c3: Fraction
+
+    @property
+    def factor_c1(self) -> Fraction:
+        """C1 selector value: exact physical singleton core plus Phi."""
+
+        return self.c1 + self.phi_difference
+
+
+def set_score_decomposition(
+    *,
+    coalition_users: Sequence[int],
+    outcomes_by_subset: Mapping[frozenset[int], NetworkOutcome],
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+    phi_difference: int | float | str | Fraction = 0,
+) -> SetScoreDecomposition:
+    """Compute the O(|A|) set decomposition and bounded reporting credit.
+
+    The physical decomposition needs only the empty, singleton, and complete
+    coalition outcomes.  Exact Shapley credit is a reporting-only supplement
+    when ``|A| <= 4`` and the caller supplies the complete small powerset.
+    Large coalitions never enumerate subsets and explicitly report that no
+    per-user split was computed.
+    """
+
+    users = tuple(sorted(int(user) for user in coalition_users))
+    if len(set(users)) != len(users):
+        raise MCRLContractError("set-score coalition users must be unique")
+    sparse_required = {
+        frozenset(),
+        frozenset(users),
+        *(frozenset((user,)) for user in users),
+    }
+    supplied = set(outcomes_by_subset)
+    if not sparse_required <= supplied:
+        raise MCRLContractError(
+            "set-score decomposition needs empty, singleton, and complete outcomes"
+        )
+    eta, kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    phi = exact(phi_difference)
+    values = {
+        subset: outcome.bits - eta * outcome.joules
+        for subset, outcome in outcomes_by_subset.items()
+    }
+    base = values[frozenset()]
+    d_by_user = tuple(
+        (user, values[frozenset((user,))] - base) for user in users
+    )
+    joint = values[frozenset(users)] - base
+    interaction = joint - sum((value for _user, value in d_by_user), Fraction())
+    complete_powerset = {
+        frozenset(subset)
+        for size in range(len(users) + 1)
+        for subset in itertools.combinations(users, size)
+    }
+    if len(users) < 2:
+        credits = tuple((user, Fraction()) for user in users)
+        credit_split = "EXACT_TRIVIAL"
+    elif len(users) <= 4 and supplied == complete_powerset:
+        allocated = c3_set_interaction(
+            coalition_users=users,
+            outcomes_by_subset=outcomes_by_subset,
+            lambda_bits_per_j=lambda_bits_per_j,
+            eta_ref=eta_ref,
+            kappa_bits_per_user_step=kappa_bits_per_user_step,
+        )
+        credits = allocated.z3_by_user
+        credit_split = "EXACT_SHAPLEY_SMALL_SET"
+    else:
+        credits = ()
+        credit_split = "NOT_COMPUTED_LARGE_SET" if len(users) > 4 else "NOT_SUPPLIED_SMALL_SET"
+    if credits and sum((value for _user, value in credits), Fraction()) != interaction:
+        raise MCRLContractError("set-score Shapley credits do not conserve Psi_A")
+    c1 = sum((value for _user, value in d_by_user), Fraction()) / kappa
+    c3 = interaction / kappa
+    if c1 + c3 != joint / kappa:
+        raise MCRLContractError("C1 + C3 does not equal the complete F change")
+    return SetScoreDecomposition(
+        users,
+        d_by_user,
+        interaction,
+        credits,
+        credit_split,
+        joint,
+        phi,
+        c1,
+        c3,
+    )
+                if (
+                    member.reference_action != reference_action
+                    or member.selected_action != selected_action
+                ):
+                    raise StageCContractError("coalition physical actions differ from catalogue profile")
+
+    @staticmethod
+    def _additive_score(
+        model: V1ThreeRouteModel,
+        tables: Sequence[UserActionTable],
+        profile: Profile,
+        reference: Profile,
+        *,
+        knockout: str | None,
+    ) -> float:
+        total = 0.0
+        for table, selected, baseline in zip(tables, profile, reference, strict=True):
+            if knockout != "C1":
+                total += model.score("C1", table.q1_states[selected]) - model.score(
+                    "C1", table.q1_states[baseline]
+                )
+            if knockout != "C2":
+                total += model.score("C2", table.q2_states[selected]) - model.score(
+                    "C2", table.q2_states[baseline]
+                )
+        return total
+
+    def select(
+        self,
+        *,
+        base_profile: Profile,
+        tables: Sequence[UserActionTable],
+        catalogue: Sequence[Profile],
+        jointly_legal: Callable[[Profile], bool],
+        service_guard: Callable[[Profile], bool],
+        model: V1ThreeRouteModel | None = None,
+        coalition_context: Mapping[Profile, CoalitionContext] | None = None,
+        exact_psi: Callable[[Profile], float] | None = None,
+        exact_nominal_score: Callable[[Profile], float] | None = None,
+        knockout_route: Route | None = None,
+        coordinator_information: CoordinatorInformation,
+        arm_information_interfaces: Mapping[str, ArmInformationInterface],
+        matched_information_sha256: str,
+        model_checkpoint_sha256: str | None = None,
+        knockout_experiment: CheckpointKnockoutExperiment | None = None,
+    ) -> SelectorDecision:
+        self._authenticate_inputs(
+            base_profile=base_profile,
+            tables=tables,
+            catalogue=catalogue,
+            coordinator_information=coordinator_information,
+            arm_information_interfaces=arm_information_interfaces,
+            matched_information_sha256=matched_information_sha256,
+            coalition_context=coalition_context if self.mode != "S_UNI" else None,
+        )
+        if self.mode == "S3" and model_checkpoint_sha256 is None:
+            raise StageCContractError("S3 requires a deployed checkpoint identity")
+        if knockout_route is not None:
+            if (
+                knockout_experiment is None
+                or model_checkpoint_sha256 != knockout_experiment.checkpoint_sha256
+                or knockout_route not in knockout_experiment.zeroed_deployed_routes
+            ):
+                raise StageCContractError("knockout is not bound to the deployed checkpoint")
+        if not jointly_legal(base_profile) or not service_guard(base_profile):
+            raise StageCContractError("selector requires a prevalidated BASE")
+        if self.mode == "S_UNI":
+            if exact_nominal_score is None:
+                raise StageCContractError("S_UNI requires exact nominal joint physics")
+            current = base_profile
+            evaluated = 0
+            while True:
+                best = current
+                best_score = exact_nominal_score(current)
+                evaluated += 1
+                for user_index, table in enumerate(tables):
+                    for action_index, legal in enumerate(table.action_mask):
+                        if not legal or action_index == current[user_index]:
+                            continue
+                        candidate = (*current[:user_index], action_index, *current[user_index + 1 :])
+                        if not jointly_legal(candidate) or not service_guard(candidate):
+                            continue
+                        score = exact_nominal_score(candidate)
+                        evaluated += 1
+                        if score > best_score:
+                            best, best_score = candidate, score
+                if best == current:
+                    return SelectorDecision("S_UNI", current, best_score, False, None, True, evaluated)
+                current = best
+
+        if model is None or coalition_context is None:
+            raise StageCContractError(f"{self.mode} requires model and coalition contexts")
+        if self.mode == "S0" and exact_psi is None:
+            raise StageCContractError("S0 requires exact Psi")
+        best = base_profile
+        best_score = float("-inf")
+        evaluated = 0
+        for profile in (base_profile, *catalogue):
+            if len(profile) != len(tables) or not jointly_legal(profile) or not service_guard(profile):
+                continue
+            additive = self._additive_score(
+                model, tables, profile, base_profile, knockout=knockout_route
+            )
+            interaction = 0.0
+            if knockout_route != "C3":
+                interaction = (
+                    model.interaction(coalition_context[profile])
+                    if self.mode == "S3"
+                    else float(exact_psi(profile))
+                )
+            score = additive + interaction
+            evaluated += 1
+            if score > best_score:
+                best, best_score = profile, score
+        if evaluated == 0:
+            return SelectorDecision(self.mode, base_profile, 0.0, True, "empty_legal_catalogue", None, 0)
+        return SelectorDecision(self.mode, best, best_score, False, None, None, evaluated)
+
+    def select_timed(self, *, deadline_s: float = DEPLOYMENT_DEADLINE_S, **kwargs: object) -> SelectorDecision:
+        """F2: validate BASE in the parent, then kill the coordinator on timeout."""
+
+        base_profile = kwargs.get("base_profile")
+        jointly_legal = kwargs.get("jointly_legal")
+        service_guard = kwargs.get("service_guard")
+        if (
+            not isinstance(base_profile, tuple)
+            or not callable(jointly_legal)
+            or not callable(service_guard)
+            or not jointly_legal(base_profile)
+            or not service_guard(base_profile)
+        ):
+            raise StageCContractError("timed selector requires prevalidated BASE")
+        if deadline_s <= 0.0:
+            raise StageCContractError("selector deadline must be positive")
+        context = multiprocessing.get_context("fork")
+        parent, child = context.Pipe(duplex=False)
+
+        def work() -> None:
+            try:
+                child.send(("ok", self.select(**kwargs)))
+            except BaseException as error:
+                child.send(("error", type(error).__name__))
+            finally:
+                child.close()
+
+        started = time.monotonic()
+        process = context.Process(target=work, name="stagec-profile-selector")
+        process.start()
+        child.close()
+        process.join(deadline_s)
+        if process.is_alive():
+    interfaces = {arm: ArmInformationInterface(
+        arm=arm, anchor_id=anchor_id, decision_time_ns=0,
+        primitive_access_sha256=_digest("primitive"), forecast_method_sha256=_digest("forecast"),
+        physical_identity_schema_sha256=_digest("identity"), catalogue_sha256=catalogue_digest,
+        joint_search_sha256=_digest("search"), guards_sha256=_digest("guards"),
+        tie_breaking_sha256=_digest("ties"), validation_sha256=_digest("validation"),
+        deadline_sha256=_digest("deadline"), fallback_sha256=_digest("fallback"),
+        source_provenance_sha256=source, learned_pruning=False,
+    ) for arm in ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL", "BASELINE", "S0", "S_UNI")}
+    matched = authenticate_matched_catalogues(interfaces, required_arms=tuple(interfaces))
+    return {
+        "coordinator_information": coordinator,
+        "arm_information_interfaces": interfaces,
+        "matched_information_sha256": matched,
+    }
+
+
+def test_T1_exhaustive_decomposition_and_intervention(tmp_path) -> None:
+    synergy = _coalition_row("synergy")
+    antagonistic = _coalition_row("antagonistic")
+    additive = _coalition_row("additive")
+
+    # Exact B4 identity with nonzero Phi charged once, and the second physical
+    # identity without Phi.  Values are normalized by kappa=2.
+    assert float.fromhex(synergy.c1_normalized_hex) == -1.0
+    assert float.fromhex(synergy.psi_normalized_hex) == 2.0
+    assert float.fromhex(synergy.objective_delta_normalized_hex) == 1.0
+    assert float.fromhex(synergy.physical_c1_normalized_hex) == -0.5
+    assert float.fromhex(synergy.physical_psi_normalized_hex) == 2.5
+    assert float.fromhex(synergy.physical_delta_normalized_hex) == 2.0
+    assert float.fromhex(antagonistic.psi_normalized_hex) == -1.0
+    assert float.fromhex(additive.psi_normalized_hex) == 0.0
+    # Exhaust all 2^3 profiles at each of the three hand-computed steps.  User
+    # 2 is a dummy, so toggling only that bit never changes F or Psi.
+    joint_f = {"additive": -2.0, "synergy": 2.0, "antagonistic": -4.0}
+    for kind, profile in product(joint_f, product((0, 1), repeat=3)):
+        u0, u1, dummy = profile
+        value = joint_f[kind] if u0 and u1 else -float(u0 + u1)
+        without_dummy = (u0, u1, 0)
+        value_without_dummy = (
+            joint_f[kind]
+            if without_dummy[0] and without_dummy[1]
+            else -float(without_dummy[0] + without_dummy[1])
+        )
+        assert value == value_without_dummy
+        psi = value - (-float(u0)) - (-float(u1))
+        assert psi == (joint_f[kind] + 2.0 if u0 and u1 else 0.0)
+    assert kappa_normalization_bits(2.0) == pytest.approx(60.16)
+    reporting_credit = pair_reporting_credit(
+        psi_normalized=2.0, coalition_users=(0, 1), roster=(0, 1, 2)
+    )
+    assert reporting_credit == {0: 1.0, 1: 1.0, 2: 0.0}
+    shapley = exact_shapley_reporting_credit(
+        coalition_users=(0, 1),
+        subset_values={
+            frozenset(): 0.0,
+            frozenset({0}): -1.0,
+            frozenset({1}): -1.0,
+            frozenset({0, 1}): 2.0,
+        },
+        roster=(0, 1, 2),
+    )
+    assert shapley == {0: 1.0, 1: 1.0, 2: 0.0}
+    dummy_row = _coalition_row("synergy", tmp_count=3, members=(0, 1, 2))
+    assert float.fromhex(dummy_row.psi_normalized_hex) == 2.0
+    assert float.fromhex(dummy_row.objective_delta_normalized_hex) == 1.0
+    capped = _coalition_row("synergy", tmp_count=5, members=(0, 1, 2, 3))
+    assert capped.capped_decomposition is True
+    assert float.fromhex(capped.decomposition_weight_hex) == pytest.approx(0.2)
+    decomposition = capped_coalition_decomposition(tuple(range(5)))
+    assert tuple(users for users, _weight in decomposition) == tuple(
+        tuple(user for user in range(5) if user != omitted) for omitted in reversed(range(5))
+    )
+    capped_rows = tuple(
+        _coalition_row("synergy", tmp_count=5, members=users)
+        for users, _weight in decomposition
+    )
+    assert len({row.decomposition_id for row in capped_rows}) == 1
+    assert sum(float.fromhex(row.decomposition_weight_hex) for row in capped_rows) == pytest.approx(1.0)
+
+    def projection(index: int, *, survives: bool) -> OffsetProjection:
+        return OffsetProjection(
+            offset_index=index,
+            valid=True,
+            survives=survives,
+            outcome=_outcome(physical_f=0.0),
+            background_power_recomputed=True,
+            required_power_w=0.5,
+            power_cap_w=1.0,
+            min_decoding_margin_db=1.0,
+            mean_acm_se_bit_s_hz=1.0,
+        )
+
+    future = c2_persistence_forecast(
+        (projection(1, survives=True), projection(2, survives=False), projection(3, survives=True)),
+        tuple(projection(index, survives=True) for index in (1, 2, 3)),
+        lambda_bits_per_j=1,
+        eta_ref=1,
+        kappa_bits_per_user_s=2,
+    )
+    assert future.lost_offsets == 2
+    assert future.normalized_total == -2
+
+    shard = write_coalition_shard(tmp_path / "c3.jsonl", (synergy, antagonistic, additive))
+    reopened = read_coalition_shard(shard.path)
+    assert reopened.rows == shard.rows
+    batch = CoalitionBatch.create((reopened,))
+    training_batch = _held_out_training_batch(tmp_path, "c3-training.jsonl")
+    model = _model_from_batch(training_batch, tmp_path)
+    assert LEGACY_EPOCH_BUDGET == 2000
+    assert LEGACY_TRAINER_LITERALS["C1"]["hidden_layers"] == (8,)
+    assert LEGACY_TRAINER_LITERALS["C2"]["hidden_layers"] == (100, 50, 50)
+    assert LEGACY_TRAINER_LITERALS["C3"]["hidden_layers"] == (64, 64)
+    assert [weights.shape for weights in model.q1.weights] == [(16, 8), (8, 1)]
+    assert [weights.shape for weights in model.q2.weights] == [
+        (22, 100), (100, 50), (50, 50), (50, 1)
+    ]
+    assert [weights.shape for weights in model.psi.network.weights][-1] == (64, 1)
+    tables = _tables()
+    catalogue = tuple(product((0, 1), repeat=3))
+    legal = lambda profile: profile in catalogue
+    guard = lambda profile: True
+    exact_synergy = lambda profile: 2.0 if profile[0] == profile[1] == 1 else 0.0
+    exact_antagonistic = lambda profile: -1.0 if profile[0] == profile[1] == 1 else 0.0
+    s0 = ProfileSelector("S0")
+    assert s0.select(
+        base_profile=(0, 0, 0), tables=tables, catalogue=catalogue,
+        jointly_legal=legal, service_guard=guard, model=model,
+        coalition_context=_profile_contexts("synergy"), exact_psi=exact_synergy,
+        **_selector_authority(tables, catalogue, anchor_id="synergy-anchor"),
+    ).profile == (1, 1, 0)
+    assert s0.select(
+        base_profile=(0, 0, 0), tables=tables, catalogue=catalogue,
+        jointly_legal=legal, service_guard=guard, model=model,
+        coalition_context=_profile_contexts("antagonistic"), exact_psi=exact_antagonistic,
+        **_selector_authority(tables, catalogue, anchor_id="antagonistic-anchor"),
+    ).profile == (0, 0, 0)
+    knockout = CheckpointKnockoutExperiment(
+        "mcrl-v025-checkpoint-knockout-v1",
+        model.checkpoint_sha256,
+        ("C1", "C2", "C3"),
+        True,
+    )
+    assert s0.select(
+        base_profile=(0, 0, 0), tables=tables, catalogue=catalogue,
+        jointly_legal=legal, service_guard=guard, model=model,
+        coalition_context=_profile_contexts("synergy"), exact_psi=exact_synergy,
+        knockout_route="C3", knockout_experiment=knockout,
+        model_checkpoint_sha256=model.checkpoint_sha256,
+        **_selector_authority(tables, catalogue, anchor_id="synergy-anchor"),
+    ).profile == (0, 0, 0)
+        V1LineageOrchestrator(
+            learner_seed=101, q1_batch=_pair("C1"),
+            q2_batch=replace(_pair("C2"), physics_digest=_digest("other-physics")),
+            c3_batch=batch, neutral_sources=default_synthetic_neutral_sources(),
+        )
+    production_report = run_synthetic_pipeline(
+        tmp_path / "three-step-production", epochs=3, bootstrap_draws=16
+    )
+    assert production_report["synthetic"]["steps_per_world"] == 3
+    assert production_report["attempt_registry"]["abandoned_count"] == 0
+
+
+def test_T2_information_twins_reversal_and_additive_placebo(tmp_path) -> None:
+    rows = tuple(_coalition_row(kind) for kind in ("synergy", "antagonistic", "additive"))
+    assert float.fromhex(rows[0].objective_delta_normalized_hex) > 0.0
+    assert float.fromhex(rows[1].objective_delta_normalized_hex) < 0.0
+    write_coalition_shard(tmp_path / "held-out-twins.jsonl", rows)
+    batch = _held_out_training_batch(tmp_path, "twin-training.jsonl")
+    model = _model_from_batch(batch, tmp_path)
+    dominant = _context("synergy", (0, 1))
+    diffuse = _context("antagonistic", (0, 1))
+    assert dominant.payload()["context_schema"] == COALITION_CONTEXT_SCHEMA
+    assert dominant.payload()["pairwise_cross_gain_top_k"] == PAIRWISE_CROSS_GAIN_TOP_K
+    assert canonical_json_bytes(dominant.payload()) != canonical_json_bytes(diffuse.payload())
+    dominant_without_pairs = replace(dominant, pairwise_cross_gain_terms=())
+    diffuse_without_pairs = replace(diffuse, pairwise_cross_gain_terms=())
+    assert canonical_json_bytes(dominant_without_pairs.payload()) == canonical_json_bytes(
+        diffuse_without_pairs.payload()
+    )
+    assert model.interaction(_context("synergy", ())) == 0.0
+    assert model.interaction(_context("synergy", (0,))) == 0.0
+    assert model.interaction(dominant) > 1.0
+    assert model.interaction(diffuse) < 0.0
+    permuted_context = replace(
+        dominant,
+        members=tuple(reversed(dominant.members)),
+        pairwise_cross_gain_terms=tuple(reversed(dominant.pairwise_cross_gain_terms)),
+    )
+    assert canonical_json_bytes(permuted_context.payload()) == canonical_json_bytes(dominant.payload())
+    assert model.interaction(permuted_context) == pytest.approx(
+        model.interaction(dominant), abs=1e-12
+    )
+
+    catalogue = ((0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0))
+    selector = ProfileSelector("S3")
+    choose = lambda kind, relabel=0: selector.select(
+        base_profile=(0, 0, 0), tables=(tables := _tables(relabel=relabel)), catalogue=catalogue,
+        jointly_legal=lambda profile: profile in catalogue,
+        service_guard=lambda profile: True, model=model,
+        coalition_context={
+            profile: _profile_contexts(kind, relabel=relabel)[profile]
+            for profile in catalogue
+        },
+        model_checkpoint_sha256=model.checkpoint_sha256,
+        **_selector_authority(tables, catalogue, anchor_id="information-twin-anchor"),
+    ).profile
+    assert choose("synergy") == (1, 1, 0)
+    assert choose("antagonistic") == (0, 0, 0)
+    laundered = {
+        profile: _profile_contexts("synergy")[profile] for profile in catalogue
+    }
+    laundered[(1, 1, 0)] = replace(laundered[(1, 1, 0)], members=())
+    with pytest.raises(StageCContractError, match="changed-user set"):
+        selector.select(
+            base_profile=(0, 0, 0), tables=_tables(), catalogue=catalogue,
+            jointly_legal=lambda profile: profile in catalogue,
+            service_guard=lambda profile: True, model=model,
+            coalition_context=laundered, model_checkpoint_sha256=model.checkpoint_sha256,
+            **_selector_authority(_tables(), catalogue, anchor_id="information-twin-anchor"),
+        )
+
+    # Post-decision poison and hidden legacy reset state are absent from the
+    # builder, so changing them cannot affect current features/actions.
+    current_before = canonical_sha256(_context("synergy", (0, 1)).payload())
+    poisoned_future_fading = 1e300
+    poisoned_hidden_reset = object()
+    del poisoned_future_fading, poisoned_hidden_reset
+    assert canonical_sha256(_context("synergy", (0, 1)).payload()) == current_before
+    anchor = make_synthetic_anchors()[0]
+    poisoned_anchor = SimpleNamespace(
+        **{
+            field: getattr(anchor, field)
+            for field in anchor.__dataclass_fields__
+        },
+        realised_future_fading=1e300,
+        post_decision_outcome={"bits": -999},
+        hidden_legacy_reset_state=object(),
+    )
+    assert extract_source_rows(poisoned_anchor) == extract_source_rows(anchor)
+    poisoned_consumed = replace(
+        anchor,
+        actions=(
+            replace(
+                anchor.actions[0],
+                forecasts=(
+                    replace(anchor.actions[0].forecasts[0], minimum_decoding_margin_db=999.0),
+                    *anchor.actions[0].forecasts[1:],
+                ),
+            ),
+            *anchor.actions[1:],
+        ),
+
+exec
+/bin/bash -lc "sed -n '210,285p' src/mcrl/stagec_v025/coalitions.py
+sed -n '800,885p' src/mcrl/stagec_v025/learner.py
+rg -n \"invariant_vector\\(|pairwise_cross_gain_vector\\(\" tests src/mcrl | head -100
+rg -n \"service_guard\" tests/stagec_v025/test_stagec_pipeline.py tests/stagec_v025/test_contract_v1_acceptance.py | sed -n '1,180p'" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+            self.pairwise_cross_gain_terms,
+            key=lambda row: (-abs(row[2]), row[0], row[1]),
+        )
+        retained = tuple(sorted(ranked[:PAIRWISE_CROSS_GAIN_TOP_K], key=lambda row: (row[0], row[1])))
+        residual_sum = math.fsum(row[2] for row in ranked[PAIRWISE_CROSS_GAIN_TOP_K:])
+        return retained, residual_sum
+
+    def pairwise_cross_gain_vector(self) -> np.ndarray:
+        """Fixed-width ordered pair block used by the interaction encoder."""
+
+        retained, residual_sum = self._bounded_pairwise_cross_gain_terms()
+        block = np.zeros((PAIRWISE_CROSS_GAIN_TOP_K, 4), dtype=np.float64)
+        for index, (source, target, gain) in enumerate(retained):
+            block[index] = (
+                int.from_bytes(hashlib.sha256(source.encode()).digest()[:8], "big") / 2**64,
+                int.from_bytes(hashlib.sha256(target.encode()).digest()[:8], "big") / 2**64,
+                gain,
+                1.0,
+            )
+        return np.concatenate((block.reshape(-1), np.asarray([residual_sum])))
+
+    def invariant_vector(self, *, member_width: int) -> np.ndarray:
+        """DeepSets-style deterministic encoding; IDs/order are not features."""
+
+        if len(self.members) <= 1:
+            # Empty and singleton values are hard anchored by the head, but a
+            # stable vector remains useful for schema and KAT checks.
+            member_matrix = np.zeros((1, member_width), dtype=np.float64)
+        else:
+            member_matrix = np.asarray(
+                [member.invariant_features for member in self.members],
+                dtype=np.float64,
+            )
+            if member_matrix.shape[1] != member_width:
+                raise StageCContractError("coalition member feature width drifted")
+        beams = tuple(sorted(self.affected_beams, key=lambda beam: beam.beam_key))
+        beam_features = np.asarray([
+            [
+                beam.occupancy_before,
+                beam.occupancy_after,
+                float(beam.active_after) - float(beam.active_before),
+                beam.shared_capacity,
+                beam.interference_summary,
+                beam.capacity_margin,
+                1.0,
+            ]
+            for beam in beams
+        ], dtype=np.float64)
+        beam_pool = np.concatenate(
+            (
+                beam_features.sum(axis=0),
+                beam_features.max(axis=0),
+                beam_features.min(axis=0),
+                beam_features.mean(axis=0),
+            )
+        )
+        vector = np.concatenate(
+            (
+                np.asarray([float(len(self.members))], dtype=np.float64),
+                member_matrix.sum(axis=0),
+                member_matrix.max(axis=0),
+                beam_pool,
+                self.pairwise_cross_gain_vector(),
+                np.asarray(self.global_resource_features, dtype=np.float64),
+            )
+        )
+        if not np.isfinite(vector).all():
+            raise StageCContractError("coalition invariant encoding is non-finite")
+        return vector
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionRow:
+    schema: str
+    split: str
+    world_id: str
+        ]
+        return {
+            "kind": "legacy_heterogeneous_adam_mlp",
+            "activation": self.activation,
+            "weights_hex": encode(self.weights),
+            "biases_hex": encode(self.biases),
+            "adam_first_moment_weights_hex": encode(self.first_moment_w),
+            "adam_second_moment_weights_hex": encode(self.second_moment_w),
+            "adam_first_moment_biases_hex": encode(self.first_moment_b),
+            "adam_second_moment_biases_hex": encode(self.second_moment_b),
+            "adam_step": self.adam_step,
+            "optimizer": {
+                "kind": "Adam", "learning_rate": self.learning_rate,
+                "betas": [self.beta1, self.beta2], "epsilon": self.epsilon,
+                "weight_decay": self.weight_decay,
+            },
+            "gauge_beta": self.gauge_beta,
+            "loss_weight": self.loss_weight,
+        }
+
+
+@dataclass(slots=True)
+class AdamSetInteractionHead:
+    network: AdamMLPHead
+    member_width: int
+
+    def clone(self) -> "AdamSetInteractionHead":
+        return AdamSetInteractionHead(self.network.clone(), self.member_width)
+
+    def score(self, context: CoalitionContext) -> float:
+        if len(context.members) <= 1:
+            return 0.0
+        return self.network.score(context.invariant_vector(member_width=self.member_width))
+
+    def update(self, batch: CoalitionBatch) -> float:
+        return self.network.update_scalar(batch.invariant_states, batch.target_psi)
+
+    def payload(self) -> dict[str, object]:
+        return {
+            **self.network.payload(),
+            "kind": "permutation_invariant_set_conditioned_legacy_adam_mlp",
+            "architecture": "two_hidden_layer_relu_mlp_on_sum_max_and_padded_resource_context",
+            "member_width": self.member_width,
+            "anchors": {"empty": 0.0, "singleton": 0.0},
+        }
+
+
+@dataclass(slots=True)
+class SetInteractionHead:
+    """Two-layer permutation-invariant scalar Psi MLP with hard zero anchors."""
+
+    input_weights: np.ndarray
+    input_bias: np.ndarray
+    output_weights: np.ndarray
+    output_bias: float
+    member_width: int
+
+    def clone(self) -> "SetInteractionHead":
+        return SetInteractionHead(
+            self.input_weights.copy(),
+            self.input_bias.copy(),
+            self.output_weights.copy(),
+            float(self.output_bias),
+            self.member_width,
+        )
+
+    def _hidden(self, values: np.ndarray) -> np.ndarray:
+        if values.shape[-1] != self.input_weights.shape[1]:
+            raise StageCContractError("set-interaction state shape drifted")
+        return np.tanh(values @ self.input_weights.T + self.input_bias)
+
+    def score(self, context: CoalitionContext) -> float:
+        if len(context.members) <= 1:
+            return 0.0
+        values = context.invariant_vector(member_width=self.member_width)
+        return float(self._hidden(values) @ self.output_weights + self.output_bias)
+
+    def update(self, batch: CoalitionBatch, *, learning_rate: float) -> float:
+        hidden = self._hidden(batch.invariant_states)
+        predictions = hidden @ self.output_weights + self.output_bias
+        residual = predictions - batch.target_psi
+        count = float(batch.target_psi.size)
+        scale = 2.0 / count
+        output_weights_before = self.output_weights.copy()
+        self.output_weights -= learning_rate * scale * (hidden.T @ residual)
+        self.output_bias -= learning_rate * float(scale * residual.sum())
+src/mcrl/stagec_v025/learner.py:578:            [context.invariant_vector(member_width=member_width) for context in contexts]
+src/mcrl/stagec_v025/learner.py:832:        return self.network.score(context.invariant_vector(member_width=self.member_width))
+src/mcrl/stagec_v025/learner.py:874:        values = context.invariant_vector(member_width=self.member_width)
+src/mcrl/stagec_v025/coalitions.py:217:    def pairwise_cross_gain_vector(self) -> np.ndarray:
+src/mcrl/stagec_v025/coalitions.py:231:    def invariant_vector(self, *, member_width: int) -> np.ndarray:
+src/mcrl/stagec_v025/coalitions.py:272:                self.pairwise_cross_gain_vector(),
+tests/stagec_v025/test_contract_v1_acceptance.py:447:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:453:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:465:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:494:            service_guard=lambda profile: True, model=route_model,
+tests/stagec_v025/test_contract_v1_acceptance.py:668:        service_guard=lambda profile: True, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:686:            service_guard=lambda profile: True, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:842:        service_guard=lambda profile: True,
+tests/stagec_v025/test_contract_v1_acceptance.py:867:        jointly_legal=lambda profile: True, service_guard=lambda profile: True,
+tests/stagec_v025/test_contract_v1_acceptance.py:876:        jointly_legal=lambda profile: True, service_guard=lambda profile: True,
+
+exec
+/bin/bash -lc 'rg -n "def [a-zA-Z0-9_]*service|def [a-zA-Z0-9_]*guard|service_guard" src/mcrl | head -300
+rg -n "qos.*gate|service.*availability|availability.*guard|guard.*qos" src/mcrl/physics_v025 tests/physics_v025 | head -240' in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+src/mcrl/env/cells.py:211:def service_area_sample(
+src/mcrl/env/cells.py:284:def cell_area_fraction_inside_service_area(
+src/mcrl/env/service.py:185:def resolve_service(
+src/mcrl/env/ephemeris.py:573:def service_area_center_ecef() -> np.ndarray:
+src/mcrl/env/dwell.py:206:def segments_per_service_window(
+src/mcrl/runtime/ee_axis_pnfe_live.py:291:def _committed_service_states(
+src/mcrl/runtime/ee_axis_ops3.py:382:def opening_service_feasibility_surface(
+src/mcrl/runtime/ee_axis_ops3_live.py:254:def _backgrounds_from_last_service(
+src/mcrl/runtime/energy_efficiency.py:52:    def service_rate(self) -> float:
+src/mcrl/stagec_v025/deployment.py:59:    service_guard_passed: bool
+src/mcrl/stagec_v025/deployment.py:392:                service_guard_passed=True,
+src/mcrl/stagec_v025/deployment.py:654:        service_guard: Callable[[Profile], bool],
+src/mcrl/stagec_v025/deployment.py:684:        if not jointly_legal(base_profile) or not service_guard(base_profile):
+src/mcrl/stagec_v025/deployment.py:700:                        if not jointly_legal(candidate) or not service_guard(candidate):
+src/mcrl/stagec_v025/deployment.py:718:            if len(profile) != len(tables) or not jointly_legal(profile) or not service_guard(profile):
+src/mcrl/stagec_v025/deployment.py:743:        service_guard = kwargs.get("service_guard")
+src/mcrl/stagec_v025/deployment.py:747:            or not callable(service_guard)
+src/mcrl/stagec_v025/deployment.py:749:            or not service_guard(base_profile)
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1030:    service_guard_sha256: str
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1072:            "service_guard_sha256",
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1074:                self.service_guard_sha256,
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1075:                field="selection.service_guard_sha256",
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1091:            "service_guard_sha256": self.service_guard_sha256,
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1109:                "service_guard_sha256",
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1126:            service_guard_sha256=payload["service_guard_sha256"],  # type: ignore[arg-type]
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:2093:    service_guard_sha256: str,
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:2132:            service_guard_sha256=service_guard_sha256,
+src/mcrl/stagec_v025/synthetic.py:354:                service_guard=lambda _candidate: True,
+src/mcrl/stagec_v025/synthetic.py:380:                service_guard=lambda _candidate: True,
+tests/physics_v025/test_stage4_contract.py:145:def test_qos_gate_can_fail_only_availability_margin() -> None:
+tests/physics_v025/test_stage4d_gate.py:499:    target["arm_payload"]["complete_service_availability"] += 0.01
+
+exec
+/bin/bash -lc "sed -n '780,900p' tests/stagec_v025/test_contract_v1_acceptance.py
+sed -n '630,730p' src/mcrl/stagec_v025/deployment.py
+sed -n '110,165p' tests/physics_v025/test_stage4d_gate.py
+sed -n '55,90p' tests/physics_v025/test_stage4b_contract.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+            forecast_method_sha256=_digest("forecast"),
+            physical_identity_schema_sha256=_digest("identity"),
+            catalogue_sha256=_digest("catalogue"), joint_search_sha256=_digest("search"),
+            guards_sha256=_digest("guards"), tie_breaking_sha256=_digest("ties"),
+            validation_sha256=_digest("validation"), deadline_sha256=_digest("deadline"),
+            fallback_sha256=_digest("fallback"), learned_pruning=False,
+            source_provenance_sha256=_digest("source"),
+        )
+        for arm in (
+            "FULL", "DROP_C1", "DROP_C2", "DROP_C3",
+            "ALL_NEUTRAL_CONTROL", "BASELINE", "S0", "S_UNI",
+        )
+    }
+    matched_arms = tuple(interfaces)
+    assert len(authenticate_matched_catalogues(interfaces, required_arms=matched_arms)) == 64
+    with pytest.raises(StageCContractError, match="catalogue_sha256"):
+        authenticate_matched_catalogues(
+            {**interfaces, "DROP_C3": replace(interfaces["DROP_C3"], catalogue_sha256=_digest("bad"))},
+            required_arms=matched_arms,
+        )
+
+    production_model = V1ThreeRouteModel(
+        LinearHead(np.asarray([1.0] + [0.0] * (len(Q1_FEATURES) - 1)), 0.0),
+        LinearHead(np.zeros(len(Q2_FEATURES)), 0.0),
+        model.psi.clone(),
+        model.checkpoint_sha256,
+    )
+    two_tables = _tables()[:2]
+    positive_tables = tuple(
+        replace(
+            table,
+            q1_states=(tuple(0.0 for _ in Q1_FEATURES), (1.0, *tuple(0.0 for _ in Q1_FEATURES[1:]))),
+        ) for table in two_tables
+    )
+    repaired_a0 = ProfileSelector("S3").repair_reference(
+        model=production_model,
+        tables=positive_tables,
+        catalogue=((0, 0), (1, 0), (0, 1), (1, 1)),
+        jointly_legal=lambda profile: profile != (1, 1),
+    )
+    assert repaired_a0 == (1, 0)
+    started = time.monotonic()
+    timeout_catalogue = ((0, 0), (1, 0), (0, 1), (1, 1))
+    timeout_contexts = {
+        profile: CoalitionContext(
+            anchor_id="information-twin-anchor",
+            reference_profile=tuple((table.user_id, table.actions[0]) for table in positive_tables),
+            members=tuple(
+                CoalitionMember(
+                    table.user_id, table.actions[0], table.actions[action],
+                    table.q1_states[action], table.q1_states[0], False,
+                )
+                for table, action in zip(positive_tables, profile, strict=True) if action != 0
+            ),
+            affected_beams=(AffectedBeamContext("affected", 0, sum(profile), False, bool(sum(profile)), 2.0, 0.5),),
+            global_resource_features=(1.0, 0.0, 0.0),
+        ) for profile in timeout_catalogue
+    }
+    timeout = ProfileSelector("S0").select_timed(
+        deadline_s=0.02,
+        model=production_model, tables=positive_tables, base_profile=(0, 0), catalogue=timeout_catalogue,
+        jointly_legal=lambda profile: True,
+        service_guard=lambda profile: True,
+        coalition_context=timeout_contexts,
+        exact_psi=lambda _profile: (time.sleep(0.10) or 0.0),
+        **_selector_authority(positive_tables, timeout_catalogue, anchor_id="information-twin-anchor", base=(0, 0)),
+    )
+    assert timeout.profile == (0, 0)
+    assert timeout.fallback_reason == "runner_deadline_process_killed"
+    assert timeout.worker_terminated is True and timeout.worker_pid is not None
+    assert time.monotonic() - started < 0.08
+
+    placebo = CoalitionBatch.create(
+        (
+            write_coalition_shard(
+                tmp_path / "placebo.jsonl",
+                tuple(
+                    _coalition_row("additive", signal_scale=scale)
+                    for scale in (0.75, 1.25)
+                ),
+            ),
+        )
+    )
+    placebo_model = _model_from_batch(placebo, tmp_path, epochs=1500)
+    assert abs(placebo_model.interaction(_context("additive", (0, 1)))) < 0.05
+    s3_profile = ProfileSelector("S3").select(
+        base_profile=(0, 0, 0), tables=_tables(), catalogue=catalogue,
+        jointly_legal=lambda profile: True, service_guard=lambda profile: True,
+        model=placebo_model, coalition_context={
+            profile: _profile_contexts("additive")[profile] for profile in catalogue
+        },
+        model_checkpoint_sha256=placebo_model.checkpoint_sha256,
+        **_selector_authority(_tables(), catalogue, anchor_id="information-twin-anchor"),
+    ).profile
+    suni_profile = ProfileSelector("S_UNI").select(
+        base_profile=(0, 0, 0), tables=_tables(), catalogue=catalogue,
+        jointly_legal=lambda profile: True, service_guard=lambda profile: True,
+        exact_nominal_score=lambda profile: -0.5 * sum(profile[:2]),
+        **_selector_authority(_tables(), catalogue, anchor_id="information-twin-anchor"),
+    ).profile
+    assert s3_profile == suni_profile == (0, 0, 0)
+
+
+class _ReceiptEvaluator:
+    action = PhysicalAction(1, 1)
+
+    @classmethod
+    def initial(cls, *, unit, arm):
+        del unit, arm
+        return InitialTemporalState((cls.action,), frozenset({0}))
+
+    def __call__(self, *, unit, arm, model, step_index, previous_profile):
+        del model, step_index, previous_profile
+        energy = 1.0 if unit.world_seed % 2 else 4.0
+        ee = 10.0
+        if arm in {"DROP_C1", "FULL"}:
+            bits = ee * energy
+        elif arm == "DROP_C2":
+            bits = 0.0
+        elif arm == "DROP_C3":
+            bits, energy = 0.0, 0.0
+        profile: Profile,
+        reference: Profile,
+        *,
+        knockout: str | None,
+    ) -> float:
+        total = 0.0
+        for table, selected, baseline in zip(tables, profile, reference, strict=True):
+            if knockout != "C1":
+                total += model.score("C1", table.q1_states[selected]) - model.score(
+                    "C1", table.q1_states[baseline]
+                )
+            if knockout != "C2":
+                total += model.score("C2", table.q2_states[selected]) - model.score(
+                    "C2", table.q2_states[baseline]
+                )
+        return total
+
+    def select(
+        self,
+        *,
+        base_profile: Profile,
+        tables: Sequence[UserActionTable],
+        catalogue: Sequence[Profile],
+        jointly_legal: Callable[[Profile], bool],
+        service_guard: Callable[[Profile], bool],
+        model: V1ThreeRouteModel | None = None,
+        coalition_context: Mapping[Profile, CoalitionContext] | None = None,
+        exact_psi: Callable[[Profile], float] | None = None,
+        exact_nominal_score: Callable[[Profile], float] | None = None,
+        knockout_route: Route | None = None,
+        coordinator_information: CoordinatorInformation,
+        arm_information_interfaces: Mapping[str, ArmInformationInterface],
+        matched_information_sha256: str,
+        model_checkpoint_sha256: str | None = None,
+        knockout_experiment: CheckpointKnockoutExperiment | None = None,
+    ) -> SelectorDecision:
+        self._authenticate_inputs(
+            base_profile=base_profile,
+            tables=tables,
+            catalogue=catalogue,
+            coordinator_information=coordinator_information,
+            arm_information_interfaces=arm_information_interfaces,
+            matched_information_sha256=matched_information_sha256,
+            coalition_context=coalition_context if self.mode != "S_UNI" else None,
+        )
+        if self.mode == "S3" and model_checkpoint_sha256 is None:
+            raise StageCContractError("S3 requires a deployed checkpoint identity")
+        if knockout_route is not None:
+            if (
+                knockout_experiment is None
+                or model_checkpoint_sha256 != knockout_experiment.checkpoint_sha256
+                or knockout_route not in knockout_experiment.zeroed_deployed_routes
+            ):
+                raise StageCContractError("knockout is not bound to the deployed checkpoint")
+        if not jointly_legal(base_profile) or not service_guard(base_profile):
+            raise StageCContractError("selector requires a prevalidated BASE")
+        if self.mode == "S_UNI":
+            if exact_nominal_score is None:
+                raise StageCContractError("S_UNI requires exact nominal joint physics")
+            current = base_profile
+            evaluated = 0
+            while True:
+                best = current
+                best_score = exact_nominal_score(current)
+                evaluated += 1
+                for user_index, table in enumerate(tables):
+                    for action_index, legal in enumerate(table.action_mask):
+                        if not legal or action_index == current[user_index]:
+                            continue
+                        candidate = (*current[:user_index], action_index, *current[user_index + 1 :])
+                        if not jointly_legal(candidate) or not service_guard(candidate):
+                            continue
+                        score = exact_nominal_score(candidate)
+                        evaluated += 1
+                        if score > best_score:
+                            best, best_score = candidate, score
+                if best == current:
+                    return SelectorDecision("S_UNI", current, best_score, False, None, True, evaluated)
+                current = best
+
+        if model is None or coalition_context is None:
+            raise StageCContractError(f"{self.mode} requires model and coalition contexts")
+        if self.mode == "S0" and exact_psi is None:
+            raise StageCContractError("S0 requires exact Psi")
+        best = base_profile
+        best_score = float("-inf")
+        evaluated = 0
+        for profile in (base_profile, *catalogue):
+            if len(profile) != len(tables) or not jointly_legal(profile) or not service_guard(profile):
+                continue
+            additive = self._additive_score(
+                model, tables, profile, base_profile, knockout=knockout_route
+            )
+            interaction = 0.0
+            if knockout_route != "C3":
+                interaction = (
+                    model.interaction(coalition_context[profile])
+                    if self.mode == "S3"
+                    else float(exact_psi(profile))
+                )
+            score = additive + interaction
+            for index in range(users)
+        ),
+        cross_matrix,
+    )
+    return arrays, geometry
+
+
+def test_large_set_decomposition_is_linear_and_has_no_credit_split() -> None:
+    users = tuple(range(6))
+    outcomes = {frozenset(): _outcome(0), frozenset(users): _outcome(40)}
+    outcomes.update({frozenset((user,)): _outcome(user + 1) for user in users})
+    result = set_score_decomposition(
+        coalition_users=users,
+        outcomes_by_subset=outcomes,
+        lambda_bits_per_j=1,
+        eta_ref=1,
+        kappa_bits_per_user_step=1,
+    )
+    assert len(outcomes) == len(users) + 2
+    assert dict(result.d_by_user) == {user: user + 1 for user in users}
+    assert result.interaction_bits == 19
+    assert result.shapley_interaction_by_user == ()
+    assert result.credit_split == "NOT_COMPUTED_LARGE_SET"
+
+
+def test_small_set_shapley_is_reporting_only_and_exact() -> None:
+    values = {
+        frozenset(): 0,
+        frozenset({0}): 2,
+        frozenset({1}): 3,
+        frozenset({0, 1}): 9,
+    }
+    result = set_score_decomposition(
+        coalition_users=(0, 1),
+        outcomes_by_subset={key: _outcome(value) for key, value in values.items()},
+        lambda_bits_per_j=1,
+        eta_ref=1,
+        kappa_bits_per_user_step=1,
+    )
+    assert result.interaction_bits == 4
+    assert dict(result.shapley_interaction_by_user) == {0: 2, 1: 2}
+    assert result.credit_split == "EXACT_SHAPLEY_SMALL_SET"
+
+
+def test_full_48_boundary_endpoint_matches_frozen_stage4b_bits() -> None:
+    arrays, _geometry = _three_user_arrays(0.8, 1.0e-4)
+    result = evaluate_ar_tdm_catalogue(
+        arrays,
+        np.asarray([[0, 1, 2]]),
+        field="nominal",
+        boundary_indices=tuple(range(48)),
+    )
+    assert float(result.bits.sum()).hex() == "0x0.0p+0"
+    assert float(result.joules[0]).hex() == "0x1.edbf06821a358p+5"
+
+
+        bits=value + 100,
+        joules=100,
+        phi=0,
+        decoding_availability=1,
+        useful_availability=1,
+    )
+
+
+def test_v15_set_decomposition_and_factor_identity_are_exact() -> None:
+    values = {
+        frozenset(): 0,
+        frozenset({0}): 2,
+        frozenset({1}): 3,
+        frozenset({2}): 5,
+        frozenset({0, 1}): 8,
+        frozenset({0, 2}): 11,
+        frozenset({1, 2}): 13,
+        frozenset({0, 1, 2}): 25,
+    }
+    result = set_score_decomposition(
+        coalition_users=(0, 1, 2),
+        outcomes_by_subset={key: _outcome(value) for key, value in values.items()},
+        lambda_bits_per_j=1,
+        eta_ref=1,
+        kappa_bits_per_user_step=2,
+        phi_difference=Fraction(-1, 2),
+    )
+    assert dict(result.d_by_user) == {0: 2, 1: 3, 2: 5}
+    assert result.interaction_bits == 15
+    assert sum(dict(result.shapley_interaction_by_user).values(), Fraction()) == 15
+    assert result.c1 + result.c3 == Fraction(25, 2)
+    assert result.factor_c1 == result.c1 - Fraction(1, 2)
+
+
+def test_regimes_are_sealed_after_31_and_launch_order_is_binding() -> None:
+    assert [row.run_id for row in ALL_SEALED_RUN_SETTINGS[:31]] == [
+
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025/test_stagec_pipeline.py -ra > .scratch/harness-audit-2026-09-09/baseline-stagec-pipeline.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/baseline-stagec-pipeline.log
+tail -120 .scratch/harness-audit-2026-09-09/baseline-stagec-pipeline.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ succeeded in 22162ms:
+............                                                             [100%]
+12 passed in 22.12s
+
+HARNESS_EXIT_STATUS=0
+
+codex
+The isolated Stage-C pipeline file is healthy on the untouched snapshot: 12/12 passed in 22.12s, exit 0. Combined with the full-run markers and focused first-failure run, the non-completing case is isolated to `test_T3_crossed_cluster_real_merger_coverage_and_power`; I’m moving on to the three scientific mutations.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/src/mcrl/stagec_v025/coalitions.py
