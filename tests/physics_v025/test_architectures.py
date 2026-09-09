@@ -17,10 +17,13 @@ from mcrl.physics_v025.architectures import (
     Geometry,
     Link,
     RadiationConfig,
+    _solve_power,
+    _target_feasibility,
 )
 from mcrl.physics_v025.channel import noise_power_w
 from mcrl.physics_v025.constants_v025 import (
     BEAM_BANDWIDTH_HZ,
+    BEAM_RF_CAP_W,
     POWER_CONTROL_TARGET_LINEAR,
     RATE_TARGET_BPS,
 )
@@ -164,7 +167,12 @@ def test_coupled_power_convergence_saturation_and_failure_certificate() -> None:
     links = (Link(0, (1, 1), 0, direct), Link(1, (2, 1), 0, direct))
     converged = AngleTPC_TDM().radiate(config, geometry(links, cross), "nominal")
     assert converged.certificate.status == "CONVERGED"
-    assert converged.certificate.residual_w <= 1e-10
+    assert (
+        converged.certificate.residual_w <= 1e-10
+        or converged.certificate.residual_w / max(
+            tx.rf_power_w for tx in converged.slots[0].transmissions
+        ) <= 1e-9
+    )
     assert [tx.rf_power_w for tx in converged.slots[0].transmissions] == pytest.approx([5 / 9, 5 / 9], abs=2e-10)
 
     weak = POWER_CONTROL_TARGET_LINEAR * noise / 10.0
@@ -288,6 +296,52 @@ def test_rate_target_no_mode_forces_cap_without_invalidating_solver() -> None:
     )
 
 
+def test_no_mode_cap_attempt_still_interferes_costs_pa_and_is_not_served() -> None:
+    """A no-mode user is a radiating failed attempt, not a pruned assignment."""
+
+    links = tuple(Link(user, (1, 1), 0, 1.0) for user in range(13)) + (
+        Link(13, (2, 1), 0, 1.0),
+    )
+    cross = np.zeros((14, 14), dtype=np.float64)
+    cross[:13, 13] = 0.01
+    cross[13, :13] = 0.01
+    result = AngleRateTPC_TDM().radiate(RadiationConfig(), geometry(links, cross), "nominal")
+    assert result.per_user_rate_target_feasible is not None
+    assert all(not result.per_user_rate_target_feasible[user] for user in range(13))
+    assert result.rate_target_attained is not None
+    assert all(not result.rate_target_attained[user] for user in range(13))
+    no_mode = [tx for slot in result.slots for tx in slot.transmissions if tx.user_id < 13]
+    assert all(tx.rf_power_w == BEAM_RF_CAP_W for tx in no_mode)
+    served_with_aggressors = next(
+        tx for slot in result.slots for tx in slot.transmissions if tx.user_id == 13
+    )
+    assert served_with_aggressors.inter_interference_w > 0
+    without_cross = cross.copy()
+    without_cross[13, :13] = 0.0
+    isolated = AngleRateTPC_TDM().radiate(
+        RadiationConfig(), geometry(links, without_cross), "nominal"
+    )
+    served_without_aggressors = next(
+        tx for slot in isolated.slots for tx in slot.transmissions if tx.user_id == 13
+    )
+    assert served_with_aggressors.rf_power_w > served_without_aggressors.rf_power_w
+    assert served_with_aggressors.sinr == pytest.approx(served_without_aggressors.sinr)
+    energy = schedule_energy(
+        HardwareInventory.fixed(((1, 1), (2, 1))),
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in result.slots),
+        duration_s=1.0,
+    )
+    victim_only = AngleRateTPC_TDM().radiate(
+        RadiationConfig(), geometry((links[13],)), "nominal"
+    )
+    victim_only_energy = schedule_energy(
+        HardwareInventory.fixed(((1, 1), (2, 1))),
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in victim_only.slots),
+        duration_s=1.0,
+    )
+    assert energy.pa_j > victim_only_energy.pa_j
+
+
 def test_rate_target_tdm_slot_pa_and_fdm_summed_rf_fixture() -> None:
     """TDM integrates PA(.2)/2+PA(.8)/2; FDM sums .1+.4=.5 RF before one PA evaluation."""
 
@@ -353,3 +407,51 @@ def test_rate_target_coupled_solve_clears_discrete_threshold() -> None:
         ACMRate().rate_bps(tx.sinr, tx.bandwidth_hz) >= RATE_TARGET_BPS
         for tx in result.slots[0].transmissions
     )
+
+
+def test_near_unit_spectral_radius_converges_to_analytic_fixed_point() -> None:
+    coupling = np.full((3, 3), 0.4995)
+    np.fill_diagonal(coupling, 0.0)
+    power, certificate = _solve_power(
+        np.ones(3),
+        coupling,
+        np.full(3, 0.0001),
+        np.full(3, 1.65),
+        (0, 1, 2),
+        RadiationConfig(bandwidth_hz=1.0, target_sinr=1.0),
+    )
+    assert certificate.status == "CONVERGED"
+    assert power == pytest.approx(np.full(3, 0.1), rel=2e-6)
+
+
+def test_jointly_unattainable_rate_targets_converge_at_cap() -> None:
+    power, certificate = _solve_power(
+        np.ones(2),
+        np.array(((0.0, 2.0), (2.0, 0.0))),
+        np.ones(2),
+        np.full(2, 1.65),
+        (0, 1),
+        RadiationConfig(bandwidth_hz=1.0, target_sinr=1.0),
+        target_sinr=np.ones(2),
+    )
+    assert certificate.status == "CONVERGED"
+    assert certificate.saturated_users == (0, 1)
+    assert _target_feasibility(
+        power,
+        np.ones(2),
+        np.array(((0.0, 2.0), (2.0, 0.0))),
+        np.ones(2),
+        (1.0, 1.0),
+    ) == (False, False)
+
+
+def test_nonfinite_coupled_update_is_invalid() -> None:
+    _power, certificate = _solve_power(
+        np.ones(2),
+        np.array(((0.0, np.nan), (0.0, 0.0))),
+        np.ones(2),
+        np.full(2, 1.65),
+        (0, 1),
+        RadiationConfig(bandwidth_hz=1.0, target_sinr=1.0),
+    )
+    assert certificate.status == "INVALID"

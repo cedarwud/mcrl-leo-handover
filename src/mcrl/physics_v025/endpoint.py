@@ -140,13 +140,28 @@ def assert_same_energy_price(
     return endpoint_price
 
 
-def calibration(bits: Number, joules: Number, *, users: int, time_s: Number) -> tuple[Fraction, Fraction]:
-    """Return ``(eta_ref, kappa)`` from positive nominal-greedy totals."""
+def calibration(
+    bits: Number,
+    joules: Number,
+    *,
+    users: int,
+    decision_steps: int | None = None,
+    time_s: Number | None = None,
+) -> tuple[Fraction, Fraction]:
+    """Return ``(eta_ref, kappa)`` with κ measured in bits/user-step.
 
-    b, e, duration = exact(bits), exact(joules), exact(time_s)
-    if b <= 0 or e <= 0 or users <= 0 or duration <= 0:
-        raise MCRLContractError("calibration totals, users, and time must be positive")
-    return b / e, b / (users * duration)
+    ``time_s`` is accepted only as a compatibility audit field.  It never
+    enters κ: changing the physical decision duration cannot change the
+    normalisation of one decision step.
+    """
+
+    b, e = exact(bits), exact(joules)
+    steps = 1 if decision_steps is None else decision_steps
+    if type(steps) is not int or b <= 0 or e <= 0 or users <= 0 or steps <= 0:
+        raise MCRLContractError("calibration totals, users, and decision steps must be positive")
+    if time_s is not None and exact(time_s) <= 0:
+        raise MCRLContractError("calibration audit duration must be positive")
+    return b / e, b / (users * steps)
 
 
 __all__ = [

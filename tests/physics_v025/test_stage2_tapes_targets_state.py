@@ -198,7 +198,7 @@ def test_nominal_greedy_and_calibration_are_deterministic_per_setting() -> None:
     )
     frozen = freeze_setting_calibration(setting=setting, observations=observations)
     assert frozen.eta_ref == frozen.lambda_bits_per_j == 10
-    assert frozen.kappa_bits_per_user_s == 10
+    assert frozen.kappa_bits_per_user_s == 50
     assert freeze_setting_calibration(setting=setting, observations=observations).digest == frozen.digest
 
 
@@ -286,14 +286,13 @@ def test_c3_uses_declared_network_interaction_and_equal_split() -> None:
         f10=_outcome(14, 1),
         f01=_outcome(13, 1),
         f11=_outcome(22, 1),
-        externality_e_by_user={0: 2, 1: -1},
         lambda_bits_per_j=5,
         eta_ref=5,
         kappa_bits_per_user_s=3,
     )
     # Energy cancels: Psi = 22 - 14 - 13 + 10 = 5.
     assert interaction.psi == 5
-    assert dict(interaction.z3_by_user) == {0: Fraction(9, 2), 1: Fraction(3, 2)}
+    assert dict(interaction.z3_by_user) == {0: Fraction(5, 2), 1: Fraction(5, 2)}
 
 
 def test_reward_core_identity_is_exact() -> None:
@@ -356,3 +355,4 @@ def test_transition_ledger_uses_norad_and_chain_not_cell_slot() -> None:
         user_id=0, before=(10, 1), after=(10, 1), cell_rekey=True, was_previously_served=True
     ).kind == "cell_rekey"
     assert corrected_boundary_rekey_rate(rekeys=2, eligible_boundaries=4) == 0.5
+    assert corrected_boundary_rekey_rate(rekeys=0, eligible_boundaries=0) is None

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from pathlib import Path
 from typing import Iterable
 
 import numpy as np
@@ -31,7 +32,13 @@ from .constants_v025 import (
     RX_GAIN_MAX_DBI,
     ZENITH_GASEOUS_LOSS_DB,
 )
-from .tapes import PrimitiveBoundary, PrimitiveCandidate, UserLayout, digest_payload
+from .tapes import (
+    PrimitiveBoundary,
+    PrimitiveCandidate,
+    ProviderProtocolOutputs,
+    UserLayout,
+    digest_payload,
+)
 
 
 EARTH_RADIUS_KM = 6_371.0
@@ -121,6 +128,31 @@ class ParametricSyntheticProvider:
     def cluster_identity(self, *, world_seed: int) -> tuple[str, int]:
         return ("synthetic-550km", self._mixed_seed(world_seed))
 
+    def protocol_outputs(self, *, world_seed: int) -> ProviderProtocolOutputs:
+        """Attest the synthetic input seam required by the stage-4b tape contract."""
+
+        return ProviderProtocolOutputs(
+            split="TRAIN",
+            start_utc="2026-01-01T00:00:00+00:00",
+            tle_files=(
+                (
+                    "SYNTHETIC-PARAMETRIC.tle",
+                    digest_payload(
+                        {
+                            "parameter_sha256": self.parameter_digest,
+                            "world_seed": int(world_seed),
+                        }
+                    ),
+                ),
+            ),
+            split_rule_digest=digest_payload(
+                {"rule": "synthetic-mechanism-map-train-only"}
+            ),
+            provider_source_digest=hashlib.sha256(
+                Path(__file__).read_bytes()
+            ).hexdigest(),
+        )
+
     def user_layout(self, *, world_seed: int) -> Iterable[UserLayout]:
         rng = np.random.default_rng(self._mixed_seed(world_seed))
         rows = []
@@ -181,6 +213,15 @@ class ParametricSyntheticProvider:
                 realised_cross = tuple(
                     (aggressor, realised * cross_ratio) for aggressor in self._norads
                 )
+                # Stage 4b binds interference to the complete physical
+                # aggressor identity.  Keep the old NORAD view only as a
+                # compatibility projection; the engine consumes these rows.
+                nominal_cross_by_identity = tuple(
+                    (identity, nominal * cross_ratio) for identity in self._inventory
+                )
+                realised_cross_by_identity = tuple(
+                    (identity, realised * cross_ratio) for identity in self._inventory
+                )
                 descent_crossing_s = self._descending_crossing_s(
                     self._entry_elevation_deg, peak_fraction
                 )
@@ -207,6 +248,8 @@ class ParametricSyntheticProvider:
                         remaining_d2_s=(
                             max(0.0, descent_crossing_s - absolute_time_s) if eligible else 0.0
                         ),
+                        nominal_cross_gain_by_identity=nominal_cross_by_identity,
+                        realised_cross_gain_by_identity=realised_cross_by_identity,
                     )
                 )
         return PrimitiveBoundary(float(absolute_time_s), tuple(rows))

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run the pre-declared V0.25 synthetic mechanism map.
+"""Re-run the pre-declared V0.25 synthetic mechanism map on stage 4b.
 
-The script imports the stage-2 runner and supplies only a parametric primitive
-provider plus an explicit bounded synthetic catalogue.  Radiation, energy,
-targets, arm selection, and step summaries remain the stage-2 code paths.
+The script imports the stage-4b runner and supplies only a parametric primitive
+provider. Radiation, energy, bounded-catalogue construction, ledger handling,
+v1.5 target-sum selection, and step summaries remain stage-4b code paths.
 """
 
 from __future__ import annotations
@@ -38,14 +38,14 @@ STAGE2_PATH = (
     / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
 )
 DEFAULT_OUTPUT = (
-    REPO / ".scratch/multi-catfish-v025-physics-successor/synthetic-map"
+    REPO / ".scratch/multi-catfish-v025-physics-successor/synthetic-map-r2"
 )
 DEFAULT_REPORT = (
     REPO
-    / ".scratch/multi-catfish-v025-physics-successor/V025-SYNTHETIC-MAP-REPORT-2026-09-08.md"
+    / ".scratch/multi-catfish-v025-physics-successor/V025-SYNTHETIC-MAP-R2-REPORT-2026-09-08.md"
 )
-LABEL = "SYNTHETIC_MECHANISM_MAP"
-SCHEMA = "multi-catfish-mcrl-v025-synthetic-mechanism-map-v1"
+LABEL = "SYNTHETIC_MECHANISM_MAP_R2"
+SCHEMA = "multi-catfish-mcrl-v025-synthetic-mechanism-map-r2-v1"
 MAX_CORE_HOURS = 10.0
 MAX_WORKERS = 4
 STEPS = 30
@@ -96,7 +96,9 @@ class SyntheticMapError(RuntimeError):
 
 
 def _load_stage2():
-    name = "_mcrl_v025_stage2_runner"
+    """Compatibility name retained for local callers; loads stage 4b."""
+
+    name = "_mcrl_v025_stage4b_runner"
     if name in sys.modules:
         return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, STAGE2_PATH)
@@ -136,23 +138,62 @@ def _provider(cell: Mapping[str, object], seed: int) -> ParametricSyntheticProvi
 
 def _bind_provider(runner, cell: Mapping[str, object], seed: int) -> None:
     runner.WORLD_PROVIDER_FACTORY = lambda: _provider(cell, seed)
-    runner.EVALUATION_EQUIVALENCE_KEY = lambda config: tuple(
-        sorted(
-            (
-                identity,
-                sum(candidate == identity for _user, candidate in config.assignments),
-            )
-            for identity in set(candidate for _user, candidate in config.assignments)
-        )
-    )
 
 
 def _calibrate(runner, cell: Mapping[str, object], setting_label: str):
     _bind_provider(runner, cell, CALIBRATION_SEED)
-    return runner._calibrate(
-        runner._setting(setting_label),
-        catalogue_builder=runner._catalogue,
-        start_time_s=CALIBRATION_START_S,
+    setting = runner._setting(setting_label)
+    run_setting = runner.run_setting_for(setting_label)
+    observations = []
+    for domain in runner.CALIBRATION_WORLD_DOMAINS:
+        tape = build_world_tape(
+            domain=domain,
+            provider=runner.WORLD_PROVIDER_FACTORY(),
+            steps=1,
+            start_time_s=CALIBRATION_START_S,
+        )
+        base = runner._base_configuration(tape, 0, "nearest-eligible")
+        catalog = runner._catalogue(tape, 0, base)
+        evaluator = runner.StepEvaluator(
+            tape,
+            setting,
+            0,
+            transition_from=base,
+            cell_rekeyed_users=runner._rekeyed_users(tape, 0),
+            field="nominal",
+            run_setting=run_setting,
+        )
+        profiles = {row.configuration_id: evaluator.evaluate(row) for row in catalog}
+        selected = runner.nominal_greedy_reference(
+            runner._nominal_configuration(row, profiles[row.configuration_id])
+            for row in catalog
+        )
+        realised = runner.StepEvaluator(
+            tape,
+            setting,
+            0,
+            transition_from=base,
+            cell_rekeyed_users=runner._rekeyed_users(tape, 0),
+            run_setting=run_setting,
+        ).evaluate(next(row for row in catalog if row.configuration_id == selected.configuration_id))
+        observations.append(
+            runner.CalibrationObservation.build(
+                world_domain=domain,
+                bits=realised.bits,
+                joules=realised.joules,
+                users=len(tape.user_layout),
+                time_s=DECISION_INTERVAL_S,
+                selected_configuration_id=selected.configuration_id,
+            )
+        )
+    frozen = runner.freeze_setting_calibration(
+        setting=setting,
+        observations=observations,
+    )
+    return runner.replace(
+        frozen,
+        setting_label=run_setting.run_id,
+        setting_digest=run_setting.digest,
     )
 
 
@@ -222,6 +263,19 @@ def _safe(label: str) -> str:
     return label.replace("′", "prime").replace("γ", "gamma")
 
 
+def _estimated_unit_execution_seconds(execution_seconds: float, legal_steps: int) -> float:
+    """Scale one measured carrier-step to one complete three-carrier unit."""
+
+    return float(execution_seconds) * int(legal_steps) * len(REFERENCE_CARRIERS)
+
+
+def _budget_gate_path(output: Path) -> Path:
+    """Prefer a sealed correction over the original estimate, when present."""
+
+    corrected = output / "corrected-estimate.json"
+    return corrected if corrected.is_file() else output / "estimate.json"
+
+
 def dry_run(output: Path) -> dict[str, object]:
     runner = _load_stage2()
     rows = []
@@ -252,12 +306,11 @@ def dry_run(output: Path) -> dict[str, object]:
                 carrier=REFERENCE_CARRIERS[peak_step % len(REFERENCE_CARRIERS)],
                 calibration=calibrations[setting_label],
                 counter=counter,
-                catalogue_builder=runner._catalogue,
             )
             elapsed = time.perf_counter() - started
             arms = [row["arm"] for row in step["arms"]]
             if arms != list(runner.ARMS):
-                raise SyntheticMapError("dry-run did not traverse all stage-2 arms")
+                raise SyntheticMapError("dry-run did not traverse all stage-4b arms")
             rows.append(
                 {
                     "grid_cell": cell,
@@ -306,7 +359,11 @@ def estimate(output: Path) -> dict[str, object]:
                 absolute_time_s=step_index * DECISION_INTERVAL_S,
             )
             legal_steps += int(any(candidate.legal for candidate in boundary.candidates))
-        per_world = float(row["execution_seconds"]) * legal_steps
+        # ``execution_seconds`` measures one (step, setting) call, while every
+        # unit executes all three sealed reference carriers at each anchor.
+        per_world = _estimated_unit_execution_seconds(
+            float(row["execution_seconds"]), legal_steps
+        )
         calibration = float(row["calibration_seconds"])
         total_seconds += per_world * len(WORLD_SEEDS) + calibration
         tape_seconds_by_cell[str(cell["id"])] = float(row["tape_seconds"]) * (33.0 / 19.0)
@@ -328,7 +385,7 @@ def estimate(output: Path) -> dict[str, object]:
             "schema": f"{SCHEMA}-estimate",
             "status": "PASS" if core_hours <= MAX_CORE_HOURS else "ABORT_OVER_BUDGET",
             "experiment_label": LABEL,
-            "basis": "measured peak legal step times legal-step census, plus calibration",
+            "basis": "measured peak legal step times legal-step census times three reference carriers, plus calibration",
             "reserve_multiplier": reserve,
             "estimated_core_hours": core_hours,
             "core_hour_ceiling": MAX_CORE_HOURS,
@@ -354,7 +411,7 @@ def _calibration_receipt_task(task):
             "setting": setting_label,
             "provider_seed": CALIBRATION_SEED,
             "calibration_start_s": CALIBRATION_START_S,
-            "two_disjoint_stage2_calibration_domains": True,
+            "two_disjoint_calibration_domains": True,
             "calibration": value.payload(),
             "calibration_sha256": value.digest,
             "elapsed_seconds": elapsed,
@@ -366,12 +423,6 @@ def _unit_task(task):
     cell, world_seed, calibration_payloads = task
     runner = _load_stage2()
     _bind_provider(runner, cell, world_seed)
-    tape = build_world_tape(
-        domain=PROBE_WORLD_DOMAINS[world_seed - 1],
-        provider=runner.WORLD_PROVIDER_FACTORY(),
-        steps=STEPS + 3,
-        start_time_s=0.0,
-    )
     started = time.perf_counter()
     results = []
     for setting_label in SETTINGS:
@@ -382,8 +433,6 @@ def _unit_task(task):
                 world_index=world_seed,
                 executed_steps=STEPS,
                 calibration=calibration,
-                catalogue_builder=runner._catalogue,
-                tape=tape,
             )
         except Exception as error:
             results.append(
@@ -405,9 +454,9 @@ def _unit_task(task):
                 "synthetic_world_seed": world_seed,
                 "provider_parameter_sha256": _provider(cell, world_seed).parameter_digest,
                 "steps_executed": STEPS,
-                "catalogue_scope": "complete Cartesian legal assignments",
-                "exchangeability_cache": "exact per-physical-beam occupancy equivalence",
-                "shared_world_tape_across_settings": True,
+                "catalogue_scope": "stage-4b bounded catalogue with complete Cartesian cells up to the sealed limit",
+                "exchangeability_cache": "disabled; per-chain physical identities retained",
+                "common_random_world_across_settings": True,
                 "group_elapsed_seconds_so_far": time.perf_counter() - started,
             }
         )
@@ -417,7 +466,7 @@ def _unit_task(task):
 
 def run_sweep(output: Path, *, workers: int) -> dict[str, object]:
     dry = read_once(output / "dry-run.json")
-    gate = read_once(output / "estimate.json")
+    gate = read_once(_budget_gate_path(output))
     if dry.get("status") != "PASS":
         raise SyntheticMapError("dry-run did not pass")
     if not gate.get("within_ceiling"):

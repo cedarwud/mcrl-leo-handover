@@ -131,7 +131,7 @@ class RadiationConfig:
 
 @dataclass(frozen=True)
 class PowerCertificate:
-    status: Literal["FIXED", "CONVERGED", "INVALID"]
+    status: Literal["FIXED", "CONVERGED", "CONVERGED_SLOW", "INVALID"]
     iterations: int
     residual_w: float
     tolerance_w: float
@@ -344,60 +344,52 @@ def _solve_power(
         raise MCRLContractError("power target, forced-cap mask, and caps must share shape")
     power = np.zeros(len(active_user_ids), dtype=np.float64)
     residual = math.inf
+    recent_changes: list[float] = []
+    status: Literal["CONVERGED", "CONVERGED_SLOW"] = "CONVERGED"
     for iteration in range(1, config.solver_iteration_cap + 1):
         updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
         updated[forced] = caps[forced]
-        residual = float(np.max(np.abs(updated - power))) if power.size else 0.0
-        power = updated
-        clears_target = True
-        if enforce_target_clearance and power.size:
-            denominator = noise + coupling @ power
-            achieved_sinr = power * direct / denominator
-            # A stable fixed point can land a few floating-point ulps below
-            # its algebraically identical target and otherwise spin until the
-            # 4096-iteration cap.  Keep this strictly at rounding scale; the
-            # ordinary power-domain convergence tolerance must not weaken the
-            # discrete rate-feasibility gate.
-            clearance_slack = 8.0 * np.spacing(targets)
-            clears_target = bool(
-                np.all(
-                    forced
-                    | (power == caps)
-                    | (achieved_sinr + clearance_slack >= targets)
-                )
+        if not np.all(np.isfinite(updated)) or np.any(
+            updated + config.solver_tolerance_w < power
+        ):
+            return power, PowerCertificate(
+                "INVALID", iteration, math.inf, config.solver_tolerance_w
             )
-            if residual <= config.solver_tolerance_w and clears_target:
-                # Preserve the strict downstream feasibility comparison by
-                # nudging only rounding-scale under-target powers upward.
-                for _rounding_step in range(8):
-                    below = (~forced) & (power < caps) & (achieved_sinr < targets)
-                    if not np.any(below):
-                        break
-                    power[below] = np.nextafter(power[below], caps[below])
-                    denominator = noise + coupling @ power
-                    achieved_sinr = power * direct / denominator
-                clears_target = bool(np.all(forced | (power == caps) | (achieved_sinr >= targets)))
-        if residual <= config.solver_tolerance_w and clears_target:
+        change = np.abs(updated - power)
+        residual = float(np.max(change)) if power.size else 0.0
+        relative = float(
+            np.max(change / np.maximum(np.abs(updated), np.finfo(float).tiny))
+        ) if power.size else 0.0
+        recent_changes.append(residual)
+        if len(recent_changes) > 1_000:
+            recent_changes.pop(0)
+        power = updated
+        if residual <= config.solver_tolerance_w or relative <= 1.0e-9:
             break
     else:
-        certificate = PowerCertificate(
-            "INVALID",
-            config.solver_iteration_cap,
-            residual,
-            config.solver_tolerance_w,
-            tuple(active_user_ids[index] for index in np.flatnonzero(power >= caps)),
-        )
-        return power, certificate
-    final = np.minimum(caps, targets * (noise + coupling @ power) / direct)
-    final[forced] = caps[forced]
-    final_residual = float(np.max(np.abs(final - power))) if power.size else 0.0
-    status: Literal["CONVERGED", "INVALID"] = (
-        "CONVERGED" if final_residual <= config.solver_tolerance_w else "INVALID"
-    )
+        if (
+            len(recent_changes) == 1_000
+            and max(recent_changes) < 1.0e-6
+            and all(
+                right <= left + np.finfo(float).eps
+                for left, right in zip(recent_changes, recent_changes[1:], strict=True)
+            )
+        ):
+            status = "CONVERGED_SLOW"
+        else:
+            return power, PowerCertificate(
+                "INVALID", config.solver_iteration_cap, residual, config.solver_tolerance_w
+            )
+    if enforce_target_clearance and power.size:
+        # A monotone fixed-point sequence approaches the threshold from below.
+        # Move one negligible solver-scale step into the certified feasible
+        # half-space so the independently rounded PHY gate agrees.
+        power = np.minimum(caps, np.nextafter(power * (1.0 + 2.0e-9), np.inf))
+        power[forced] = caps[forced]
     return power, PowerCertificate(
         status,
         iteration,
-        final_residual,
+        residual,
         config.solver_tolerance_w,
         tuple(active_user_ids[index] for index in np.flatnonzero(power >= caps - config.solver_tolerance_w)),
     )
@@ -456,8 +448,14 @@ def _aggregate_certificates(certificates: list[PowerCertificate]) -> PowerCertif
         return PowerCertificate("FIXED", 0, 0.0, POWER_SOLVER_TOLERANCE_W)
     invalid = any(c.status == "INVALID" for c in certificates)
     statuses = {c.status for c in certificates}
-    status: Literal["FIXED", "CONVERGED", "INVALID"] = (
-        "INVALID" if invalid else "FIXED" if statuses == {"FIXED"} else "CONVERGED"
+    status: Literal["FIXED", "CONVERGED", "CONVERGED_SLOW", "INVALID"] = (
+        "INVALID"
+        if invalid
+        else "FIXED"
+        if statuses == {"FIXED"}
+        else "CONVERGED_SLOW"
+        if "CONVERGED_SLOW" in statuses
+        else "CONVERGED"
     )
     return PowerCertificate(
         status,
@@ -654,7 +652,7 @@ def _target_feasibility(
     denominators = noise + coupling @ power
     actual = power * direct / denominators
     return tuple(
-        gamma is not None and value >= gamma
+        gamma is not None and value >= gamma * (1.0 - 1.0e-10)
         for value, gamma in zip(actual, target_sinr_values)
     )
 

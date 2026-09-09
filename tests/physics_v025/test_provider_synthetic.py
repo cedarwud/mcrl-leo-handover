@@ -78,6 +78,19 @@ def test_provider_and_tape_digests_are_deterministic() -> None:
     assert tape_a.seed == seed_from_domain(domain)
 
 
+def test_provider_supplies_stage4b_protocol_and_per_chain_cross_gains() -> None:
+    provider = ParametricSyntheticProvider(1.5, 2, -12.0, 10)
+    protocol = provider.protocol_outputs(world_seed=7)
+    assert protocol.split == "TRAIN"
+    boundary = provider.boundary(
+        world_seed=7, step_index=0, boundary_index=0, absolute_time_s=435.0
+    )
+    expected = tuple(sorted(provider.inventory(world_seed=7)))
+    for candidate in boundary.candidates:
+        assert tuple(identity for identity, _gain in candidate.nominal_cross_gain_by_identity) == expected
+        assert tuple(identity for identity, _gain in candidate.realised_cross_gain_by_identity) == expected
+
+
 def test_rate_target_fixed_point_accepts_power_tolerance_scale_clearance() -> None:
     """KAT for the large-world ulp-at-clearance iteration-cap pathology."""
 

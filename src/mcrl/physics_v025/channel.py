@@ -12,7 +12,7 @@ import math
 import numpy as np
 
 from mcrl.errors import MCRLContractError
-from mcrl.runtime.bessel import bessel_j_array, bessel_j_miller
+from mcrl.runtime.bessel import _miller_array, bessel_j_array, bessel_j_miller
 
 from .constants_v025 import (
     BOLTZMANN_J_PER_K,
@@ -105,12 +105,19 @@ def transmit_gain_linear(theta_deg: np.ndarray | float) -> np.ndarray:
     # The historical ascending series is already measurably inaccurate at
     # mu=34.  Route the new engine to stable Miller recursion from mu>=20;
     # keep the vectorised series only in its well-conditioned main-lobe range.
-    j1, j3 = bessel_j_array((1, 3), safe)
     stable = np.abs(safe) >= 20.0
+    j1 = np.empty_like(safe)
+    j3 = np.empty_like(safe)
+    if np.any(~stable):
+        series_rows = bessel_j_array((1, 3), safe[~stable])
+        j1[~stable] = series_rows[0]
+        j3[~stable] = series_rows[1]
     if np.any(stable):
         stable_values = safe[stable]
-        j1[stable] = np.asarray([bessel_j_miller(1, float(value)) for value in stable_values])
-        j3[stable] = np.asarray([bessel_j_miller(3, float(value)) for value in stable_values])
+        stable_rows = _miller_array((1, 3), np.abs(stable_values))
+        signs = np.where(stable_values < 0.0, -1.0, 1.0)
+        j1[stable] = stable_rows[0] * signs
+        j3[stable] = stable_rows[1] * signs
     bracket = j1 / (2.0 * safe) + 36.0 * j3 / safe**3
     result = TX_G0_LINEAR * bracket**2
     result[on_axis] = TX_G0_LINEAR
@@ -244,6 +251,66 @@ def keyed_fading_gain(
     return rician * 10.0 ** (-(shadow_db + deterministic_loss_db) / 10.0)
 
 
+def _splitmix64(values: np.ndarray) -> np.ndarray:
+    """Vectorisable stateless 64-bit mixer used for keyed boundary tapes."""
+
+    with np.errstate(over="ignore"):
+        values = values + np.uint64(0x9E3779B97F4A7C15)
+        values = (values ^ (values >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+        values = (values ^ (values >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    return values ^ (values >> np.uint64(31))
+
+
+def _keyed_uniform(base: np.ndarray, stream: int) -> np.ndarray:
+    mixed = _splitmix64(base ^ np.uint64(stream))
+    return ((mixed >> np.uint64(11)).astype(np.float64) + 0.5) * (2.0 ** -53)
+
+
+def _keyed_normal(base: np.ndarray, stream: int) -> np.ndarray:
+    first = _keyed_uniform(base, stream)
+    second = _keyed_uniform(base, stream ^ 0xD1B54A32D192ED03)
+    return np.sqrt(-2.0 * np.log(first)) * np.cos(2.0 * np.pi * second)
+
+
+def keyed_fading_gain_array(
+    *,
+    world: int,
+    user: np.ndarray,
+    norad: np.ndarray,
+    absolute_time_ns: np.ndarray,
+    elevation_deg: np.ndarray,
+) -> np.ndarray:
+    """Dense counterpart of :func:`keyed_fading_gain` for provider tapes."""
+
+    elevation = np.asarray(elevation_deg, dtype=np.float64)
+    if not np.all(np.isfinite(elevation)) or np.any((elevation < -90.0) | (elevation > 90.0)):
+        raise MCRLContractError("elevation must be finite and in [-90,90] degrees")
+    user_values, norad_values, times, elevation = np.broadcast_arrays(
+        np.asarray(user, dtype=np.uint64),
+        np.asarray(norad, dtype=np.uint64),
+        np.asarray(absolute_time_ns, dtype=np.uint64),
+        elevation,
+    )
+    with np.errstate(over="ignore"):
+        base = (
+            np.uint64(world)
+            ^ (user_values * np.uint64(0x9E3779B185EBCA87))
+            ^ (norad_values * np.uint64(0xC2B2AE3D27D4EB4F))
+            ^ (times * np.uint64(0x165667B19E3779F9))
+        )
+    shadow_z = _keyed_normal(base, 0x243F6A8885A308D3)
+    real_z = _keyed_normal(base, 0x13198A2E03707344)
+    imaginary_z = _keyed_normal(base, 0xA4093822299F31D0)
+    k_linear = 10.0 ** (RICIAN_K_FACTOR_DB / 10.0)
+    los = math.sqrt(k_linear / (k_linear + 1.0))
+    sigma = math.sqrt(1.0 / (2.0 * (k_linear + 1.0)))
+    rician = (los + sigma * real_z) ** 2 + (sigma * imaginary_z) ** 2
+    shadow_db = shadow_sigma_db(elevation) * shadow_z
+    return rician * 10.0 ** (
+        -(shadow_db + scintillation_loss_db(elevation)) / 10.0
+    )
+
+
 def is_visible(elevation_deg: float) -> bool:
     """The live V0.25 visibility contract uses the wired 10-degree floor."""
 
@@ -257,6 +324,7 @@ __all__ = [
     "free_space_path_gain",
     "keyed_component_seed",
     "keyed_fading_gain",
+    "keyed_fading_gain_array",
     "interference_receive_gain_linear",
     "is_visible",
     "noise_power_w",

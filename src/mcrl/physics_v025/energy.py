@@ -90,6 +90,7 @@ def interval_energy(
     *,
     idle_power_w: float = PRIMARY_IDLE_POWER_W,
     bus_power_w: float = P_BUS_W,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
 ) -> EnergyReceipt:
     """Evaluate the declared physical-inventory formula for one interval."""
 
@@ -97,6 +98,8 @@ def interval_energy(
         raise MCRLContractError("interval duration must be finite and nonnegative")
     if not math.isfinite(idle_power_w) or idle_power_w < 0.0:
         raise MCRLContractError("idle power must be finite and nonnegative")
+    if not math.isfinite(circuit_power_per_active_chain_w) or circuit_power_per_active_chain_w < 0.0:
+        raise MCRLContractError("active-chain circuit power must be finite and nonnegative")
     if bus_power_w != 0.0:
         raise MCRLContractError("V0.25 stage-1 endpoint declares P_bus=0 exclusion")
     inventory_set = set(inventory.chains)
@@ -108,14 +111,25 @@ def interval_energy(
     duration = interval.duration_s
     pa_j = circuit_j = standby_j = 0.0
     active_satellites: set[int] = set()
-    for identity in inventory.chains:
-        rf = float(interval.beam_rf_w.get(identity, 0.0))
+    active_by_satellite: dict[int, int] = {}
+    for identity, raw_rf in interval.beam_rf_w.items():
+        rf = float(raw_rf)
         if rf > 0.0:
             active_satellites.add(identity[0])
+            active_by_satellite[identity[0]] = active_by_satellite.get(identity[0], 0) + 1
             pa_j += max(idle_power_w, pa_supply_power_w(rf)) * duration
-            circuit_j += CIRCUIT_POWER_PER_CHAIN_W * duration
-        else:
-            standby_j += idle_power_w * duration
+            circuit_j += circuit_power_per_active_chain_w * duration
+    if idle_power_w > 0.0:
+        # Sensitivity-only physical census: every represented satellite owns
+        # 12 RF chains, independent of the number of realisable earth cells.
+        represented_satellites = {identity[0] for identity in inventory.chains}
+        if any(active_by_satellite.get(satellite, 0) > 12 for satellite in represented_satellites):
+            raise MCRLContractError("active beams exceed the declared 12-chain satellite census")
+        idle_chains = sum(
+            12 - active_by_satellite.get(satellite, 0)
+            for satellite in represented_satellites
+        )
+        standby_j = idle_chains * idle_power_w * duration
     baseband_j = len(active_satellites) * BASEBAND_POWER_PER_ACTIVE_SATELLITE_W * duration
     receipt = EnergyReceipt(
         math.fsum((pa_j, circuit_j, standby_j, baseband_j)),
@@ -135,6 +149,7 @@ def schedule_energy(
     *,
     duration_s: float,
     idle_power_w: float = PRIMARY_IDLE_POWER_W,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
 ) -> EnergyReceipt:
     """Integrate a slot schedule, preserving nonlinear PA averaging."""
 
@@ -148,6 +163,7 @@ def schedule_energy(
             inventory,
             EnergyInterval(duration_s * fraction, beam_rf),
             idle_power_w=idle_power_w,
+            circuit_power_per_active_chain_w=circuit_power_per_active_chain_w,
         )
         for fraction, beam_rf in schedule
     ]

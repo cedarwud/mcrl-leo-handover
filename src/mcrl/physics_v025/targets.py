@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
+import itertools
 import math
 from typing import Callable, Iterable, Literal, Mapping, Sequence
 
@@ -166,6 +167,8 @@ def c1_difference_surplus(
         kappa_bits_per_user_s=kappa_bits_per_user_s,
     )
     core = (candidate.bits - default.bits) - eta * (candidate.joules - default.joules)
+    # Phi_1=.5 and Phi_2=1 are prices in κ-bit units.  Dividing the physical
+    # surplus by κ and then adding Phi therefore keeps the target dimensionless.
     phi = candidate.phi - default.phi
     return C1Label(core, phi, core / kappa + phi)
 
@@ -252,6 +255,7 @@ def c2_persistence_forecast(
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
     kappa_bits_per_user_s: int | float | str | Fraction,
+    horizon_offsets: int = FORECAST_OFFSETS,
 ) -> C2Label:
     """OPS-3-style absorbing persistence with one -kappa per lost offset.
 
@@ -266,6 +270,8 @@ def c2_persistence_forecast(
         kappa_bits_per_user_s=kappa_bits_per_user_s,
     )
     candidate_rows, default_rows = tuple(candidate), tuple(default)
+    if horizon_offsets not in {1, 2, FORECAST_OFFSETS}:
+        raise MCRLContractError("C2 horizon sensitivity must use the first 1, 2, or 3 offsets")
     if len(candidate_rows) != FORECAST_OFFSETS or len(default_rows) != FORECAST_OFFSETS:
         raise MCRLContractError("C2 requires exactly three candidate and default projections")
     if tuple(row.offset_index for row in candidate_rows) != (1, 2, 3):
@@ -276,7 +282,9 @@ def c2_persistence_forecast(
     core = Fraction()
     lost = 0
     retained: list[OffsetProjection] = []
-    for selected, baseline in zip(candidate_rows, default_rows, strict=True):
+    for selected, baseline in zip(
+        candidate_rows[:horizon_offsets], default_rows[:horizon_offsets], strict=True
+    ):
         if not selected.background_power_recomputed or not baseline.background_power_recomputed:
             raise MCRLContractError("C2 projection did not recompute background powers")
         if alive:
@@ -311,7 +319,6 @@ def c3_lcsrs_interaction(
     f10: NetworkOutcome,
     f01: NetworkOutcome,
     f11: NetworkOutcome,
-    externality_e_by_user: Mapping[int, int | float | str | Fraction],
     lambda_bits_per_j: int | float | str | Fraction,
     eta_ref: int | float | str | Fraction,
     kappa_bits_per_user_s: int | float | str | Fraction,
@@ -319,8 +326,8 @@ def c3_lcsrs_interaction(
     """Declared LC-SRS two-user interaction Psi on one network objective F."""
 
     users = tuple(int(user) for user in coalition_users)
-    if len(users) != 2 or len(set(users)) != 2 or set(users) != set(externality_e_by_user):
-        raise MCRLContractError("LC-SRS interaction requires exactly two coalition users/e_i values")
+    if len(users) != 2 or len(set(users)) != 2:
+        raise MCRLContractError("LC-SRS pair interaction requires exactly two users")
     values = tuple(
         network_objective(
             outcome,
@@ -331,8 +338,231 @@ def c3_lcsrs_interaction(
         for outcome in (f00, f10, f01, f11)
     )
     psi = values[3] - values[1] - values[2] + values[0]
-    z3 = tuple((user, exact(externality_e_by_user[user]) + psi / 2) for user in users)
+    # Whole-network C1 already owns every unilateral bit and joule change.
+    # C3 owns interaction only; no historical own-bits C1 externality term.
+    z3 = tuple((user, psi / 2) for user in users)
     return C3Interaction(*values, psi, z3)
+
+
+@dataclass(frozen=True)
+class C3SetInteraction:
+    """Shapley allocation of interaction beyond the singleton baseline."""
+
+    coalition_users: tuple[int, ...]
+    set_interaction: Fraction
+    z3_by_user: tuple[tuple[int, Fraction], ...]
+
+
+def c3_set_interaction(
+    *,
+    coalition_users: Sequence[int],
+    outcomes_by_subset: Mapping[frozenset[int], NetworkOutcome],
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_s: int | float | str | Fraction,
+) -> C3SetInteraction:
+    """Allocate a set interaction with exact Shapley arithmetic.
+
+    The characteristic value is complete ``F`` for every subset.  We subtract
+    each singleton's baseline marginal from its Shapley value, leaving only
+    interaction credit.  The credits sum exactly to
+    ``F(S)-F(∅)-Σ_i(F({i})-F(∅))``; for a pair this reduces to Ψ/2 each.
+    """
+
+    users = tuple(int(user) for user in coalition_users)
+    if len(users) < 2 or len(set(users)) != len(users):
+        raise MCRLContractError("set interaction needs at least two unique users")
+    expected = {
+        frozenset(subset)
+        for size in range(len(users) + 1)
+        for subset in itertools.combinations(users, size)
+    }
+    if set(outcomes_by_subset) != expected:
+        raise MCRLContractError("set interaction needs every coalition subset exactly once")
+    values = {
+        subset: network_objective(
+            outcome,
+            lambda_bits_per_j=lambda_bits_per_j,
+            eta_ref=eta_ref,
+            kappa_bits_per_user_s=kappa_bits_per_user_s,
+        )
+        for subset, outcome in outcomes_by_subset.items()
+    }
+    empty = values[frozenset()]
+    full = values[frozenset(users)]
+    interaction = full - empty - sum(
+        (values[frozenset((user,))] - empty for user in users), Fraction()
+    )
+    factorial = math.factorial
+    n = len(users)
+    credits = []
+    for user in users:
+        others = tuple(value for value in users if value != user)
+        shapley = Fraction()
+        for size in range(n):
+            weight = Fraction(factorial(size) * factorial(n - size - 1), factorial(n))
+            for subset_tuple in itertools.combinations(others, size):
+                subset = frozenset(subset_tuple)
+                shapley += weight * (
+                    values[subset | {user}] - values[subset]
+                )
+        singleton = values[frozenset((user,))] - empty
+        credits.append((user, shapley - singleton))
+    if sum((credit for _, credit in credits), Fraction()) != interaction:
+        raise MCRLContractError("Shapley interaction credits do not conserve set interaction")
+    return C3SetInteraction(users, interaction, tuple(credits))
+
+
+@dataclass(frozen=True)
+class SetScoreDecomposition:
+    """Executable v1.5 decomposition of one complete changed-user set.
+
+    ``d_by_user``, ``interaction_bits`` and ``joint_change_bits`` are in the
+    physical F units (bits at the frozen energy price). ``c1`` and ``c3`` are
+    the dimensionless physical identity terms; ``factor_c1`` adds the separate
+    dimensionless Phi preference for the factor-arm selector.
+    """
+
+    coalition_users: tuple[int, ...]
+    d_by_user: tuple[tuple[int, Fraction], ...]
+    interaction_bits: Fraction
+    shapley_interaction_by_user: tuple[tuple[int, Fraction], ...]
+    joint_change_bits: Fraction
+    phi_difference: Fraction
+    c1: Fraction
+    c3: Fraction
+
+    @property
+    def factor_c1(self) -> Fraction:
+        """C1 selector value: exact physical singleton core plus Phi."""
+
+        return self.c1 + self.phi_difference
+
+
+def set_score_decomposition(
+    *,
+    coalition_users: Sequence[int],
+    outcomes_by_subset: Mapping[frozenset[int], NetworkOutcome],
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_s: int | float | str | Fraction,
+    phi_difference: int | float | str | Fraction = 0,
+) -> SetScoreDecomposition:
+    """Compute d_i, Psi_A and exact Shapley interaction credit.
+
+    The complete powerset is required deliberately: a missing counterfactual
+    is an invalid certificate, never an inferred zero interaction.  For an
+    empty changed set the decomposition is the exact zero/base identity.
+    """
+
+    users = tuple(sorted(int(user) for user in coalition_users))
+    if len(set(users)) != len(users):
+        raise MCRLContractError("set-score coalition users must be unique")
+    expected = {
+        frozenset(subset)
+        for size in range(len(users) + 1)
+        for subset in itertools.combinations(users, size)
+    }
+    if set(outcomes_by_subset) != expected:
+        raise MCRLContractError("set-score decomposition needs the complete powerset")
+    eta, kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_s=kappa_bits_per_user_s,
+    )
+    phi = exact(phi_difference)
+    values = {
+        subset: outcome.bits - eta * outcome.joules
+        for subset, outcome in outcomes_by_subset.items()
+    }
+    base = values[frozenset()]
+    d_by_user = tuple(
+        (user, values[frozenset((user,))] - base) for user in users
+    )
+    joint = values[frozenset(users)] - base
+    interaction = joint - sum((value for _user, value in d_by_user), Fraction())
+    if len(users) < 2:
+        credits = tuple((user, Fraction()) for user in users)
+    else:
+        allocated = c3_set_interaction(
+            coalition_users=users,
+            outcomes_by_subset=outcomes_by_subset,
+            lambda_bits_per_j=lambda_bits_per_j,
+            eta_ref=eta_ref,
+            kappa_bits_per_user_s=kappa_bits_per_user_s,
+        )
+        credits = allocated.z3_by_user
+    if sum((value for _user, value in credits), Fraction()) != interaction:
+        raise MCRLContractError("set-score Shapley credits do not conserve Psi_A")
+    c1 = sum((value for _user, value in d_by_user), Fraction()) / kappa
+    c3 = interaction / kappa
+    if c1 + c3 != joint / kappa:
+        raise MCRLContractError("C1 + C3 does not equal the complete F change")
+    return SetScoreDecomposition(
+        users,
+        d_by_user,
+        interaction,
+        credits,
+        joint,
+        phi,
+        c1,
+        c3,
+    )
+
+
+@dataclass(frozen=True)
+class MatchedAnchorDecomposition:
+    eta0: Fraction
+    additive: Fraction
+    interaction: Fraction
+    joint_change: Fraction
+    denominator: Fraction
+    g_additive: Fraction
+    g_interaction: Fraction
+
+
+def matched_anchor_decomposition(
+    *,
+    base: Sequence[NetworkOutcome],
+    selected: Sequence[NetworkOutcome],
+    singleton_selected: Sequence[Sequence[NetworkOutcome]],
+) -> MatchedAnchorDecomposition:
+    """Pooled matched-anchor A/I decomposition with no clipping."""
+
+    base_rows, selected_rows = tuple(base), tuple(selected)
+    singleton_rows = tuple(tuple(rows) for rows in singleton_selected)
+    if not base_rows or len(base_rows) != len(selected_rows) or any(
+        len(rows) != len(base_rows) for rows in singleton_rows
+    ):
+        raise MCRLContractError("matched-anchor profiles must have the same nonzero length")
+    base_bits = sum((row.bits for row in base_rows), Fraction())
+    base_energy = sum((row.joules for row in base_rows), Fraction())
+    selected_energy = sum((row.joules for row in selected_rows), Fraction())
+    if base_energy <= 0 or selected_energy <= 0:
+        raise MCRLContractError("matched-anchor energy denominators must be positive")
+    eta0 = base_bits / base_energy
+    f0 = tuple(row.bits - eta0 * row.joules for row in base_rows)
+    fstar = tuple(row.bits - eta0 * row.joules for row in selected_rows)
+    additive = sum(
+        (
+            (row.bits - eta0 * row.joules) - f0[index]
+            for rows in singleton_rows
+            for index, row in enumerate(rows)
+        ),
+        Fraction(),
+    )
+    joint = sum((fstar[index] - f0[index] for index in range(len(f0))), Fraction())
+    interaction = joint - additive
+    denominator = eta0 * selected_energy
+    return MatchedAnchorDecomposition(
+        eta0,
+        additive,
+        interaction,
+        joint,
+        denominator,
+        additive / denominator,
+        interaction / denominator,
+    )
 
 
 def assert_reward_core_identity(
@@ -361,15 +591,21 @@ __all__ = [
     "C1Label",
     "C2Label",
     "C3Interaction",
+    "C3SetInteraction",
+    "SetScoreDecomposition",
     "HandoverEvent",
     "NetworkOutcome",
+    "MatchedAnchorDecomposition",
     "OffsetProjection",
     "assert_reward_core_identity",
     "c1_difference_surplus",
     "c2_persistence_forecast",
     "c3_lcsrs_interaction",
+    "c3_set_interaction",
+    "set_score_decomposition",
     "classify_physical_transition",
     "network_objective",
+    "matched_anchor_decomposition",
     "phi_qos",
     "project_three_offsets",
 ]

@@ -105,6 +105,7 @@ class CalibrationValues:
     bits_ref: Fraction
     joules_ref: Fraction
     users: int
+    decision_steps_ref: int
     time_ref_s: Fraction
     world_domains: tuple[str, ...]
     selection_ids: tuple[str, ...]
@@ -115,12 +116,21 @@ class CalibrationValues:
             eta_ref=self.eta_ref,
             kappa_bits_per_user_s=self.kappa_bits_per_user_s,
         )
-        if self.bits_ref <= 0 or self.joules_ref <= 0 or self.users <= 0 or self.time_ref_s <= 0:
+        if (
+            self.bits_ref <= 0
+            or self.joules_ref <= 0
+            or self.users <= 0
+            or type(self.decision_steps_ref) is not int
+            or self.decision_steps_ref <= 0
+            or self.time_ref_s <= 0
+        ):
             raise MCRLContractError("frozen calibration totals must be positive")
         if self.eta_ref != self.bits_ref / self.joules_ref:
             raise MCRLContractError("eta_ref is not B_ref/E_ref")
-        if self.kappa_bits_per_user_s != self.bits_ref / (self.users * self.time_ref_s):
-            raise MCRLContractError("kappa is not B_ref/(U*T_ref)")
+        if self.kappa_bits_per_user_s != self.bits_ref / (
+            self.users * self.decision_steps_ref
+        ):
+            raise MCRLContractError("kappa is not B_ref/(U*N_ref)")
         if set(self.world_domains) != set(CALIBRATION_WORLD_DOMAINS):
             raise MCRLContractError("calibration must use exactly the two disjoint V025_CAL worlds")
 
@@ -130,7 +140,7 @@ class CalibrationValues:
 
     def payload(self) -> dict[str, object]:
         return {
-            "schema": "mcrl-v025-setting-calibration-v1",
+            "schema": "mcrl-v025-setting-calibration-v2-user-step",
             "setting_label": self.setting_label,
             "setting_sha256": self.setting_digest,
             "eta_ref": [self.eta_ref.numerator, self.eta_ref.denominator],
@@ -145,6 +155,7 @@ class CalibrationValues:
             "bits_ref": [self.bits_ref.numerator, self.bits_ref.denominator],
             "joules_ref": [self.joules_ref.numerator, self.joules_ref.denominator],
             "users": self.users,
+            "decision_steps_ref": self.decision_steps_ref,
             "time_ref_s": [self.time_ref_s.numerator, self.time_ref_s.denominator],
             "world_domains": list(self.world_domains),
             "selection_ids": list(self.selection_ids),
@@ -171,6 +182,7 @@ class CalibrationValues:
                 ratio("bits_ref"),
                 ratio("joules_ref"),
                 int(payload["users"]),
+                int(payload["decision_steps_ref"]),
                 ratio("time_ref_s"),
                 tuple(str(value) for value in payload["world_domains"]),  # type: ignore[index]
                 tuple(str(value) for value in payload["selection_ids"]),  # type: ignore[index]
@@ -219,7 +231,14 @@ def freeze_setting_calibration(
     joules = sum((row.joules for row in rows), Fraction())
     time_s = sum((row.time_s for row in rows), Fraction())
     user_count = next(iter(users))
-    eta_ref, kappa = calibration(bits, joules, users=user_count, time_s=time_s)
+    decision_steps = len(rows)
+    eta_ref, kappa = calibration(
+        bits,
+        joules,
+        users=user_count,
+        decision_steps=decision_steps,
+        time_s=time_s,
+    )
     return CalibrationValues(
         setting.label,
         setting.digest,
@@ -229,6 +248,7 @@ def freeze_setting_calibration(
         bits,
         joules,
         user_count,
+        decision_steps,
         time_s,
         tuple(row.world_domain for row in rows),
         tuple(row.selected_configuration_id for row in rows),
@@ -261,6 +281,16 @@ def assert_calibration_world_separation(
     probe_domains = {tape.domain for tape in probe_tapes}
     if calibration_domains != set(CALIBRATION_WORLD_DOMAINS) or calibration_domains & probe_domains:
         raise MCRLContractError("calibration worlds are incomplete or overlap probe worlds")
+    calibration_clusters = {
+        (tape.tle_date, digest_payload([row.payload() for row in tape.user_layout]))
+        for tape in calibration_tapes
+    }
+    probe_clusters = {
+        (tape.tle_date, digest_payload([row.payload() for row in tape.user_layout]))
+        for tape in probe_tapes
+    }
+    if calibration_clusters & probe_clusters:
+        raise MCRLContractError("calibration and probe providers map to a colliding date/layout cluster")
 
 
 __all__ = [
