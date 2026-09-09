@@ -7331,3 +7331,1979 @@ codex
 The source equation does disambiguate the symbol: at \(\theta=\theta_{3dB}\), its normalized pattern evaluates to \(0.5000004083\), i.e. \(-3.0103\) dB. Thus `0.058 rad` is a one-sided off-boresight half-power angle, while the requested sweep remains a design-parameter sensitivity with boresight gain and every other constant held fixed.
 
 The preliminary network harness is suitable in structure (real detached world tapes, exact iterated best responses, bounded set catalogue, 48-boundary committed scoring), but it only accepts the old two-point full-span inputs. I’m changing only that diagnostic copy so its public input is the unambiguous one-sided angle and it accepts all five declared points.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/run_beamwidth_network.py
+/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/spec.md
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+exec
+/bin/bash -lc 'git diff -- .scratch/beamwidth/run_beamwidth_network.py .scratch/beamwidth/spec.md; nice -n 12 env PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 /home/sat/mcrl-leo-handover/.venv/bin/python -m py_compile .scratch/beamwidth/run_beamwidth_network.py; nice -n 12 env PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/beamwidth/run_beamwidth_network.py --self-test --one-sided-hp-deg 3.32' in /home/sat/mcrl-v025-beam-ws
+ succeeded in 2422ms:
+{"completed_improving_moves": 1, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 1, "unique_selection_evaluations": 336}
+{"anchor": "V025_PROBE_R2/world/1:step/0", "joint_candidates": 2, "oracle_ee_gain_pct": null, "qualifying": true, "unilateral_iterations": 1, "wall_seconds": 0.6426382170175202}
+{
+  "anchor_count": 1,
+  "exact_evaluation_count": {
+    "committed_boundary_evaluations": 144,
+    "committed_unique_configurations": 3,
+    "joint_unique_candidates": 2,
+    "selection_boundary_evaluations": 576,
+    "unilateral_candidate_comparisons": 12,
+    "unique_selection_configurations": 576
+  },
+  "oracle_set_over_unilateral_relative": null,
+  "pooled": {
+    "BASELINE": {
+      "bits": 0.0,
+      "ee_bit_per_j": 0.0,
+      "interference_structure": {
+        "infeasible_user_steps": 0,
+        "interference_limited_share_of_infeasible": null,
+        "interference_limited_user_steps": 0,
+        "top1_aggressor_share": null,
+        "user_steps": 3,
+        "weighted_top1_interference_w": 0.0,
+        "weighted_total_interference_w": 0.0
+      },
+      "joules": 407.461676677733,
+      "served_count_sum": 0
+    },
+    "ORACLE_SET": {
+      "bits": 0.0,
+      "ee_bit_per_j": 0.0,
+      "interference_structure": {
+        "infeasible_user_steps": 3,
+        "interference_limited_share_of_infeasible": 0.0,
+        "interference_limited_user_steps": 0,
+        "top1_aggressor_share": null,
+        "user_steps": 3,
+        "weighted_top1_interference_w": 0.0,
+        "weighted_total_interference_w": 0.0
+      },
+      "joules": 297.1505707501123,
+      "served_count_sum": 0
+    },
+    "UNILATERAL": {
+      "bits": 0.0,
+      "ee_bit_per_j": 0.0,
+      "interference_structure": {
+        "infeasible_user_steps": 1,
+        "interference_limited_share_of_infeasible": 0.0,
+        "interference_limited_user_steps": 0,
+        "top1_aggressor_share": null,
+        "user_steps": 3,
+        "weighted_top1_interference_w": 0.0,
+        "weighted_total_interference_w": 0.0
+      },
+      "joules": 351.37564380610496,
+      "served_count_sum": 0
+    }
+  },
+  "qualifying_coalition_anchor_count": 1,
+  "unilateral_over_baseline_relative": null,
+  "world_count": 1
+}
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+The diagnostic self-test passes after the interface change. I’m starting the real sweep now: five one-sided angles × eight anchors (two independent real worlds, four time anchors each), sequential across widths, with two evaluation workers plus the controller process and single-threaded math libraries. I’ll preserve one JSON receipt per point and poll the run frequently.
+exec
+/bin/bash -lc 'set -euo pipefail
+for hp in 1.66 2.40 3.32 4.50 6.65; do
+  nice -n 12 env PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/beamwidth/run_beamwidth_network.py --worlds 2 --anchors-per-world 4 --one-sided-hp-deg "$hp" --output ".scratch/beamwidth/sweep-one-sided-${hp}.json"
+done' in /home/sat/mcrl-v025-beam-ws
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+The sweep is running cleanly. The first point is in its iterated-unilateral search; no sealed files are being touched, and each width is written only after all eight anchors finish.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+Anchor 1/40 is complete. At the current-model point (1.66° one-sided), the first anchor shows positive oracle-over-unilateral headroom; that is only an interim anchor result, not the pooled curve.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+The selector is converging deterministically through full passes: anchors 1 and 2 at 1.66° completed with 4.80% and 5.66% local headroom. The eventual report will use pooled bits divided by pooled joules, not average these percentages.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+Three anchors are complete; the fourth is in its terminal certification pass. The bounded oracle catalogue is staying below its fixed 4,096-candidate cap (roughly 900–1,100 unique set candidates so far).
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+World 1 is complete at the first width; world 2 is underway. The fourth anchor’s larger catalogue (1,467 candidates) remained within the declared bound and produced the longest anchor time so far, about 78 seconds.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+Six of eight anchors are complete at 1.66°. Both worlds use fixed domain IDs and deterministic seeds, so the exact same world/time anchor panel will be reconstructed at each later width; only the runtime copy of the channel module’s full-span value changes.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+Seven anchors are complete. All seven have found a qualifying set move beyond the converged unilateral configuration, but the local gains vary substantially; the pooled ratio and the cross-width shape remain the relevant outputs.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+The 1.66° one-sided point is complete on eight anchors: pooled coordination headroom is 6.50%. Its receipt is saved. The 2.40° point has now started; I’m withholding the full metric table until all points use the matched panel.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
