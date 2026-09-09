@@ -1,0 +1,12 @@
+# Stage C build 4 (gpt-5.6-sol, high effort): make the production `EvaluationRunner` the only path — timer, schema binding, S3 authentication, T1–T3 as executed production runs; apply contract v1.1
+
+Continue in `/home/sat/mcrl-v025-codex-ws-stagec` on top of build 3 (same constraints; the controller commits). Read `/home/sat/mcrl-v023-codex-audits/parallel-20260908/STAGEC-BUILD3-AUDIT-2026-09-08.md` (`BUILD3=NOT_READY: S3 checkpoint/context authentication, experiment execution binding, T1–T3 contract gaps, runner timer, provenance and H gate; IMPLEMENTED 10/28; T1/T2/T3 FAIL as production-path tests`) and `V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md` (16 learner seeds; measured calibration; copied into your workspace root by the launcher).
+
+Definition of done for this build (the auditor's, adopted verbatim): **every acceptance test is one executed run of the production `EvaluationRunner` from raw rows to receipts to `merge_receipts` to the claim decision** — no helper path, no selector wrapper called directly, no pre-aggregated totals.
+1. **Runner timer:** `EvaluationRunner` itself owns the coordinator deadline: process-based worker, kill on timeout, validated BASE executed, miss recorded in the receipt; T2 injects the slow coordinator through the runner (not through `ProfileSelector.select_timed`).
+2. **Experiment execution binding:** the four experiment schemas bind allocation → execution → receipts → merge; the oracle tests may not reuse checkpoint-knockout machinery; a mislabelled or cross-wired run is rejected at execution time (KAT through the runner).
+3. **S3 authentication:** checkpoint and context digests are required by the S3 selector at deployment (a stale or foreign checkpoint is rejected; KAT through the runner).
+4. **T1–T3 through the runner** exactly as §G of contract v1 describes, with T3 adding the 10 % date-SD row and a pre-declared calibration acceptance statement (coverage reported against 0.95 with its Monte-Carlo uncertainty; no post-hoc widening).
+5. **Contract v1.1:** 16 learner seeds everywhere (validation, allocation, T3 scenarios at 5 / 12 / 16 / 24 seeds); the measured power table cited in the report schema.
+6. **Provenance and the H gate; F1/F3:** causal-input variant flag and action-effective-time convention as explicit fields (values remain seal-time); latency samples required.
+Report `V025-STAGEC-BUILD4-REPORT-2026-09-09.md` with the pytest line, the T3 table, the list of clauses now IMPLEMENTED, and remaining `CONTROLLER_DECIDE` (seal-time only).
