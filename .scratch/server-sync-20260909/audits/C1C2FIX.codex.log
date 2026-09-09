@@ -1,0 +1,3539 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-c1c2suff-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08721-4be0-7410-b42b-763ccc2ccd52
+--------
+user
+You are auditing and repairing a feature-encoder defect in the MCRL LEO handover project. Workspace: /home/sat/mcrl-v025-c1c2suff-ws (a clone; the sealed clone /home/sat/mcrl-leo-handover must never be modified, but its interpreter /home/sat/mcrl-leo-handover/.venv/bin/python is the one to use, with PYTHONPATH=src and `nice -n 15`).
+
+## What is already established (do not re-derive)
+A prior diagnostic in this same workspace produced C1C2-SUFFICIENCY-2026-09-09.md. Read it first. Its findings:
+1. Two admissible network states have byte-identical 16-scalar Q1 and 22-scalar Q2 rows but exact C1 targets 11/10 vs -33/10.
+2. A REAL legacy-tape witness (V025_PROBE/world/1, step 0, user 6, action (65028,44), anchors 0 and 1) has byte-identical Q1/Q2 but exact C2 targets 5.4095145 vs 19.3466970. In that witness the exact projection has survives=0 at offset 1 for state A and survives=1 for state B, yet the stored 22-scalar Q2 says valid and surviving at all three offsets in BOTH rows. There are 62 such exact C2 collision groups among just those two anchors.
+3. Held-out k-NN on the current encoders: C1 explained variance -0.3355 (worse than the mean), C2 0.2107. Given the discarded target-defining terms, an OLS readout reaches EV = 1.0 with coefficients +/-1.
+
+## The trap you must not fall into
+Finding 3's EV = 1.0 is TAUTOLOGICAL. The C1 target is defined as ((B_cand - B_def) - eta*(E_cand - E_def))/kappa + (Phi_cand - Phi_def). Regressing it on B_cand, E_cand, Phi_cand, B_def, E_def, Phi_def recovers its own definition. Those quantities are the OUTPUT of the expensive coupled evaluation of the candidate action; the head exists precisely to predict them cheaply BEFORE that evaluation is run. Adding them to the encoder would be leakage, not a repair, and would make the learner useless at deployment.
+
+So the governing constraint for every feature you propose is:
+
+**ADMISSIBILITY: a feature is admissible only if it is computable from the pre-decision network state and the focal candidate action alone, without evaluating the candidate configuration's coupled power fixed point or its whole-network outcome, and without any label, oracle, or future information.**
+
+State this constraint at the top of your report and justify EVERY proposed feature against it individually, in a table, naming the function that computes it and its inputs.
+
+## Tasks
+
+### Task A — is the C2 survival flag an encoder bug rather than a sufficiency gap?
+Determine precisely why the stored Q2 says surviving at all three offsets while the exact projection says survives=0 at offset 1 for state A. Read the encoder in src/mcrl/stagec_v025/state.py and the projection code that the exact target uses. Answer, with code citations and a minimal reproduction:
+- Does the encoder compute a DIFFERENT survival predicate than the target's, or does it compute the same predicate on different inputs, or does it overwrite/default the flag?
+- Is the absorbing rule (once survives=0, later offsets are losses) applied in the target but not in the encoded row?
+- Classify the result as ENCODER_BUG (the encoded row misreports a quantity it already has) or SUFFICIENCY_GAP (the quantity is genuinely absent) or BOTH, and give the count of affected rows over the two anchors you can reach cheaply.
+If it is an ENCODER_BUG, that is the single most important sentence in your report; lead with it.
+
+### Task B — the minimal admissible feature set
+For C1 and for C2 separately, propose the SMALLEST set of admissible features (as defined above) that breaks the published collision witnesses, i.e. makes the two colliding states encode to different rows. For each:
+- give the exact definition and the production function that supplies it;
+- verify against the admissibility constraint;
+- state whether it breaks witness 1 (C1 constructed), witness 2 (C2 real), or both, and show the two now-different encoded values.
+The C1 witness differed in background association topology, focal cross gains, and background coupled powers. Those are pre-decision state and are therefore candidates. Do not propose more than you need; a large encoder is not the goal, identifiability is.
+
+### Task C — does the repair actually buy predictive power?
+Re-run the held-out diagnostic (scripts/diagnose_v025_c1c2_sufficiency.py, seed 20260909, same by-physical-step split: train 1,2,4,6,7,8,9; validation 5; test 0,3) with the encoder extended by your Task B features ONLY. Report the same table: Q-only held-out EV and RMSE for C1 and C2, before and after. Also report a LEAKY upper reference row computed with the tautological target-defining terms, clearly labelled `LEAKY_REFERENCE_NOT_DEPLOYABLE`, so the reader can see where the admissible repair sits between the current encoder and the ceiling.
+If the admissible repair moves EV very little, say so plainly. A negative result here is more valuable than an optimistic one, because it would mean the target is genuinely unpredictable from pre-decision information and the whole per-user head design is in question. Do not tune features to improve the number; propose the set once on identifiability grounds, measure it, and report what you get. If you want to measure a second variant, declare both variants BEFORE measuring either, and report both.
+
+### Task D — consequences
+State, in at most 200 words each:
+- whether C1 and C2 can be expected to raise pooled energy efficiency with the current encoder;
+- what the minimum change to the training pipeline would be to adopt your Task B features, listing files and whether any sealed artefact or frozen manifest would need to change (if any would, say so and STOP there; do not modify it).
+
+## Rules
+- `DIAGNOSTIC_NOT_CLAIM`. No training run is authorised. No production run is authorised.
+- Never modify /home/sat/mcrl-leo-handover or its venv.
+- Do not change any threshold, sign, seed, horizon, price, service guard or acceptance rule. Do not touch PILOT_PRIMITIVE_SOURCE_FALLBACK (leave it True).
+- Use exact Fraction arithmetic where the existing target code does.
+- If a task is infeasible in the time you have, do the earlier tasks fully and say plainly which you did not reach. Partial and honest beats complete and guessed.
+- Write C1C2-ENCODER-REPAIR-2026-09-10.md in the workspace root AND print it as your final message. Lead with one line: whether the C2 defect is an encoder bug, and whether an admissible repair exists for C1.
+codex
+I’m using the `diagnosing-bugs` workflow because this task hinges on tracing a concrete encoder/target mismatch before measuring a narrowly scoped repair. I’ll treat the existing diagnostic and its split as fixed evidence, keep all candidate features pre-decision admissible, and make no training or production changes.
+exec
+/bin/bash -lc "sed -n '1,240p' /home/sat/.codex/skills/diagnosing-bugs/SKILL.md" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+---
+name: diagnosing-bugs
+description: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", or reports something broken/throwing/failing/slow.
+---
+
+<!-- project-skills-adapter:start -->
+Follow this skill subject to user and higher-priority project instructions.
+Set one checkable completion criterion. Inspect bundled helpers only after an
+execution error.
+
+Without a configured, authorized tracker, use `.scratch/<feature>/spec.md`,
+`.scratch/<feature>/issues/`, or `.scratch/<effort>/map.md` as applicable.
+External messages, installs, commits, pushes, branch changes, destructive
+actions, and out-of-scope writes still require authority.
+
+Read the extended
+[runtime contract](../select-project-skill/references/runtime.md) only for a
+cross-skill transition, implementation/review orchestration, handoff
+consumption, or a host-specific prerequisite. Verify the criterion before
+claiming success; missing requirements are `blocked`, not simulated success.
+
+Only when the request explicitly authorizes a controlled Project Skills
+sampling run, read the [feedback instructions](../select-project-skill/references/feedback.md)
+and record its terminal event. Ordinary work does not record events.
+<!-- project-skills-adapter:end -->
+
+# Diagnosing Bugs
+
+A discipline for hard bugs. Skip phases only when explicitly justified.
+
+When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
+
+## Redact
+
+This skill has you show commands, outputs and captured artifacts. **Redact every secret first** — write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
+
+If the redacted output is not enough to diagnose the bug, say so and ask the user.
+
+## Phase 1 — Build a feedback loop
+
+**This is the skill.** Everything else is mechanical. If you have a **tight** pass/fail signal for the bug — one that goes red on _this_ bug — you will find the cause; bisection, hypothesis-testing, and instrumentation all just consume it. If you don't have one, no amount of staring at code will save you.
+
+Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give up.**
+
+### Ways to construct one — try them in roughly this order
+
+1. **Failing test** at whatever seam reaches the bug — unit, integration, e2e.
+2. **Curl / HTTP script** against a running dev server.
+3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.
+4. **Headless browser script** (Playwright / Puppeteer) — drives the UI, asserts on DOM/console/network.
+5. **Replay a captured trace.** Save a real network request / payload / event log to disk; replay it through the code path in isolation.
+6. **Throwaway harness.** Spin up a minimal subset of the system (one service, mocked deps) that exercises the bug code path with a single function call.
+7. **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
+8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check, repeat" so you can `git bisect run` it.
+9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.
+10. **HITL bash script.** Last resort. If a human must click, drive _them_ with `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
+
+Build the right feedback loop, and the bug is 90% fixed.
+
+### Tighten the loop
+
+Treat the loop as a product. Once you have _a_ loop, **tighten** it:
+
+- Can I make it faster? (Cache setup, skip unrelated init, narrow the test scope.)
+- Can I make the signal sharper? (Assert on the specific symptom, not "didn't crash".)
+- Can I make it more deterministic? (Pin time, seed RNG, isolate filesystem, freeze network.)
+
+A 30-second flaky loop is barely better than no loop; a 2-second deterministic one is tight — a debugging superpower.
+
+### Non-deterministic bugs
+
+The goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100×, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not — keep raising the rate until it's debuggable.
+
+### When you genuinely cannot build a loop
+
+Stop and say so explicitly. List what you tried. Ask the user for: (a) access to whatever environment reproduces it, (b) a redacted captured artifact (HAR file, log dump, core dump, screen recording with timestamps), or (c) permission to add temporary production instrumentation. Do **not** proceed to hypothesise without a loop.
+
+### Completion criterion — a tight loop that goes red
+
+Phase 1 is done when the loop is **tight** and **red-capable**: you can name **one command** — a script path, a test invocation, a curl — that you have **already run at least once** (show the invocation and its output, redacted), and that is:
+
+- [ ] **Red-capable** — it drives the actual bug code path and asserts the **user's exact symptom**, so it can go red on this bug and green once fixed. Not "runs without erroring" — it must be able to _catch this specific bug_.
+- [ ] **Deterministic** — same verdict every run (flaky bugs: a pinned, high reproduction rate, per above).
+- [ ] **Fast** — seconds, not minutes.
+- [ ] **Agent-runnable** — you can run it unattended; a human in the loop only via `scripts/hitl-loop.template.sh`.
+
+If you catch yourself reading code to build a theory before this command exists, **stop — jumping straight to a hypothesis is the exact failure this skill prevents.** No red-capable command, no Phase 2.
+
+## Phase 2 — Reproduce + minimise
+
+Run the loop. Watch it go red — the bug appears.
+
+Confirm:
+
+- [ ] The loop produces the failure mode the **user** described — not a different failure that happens to be nearby. Wrong bug = wrong fix.
+- [ ] The failure is reproducible across multiple runs (or, for non-deterministic bugs, reproducible at a high enough rate to debug against).
+- [ ] You have captured the exact symptom (error message, wrong output, slow timing) so later phases can verify the fix actually addresses it.
+
+### Minimise
+
+Once it's red, shrink the repro to the **smallest scenario that still goes red**. Cut inputs, callers, config, data, and steps **one at a time**, re-running the loop after each cut — keep only what's load-bearing for the failure.
+
+Why bother: a minimal repro shrinks the hypothesis space in Phase 3 (fewer moving parts left to suspect) and becomes the clean regression test in Phase 5.
+
+Done when **every remaining element is load-bearing** — removing any one of them makes the loop go green.
+
+Do not proceed until you have reproduced **and** minimised.
+
+## Phase 3 — Hypothesise
+
+Generate **3–5 ranked hypotheses** before testing any of them. Single-hypothesis generation anchors on the first plausible idea.
+
+Each hypothesis must be **falsifiable**: state the prediction it makes.
+
+> Format: "If <X> is the cause, then <changing Y> will make the bug disappear / <changing Z> will make it worse."
+
+If you cannot state the prediction, the hypothesis is a vibe — discard or sharpen it.
+
+**Show the ranked list to the user before testing.** They often have domain knowledge that re-ranks instantly ("we just deployed a change to #3"), or know hypotheses they've already ruled out. Cheap checkpoint, big time saver. Don't block on it — proceed with your ranking if the user is AFK.
+
+## Phase 4 — Instrument
+
+Each probe must map to a specific prediction from Phase 3. **Change one variable at a time.**
+
+Tool preference:
+
+1. **Debugger / REPL inspection** if the env supports it. One breakpoint beats ten logs.
+2. **Targeted logs** at the boundaries that distinguish hypotheses.
+3. Never "log everything and grep".
+
+**Tag every debug log** with a unique prefix, e.g. `[DEBUG-a4f2]`. Cleanup at the end becomes a single grep. Untagged logs survive; tagged logs die.
+
+**Perf branch.** For performance regressions, logs are usually wrong. Instead: establish a baseline measurement (timing harness, `performance.now()`, profiler, query plan), then bisect. Measure first, fix second.
+
+## Phase 5 — Fix + regression test
+
+Write the regression test **before the fix** — but only if there is a **correct seam** for it.
+
+A correct seam is one where the test exercises the **real bug pattern** as it occurs at the call site. If the only available seam is too shallow (single-caller test when the bug needs multiple callers, unit test that can't replicate the chain that triggered the bug), a regression test there gives false confidence.
+
+**If no correct seam exists, that itself is the finding.** Note it. The codebase architecture is preventing the bug from being locked down. Flag this for the next phase.
+
+If a correct seam exists:
+
+1. Turn the minimised repro into a failing test at that seam.
+2. Watch it fail.
+3. Apply the fix.
+4. Watch it pass.
+5. Re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
+
+## Phase 6 — Cleanup + post-mortem
+
+Required before declaring done:
+
+- [ ] Original repro no longer reproduces (re-run the Phase 1 loop)
+- [ ] Regression test passes (or absence of seam is documented)
+- [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
+- [ ] Throwaway prototypes deleted (or moved to a clearly-marked debug location)
+- [ ] The hypothesis that turned out correct is stated in the commit / PR message — so the next debugger learns
+
+**Then ask: what would have prevented this bug?** If the answer involves architectural change (no good test seam, tangled callers, hidden coupling) hand off to the `/improve-codebase-architecture` skill with the specifics. Make the recommendation **after** the fix is in, not before — you have more information now than when you started.
+
+codex
+Completion criterion: one deterministic command must reproduce the real tape witness, show the encoded three-offset survival flags beside the exact projection (including the offset-1 disagreement and absorbing behavior), then the fixed-feature diagnostic must reproduce the requested split/table without changing production code or sealed artifacts.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g 'CONTEXT.md' -g '*ADR*' -g 'C1C2-SUFFICIENCY-2026-09-09.md' -g 'state.py' -g 'diagnose_v025_c1c2_sufficiency.py' | sort && git status --short" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-c1c2suff-ws
+C1C2-SUFFICIENCY-2026-09-09.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/docs/ADR-007-action-shared-three-q-instrument.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/docs/ADR-007-action-shared-three-q-instrument.md
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/docs/ADR-007-action-shared-three-q-instrument.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+docs/decisions/ADR-001-proposed-ris-lineage-r1-catfish.md
+docs/decisions/ADR-002-proposed-hobs-primary-geometry.md
+docs/decisions/ADR-003-proposed-specialist-multi-catfish.md
+docs/decisions/ADR-004-payload-boundary-time-only-c2.md
+docs/decisions/ADR-005-separate-r5-run-authority-from-r6-authoring.md
+docs/decisions/ADR-006-e1-instrument-validity-before-ee-ablation.md
+docs/decisions/ADR-007-action-shared-three-q-instrument.md
+scripts/diagnose_v025_c1c2_sufficiency.py
+src/mcrl/stagec_v025/state.py
+ D C1C2-AUDIT-2026-09-09.md
+?? .scratch/c1c2-sufficiency/
+
+exec
+/bin/bash -lc "wc -l C1C2-SUFFICIENCY-2026-09-09.md scripts/diagnose_v025_c1c2_sufficiency.py src/mcrl/stagec_v025/state.py docs/decisions/ADR-007-action-shared-three-q-instrument.md && sed -n '1,260p' C1C2-SUFFICIENCY-2026-09-09.md" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+  252 C1C2-SUFFICIENCY-2026-09-09.md
+  698 scripts/diagnose_v025_c1c2_sufficiency.py
+  526 src/mcrl/stagec_v025/state.py
+   80 docs/decisions/ADR-007-action-shared-three-q-instrument.md
+ 1556 total
+# C1/C2 feature sufficiency diagnostic — 2026-09-09
+
+`DIAGNOSTIC_NOT_CLAIM`
+
+## Verdict first
+
+- **C1 collision found:** yes, at the production target/encoder contract. Two admissible network states have byte-identical 16-scalar Q1 and 22-scalar Q2 rows, while exact `c1_difference_surplus` is `11/10` versus `-33/10`. The gap is `22/5 = 4.4`, so any deterministic scalar predictor on this encoded row incurs squared loss at least `(4.4/2)^2 = 121/25 = 4.84` on one member of the pair. This is a constructed contract-level witness; the separate exhaustive scan of the existing row corpus did not find a naturally occurring C1 collision.
+- **C2 collision found:** yes, including a real legacy-provider/evaluator witness. Two production rows for the same user/action at the same physical step have byte-identical Q1 and Q2 inputs, but exact `c2_persistence_forecast` is approximately `5.4095145003632172` versus `19.346696956352321`. The exact gap is approximately `13.937182455989104`, giving a squared-loss lower bound of approximately `48.561263702882613`.
+- **Regression witness:** with `PILOT_PRIMITIVE_SOURCE_FALLBACK = True`, the new exact-singleton acceptance test fails; after changing only that flag to `False`, all four C1/C2 checks pass; after restoring it to `True`, the same C1 assertion fails again. The flag is restored to `True` in the final tree, so the test intentionally remains red on the defective path.
+
+No production learner was trained. The only fitted estimator was the Task 3 diagnostic k-nearest-neighbor regressor.
+
+## What the heads actually receive
+
+`src/mcrl/stagec_v025/state.py` defines 16 Q1 features and 22 Q2 features. `src/mcrl/stagec_v025/learner.py:271` implements `LinearHead.score(self, state)` using only that one numeric sequence. No action identity, association map, geometry, cross-gain matrix, coupled-power result, network outcome, projected outcome, provenance digest, action mask, or other auxiliary branch enters the scalar head. The pairwise trainer evaluates the same scalar head separately on the reference and candidate rows.
+
+Accordingly, `head_auxiliary_inputs = []` for both witnesses below. The test `tests/stagec_v025/test_c1c2_feature_sufficiency.py` checks the dimensions, absence of an auxiliary input, byte equality, and unequal exact targets.
+
+## Task 1 — C1 collision
+
+### Two states
+
+Both states use the same focal action `(norad_id=1001, beam_chain_id=7)` and the same production `ActionEvaluation` values: current margin `4 dB`, required power/cap `0.5`, mode SE `2 bit/s/Hz`, one background occupant, active beam and satellite, off-axis angle `0.25 rad`, remaining D2/visibility `60/90 s`, phase 2, previous load one, current power-cap margin `0.825 W`, and three valid/surviving forecast summaries with margins `3, 2, 1 dB` and SE `2 bit/s/Hz`.
+
+Only structure discarded by the encoder changes:
+
+| Quantity | State A | State B |
+|---|---:|---:|
+| Background associations | user 1→`(1001,7)`, user 2→`(2002,4)` | user 17→`(1001,7)`, user 23→`(2003,2)` |
+| Example focal cross gains | `1e-13`, `2e-14` | `8e-11`, `3e-11` |
+| Background coupled powers | `0.4 W`, `0.3 W` | `1.4 W`, `1.2 W` |
+| Candidate whole-network outcome | 220 bits, 22 J, Phi `-1/2` | 180 bits, 24 J, Phi `-1/2` |
+| Shared default outcome | 200 bits, 20 J, Phi `0` | 200 bits, 20 J, Phi `0` |
+
+These values are accepted by the production `NetworkOutcome.build`, `OffsetProjection`, `seal_action_evaluation`, and `extract_source_rows` invariants: bits, joules, powers and capacities are nonnegative; availability is in range; projected powers are below the `1.65 W` cap; offsets are ordered; and forecasts are finite and recompute background power. Different background topology and coupled powers can change whole-network bits and joules while preserving the focal aggregate summaries retained by Q1/Q2. This is a target/encoder-contract admissibility proof, not a claim that these two rows were observed in the legacy tape.
+
+With `eta_ref = lambda = 2` and `kappa = 10`, production `c1_difference_surplus` gives:
+
+```text
+C1_A = ((220-200) - 2*(22-20))/10 + (-1/2-0) = 11/10
+C1_B = ((180-200) - 2*(24-20))/10 + (-1/2-0) = -33/10
+absolute difference = 22/5
+squared-loss lower bound = (difference/2)^2 = 121/25
+```
+
+### Identical encoded input, byte for byte
+
+Q1 scalar values, in Python hexadecimal float form, for **both** states:
+
+```text
+[0x1.999999999999ap-3, 0x1.0000000000000p-1,
+ 0x1.0000000000000p-1, 0x1.999999999999ap-4,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.0000000000000p-2, 0x1.0000000000000p-1,
+ 0x1.8000000000000p-1, 0x1.5555555555555p-1,
+ 0x0.0p+0,                0x1.999999999999ap-4,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.999999999999ap-2, 0x0.0p+0]
+```
+
+Q1 as 16 big-endian binary64 values (128 bytes), for both states:
+
+```text
+3fc999999999999a3fe00000000000003fe00000000000003fb999999999999a3ff00000000000003ff00000000000003fd00000000000003fe00000000000003fe80000000000003fe555555555555500000000000000003fb999999999999a3ff00000000000003ff00000000000003fd999999999999a0000000000000000
+```
+
+Q2 scalar values, for **both** states:
+
+```text
+[0x1.999999999999ap-3, 0x0.0p+0,
+ 0x1.0000000000000p-1, 0x1.8000000000000p-1,
+ 0x1.5555555555555p-1, 0x1.999999999999ap-4,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.0000000000000p-1, 0x0.0p+0,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.3333333333333p-3, 0x1.0000000000000p-1,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.999999999999ap-4, 0x1.0000000000000p-1,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.999999999999ap-5, 0x1.0000000000000p-1]
+```
+
+Q2 as 22 big-endian binary64 values (176 bytes), for both states:
+
+```text
+3fc999999999999a00000000000000003fe00000000000003fe80000000000003fe55555555555553fb999999999999a3ff00000000000003ff00000000000003fe000000000000000000000000000003ff00000000000003ff00000000000003fc33333333333333fe00000000000003ff00000000000003ff00000000000003fb999999999999a3fe00000000000003ff00000000000003ff00000000000003fa999999999999a3fe0000000000000
+```
+
+### Existing-row negative search for C1
+
+I also scanned all 176,223 source rows in the existing two-world corpus, grouping on the exact concatenated Q1+Q2 tuple. There were 5,230 duplicate groups overall and 4,701 among nonreference rows. Every duplicate was another carrier view of the same physical step; there were no cross-step or cross-world duplicate groups. Exact relabeling of the first carrier pair found no C1 difference. Thus the corpus search alone did **not** find an empirical C1 collision; it neither proves nor suggests sufficiency beyond that finite corpus. The constructed admissible contract witness above is the C1 insufficiency proof.
+
+## Task 1 — C2 collision
+
+### Real evaluator states
+
+This witness comes from the existing real legacy-provider tape `V025_PROBE/world/1`, step 0, user 6, action `(65028,44)`. State A is source anchor 0 with carrier rule `nearest-eligible`; state B is source anchor 1 with carrier rule `stay-if-possible`. The production evaluator and `_batched_stage2_forecasts` recomputed both singleton configurations and their three offsets. Among these two anchors there are 62 exact C2 collision groups.
+
+For the selected group, the candidate/default normalized physical terms at offset 1 are the same in both states:
+
+```text
+candidate: bits/kappa=125.63281341025531, eta*joules/kappa=96.27152690774090
+default:   bits/kappa=119.31271970410177, eta*joules/kappa=98.36094770195058
+valid=1 in both
+```
+
+The exact projection says `survives=0` at offset 1 in state A, making later offsets absorbing losses, but `survives=1` at all three offsets in state B. The stored 22-scalar Q2 vectors say valid/surviving at all three offsets in **both** rows, so the head cannot see this difference. Exact production targets are:
+
+```text
+C2_A = 60102789335062397912351470235270 /
+       11110569965387252983357173269901
+     = 5.4095145003632172...
+
+C2_B = 2149528301326970807719944431070731 /
+       111105699653872529833571732699010
+     = 19.346696956352321...
+
+absolute difference =
+  516166802658782276198809909572677 /
+  37035233217957509944523910899670
+  = 13.937182455989104...
+
+squared-loss lower bound = 48.561263702882613...
+```
+
+### Identical real encoded input, byte for byte
+
+Q1 float values for both real states:
+
+```text
+[-0x1.8930fea2e94e6p-3, 0x1.2e7506d9e3e5dp-6,
+  0x1.e8207e761dbfdp-2, 0x0.0p+0,
+  0x0.0p+0,                0x1.0000000000000p+0,
+  0x0.0p+0,                0x1.5acb6f46508e0p+0,
+  0x1.f92c5f92c5f93p+0, 0x0.0p+0,
+  0x0.0p+0,                0x0.0p+0,
+  0x0.0p+0,                0x1.0000000000000p+0,
+  0x1.2e7506d9e3e5dp-6, 0x0.0p+0]
+```
+
+Q1 big-endian binary64 bytes for both real states:
+
+```text
+bfc8930fea2e94e63f92e7506d9e3e5d3fde8207e761dbfd000000000000000000000000000000003ff000000000000000000000000000003ff5acb6f46508e03fff92c5f92c5f9300000000000000000000000000000000000000000000000000000000000000003ff00000000000003f92e7506d9e3e5d0000000000000000
+```
+
+Q2 float values for both real states:
+
+```text
+[-0x1.8930fea2e94e6p-3, 0x1.e6d426f9e31dfp+0,
+  0x1.5acb6f46508e0p+0, 0x1.f92c5f92c5f93p+0,
+  0x0.0p+0,                0x0.0p+0,
+  0x0.0p+0,                0x1.0000000000000p+0,
+  0x1.f68c57c930e0dp-1, 0x0.0p+0,
+  0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ -0x1.88049eca8d9cdp-3, 0x1.e8207e761dbfdp+0,
+  0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ -0x1.ff9e74e3596bdp-2, 0x1.e8207e761dbfdp+0,
+  0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ -0x1.720fc11a780aep-1, 0x1.e8207e761dbfdp+0]
+```
+
+Q2 big-endian binary64 bytes for both real states:
+
+```text
+bfc8930fea2e94e63ffe6d426f9e31df3ff5acb6f46508e03fff92c5f92c5f930000000000000000000000000000000000000000000000003ff00000000000003fef68c57c930e0d00000000000000003ff00000000000003ff0000000000000bfc88049eca8d9cd3ffe8207e761dbfd3ff00000000000003ff0000000000000bfdff9e74e3596bd3ffe8207e761dbfd3ff00000000000003ff0000000000000bfe720fc11a780ae3ffe8207e761dbfd
+```
+
+This is a real, simulator-generated physical collision, not merely a finite-precision near-match.
+
+## Task 2 — missing exact-label acceptance test
+
+Added `tests/stagec_v025/test_c1c2_exact_label_acceptance.py`. It uses two real legacy-provider anchors. To keep runtime bounded, each anchor retains one user and three genuine legal singleton configurations: its reference, one nonreference action, and null. It calls production `_build_anchor_rows`, independently evaluates those configurations with `StepEvaluator`, independently generates future projections with `_batched_stage2_forecasts`, and then calls the public production target definitions `c1_difference_surplus` and `c2_persistence_forecast` as the oracle.
+
+The asserted absolute tolerance is `1e-9` in normalized target units with zero relative tolerance. Production targets are exact `Fraction` arithmetic until the row boundary; the comparison crosses two binary64 conversions. `1e-9` is therefore deliberately looser than expected roundoff but more than seven orders tighter than the smallest observed proxy mismatch (`0.03547`). No physics or acceptance constant was changed.
+
+### Required True → False → True witness
+
+1. With `PILOT_PRIMITIVE_SOURCE_FALLBACK = True`:
+
+   ```text
+   FAILED test_production_c1_labels_equal_exact_evaluator_singletons[0]
+   AssertionError: production C1 label disagrees with exact evaluator singleton:
+   anchor=0 user=0 action=(65028, 55)
+   actual=0.16304247271668615 exact=0.12756951502457881 abs_tol=1e-09
+   ```
+
+   The C2-specific run also fires:
+
+   ```text
+   FAILED test_production_c2_labels_equal_exact_evaluator_singletons[0]
+   AssertionError: production C2 label disagrees with exact evaluator singleton:
+   anchor=0 user=0 action=(65028, 43)
+   actual=0.15938602060975687 exact=-3 abs_tol=1e-09
+   ```
+
+2. After changing only the flag to `False`:
+
+   ```text
+   .... [100%]
+   4 passed
+   ```
+
+3. After restoring the flag to `True`, the first C1 assertion above fails again with the same actual and exact values.
+
+The exact command was:
+
+```text
+nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python \
+  -m pytest -q tests/stagec_v025/test_c1c2_exact_label_acceptance.py -x
+```
+
+## Task 3 — held-out explainability
+
+The diagnostic `scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30` read existing rows from `artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1`, then replaced their proxy labels with exact evaluator C1/C2 targets. It retained 26,345 valid nonreference rows from 30 source anchors (10 physical steps × 3 carrier views).
+
+The deterministic seed was `20260909`. Splitting was by whole physical step—not source shard—so byte-identical carrier views could not leak across partitions:
+
+- train steps: 1, 2, 4, 6, 7, 8, 9;
+- validation step: 5;
+- held-out test steps: 0, 3;
+- held-out rows: 5,280.
+
+The Q-only model was standardized inverse-distance k-nearest-neighbor regression with `k` selected from `{1,3,7,15,31}` on the validation step. The comparator was a fitted ordinary least-squares readout given the discarded exact target-sufficient terms: whole-network candidate/default bits, energy and Phi for C1; and per-offset candidate/default bits, energy, validity and survival with the production absorbing rule expanded for C2.
+
+| Route | Q-only held-out EV | Q-only RMSE | Discarded-structure EV | Structure RMSE | EV gap |
+|---|---:|---:|---:|---:|---:|
+| C1 | `-0.3355476799` | `3.4683937281` | `1.0` | `2.66e-13` | `1.3355476799` |
+| C2 | `0.2106516781` | `3.3856461561` | `1.0` | `1.02e-14` | `0.7893483219` |
+
+Selected `k=31` for both routes. C1 held-out target variance was `8.3419683433`; C2 was `14.3690049981`. The fitted structure coefficients recover the production definitions to rounding: C1 coefficients are intercept approximately zero followed by `[+1,-1,+1,-1,+1,-1]`; C2 coefficients are intercept approximately zero followed by `[+1,+1,+1,-1]` for the three live offset surpluses and lost-offset count.
+
+The large empirical gaps say that, on these anchors, the discarded target structure is binding for this flexible Q-only estimator. Negative C1 explained variance means its residual variance exceeds the variance of the held-out targets. These finite-sample scores are not a mathematical upper bound on every possible architecture; the collision pairs, not the regression, provide the formal impossibility and squared-loss bounds.
+
+## Reproduction and files
+
+```text
+PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python \
+  -m pytest -q tests/stagec_v025/test_c1c2_feature_sufficiency.py
+
+nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python \
+  scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30
+```
+
+Changed or added for this diagnostic:
+
+- `C1C2-SUFFICIENCY-2026-09-09.md` (this report)
+- `scripts/diagnose_v025_c1c2_sufficiency.py`
+- `tests/stagec_v025/test_c1c2_feature_sufficiency.py`
+- `tests/stagec_v025/test_c1c2_exact_label_acceptance.py`
+
+No threshold, sign, seed, horizon, price, service guard, or acceptance rule was changed. The fallback flag is restored to its original `True` value solely to complete the requested red/green/red witness.
+
+exec
+/bin/bash -lc "sed -n '1,526p' src/mcrl/stagec_v025/state.py" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+"""Versioned Stage-C state schemas and the thin engine-output extractor."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime
+import math
+from typing import Protocol, Sequence, runtime_checkable
+
+from .canonical import StageCContractError, canonical_sha256, float_hex
+from mcrl.physics_v025.constants_v025 import DECISION_INTERVAL_S
+
+
+Q1_SCHEMA_VERSION = "mcrl-v025-stagec-q1-action-v1"
+Q2_SCHEMA_VERSION = "mcrl-v025-stagec-q2-action-v1"
+ROW_SCHEMA_VERSION = "mcrl-v025-stagec-source-row-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class FeatureSpec:
+    name: str
+    unit: str
+    scale: float
+
+
+# The exact draft list requested by contract section 2. Values are action-row
+# local; historical vector blocks from V0.23 become the corresponding value for
+# the candidate action. Controller-unsealed scales are called out in the spec.
+Q1_FEATURES = (
+    FeatureSpec("nominal_sinr_margin_at_rate_target", "dB", 20.0),
+    FeatureSpec("nominal_required_power_over_cap", "ratio", 1.0),
+    FeatureSpec("nominal_mode_spectral_efficiency", "bit/s/Hz", 4.0),
+    FeatureSpec("background_occupancy_excluding_focal", "user", 10.0),
+    FeatureSpec("beam_active_before_focal", "boolean", 1.0),
+    FeatureSpec("satellite_active_before_focal", "boolean", 1.0),
+    FeatureSpec("off_axis_angle", "rad", 1.0),
+    FeatureSpec("remaining_d2_time", "s", 120.0),
+    FeatureSpec("remaining_visibility_time", "s", 120.0),
+    FeatureSpec("refresh_phase", "decision", 3.0),
+    FeatureSpec("previous_served_association_for_action", "boolean", 1.0),
+    FeatureSpec("previous_served_load_for_action", "user", 10.0),
+    FeatureSpec("previous_beam_active_for_action", "boolean", 1.0),
+    FeatureSpec("previous_satellite_active_for_action", "boolean", 1.0),
+    FeatureSpec("previous_beam_max_rf_over_cap", "ratio", 1.0),
+    FeatureSpec("missing_incumbent", "boolean", 1.0),
+)
+
+Q2_CURRENT_FEATURES = (
+    FeatureSpec("candidate_current_nominal_decoding_margin", "dB", 20.0),
+    FeatureSpec("forecast_se_trend", "bit/s/Hz/s", 0.1),
+    FeatureSpec("remaining_d2_time", "s", 120.0),
+    FeatureSpec("remaining_visibility_time", "s", 120.0),
+    FeatureSpec("refresh_phase", "decision", 3.0),
+    FeatureSpec("background_occupancy_excluding_focal", "user", 10.0),
+    FeatureSpec("beam_active_before_focal", "boolean", 1.0),
+    FeatureSpec("satellite_active_before_focal", "boolean", 1.0),
+    FeatureSpec("required_power_cap_margin", "W", 1.65),
+    FeatureSpec("missing_incumbent", "boolean", 1.0),
+)
+
+Q2_OFFSET_FEATURES = (
+    FeatureSpec("valid", "boolean", 1.0),
+    FeatureSpec("survival", "boolean", 1.0),
+    FeatureSpec("minimum_decoding_margin", "dB", 20.0),
+    FeatureSpec("mean_acm_spectral_efficiency", "bit/s/Hz", 4.0),
+)
+
+
+def _schema_payload(version: str, features: Sequence[FeatureSpec]) -> dict[str, object]:
+    return {
+        "schema": version,
+        "normalization": "raw_value / positive_frozen_scale; signed values retained",
+        "shape": [len(features)],
+        "features": [
+            {"name": item.name, "unit": item.unit, "scale_hex": float_hex(item.scale)}
+            for item in features
+        ],
+        "removed": ["recurrence_power", "entry_gain_ratio", "segment_age"],
+    }
+
+
+Q2_FEATURES = Q2_CURRENT_FEATURES + tuple(
+    FeatureSpec(f"offset_{offset}_{feature.name}", feature.unit, feature.scale)
+    for offset in (1, 2, 3)
+    for feature in Q2_OFFSET_FEATURES
+)
+Q1_SCHEMA = _schema_payload(Q1_SCHEMA_VERSION, Q1_FEATURES)
+Q2_SCHEMA = _schema_payload(Q2_SCHEMA_VERSION, Q2_FEATURES)
+Q1_SCHEMA_SHA256 = canonical_sha256(Q1_SCHEMA)
+Q2_SCHEMA_SHA256 = canonical_sha256(Q2_SCHEMA)
+
+
+@dataclass(frozen=True, slots=True)
+class PhysicalAction:
+    norad_id: int | None
+    beam_chain_id: int | None
+
+    def __post_init__(self) -> None:
+        if (self.norad_id is None) != (self.beam_chain_id is None):
+            raise StageCContractError("null action must have both physical identity fields null")
+
+    @property
+    def is_null(self) -> bool:
+        return self.norad_id is None
+
+    def payload(self) -> dict[str, int | None]:
+        return {"norad_id": self.norad_id, "beam_chain_id": self.beam_chain_id}
+
+
+@dataclass(frozen=True, slots=True)
+class ForecastObservation:
+    valid: bool
+    survival: bool
+    minimum_decoding_margin_db: float
+    mean_acm_spectral_efficiency: float
+
+
+@dataclass(frozen=True, slots=True)
+class ActionEvaluation:
+    """Engine-neutral values for one legal action at one matched anchor."""
+
+    action: PhysicalAction
+    nominal_sinr_margin_at_rate_target_db: float
+    nominal_required_power_over_cap: float
+    nominal_mode_spectral_efficiency: float
+    background_occupancy_excluding_focal: int
+    beam_active_before_focal: bool
+    satellite_active_before_focal: bool
+    off_axis_angle_rad: float
+    remaining_d2_time_s: float
+    remaining_visibility_time_s: float
+    refresh_phase: int
+    previous_served_association_for_action: bool
+    previous_served_load_for_action: int
+    previous_beam_active_for_action: bool
+    previous_satellite_active_for_action: bool
+    previous_beam_max_rf_over_cap: float
+    missing_incumbent: bool
+    candidate_current_nominal_decoding_margin_db: float
+    incumbent_nominal_decoding_margin_db: float
+    forecast_se_trend_bit_s_hz_per_s: float
+    required_power_cap_margin_w: float
+    forecasts: tuple[ForecastObservation, ForecastObservation, ForecastObservation]
+    c1_label_bits: float
+    c1_phi_difference: float
+    c2_label_bits: float
+    legal: bool = True
+    terminal: bool = False
+    outage: bool = False
+    source_provenance_sha256: str = ""
+    forecast_method_sha256: str = ""
+    visible_primitives_sha256: str = ""
+    tle_provenance: str = "nearest_epoch_retrospective_benchmark"
+    future_tle_access: str = "declared_forecast_horizon_only"
+
+
+def _action_visible_payload(item: ActionEvaluation) -> dict[str, object]:
+    """Exact B1 dependency allowlist: every value consumed by Q1/Q2/labels."""
+
+    omitted = {
+        "source_provenance_sha256",
+        "forecast_method_sha256",
+        "visible_primitives_sha256",
+        "tle_provenance",
+        "future_tle_access",
+    }
+    payload = {
+        name: value
+        for name, value in asdict(item).items()
+        if name not in omitted
+    }
+    payload["action"] = item.action.payload()
+    return payload
+
+
+def seal_action_evaluation(
+    item: ActionEvaluation,
+    *,
+    source_provenance_sha256: str,
+    forecast_method_sha256: str,
+    tle_provenance: str = "nearest_epoch_retrospective_benchmark",
+    future_tle_access: str = "declared_forecast_horizon_only",
+) -> ActionEvaluation:
+    """Bind one engine-adapter row to the exact visible primitive values."""
+
+    for field, value in (
+        ("source_provenance_sha256", source_provenance_sha256),
+        ("forecast_method_sha256", forecast_method_sha256),
+    ):
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise StageCContractError(f"{field} must be a lowercase SHA-256")
+    return replace(
+        item,
+        source_provenance_sha256=source_provenance_sha256,
+        forecast_method_sha256=forecast_method_sha256,
+        visible_primitives_sha256=canonical_sha256(_action_visible_payload(item)),
+        tle_provenance=tle_provenance,
+        future_tle_access=future_tle_access,
+    )
+
+
+@runtime_checkable
+class PerAnchorEvaluation(Protocol):
+    """Only interface the moving engine must adapt to for Stage C."""
+
+    world_id: str
+    split: str
+    world_seed: int
+    anchor_id: str
+    anchor_index: int
+    decision_time_utc: str
+    decision_time_ns: int
+    user_id: int
+    setting_id: str
+    code_digest: str
+    physics_digest: str
+    launch_digest: str
+    catalogue_digest: str
+    setting_digest: str
+    calibration_digest: str
+    provider_digest: str
+    archive_digest: str
+    allocation_manifest_digest: str
+    lambda_bits_per_j: float
+    eta_ref_bits_per_j: float
+    kappa_normalization_bits: float
+    base_action_index: int
+    actions: Sequence[ActionEvaluation]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRow:
+    schema: str
+    split: str
+    world_id: str
+    world_seed: int
+    learner_seed: int | None
+    anchor_id: str
+    anchor_index: int
+    decision_time_utc: str
+    decision_time_ns: int
+    user_id: int
+    action_index: int
+    action: PhysicalAction
+    reference_action: bool
+    action_mask: tuple[bool, ...]
+    q1_state: tuple[float, ...]
+    q2_state: tuple[float, ...]
+    incumbent_context_nominal_decoding_margin_db_hex: str
+    q1_schema_sha256: str
+    q2_schema_sha256: str
+    setting_id: str
+    code_digest: str
+    physics_digest: str
+    launch_digest: str
+    catalogue_digest: str
+    setting_digest: str
+    calibration_digest: str
+    provider_digest: str
+    archive_digest: str
+    allocation_manifest_digest: str
+    lambda_bits_per_j_hex: str
+    eta_ref_bits_per_j_hex: str
+    kappa_normalization_bits_hex: str
+    c1_label_bits_hex: str
+    c1_phi_difference_hex: str
+    c2_label_bits_hex: str
+    c1_label_normalized_hex: str
+    c2_label_normalized_hex: str
+    source_provenance_sha256: str
+    forecast_method_sha256: str
+    visible_primitives_sha256: str
+    tle_provenance: str
+    future_tle_access: str
+    terminal: bool
+    null_action: bool
+    outage: bool
+
+    def payload(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["action"] = self.action.payload()
+        payload["action_mask"] = list(self.action_mask)
+        payload["q1_state"] = [float_hex(value) for value in self.q1_state]
+        payload["q2_state"] = [float_hex(value) for value in self.q2_state]
+        return payload
+
+
+def _normalize(raw: Sequence[float], specs: Sequence[FeatureSpec]) -> tuple[float, ...]:
+    if len(raw) != len(specs):
+        raise StageCContractError("state field count disagrees with schema")
+    result = tuple(float(value) / spec.scale for value, spec in zip(raw, specs, strict=True))
+    if not all(math.isfinite(value) for value in result):
+        raise StageCContractError("state values must be finite")
+    return result
+
+
+def kappa_normalization_bits(kappa_bits_per_user_s: float) -> float:
+    """Controller-sealed conversion from calibration rate to one user-step."""
+
+    value = float(kappa_bits_per_user_s)
+    if not math.isfinite(value) or value <= 0.0:
+        raise StageCContractError("kappa bits/user-second must be positive and finite")
+    return value * DECISION_INTERVAL_S
+
+
+def _validate_anchor(anchor: PerAnchorEvaluation) -> None:
+    if anchor.split != "TRAIN":
+        raise StageCContractError("Stage C source construction is TRAIN-only")
+    if not anchor.actions:
+        raise StageCContractError("anchor must carry at least the explicit null action")
+    if not 0 <= anchor.base_action_index < len(anchor.actions):
+        raise StageCContractError("base_action_index is outside the action table")
+    if not anchor.actions[anchor.base_action_index].legal:
+        raise StageCContractError("BASE action must be legal")
+    if not any(item.legal and item.action.is_null for item in anchor.actions):
+        raise StageCContractError("anchor must include an explicit legal null action")
+    if (
+        not math.isfinite(anchor.kappa_normalization_bits)
+        or anchor.kappa_normalization_bits <= 0.0
+    ):
+        raise StageCContractError("normalization kappa must be a positive bit scale")
+    if (
+        not math.isfinite(anchor.lambda_bits_per_j)
+        or anchor.lambda_bits_per_j <= 0.0
+        or anchor.lambda_bits_per_j != anchor.eta_ref_bits_per_j
+    ):
+        raise StageCContractError("lambda and eta_ref must be identical")
+    if anchor.anchor_index < 0 or anchor.decision_time_ns < 0:
+        raise StageCContractError("anchor indices/times must be nonnegative")
+    identities = [item.action for item in anchor.actions]
+    if len(set(identities)) != len(identities):
+        raise StageCContractError("anchor has duplicate physical actions")
+    for field in (
+        "code_digest",
+        "physics_digest",
+        "launch_digest",
+        "catalogue_digest",
+        "setting_digest",
+        "calibration_digest",
+        "provider_digest",
+        "archive_digest",
+        "allocation_manifest_digest",
+    ):
+        digest = getattr(anchor, field)
+        if (
+            len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise StageCContractError(f"{field} must be a lowercase SHA-256")
+    try:
+        parsed = datetime.fromisoformat(anchor.decision_time_utc.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise StageCContractError("decision_time_utc must be RFC3339") from error
+    if parsed.tzinfo is None:
+        raise StageCContractError("decision_time_utc must include a timezone")
+
+
+def extract_source_rows(anchor: PerAnchorEvaluation) -> tuple[SourceRow, ...]:
+    """Turn one engine adapter output into authenticated per-action rows."""
+
+    _validate_anchor(anchor)
+    legal_mask = tuple(bool(item.legal) for item in anchor.actions)
+    rows: list[SourceRow] = []
+    for action_index, item in enumerate(anchor.actions):
+        if not item.legal:
+            continue
+        if len(item.forecasts) != 3:
+            raise StageCContractError("Q2 requires exactly three forecast offsets")
+        for field in (
+            "source_provenance_sha256",
+            "forecast_method_sha256",
+            "visible_primitives_sha256",
+        ):
+            value = getattr(item, field)
+            if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+                raise StageCContractError(f"action {field} is not bound")
+        if item.visible_primitives_sha256 != canonical_sha256(_action_visible_payload(item)):
+            raise StageCContractError("dependency-allowlist provenance does not match consumed values")
+        if item.future_tle_access != "declared_forecast_horizon_only":
+            raise StageCContractError("future TLE access exceeds the declared horizon")
+        if item.tle_provenance not in {
+            "nearest_epoch_retrospective_benchmark",
+            "causal_ephemeris_available_by_decision_time",
+        }:
+            raise StageCContractError("TLE provenance is undeclared")
+        if (
+            item.refresh_phase not in range(4)
+            or item.background_occupancy_excluding_focal < 0
+            or item.previous_served_load_for_action < 0
+            or item.remaining_d2_time_s < 0.0
+            or item.remaining_visibility_time_s < 0.0
+            or item.nominal_required_power_over_cap < 0.0
+            or item.previous_beam_max_rf_over_cap < 0.0
+        ):
+            raise StageCContractError("action state violates range invariants")
+        q1_raw = (
+            item.nominal_sinr_margin_at_rate_target_db,
+            item.nominal_required_power_over_cap,
+            item.nominal_mode_spectral_efficiency,
+            float(item.background_occupancy_excluding_focal),
+            float(item.beam_active_before_focal),
+            float(item.satellite_active_before_focal),
+            item.off_axis_angle_rad,
+            item.remaining_d2_time_s,
+            item.remaining_visibility_time_s,
+            float(item.refresh_phase),
+            float(item.previous_served_association_for_action),
+            float(item.previous_served_load_for_action),
+            float(item.previous_beam_active_for_action),
+            float(item.previous_satellite_active_for_action),
+            item.previous_beam_max_rf_over_cap,
+            float(item.missing_incumbent),
+        )
+        q2_raw: list[float] = [
+            item.candidate_current_nominal_decoding_margin_db,
+            item.forecast_se_trend_bit_s_hz_per_s,
+            item.remaining_d2_time_s,
+            item.remaining_visibility_time_s,
+            float(item.refresh_phase),
+            float(item.background_occupancy_excluding_focal),
+            float(item.beam_active_before_focal),
+            float(item.satellite_active_before_focal),
+            item.required_power_cap_margin_w,
+            float(item.missing_incumbent),
+        ]
+        for forecast in item.forecasts:
+            q2_raw.extend(
+                (
+                    float(forecast.valid),
+                    float(forecast.survival),
+                    forecast.minimum_decoding_margin_db,
+                    forecast.mean_acm_spectral_efficiency,
+                )
+            )
+        kappa = float(anchor.kappa_normalization_bits)
+        labels = (item.c1_label_bits, item.c2_label_bits)
+        if not all(math.isfinite(label) for label in (*labels, item.c1_phi_difference)):
+            raise StageCContractError("labels must be finite")
+        rows.append(
+            SourceRow(
+                schema=ROW_SCHEMA_VERSION,
+                split=anchor.split,
+                world_id=anchor.world_id,
+                world_seed=anchor.world_seed,
+                learner_seed=None,
+                anchor_id=anchor.anchor_id,
+                anchor_index=anchor.anchor_index,
+                decision_time_utc=anchor.decision_time_utc,
+                decision_time_ns=anchor.decision_time_ns,
+                user_id=anchor.user_id,
+                action_index=action_index,
+                action=item.action,
+                reference_action=action_index == anchor.base_action_index,
+                action_mask=legal_mask,
+                q1_state=_normalize(q1_raw, Q1_FEATURES),
+                q2_state=_normalize(q2_raw, Q2_FEATURES),
+                incumbent_context_nominal_decoding_margin_db_hex=float_hex(
+                    item.incumbent_nominal_decoding_margin_db
+                ),
+                q1_schema_sha256=Q1_SCHEMA_SHA256,
+                q2_schema_sha256=Q2_SCHEMA_SHA256,
+                setting_id=anchor.setting_id,
+                code_digest=anchor.code_digest,
+                physics_digest=anchor.physics_digest,
+                launch_digest=anchor.launch_digest,
+                catalogue_digest=anchor.catalogue_digest,
+                setting_digest=anchor.setting_digest,
+                calibration_digest=anchor.calibration_digest,
+                provider_digest=anchor.provider_digest,
+                archive_digest=anchor.archive_digest,
+                allocation_manifest_digest=anchor.allocation_manifest_digest,
+                lambda_bits_per_j_hex=float_hex(anchor.lambda_bits_per_j),
+                eta_ref_bits_per_j_hex=float_hex(anchor.eta_ref_bits_per_j),
+                kappa_normalization_bits_hex=float_hex(kappa),
+                c1_label_bits_hex=float_hex(labels[0]),
+                c1_phi_difference_hex=float_hex(item.c1_phi_difference),
+                c2_label_bits_hex=float_hex(labels[1]),
+                c1_label_normalized_hex=float_hex(
+                    labels[0] / kappa + item.c1_phi_difference
+                ),
+                c2_label_normalized_hex=float_hex(labels[1] / kappa),
+                source_provenance_sha256=item.source_provenance_sha256,
+                forecast_method_sha256=item.forecast_method_sha256,
+                visible_primitives_sha256=item.visible_primitives_sha256,
+                tle_provenance=item.tle_provenance,
+                future_tle_access=item.future_tle_access,
+                terminal=item.terminal,
+                null_action=item.action.is_null,
+                outage=item.outage,
+            )
+        )
+    if not rows:
+        raise StageCContractError("anchor has no retained legal action rows")
+    return tuple(rows)
+
+
+def schema_manifest() -> dict[str, object]:
+    return {
+        "q1": {**Q1_SCHEMA, "sha256": Q1_SCHEMA_SHA256},
+        "q2": {**Q2_SCHEMA, "sha256": Q2_SCHEMA_SHA256},
+        "row_schema": ROW_SCHEMA_VERSION,
+        "background_semantics": {
+            "source": "previous committed served set",
+            "focal_user": "excluded",
+            "timestamp": "decision instant",
+            "activation": "before focal insertion",
+        },
+    }
+
+
+__all__ = [
+    "ActionEvaluation",
+    "FeatureSpec",
+    "ForecastObservation",
+    "PerAnchorEvaluation",
+    "PhysicalAction",
+    "Q1_FEATURES",
+    "Q1_SCHEMA_SHA256",
+    "Q2_FEATURES",
+    "Q2_SCHEMA_SHA256",
+    "SourceRow",
+    "extract_source_rows",
+    "kappa_normalization_bits",
+    "schema_manifest",
+    "seal_action_evaluation",
+]
+
+exec
+/bin/bash -lc "rg -n \"ForecastObservation|survival=|survival\\b|survives\\b|_batched_stage2_forecasts|OffsetProjection|c2_persistence_forecast\" src scripts tests | head -n 300" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+src/mcrl/env/d2.py:36:Per-satellite state is keyed by **NORAD id** and survives a satellite
+scripts/run_v025_pilot_c3.py:36:from mcrl.physics_v025.targets import c2_persistence_forecast, matched_anchor_decomposition
+scripts/run_v025_pilot_c3.py:60:    ForecastObservation,
+scripts/run_v025_pilot_c3.py:422:                survives = bool(future_metric["legal"] and identity is not None)
+scripts/run_v025_pilot_c3.py:424:                    c2_normalized += math.tanh(math.log(max(future_ratio, 1e-30))) if survives else -1.0
+scripts/run_v025_pilot_c3.py:425:                    alive = survives
+scripts/run_v025_pilot_c3.py:428:                forecast_rows.append(ForecastObservation(
+scripts/run_v025_pilot_c3.py:429:                    valid=survives,
+scripts/run_v025_pilot_c3.py:430:                    survival=survives,
+scripts/run_v025_pilot_c3.py:570:    forecasts, _forecast_receipts = ENGINE._batched_stage2_forecasts(
+scripts/run_v025_pilot_c3.py:601:            c2 = c2_persistence_forecast(
+scripts/run_v025_pilot_c3.py:666:                    ForecastObservation(
+scripts/run_v025_pilot_c3.py:668:                        survival=row.survives,
+scripts/diagnose_v025_c1c2_sufficiency.py:25:    OffsetProjection,
+scripts/diagnose_v025_c1c2_sufficiency.py:27:    c2_persistence_forecast,
+scripts/diagnose_v025_c1c2_sufficiency.py:33:    ForecastObservation,
+scripts/diagnose_v025_c1c2_sufficiency.py:74:) -> OffsetProjection:
+scripts/diagnose_v025_c1c2_sufficiency.py:75:    return OffsetProjection(
+scripts/diagnose_v025_c1c2_sufficiency.py:78:        survives=True,
+scripts/diagnose_v025_c1c2_sufficiency.py:90:        ForecastObservation(True, True, 4.0 - index, 2.0)
+scripts/diagnose_v025_c1c2_sufficiency.py:214:    c2_a = c2_persistence_forecast(
+scripts/diagnose_v025_c1c2_sufficiency.py:221:    c2_b = c2_persistence_forecast(
+scripts/diagnose_v025_c1c2_sufficiency.py:371:    forecasts, _ = pilot.ENGINE._batched_stage2_forecasts(
+scripts/diagnose_v025_c1c2_sufficiency.py:404:        c2 = c2_persistence_forecast(
+scripts/diagnose_v025_c1c2_sufficiency.py:433:                        float(projection.survives),
+scripts/diagnose_v025_c1c2_sufficiency.py:578:    # survival state is expanded, so ordinary least squares is sufficient and
+src/mcrl/env/service.py:47:What survives is the *behaviour*, under its proper name: "連上之後仍須滿足
+src/mcrl/env/step.py:415:        """Return the environment state that survives an episode reset.
+tests/test_w03_g9_handover_accounting.py:280:    survives a shuffle would be testing a property it does not have.
+src/mcrl/stagec_v025/synthetic.py:60:    ForecastObservation,
+src/mcrl/stagec_v025/synthetic.py:103:        ForecastObservation(True, True, 4.0 + offset, 2.0 + 0.1 * offset)
+src/mcrl/stagec_v025/state.py:63:    FeatureSpec("survival", "boolean", 1.0),
+src/mcrl/stagec_v025/state.py:111:class ForecastObservation:
+src/mcrl/stagec_v025/state.py:113:    survival: bool
+src/mcrl/stagec_v025/state.py:143:    forecasts: tuple[ForecastObservation, ForecastObservation, ForecastObservation]
+src/mcrl/stagec_v025/state.py:430:                    float(forecast.survival),
+src/mcrl/stagec_v025/state.py:514:    "ForecastObservation",
+tests/test_w17_step_environment.py:8:What survives from that episode is the **compatibility condition**: the
+tests/stagec_v025/test_c1c2_exact_label_acceptance.py:21:    c2_persistence_forecast,
+tests/stagec_v025/test_c1c2_exact_label_acceptance.py:136:    forecasts, _ = pilot.ENGINE._batched_stage2_forecasts(
+tests/stagec_v025/test_c1c2_exact_label_acceptance.py:217:        exact = c2_persistence_forecast(
+tests/stagec_v025/test_contract_v1_acceptance.py:16:    OffsetProjection,
+tests/stagec_v025/test_contract_v1_acceptance.py:17:    c2_persistence_forecast,
+tests/stagec_v025/test_contract_v1_acceptance.py:415:    def projection(index: int, *, survives: bool) -> OffsetProjection:
+tests/stagec_v025/test_contract_v1_acceptance.py:416:        return OffsetProjection(
+tests/stagec_v025/test_contract_v1_acceptance.py:419:            survives=survives,
+tests/stagec_v025/test_contract_v1_acceptance.py:428:    future = c2_persistence_forecast(
+tests/stagec_v025/test_contract_v1_acceptance.py:429:        (projection(1, survives=True), projection(2, survives=False), projection(3, survives=True)),
+tests/stagec_v025/test_contract_v1_acceptance.py:430:        tuple(projection(index, survives=True) for index in (1, 2, 3)),
+src/mcrl/physics_v025/targets.py:177:class OffsetProjection:
+src/mcrl/physics_v025/targets.py:180:    survives: bool
+src/mcrl/physics_v025/targets.py:212:ProjectionEvaluator = Callable[[int, float, Mapping[int, PhysicalIdentity | None], bool], OffsetProjection]
+src/mcrl/physics_v025/targets.py:223:) -> tuple[OffsetProjection, ...]:
+src/mcrl/physics_v025/targets.py:248:    projections: tuple[OffsetProjection, ...]
+src/mcrl/physics_v025/targets.py:251:def c2_persistence_forecast(
+src/mcrl/physics_v025/targets.py:252:    candidate: Sequence[OffsetProjection],
+src/mcrl/physics_v025/targets.py:253:    default: Sequence[OffsetProjection],
+src/mcrl/physics_v025/targets.py:292:    retained: list[OffsetProjection] = []
+src/mcrl/physics_v025/targets.py:303:            if not selected.valid or not selected.survives:
+src/mcrl/physics_v025/targets.py:697:    "OffsetProjection",
+src/mcrl/physics_v025/targets.py:700:    "c2_persistence_forecast",
+src/mcrl/physics_v025/state_v025.py:32:    ("survival", "boolean", 1.0),
+src/mcrl/physics_v025/state_v025.py:74:    survival: bool
+src/mcrl/physics_v025/state_v025.py:81:            float(self.survival),
+tests/physics_v025/test_stage2_tapes_targets_state.py:51:    OffsetProjection,
+tests/physics_v025/test_stage2_tapes_targets_state.py:54:    c2_persistence_forecast,
+tests/physics_v025/test_stage2_tapes_targets_state.py:73:def _projection(index: int, bits: float, joules: float, *, survives: bool = True) -> OffsetProjection:
+tests/physics_v025/test_stage2_tapes_targets_state.py:74:    return OffsetProjection(
+tests/physics_v025/test_stage2_tapes_targets_state.py:77:        survives,
+tests/physics_v025/test_stage2_tapes_targets_state.py:218:        c2_persistence_forecast,
+tests/physics_v025/test_stage2_tapes_targets_state.py:272:        _projection(1, 5, 2, survives=False),
+tests/physics_v025/test_stage2_tapes_targets_state.py:277:    label = c2_persistence_forecast(
+tests/physics_v025/test_stage4d_gate.py:587:    row = runner._projection_from_profile(offset=2, profile=None, survives=False)
+tests/physics_v025/test_stage4d_gate.py:589:    assert row.survives is False
+src/mcrl/physics_v025/__init__.py:24:from .targets import c1_difference_surplus, c2_persistence_forecast, c3_lcsrs_interaction
+src/mcrl/physics_v025/__init__.py:44:    "c2_persistence_forecast",
+tests/test_w173_ee_axis_relational_zr_c3.py:327:    # non-focal token survives while every focal/padded row remains zero.
+tests/test_w04_d2.py:5:time-to-trigger, and per-NORAD state that survives leaving the window.
+src/mcrl/runtime/probe_p6.py:121:    rate asks whether the greedy choice survives.  Kendall tau asks whether
+
+exec
+/bin/bash -lc "sed -n '520,700p' scripts/run_v025_pilot_c3.py && sed -n '160,330p' src/mcrl/physics_v025/targets.py && rg -n \"def _batched_stage2_forecasts\" -S ." in /home/sat/mcrl-v025-c1c2suff-ws
+ exited 1 in 449ms:
+exec
+/bin/bash -lc "sed -n '1,120p' scripts/run_v025_pilot_c3.py && rg -n \"batched_stage2_forecasts\" --glob '*.py' ." in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Quarantined end-to-end V0.25 learned-C3 pilot (PILOT_NOT_CLAIM).
+
+This adapter joins the independently delivered stage-4d/4f real-physics
+engine, fixed legacy provider, and Stage-C build-3 learner.  It deliberately
+uses only V025_PROBE/world/{1..4}; no claim-panel namespace is accepted.
+"""
+
+from __future__ import annotations
+
+import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass
+import datetime as dt
+from fractions import Fraction
+import hashlib
+import importlib.util
+import itertools
+import json
+import math
+import multiprocessing as mp
+import os
+from pathlib import Path
+import resource
+import sys
+import time
+from types import ModuleType
+from typing import Iterable, Mapping, Sequence
+
+import numpy as np
+
+from mcrl.physics_v025.calibration import assert_calibration_prices
+from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W, DECISION_INTERVAL_S
+from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+from mcrl.physics_v025.tapes import DEVELOPMENT_WORLD_DOMAINS, build_world_tape, digest_payload, seed_from_domain
+from mcrl.physics_v025.targets import c2_persistence_forecast, matched_anchor_decomposition
+from mcrl.stagec_v025.canonical import canonical_sha256, write_once_json
+from mcrl.stagec_v025.coalitions import (
+    AffectedBeamContext,
+    CoalitionContext,
+    CoalitionMember,
+    build_coalition_row,
+    read_coalition_shard,
+    write_coalition_shard,
+)
+from mcrl.stagec_v025.learner import (
+    CoalitionBatch,
+    LEGACY_EPOCH_BUDGET,
+    LEARNED_ARMS,
+    PairwiseBatch,
+    ROUTES,
+    SOURCE_MAP,
+    V1LineageOrchestrator,
+    build_pairwise_batches,
+    default_synthetic_neutral_sources,
+)
+from mcrl.stagec_v025.shards import read_source_shard, write_source_shard
+from mcrl.stagec_v025.state import (
+    ActionEvaluation,
+    ForecastObservation,
+    PhysicalAction,
+    extract_source_rows,
+    seal_action_evaluation,
+)
+
+
+LABEL = "PILOT_NOT_CLAIM"
+PILOT_SCHEMA = "mcrl-v025-learned-c3-real-physics-pilot-v1"
+ROOT = Path(__file__).resolve().parents[1]
+ENGINE_PATH = ROOT / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+DEFAULT_OUTPUT = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
+REPORT_PATH = ROOT / "V025-PILOT-C3-REPORT-2026-09-09.md"
+TRAIN_WORLDS = DEVELOPMENT_WORLD_DOMAINS[:2]
+EVALUATION_WORLDS = DEVELOPMENT_WORLD_DOMAINS[2:4]
+LEARNER_DOMAINS = tuple(f"V025_LEARNER/seed/{index}" for index in range(1, 5))
+LEARNER_SEEDS = tuple(seed_from_domain(domain) for domain in LEARNER_DOMAINS)
+REPORTED_ARMS = (*LEARNED_ARMS, "BASELINE", "S0", "S_UNI")
+# --- minimal-pilot scale knobs (engineering only; overridden from main()) ---
+# Defaults reproduce the original full-scale pilot exactly.
+PILOT_ARMS = tuple(LEARNED_ARMS)
+EVAL_ANCHOR_STEPS = 30
+EVAL_CARRIER_LIMIT = None
+EVAL_EPOCH = LEGACY_EPOCH_BUDGET
+ROW_WORLD_GLOB = "world-*"
+ROW_ANCHOR_LIMIT = None
+EVAL_TAPE_STEPS = 33
+PILOT_FORECAST_BOUNDARIES = (0,)
+PILOT_AGGREGATE_PAIR_LIMIT = 4_096
+PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+
+
+def _engine() -> ModuleType:
+    name = "mcrl_v025_pilot_matrix_engine"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, ENGINE_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load engine at {ENGINE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+ENGINE = _engine()
+# Pilot-only compute fallback. The sealed engine remains byte-for-byte intact;
+# its forecast helper reads this module constant at call time.
+ENGINE.SELECTION_BOUNDARY_INDICES = PILOT_FORECAST_BOUNDARIES
+
+
+def _sha_files(paths: Iterable[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(paths):
+        digest.update(path.relative_to(ROOT).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+./tests/stagec_v025/test_c1c2_exact_label_acceptance.py:136:    forecasts, _ = pilot.ENGINE._batched_stage2_forecasts(
+./scripts/run_v025_pilot_c3.py:570:    forecasts, _forecast_receipts = ENGINE._batched_stage2_forecasts(
+./scripts/diagnose_v025_c1c2_sufficiency.py:371:    forecasts, _ = pilot.ENGINE._batched_stage2_forecasts(
+
+exec
+/bin/bash -lc "rg -n \"def _batched_stage2_forecasts|survives|valid=\" .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | head -n 160 && sed -n '1220,1420p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+1222:            survives = bool(result.score.served_phy.get(focal_user, False))
+1225:            survives = False
+1237:                survives,
+1567:    survives: bool,
+1572:        survives,
+1592:def _batched_stage2_forecasts(
+1633:            survives = profile is not None and all(
+1637:                offset=offset, profile=profile, survives=survives
+1646:                    "survives": projection.survives,
+                        margins.append(10.0 * math.log10(tx.sinr) - SINR_MIN_DB)
+                        ses.append(model.rate_bps(tx.sinr, tx.bandwidth_hz) / tx.bandwidth_hz)
+            survives = bool(result.score.served_phy.get(focal_user, False))
+            outcome = result.outcome()
+        else:
+            survives = False
+            outcome = NetworkOutcome.build(
+                bits=0,
+                joules=0,
+                phi=0,
+                decoding_availability=0,
+                useful_availability=0,
+            )
+        rows.append(
+            OffsetProjection(
+                offset,
+                valid,
+                survives,
+                outcome,
+                True,
+                required if setting.architecture in {"a-r", "a′-r"} else None,
+                cap if setting.architecture in {"a-r", "a′-r"} else None,
+                min(margins, default=-math.inf) if margins else -100.0,
+                math.fsum(ses) / len(ses) if ses else 0.0,
+            )
+        )
+    return tuple(rows)
+
+
+def _factor_scores(
+    *,
+    tape: ExogenousWorldTape,
+    setting: PhysicsSetting,
+    step_index: int,
+    carrier: str,
+    base: Configuration,
+    incumbent: Configuration,
+    catalog: Sequence[Configuration],
+    evaluated: Mapping[str, EvaluatedProfile],
+    calibration: CalibrationValues,
+    counter: EvaluationCounter,
+) -> tuple[
+    dict[str, dict[tuple[int, tuple[int, int] | None], Fraction]],
+    Fraction,
+    int,
+]:
+    base_profile = evaluated[base.configuration_id]
+    result = {name: {} for name in ("C1", "C2", "C3")}
+    for config in catalog:
+        if config.changed_users != 1:
+            continue
+        user = next(
+            user for user, identity in config.assignments if dict(base.assignments)[user] != identity
+        )
+        identity = dict(config.assignments)[user]
+        c1 = c1_difference_surplus(
+            evaluated[config.configuration_id].outcome(
+                phi=_phi_for(
+                    incumbent,
+                    config,
+                    cell_rekeyed_users=_rekeyed_users(tape, step_index),
+                )
+            ),
+            base_profile.outcome(
+                phi=_phi_for(
+                    incumbent,
+                    base,
+                    cell_rekeyed_users=_rekeyed_users(tape, step_index),
+                )
+            ),
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=calibration.eta_ref,
+            kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+        )
+        result["C1"][(user, identity)] = c1.normalized_total
+        candidate_forecast = _forecast_rows(
+            tape=tape,
+            setting=setting,
+            anchor_step=step_index,
+            config=config,
+            carrier=carrier,
+            counter=counter,
+            focal_user=user,
+        )
+        default_forecast = _forecast_rows(
+            tape=tape,
+            setting=setting,
+            anchor_step=step_index,
+            config=base,
+            carrier=carrier,
+            counter=counter,
+            focal_user=user,
+        )
+        c2 = c2_persistence_forecast(
+            candidate_forecast,
+            default_forecast,
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=calibration.eta_ref,
+            kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+        )
+        result["C2"][(user, identity)] = c2.normalized_total
+    users = tuple(user for user, _ in base.assignments)
+    interaction_sum = Fraction()
+    interaction_count = 0
+    for user0, user1 in itertools.combinations(users, 2):
+        uni0 = [row for row in catalog if row.changed_users == 1 and dict(row.assignments)[user0] != dict(base.assignments)[user0]]
+        uni1 = [row for row in catalog if row.changed_users == 1 and dict(row.assignments)[user1] != dict(base.assignments)[user1]]
+        for first in uni0:
+            for second in uni1:
+                merged_map = dict(base.assignments)
+                merged_map[user0] = dict(first.assignments)[user0]
+                merged_map[user1] = dict(second.assignments)[user1]
+                joint = next((row for row in catalog if row.mapping == merged_map), None)
+                if joint is None:
+                    continue
+                interaction = c3_lcsrs_interaction(
+                    coalition_users=(user0, user1),
+                    f00=base_profile.outcome(),
+                    f10=evaluated[first.configuration_id].outcome(),
+                    f01=evaluated[second.configuration_id].outcome(),
+                    f11=evaluated[joint.configuration_id].outcome(),
+                    lambda_bits_per_j=calibration.lambda_bits_per_j,
+                    eta_ref=calibration.eta_ref,
+                    kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+                )
+                interaction_sum += interaction.psi
+                interaction_count += 1
+                for user, z3 in interaction.z3_by_user:
+                    identity = merged_map[user]
+                    old = result["C3"].get((user, identity))
+                    normalized = z3 / calibration.kappa_bits_per_user_step
+                    if old is None or normalized > old:
+                        result["C3"][(user, identity)] = normalized
+    return result, interaction_sum, interaction_count
+
+
+def _configuration_factor_scores(
+    *,
+    tape: ExogenousWorldTape,
+    setting: PhysicsSetting,
+    step_index: int,
+    carrier: str,
+    base: Configuration,
+    incumbent: Configuration,
+    catalog: Sequence[Configuration],
+    evaluator: StepEvaluator,
+    calibration: CalibrationValues,
+    counter: EvaluationCounter,
+    c2_horizon_offsets: int = 3,
+    run_setting: SealedRunSetting | None = None,
+) -> tuple[dict[str, dict[str, object]], Fraction, int]:
+    """Score every complete configuration by the sealed v1.5 decomposition."""
+
+    base_profile = evaluator.evaluate(base)
+    base_map = base.mapping
+    singleton_c2: dict[tuple[int, tuple[int, int] | None], Fraction] = {}
+    default_forecasts: dict[int, tuple[OffsetProjection, ...]] = {}
+    result: dict[str, dict[str, object]] = {}
+    interaction_sum = Fraction()
+    interaction_count = 0
+    for config in catalog:
+        selected_map = config.mapping
+        changed = tuple(
+            user for user in sorted(base_map) if selected_map[user] != base_map[user]
+        )
+        required_subsets = {frozenset(), frozenset(changed)} | {
+            frozenset((user,)) for user in changed
+        }
+        reporting_subsets = (
+            {
+                frozenset(subset)
+                for size in range(len(changed) + 1)
+                for subset in itertools.combinations(changed, size)
+            }
+            if 1 < len(changed) <= 4
+            else required_subsets
+        )
+        outcomes: dict[frozenset[int], NetworkOutcome] = {}
+        for subset in reporting_subsets:
+            mapping = dict(base_map)
+            for user in subset:
+                mapping[user] = selected_map[user]
+            subset_config = _configuration(base, mapping, kind="v15-sparse-set")
+            outcomes[subset] = evaluator.evaluate(subset_config).outcome()
+        candidate_phi = _phi_for(
+            incumbent,
+            config,
+            cell_rekeyed_users=_rekeyed_users(tape, step_index),
+        )
+        base_phi = _phi_for(
+            incumbent,
+            base,
+            cell_rekeyed_users=_rekeyed_users(tape, step_index),
+        )
+        decomposition = set_score_decomposition(
+            coalition_users=changed,
+            outcomes_by_subset=outcomes,
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=calibration.eta_ref,
+            kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+            phi_difference=candidate_phi - base_phi,
+
+exec
+/bin/bash -lc "sed -n '1530,1665p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py && sed -n '340,470p' scripts/diagnose_v025_c1c2_sufficiency.py && sed -n '470,698p' scripts/diagnose_v025_c1c2_sufficiency.py" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+            singleton = _configuration(base, mapping, kind="selection-singleton")
+            profile = evaluated[singleton.configuration_id]
+            value = Fraction(str(profile.bits)) - calibration.eta_ref * Fraction(
+                str(profile.joules)
+            )
+            d_rows.append((user, value - base_core))
+        profile = evaluated[config.configuration_id]
+        joint = (
+            Fraction(str(profile.bits))
+            - calibration.eta_ref * Fraction(str(profile.joules))
+            - base_core
+        )
+        additive = sum((value for _user, value in d_rows), Fraction())
+        psi = joint - additive
+        phi = _phi_for(
+            incumbent, config, cell_rekeyed_users=cell_rekeyed_users
+        ) - _phi_for(
+            incumbent, base, cell_rekeyed_users=cell_rekeyed_users
+        )
+        result[config.configuration_id] = {
+            "C1": additive / calibration.kappa_bits_per_user_step + phi,
+            "C2": Fraction(),
+            "C3": psi / calibration.kappa_bits_per_user_step,
+            "d_by_user": tuple(d_rows),
+            "psi_A": psi,
+            "shapley_interaction_by_user": (),
+            "joint_change_bits": joint,
+            "c1_physical_core": additive / calibration.kappa_bits_per_user_step,
+            "phi_difference": phi,
+        }
+    return result
+
+
+def _projection_from_profile(
+    *,
+    offset: int,
+    profile: EvaluatedProfile | None,
+    survives: bool,
+) -> OffsetProjection:
+    return OffsetProjection(
+        offset,
+        profile is not None,
+        survives,
+        (
+            profile.outcome()
+            if profile is not None
+            else NetworkOutcome.build(
+                bits=0,
+                joules=0,
+                phi=0,
+                decoding_availability=0,
+                useful_availability=0,
+            )
+        ),
+        True,
+        None if profile is None else profile.required_power_w_max,
+        None if profile is None else BEAM_RF_CAP_W,
+        -100.0 if profile is None else profile.min_decoding_margin_db,
+        0.0 if profile is None else profile.mean_acm_se_bit_s_hz,
+    )
+
+
+def _batched_stage2_forecasts(
+    *,
+    tape: ExogenousWorldTape,
+    setting: PhysicsSetting,
+    anchor_step: int,
+    carrier: str,
+    configs: Sequence[Configuration],
+    counter: EvaluationCounter,
+    calibration: CalibrationValues,
+    run_setting: SealedRunSetting,
+) -> tuple[
+    dict[str, tuple[OffsetProjection, ...]],
+    tuple[dict[str, object], ...],
+]:
+    """Evaluate configuration × offset × coarse-boundary forecasts in batches."""
+
+    by_config: dict[str, list[OffsetProjection]] = {
+        row.configuration_id: [] for row in configs
+    }
+    receipts: list[dict[str, object]] = []
+    for offset in (1, 2, 3):
+        projected_step = anchor_step + offset
+        transition = _base_configuration(tape, projected_step, carrier)
+        evaluator = StepEvaluator(
+            tape,
+            setting,
+            projected_step,
+            transition_from=transition,
+            field="nominal",
+            counter=counter,
+            run_setting=run_setting,
+            boundary_indices=SELECTION_BOUNDARY_INDICES,
+        )
+        evaluator.evaluate_many(configs)
+        for config in configs:
+            profile = evaluator._evaluated.get(config.configuration_id)
+            changed = tuple(
+                user
+                for user in config.mapping
+                if config.mapping[user] != transition.mapping.get(user)
+            )
+            survives = profile is not None and all(
+                profile.score.served_phy.get(user, False) for user in changed
+            )
+            projection = _projection_from_profile(
+                offset=offset, profile=profile, survives=survives
+            )
+            by_config[config.configuration_id].append(projection)
+            receipts.append(
+                {
+                    "schema": f"{SCHEMA}-forecast-margin-row-v1",
+                    "configuration_id": config.configuration_id,
+                    "offset": offset,
+                    "valid": projection.valid,
+                    "survives": projection.survives,
+                    "required_power_w": projection.required_power_w,
+                    "power_cap_w": projection.power_cap_w,
+                    "required_power_cap_margin_w": projection.required_power_cap_margin_w,
+                    "min_decoding_margin_db": projection.min_decoding_margin_db,
+                    "mean_acm_se_bit_s_hz": projection.mean_acm_se_bit_s_hz,
+                }
+            )
+    validated: dict[str, tuple[OffsetProjection, ...]] = {}
+    for config in configs:
+        rows = tuple(by_config[config.configuration_id])
+        if all(row.valid for row in rows):
+            def replay_projection(
+                index: int,
+                _time_s: float,
+                assignments: Mapping[int, tuple[int, int] | None],
+                recompute_background: bool,
+                *,
+                expected_assignments: Mapping[int, tuple[int, int] | None] = config.mapping,
+                projections: tuple[OffsetProjection, ...] = rows,
+        EXISTING_ROWS / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
+    )
+    base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
+    incumbent = pilot.ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+    configs = {base.configuration_id: base}
+    row_configs = []
+    for row in shard.rows:
+        mapping = base.mapping
+        mapping[row.user_id] = pilot._identity(row.action)
+        config = pilot.ENGINE._configuration(base, mapping, kind="sufficiency-replay")
+        configs[config.configuration_id] = config
+        row_configs.append((row, config))
+
+    counter = pilot.ENGINE.EvaluationCounter()
+    evaluator = pilot.ENGINE.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+        field="nominal",
+        counter=counter,
+        run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+    evaluator.evaluate_many(tuple(configs.values()))
+    valid = tuple(
+        config
+        for config in configs.values()
+        if config.configuration_id not in evaluator._invalid
+    )
+    forecasts, _ = pilot.ENGINE._batched_stage2_forecasts(
+        tape=tape,
+        setting=setting,
+        anchor_step=step_index,
+        carrier=carrier,
+        configs=valid,
+        counter=counter,
+        calibration=calibration,
+        run_setting=run_setting,
+    )
+    base_profile = evaluator.evaluate(base)
+    rekeys = pilot.ENGINE._rekeyed_users(tape, step_index)
+    base_outcome = base_profile.outcome(
+        phi=pilot.ENGINE._phi_for(incumbent, base, cell_rekeyed_users=rekeys)
+    )
+    kappa = calibration.kappa_bits_per_user_step
+    eta = calibration.eta_ref
+    result = []
+    for row, config in row_configs:
+        if row.reference_action or config.configuration_id in evaluator._invalid:
+            continue
+        profile = evaluator.evaluate(config)
+        outcome = profile.outcome(
+            phi=pilot.ENGINE._phi_for(incumbent, config, cell_rekeyed_users=rekeys)
+        )
+        c1 = c1_difference_surplus(
+            outcome,
+            base_outcome,
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=eta,
+            kappa_bits_per_user_step=kappa,
+        )
+        candidate_forecasts = forecasts[config.configuration_id]
+        c2 = c2_persistence_forecast(
+            candidate_forecasts,
+            forecasts[base.configuration_id],
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=eta,
+            kappa_bits_per_user_step=kappa,
+        )
+        c1_structure = (
+            _f(outcome.bits / kappa),
+            _f(eta * outcome.joules / kappa),
+            _f(outcome.phi),
+            _f(base_outcome.bits / kappa),
+            _f(eta * base_outcome.joules / kappa),
+            _f(base_outcome.phi),
+            float(profile.required_power_w_max / 1.65),
+            float(profile.score.decoding_time_s.get(row.user_id, 0.0)),
+        )
+        c2_values: list[float] = []
+        for candidate_projection, default_projection in zip(
+            candidate_forecasts, forecasts[base.configuration_id], strict=True
+        ):
+            for projection in (candidate_projection, default_projection):
+                c2_values.extend(
+                    (
+                        _f(projection.outcome.bits / kappa),
+                        _f(eta * projection.outcome.joules / kappa),
+                        _f(projection.outcome.decoding_availability),
+                        _f(projection.outcome.useful_availability),
+                        float(projection.valid),
+                        float(projection.survives),
+                        -1.0 if projection.required_power_w is None else projection.required_power_w / 1.65,
+                    )
+                )
+        result.append(
+            ExactRow(
+                anchor_index,
+                row.user_id,
+                pilot._identity(row.action),
+                row.q1_state,
+                row.q2_state,
+                c1_structure,
+                tuple(c2_values),
+                float(c1.normalized_total),
+                float(c2.normalized_total),
+                str(c1.normalized_total),
+                str(c2.normalized_total),
+            )
+        )
+    return result
+
+
+def _standardize(train: np.ndarray, other: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    mean = train.mean(axis=0)
+    scale = train.std(axis=0)
+    scale[scale < 1e-12] = 1.0
+    return (train - mean) / scale, (other - mean) / scale
+
+
+def _knn_predict(
+    train_x: np.ndarray,
+    train_y: np.ndarray,
+    test_x: np.ndarray,
+    *,
+    neighbors: int,
+    chunk_size: int = 128,
+) -> np.ndarray:
+    predictions = []
+    predictions = []
+    k = min(neighbors, len(train_x))
+    train_norm = np.einsum("ij,ij->i", train_x, train_x)
+    for start in range(0, len(test_x), chunk_size):
+        chunk = test_x[start : start + chunk_size]
+        distances = (
+            np.einsum("ij,ij->i", chunk, chunk)[:, None]
+            + train_norm[None, :]
+            - 2.0 * chunk @ train_x.T
+        )
+        indices = np.argpartition(distances, kth=k - 1, axis=1)[:, :k]
+        selected_distances = np.take_along_axis(distances, indices, axis=1)
+        weights = 1.0 / np.maximum(selected_distances, 1e-12)
+        selected_y = train_y[indices]
+        predictions.append((weights * selected_y).sum(axis=1) / weights.sum(axis=1))
+    return np.concatenate(predictions)
+
+
+def _explained_variance(actual: np.ndarray, predicted: np.ndarray) -> float:
+    variance = float(np.var(actual))
+    return float("nan") if variance == 0.0 else 1.0 - float(np.var(actual - predicted)) / variance
+
+
+def _fit_route(
+    rows: list[ExactRow],
+    *,
+    route: str,
+    train_anchors: set[int],
+    validation_anchors: set[int],
+    test_anchors: set[int],
+) -> dict[str, object]:
+    q_name = {"C1": "q1", "C2": "q2"}[route]
+    target_name = f"{route.lower()}_target"
+    structure_name = f"{route.lower()}_structure"
+    candidates = (1, 3, 7, 15, 31)
+
+    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+
+    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+        if route == "C1":
+            # Exact C1 is linear in the six complete network terms.  Retain
+            # the two extra evaluator diagnostics in the stored row, but do
+            # not hand them to this sufficient comparator.
+            return np.asarray(
+                [getattr(row, structure_name)[:6] for row in selected],
+                dtype=np.float64,
+            )
+        values = []
+        for row in selected:
+            raw = getattr(row, structure_name)
+            alive = True
+            live_cores = []
+            lost = 0
+            for offset in range(3):
+                start = offset * 14
+                candidate = raw[start : start + 7]
+                default = raw[start + 7 : start + 14]
+                core = candidate[0] - candidate[1] - default[0] + default[1]
+                live_cores.append(core if alive else 0.0)
+                if alive and not (bool(candidate[4]) and bool(candidate[5])):
+                    alive = False
+                    lost += 1
+                elif not alive:
+                    lost += 1
+            values.append((*live_cores, float(lost)))
+        return np.asarray(values, dtype=np.float64)
+
+    def select(anchors: set[int]) -> list[ExactRow]:
+        return [row for row in rows if row.anchor in anchors]
+
+    fit_rows = select(train_anchors)
+    validation_rows = select(validation_anchors)
+    all_train_rows = select(train_anchors | validation_anchors)
+    test_rows = select(test_anchors)
+    fit_y = np.asarray([getattr(row, target_name) for row in fit_rows])
+    validation_y = np.asarray([getattr(row, target_name) for row in validation_rows])
+    all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+    test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+
+    fit_x = q_matrix(fit_rows)
+    validation_x = q_matrix(validation_rows)
+    fit_x, validation_x = _standardize(fit_x, validation_x)
+    scores = {}
+    for neighbors in candidates:
+        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+        scores[neighbors] = _explained_variance(validation_y, prediction)
+    selected_k = max(scores, key=lambda value: (scores[value], -value))
+    train_x = q_matrix(all_train_rows)
+    test_x = q_matrix(test_rows)
+    train_x, test_x = _standardize(train_x, test_x)
+    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+    residual = test_y - prediction
+    results = {
+        "q_only": {
+            "model": "standardized inverse-distance k-nearest-neighbor",
+            "selected_k": selected_k,
+            "validation_explained_variance_by_k": {
+                str(key): value for key, value in scores.items()
+            },
+            "held_out_explained_variance": _explained_variance(test_y, prediction),
+            "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+            "held_out_mae": float(np.mean(np.abs(residual))),
+        }
+    }
+
+    # The comparator sees the complete outcome terms discarded by Q1/Q2.
+    # Their production target definitions are linear once C2's absorbing
+    # survival state is expanded, so ordinary least squares is sufficient and
+    # avoids attributing k-NN's high-dimensional distance failure to physics.
+    train_structure = structure_matrix(all_train_rows)
+    test_structure = structure_matrix(test_rows)
+    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
+    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
+    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
+    structure_prediction = test_design @ coefficients
+    structure_residual = test_y - structure_prediction
+    results["discarded_structure"] = {
+        "model": "ordinary least squares on exact target-sufficient network terms",
+        "held_out_explained_variance": _explained_variance(
+            test_y, structure_prediction
+        ),
+        "held_out_rmse": float(
+            np.sqrt(np.mean(structure_residual * structure_residual))
+        ),
+        "held_out_mae": float(np.mean(np.abs(structure_residual))),
+        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
+        "coefficients": [float(value) for value in coefficients],
+    }
+    results["held_out_rows"] = len(test_rows)
+    results["held_out_target_variance"] = float(np.var(test_y))
+    results["explained_variance_gap"] = (
+        results["discarded_structure"]["held_out_explained_variance"]
+        - results["q_only"]["held_out_explained_variance"]
+    )
+    return results
+
+
+def explainability(anchor_count: int) -> dict[str, object]:
+    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+        raise ValueError("anchor_count must be an even integer in [12, 90]")
+    anchor_indices = tuple(range(anchor_count))
+    max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+    tape = build_world_tape(
+        domain=DEVELOPMENT_WORLD_DOMAINS[0],
+        provider=LegacyWorldProvider(role="pilot-source"),
+        steps=max_step + 4,
+        start_time_s=0.0,
+    )
+    calibration = _calibration()
+    rows = []
+    for anchor_index in anchor_indices:
+        rows.extend(_relabel_anchor(tape, calibration, anchor_index))
+        print(
+            json.dumps(
+                {"phase": "exact-relabel", "anchor": anchor_index, "rows": len(rows)}
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+    # Both carrier views of one physical step can have byte-identical Q rows.
+    # Split by step, not by source shard, so those aliases cannot leak between
+    # fitting, model-selection, and held-out sets.
+    rng = np.random.default_rng(20260909)
+    step_count = anchor_count // len(REFERENCE_CARRIERS)
+    shuffled_steps = list(range(step_count))
+    rng.shuffle(shuffled_steps)
+    test_step_count = max(1, step_count // 4)
+    validation_step_count = max(1, step_count // 6)
+    test_steps = set(shuffled_steps[:test_step_count])
+    validation_steps = set(
+        shuffled_steps[test_step_count : test_step_count + validation_step_count]
+    )
+    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
+
+    def anchors_for(steps: set[int]) -> set[int]:
+        return {
+            step * len(REFERENCE_CARRIERS) + carrier
+            for step in steps
+            for carrier in range(len(REFERENCE_CARRIERS))
+        }
+
+    train = anchors_for(train_steps)
+    validation = anchors_for(validation_steps)
+    test = anchors_for(test_steps)
+    return {
+        "source": str(EXISTING_ROWS.relative_to(ROOT)),
+        "world": DEVELOPMENT_WORLD_DOMAINS[0],
+        "anchor_indices": list(anchor_indices),
+        "exact_relabelled_nonreference_valid_rows": len(rows),
+        "split_unit": "whole physical step (both carrier views grouped)",
+        "train_steps": sorted(train_steps),
+        "validation_steps": sorted(validation_steps),
+        "test_steps": sorted(test_steps),
+        "train_anchors": sorted(train),
+        "validation_anchors": sorted(validation),
+        "test_anchors": sorted(test),
+        "split_seed": 20260909,
+        "c1": _fit_route(
+            rows,
+            route="C1",
+            train_anchors=train,
+            validation_anchors=validation,
+            test_anchors=test,
+        ),
+        "c2": _fit_route(
+            rows,
+            route="C2",
+            train_anchors=train,
+            validation_anchors=validation,
+            test_anchors=test,
+        ),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--anchors", type=int, default=12)
+    parser.add_argument("--collisions-only", action="store_true")
+    args = parser.parse_args()
+    payload = {"collisions": collision_witnesses()}
+    if not args.collisions_only:
+        payload["explainability"] = explainability(args.anchors)
+    print(json.dumps(payload, sort_keys=True, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+exec
+/bin/bash -lc "sed -n '1615,1705p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py && sed -n '1,360p' scripts/diagnose_v025_c1c2_sufficiency.py" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+        evaluator = StepEvaluator(
+            tape,
+            setting,
+            projected_step,
+            transition_from=transition,
+            field="nominal",
+            counter=counter,
+            run_setting=run_setting,
+            boundary_indices=SELECTION_BOUNDARY_INDICES,
+        )
+        evaluator.evaluate_many(configs)
+        for config in configs:
+            profile = evaluator._evaluated.get(config.configuration_id)
+            changed = tuple(
+                user
+                for user in config.mapping
+                if config.mapping[user] != transition.mapping.get(user)
+            )
+            survives = profile is not None and all(
+                profile.score.served_phy.get(user, False) for user in changed
+            )
+            projection = _projection_from_profile(
+                offset=offset, profile=profile, survives=survives
+            )
+            by_config[config.configuration_id].append(projection)
+            receipts.append(
+                {
+                    "schema": f"{SCHEMA}-forecast-margin-row-v1",
+                    "configuration_id": config.configuration_id,
+                    "offset": offset,
+                    "valid": projection.valid,
+                    "survives": projection.survives,
+                    "required_power_w": projection.required_power_w,
+                    "power_cap_w": projection.power_cap_w,
+                    "required_power_cap_margin_w": projection.required_power_cap_margin_w,
+                    "min_decoding_margin_db": projection.min_decoding_margin_db,
+                    "mean_acm_se_bit_s_hz": projection.mean_acm_se_bit_s_hz,
+                }
+            )
+    validated: dict[str, tuple[OffsetProjection, ...]] = {}
+    for config in configs:
+        rows = tuple(by_config[config.configuration_id])
+        if all(row.valid for row in rows):
+            def replay_projection(
+                index: int,
+                _time_s: float,
+                assignments: Mapping[int, tuple[int, int] | None],
+                recompute_background: bool,
+                *,
+                expected_assignments: Mapping[int, tuple[int, int] | None] = config.mapping,
+                projections: tuple[OffsetProjection, ...] = rows,
+            ) -> OffsetProjection:
+                if assignments != expected_assignments or not recompute_background:
+                    raise ProbeError("forecast projection replay contract drifted")
+                return projections[index - 1]
+
+            rows = project_three_offsets(
+                assignments=config.mapping,
+                evaluator=replay_projection,
+                architecture=setting.architecture,
+                lambda_bits_per_j=calibration.lambda_bits_per_j,
+                eta_ref=calibration.eta_ref,
+                kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+            )
+        validated[config.configuration_id] = rows
+    return validated, tuple(receipts)
+
+
+def _attach_stage2_c2(
+    *,
+    factors: dict[str, dict[str, object]],
+    forecasts: Mapping[str, tuple[OffsetProjection, ...]],
+    base: Configuration,
+    calibration: CalibrationValues,
+    horizon_offsets: int,
+) -> None:
+    baseline = forecasts[base.configuration_id]
+    for configuration_id, rows in forecasts.items():
+        label = c2_persistence_forecast(
+            rows,
+            baseline,
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=calibration.eta_ref,
+            kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+            horizon_offsets=horizon_offsets,
+        )
+        factors[configuration_id]["C2"] = label.normalized_total
+        factors[configuration_id]["c2_lost_offsets"] = label.lost_offsets
+
+
+def _committed_set_decomposition(
+#!/usr/bin/env python3
+"""No-production-training C1/C2 collision and explainability diagnostic."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass, replace
+from fractions import Fraction
+import json
+from pathlib import Path
+import struct
+import sys
+from typing import Iterable
+
+import numpy as np
+
+from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+from mcrl.physics_v025.tapes import (
+    DEVELOPMENT_WORLD_DOMAINS,
+    REFERENCE_CARRIERS,
+    build_world_tape,
+)
+from mcrl.physics_v025.targets import (
+    NetworkOutcome,
+    OffsetProjection,
+    c1_difference_surplus,
+    c2_persistence_forecast,
+)
+from mcrl.stagec_v025.canonical import canonical_sha256
+from mcrl.stagec_v025.shards import read_source_shard
+from mcrl.stagec_v025.state import (
+    ActionEvaluation,
+    ForecastObservation,
+    PhysicalAction,
+    extract_source_rows,
+    seal_action_evaluation,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import run_v025_pilot_c3 as pilot  # noqa: E402
+
+ETA = Fraction(2)
+KAPPA = Fraction(10)
+ZERO_DIGEST = "0" * 64
+EXISTING_ROWS = (
+    ROOT
+    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1"
+)
+CALIBRATION_PATH = (
+    ROOT
+    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
+    / "PILOT_NOT_CLAIM-calibration.json"
+)
+
+
+def _network(bits: int, joules: int, *, phi: str = "0") -> NetworkOutcome:
+    return NetworkOutcome.build(
+        bits=bits,
+        joules=joules,
+        phi=phi,
+        decoding_availability=1,
+        useful_availability=1,
+        per_user_bits={0: bits // 2, 1: bits - bits // 2},
+    )
+
+
+def _projection(
+    index: int,
+    outcome: NetworkOutcome,
+    *,
+    required_power_w: float,
+) -> OffsetProjection:
+    return OffsetProjection(
+        offset_index=index,
+        valid=True,
+        survives=True,
+        outcome=outcome,
+        background_power_recomputed=True,
+        required_power_w=required_power_w,
+        power_cap_w=1.65,
+        min_decoding_margin_db=4.0 - index,
+        mean_acm_se_bit_s_hz=2.0,
+    )
+
+
+def _encoded_row(*, c1_bits: Fraction, c1_phi: Fraction, c2_bits: Fraction):
+    forecasts = tuple(
+        ForecastObservation(True, True, 4.0 - index, 2.0)
+        for index in (1, 2, 3)
+    )
+    common = ActionEvaluation(
+        action=PhysicalAction(1001, 7),
+        nominal_sinr_margin_at_rate_target_db=4.0,
+        nominal_required_power_over_cap=0.5,
+        nominal_mode_spectral_efficiency=2.0,
+        background_occupancy_excluding_focal=1,
+        beam_active_before_focal=True,
+        satellite_active_before_focal=True,
+        off_axis_angle_rad=0.25,
+        remaining_d2_time_s=60.0,
+        remaining_visibility_time_s=90.0,
+        refresh_phase=2,
+        previous_served_association_for_action=False,
+        previous_served_load_for_action=1,
+        previous_beam_active_for_action=True,
+        previous_satellite_active_for_action=True,
+        previous_beam_max_rf_over_cap=0.4,
+        missing_incumbent=False,
+        candidate_current_nominal_decoding_margin_db=4.0,
+        incumbent_nominal_decoding_margin_db=3.0,
+        forecast_se_trend_bit_s_hz_per_s=0.0,
+        required_power_cap_margin_w=0.825,
+        forecasts=forecasts,
+        c1_label_bits=float(c1_bits),
+        c1_phi_difference=float(c1_phi),
+        c2_label_bits=float(c2_bits),
+    )
+    candidate = seal_action_evaluation(
+        common,
+        source_provenance_sha256=canonical_sha256(
+            {"source": "c1c2-sufficiency-collision", "labels": [str(c1_bits), str(c2_bits)]}
+        ),
+        forecast_method_sha256=canonical_sha256({"method": "three-offset-exact"}),
+    )
+    null = seal_action_evaluation(
+        replace(
+            common,
+            action=PhysicalAction(None, None),
+            background_occupancy_excluding_focal=0,
+            beam_active_before_focal=False,
+            satellite_active_before_focal=False,
+            previous_served_load_for_action=0,
+            previous_beam_active_for_action=False,
+            previous_satellite_active_for_action=False,
+            c1_label_bits=0.0,
+            c1_phi_difference=0.0,
+            c2_label_bits=0.0,
+        ),
+        source_provenance_sha256=canonical_sha256({"source": "collision-null"}),
+        forecast_method_sha256=canonical_sha256({"method": "three-offset-exact"}),
+    )
+    envelope = pilot.AnchorEnvelope(
+        world_id="C1C2_COLLISION/world",
+        split="TRAIN",
+        world_seed=1,
+        anchor_id="collision-anchor",
+        anchor_index=0,
+        decision_time_utc="2026-01-01T00:00:00+00:00",
+        decision_time_ns=0,
+        user_id=0,
+        setting_id="a-r0",
+        code_digest=ZERO_DIGEST,
+        physics_digest=ZERO_DIGEST,
+        launch_digest=ZERO_DIGEST,
+        catalogue_digest=ZERO_DIGEST,
+        setting_digest=ZERO_DIGEST,
+        calibration_digest=ZERO_DIGEST,
+        provider_digest=ZERO_DIGEST,
+        archive_digest=ZERO_DIGEST,
+        allocation_manifest_digest=ZERO_DIGEST,
+        lambda_bits_per_j=float(ETA),
+        eta_ref_bits_per_j=float(ETA),
+        kappa_normalization_bits=float(KAPPA),
+        base_action_index=0,
+        actions=(null, candidate),
+    )
+    return extract_source_rows(envelope)[1]
+
+
+def _packed_hex(values: Iterable[float]) -> str:
+    numbers = tuple(values)
+    return struct.pack(f">{len(numbers)}d", *numbers).hex()
+
+
+def collision_witnesses() -> dict[str, object]:
+    default = _network(200, 20)
+    c1_a = c1_difference_surplus(
+        _network(220, 22, phi="-0.5"),
+        default,
+        lambda_bits_per_j=ETA,
+        eta_ref=ETA,
+        kappa_bits_per_user_step=KAPPA,
+    )
+    c1_b = c1_difference_surplus(
+        _network(180, 24, phi="-0.5"),
+        default,
+        lambda_bits_per_j=ETA,
+        eta_ref=ETA,
+        kappa_bits_per_user_step=KAPPA,
+    )
+    c1_row_a = _encoded_row(
+        c1_bits=c1_a.difference_surplus_bits,
+        c1_phi=c1_a.phi_difference,
+        c2_bits=Fraction(),
+    )
+    c1_row_b = _encoded_row(
+        c1_bits=c1_b.difference_surplus_bits,
+        c1_phi=c1_b.phi_difference,
+        c2_bits=Fraction(),
+    )
+
+    default_future = tuple(_projection(i, default, required_power_w=0.8) for i in (1, 2, 3))
+    candidate_a = tuple(
+        _projection(i, _network(210, 21), required_power_w=0.9)
+        for i in (1, 2, 3)
+    )
+    candidate_b = (
+        _projection(1, _network(180, 25), required_power_w=1.4),
+        _projection(2, _network(190, 24), required_power_w=1.3),
+        _projection(3, _network(195, 23), required_power_w=1.2),
+    )
+    c2_a = c2_persistence_forecast(
+        candidate_a,
+        default_future,
+        lambda_bits_per_j=ETA,
+        eta_ref=ETA,
+        kappa_bits_per_user_step=KAPPA,
+    )
+    c2_b = c2_persistence_forecast(
+        candidate_b,
+        default_future,
+        lambda_bits_per_j=ETA,
+        eta_ref=ETA,
+        kappa_bits_per_user_step=KAPPA,
+    )
+    c2_row_a = _encoded_row(
+        c1_bits=Fraction(), c1_phi=Fraction(),
+        c2_bits=c2_a.forecast_surplus_bits - c2_a.persistence_penalty_bits,
+    )
+    c2_row_b = _encoded_row(
+        c1_bits=Fraction(), c1_phi=Fraction(),
+        c2_bits=c2_b.forecast_surplus_bits - c2_b.persistence_penalty_bits,
+    )
+
+    assert c1_row_a.q1_state == c1_row_b.q1_state
+    assert c1_row_a.q2_state == c1_row_b.q2_state
+    assert c2_row_a.q1_state == c2_row_b.q1_state
+    assert c2_row_a.q2_state == c2_row_b.q2_state
+    assert c1_a.normalized_total != c1_b.normalized_total
+    assert c2_a.normalized_total != c2_b.normalized_total
+
+    q1_bytes = _packed_hex(c1_row_a.q1_state)
+    q2_bytes = _packed_hex(c1_row_a.q2_state)
+    return {
+        "head_auxiliary_inputs": [],
+        "q1_float_hex": [value.hex() for value in c1_row_a.q1_state],
+        "q1_big_endian_float64_bytes_hex": q1_bytes,
+        "q1_bytes_sha256": canonical_sha256({"bytes_hex": q1_bytes}),
+        "q2_float_hex": [value.hex() for value in c1_row_a.q2_state],
+        "q2_big_endian_float64_bytes_hex": q2_bytes,
+        "q2_bytes_sha256": canonical_sha256({"bytes_hex": q2_bytes}),
+        "c1": {
+            "state_a": {
+                "background_associations": {"1": [1001, 7], "2": [2002, 4]},
+                "background_cross_gains_linear": {"1_to_focal": 1e-13, "2_to_focal": 2e-14},
+                "coupled_power_w": {"focal": 0.8, "1": 0.4, "2": 0.3},
+                "candidate_outcome": {"bits": 220, "joules": 22, "phi": -0.5},
+            },
+            "state_b": {
+                "background_associations": {"17": [1001, 7], "23": [2003, 2]},
+                "background_cross_gains_linear": {"17_to_focal": 8e-11, "23_to_focal": 3e-11},
+                "coupled_power_w": {"focal": 1.5, "17": 1.4, "23": 1.2},
+                "candidate_outcome": {"bits": 180, "joules": 24, "phi": -0.5},
+            },
+            "shared_default_outcome": {"bits": 200, "joules": 20, "phi": 0},
+            "target_a": str(c1_a.normalized_total),
+            "target_b": str(c1_b.normalized_total),
+            "difference": str(abs(c1_a.normalized_total - c1_b.normalized_total)),
+            "squared_loss_lower_bound": str(
+                (abs(c1_a.normalized_total - c1_b.normalized_total) / 2) ** 2
+            ),
+        },
+        "c2": {
+            "state_a_projected_outcomes": [
+                {"offset": i, "bits": 210, "joules": 21, "required_power_w": 0.9}
+                for i in (1, 2, 3)
+            ],
+            "state_b_projected_outcomes": [
+                {"offset": 1, "bits": 180, "joules": 25, "required_power_w": 1.4},
+                {"offset": 2, "bits": 190, "joules": 24, "required_power_w": 1.3},
+                {"offset": 3, "bits": 195, "joules": 23, "required_power_w": 1.2},
+            ],
+            "shared_default_projected_outcomes": [
+                {"offset": i, "bits": 200, "joules": 20, "required_power_w": 0.8}
+                for i in (1, 2, 3)
+            ],
+            "target_a": str(c2_a.normalized_total),
+            "target_b": str(c2_b.normalized_total),
+            "difference": str(abs(c2_a.normalized_total - c2_b.normalized_total)),
+            "squared_loss_lower_bound": str(
+                (abs(c2_a.normalized_total - c2_b.normalized_total) / 2) ** 2
+            ),
+        },
+    }
+
+
+def _fraction(pair: list[int]) -> Fraction:
+    return Fraction(pair[0], pair[1])
+
+
+def _calibration() -> pilot.PilotCalibration:
+    payload = json.loads(CALIBRATION_PATH.read_text())
+    return pilot.PilotCalibration(
+        eta_ref=_fraction(payload["eta_ref"]),
+        lambda_bits_per_j=_fraction(payload["lambda_bits_per_j"]),
+        kappa_bits_per_user_step=_fraction(payload["kappa_bits_per_user_step"]),
+        bits_ref=_fraction(payload["bits_ref"]),
+        joules_ref=_fraction(payload["joules_ref"]),
+        users=int(payload["users"]),
+    )
+
+
+@dataclass(frozen=True)
+class ExactRow:
+    anchor: int
+    user_id: int
+    action: tuple[int, int] | None
+    q1: tuple[float, ...]
+    q2: tuple[float, ...]
+    c1_structure: tuple[float, ...]
+    c2_structure: tuple[float, ...]
+    c1_target: float
+    c2_target: float
+    c1_target_exact: str
+    c2_target_exact: str
+
+
+def _f(value: Fraction) -> float:
+    return float(value)
+
+
+def _relabel_anchor(tape, calibration, anchor_index: int) -> list[ExactRow]:
+    step_index, carrier_index = divmod(anchor_index, len(REFERENCE_CARRIERS))
+    carrier = REFERENCE_CARRIERS[carrier_index]
+    setting = pilot.ENGINE._setting("a-r0")
+    run_setting = pilot.ENGINE.run_setting_for("a-r0")
+    shard = read_source_shard(
+        EXISTING_ROWS / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
+    )
+    base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
+    incumbent = pilot.ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+    configs = {base.configuration_id: base}
+    row_configs = []
+    for row in shard.rows:
+        mapping = base.mapping
+        mapping[row.user_id] = pilot._identity(row.action)
+        config = pilot.ENGINE._configuration(base, mapping, kind="sufficiency-replay")
+        configs[config.configuration_id] = config
+        row_configs.append((row, config))
+
+    counter = pilot.ENGINE.EvaluationCounter()
+    evaluator = pilot.ENGINE.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+        field="nominal",
+
+exec
+/bin/bash -lc "sed -n '330,470p' scripts/run_v025_pilot_c3.py && sed -n '470,535p' scripts/run_v025_pilot_c3.py && sed -n '90,250p' tests/stagec_v025/test_c1c2_exact_label_acceptance.py" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+    if arrays is None:
+        candidate = next(
+            (row for row in tape.steps[step_index].boundaries[0].candidates
+             if row.user_id == user and row.identity == identity),
+            None,
+        )
+        if candidate is None:
+            return {"legal": False, "gain": 0.0, "remaining_d2": 0.0, "remaining_visibility": 0.0}
+        return {
+            "legal": candidate.legal,
+            "gain": candidate.nominal_gain,
+            "remaining_d2": candidate.remaining_d2_s,
+            "remaining_visibility": candidate.remaining_visibility_s,
+        }
+    row = indices[step_index].get((user, identity))
+    if row is None:
+        return {"legal": False, "gain": 0.0, "remaining_d2": 0.0, "remaining_visibility": 0.0}
+    return {
+        "legal": bool(arrays.visible[0, row] and arrays.d2_eligible[0, row] and arrays.cell_reachable[0, row]),
+        "gain": float(arrays.nominal_gain[0, row]),
+        "remaining_d2": float(arrays.remaining_d2_s[0, row]),
+        "remaining_visibility": float(arrays.remaining_visibility_s[0, row]),
+    }
+
+
+def _build_anchor_rows_primitive(
+    *, tape, setting, run_setting, calibration, step_index, carrier,
+    anchor_index, include_coalition, full_legal_actions,
+):
+    """Schema-complete provider-primitive fallback for bounded pilot compute."""
+
+    base = ENGINE._base_configuration(tape, step_index, carrier)
+    incumbent = ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+    by_user, configs, census = _action_configs(
+        tape, step_index, base, run_setting, full_legal=full_legal_actions
+    )
+    indices = {
+        offset: tape.steps[offset].arrays._row_index()
+        for offset in range(step_index, min(step_index + 4, len(tape.steps)))
+        if tape.steps[offset].arrays is not None
+    }
+    # The generating-input digest already authenticates the provider inputs
+    # and boundary-zero bytes. Computing ``tape.digest`` here hashes every
+    # dense 33x48 array and dominates an entire anchor on this snapshot.
+    tape_digest = tape.generating_input_digest or canonical_sha256({
+        "domain": tape.domain,
+        "seed": tape.seed,
+        "provider": tape.protocol.provider_source_digest,
+    })
+    future_bases = {
+        offset: ENGINE._base_configuration(tape, step_index + offset, carrier)
+        for offset in (1, 2, 3)
+    }
+    counter = ENGINE.EvaluationCounter()
+    current = ENGINE.StepEvaluator(
+        tape, setting, step_index, transition_from=incumbent,
+        cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+        field="nominal", counter=counter, run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+    base_profile = current.evaluate(base)
+    source_rows = []
+    rows_by_user_action = {}
+    for user in sorted(by_user):
+        actions = []
+        identities = []
+        beam_before, satellite_before = _counts(base.mapping, user)
+        previous_beam, previous_satellite = _counts(incumbent.mapping, user)
+        base_metric = _primitive_metrics(
+            tape, step_index, user, base.mapping[user], indices
+        )
+        base_gain = max(base_metric["gain"], 1e-300)
+        for identity in by_user[user]:
+            metric = _primitive_metrics(tape, step_index, user, identity, indices)
+            ratio = max(metric["gain"], 1e-300) / base_gain
+            gain_db = 10.0 * math.log10(max(ratio, 1e-30))
+            if identity is None or not metric["legal"]:
+                normalized_delta = -1.0
+            else:
+                normalized_delta = math.tanh(math.log(max(ratio, 1e-30)))
+            candidate_margin = base_profile.min_decoding_margin_db + gain_db
+            required_ratio = min(1e6, max(0.0, base_profile.required_power_w_max / BEAM_RF_CAP_W / max(ratio, 1e-12)))
+            se = max(0.0, base_profile.mean_acm_se_bit_s_hz * min(4.0, max(0.0, ratio)))
+            forecast_rows = []
+            c2_normalized = 0.0
+            alive = True
+            for offset in (1, 2, 3):
+                projected = step_index + offset
+                future_metric = _primitive_metrics(tape, projected, user, identity, indices)
+                future_base = future_bases[offset].mapping[user]
+                future_base_metric = _primitive_metrics(tape, projected, user, future_base, indices)
+                future_ratio = max(future_metric["gain"], 1e-300) / max(future_base_metric["gain"], 1e-300)
+                survives = bool(future_metric["legal"] and identity is not None)
+                if alive:
+                    c2_normalized += math.tanh(math.log(max(future_ratio, 1e-30))) if survives else -1.0
+                    alive = survives
+                else:
+                    c2_normalized -= 1.0
+                forecast_rows.append(ForecastObservation(
+                    valid=survives,
+                    survival=survives,
+                    minimum_decoding_margin_db=base_profile.min_decoding_margin_db + 10.0 * math.log10(max(future_ratio, 1e-30)),
+                    mean_acm_spectral_efficiency=max(0.0, se * min(4.0, max(0.0, future_ratio))),
+                ))
+            phi = ENGINE._phi_for(incumbent, configs[(user, identity)]) - ENGINE._phi_for(incumbent, base)
+            background_occupancy = 0 if identity is None else beam_before.get(identity, 0)
+            previous_load = 0 if identity is None else previous_beam.get(identity, 0)
+            observation = ActionEvaluation(
+                action=_physical_action(identity),
+                nominal_sinr_margin_at_rate_target_db=candidate_margin,
+                nominal_required_power_over_cap=required_ratio,
+                nominal_mode_spectral_efficiency=se,
+                background_occupancy_excluding_focal=background_occupancy,
+                beam_active_before_focal=identity is not None and identity in beam_before,
+                satellite_active_before_focal=identity is not None and identity[0] in satellite_before,
+                off_axis_angle_rad=0.0,
+                remaining_d2_time_s=metric["remaining_d2"],
+                remaining_visibility_time_s=metric["remaining_visibility"],
+                refresh_phase=tape.steps[step_index].refresh_phase,
+                previous_served_association_for_action=identity == incumbent.mapping[user],
+                previous_served_load_for_action=previous_load,
+                previous_beam_active_for_action=identity is not None and identity in previous_beam,
+                previous_satellite_active_for_action=identity is not None and identity[0] in previous_satellite,
+                previous_beam_max_rf_over_cap=0.0 if identity is None else min(1.0, required_ratio),
+                missing_incumbent=incumbent.mapping[user] is None,
+                candidate_current_nominal_decoding_margin_db=candidate_margin,
+                incumbent_nominal_decoding_margin_db=base_profile.min_decoding_margin_db,
+                forecast_se_trend_bit_s_hz_per_s=(forecast_rows[0].mean_acm_spectral_efficiency - se) / DECISION_INTERVAL_S,
+                required_power_cap_margin_w=BEAM_RF_CAP_W * (1.0 - required_ratio),
+                forecasts=tuple(forecast_rows),
+                c1_label_bits=float(calibration.kappa_bits_per_user_step) * normalized_delta,
+                c1_phi_difference=float(phi),
+                c2_label_bits=float(calibration.kappa_bits_per_user_step) * c2_normalized,
+                legal=True,
+                terminal=step_index == 29,
+                outage=not bool(metric["legal"]),
+            )
+            actions.append(seal_action_evaluation(
+                observation,
+                source_provenance_sha256=canonical_sha256({
+                    "artifact_label": LABEL, "method": "provider-primitive-fallback",
+                    "artifact_label": LABEL, "method": "provider-primitive-fallback",
+                    "world": tape_digest, "step": step_index, "carrier": carrier,
+                    "user": user, "identity": identity,
+                }),
+                forecast_method_sha256=canonical_sha256({
+                    "method": "provider-primitive-boundary-0", "offsets": [1, 2, 3]
+                }),
+            ))
+            identities.append(identity)
+        envelope = AnchorEnvelope(
+            world_id=tape.domain, split="TRAIN", world_seed=tape.seed,
+            anchor_id=f"{tape.domain}|{step_index}|{carrier}", anchor_index=anchor_index,
+            decision_time_utc=_utc_at(tape, step_index),
+            decision_time_ns=int(round(step_index * DECISION_INTERVAL_S * 1e9)),
+            user_id=user, setting_id="a-r0", code_digest=CODE_DIGEST,
+            physics_digest=PHYSICS_DIGEST, launch_digest=LAUNCH_DIGEST,
+            catalogue_digest=ENGINE.catalogue_definition()["sha256"],
+            setting_digest=run_setting.digest, calibration_digest=calibration.digest,
+            provider_digest=tape.protocol.provider_source_digest,
+            archive_digest=_archive_digest(tape), allocation_manifest_digest=ALLOCATION_DIGEST,
+            lambda_bits_per_j=float(calibration.lambda_bits_per_j),
+            eta_ref_bits_per_j=float(calibration.eta_ref),
+            kappa_normalization_bits=float(calibration.kappa_bits_per_user_step),
+            base_action_index=identities.index(base.mapping[user]), actions=tuple(actions),
+        )
+        extracted = extract_source_rows(envelope)
+        source_rows.extend(extracted)
+        for row in extracted:
+            rows_by_user_action[(user, _identity(row.action))] = row
+    coalition_row = None
+    catalogue_count = 0
+    if include_coalition:
+        catalogue, _ = ENGINE._catalogue_with_census(
+            tape, step_index, base, setting=setting, calibration=calibration,
+            counter=counter, run_setting=run_setting,
+        )
+        pairwise = [row for row in catalogue if row.changed_users == 2]
+        selected = min(pairwise, key=lambda row: row.configuration_id)
+        current.evaluate_many((base, selected))
+        coalition_row = _coalition_row(
+            tape=tape, step_index=step_index, carrier=carrier,
+            anchor_index=anchor_index, anchor=base, selected=selected,
+            evaluator=current, rows_by_user_action=rows_by_user_action,
+            calibration=calibration, run_setting=run_setting,
+        )
+        catalogue_count = len(catalogue)
+    return {
+        "base": base, "incumbent": incumbent, "rows": tuple(source_rows),
+        "rows_by_user_action": rows_by_user_action, "current_evaluator": current,
+        "coalition_row": coalition_row, "census": census, "skipped_invalid": 0,
+        "catalogue_count": catalogue_count,
+        "physics_calls": counter.boundary_evaluations,
+    }
+
+
+def _build_anchor_rows(
+    *,
+    tape,
+    setting,
+    run_setting,
+    calibration: PilotCalibration,
+    step_index: int,
+    carrier: str,
+    anchor_index: int,
+    include_coalition: bool,
+    full_legal_actions: bool = False,
+
+def _anchor_rows(real_context, monkeypatch: pytest.MonkeyPatch, step_index: int):
+    tape, setting, run_setting, calibration = real_context
+    _limit_to_real_singletons(monkeypatch)
+    built = pilot._build_anchor_rows(
+        tape=tape,
+        setting=setting,
+        run_setting=run_setting,
+        calibration=calibration,
+        step_index=step_index,
+        carrier=CARRIER,
+        anchor_index=step_index,
+        include_coalition=False,
+    )
+    return built, tape, setting, run_setting, calibration
+
+
+def _exact_singletons(built, tape, setting, run_setting, calibration, step_index: int):
+    base = pilot.ENGINE._base_configuration(tape, step_index, CARRIER)
+    incumbent = pilot.ENGINE._base_configuration(tape, max(0, step_index - 1), CARRIER)
+    configs = {base.configuration_id: base}
+    for row in built["rows"]:
+        identity = pilot._identity(row.action)
+        mapping = base.mapping
+        mapping[row.user_id] = identity
+        config = pilot.ENGINE._configuration(base, mapping, kind="acceptance-singleton")
+        configs[config.configuration_id] = config
+
+    counter = pilot.ENGINE.EvaluationCounter()
+    evaluator = pilot.ENGINE.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+        field="nominal",
+        counter=counter,
+        run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+    evaluator.evaluate_many(tuple(configs.values()))
+    valid = tuple(
+        config
+        for config in configs.values()
+        if config.configuration_id not in evaluator._invalid
+    )
+    forecasts, _ = pilot.ENGINE._batched_stage2_forecasts(
+        tape=tape,
+        setting=setting,
+        anchor_step=step_index,
+        carrier=CARRIER,
+        configs=valid,
+        counter=counter,
+        calibration=calibration,
+        run_setting=run_setting,
+    )
+    base_profile = evaluator.evaluate(base)
+    base_outcome = base_profile.outcome(
+        phi=pilot.ENGINE._phi_for(
+            incumbent,
+            base,
+            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+        )
+    )
+    return base, incumbent, evaluator, forecasts, base_outcome
+
+
+@pytest.mark.parametrize("step_index", ANCHOR_STEPS)
+def test_production_c1_labels_equal_exact_evaluator_singletons(
+    real_context, monkeypatch: pytest.MonkeyPatch, step_index: int
+) -> None:
+    built, tape, setting, run_setting, calibration = _anchor_rows(
+        real_context, monkeypatch, step_index
+    )
+    base, incumbent, evaluator, _forecasts, base_outcome = _exact_singletons(
+        built, tape, setting, run_setting, calibration, step_index
+    )
+    for row in built["rows"]:
+        identity = pilot._identity(row.action)
+        mapping = base.mapping
+        mapping[row.user_id] = identity
+        config = pilot.ENGINE._configuration(base, mapping, kind="acceptance-singleton")
+        if config.configuration_id in evaluator._invalid:
+            continue
+        candidate = evaluator.evaluate(config).outcome(
+            phi=pilot.ENGINE._phi_for(
+                incumbent,
+                config,
+                cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+            )
+        )
+        exact = c1_difference_surplus(
+            candidate,
+            base_outcome,
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=calibration.eta_ref,
+            kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+        )
+        actual = parse_float_hex(
+            row.c1_label_normalized_hex, field="c1_label_normalized_hex"
+        )
+        expected = float(exact.normalized_total)
+        assert actual == pytest.approx(expected, abs=NORMALIZED_ABS_TOL, rel=0.0), (
+            "production C1 label disagrees with exact evaluator singleton: "
+            f"anchor={step_index} user={row.user_id} action={identity} "
+            f"actual={actual:.17g} exact={expected:.17g} "
+            f"abs_tol={NORMALIZED_ABS_TOL}"
+        )
+
+
+@pytest.mark.parametrize("step_index", ANCHOR_STEPS)
+def test_production_c2_labels_equal_exact_evaluator_singletons(
+    real_context, monkeypatch: pytest.MonkeyPatch, step_index: int
+) -> None:
+    built, tape, setting, run_setting, calibration = _anchor_rows(
+        real_context, monkeypatch, step_index
+    )
+    base, _incumbent, evaluator, forecasts, _base_outcome = _exact_singletons(
+        built, tape, setting, run_setting, calibration, step_index
+    )
+    for row in built["rows"]:
+        identity = pilot._identity(row.action)
+        mapping = base.mapping
+        mapping[row.user_id] = identity
+        config = pilot.ENGINE._configuration(base, mapping, kind="acceptance-singleton")
+        if config.configuration_id in evaluator._invalid:
+            continue
+        exact = c2_persistence_forecast(
+            forecasts[config.configuration_id],
+            forecasts[base.configuration_id],
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=calibration.eta_ref,
+            kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+        )
+        actual = parse_float_hex(
+            row.c2_label_normalized_hex, field="c2_label_normalized_hex"
+        )
+        expected = float(exact.normalized_total)
+        assert actual == pytest.approx(expected, abs=NORMALIZED_ABS_TOL, rel=0.0), (
+            "production C2 label disagrees with exact evaluator singleton: "
+            f"anchor={step_index} user={row.user_id} action={identity} "
+            f"actual={actual:.17g} exact={expected:.17g} "
+            f"abs_tol={NORMALIZED_ABS_TOL}"
+        )
+
+codex
+The first code-level distinction is now clear: `state.py` does not recompute or overwrite survival; it serializes whatever `ForecastObservation.survival` it is handed. The stored pilot rows were produced by the primitive fallback’s geometric/legal predicate, while the exact target replay uses the coupled evaluator’s served-set predicate. I’m next pinning down the smallest pre-decision scalars that separate each witness and can actually be supplied by named production functions.
+exec
+/bin/bash -lc 'rg -n "class EvaluatedProfile|class StepEvaluator|def _candidate_primitives|def _primitive_metrics|cross_gain|interference|coupled|power_w|mapping" .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | head -n 260 && rg -n "pre.*decision|interference|cross_gain|nominal_gain" src/mcrl/physics_v025 scripts/run_v025_pilot_c3.py | head -n 260' in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+48:from mcrl.physics_v025.channel import noise_power_w  # noqa: E402
+307:    def mapping(self) -> dict[int, tuple[int, int] | None]:
+312:class EvaluatedProfile:
+326:    required_power_w_max: float = 0.0
+384:    mapping = dict(action.assignments)
+399:    for user in mapping:
+401:            mapping[user] = None
+403:        f"BASE:{carrier}", tuple(sorted(mapping.items())), 0, "reference"
+488:        noise = noise_power_w(500_000_000.0)
+502:        noise = noise_power_w(500_000_000.0)
+529:    mapping: Mapping[int, tuple[int, int] | None],
+533:    assignments = tuple(sorted(mapping.items()))
+534:    base_map = base.mapping
+567:    base_map = base.mapping
+570:            mapping = dict(zip(users, product, strict=True))
+571:            if mapping == base_map:
+573:            rows.append(_configuration(base, mapping, kind="complete-cartesian"))
+583:                mapping = dict(base_map)
+584:                mapping[user] = identity
+585:                row = _configuration(base, mapping, kind="unilateral")
+626:            mapping = dict(base_map)
+629:                    mapping[user] = unilaterals[user][proposal_rank].mapping[user]
+630:            if mapping != base_map:
+631:                rows.append(_configuration(base, mapping, kind="s0-top-two"))
+637:                    mapping = dict(base_map)
+638:                    mapping[first] = first_row.mapping[first]
+639:                    mapping[second] = second_row.mapping[second]
+640:                    rows.append(_configuration(base, mapping, kind="pairwise-top10-top2"))
+645:            mapping = dict(base_map)
+648:                mapping[user] = next(
+652:            if mapping != base_map:
+653:                rows.append(_configuration(base, mapping, kind="beam-evacuation"))
+692:            idle_power_w=idle,
+724:    before_map = before.mapping
+747:    mapping = {
+755:        InterruptionEvent(event.user_id, decision_time_s, mapping[event.kind])
+759:        if event.kind in mapping
+763:class StepEvaluator:
+808:            mapping = config.mapping
+810:                identity = mapping[user]
+893:                float(result.max_rf_power_w[index]),
+906:        geometry = self.tape.geometry_for(step_index=self.step_index, assignments=config.mapping)
+951:                    cap_hits += int(math.isclose(tx.rf_power_w, BEAM_RF_CAP_W, rel_tol=0.0, abs_tol=1e-9))
+997:                    tx.rf_power_w
+1038:            return profile.required_power_w_max, BEAM_RF_CAP_W
+1041:            tx.rf_power_w
+1332:                joint = next((row for row in catalog if row.mapping == merged_map), None)
+1374:    base_map = base.mapping
+1381:        selected_map = config.mapping
+1399:            mapping = dict(base_map)
+1401:                mapping[user] = selected_map[user]
+1402:            subset_config = _configuration(base, mapping, kind="v15-sparse-set")
+1515:    base_map = base.mapping
+1524:            if config.mapping[user] != base_map[user]
+1528:            mapping = dict(base_map)
+1529:            mapping[user] = config.mapping[user]
+1530:            singleton = _configuration(base, mapping, kind="selection-singleton")
+1585:        None if profile is None else profile.required_power_w_max,
+1630:                for user in config.mapping
+1631:                if config.mapping[user] != transition.mapping.get(user)
+1647:                    "required_power_w": projection.required_power_w,
+1664:                expected_assignments: Mapping[int, tuple[int, int] | None] = config.mapping,
+1672:                assignments=config.mapping,
+1716:    base_map = base.mapping
+1718:        user for user in sorted(base_map) if selected.mapping[user] != base_map[user]
+1734:        mapping = dict(base_map)
+1736:            mapping[user] = selected.mapping[user]
+1737:        configs.append((subset, _configuration(base, mapping, kind="committed-sparse-set")))
+1785:        (row for row in catalog if row.mapping == assignments),
+1888:                if identity == current.mapping[user]:
+1890:                mapping = current.mapping
+1891:                mapping[user] = identity
+1893:                    _configuration(base, mapping, kind="s-uni-iterate")
+2131:        "required_power_w_max": profile.required_power_w_max,
+2147:                "prior": None if base.mapping[user] is None else list(base.mapping[user]),
+2150:                    if profile.config.mapping[user] is None
+2151:                    else list(profile.config.mapping[user])
+2475:            "required_power_w_max_distribution": {
+2476:                "min": min(float(row["required_power_w_max"]) for row in arms),
+2479:                        [row["required_power_w_max"] for row in arms], 0.5
+2482:                "max": max(float(row["required_power_w_max"]) for row in arms),
+3145:            "required_power_w_max_distribution": {
+3146:                "min": min(float(row["required_power_w_max"]) for row in rows),
+3147:                "p50": float(np.quantile([row["required_power_w_max"] for row in rows], 0.5)),
+3148:                "max": max(float(row["required_power_w_max"]) for row in rows),
+scripts/run_v025_pilot_c3.py:340:            "gain": candidate.nominal_gain,
+scripts/run_v025_pilot_c3.py:349:        "gain": float(arrays.nominal_gain[0, row]),
+scripts/run_v025_pilot_c3.py:805:def _cross_gain_terms(tape, step_index: int, affected: Sequence[tuple[int, int]]):
+scripts/run_v025_pilot_c3.py:875:    relations = _cross_gain_terms(tape, step_index, affected)
+scripts/run_v025_pilot_c3.py:884:            interference_summary=math.fsum(
+scripts/run_v025_pilot_c3.py:906:        pairwise_cross_gain_terms=relations,
+src/mcrl/physics_v025/channel.py:160:def interference_receive_gain_linear(
+src/mcrl/physics_v025/channel.py:165:    """Receive gain used in the interference sum, including boresight override."""
+src/mcrl/physics_v025/channel.py:328:    "interference_receive_gain_linear",
+src/mcrl/physics_v025/provider_legacy.py:59:    interference_receive_gain_linear,
+src/mcrl/physics_v025/provider_legacy.py:884:        receive_gain = interference_receive_gain_linear(
+src/mcrl/physics_v025/provider_legacy.py:953:            nominal_gain=nominal,
+src/mcrl/physics_v025/batch.py:217:            direct_nominal = arrays.nominal_gain[boundary, safe_rows]
+src/mcrl/physics_v025/batch.py:260:                    interference = np.matmul(coupling, power[..., None])[..., 0]
+src/mcrl/physics_v025/batch.py:263:                        targets * (noise + interference) / direct_nominal,
+src/mcrl/physics_v025/batch.py:333:                realised_interference = np.matmul(
+src/mcrl/physics_v025/batch.py:338:                    power * direct_field / (noise + realised_interference),
+src/mcrl/physics_v025/tapes.py:24:from .channel import interference_receive_gain_linear, keyed_fading_gain
+src/mcrl/physics_v025/tapes.py:224:    nominal_gain: float
+src/mcrl/physics_v025/tapes.py:227:    nominal_cross_gain_by_norad: tuple[tuple[int, float], ...]
+src/mcrl/physics_v025/tapes.py:228:    realised_cross_gain_by_norad: tuple[tuple[int, float], ...]
+src/mcrl/physics_v025/tapes.py:235:    nominal_cross_gain_by_identity: tuple[tuple[BeamIdentity, float], ...] = ()
+src/mcrl/physics_v025/tapes.py:236:    realised_cross_gain_by_identity: tuple[tuple[BeamIdentity, float], ...] = ()
+src/mcrl/physics_v025/tapes.py:250:            self.nominal_gain,
+src/mcrl/physics_v025/tapes.py:256:        if self.nominal_gain <= 0.0 or self.realised_gain <= 0.0:
+src/mcrl/physics_v025/tapes.py:258:        for name in ("nominal_cross_gain_by_norad", "realised_cross_gain_by_norad"):
+src/mcrl/physics_v025/tapes.py:265:            "nominal_cross_gain_by_identity",
+src/mcrl/physics_v025/tapes.py:266:            "realised_cross_gain_by_identity",
+src/mcrl/physics_v025/tapes.py:299:            "nominal_gain": _f(self.nominal_gain),
+src/mcrl/physics_v025/tapes.py:301:            "nominal_cross_gain_by_norad": [
+src/mcrl/physics_v025/tapes.py:302:                [norad, _f(gain)] for norad, gain in self.nominal_cross_gain_by_norad
+src/mcrl/physics_v025/tapes.py:304:            "realised_cross_gain_by_norad": [
+src/mcrl/physics_v025/tapes.py:305:                [norad, _f(gain)] for norad, gain in self.realised_cross_gain_by_norad
+src/mcrl/physics_v025/tapes.py:310:            "nominal_cross_gain_by_identity": [
+src/mcrl/physics_v025/tapes.py:312:                for identity, gain in self.nominal_cross_gain_by_identity
+src/mcrl/physics_v025/tapes.py:314:            "realised_cross_gain_by_identity": [
+src/mcrl/physics_v025/tapes.py:316:                for identity, gain in self.realised_cross_gain_by_identity
+src/mcrl/physics_v025/tapes.py:369:    nominal_gain: np.ndarray
+src/mcrl/physics_v025/tapes.py:405:            "nominal_gain", "realised_gain", "remaining_visibility_s",
+src/mcrl/physics_v025/tapes.py:518:                    nominal_gain=float(self.nominal_gain[boundary_index, row]),
+src/mcrl/physics_v025/tapes.py:520:                    nominal_cross_gain_by_norad=tuple(sorted(nominal_norad.items())),
+src/mcrl/physics_v025/tapes.py:521:                    realised_cross_gain_by_norad=tuple(sorted(realised_norad.items())),
+src/mcrl/physics_v025/tapes.py:525:                    nominal_cross_gain_by_identity=tuple(nominal_identity),
+src/mcrl/physics_v025/tapes.py:526:                    realised_cross_gain_by_identity=tuple(realised_identity),
+src/mcrl/physics_v025/tapes.py:612:                    float(self.nominal_gain[boundary_index, row]),
+src/mcrl/physics_v025/tapes.py:838:            "cross_gain_key": "(NORAD,cell_id)",
+src/mcrl/physics_v025/tapes.py:901:                    dict(victim.nominal_cross_gain_by_identity)
+src/mcrl/physics_v025/tapes.py:902:                    if victim.nominal_cross_gain_by_identity
+src/mcrl/physics_v025/tapes.py:903:                    else dict(victim.nominal_cross_gain_by_norad)
+src/mcrl/physics_v025/tapes.py:906:                    dict(victim.realised_cross_gain_by_identity)
+src/mcrl/physics_v025/tapes.py:907:                    if victim.realised_cross_gain_by_identity
+src/mcrl/physics_v025/tapes.py:908:                    else dict(victim.realised_cross_gain_by_norad)
+src/mcrl/physics_v025/tapes.py:915:                        if victim.nominal_cross_gain_by_identity
+src/mcrl/physics_v025/tapes.py:926:                        row.nominal_gain,
+src/mcrl/physics_v025/tapes.py:1178:                        interference_receive_gain_linear(
+src/mcrl/physics_v025/architectures.py:36:    nominal_gain: float
+src/mcrl/physics_v025/architectures.py:47:            ("nominal_gain", self.nominal_gain),
+src/mcrl/physics_v025/architectures.py:63:    nominal_cross_gain: np.ndarray
+src/mcrl/physics_v025/architectures.py:64:    realised_cross_gain: np.ndarray | None = None
+src/mcrl/physics_v025/architectures.py:69:            if np.asarray(self.nominal_cross_gain).shape != (0, 0):
+src/mcrl/physics_v025/architectures.py:73:            object.__setattr__(self, "nominal_cross_gain", empty)
+src/mcrl/physics_v025/architectures.py:74:            object.__setattr__(self, "realised_cross_gain", None)
+src/mcrl/physics_v025/architectures.py:79:        for name in ("nominal_cross_gain", "realised_cross_gain"):
+src/mcrl/physics_v025/architectures.py:94:            return np.asarray([link.nominal_gain for link in self.links], dtype=np.float64)
+src/mcrl/physics_v025/architectures.py:97:                link.nominal_gain if link.realised_gain is None else link.realised_gain
+src/mcrl/physics_v025/architectures.py:104:        if field == "realised" and self.realised_cross_gain is not None:
+src/mcrl/physics_v025/architectures.py:105:            return np.asarray(self.realised_cross_gain, dtype=np.float64)
+src/mcrl/physics_v025/architectures.py:106:        return np.asarray(self.nominal_cross_gain, dtype=np.float64)
+src/mcrl/physics_v025/architectures.py:151:    intra_interference_w: float
+src/mcrl/physics_v025/architectures.py:152:    inter_interference_w: float
+src/mcrl/physics_v025/architectures.py:161:    def interference_w(self) -> float:
+src/mcrl/physics_v025/architectures.py:162:        return self.intra_interference_w + self.inter_interference_w
+src/mcrl/physics_v025/architectures.py:166:        return self.wanted_w / (self.interference_w + self.noise_w)
+src/mcrl/physics_v025/architectures.py:203:    def per_user_interference_w(self) -> dict[int, tuple[float, float]]:
+src/mcrl/physics_v025/architectures.py:209:                    old[0] + slot.fraction * tx.intra_interference_w,
+src/mcrl/physics_v025/architectures.py:210:                    old[1] + slot.fraction * tx.inter_interference_w,
+src/mcrl/physics_v025/architectures.py:331:    """Capped standard-interference fixed point, always initialised at zero."""
+src/mcrl/physics_v025/architectures.py:432:                intra_interference_w=float(intra),
+src/mcrl/physics_v025/architectures.py:433:                inter_interference_w=float(inter),
+
+exec
+/bin/bash -lc "sed -n '280,345p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py && sed -n '760,1060p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py && sed -n '780,930p' scripts/run_v025_pilot_c3.py" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return str(record["record_sha256"])
+
+
+def _attempt_records() -> list[dict[str, object]]:
+    if not ATTEMPT_REGISTRY.is_file():
+        return []
+    records = [json.loads(line) for line in ATTEMPT_REGISTRY.read_text(encoding="ascii").splitlines() if line]
+    previous = None
+    for record in records:
+        declared = record.get("record_sha256")
+        unsigned = dict(record)
+        unsigned.pop("record_sha256", None)
+        if unsigned.get("previous_record_sha256") != previous or declared != digest_payload(unsigned):
+            raise ProbeError("attempt registry hash chain is invalid")
+        previous = declared
+    return records
+
+
+@dataclass(frozen=True)
+class Configuration:
+    configuration_id: str
+    assignments: tuple[tuple[int, tuple[int, int] | None], ...]
+    changed_users: int
+    kind: str
+
+    @property
+    def mapping(self) -> dict[int, tuple[int, int] | None]:
+        return dict(self.assignments)
+
+
+@dataclass(frozen=True)
+class EvaluatedProfile:
+    config: Configuration
+    score: CellScore
+    energy_components: Mapping[str, float]
+    lit_beam_seconds: float
+    lit_satellite_seconds: float
+    acm_mode_counts: Mapping[str, int]
+    se_plateau_user_steps: int
+    user_step_observations: int
+    rf_cap_hits: int
+    rf_transmission_observations: int
+    treatment_t_same_instant_comparison: Mapping[str, object] | None
+    certificate_status: str = "CONVERGED"
+    certificate_iterations: int = 0
+    required_power_w_max: float = 0.0
+    min_decoding_margin_db: float = -100.0
+    mean_acm_se_bit_s_hz: float = 0.0
+
+    @property
+    def bits(self) -> float:
+        return math.fsum(self.score.bits.values())
+
+    @property
+    def joules(self) -> float:
+        return self.score.joules
+
+    def outcome(self, *, phi: Fraction = Fraction()) -> NetworkOutcome:
+        opportunities = max(1, len(self.score.bits)) * DECISION_INTERVAL_S
+        decoding = math.fsum(self.score.decoding_time_s.values()) / opportunities
+        useful = math.fsum(self.score.useful_time_s.values()) / opportunities
+        return NetworkOutcome.build(
+            bits=sum((Fraction(str(value)) for value in self.score.bits.values()), Fraction()),
+            joules=self.joules,
+            phi=phi,
+    )
+
+
+class StepEvaluator:
+    """Architecture/configuration cache; treatment cells only rescore it."""
+
+    def __init__(
+        self,
+        tape: ExogenousWorldTape,
+        setting: PhysicsSetting,
+        step_index: int,
+        *,
+        transition_from: Configuration,
+        cell_rekeyed_users: Iterable[int] = (),
+        field: str = "realised",
+        counter: EvaluationCounter | None = None,
+        run_setting: SealedRunSetting | None = None,
+        boundary_indices: tuple[int, ...] = tuple(range(48)),
+    ) -> None:
+        self.tape = tape
+        self.setting = setting
+        self.step_index = step_index
+        self.transition_from = transition_from
+        self.cell_rekeyed_users = tuple(cell_rekeyed_users)
+        self.field = field
+        self.counter = counter
+        self.run_setting = run_setting_for(setting.label) if run_setting is None else run_setting
+        self.boundary_indices = boundary_indices
+        self._shared: dict[str, object] = {}
+        self._evaluated: dict[str, EvaluatedProfile] = {}
+        self._invalid: set[str] = set()
+        self.physical_evaluations = 0
+
+    def evaluate_many(self, configs: Sequence[Configuration]) -> None:
+        """Populate the cache through the dense real-world ``a-r0`` path."""
+
+        missing = [row for row in configs if row.configuration_id not in self._evaluated]
+        step = self.tape.steps[self.step_index]
+        if not missing or step.arrays is None or self.setting.label != "a-r0":
+            for config in missing:
+                self.evaluate(config)
+            return
+        arrays = step.arrays
+        row_of = arrays._row_index()
+        users = tuple(int(value) for value in arrays.users)
+        selected = np.full((len(missing), len(users)), -1, dtype=np.int64)
+        absent = np.zeros(len(missing), dtype=np.bool_)
+        for config_index, config in enumerate(missing):
+            mapping = config.mapping
+            for user_column, user in enumerate(users):
+                identity = mapping[user]
+                if identity is not None:
+                    row = row_of.get((user, identity))
+                    if row is None:
+                        absent[config_index] = True
+                    else:
+                        selected[config_index, user_column] = row
+        result = evaluate_ar_tdm_catalogue(
+            arrays,
+            selected,
+            field=self.field,
+            rate_target_bps=self.run_setting.rate_target_bps,
+            circuit_power_per_active_chain_w=self.run_setting.circuit_power_per_active_chain_w,
+            boundary_indices=self.boundary_indices,
+        )
+        mode_names = ("NO_MODE",) + tuple(row.name for row in ACM_MODES)
+        for index, config in enumerate(missing):
+            if absent[index] or not bool(result.valid[index]):
+                self._invalid.add(config.configuration_id)
+                continue
+            per_user_bits = {
+                user: float(result.bits[index, column])
+                for column, user in enumerate(users)
+            }
+            decoding = {
+                user: float(result.decoding_time_s[index, column])
+                for column, user in enumerate(users)
+            }
+            served = {user: decoding[user] > 0.0 for user in users}
+            feasible = {
+                user: bool(result.feasible[index, column])
+                for column, user in enumerate(users)
+            }
+            attained = {
+                user: bool(result.attained[index, column])
+                for column, user in enumerate(users)
+            }
+            score = CellScore(
+                self.setting,
+                per_user_bits,
+                float(result.joules[index]),
+                decoding,
+                dict(decoding),
+                served,
+                attained,
+                feasible,
+                None,
+                self.run_setting.rate_target_bps,
+                True,
+                float(result.residual_w[index]),
+            )
+            components = {
+                "pa_j": float(result.pa_j[index]),
+                "circuit_j": float(result.circuit_j[index]),
+                "standby_j": 0.0,
+                "baseband_j": float(result.baseband_j[index]),
+                "bus_j": 0.0,
+            }
+            counts = {
+                name: int(result.mode_counts[index, column])
+                for column, name in enumerate(mode_names)
+                if result.mode_counts[index, column]
+            }
+            profile = EvaluatedProfile(
+                config,
+                score,
+                components,
+                (
+                    0.0
+                    if self.run_setting.circuit_power_per_active_chain_w == 0.0
+                    else components["circuit_j"] / self.run_setting.circuit_power_per_active_chain_w
+                ),
+                components["baseband_j"] / 0.200,
+                counts,
+                int(result.plateau_users[index]),
+                len(users),
+                int(result.cap_hits[index]),
+                int(result.transmissions[index]),
+                None,
+                {0: "INVALID", 1: "CONVERGED", 2: "CONVERGED_SLOW"}[
+                    int(result.certificate_status[index])
+                ],
+                int(result.certificate_iterations[index]),
+                float(result.max_rf_power_w[index]),
+                float(result.min_decoding_margin_db[index]),
+                float(result.mean_acm_se_bit_s_hz[index]),
+            )
+            self._evaluated[config.configuration_id] = profile
+        evaluations = len(missing) * len(self.boundary_indices)
+        self.physical_evaluations += evaluations
+        if self.counter is not None:
+            self.counter.boundary_evaluations += evaluations
+
+    def evaluate(self, config: Configuration) -> EvaluatedProfile:
+        if config.configuration_id in self._evaluated:
+            return self._evaluated[config.configuration_id]
+        geometry = self.tape.geometry_for(step_index=self.step_index, assignments=config.mapping)
+        shared = build_shared_tape(
+            self.setting.architecture,
+            geometry,
+            self.tape.inventory,
+            field=self.field,  # type: ignore[arg-type]
+            roster=tuple(user.user_id for user in self.tape.user_layout),
+            config=RadiationConfig(rate_target_bps=self.run_setting.rate_target_bps),
+            circuit_power_per_active_chain_w=self.run_setting.circuit_power_per_active_chain_w,
+        )
+        event_ledger = _interruption_events(
+            self.transition_from,
+            config,
+            shared.integrated[0].time_s,
+            cell_rekeyed_users=self.cell_rekeyed_users,
+        )
+        score = score_setting(
+            shared,
+            self.setting,
+            discontinuities=discontinuities_from_event_ledger(
+                shared, event_ledger
+            ),
+            interruptions=event_ledger,
+        )
+        if not score.valid:
+            raise ProbeError(f"invalid power certificate for {config.configuration_id}")
+        components, beam_seconds, satellite_seconds = _energy_fields(
+            shared,
+            self.setting,
+            circuit_power_per_active_chain_w=self.run_setting.circuit_power_per_active_chain_w,
+        )
+        if not math.isclose(math.fsum(components.values()), score.joules, rel_tol=1e-10, abs_tol=1e-8):
+            raise ProbeError("energy-component reconstruction disagrees with cell score")
+        mode_counts: dict[str, int] = {}
+        cap_hits = transmissions = 0
+        top_mode = max(ACM_MODES, key=lambda row: row.efficiency_bit_per_symbol)
+        user_on_plateau: dict[int, bool] = {}
+        for boundary in shared.integrated:
+            for slot in boundary.radiation.slots:
+                for tx in slot.transmissions:
+                    mode = select_mode(tx.sinr)
+                    name = "NO_MODE" if mode is None else mode.name
+                    mode_counts[name] = mode_counts.get(name, 0) + 1
+                    user_on_plateau[tx.user_id] = user_on_plateau.get(tx.user_id, True) and mode == top_mode
+                    transmissions += 1
+                    cap_hits += int(math.isclose(tx.rf_power_w, BEAM_RF_CAP_W, rel_tol=0.0, abs_tol=1e-9))
+        t_comparison = None
+        if self.setting.integration == "T":
+            integral_setting = next(
+                row
+                for row in MATRIX_SETTINGS
+                if row.architecture == self.setting.architecture and row.treatment == "0"
+            )
+            integral_score = score_setting(
+                shared,
+                integral_setting,
+                discontinuities=discontinuities_from_event_ledger(
+                    shared, event_ledger
+                ),
+                interruptions=event_ledger,
+            )
+            t_comparison = {
+                "snapshot_convention": "left-endpoint decision-time zero-order hold",
+                "same_instant_integral": {
+                    "bits": math.fsum(integral_score.bits.values()),
+                    "joules": integral_score.joules,
+                },
+                "left_snapshot": {"bits": math.fsum(score.bits.values()), "joules": score.joules},
+            }
+        result = EvaluatedProfile(
+            config,
+            score,
+            components,
+            beam_seconds,
+            satellite_seconds,
+            mode_counts,
+            sum(user_on_plateau.values()),
+            len(user_on_plateau),
+            cap_hits,
+            transmissions,
+            t_comparison,
+            max(
+                (
+                    boundary.radiation.certificate.status
+                    for boundary in shared.integrated
+                ),
+                key=lambda value: {"FIXED": 0, "CONVERGED": 1, "CONVERGED_SLOW": 2, "INVALID": 3}[value],
+            ),
+            sum(boundary.radiation.certificate.iterations for boundary in shared.integrated),
+            max(
+                (
+                    tx.rf_power_w
+                    for boundary in shared.integrated
+                    for slot in boundary.radiation.slots
+                    for tx in slot.transmissions
+                ),
+                default=0.0,
+            ),
+            min(
+                (
+                    10.0 * math.log10(tx.sinr) - SINR_MIN_DB
+                    for boundary in shared.integrated
+                    for slot in boundary.radiation.slots
+                    for tx in slot.transmissions
+                ),
+                default=-100.0,
+            ),
+            math.fsum(
+                rate_model(self.setting.rate).rate_bps(tx.sinr, tx.bandwidth_hz) / tx.bandwidth_hz
+                for boundary in shared.integrated
+                for slot in boundary.radiation.slots
+                for tx in slot.transmissions
+            ) / max(
+                1,
+                sum(
+                    1
+                    for boundary in shared.integrated
+                    for slot in boundary.radiation.slots
+                    for _tx in slot.transmissions
+                ),
+            ),
+        )
+        self._shared[config.configuration_id] = shared
+        self._evaluated[config.configuration_id] = result
+        self.physical_evaluations += len(shared.integrated)
+        if self.counter is not None:
+            self.counter.boundary_evaluations += len(shared.integrated)
+        return result
+
+    def required_power(self, config: Configuration) -> tuple[float, float]:
+        profile = self.evaluate(config)
+        if config.configuration_id not in self._shared:
+            return profile.required_power_w_max, BEAM_RF_CAP_W
+        shared = self._shared[config.configuration_id]
+        powers = [
+            tx.rf_power_w
+            for boundary in shared.integrated  # type: ignore[attr-defined]
+            for slot in boundary.radiation.slots
+            for tx in slot.transmissions
+        ]
+        return (max(powers, default=0.0), BEAM_RF_CAP_W)
+
+
+def _nominal_configuration(config: Configuration, profile: EvaluatedProfile) -> NominalConfiguration:
+    return NominalConfiguration(
+        config.configuration_id,
+        config.assignments,
+        profile.bits,
+        profile.joules,
+        sum(profile.score.served_phy.values()),
+    )
+
+
+def _calibrate(
+    setting: PhysicsSetting,
+            anchor_index=anchor_index,
+            anchor=base,
+            selected=selected,
+            evaluator=current,
+            rows_by_user_action=rows_by_user_action,
+            calibration=calibration,
+            run_setting=run_setting,
+        )
+    return {
+        "base": base,
+        "incumbent": incumbent,
+        "rows": tuple(source_rows),
+        "rows_by_user_action": rows_by_user_action,
+        "current_evaluator": current,
+        "coalition_row": coalition_row,
+        "census": census,
+        "skipped_invalid": skipped_invalid,
+        "catalogue_count": catalogue_count,
+        "physics_calls": counter.boundary_evaluations,
+    }
+
+
+_CROSS_GAIN_CACHE = {}
+
+
+def _cross_gain_terms(tape, step_index: int, affected: Sequence[tuple[int, int]]):
+    step = tape.steps[step_index]
+    if step.arrays is None:
+        return ()
+    arrays = step.arrays
+    cache_key = (tape.seed, step_index)
+    cached = _CROSS_GAIN_CACHE.get(cache_key)
+    if cached is None:
+        aggressors = {
+            tuple(int(value) for value in identity): index
+            for index, identity in enumerate(arrays.aggressor_identities)
+        }
+        victim_columns = {}
+        for row, identity in enumerate(arrays.identities.tolist()):
+            key = tuple(int(value) for value in identity)
+            victim_columns.setdefault(key, []).append(
+                int(arrays.row_user_column[row])
+            )
+        cached = (aggressors, victim_columns, {})
+        _CROSS_GAIN_CACHE[cache_key] = cached
+    aggressors, victim_columns, pair_cache = cached
+    result = []
+    for source, target in itertools.permutations(sorted(set(affected)), 2):
+        relation = (source, target)
+        gain = pair_cache.get(relation)
+        if gain is None:
+            column = aggressors.get(source)
+            gain = 0.0 if column is None else max(
+                (
+                    float(arrays.cross_base_nominal[0, user, column])
+                    for user in victim_columns.get(target, ())
+                ),
+                default=0.0,
+            )
+            pair_cache[relation] = gain
+        result.append((f"{source[0]}:{source[1]}", f"{target[0]}:{target[1]}", gain))
+    return tuple(result)
+
+
+def _coalition_context(*, tape, step_index, anchor, selected, rows_by_user_action):
+    changed = tuple(
+        user for user in sorted(anchor.mapping) if selected.mapping[user] != anchor.mapping[user]
+    )
+    members = tuple(
+        CoalitionMember(
+            user_id=user,
+            reference_action=_physical_action(anchor.mapping[user]),
+            selected_action=_physical_action(selected.mapping[user]),
+            selected_q1_row=rows_by_user_action[(user, selected.mapping[user])].q1_state,
+            incumbent_q1_row=rows_by_user_action[(user, anchor.mapping[user])].q1_state,
+            missing_incumbent=rows_by_user_action[(user, selected.mapping[user])].outage,
+        )
+        for user in changed
+    )
+    affected = sorted(
+        {
+            identity
+            for user in changed
+            for identity in (anchor.mapping[user], selected.mapping[user])
+            if identity is not None
+        }
+    )
+    before_counts: dict[tuple[int, int], int] = {}
+    after_counts: dict[tuple[int, int], int] = {}
+    for identity in anchor.mapping.values():
+        if identity is not None:
+            before_counts[identity] = before_counts.get(identity, 0) + 1
+    for identity in selected.mapping.values():
+        if identity is not None:
+            after_counts[identity] = after_counts.get(identity, 0) + 1
+    relations = _cross_gain_terms(tape, step_index, affected)
+    beams = tuple(
+        AffectedBeamContext(
+            beam_key=f"{identity[0]}:{identity[1]}",
+            occupancy_before=before_counts.get(identity, 0),
+            occupancy_after=after_counts.get(identity, 0),
+            active_before=before_counts.get(identity, 0) > 0,
+            active_after=after_counts.get(identity, 0) > 0,
+            shared_capacity=1.0,
+            interference_summary=math.fsum(
+                gain for _source, target, gain in relations if target == f"{identity[0]}:{identity[1]}"
+            ),
+            capacity_margin=float(10 - after_counts.get(identity, 0)),
+        )
+        for identity in affected
+    )
+    return CoalitionContext(
+        anchor_id=f"{tape.domain}|{step_index}|{anchor.configuration_id}",
+        reference_profile=tuple(
+            (user, _physical_action(identity)) for user, identity in anchor.assignments
+        ),
+        members=members,
+        affected_beams=beams,
+        global_resource_features=(
+            len(changed) / max(1, len(anchor.assignments)),
+            len(affected) / max(1, len(anchor.assignments)),
+            math.fsum(before_counts.values()) / max(1, len(anchor.assignments)),
+            math.fsum(after_counts.values()) / max(1, len(anchor.assignments)),
+            math.fsum(gain for _source, _target, gain in relations),
+            max((gain for _source, _target, gain in relations), default=0.0),
+        ),
+        pairwise_cross_gain_terms=relations,
+    )
+
+
+def _coalition_row(
+    *, tape, step_index, carrier, anchor_index, anchor, selected, evaluator,
+    rows_by_user_action, calibration, run_setting,
+):
+    context = _coalition_context(
+        tape=tape,
+        step_index=step_index,
+        anchor=anchor,
+        selected=selected,
+        rows_by_user_action=rows_by_user_action,
+    )
+    reference = evaluator.evaluate(anchor).outcome(
+        phi=ENGINE._phi_for(anchor, anchor)
+    )
+    unilateral = {}
+    for user in context.changed_users:
+        mapping = anchor.mapping
+        mapping[user] = selected.mapping[user]
+        config = ENGINE._configuration(anchor, mapping, kind="pilot-coalition-singleton")
+        unilateral[user] = evaluator.evaluate(config).outcome(
+            phi=ENGINE._phi_for(anchor, config)
+
+exec
+/bin/bash -lc "rg -n \"62|collision|state_a|65028|anchor 0|anchor=0\" scripts/diagnose_v025_c1c2_sufficiency.py tests/stagec_v025/test_c1c2_feature_sufficiency.py .scratch/c1c2-sufficiency -S | head -n 300 && find .scratch/c1c2-sufficiency -maxdepth 2 -type f -printf '%p\\n' | sort" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+tests/stagec_v025/test_c1c2_feature_sufficiency.py:3:from scripts.diagnose_v025_c1c2_sufficiency import collision_witnesses
+tests/stagec_v025/test_c1c2_feature_sufficiency.py:6:def test_production_encoders_have_c1_and_c2_target_collisions() -> None:
+tests/stagec_v025/test_c1c2_feature_sufficiency.py:7:    witness = collision_witnesses()
+.scratch/c1c2-sufficiency/spec.md:5:fallback; the final report records separate C1/C2 collisions (or a bounded
+scripts/diagnose_v025_c1c2_sufficiency.py:2:"""No-production-training C1/C2 collision and explainability diagnostic."""
+scripts/diagnose_v025_c1c2_sufficiency.py:123:            {"source": "c1c2-sufficiency-collision", "labels": [str(c1_bits), str(c2_bits)]}
+scripts/diagnose_v025_c1c2_sufficiency.py:141:        source_provenance_sha256=canonical_sha256({"source": "collision-null"}),
+scripts/diagnose_v025_c1c2_sufficiency.py:145:        world_id="C1C2_COLLISION/world",
+scripts/diagnose_v025_c1c2_sufficiency.py:148:        anchor_id="collision-anchor",
+scripts/diagnose_v025_c1c2_sufficiency.py:177:def collision_witnesses() -> dict[str, object]:
+scripts/diagnose_v025_c1c2_sufficiency.py:255:            "state_a": {
+scripts/diagnose_v025_c1c2_sufficiency.py:276:            "state_a_projected_outcomes": [
+scripts/diagnose_v025_c1c2_sufficiency.py:688:    parser.add_argument("--collisions-only", action="store_true")
+scripts/diagnose_v025_c1c2_sufficiency.py:690:    payload = {"collisions": collision_witnesses()}
+scripts/diagnose_v025_c1c2_sufficiency.py:691:    if not args.collisions_only:
+.scratch/c1c2-sufficiency/spec.md
+
+exec
+/bin/bash -lc "sed -n '1,200p' .scratch/c1c2-sufficiency/spec.md && nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+from scripts.diagnose_v025_c1c2_sufficiency import *
+tape=build_world_tape(domain=DEVELOPMENT_WORLD_DOMAINS[0],provider=LegacyWorldProvider(role='pilot-source'),steps=5,start_time_s=0.0)
+cal=_calibration()
+rows=[]
+for a in (0,1):
+ r=_relabel_anchor(tape,cal,a); print('anchor',a,'rows',len(r)); rows += r
+from collections import defaultdict
+g=defaultdict(list)
+for r in rows: g[(r.user_id,r.action,r.q1,r.q2)].append(r)
+cs=[v for v in g.values() if len(v)>1 and len({x.c2_target_exact for x in v})>1]
+print('collisions',len(cs))
+for v in cs:
+ if v[0].user_id==6 and v[0].action==(65028,44):
+  for x in v:
+   print('W',x.anchor,x.user_id,x.action,x.c2_target_exact)
+   print('c1struct',x.c1_structure)
+   print('c2struct',x.c2_structure)
+PY" in /home/sat/mcrl-v025-c1c2suff-ws
+ exited 1 in 48624ms:
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+NameError: name '_calibration' is not defined
+
+exec
+/bin/bash -lc "nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import scripts.diagnose_v025_c1c2_sufficiency as d
+from collections import defaultdict
+tape=d.build_world_tape(domain=d.DEVELOPMENT_WORLD_DOMAINS[0],provider=d.LegacyWorldProvider(role='pilot-source'),steps=5,start_time_s=0.0)
+cal=d._calibration(); rows=[]
+for a in (0,1):
+ r=d._relabel_anchor(tape,cal,a); print('anchor',a,'rows',len(r)); rows += r
+g=defaultdict(list)
+for r in rows: g[(r.user_id,r.action,r.q1,r.q2)].append(r)
+cs=[v for v in g.values() if len(v)>1 and len({x.c2_target_exact for x in v})>1]
+print('collisions',len(cs))
+for v in cs:
+ if v[0].user_id==6 and v[0].action==(65028,44):
+  for x in v:
+   print('W',x.anchor,x.user_id,x.action,x.c2_target_exact)
+   print('c1struct',x.c1_structure)
+   print('c2struct',x.c2_structure)
+PY" in /home/sat/mcrl-v025-c1c2suff-ws

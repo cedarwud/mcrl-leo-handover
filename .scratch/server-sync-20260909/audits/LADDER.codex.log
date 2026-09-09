@@ -7996,3 +7996,1164 @@ My next allocation would be to write the conditional mechanism argument and reso
 115:The project has been asking "does coordination beat the exhaustive unilateral optimum," which is a theory question you have now answered: yes, by 6.36 %, and the optimum costs 1,213 s. The question the 10 s budget actually supports is a **deployability** question, and it wants a different comparator set: carrier default; one-pass greedy unilateral within 10 s; occupancy-floor heuristic within 10 s; oracle. That frame uses `CERTPROFILE` as a load-bearing result rather than an obstacle, needs no learner, and is where the remaining headroom in the *paper* lives.
 131:Tomorrow: (1) run the occupancy-floor heuristic against the oracle catalogue — Frame A; (2) run ORACLE over ~30 dates to put an interval on +6.36 % — Q4's weak point. Both are learner-free, both are hours not days, and between them they determine whether the paper's headline is "a simple physical rule captures most of a 6 % coordination headroom" or "a 6 % coordination headroom exists that neither exhaustive search nor a learned head can reach."
 
+exec
+/bin/bash -lc "rg -n 'SELECTION_WORKERS|pool is None|processes_used|scalar|formulation' .scratch/ladder-floor-20260910/oracle_runner.py; tail -n 5 .scratch/ladder-floor-20260910/original-run.log; tail -n 5 .scratch/ladder-floor-20260910/margin-run.log; ps -eo pid,ppid,ni,%cpu,rss,args | rg 'ladder-floor|PID'" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+40:SELECTION_WORKERS = 1
+168:        if self.pool is None:
+172:                tuple(missing[index::SELECTION_WORKERS])
+173:                for index in range(SELECTION_WORKERS)
+680:    formulation: str = "original", checkpoint_path: Path | None = None,
+687:    if formulation == "margin":
+690:    elif formulation != "original":
+691:        raise RuntimeError(f"unknown formulation: {formulation}")
+737:                                "formulation": formulation,
+772:        "formulation": formulation,
+779:        "processes_used": 1,
+814:    parser.add_argument("--formulation", choices=("original", "margin"), default="original")
+820:        formulation=args.formulation,
+{"completed_improving_moves": 72, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 72, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 98, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 26, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 106, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 8, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 90, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 90, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 136, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 46, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 149, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 13, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 151, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 2, "unique_selection_evaluations": 10801}
+    PID    PPID  NI %CPU   RSS COMMAND
+      1       0   0  0.0 16832 codex-linux-sandbox --sandbox-policy-cwd /home/sat/mcrl-v025-ladder-ws --command-cwd /home/sat/mcrl-v025-ladder-ws --permission-profile {"type":"managed","file_system":{"type":"restricted","entries":[{"path":{"type":"special","value":{"kind":"root"}},"access":"read"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-ladder-ws"},"access":"write"},{"path":{"type":"special","value":{"kind":"slash_tmp"}},"access":"write"},{"path":{"type":"special","value":{"kind":"tmpdir"}},"access":"write"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-ladder-ws/.git"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-ladder-ws/.agents"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-ladder-ws/.codex"},"access":"read","missing_path_behavior":"skip"}]},"network":"restricted"} --apply-seccomp-then-exec -- /bin/bash -c __CODEX_SNAPSHOT_OVERRIDE_SET_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS+x}" __CODEX_SNAPSHOT_OVERRIDE_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS-}" __CODEX_SNAPSHOT_OVERRIDE_SET_1="${CODEX_PERMISSION_PROFILE+x}" __CODEX_SNAPSHOT_OVERRIDE_1="${CODEX_PERMISSION_PROFILE-}" __CODEX_SNAPSHOT_OVERRIDE_SET_2="${CODEX_PLUGIN_METRICS_OUTPUT+x}" __CODEX_SNAPSHOT_OVERRIDE_2="${CODEX_PLUGIN_METRICS_OUTPUT-}" __CODEX_SNAPSHOT_OVERRIDE_SET_3="${CODEX_SESSION_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_3="${CODEX_SESSION_ID-}" __CODEX_SNAPSHOT_OVERRIDE_SET_4="${CODEX_THREAD_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_4="${CODEX_THREAD_ID-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0="${ALL_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_0="${ALL_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1="${BUNDLE_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_1="${BUNDLE_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2="${BUNDLE_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_2="${BUNDLE_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3="${BUNDLE_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_3="${BUNDLE_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4="${BUNDLE_SSL_CA_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_4="${BUNDLE_SSL_CA_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5="${CARGO_HTTP_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_5="${CARGO_HTTP_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6="${CODEX_CA_CERTIFICATE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_6="${CODEX_CA_CERTIFICATE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8="${CODEX_NETWORK_PROXY_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_8="${CODEX_NETWORK_PROXY_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9="${CODEX_NETWORK_PROXY_ATTRIBUTION+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_9="${CODEX_NETWORK_PROXY_ATTRIBUTION-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12="${CURL_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_12="${CURL_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13="${DOCKER_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_13="${DOCKER_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14="${DOCKER_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_14="${DOCKER_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15="${ELECTRON_GET_USE_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_15="${ELECTRON_GET_USE_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16="${FTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_16="${FTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17="${GIT_SSL_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_17="${GIT_SSL_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18="${HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_18="${HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19="${HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_19="${HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20="${NODE_EXTRA_CA_CERTS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_20="${NODE_EXTRA_CA_CERTS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21="${NODE_USE_ENV_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_21="${NODE_USE_ENV_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22="${NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_22="${NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23="${NPM_CONFIG_CAFILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_23="${NPM_CONFIG_CAFILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24="${NPM_CONFIG_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_24="${NPM_CONFIG_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25="${NPM_CONFIG_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_25="${NPM_CONFIG_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26="${NPM_CONFIG_NOPROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_26="${NPM_CONFIG_NOPROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27="${NPM_CONFIG_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_27="${NPM_CONFIG_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28="${PIP_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_28="${PIP_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29="${PIP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_29="${PIP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30="${REQUESTS_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_30="${REQUESTS_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31="${SSL_CERT_FILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_31="${SSL_CERT_FILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32="${WSS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_32="${WSS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33="${WS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_33="${WS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34="${YARN_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_34="${YARN_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35="${YARN_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_35="${YARN_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36="${YARN_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_36="${YARN_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37="${all_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_37="${all_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38="${ftp_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_38="${ftp_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39="${http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_39="${http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40="${https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_40="${https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41="${no_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_41="${no_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42="${npm_config_cafile+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_42="${npm_config_cafile-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43="${npm_config_http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_43="${npm_config_http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44="${npm_config_https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_44="${npm_config_https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45="${npm_config_noproxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_45="${npm_config_noproxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46="${npm_config_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_46="${npm_config_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47="${ws_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_47="${ws_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48="${wss_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_48="${wss_proxy-}" __CODEX_SNAPSHOT_PROXY_ENV_SET="${CODEX_NETWORK_PROXY_ACTIVE+x}"  if . '/home/sat/.codex/shell_snapshots/01a08716-f415-7560-a829-dd9f856bcd35.1788972823579887290.sh' >/dev/null 2>&1; then :; fi  if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_0}" ]; then export CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS="${__CODEX_SNAPSHOT_OVERRIDE_0}"; else unset CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_1}" ]; then export CODEX_PERMISSION_PROFILE="${__CODEX_SNAPSHOT_OVERRIDE_1}"; else unset CODEX_PERMISSION_PROFILE; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_2}" ]; then export CODEX_PLUGIN_METRICS_OUTPUT="${__CODEX_SNAPSHOT_OVERRIDE_2}"; else unset CODEX_PLUGIN_METRICS_OUTPUT; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_3}" ]; then export CODEX_SESSION_ID="${__CODEX_SNAPSHOT_OVERRIDE_3}"; else unset CODEX_SESSION_ID; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_4}" ]; then export CODEX_THREAD_ID="${__CODEX_SNAPSHOT_OVERRIDE_4}"; else unset CODEX_THREAD_ID; fi if [ -n "$__CODEX_SNAPSHOT_PROXY_ENV_SET" ] || [ -n "${CODEX_NETWORK_PROXY_ACTIVE+x}" ]; then if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0}" ]; then export ALL_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_0}"; else unset ALL_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1}" ]; then export BUNDLE_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_1}"; else unset BUNDLE_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2}" ]; then export BUNDLE_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_2}"; else unset BUNDLE_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3}" ]; then export BUNDLE_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_3}"; else unset BUNDLE_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4}" ]; then export BUNDLE_SSL_CA_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_4}"; else unset BUNDLE_SSL_CA_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5}" ]; then export CARGO_HTTP_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_5}"; else unset CARGO_HTTP_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6}" ]; then export CODEX_CA_CERTIFICATE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_6}"; else unset CODEX_CA_CERTIFICATE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7}" ]; then export CODEX_NETWORK_ALLOW_LOCAL_BINDING="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_7}"; else unset CODEX_NETWORK_ALLOW_LOCAL_BINDING; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8}" ]; then export CODEX_NETWORK_PROXY_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_8}"; else unset CODEX_NETWORK_PROXY_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9}" ]; then export CODEX_NETWORK_PROXY_ATTRIBUTION="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_9}"; else unset CODEX_NETWORK_PROXY_ATTRIBUTION; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10}" ]; then export CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_10}"; else unset CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11}" ]; then export CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_11}"; else unset CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12}" ]; then export CURL_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_12}"; else unset CURL_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13}" ]; then export DOCKER_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_13}"; else unset DOCKER_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14}" ]; then export DOCKER_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_14}"; else unset DOCKER_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15}" ]; then export ELECTRON_GET_USE_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_15}"; else unset ELECTRON_GET_USE_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16}" ]; then export FTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_16}"; else unset FTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17}" ]; then export GIT_SSL_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_17}"; else unset GIT_SSL_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18}" ]; then export HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_18}"; else unset HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19}" ]; then export HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_19}"; else unset HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20}" ]; then export NODE_EXTRA_CA_CERTS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_20}"; else unset NODE_EXTRA_CA_CERTS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21}" ]; then export NODE_USE_ENV_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_21}"; else unset NODE_USE_ENV_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22}" ]; then export NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_22}"; else unset NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23}" ]; then export NPM_CONFIG_CAFILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_23}"; else unset NPM_CONFIG_CAFILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24}" ]; then export NPM_CONFIG_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_24}"; else unset NPM_CONFIG_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25}" ]; then export NPM_CONFIG_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_25}"; else unset NPM_CONFIG_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26}" ]; then export NPM_CONFIG_NOPROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_26}"; else unset NPM_CONFIG_NOPROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27}" ]; then export NPM_CONFIG_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_27}"; else unset NPM_CONFIG_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28}" ]; then export PIP_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_28}"; else unset PIP_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29}" ]; then export PIP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_29}"; else unset PIP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30}" ]; then export REQUESTS_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_30}"; else unset REQUESTS_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31}" ]; then export SSL_CERT_FILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_31}"; else unset SSL_CERT_FILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32}" ]; then export WSS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_32}"; else unset WSS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33}" ]; then export WS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_33}"; else unset WS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34}" ]; then export YARN_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_34}"; else unset YARN_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35}" ]; then export YARN_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_35}"; else unset YARN_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36}" ]; then export YARN_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_36}"; else unset YARN_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37}" ]; then export all_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_37}"; else unset all_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38}" ]; then export ftp_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_38}"; else unset ftp_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39}" ]; then export http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_39}"; else unset http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40}" ]; then export https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_40}"; else unset https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41}" ]; then export no_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_41}"; else unset no_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42}" ]; then export npm_config_cafile="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_42}"; else unset npm_config_cafile; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43}" ]; then export npm_config_http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_43}"; else unset npm_config_http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44}" ]; then export npm_config_https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_44}"; else unset npm_config_https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45}" ]; then export npm_config_noproxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_45}"; else unset npm_config_noproxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46}" ]; then export npm_config_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_46}"; else unset npm_config_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47}" ]; then export ws_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_47}"; else unset ws_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48}" ]; then export wss_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_48}"; else unset wss_proxy; fi fi if [ -n "${PATH:-}" ]; then export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path':"$PATH"; else export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path'; fi  exec '/bin/bash' -c 'rg -n '"'"'SELECTION_WORKERS|pool is None|processes_used|scalar|formulation'"'"' .scratch/ladder-floor-20260910/oracle_runner.py; tail -n 5 .scratch/ladder-floor-20260910/original-run.log; tail -n 5 .scratch/ladder-floor-20260910/margin-run.log; ps -eo pid,ppid,ni,%cpu,rss,args | rg '"'"'ladder-floor|PID'"'"''
+      2       1   0  0.0  3684 /bin/bash -c rg -n 'SELECTION_WORKERS|pool is None|processes_used|scalar|formulation' .scratch/ladder-floor-20260910/oracle_runner.py; tail -n 5 .scratch/ladder-floor-20260910/original-run.log; tail -n 5 .scratch/ladder-floor-20260910/margin-run.log; ps -eo pid,ppid,ni,%cpu,rss,args | rg 'ladder-floor|PID'
+      7       2   0  0.0  4504 rg ladder-floor|PID
+
+exec
+/bin/bash -lc 'tail -n 3 .scratch/ladder-floor-20260910/original-run.log; tail -n 3 .scratch/ladder-floor-20260910/margin-run.log; ls .scratch/ladder-floor-20260910' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 98, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 26, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 106, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 8, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/1:step/0", "joint_candidates": 1089, "oracle_ee_gain_pct": 4.798097779556465, "qualifying": true, "unilateral_iterations": 106, "wall_seconds": 56.411478454014286}
+{"completed_improving_moves": 151, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 2, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/1:step/0", "joint_candidates": 643, "oracle_ee_gain_pct": -0.5227946869086675, "qualifying": true, "unilateral_iterations": 151, "wall_seconds": 35.11398883498623}
+{"completed_improving_moves": 85, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 85, "unique_selection_evaluations": 2701}
+audit_variant.py
+code-evidence.md
+margin-result.checkpoint.json
+margin-run.log
+margin_batch.py
+oracle_runner.py
+original-result.checkpoint.json
+original-run.log
+variant-audit.json
+
+codex
+The first original anchor reproduces its published +4.7981% oracle gain. With margin provisioned, that anchor’s oracle-over-unilateral EE change is −0.5228%. That is preliminary; both full 20-anchor runs are underway.
+
+The variant has also passed independent checks: its only physics change is `Gamma → Gamma/q`, and both search and committed endpoint evaluation use it.
+exec
+/bin/bash -lc 'cp /home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json .scratch/ladder-floor-20260910/reference-oracle-result.json' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+exec
+/bin/bash -lc "tail -n 3 .scratch/ladder-floor-20260910/original-run.log; tail -n 3 .scratch/ladder-floor-20260910/margin-run.log; sed -n '1,220p' .scratch/ladder-floor-20260910/scalar_diagnostics.py" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 111, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 3, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 112, "completed_passes": 5, "coordinate_step": 1, "moves_in_pass": 1, "unique_selection_evaluations": 13501}
+{"anchor": "V025_PROBE_R2/world/1:step/1", "joint_candidates": 964, "oracle_ee_gain_pct": 5.65700167115768, "qualifying": true, "unilateral_iterations": 112, "wall_seconds": 74.3516396949999}
+{"completed_improving_moves": 140, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 15, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 142, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 2, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/1:step/2", "joint_candidates": 759, "oracle_ee_gain_pct": -0.18112770125457978, "qualifying": true, "unilateral_iterations": 142, "wall_seconds": 44.921073683013674}
+"""Unsealed ladder-floor scalar diagnostic; never edits the declared engine.
+
+`census(tape, step_index, assignments, formulation)` returns JSON-safe counts
+and compact distributions. Histograms round to 0.01 dB (maximum rounding
+error 0.005 dB); exact extrema and means are retained. Duration weights are
+native TDM slot fraction times the 48-point trapezoid boundary weight.
+"""
+
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from contextlib import contextmanager
+import math
+from typing import Mapping
+
+import numpy as np
+
+from mcrl.physics_v025 import architectures
+from mcrl.physics_v025.channel import fading_product_quantile
+from mcrl.physics_v025.energy import schedule_energy
+
+
+@contextmanager
+def scalar_formulation(formulation: str):
+    """Temporarily replace only the scalar power target for the margin copy.
+
+    Process-local and not thread-safe. The original helper is restored even
+    when evaluation raises; nested invocations are rejected.
+    """
+
+    if formulation not in {"original", "margin"}:
+        raise ValueError("formulation must be original or margin")
+    if formulation == "original":
+        yield
+        return
+    original = architectures._rate_targets
+    if getattr(original, "_ladder_floor_variant", False):
+        raise RuntimeError("nested scalar margin patches are not supported")
+
+    def margin_targets(config, geometry, active, members):
+        values, forced, reported, modes = original(config, geometry, active, members)
+        if config.fading_quantile_alpha is None:
+            raise ValueError("margin provisioning requires a fading quantile")
+        quantiles = np.asarray(
+            [
+                fading_product_quantile(
+                    geometry.links[index].elevation_deg,
+                    config.fading_quantile_alpha,
+                )
+                for index in active
+            ],
+            dtype=np.float64,
+        )
+        provisioned = values.copy()
+        provisioned[~forced] /= quantiles[~forced]
+        reported_provisioned = tuple(
+            None if value is None else float(value / quantile)
+            for value, quantile in zip(reported, quantiles, strict=True)
+        )
+        return provisioned, forced, reported_provisioned, modes
+
+    margin_targets._ladder_floor_variant = True
+    architectures._rate_targets = margin_targets
+    try:
+        yield
+    finally:
+        architectures._rate_targets = original
+
+
+class _Histogram:
+    def __init__(self):
+        self.count = 0
+        self.weight = 0.0
+        self.total = 0.0
+        self.weighted_total = 0.0
+        self.minimum = math.inf
+        self.maximum = -math.inf
+        self.bins = defaultdict(lambda: [0, 0.0])
+
+    def add(self, value: float, weight: float):
+        if not math.isfinite(value):
+            raise ValueError("nonfinite samples must be counted separately")
+        self.count += 1
+        self.weight += weight
+        self.total += value
+        self.weighted_total += value * weight
+        self.minimum = min(self.minimum, value)
+        self.maximum = max(self.maximum, value)
+        key = int(math.floor(value * 100.0 + 0.5))
+        self.bins[key][0] += 1
+        self.bins[key][1] += weight
+
+    def payload(self):
+        return {
+            "bin_width_db": 0.01,
+            "count": self.count,
+            "weight_s": self.weight,
+            "min": None if not self.count else self.minimum,
+            "max": None if not self.count else self.maximum,
+            "sum": self.total,
+            "weighted_sum": self.weighted_total,
+            "mean": None if not self.count else self.total / self.count,
+            "duration_weighted_mean": (
+                None if not self.weight else self.weighted_total / self.weight
+            ),
+            "bins": [
+                [key / 100.0, count, weight]
+                for key, (count, weight) in sorted(self.bins.items())
+            ],
+        }
+
+
+def _boundary_weights(times):
+    result = np.zeros(len(times), dtype=np.float64)
+    differences = np.diff(np.asarray(times, dtype=np.float64))
+    if np.any(differences <= 0.0):
+        raise ValueError("geometry times must increase")
+    result[:-1] += differences / 2.0
+    result[1:] += differences / 2.0
+    return result
+
+
+def census(
+    tape,
+    step_index: int,
+    assignments: Mapping[int, tuple[int, int] | None],
+    formulation: str,
+    *,
+    alpha: float = 0.10,
+) -> dict:
+    """Census actual scalar TDM attempts over one real 48-boundary anchor.
+
+    `nominal_target_margin_db` uses the unmodified target mode threshold;
+    `nominal_provisioned_target_margin_db` uses the threshold requested from
+    the solver, including the variant fade margin when applicable.
+    `served_target_miss` counts decoded attempts whose SE is below r*n/W;
+    it is distinct from complete user-step target attainment.
+    """
+
+    samples = tape.geometry_for(step_index=step_index, assignments=assignments)
+    if len(samples) != 48:
+        raise ValueError("anchor census requires all 48 native boundaries")
+    times = [time_s for time_s, _ in samples]
+    weights = _boundary_weights(times)
+    config = architectures.RadiationConfig(fading_quantile_alpha=alpha)
+    engine = architectures.AngleRateTPC_TDM()
+    occupancy_counts = defaultdict(Counter)
+    modes = Counter()
+    margins = {
+        name: _Histogram()
+        for name in (
+            "nominal_tx_margin_db",
+            "realised_tx_margin_db",
+            "realised_tx_margin_served_db",
+            "nominal_target_margin_db",
+            "nominal_provisioned_target_margin_db",
+            "q_margin_db",
+            "elevation_deg",
+        )
+    }
+    total = Counter()
+    per_user_bits = {int(user): 0.0 for user in assignments}
+    per_user_decode_s = {int(user): 0.0 for user in assignments}
+    decoded_users_any = set()
+    boundary_bits = 0.0
+    integrated_joules = 0.0
+    minimum_residual = math.inf
+    maximum_residual = 0.0
+    with scalar_formulation(formulation):
+        for boundary, ((time_s, geometry), boundary_weight) in enumerate(
+            zip(samples, weights, strict=True)
+        ):
+            radiation = engine.radiate(config, geometry, "realised")
+            if not radiation.valid:
+                raise RuntimeError(f"invalid scalar certificate at boundary {boundary}")
+            energy = schedule_energy(
+                tape.inventory,
+                ((slot.fraction, dict(slot.beam_rf_w)) for slot in radiation.slots),
+                duration_s=1.0,
+                idle_power_w=0.0,
+            )
+            integrated_joules += float(boundary_weight * energy.total_j)
+            minimum_residual = min(minimum_residual, radiation.certificate.residual_w)
+            maximum_residual = max(maximum_residual, radiation.certificate.residual_w)
+            by_beam = Counter(link.beam for link in geometry.links)
+            elevation_by_user = {link.user_id: link.elevation_deg for link in geometry.links}
+            rates = Counter()
+            all_decoded = {}
+            for slot in radiation.slots:
+                for tx in slot.transmissions:
+                    n = by_beam[tx.beam]
+                    row = occupancy_counts[n]
+                    weight_s = float(boundary_weight * slot.fraction)
+                    has_mode = tx.m_tx is not None
+                    decoded = bool(tx.realised_outcome.decoded)
+                    cap_hit = tx.rf_power_w >= config.beam_cap_w - 1.0e-9
+                    se = 0.0 if not has_mode else tx.m_tx.spectral_efficiency_bit_per_s_hz
+                    target_miss = decoded and se < config.rate_target_bps * n / config.bandwidth_hz
+                    flags = {
+                        "attempts": True,
+                        "no_mode": not has_mode,
+                        "no_mode_uncapped": not has_mode and not cap_hit,
+                        "has_mode": has_mode,
+                        "decoded": decoded,
+                        "decode_failure_with_mode": has_mode and not decoded,
+                        "cap_hits": cap_hit,
+                        "served_target_miss": target_miss,
+                    }
+                    for name, flag in flags.items():
+                        if flag:
+                            row[name] += 1
+                            row[name + "_duration_s"] += weight_s
+                            total[name] += 1
+                            total[name + "_duration_s"] += weight_s
+                    target_name = None if tx.m_target is None else tx.m_target.name
+                    mode_name = None if tx.m_tx is None else tx.m_tx.name
+                    modes[(target_name or "NO_TARGET", mode_name or "NO_MODE")] += 1
+                    elevation = float(elevation_by_user[tx.user_id])
+                    quantile = fading_product_quantile(elevation, alpha)
+                    q_margin = -10.0 * math.log10(quantile)
+
+exec
+/bin/bash -lc 'tail -n 4 .scratch/ladder-floor-20260910/original-run.log; tail -n 4 .scratch/ladder-floor-20260910/margin-run.log; tail -n 80 .scratch/ladder-floor-20260910/scalar_diagnostics.py' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"anchor": "V025_PROBE_R2/world/1:step/1", "joint_candidates": 964, "oracle_ee_gain_pct": 5.65700167115768, "qualifying": true, "unilateral_iterations": 112, "wall_seconds": 74.3516396949999}
+{"completed_improving_moves": 66, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 66, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 91, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 25, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 97, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 6, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/1:step/2", "joint_candidates": 759, "oracle_ee_gain_pct": -0.18112770125457978, "qualifying": true, "unilateral_iterations": 142, "wall_seconds": 44.921073683013674}
+{"completed_improving_moves": 87, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 87, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 121, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 34, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 136, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 15, "unique_selection_evaluations": 8101}
+                        realised_margin = 10.0 * math.log10(tx.sinr) - tx.m_tx.threshold_db
+                        margins["nominal_tx_margin_db"].add(nominal_margin, weight_s)
+                        margins["realised_tx_margin_db"].add(realised_margin, weight_s)
+                        if decoded:
+                            margins["realised_tx_margin_served_db"].add(realised_margin, weight_s)
+                    rates[tx.user_id] += (
+                        slot.fraction
+                        * tx.bandwidth_hz
+                        * tx.realised_outcome.credited_spectral_efficiency_bit_per_s_hz
+                    )
+                    all_decoded[tx.user_id] = all_decoded.get(tx.user_id, True) and decoded
+                    if decoded:
+                        decoded_users_any.add(tx.user_id)
+                        any_decoded.add(tx.user_id)
+                    if has_mode:
+                        any_mode.add(tx.user_id)
+            if boundary == 0:
+                boundary_bits = float(sum(rates.values()) * (times[-1] - times[0]))
+                boundary_zero_beams = [
+                    {
+                        "identity": list(beam),
+                        "occupancy": n,
+                        "users": sorted(link.user_id for link in geometry.links if link.beam == beam),
+                        "served_users": sorted(link.user_id for link in geometry.links if link.beam == beam and link.user_id in any_decoded),
+                        "has_mode_users": sorted(link.user_id for link in geometry.links if link.beam == beam and link.user_id in any_mode),
+                        "no_mode_users": sorted(link.user_id for link in geometry.links if link.beam == beam and link.user_id not in any_mode),
+                    }
+                    for beam, n in sorted(by_beam.items())
+                ]
+            for user in per_user_bits:
+                per_user_bits[user] += float(boundary_weight * rates[user])
+                per_user_decode_s[user] += float(boundary_weight * all_decoded.get(user, False))
+
+    count_keys = (
+        "attempts", "no_mode", "no_mode_uncapped", "has_mode", "decoded",
+        "decode_failure_with_mode", "cap_hits", "served_target_miss",
+    )
+    def normalize(row):
+        for key in count_keys:
+            row.setdefault(key, 0)
+            row.setdefault(key + "_duration_s", 0.0)
+        row["no_mode_share"] = row["no_mode"] / row["attempts"] if row["attempts"] else None
+        row["no_mode_duration_share"] = (
+            row["no_mode_duration_s"] / row["attempts_duration_s"]
+            if row["attempts_duration_s"] else None
+        )
+        return dict(row)
+
+    duration = times[-1] - times[0]
+    return {
+        "schema": "ladder-floor-scalar-census-v1",
+        "formulation": formulation,
+        "step_index": step_index,
+        "alpha": alpha,
+        "boundaries": len(samples),
+        "duration_s": duration,
+        "counts_unit": "one transmission in a native scalar TDM slot at one boundary",
+        "duration_weights": "native TDM fraction times trapezoid boundary weight",
+        "counts": normalize(total),
+        "by_occupancy": {str(n): normalize(row) for n, row in sorted(occupancy_counts.items())},
+        "mode_transitions": [
+            [target, tx, count] for (target, tx), count in sorted(modes.items())
+        ],
+        "boundary_zero_beams": boundary_zero_beams,
+        "distributions": {name: hist.payload() for name, hist in margins.items()},
+        "scalar_integrated_bits": float(sum(per_user_bits.values())),
+        "scalar_integrated_joules": integrated_joules,
+        "scalar_boundary_zero_bits": boundary_bits,
+        "scalar_served_users": sum(value > 0.0 for value in per_user_decode_s.values()),
+        "decoded_users_any_attempt": len(decoded_users_any),
+        "rate_target_attained_users": sum(
+            value >= config.rate_target_bps * duration for value in per_user_bits.values()
+        ),
+        "per_user_bits": {str(user): value for user, value in per_user_bits.items()},
+        "solver_residual_w_min": minimum_residual,
+        "solver_residual_w_max": maximum_residual,
+    }
+
+
+__all__ = ["census", "scalar_formulation"]
+
+exec
+/bin/bash -lc "sed -n '228,300p' src/mcrl/physics_v025/architectures.py; sed -n '165,212p' src/mcrl/physics_v025/adapter.py; sed -n '132,178p' src/mcrl/physics_v025/resolution.py" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+
+    @property
+    def valid(self) -> bool:
+        return self.certificate.valid
+
+    @property
+    def per_user_wanted_w(self) -> dict[int, float]:
+        result: dict[int, float] = {}
+        for slot in self.slots:
+            for tx in slot.transmissions:
+                result[tx.user_id] = result.get(tx.user_id, 0.0) + slot.fraction * tx.wanted_w
+        return result
+
+    @property
+    def per_user_interference_w(self) -> dict[int, tuple[float, float]]:
+        result: dict[int, tuple[float, float]] = {}
+        for slot in self.slots:
+            for tx in slot.transmissions:
+                old = result.get(tx.user_id, (0.0, 0.0))
+                result[tx.user_id] = (
+                    old[0] + slot.fraction * tx.intra_interference_w,
+                    old[1] + slot.fraction * tx.inter_interference_w,
+                )
+        return result
+
+    @property
+    def per_user_rate_target_feasible(self) -> dict[int, bool] | None:
+        """Controller feasibility by user, distinct from realised PHY service."""
+
+        rows: dict[int, bool] = {}
+        saw_target = False
+        for slot in self.slots:
+            for tx in slot.transmissions:
+                if tx.rate_target_feasible is None:
+                    continue
+                saw_target = True
+                rows[tx.user_id] = rows.get(tx.user_id, True) and tx.rate_target_feasible
+        return rows if saw_target or self.rate_target_bps is not None else None
+
+    @property
+    def rate_target_attained(self) -> dict[int, bool] | None:
+        """Realised achieved-ACM target status over this normalized user-step."""
+
+        transmission_targets = {
+            tx.rate_target_bps
+            for slot in self.slots
+            for tx in slot.transmissions
+            if tx.rate_target_bps is not None
+        }
+        if self.rate_target_bps is None:
+            if transmission_targets:
+                raise MCRLContractError("non-target radiation contains a rate target")
+            return None
+        if transmission_targets and transmission_targets != {self.rate_target_bps}:
+            raise MCRLContractError("radiation result contains inconsistent rate targets")
+        target = self.rate_target_bps
+        rates: dict[int, float] = {}
+        for slot in self.slots:
+            for tx in slot.transmissions:
+                rates.setdefault(tx.user_id, 0.0)
+                if tx.realised_outcome is None:
+                    raise MCRLContractError("ACM transmission lacks a decode outcome")
+                if tx.realised_outcome.decoded:
+                    rates[tx.user_id] += (
+                        slot.fraction
+                        * tx.bandwidth_hz
+                        * tx.realised_outcome.credited_spectral_efficiency_bit_per_s_hz
+                    )
+        return {user: rate >= target for user, rate in rates.items()}
+
+
+class RadiationArchitecture(Protocol):
+    code: ArchitectureCode
+        for slot in boundary.radiation.slots
+        for transmission in slot.transmissions
+    }
+    users = set(roster) | transmitting_users
+    rates = {user: 0.0 for user in users}
+    decoded = {user: True for user in users}
+    seen = {user: False for user in users}
+    for slot in boundary.radiation.slots:
+        for transmission in slot.transmissions:
+            seen[transmission.user_id] = True
+            if isinstance(model, ACMRate):
+                if transmission.realised_outcome is None:
+                    raise MCRLContractError(
+                        "ACM transmission lacks a realised outcome"
+                    )
+                passed = transmission.realised_outcome.decoded
+            else:
+                passed = model.served(transmission.sinr, allocated=True)
+            decoded[transmission.user_id] &= passed
+            if passed:
+                if isinstance(model, ACMRate):
+                    rates[transmission.user_id] += (
+                        slot.fraction
+                        * transmission.bandwidth_hz
+                        * transmission.realised_outcome.credited_spectral_efficiency_bit_per_s_hz
+                    )
+                else:
+                    rates[transmission.user_id] += slot.fraction * model.rate_bps(
+                        transmission.sinr, transmission.bandwidth_hz
+                    )
+    decoded = {user: decoded[user] and seen[user] for user in users}
+    idle = SENSITIVITY_IDLE_POWER_W if setting.standby == "f" else PRIMARY_IDLE_POWER_W
+    energy = schedule_energy(
+        inventory,
+        ((slot.fraction, dict(slot.beam_rf_w)) for slot in boundary.radiation.slots),
+        duration_s=1.0,
+        idle_power_w=idle,
+        circuit_power_per_active_chain_w=circuit_power_per_active_chain_w,
+    )
+    return BoundarySample(boundary.time_s, rates, energy.joules, decoded)
+
+
+def discontinuities_from_event_ledger(
+    tape: SharedArchitectureTape,
+    events: Iterable[InterruptionEvent],
+    *,
+    exact_limits_by_time: Mapping[
+        float, tuple[BoundarySample, BoundarySample]
+            if served:
+                served_fraction[transmission.user_id] += slot.fraction
+                if isinstance(rate_model, ACMRate):
+                    rates[transmission.user_id] += (
+                        slot.fraction
+                        * transmission.bandwidth_hz
+                        * transmission.realised_outcome.credited_spectral_efficiency_bit_per_s_hz
+                    )
+                else:
+                    rates[transmission.user_id] += slot.fraction * rate_model.rate_bps(
+                        transmission.sinr, transmission.bandwidth_hz
+                    )
+            # No branch edits radiation: an unsuccessful attempt continues to
+            # interfere and consume exactly the energy already scheduled.
+    energy = schedule_energy(
+        inventory,
+        (
+            (slot.fraction, dict(slot.beam_rf_w))
+            for slot in radiation.slots
+        ),
+        duration_s=duration_s,
+        idle_power_w=idle_power_w,
+    )
+    bits = {user: rate * duration_s for user, rate in rates.items()}
+    complete = {
+        user: allocated_fraction[user] > 0.0
+        and math.isclose(served_fraction[user], allocated_fraction[user], rel_tol=0.0, abs_tol=1.0e-15)
+        for user in rates
+    }
+    return ResolutionResult(
+        radiation,
+        rates,
+        bits,
+        served_fraction,
+        complete,
+        radiation.rate_target_attained,
+        radiation.per_user_rate_target_feasible,
+        energy,
+    )
+
+
+__all__ = ["ResolutionResult", "resolve_configuration"]
+
+exec
+/bin/bash -lc 'tail -n 3 .scratch/ladder-floor-20260910/original-run.log; tail -n 3 .scratch/ladder-floor-20260910/margin-run.log; ls .scratch/ladder-floor-20260910' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 102, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 5, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/1:step/2", "joint_candidates": 907, "oracle_ee_gain_pct": 13.947099987470235, "qualifying": true, "unilateral_iterations": 102, "wall_seconds": 69.74267568800133}
+{"completed_improving_moves": 44, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 44, "unique_selection_evaluations": 2701}
+{"anchor": "V025_PROBE_R2/world/1:step/3", "joint_candidates": 870, "oracle_ee_gain_pct": 4.92184052777993, "qualifying": true, "unilateral_iterations": 145, "wall_seconds": 88.13740342899109}
+{"completed_improving_moves": 92, "completed_passes": 1, "coordinate_step": 4, "moves_in_pass": 92, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 136, "completed_passes": 2, "coordinate_step": 4, "moves_in_pass": 44, "unique_selection_evaluations": 5401}
+audit_variant.py
+code-evidence.md
+compare_original.py
+margin-result.checkpoint.json
+margin-run.log
+margin_batch.py
+oracle_runner.py
+original-reproduction-audit.json
+original-result.checkpoint.json
+original-run.log
+reference-oracle-result.json
+scalar_diagnostics.py
+variant-audit.json
+
+codex
+The first three original anchors match the archived results exactly. The margin variant has mixed oracle EE changes so far, including a +4.92% anchor, so the pooled result still matters.
+
+The structural result is clear: an uncapped link provisioned with `Gamma/q` can select its target mode at occupancy 1. Any remaining joint-search gain must be explained separately from the original “low occupancy has no mode” mechanism.
+exec
+/bin/bash -lc 'ls .scratch/ladder-floor-20260910; tail -n 2 .scratch/ladder-floor-20260910/original-run.log; tail -n 2 .scratch/ladder-floor-20260910/margin-run.log; cat .scratch/ladder-floor-20260910/variant-audit.json' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+audit_variant.py
+code-evidence.md
+compare_original.py
+margin-result.checkpoint.json
+margin-run.log
+margin_batch.py
+oracle_runner.py
+original-reproduction-audit.json
+original-result.checkpoint.json
+original-run.log
+reference-oracle-result.json
+run_scalar_census.py
+scalar-census-first1.log
+scalar_diagnostics.py
+variant-audit.json
+{"completed_improving_moves": 65, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 21, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 67, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 2, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 144, "completed_passes": 3, "coordinate_step": 4, "moves_in_pass": 8, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/1:step/4", "joint_candidates": 499, "oracle_ee_gain_pct": 0.20037735679818702, "qualifying": true, "unilateral_iterations": 144, "wall_seconds": 15.31488165500923}
+{
+  "actual_selector_and_committed_routes": [
+    {
+      "alpha": 0.1,
+      "boundaries": [
+        0
+      ],
+      "field": "realised"
+    },
+    {
+      "alpha": 0.1,
+      "boundaries": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47
+      ],
+      "field": "realised"
+    }
+  ],
+  "alpha_none_bitwise_parity": [
+    {
+      "boundaries": 1,
+      "equal_fields": 23,
+      "field": "nominal",
+      "isolated_target_power_w": 0.01,
+      "rho": 0.0
+    },
+    {
+      "boundaries": 48,
+      "equal_fields": 23,
+      "field": "nominal",
+      "isolated_target_power_w": 0.01,
+      "rho": 0.0
+    },
+    {
+      "boundaries": 1,
+      "equal_fields": 23,
+      "field": "realised",
+      "isolated_target_power_w": 0.01,
+      "rho": 0.0
+    },
+    {
+      "boundaries": 48,
+      "equal_fields": 23,
+      "field": "realised",
+      "isolated_target_power_w": 0.01,
+      "rho": 0.0
+    },
+    {
+      "boundaries": 1,
+      "equal_fields": 23,
+      "field": "nominal",
+      "isolated_target_power_w": 0.05,
+      "rho": 0.1
+    },
+    {
+      "boundaries": 48,
+      "equal_fields": 23,
+      "field": "nominal",
+      "isolated_target_power_w": 0.05,
+      "rho": 0.1
+    },
+    {
+      "boundaries": 1,
+      "equal_fields": 23,
+      "field": "realised",
+      "isolated_target_power_w": 0.05,
+      "rho": 0.1
+    },
+    {
+      "boundaries": 48,
+      "equal_fields": 23,
+      "field": "realised",
+      "isolated_target_power_w": 0.05,
+      "rho": 0.1
+    },
+    {
+      "boundaries": 1,
+      "equal_fields": 23,
+      "field": "nominal",
+      "isolated_target_power_w": 0.0001,
+      "rho": 0.8
+    },
+    {
+      "boundaries": 48,
+      "equal_fields": 23,
+      "field": "nominal",
+      "isolated_target_power_w": 0.0001,
+      "rho": 0.8
+    },
+    {
+      "boundaries": 1,
+      "equal_fields": 23,
+      "field": "realised",
+      "isolated_target_power_w": 0.0001,
+      "rho": 0.8
+    },
+    {
+      "boundaries": 48,
+      "equal_fields": 23,
+      "field": "realised",
+      "isolated_target_power_w": 0.0001,
+      "rho": 0.8
+    },
+    {
+      "boundaries": 1,
+      "equal_fields": 23,
+      "field": "nominal",
+      "isolated_target_power_w": 2.0,
+      "rho": 0.1
+    },
+    {
+      "boundaries": 48,
+      "equal_fields": 23,
+      "field": "nominal",
+      "isolated_target_power_w": 2.0,
+      "rho": 0.1
+    },
+    {
+      "boundaries": 1,
+      "equal_fields": 23,
+      "field": "realised",
+      "isolated_target_power_w": 2.0,
+      "rho": 0.1
+    },
+    {
+      "boundaries": 48,
+      "equal_fields": 23,
+      "field": "realised",
+      "isolated_target_power_w": 2.0,
+      "rho": 0.1
+    }
+  ],
+  "claim_ceiling": "DIAGNOSTIC_NOT_CLAIM",
+  "status": "PASS",
+  "uncapped_occupancy_one": {
+    "margin_bits": 6144378933.333334,
+    "margin_max_power_w": 0.022620553454022613,
+    "margin_no_mode": 0,
+    "original_max_power_w": 0.010000000020000002,
+    "original_no_mode": 3
+  }
+}
+
+codex
+The scalar replay matches the first anchor’s delivered bits and energy to floating-point precision. It also confirms that the published served counts use a permissive definition: any successful decoding during the endpoint, rather than continuous service or attainment of 50 Mbit/s. I’m retaining that definition for the comparison and measuring rate-target misses separately.
+exec
+/bin/bash -lc 'tail -n 3 .scratch/ladder-floor-20260910/original-run.log; tail -n 3 .scratch/ladder-floor-20260910/margin-run.log; tail -n 3 .scratch/ladder-floor-20260910/scalar-census-first1.log; du -sh .scratch/ladder-floor-20260910' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 44, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 44, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 65, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 21, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 67, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 2, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 109, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 23, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 116, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 7, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 121, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 5, "unique_selection_evaluations": 10801}
+668K	.scratch/ladder-floor-20260910
+
+exec
+/bin/bash -lc 'tail -n 4 .scratch/ladder-floor-20260910/scalar-census-first1.log; tail -n 3 .scratch/ladder-floor-20260910/original-run.log; tail -n 3 .scratch/ladder-floor-20260910/margin-run.log; ls -lh .scratch/ladder-floor-20260910/*json' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"anchor_id": "V025_PROBE_R2/world/1:step/0", "formulation": "original", "selector": "UNILATERAL", "bits_relative_difference": 0.0, "joules_relative_difference": -5.551115123125783e-16, "scalar_served": 98, "scalar_any_attempt_served": 98, "batch_served": 98, "passed": true, "no_mode_share": 0.0699810606060606, "elapsed_s": 60.941370027983794}
+{"anchor_id": "V025_PROBE_R2/world/1:step/0", "formulation": "margin", "selector": "BASELINE", "bits_relative_difference": 4.440892098500626e-16, "joules_relative_difference": 0.0, "scalar_served": 58, "scalar_any_attempt_served": 60, "batch_served": 60, "passed": true, "no_mode_share": 0.46608382936507936, "elapsed_s": 62.322868599992944}
+{"anchor_id": "V025_PROBE_R2/world/1:step/0", "formulation": "margin", "selector": "ORACLE_SET", "bits_relative_difference": -2.220446049250313e-16, "joules_relative_difference": -2.220446049250313e-16, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.0, "elapsed_s": 63.01175768999383}
+{"anchor_id": "V025_PROBE_R2/world/1:step/0", "formulation": "margin", "selector": "UNILATERAL", "bits_relative_difference": -2.220446049250313e-16, "joules_relative_difference": 0.0, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.0, "elapsed_s": 63.728430280985776}
+{"completed_improving_moves": 92, "completed_passes": 3, "coordinate_step": 4, "moves_in_pass": 7, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 93, "completed_passes": 4, "coordinate_step": 4, "moves_in_pass": 1, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/1:step/4", "joint_candidates": 970, "oracle_ee_gain_pct": 0.8476845895436069, "qualifying": true, "unilateral_iterations": 93, "wall_seconds": 48.33449181201286}
+{"completed_improving_moves": 85, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 85, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 122, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 37, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 133, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 11, "unique_selection_evaluations": 8101}
+-rw-rw-r-- 1 sat sat 289K Sep  9 17:04 .scratch/ladder-floor-20260910/margin-result.checkpoint.json
+-rw-rw-r-- 1 sat sat  462 Sep  9 17:00 .scratch/ladder-floor-20260910/original-reproduction-audit.json
+-rw-rw-r-- 1 sat sat 207K Sep  9 17:05 .scratch/ladder-floor-20260910/original-result.checkpoint.json
+-rw-rw-r-- 1 sat sat 114K Sep  9 17:00 .scratch/ladder-floor-20260910/reference-oracle-result.json
+-rw-rw-r-- 1 sat sat 4.4M Sep  9 17:05 .scratch/ladder-floor-20260910/scalar-census-summary-first1.json
+-rw-rw-r-- 1 sat sat 3.4K Sep  9 16:59 .scratch/ladder-floor-20260910/variant-audit.json
+
+exec
+/bin/bash -lc "nice -n 10 env PYTHONDONTWRITEBYTECODE=1 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+p=Path('.scratch/ladder-floor-20260910')
+for form in ['original','margin']:
+ d=json.loads((p/f'{form}-result.checkpoint.json').read_text())
+ aa=d['anchors'];print(form, len(aa))
+ for a in ['BASELINE','UNILATERAL','ORACLE_SET']:
+  b=sum(x['committed'][a]['bits'] for x in aa);e=sum(x['committed'][a]['joules'] for x in aa);s=sum(x['committed'][a]['served_count'] for x in aa)
+  print(a,b/e,s)
+d=json.loads((p/'scalar-census-summary-first1.json').read_text());print('census keys',d.keys())
+for k,v in d.items():
+ if isinstance(v,dict):print(k,list(v)[:10])
+PY" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+original 5
+BASELINE 3943747.4302630345 198
+UNILATERAL 28048397.312751997 483
+ORACLE_SET 30439065.64210741 494
+margin 8
+BASELINE 8709063.389308922 462
+UNILATERAL 43574793.491552554 800
+ORACLE_SET 43672447.53832297 800
+census keys dict_keys(['schema', 'anchor_count', 'parity_passed', 'parity', 'pooled', 'anchors', 'wall_seconds'])
+pooled ['original', 'margin']
+
+codex
+On the first anchor, the margin-provisioned unilateral and oracle profiles both have zero `NO_MODE` attempts and serve all 100 users. The remaining low-occupancy failures in BASELINE are all at the power cap. Uncapped low-occupancy failures are gone.
+
+The margin audit also finds a 4.39 dB median nominal margin above the transmitted mode in the original first-anchor profiles—larger than the review’s suggested 0.5–1.5 dB adjacent-mode gap.
+exec
+/bin/bash -lc "nice -n 10 env PYTHONDONTWRITEBYTECODE=1 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+x=json.loads(Path('.scratch/ladder-floor-20260910/scalar-census-summary-first1.json').read_text())
+for f,forms in x['pooled'].items():
+ print(f,forms.keys())
+ for arm,v in forms.items():
+  print(arm, v.keys());print('counts',v['counts']);print('n12', {n:v['by_occupancy'].get(n) for n in ['1','2']})
+  break
+print('anchor keys',x['anchors'][0].keys())
+PY" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+original dict_keys(['BASELINE', 'UNILATERAL', 'ORACLE_SET'])
+BASELINE dict_keys(['anchor_count', 'counts', 'by_occupancy', 'distributions', 'mode_transitions', 'scalar_integrated_bits', 'scalar_integrated_joules', 'scalar_served_users_sum', 'rate_target_attained_users_sum'])
+counts {'attempts': 32256, 'attempts_duration_s': 1263.3600000002004, 'no_mode': 25695, 'no_mode_duration_s': 1004.5798095238797, 'no_mode_uncapped': 16427, 'no_mode_uncapped_duration_s': 641.866666666684, 'cap_hits': 10048, 'cap_hits_duration_s': 392.68342857142414, 'has_mode': 6561, 'has_mode_duration_s': 258.7801904761879, 'decoded': 6233, 'decoded_duration_s': 245.15047619047326, 'served_target_miss': 6233, 'served_target_miss_duration_s': 245.15047619047326, 'decode_failure_with_mode': 328, 'decode_failure_with_mode_duration_s': 13.629714285714284, 'no_mode_share': 0.7965959821428571, 'no_mode_duration_share': 0.7951651227866328}
+n12 {'1': {'beam_boundaries': 720, 'beam_duration_s': 451.1999999999932, 'attempts': 11520, 'attempts_duration_s': 451.199999999992, 'no_mode': 11520, 'no_mode_duration_s': 451.199999999992, 'no_mode_uncapped': 9984, 'no_mode_uncapped_duration_s': 391.03999999999337, 'cap_hits': 1536, 'cap_hits_duration_s': 60.16000000000009, 'has_mode': 0, 'has_mode_duration_s': 0.0, 'decoded': 0, 'decoded_duration_s': 0.0, 'decode_failure_with_mode': 0, 'decode_failure_with_mode_duration_s': 0.0, 'served_target_miss': 0, 'served_target_miss_duration_s': 0.0, 'no_mode_share': 1.0, 'no_mode_duration_share': 1.0}, '2': {'beam_boundaries': 624, 'beam_duration_s': 391.0399999999945, 'attempts': 9984, 'attempts_duration_s': 391.03999999999337, 'no_mode': 9904, 'no_mode_duration_s': 388.1599999999946, 'no_mode_uncapped': 6403, 'no_mode_uncapped_duration_s': 249.11999999999637, 'cap_hits': 3501, 'cap_hits_duration_s': 139.03999999999846, 'has_mode': 80, 'has_mode_duration_s': 2.8800000000000017, 'decoded': 80, 'decoded_duration_s': 2.8800000000000017, 'served_target_miss': 80, 'served_target_miss_duration_s': 2.8800000000000017, 'decode_failure_with_mode': 0, 'decode_failure_with_mode_duration_s': 0.0, 'no_mode_share': 0.9919871794871795, 'no_mode_duration_share': 0.9926350245499213}}
+margin dict_keys(['BASELINE', 'UNILATERAL', 'ORACLE_SET'])
+BASELINE dict_keys(['anchor_count', 'counts', 'by_occupancy', 'distributions', 'mode_transitions', 'scalar_integrated_bits', 'scalar_integrated_joules', 'scalar_served_users_sum', 'rate_target_attained_users_sum'])
+counts {'attempts': 32256, 'attempts_duration_s': 1263.3600000002004, 'has_mode': 17222, 'has_mode_duration_s': 680.58285714288, 'decoded': 16019, 'decoded_duration_s': 632.7139047619193, 'no_mode': 15034, 'no_mode_duration_s': 582.7771428571468, 'cap_hits': 17900, 'cap_hits_duration_s': 701.5954285714455, 'served_target_miss': 2732, 'served_target_miss_duration_s': 113.32495238095115, 'decode_failure_with_mode': 1203, 'decode_failure_with_mode_duration_s': 47.86895238095241, 'no_mode_uncapped': 0, 'no_mode_uncapped_duration_s': 0.0, 'no_mode_share': 0.46608382936507936, 'no_mode_duration_share': 0.46129143146613344}
+n12 {'1': {'beam_boundaries': 720, 'beam_duration_s': 451.1999999999932, 'attempts': 11520, 'attempts_duration_s': 451.199999999992, 'has_mode': 6817, 'has_mode_duration_s': 267.19999999999635, 'decoded': 6161, 'decoded_duration_s': 241.5999999999961, 'no_mode': 4703, 'no_mode_duration_s': 183.99999999999775, 'cap_hits': 4703, 'cap_hits_duration_s': 183.99999999999775, 'decode_failure_with_mode': 656, 'decode_failure_with_mode_duration_s': 25.599999999999916, 'user_boundaries': 720, 'decoded_user_boundaries': 400, 'no_mode_user_boundaries': 279, 'no_mode_uncapped': 0, 'no_mode_uncapped_duration_s': 0.0, 'served_target_miss': 0, 'served_target_miss_duration_s': 0.0, 'no_mode_share': 0.40824652777777776, 'no_mode_duration_share': 0.40780141843971857}, '2': {'beam_boundaries': 624, 'beam_duration_s': 391.0399999999945, 'attempts': 9984, 'attempts_duration_s': 391.03999999999337, 'has_mode': 4420, 'has_mode_duration_s': 173.06666666666425, 'decoded': 4188, 'decoded_duration_s': 163.78666666666462, 'no_mode': 5564, 'no_mode_duration_s': 217.97333333333017, 'cap_hits': 5800, 'cap_hits_duration_s': 227.03999999999675, 'served_target_miss': 212, 'served_target_miss_duration_s': 8.106666666666667, 'user_boundaries': 1248, 'decoded_user_boundaries': 526, 'no_mode_user_boundaries': 693, 'decode_failure_with_mode': 232, 'decode_failure_with_mode_duration_s': 9.280000000000003, 'no_mode_uncapped': 0, 'no_mode_uncapped_duration_s': 0.0, 'no_mode_share': 0.5572916666666666, 'no_mode_duration_share': 0.5574195308237875}}
+anchor keys dict_keys(['anchor_id', 'formulation', 'selector', 'schema', 'step_index', 'alpha', 'boundaries', 'duration_s', 'counts_unit', 'duration_weights', 'counts', 'by_occupancy', 'mode_transitions', 'boundary_zero_beams', 'scalar_integrated_bits', 'scalar_integrated_joules', 'scalar_boundary_zero_bits', 'scalar_served_users', 'decoded_users_any_attempt', 'rate_target_attained_users', 'solver_residual_w_min', 'solver_residual_w_max'])
+
+exec
+/bin/bash -lc "sed -n '1,245p' .scratch/ladder-floor-20260910/run_scalar_census.py; sed -n '200,275p' .scratch/ladder-floor-20260910/scalar_diagnostics.py" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Replay committed original/margin configurations through the scalar copy.
+
+Run with the specified shared Python and PYTHONPATH=src, nice -n 10. A single
+process performs all work. Reads completed result files or live checkpoint
+snapshots, using only anchors present in both formulations. Writes compact
+gzipped census evidence and a readable pooled summary beside this script.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter, defaultdict
+import gzip
+import json
+import math
+from pathlib import Path
+import time
+
+import oracle_runner
+from scalar_diagnostics import census
+from mcrl.physics_v025.provider_legacy import factory as real_factory
+
+
+HERE = Path(__file__).resolve().parent
+
+
+def read_result(formulation):
+    final = HERE / f"{formulation}-result.json"
+    path = final if final.exists() else HERE / f"{formulation}-result.checkpoint.json"
+    return json.loads(path.read_text())
+
+
+def weighted_quantile(bins, probability, weight_column):
+    target = sum(row[weight_column] for row in bins) * probability
+    cumulative = 0.0
+    for row in bins:
+        cumulative += row[weight_column]
+        if cumulative >= target:
+            return row[0]
+    return None
+
+
+def summarize(rows):
+    counts = Counter()
+    by_occupancy = defaultdict(Counter)
+    histograms = {}
+    modes = Counter()
+    for row in rows:
+        for key, value in row["counts"].items():
+            if not key.endswith("share"):
+                counts[key] += value
+        for n, local in row["by_occupancy"].items():
+            for key, value in local.items():
+                if not key.endswith("share"):
+                    by_occupancy[n][key] += value
+        for target, tx, count in row["mode_transitions"]:
+            modes[(target, tx)] += count
+        for name, local in row["distributions"].items():
+            global_hist = histograms.setdefault(name, {
+                "count": 0, "weight_s": 0.0, "sum": 0.0, "weighted_sum": 0.0,
+                "min": math.inf, "max": -math.inf, "bins": defaultdict(lambda: [0, 0.0]),
+            })
+            for key in ("count", "weight_s", "sum", "weighted_sum"):
+                global_hist[key] += local[key]
+            if local["count"]:
+                global_hist["min"] = min(global_hist["min"], local["min"])
+                global_hist["max"] = max(global_hist["max"], local["max"])
+            for value, count, duration in local["bins"]:
+                global_hist["bins"][value][0] += count
+                global_hist["bins"][value][1] += duration
+    def finish_counts(row):
+        row["no_mode_share"] = row["no_mode"] / row["attempts"] if row["attempts"] else None
+        row["no_mode_duration_share"] = row["no_mode_duration_s"] / row["attempts_duration_s"] if row["attempts_duration_s"] else None
+        return dict(row)
+    for name, hist in histograms.items():
+        hist["bins"] = [[key, *values] for key, values in sorted(hist["bins"].items())]
+        hist["mean"] = hist["sum"] / hist["count"] if hist["count"] else None
+        hist["duration_weighted_mean"] = hist["weighted_sum"] / hist["weight_s"] if hist["weight_s"] else None
+        hist["quantiles"] = {
+            str(p): weighted_quantile(hist["bins"], p, 1)
+            for p in (0.0, 0.05, 0.25, 0.50, 0.75, 0.95, 1.0)
+        }
+        hist["duration_weighted_quantiles"] = {
+            str(p): weighted_quantile(hist["bins"], p, 2)
+            for p in (0.0, 0.05, 0.25, 0.50, 0.75, 0.95, 1.0)
+        }
+        hist["quantile_bin_width"] = 0.01
+        if not hist["count"]:
+            hist["min"] = hist["max"] = None
+    return {
+        "anchor_count": len(rows),
+        "counts": finish_counts(counts),
+        "by_occupancy": {n: finish_counts(row) for n, row in sorted(by_occupancy.items(), key=lambda item: int(item[0]))},
+        "distributions": histograms,
+        "mode_transitions": [[target, tx, count] for (target, tx), count in sorted(modes.items())],
+        "scalar_integrated_bits": sum(row["scalar_integrated_bits"] for row in rows),
+        "scalar_integrated_joules": sum(row["scalar_integrated_joules"] for row in rows),
+        "scalar_served_users_sum": sum(row["scalar_served_users"] for row in rows),
+        "rate_target_attained_users_sum": sum(row["rate_target_attained_users"] for row in rows),
+    }
+
+
+def run(limit=None):
+    started = time.perf_counter()
+    results = {formulation: read_result(formulation) for formulation in ("original", "margin")}
+    anchors = {
+        formulation: {row["anchor_id"]: row for row in result["anchors"]}
+        for formulation, result in results.items()
+    }
+    common = sorted(set(anchors["original"]) & set(anchors["margin"]))
+    if limit is None and len(common) != 20:
+        raise RuntimeError(f"full census requires all 20 matched anchors; found {len(common)}")
+    if limit is not None:
+        common = common[:limit]
+    pooled_rows = defaultdict(list)
+    parity = []
+    details = []
+    loaded_domain = None
+    tape = None
+    for anchor_id in common:
+        reference = anchors["original"][anchor_id]
+        domain = reference["world_domain"]
+        if domain != loaded_domain:
+            tape = oracle_runner.probe.build_world_tape(
+                domain=domain, provider=real_factory(), steps=5, start_time_s=0.0,
+            )
+            loaded_domain = domain
+        for formulation in ("original", "margin"):
+            anchor = anchors[formulation][anchor_id]
+            step = int(anchor["step_index"])
+            for selector, profile in anchor["committed"].items():
+                output = HERE / f"census-{formulation}-w{domain.rsplit('/', 1)[1]}-s{step}-{selector}.json.gz"
+                if output.exists():
+                    with gzip.open(output, "rt") as stream:
+                        local = json.load(stream)
+                else:
+                    mapping = {int(user): None if identity is None else tuple(identity) for user, identity in profile["assignments"]}
+                    local = census(tape, step, mapping, formulation)
+                bits_relative = local["scalar_integrated_bits"] / profile["bits"] - 1.0 if profile["bits"] else local["scalar_integrated_bits"]
+                joules_relative = local["scalar_integrated_joules"] / profile["joules"] - 1.0
+                passed = abs(bits_relative) < 1.0e-8 and abs(joules_relative) < 1.0e-8 and local["decoded_users_any_attempt"] == profile["served_count"]
+                parity_row = {
+                    "anchor_id": anchor_id, "formulation": formulation, "selector": selector,
+                    "bits_relative_difference": bits_relative, "joules_relative_difference": joules_relative,
+                    "scalar_served": local["scalar_served_users"], "scalar_any_attempt_served": local["decoded_users_any_attempt"], "batch_served": profile["served_count"],
+                    "passed": passed,
+                }
+                parity.append(parity_row)
+                pooled_rows[(formulation, selector)].append(local)
+                details.append({
+                    "anchor_id": anchor_id, "formulation": formulation, "selector": selector,
+                    **{key: value for key, value in local.items() if key not in {"distributions", "per_user_bits"}},
+                })
+                print(json.dumps({**parity_row, "no_mode_share": local["counts"]["no_mode_share"], "elapsed_s": time.perf_counter() - started}), flush=True)
+                if not passed:
+                    raise RuntimeError(f"scalar/batch parity failure: {parity_row}")
+    result = {
+        "schema": "ladder-floor-census-pooled-v1", "anchor_count": len(common),
+        "parity_passed": all(row["passed"] for row in parity), "parity": parity,
+        "pooled": {
+            formulation: {
+                selector: summarize(pooled_rows[(formulation, selector)])
+                for selector in ("BASELINE", "UNILATERAL", "ORACLE_SET")
+            }
+            for formulation in ("original", "margin")
+        },
+        "anchors": details, "wall_seconds": time.perf_counter() - started,
+    }
+    output = HERE / ("scalar-census-summary.json" if limit is None else f"scalar-census-summary-first{limit}.json")
+    output.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
+    return result
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--limit", type=int)
+    args = parser.parse_args()
+    run(args.limit)
+                    has_mode = tx.m_tx is not None
+                    decoded = bool(tx.realised_outcome.decoded)
+                    cap_hit = tx.rf_power_w >= config.beam_cap_w - 1.0e-9
+                    se = 0.0 if not has_mode else tx.m_tx.spectral_efficiency_bit_per_s_hz
+                    target_miss = decoded and se < config.rate_target_bps * n / config.bandwidth_hz
+                    flags = {
+                        "attempts": True,
+                        "no_mode": not has_mode,
+                        "no_mode_uncapped": not has_mode and not cap_hit,
+                        "has_mode": has_mode,
+                        "decoded": decoded,
+                        "decode_failure_with_mode": has_mode and not decoded,
+                        "cap_hits": cap_hit,
+                        "served_target_miss": target_miss,
+                    }
+                    for name, flag in flags.items():
+                        if flag:
+                            row[name] += 1
+                            row[name + "_duration_s"] += weight_s
+                            total[name] += 1
+                            total[name + "_duration_s"] += weight_s
+                    target_name = None if tx.m_target is None else tx.m_target.name
+                    mode_name = None if tx.m_tx is None else tx.m_tx.name
+                    modes[(target_name or "NO_TARGET", mode_name or "NO_MODE")] += 1
+                    elevation = float(elevation_by_user[tx.user_id])
+                    quantile = fading_product_quantile(elevation, alpha)
+                    q_margin = -10.0 * math.log10(quantile)
+                    margins["q_margin_db"].add(q_margin, weight_s)
+                    margins["elevation_deg"].add(elevation, weight_s)
+                    nominal_db = 10.0 * math.log10(tx.nominal_sinr)
+                    if tx.m_target is not None:
+                        margins["nominal_target_margin_db"].add(
+                            nominal_db - tx.m_target.threshold_db, weight_s
+                        )
+                    if tx.rate_target_sinr is not None:
+                        margins["nominal_provisioned_target_margin_db"].add(
+                            nominal_db - 10.0 * math.log10(tx.rate_target_sinr), weight_s
+                        )
+                    if has_mode:
+                        nominal_margin = nominal_db - tx.m_tx.threshold_db
+                        realised_margin = 10.0 * math.log10(tx.sinr) - tx.m_tx.threshold_db
+                        margins["nominal_tx_margin_db"].add(nominal_margin, weight_s)
+                        margins["realised_tx_margin_db"].add(realised_margin, weight_s)
+                        if decoded:
+                            margins["realised_tx_margin_served_db"].add(realised_margin, weight_s)
+                    rates[tx.user_id] += (
+                        slot.fraction
+                        * tx.bandwidth_hz
+                        * tx.realised_outcome.credited_spectral_efficiency_bit_per_s_hz
+                    )
+                    all_decoded[tx.user_id] = all_decoded.get(tx.user_id, True) and decoded
+                    if decoded:
+                        decoded_users_any.add(tx.user_id)
+                        any_decoded.add(tx.user_id)
+                    if has_mode:
+                        any_mode.add(tx.user_id)
+            if boundary == 0:
+                boundary_bits = float(sum(rates.values()) * (times[-1] - times[0]))
+                boundary_zero_beams = [
+                    {
+                        "identity": list(beam),
+                        "occupancy": n,
+                        "users": sorted(link.user_id for link in geometry.links if link.beam == beam),
+                        "served_users": sorted(link.user_id for link in geometry.links if link.beam == beam and link.user_id in any_decoded),
+                        "has_mode_users": sorted(link.user_id for link in geometry.links if link.beam == beam and link.user_id in any_mode),
+                        "no_mode_users": sorted(link.user_id for link in geometry.links if link.beam == beam and link.user_id not in any_mode),
+                    }
+                    for beam, n in sorted(by_beam.items())
+                ]
+            for link in geometry.links:
+                n = by_beam[link.beam]
+                occupancy_counts[n]["user_boundaries"] += 1
+                occupancy_counts[n]["decoded_user_boundaries"] += int(link.user_id in any_decoded)
+                occupancy_counts[n]["no_mode_user_boundaries"] += int(link.user_id not in any_mode)
+            for user in per_user_bits:
+                per_user_bits[user] += float(boundary_weight * rates[user])
+
+exec
+/bin/bash -lc "tail -n 3 .scratch/ladder-floor-20260910/original-run.log; tail -n 3 .scratch/ladder-floor-20260910/margin-run.log; git diff --stat; git rev-parse HEAD 'HEAD"'^{tree}'"'; ls -lh .scratch/ladder-floor-20260910/scalar-census*" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"anchor": "V025_PROBE_R2/world/2:step/1", "joint_candidates": 903, "oracle_ee_gain_pct": 3.2897800905932195, "qualifying": true, "unilateral_iterations": 96, "wall_seconds": 48.89228998500039}
+{"completed_improving_moves": 65, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 65, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 90, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 25, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 129, "completed_passes": 4, "coordinate_step": 4, "moves_in_pass": 4, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 130, "completed_passes": 5, "coordinate_step": 4, "moves_in_pass": 1, "unique_selection_evaluations": 13501}
+{"anchor": "V025_PROBE_R2/world/2:step/4", "joint_candidates": 682, "oracle_ee_gain_pct": -0.28641088363180467, "qualifying": true, "unilateral_iterations": 130, "wall_seconds": 45.186921604006784}
+9c73dcd90a2a1fbefab787208ea77c9e72863551
+1728f6b0462f86d85618a4c73f4d1dd2d2c07376
+-rw-rw-r-- 1 sat sat 2.1K Sep  9 17:05 .scratch/ladder-floor-20260910/scalar-census-first1.log
+-rw-rw-r-- 1 sat sat 192K Sep  9 17:06 .scratch/ladder-floor-20260910/scalar-census-histograms-first1.json.gz
+-rw-rw-r-- 1 sat sat 232K Sep  9 17:06 .scratch/ladder-floor-20260910/scalar-census-summary-first1.json
+
+codex
+The margin run has completed two worlds. Its oracle gains are much smaller and vary in sign; the full pooled comparison is still pending. The original replay continues to match the archived results.
+
+I’m also checking every committed profile through the independent scalar path, including whether any remaining `NO_MODE` attempt occurs below the power cap.
+exec
+/bin/bash -lc 'tail -n 2 .scratch/ladder-floor-20260910/original-run.log; tail -n 2 .scratch/ladder-floor-20260910/margin-run.log; cat .scratch/ladder-floor-20260910/interpretation-review.md' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 60, "completed_passes": 1, "coordinate_step": 4, "moves_in_pass": 60, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 73, "completed_passes": 2, "coordinate_step": 4, "moves_in_pass": 13, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 136, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 9, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 139, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 3, "unique_selection_evaluations": 10801}
+The specific occupancy-activation mechanism is falsified if provisioning the existing quantile margin makes uncapped occupancy-one links select and decode their target mode. Remaining power-cap outages do not rescue the argument that low occupancy is intrinsically unservable. Positive joint gains, beam evacuations, or positive interaction values alone would not establish that this mechanism survives: interference, discrete mode transitions and shared energy costs can still reward joint reassignment.
+
+The experiment preserves the original selector, which maximizes boundary-zero `F = B − eta_ref E`, with the sealed `eta_ref = 19,720,681.00172232` bit/J. It does not maximize the reported 48-boundary pooled EE ratio. An F improvement therefore need not improve that ratio; even at one boundary, the coefficient would have to equal the reference profile's EE for those improvement tests to coincide. Thus a disappearing or negative gain refutes the original selector's reported +6.359% under margin provisioning, not every possible joint EE optimizer.
+
+The unchanged service rule recomputes its guard from BASELINE under each formulation. It constrains selection-time served count against BASELINE, not against UNILATERAL and not against rate-target satisfaction. This is reoptimization under a changed physical formulation, not rescoring fixed assignments. Consequently the realized candidate catalogues also differ, while their construction rules remain fixed.
+
+At review time, 10 margin anchors yield −0.244636% pooled oracle-over-unilateral EE, with both serving 1,000/1,000 user-anchor endpoints. All eight completed original anchors match archived configurations and committed outcomes exactly; three contain only approximately 10⁻⁵-bit selection-reduction differences. These partial figures must be replaced by the complete panel before reporting a verdict.
+
