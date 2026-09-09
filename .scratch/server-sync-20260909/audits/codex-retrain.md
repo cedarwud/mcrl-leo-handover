@@ -25,3 +25,18 @@ If the result is negative or flat, say so plainly and early. A clean negative on
 Workspace `/home/sat/mcrl-v025-retrain-ws`, copied from the coalgen workspace once its corpus exists. Never modify any other workspace. Never write into `/home/sat/mcrl-leo-handover` or its venv, `/home/sat/mcrl-hub`, or `/home/sat/mcrl-v025-codex-ws-engine`. Python `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`. Large files under `/home/sat/bigtmp`, never `/tmp`, a RAM-backed tmpfs here. At most 4 processes, `nice -n 10`.
 
 Write `RETRAIN-RESULT-2026-09-09.md` in the workspace root and print it as your final message. Lead with one line: the FULL minus DROP_C3 relative difference at epoch 2000, and whether availability held.
+
+## A defect found after this task was written; you must handle it
+An audit found `PILOT_PRIMITIVE_SOURCE_FALLBACK = True` at `scripts/run_v025_pilot_c3.py:89`. Under that flag the per-user components are **not** trained on their contracted exact targets: C1 is labelled from a bounded log link-gain ratio, C2 from three such ratios or an outage constant, and off-axis alternatives are labelled zero. The exact evaluator path immediately below is dead code while the flag is set.
+
+Measured on ten saved decisions, exact C1 averaged `+34.990` and exact C2 `-151.063`, total `-116.073`; the learned values were `+15.962`, `+90.539` and `+106.501`. **C2 has the wrong sign**, the total misses the exact cancellation by `+222.573`, and eight of ten totals have the wrong sign.
+
+The flag exists only in the pilot script; the engine workspace does not contain it and the formal matrix path uses the exact `network_objective` and `c1_difference_surplus`. So this is a pilot-only cost compromise, not a defect of the production path. **But your workspace is a copy of the pilot tree, so you inherit it.**
+
+**What to do.** Run the measurement **both ways** and report them side by side:
+* **exact targets**, with the flag disabled, which is the contracted definition;
+* **proxy targets**, with the flag as inherited, which is what every previous pilot result used.
+
+If exact targets are too expensive at the full corpus, reduce the anchor count rather than falling back to proxies, and say what you reduced. Report the cost per exact C1/C2 label so the compromise is quantified rather than assumed. If you cannot run the exact arm at all, say so plainly and report only the proxy arm labelled as such; do not present a proxy result as the measurement.
+
+This matters more than the coalition-size change: with C2 carrying the wrong sign, the additive score that the selector maximises is wrong before the interaction head contributes anything.
