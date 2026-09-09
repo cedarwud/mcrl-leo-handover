@@ -9633,3 +9633,1964 @@ index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d28298641048
  current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
  reference = json.loads(REFERENCE.read_text())
 
+codex
+The original replay is at 17/20 anchors. All declared source files and constants remain unchanged; the margin formulation is confined to diagnostic copies. After the remaining anchors finish, I’ll complete the scalar census and assemble the report.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+exec
+/bin/bash -lc "rg -c '\"anchor\":' .scratch/ladder-floor-20260910/original-run.log; tail -n 3 .scratch/ladder-floor-20260910/original-run.log; git status --short" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+18
+{"completed_improving_moves": 110, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 20, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 115, "completed_passes": 4, "coordinate_step": 3, "moves_in_pass": 5, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 119, "completed_passes": 5, "coordinate_step": 3, "moves_in_pass": 4, "unique_selection_evaluations": 13501}
+?? .scratch/ladder-floor-20260910/
+?? LADDER-FLOOR-2026-09-10.md
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+codex
+The report draft now contains the complete EE comparison and the source trace. The original replay has two anchors left. The final census will supply the occupancy-specific failure shares, realised margin distribution and rate-target attainment counts.
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+exec
+/bin/bash -lc "tail -n 3 .scratch/ladder-floor-20260910/original-run.log; rg -c '\"anchor\":' .scratch/ladder-floor-20260910/original-run.log" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 77, "completed_passes": 1, "coordinate_step": 4, "moves_in_pass": 77, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 98, "completed_passes": 2, "coordinate_step": 4, "moves_in_pass": 21, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 103, "completed_passes": 3, "coordinate_step": 4, "moves_in_pass": 5, "unique_selection_evaluations": 8101}
+19
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+ succeeded in 1600611ms:
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+exec
+/bin/bash -lc 'tail -n 5 .scratch/ladder-floor-20260910/original-run.log; test -f .scratch/ladder-floor-20260910/original-result.json' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+  },
+  "qualifying_coalition_anchor_count": 20,
+  "unilateral_over_baseline_relative": 6.643557428839128,
+  "world_count": 4
+}
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+exec
+/bin/bash -lc 'nice -n 10 env PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/ladder-floor-20260910/run_scalar_census.py > .scratch/ladder-floor-20260910/scalar-census-full.log 2>&1' in /home/sat/mcrl-v025-ladder-ws
+exec
+/bin/bash -lc 'nice -n 10 env PYTHONDONTWRITEBYTECODE=1 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/ladder-floor-20260910/compare_original.py > .scratch/ladder-floor-20260910/original-reproduction-audit.log' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+codex
+The original run is complete and reproduces **+6.359000%**. All 20 selected configurations and committed outcomes match the archived result exactly. The full scalar census is now running across both formulations and all three selectors.
+exec
+/bin/bash -lc "head -n 1 .scratch/ladder-floor-20260910/original-reproduction-audit.log; tail -n 2 .scratch/ladder-floor-20260910/scalar-census-full.log; nice -n 10 env PYTHONDONTWRITEBYTECODE=1 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json, math
+from pathlib import Path
+p=Path('.scratch/ladder-floor-20260910')
+for form in ['original','margin']:
+ x=json.loads((p/f'{form}-result.json').read_text());print(form,'wall_s',x['wall_seconds'],'gain%',100*x['summary']['oracle_set_over_unilateral_relative'])
+ print('certified',all(a['selection']['unilateral_terminal_certified'] for a in x['anchors']), 'passes',sum(a['selection']['unilateral_passes'] for a in x['anchors']))
+ print('max_anchor_wall',max(a['wall_seconds'] for a in x['anchors']))
+print('relative gain magnitude remaining percent',(0.5447658598398464/6.359000158344718)*100)
+PY" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"status": "DIFFERENCES", "current_path": "/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/original-result.json", "reference_path": "/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/reference-oracle-result.json", "completed_anchors": 20, "committed_endpoints_and_configuration_ids_exact": true, "discrete_search_path_counts_exact": true, "max_abs_internal_F_or_Psi_difference_bits": 1.9073486328125e-05, "committed_mismatches": [], "discrete_search_path_mismatches": []}
+original wall_s 1598.8887370950251 gain% 6.3589999577662315
+certified True passes 99
+max_anchor_wall 178.20927433099132
+margin wall_s 1011.5498265020142 gain% 0.5447658598398464
+certified True passes 105
+max_anchor_wall 88.13740342899109
+relative gain magnitude remaining percent 8.56684771622418
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+exec
+/bin/bash -lc "tail -n 3 .scratch/ladder-floor-20260910/scalar-census-full.log; rg -c '\"passed\": true' .scratch/ladder-floor-20260910/scalar-census-full.log" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"anchor_id": "V025_PROBE_R2/world/2:step/4", "formulation": "margin", "selector": "BASELINE", "bits_relative_difference": 0.0, "joules_relative_difference": -6.661338147750939e-16, "scalar_served": 73, "scalar_any_attempt_served": 73, "batch_served": 73, "passed": true, "no_mode_share": 0.3650678294573643, "elapsed_s": 125.52091765901423}
+{"anchor_id": "V025_PROBE_R2/world/2:step/4", "formulation": "margin", "selector": "ORACLE_SET", "bits_relative_difference": -3.3306690738754696e-16, "joules_relative_difference": 0.0, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.005718954248366013, "elapsed_s": 126.57677630099352}
+{"anchor_id": "V025_PROBE_R2/world/2:step/4", "formulation": "margin", "selector": "UNILATERAL", "bits_relative_difference": -3.3306690738754696e-16, "joules_relative_difference": 4.440892098500626e-16, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.005718954248366013, "elapsed_s": 127.46126466200803}
+60
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae6e222f0049f83743fe41f1caabfbda8333d0c
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,71 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+codex
+The scalar census has checked 60 of the 120 committed profiles so far; bits, energy and the published served-count definition all agree with the batch results. It is finding some cap-limited `NO_MODE` intervals even in optimized variant profiles. Those are being counted separately from the uncapped table-floor failures.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..119e790d7211597916fe6ef592439fcaf0cb1702
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,73 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++At fixed transmit power and otherwise fixed link conditions, the lower required SE is easier to support. The original controller first reduces power to the lower target, then asks the mode selector for a fade allowance without provisioning that allowance.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..119e790d7211597916fe6ef592439fcaf0cb1702
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,73 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++At fixed transmit power and otherwise fixed link conditions, the lower required SE is easier to support. The original controller first reduces power to the lower target, then asks the mode selector for a fade allowance without provisioning that allowance.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+exec
+/bin/bash -lc "rg -n -i '\\brain\\b|rain_|rainfall|precipitation' src/mcrl/env/{link_budget,constants,propagation}.py src/mcrl/physics_v025/channel.py 2>/dev/null; rg -n 'def link_power_factor|atmospheric|loss' src/mcrl/env/link_budget.py | head -n 45; tail -n 2 .scratch/ladder-floor-20260910/scalar-census-full.log" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+1:"""Downlink budget: path loss, atmosphere, noise, SINR (SDD W-06, G-2).
+56:  and takes atmospheric loss from **equation (6.6-8) of TR 38.811**;
+79:# HOBS eq. (1) names the four loss terms and supplies no values.  Taking
+92:Deterministic, not a draw: the table gives a loss per elevation, so ``L_c``
+115:Clutter loss is **not** applied: TR 38.811 gives it for NLOS, and this
+120:def scintillation_loss_db(elevation_deg: np.ndarray) -> np.ndarray:
+329:def atmospheric_loss_db(elevation_deg: np.ndarray) -> np.ndarray:
+340:def total_path_loss_db(
+355:        free_space_loss_db(slant_km)
+356:        + atmospheric_loss_db(elevation_deg)
+357:        + scintillation_loss_db(elevation_deg)
+362:def atmospheric_gain(elevation_deg: np.ndarray) -> np.ndarray:
+363:    """Atmospheric loss as a linear gain in (0, 1]."""
+364:    return 10.0 ** (-atmospheric_loss_db(elevation_deg) / 10.0)
+626:    free_space_loss_db: float,
+627:    other_losses_db: float,
+640:        - free_space_loss_db
+641:        - other_losses_db
+659:def free_space_loss_db(slant_km: np.ndarray) -> np.ndarray:
+664:def link_power_factor(
+675:    the four losses of (3.10b), the receive gain of (3.10c), and the
+679:    loss_db = total_path_loss_db(
+685:    factor = 10.0 ** (-loss_db / 10.0) * receive
+748::data:`SEGMENT_START_POWER_W`.  Measured, the largest in-segment loss under
+782:            "loss before the link is infeasible; at p0 = p_max/2 that is the "
+{"anchor_id": "V025_PROBE_R2/world/4:step/1", "formulation": "margin", "selector": "ORACLE_SET", "bits_relative_difference": -3.3306690738754696e-16, "joules_relative_difference": 4.440892098500626e-16, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.0, "elapsed_s": 239.63790735800285}
+{"anchor_id": "V025_PROBE_R2/world/4:step/1", "formulation": "margin", "selector": "UNILATERAL", "bits_relative_difference": -2.220446049250313e-16, "joules_relative_difference": 2.220446049250313e-16, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.0, "elapsed_s": 240.4006667130161}
+
+exec
+/bin/bash -lc "sed -n '175,230p' src/mcrl/physics_v025/channel.py; sed -n '1,120p' src/mcrl/env/link_budget.py" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+        separation, same = np.broadcast_arrays(separation, same)
+    except ValueError as error:
+        raise MCRLContractError("separation and satellite-identity masks do not broadcast") from error
+    envelope = receive_gain_linear(separation)
+    peak = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+    return np.where(same, peak, envelope)
+
+
+def rician_power_gain(
+    rng: np.random.Generator,
+    size: tuple[int, ...],
+    *,
+    k_factor_db: float = RICIAN_K_FACTOR_DB,
+) -> np.ndarray:
+    """Unit-mean Rician power gain."""
+
+    if not isinstance(rng, np.random.Generator):
+        raise TypeError("rng must be an explicit numpy Generator")
+    if not math.isfinite(k_factor_db):
+        raise ValueError("k_factor_db must be finite")
+    k_linear = 10.0 ** (k_factor_db / 10.0)
+    los = math.sqrt(k_linear / (k_linear + 1.0))
+    sigma = math.sqrt(1.0 / (2.0 * (k_linear + 1.0)))
+    real = los + sigma * rng.standard_normal(size)
+    imaginary = sigma * rng.standard_normal(size)
+    return real**2 + imaginary**2
+
+
+def shadow_linear_mean(sigma_db: float) -> float:
+    """Mean of ``10**(-X/10)`` for ``X ~ Normal(0, sigma_db**2)``."""
+
+    if not math.isfinite(sigma_db) or sigma_db < 0.0:
+        raise ValueError("sigma_db must be finite and nonnegative")
+    return math.exp(0.5 * (sigma_db * math.log(10.0) / 10.0) ** 2)
+
+
+def keyed_component_seed(
+    world: int,
+    user: int,
+    norad: int,
+    absolute_time_ns: int,
+    component: str,
+) -> int:
+    """Stable action/history-free key material for external tape builders."""
+
+    import hashlib
+
+    payload = f"{world}|{user}|{norad}|{absolute_time_ns}|{component}".encode("ascii")
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
+
+
+def keyed_fading_gain(
+    *,
+    world: int,
+    user: int,
+    norad: int,
+"""Downlink budget: path loss, atmosphere, noise, SINR (SDD W-06, G-2).
+
+Values come from ``NEW-PROJECT-PARAMETER-SPEC-2026-08-21.md`` §1.  Every
+constant carries its class code; the two places this layer departs from the
+source project are marked ★ and explained.
+"""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+from ..errors import MCRLContractError
+
+# -- carrier and bandwidth -------------------------------------------------
+
+CARRIER_FREQ_HZ: float = 20.0e9
+"""**P** — Table I ``f_c = 20 GHz``."""
+
+BANDWIDTH_HZ: float = 500.0e6
+"""**P** — Table I ``B = 500 MHz``."""
+
+FREQUENCY_REUSE_FACTOR: int = 3
+"""**P'** — TR 38.821 Table 6.1.3.2-1 lists FRF 1/2/3.  MODQN never mentions
+reuse, so the three-colour choice is disclosed rather than paper-backed."""
+
+BEAM_BANDWIDTH_HZ: float = BANDWIDTH_HZ / FREQUENCY_REUSE_FACTOR
+"""**D** — 166.667 MHz per colour."""
+
+SPEED_OF_LIGHT_M_S: float = 299_792_458.0
+
+# -- terminal noise --------------------------------------------------------
+
+BOLTZMANN_J_PER_K: float = 1.380649e-23
+ANTENNA_TEMPERATURE_K: float = 150.0
+"""**P'** — TR 38.821 Table 6.1.1.1-3, Ka VSAT."""
+
+REFERENCE_TEMPERATURE_K: float = 290.0
+RECEIVER_NOISE_FIGURE_DB: float = 1.2
+"""**P'** — same."""
+
+SYSTEM_TEMPERATURE_K: float = ANTENNA_TEMPERATURE_K + REFERENCE_TEMPERATURE_K * (
+    10.0 ** (RECEIVER_NOISE_FIGURE_DB / 10.0) - 1.0
+)
+"""**D** — 242.294 K."""
+
+# -- atmosphere ------------------------------------------------------------
+
+ZENITH_GASEOUS_LOSS_DB: float = 0.25
+"""**P'** — clear-sky zenith gaseous attenuation at 20 GHz, dB.
+
+Derived from documents this project already cites, not chosen:
+
+* TR 38.821 Table 6.1.3.2-1 sets the LEO **target elevation angle to 30°**
+  and takes atmospheric loss from **equation (6.6-8) of TR 38.811**;
+* TR 38.811 (6.6-8) is the cosecant law ``PL_A(α, f) = A_zenith(f)/sin α``;
+* TR 38.821 Table 6.1.3.3-1 row SC 6 (LEO-600, 20 GHz DL) tabulates
+  **0.5 dB**.
+
+So ``A_zenith = 0.5 · sin 30° = 0.25 dB``.  It is also self-consistent with
+the G-2 comparator, which is the same row.
+
+★ **Replaces the source project's ``3·d·χ/(10·h_s)``**, which the controller
+ruled a transcription error rather than a modelling choice: expanded it is
+``0.3·χ·(d/h_s)`` and ``d/h_s ≈ 1/sin α``, i.e. a **0.3 km thick**
+atmosphere giving 0.015 dB at zenith.  Clear-sky gaseous attenuation at
+20 GHz is of order tenths of a dB, not hundredths.
+"""
+
+# -- (3.10b)'s remaining two terms: L_c and L_s (ruling C-8, revised) ------
+#
+# ⚠ Both were **0.0** for one day.  The first C-8 set ``L_c`` to a declared
+# zero (its model is stochastic, and the frozen-seed protocol was mid-freeze)
+# and ``L_s`` to TR 38.821's "0 dB shadowing margin for VSAT".  The
+# controller overturned that on 2026-08-22: model both from TR 38.811's NTN
+# tables rather than declare them away.
+#
+# HOBS eq. (1) names the four loss terms and supplies no values.  Taking
+# them from TR 38.811 is therefore a **substitution**, and it is disclosed
+# as one (docs/DEVIATION-REGISTER.md) rather than presented as the source's
+# own numbers.
+
+_SCINTILLATION_ELEVATION_DEG: tuple[float, ...] = (
+    10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0,
+)
+_SCINTILLATION_LOSS_DB: tuple[float, ...] = (
+    1.08, 0.48, 0.30, 0.22, 0.17, 0.13, 0.12, 0.12, 0.12,
+)
+"""**P'** — TR 38.811 Table 6.6.6.2.1-1, 20 GHz **tropospheric** scintillation.
+
+Deterministic, not a draw: the table gives a loss per elevation, so ``L_c``
+adds no randomness to the model.
+
+**Ionospheric scintillation is excluded, with a citable reason.**  TR 38.811
+§6.6.6.1 states that it is considered only below 6 GHz.  This project runs
+at 20 GHz, so the exclusion is the specification's own scope statement and
+not a modelling choice made here.
+"""
+
+_SHADOW_SIGMA_ELEVATION_DEG: tuple[float, ...] = (
+    10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0,
+)
+_SHADOW_SIGMA_DB: tuple[float, ...] = (
+    1.9, 1.6, 1.9, 2.3, 2.7, 3.1, 3.0, 3.6, 0.4,
+)
+"""**P'** — TR 38.811 Table 6.6.2-3, Ka band, **LOS** shadow-fading σ.
+
+⚠ **The 90° entry really is 0.4 dB.**  The published table steps from 3.6 dB
+at 80° straight down to 0.4 dB at 90°, and it is transcribed as printed.
+Smoothing it would be inventing data; the discontinuity is the
+specification's, and interpolating across it is the only place this model
+has a sharp edge.
+
+Clutter loss is **not** applied: TR 38.811 gives it for NLOS, and this
+project's terminal is a fixed VSAT held in line of sight.
+"""
+
+
+def scintillation_loss_db(elevation_deg: np.ndarray) -> np.ndarray:
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..119e790d7211597916fe6ef592439fcaf0cb1702
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,73 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++At fixed transmit power and otherwise fixed link conditions, the lower required SE is easier to support. The original controller first reduces power to the lower target, then asks the mode selector for a fade allowance without provisioning that allowance.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+exec
+/bin/bash -lc "tail -n 2 .scratch/ladder-floor-20260910/scalar-census-full.log; rg -c '\"passed\": true' .scratch/ladder-floor-20260910/scalar-census-full.log; ls -lh .scratch/ladder-floor-20260910/scalar-census-summary.json .scratch/ladder-floor-20260910/scalar-census-histograms.json.gz 2>/dev/null" in /home/sat/mcrl-v025-ladder-ws
+ exited 2 in 0ms:
+{"anchor_id": "V025_PROBE_R2/world/4:step/3", "formulation": "margin", "selector": "UNILATERAL", "bits_relative_difference": -2.220446049250313e-16, "joules_relative_difference": 0.0, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.005394345238095238, "elapsed_s": 253.74491008499172}
+{"anchor_id": "V025_PROBE_R2/world/4:step/4", "formulation": "original", "selector": "BASELINE", "bits_relative_difference": 2.220446049250313e-16, "joules_relative_difference": -2.220446049250313e-16, "scalar_served": 31, "scalar_any_attempt_served": 34, "batch_served": 34, "passed": true, "no_mode_share": 0.8284660218253969, "elapsed_s": 255.4863883400103}
+115
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..119e790d7211597916fe6ef592439fcaf0cb1702
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,73 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++At fixed transmit power and otherwise fixed link conditions, the lower required SE is easier to support. The original controller first reduces power to the lower target, then asks the mode selector for a fade allowance without provisioning that allowance.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+ succeeded in 263377ms:
+exec
+/bin/bash -lc 'test -f .scratch/ladder-floor-20260910/scalar-census-summary.json && nice -n 10 env PYTHONDONTWRITEBYTECODE=1 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/ladder-floor-20260910/summarize_report_data.py > .scratch/ladder-floor-20260910/report-data-output.log' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..119e790d7211597916fe6ef592439fcaf0cb1702
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,73 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++At fixed transmit power and otherwise fixed link conditions, the lower required SE is easier to support. The original controller first reduces power to the lower target, then asks the mode selector for a fade allowance without provisioning that allowance.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+
+exec
+/bin/bash -lc "sed -n '1,86p' .scratch/ladder-floor-20260910/report-data.tables.md; rg '\\| (original|margin) \\| ALL \\|' .scratch/ladder-floor-20260910/report-data.tables.md; tail -n 2 .scratch/ladder-floor-20260910/scalar-census-full.log" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+Panel: 20 anchors; final=True
+
+| Formulation | Arm | Bits | J | EE bit/J | Served | Rate attained |
+|---|---|---:|---:|---:|---:|---:|
+| original | BASELINE | 545927267996.825 | 146564.590466 | 3724823.753560 | 826 | 0 |
+| original | UNILATERAL | 1660779577104.985 | 58332.519445 | 28470904.272641 | 1939 | 0 |
+| original | ORACLE_SET | 1694404970756.872 | 55955.362098 | 30281369.063314 | 1957 | 0 |
+| margin | BASELINE | 1390585434518.730 | 175288.780717 | 7933111.456602 | 1165 | 426 |
+| margin | UNILATERAL | 3202141378897.356 | 74453.115992 | 43008829.600386 | 2000 | 1359 |
+| margin | ORACLE_SET | 3201928829736.721 | 74044.803194 | 43243127.020766 | 2000 | 1349 |
+
+original: O/U=+6.359000%; U/B=+664.355743%; positive/negative/zero EE anchors=20/0/0; qualifying=20; families={'complete-beam-evacuation': 12, 'beam-occupant-subset': 8}
+margin: O/U=+0.544766%; U/B=+442.143267%; positive/negative/zero EE anchors=13/7/0; qualifying=20; families={'beam-occupant-subset': 9, 'complete-beam-evacuation': 6, 'victim-plus-top-3-contributors': 3, 'victim-plus-top-2-contributors': 2}
+
+| Form | Arm | NO_MODE / attempts | Attempt % | Duration % | Uncapped NO_MODE | Decoded | Served rate miss |
+|---|---|---:|---:|---:|---:|---:|---:|
+| original | BASELINE | 396440 / 507744 | 78.079 | 78.195 | 212910 | 107792 | 107792 |
+| original | UNILATERAL | 48249 / 431424 | 11.184 | 10.545 | 29984 | 364658 | 364658 |
+| original | ORACLE_SET | 41682 / 436320 | 9.553 | 8.948 | 29312 | 374396 | 374396 |
+| original | ALL | 486371 / 1375488 | 35.360 | 42.827 | 272206 | 846846 | 846846 |
+| margin | BASELINE | 246575 / 507744 | 48.563 | 48.459 | 50 | 247202 | 48937 |
+| margin | UNILATERAL | 606 / 338552 | 0.179 | 0.129 | 536 | 309930 | 3786 |
+| margin | ORACLE_SET | 605 / 354200 | 0.171 | 0.138 | 593 | 324047 | 3881 |
+| margin | ALL | 247786 / 1200496 | 20.640 | 14.412 | 1179 | 881179 | 56604 |
+
+| Form | Occupancy, ALL arms | NO_MODE / attempts | Attempt % | Duration % | Uncapped NO_MODE | Decoded |
+|---|---:|---:|---:|---:|---:|---:|
+| original | 1 | 208608 / 208608 | 100.000 | 100.000 | 164579 | 0 |
+| original | 2 | 154634 / 154944 | 99.800 | 99.771 | 104631 | 310 |
+| original | 3 | 59348 / 344448 | 17.230 | 21.602 | 2996 | 275866 |
+| original | 4 | 41078 / 174720 | 23.511 | 27.313 | 0 | 127396 |
+| original | 5 | 11580 / 270912 | 4.274 | 5.211 | 0 | 245212 |
+| original | 6 | 3742 / 125664 | 2.978 | 3.817 | 0 | 114139 |
+| original | 7 | 4873 / 45888 | 10.619 | 12.157 | 0 | 38881 |
+| original | 8 | 2124 / 29760 | 7.137 | 5.183 | 0 | 25936 |
+| original | 9 | 384 / 6528 | 5.882 | 7.407 | 0 | 5812 |
+| original | 10 | 0 / 5088 | 0.000 | 0.000 | 0 | 4849 |
+| original | 11 | 0 / 8928 | 0.000 | 0.000 | 0 | 8445 |
+| margin | 1 | 74406 / 509272 | 14.610 | 8.903 | 1179 | 399678 |
+| margin | 2 | 64621 / 170904 | 37.811 | 34.892 | 0 | 99912 |
+| margin | 3 | 49526 / 351432 | 14.093 | 9.880 | 0 | 278834 |
+| margin | 4 | 45211 / 82080 | 55.082 | 55.689 | 0 | 35088 |
+| margin | 5 | 9663 / 72792 | 13.275 | 10.526 | 0 | 58592 |
+| margin | 6 | 1595 / 2880 | 55.382 | 61.631 | 0 | 1234 |
+| margin | 7 | 2764 / 11136 | 24.820 | 21.951 | 0 | 7841 |
+
+Distributions below use duration weighting for P05/P50/P95; min/max are unrounded extrema. All distributions and both weightings are in report-data.json.
+
+| Form | Arm | Distribution | min | P05 | P50 | P95 | max |
+|---|---|---|---:|---:|---:|---:|---:|
+| original | BASELINE | q_margin_db | 1.107 | 2.860 | 3.750 | 4.490 | 4.830 |
+| original | BASELINE | elevation_deg | 19.228 | 27.950 | 50.460 | 77.890 | 89.873 |
+| original | BASELINE | nominal_tx_margin_db | 1.230 | 3.200 | 4.330 | 4.740 | 5.908 |
+| original | BASELINE | realised_tx_margin_db | -9.053 | 0.730 | 3.890 | 7.180 | 15.771 |
+| original | BASELINE | realised_tx_margin_served_db | 0.000 | 1.380 | 3.940 | 7.230 | 15.771 |
+| original | UNILATERAL | q_margin_db | 1.107 | 2.870 | 3.700 | 4.440 | 4.830 |
+| original | UNILATERAL | elevation_deg | 18.454 | 28.000 | 48.870 | 76.330 | 89.873 |
+| original | UNILATERAL | nominal_tx_margin_db | 1.120 | 3.250 | 4.330 | 4.810 | 6.049 |
+| original | UNILATERAL | realised_tx_margin_db | -9.406 | 0.010 | 3.700 | 8.010 | 17.647 |
+| original | UNILATERAL | realised_tx_margin_served_db | 0.000 | 0.980 | 3.810 | 8.090 | 17.647 |
+| original | ORACLE_SET | q_margin_db | 1.107 | 2.860 | 3.670 | 4.440 | 4.830 |
+| original | ORACLE_SET | elevation_deg | 18.454 | 27.720 | 48.820 | 76.540 | 89.951 |
+| original | ORACLE_SET | nominal_tx_margin_db | 1.120 | 3.230 | 4.330 | 4.810 | 5.813 |
+| original | ORACLE_SET | realised_tx_margin_db | -9.765 | -0.070 | 3.680 | 8.060 | 17.791 |
+| original | ORACLE_SET | realised_tx_margin_served_db | 0.000 | 0.950 | 3.800 | 8.150 | 17.791 |
+| original | ALL | q_margin_db | 1.107 | 2.870 | 3.720 | 4.450 | 4.830 |
+| original | ALL | elevation_deg | 18.454 | 27.900 | 49.660 | 77.210 | 89.951 |
+| original | ALL | nominal_tx_margin_db | 1.120 | 3.230 | 4.330 | 4.810 | 6.049 |
+| original | ALL | realised_tx_margin_db | -9.765 | 0.090 | 3.740 | 7.900 | 17.791 |
+| original | ALL | realised_tx_margin_served_db | 0.000 | 1.020 | 3.830 | 7.980 | 17.791 |
+| margin | BASELINE | q_margin_db | 1.107 | 2.860 | 3.750 | 4.490 | 4.830 |
+| margin | BASELINE | elevation_deg | 19.228 | 27.950 | 50.460 | 77.890 | 89.873 |
+| margin | BASELINE | nominal_tx_margin_db | 1.107 | 2.910 | 3.840 | 4.730 | 5.963 |
+| margin | BASELINE | realised_tx_margin_db | -8.831 | -0.110 | 3.580 | 7.470 | 16.812 |
+| margin | BASELINE | realised_tx_margin_served_db | 0.001 | 0.970 | 3.680 | 7.560 | 16.812 |
+| margin | UNILATERAL | q_margin_db | 1.107 | 2.850 | 3.750 | 4.490 | 4.830 |
+| margin | UNILATERAL | elevation_deg | 13.348 | 27.670 | 50.670 | 79.370 | 89.951 |
+| margin | UNILATERAL | nominal_tx_margin_db | 1.107 | 2.850 | 3.750 | 4.510 | 5.269 |
+| margin | UNILATERAL | realised_tx_margin_db | -9.832 | -0.740 | 3.340 | 7.990 | 16.367 |
+| margin | UNILATERAL | realised_tx_margin_served_db | 0.000 | 0.650 | 3.590 | 8.120 | 16.367 |
+| margin | ORACLE_SET | q_margin_db | 1.107 | 2.850 | 3.750 | 4.490 | 4.830 |
+| margin | ORACLE_SET | elevation_deg | 13.370 | 27.850 | 50.760 | 79.400 | 89.951 |
+| margin | ORACLE_SET | nominal_tx_margin_db | 1.107 | 2.860 | 3.770 | 4.510 | 5.273 |
+| margin | ORACLE_SET | realised_tx_margin_db | -9.832 | -0.750 | 3.350 | 8.000 | 16.367 |
+| margin | ORACLE_SET | realised_tx_margin_served_db | 0.000 | 0.650 | 3.600 | 8.140 | 16.367 |
+| margin | ALL | q_margin_db | 1.107 | 2.860 | 3.750 | 4.490 | 4.830 |
+| original | ALL | 486371 / 1375488 | 35.360 | 42.827 | 272206 | 846846 | 846846 |
+| margin | ALL | 247786 / 1200496 | 20.640 | 14.412 | 1179 | 881179 | 56604 |
+| original | ALL | q_margin_db | 1.107 | 2.870 | 3.720 | 4.450 | 4.830 |
+| original | ALL | elevation_deg | 18.454 | 27.900 | 49.660 | 77.210 | 89.951 |
+| original | ALL | nominal_tx_margin_db | 1.120 | 3.230 | 4.330 | 4.810 | 6.049 |
+| original | ALL | realised_tx_margin_db | -9.765 | 0.090 | 3.740 | 7.900 | 17.791 |
+| original | ALL | realised_tx_margin_served_db | 0.000 | 1.020 | 3.830 | 7.980 | 17.791 |
+| margin | ALL | q_margin_db | 1.107 | 2.860 | 3.750 | 4.490 | 4.830 |
+| margin | ALL | elevation_deg | 13.348 | 27.820 | 50.640 | 78.940 | 89.951 |
+| margin | ALL | nominal_tx_margin_db | 1.107 | 2.860 | 3.770 | 4.540 | 5.963 |
+| margin | ALL | realised_tx_margin_db | -9.832 | -0.660 | 3.400 | 7.920 | 16.812 |
+| margin | ALL | realised_tx_margin_served_db | 0.000 | 0.690 | 3.620 | 8.050 | 16.812 |
+{"anchor_id": "V025_PROBE_R2/world/4:step/4", "formulation": "margin", "selector": "ORACLE_SET", "bits_relative_difference": -3.3306690738754696e-16, "joules_relative_difference": -1.1102230246251565e-16, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.0, "elapsed_s": 258.9117625330109}
+{"anchor_id": "V025_PROBE_R2/world/4:step/4", "formulation": "margin", "selector": "UNILATERAL", "bits_relative_difference": -3.3306690738754696e-16, "joules_relative_difference": -1.1102230246251565e-16, "scalar_served": 100, "scalar_any_attempt_served": 100, "batch_served": 100, "passed": true, "no_mode_share": 0.0, "elapsed_s": 259.74557827599347}
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..119e790d7211597916fe6ef592439fcaf0cb1702
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,73 @@
++The low-occupancy activation mechanism does not survive margin provisioning; oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual coordination gain.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. The entire coordination effect is not zero: a smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 |
++| Original | Certified UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 |
++| Original | Bounded ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 |
++| Margin provisioned | BASELINE | 1,390.585435 | 175.288781 | 7.933111 | 1,165 |
++| Margin provisioned | Certified UNILATERAL | 3,202.141379 | 74.453116 | 43.008830 | 2,000 |
++| Margin provisioned | Bounded ORACLE_SET | 3,201.928830 | 74.044803 | 43.243127 | 2,000 |
++
++**The decisive comparison is +6.359000% versus +0.544766%.** EE is the ratio of summed bits to summed joules. In the variant, ORACLE_SET uses 0.5484% less energy and delivers 0.00664% fewer bits than UNILATERAL. Its realised EE improves on 13 anchors and declines on seven; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. They are not evidence that the low-occupancy activation mechanism still operates.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [mode for mode in ACM_MODES
++            if mode.spectral_efficiency_bit_per_s_hz >= required_se]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727–742](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [lines 462–480](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` returns `None` when its threshold-eligible list is empty. The dense path used by the oracle repeats these equations at [batch.py:301–314 and 395–417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++At fixed transmit power and otherwise fixed link conditions, the lower required SE is easier to support. The original controller first reduces power to the lower target, then asks the mode selector for a fade allowance without provisioning that allowance.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This is an additive dB margin, not adding a dB number to linear SINR. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped solution, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++<!-- FULL_CENSUS_RESULTS -->
++
++The rate accounting is explicit. [acm.py:93–98](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++# Credited SE:
++0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a genuinely lower-threshold demoted mode cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++<!-- VERIFICATION_AND_ARTIFACTS -->
+

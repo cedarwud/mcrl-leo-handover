@@ -1,0 +1,1655 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-replay-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08730-9a49-7103-a856-f7716c17f1c9
+--------
+user
+Workspace: /home/sat/mcrl-v025-replay-ws (its previous job finished; reuse it). Interpreter `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`, `nice -n 15`. Never modify /home/sat/mcrl-leo-handover or its venv.
+
+# Task: audit one diagnostic number before the project acts on it
+
+`DIAGNOSTIC_NOT_CLAIM`. No training run, no policy run, no physics evaluation. This is an estimator audit on rows that already exist.
+
+## The number under audit
+A prior diagnostic (`/home/sat/mcrl-v025-c1c2suff-ws/C1C2-SUFFICIENCY-2026-09-09.md`, and its script `scripts/diagnose_v025_c1c2_sufficiency.py`) reported held-out explained variance for a scalar head's own encoded features:
+
+- C1 route: EV = -0.3355476799, RMSE 3.4683937281, target variance 8.3419683433
+- C2 route: EV = +0.2106516781, RMSE 3.3856461561, target variance 14.3690049981
+
+Estimator: standardized inverse-distance k-nearest-neighbour regression, k chosen from {1,3,7,15,31} on a validation split, k=31 selected for both. Data: 26,345 valid non-reference rows from 30 source anchors, split by whole physical step — train {1,2,4,6,7,8,9}, validate {5}, test {0,3}, 5,280 held-out rows, seed 20260909.
+
+The project has taken the negative C1 number to mean the encoded features carry no predictive value for that target. **That inference is only safe if the estimator is not the binding constraint.** k-NN in 16 dimensions with seven training steps, under a by-step split that is also a distribution shift, is a weak estimator. Your job is to determine whether the finding is about the FEATURES or about the ESTIMATOR.
+
+## Tasks
+
+### A — replicate
+Re-run the existing diagnostic unchanged and confirm you reproduce both numbers. If you cannot, stop and report that; everything downstream depends on it.
+
+### B — estimator ladder, declared in advance
+On the SAME rows, SAME split, SAME seed, SAME targets, fit this fixed list and report held-out EV and RMSE for each, for C1 and C2 separately. Declare the whole list before you run any of it, and report every entry, including the ones that do worse:
+1. constant predictor (the training mean) — this is the EV = 0 reference;
+2. ordinary least squares on the encoded features;
+3. ridge with the penalty chosen on the validation split only;
+4. gradient-boosted trees, modest depth, early stopping on the validation split only;
+5. k-NN as originally run (the replication from A).
+Do not add a sixth model after seeing results. If you want a sixth, you may not have it.
+
+### C — is the split doing the damage?
+The by-step split is also a temporal/distributional split. Report, for the best estimator from B:
+- held-out EV on test steps 0 and 3 **separately**;
+- EV under a leave-one-step-out rotation across all ten steps, reporting the per-step values and their spread.
+State plainly whether the negative number is a property of one unlucky held-out step or holds across the rotation.
+
+### D — how much variance is structurally unreachable?
+Using exact duplicate encoded rows within the corpus (byte-identical feature vectors with differing exact targets), compute the irreducible variance floor implied by those collision groups on these 26,345 rows, and express it as a fraction of total target variance for C1 and for C2. If there are no exact duplicates for a route, say so — that is itself the answer for that route.
+
+## Verdict required
+End with one of exactly these three, for C1 and for C2 separately, and justify it in two sentences:
+- `FEATURES_UNINFORMATIVE` — every estimator on the ladder fails to beat the constant predictor;
+- `ESTIMATOR_ARTEFACT` — at least one estimator on the ladder clearly beats the constant predictor, so the original negative value understates what the features carry;
+- `INDETERMINATE` — the ladder disagrees or the rotation is too unstable to call.
+
+Report honestly. A verdict of `ESTIMATOR_ARTEFACT` would mean the controller overstated a finding to the project owner, and that correction is more valuable than a tidy story.
+
+## Rules
+- Change no threshold, sign, seed, horizon, price, guard or acceptance rule. Do not modify sealed artefacts or the fallback flag.
+- Leave every script you used in the workspace and give exact command lines.
+- Write `C1C2-ESTIMATOR-AUDIT-2026-09-10.md` in the workspace root and print it as your final message. Lead with the two verdicts on one line.
+codex
+I’m treating this strictly as an estimator audit on the existing rows—no training, policy, or physics runs.
+
+Before running any ladder model, I declare the complete fixed list: (1) training-mean constant, (2) ordinary least squares, (3) ridge with penalty selected only on validation step 5, (4) modest-depth gradient-boosted trees with early stopping using only validation step 5, and (5) the original standardized inverse-distance k-NN with \(k \in \{1,3,7,15,31\}\), selected only on validation. I will report every entry and will not add another model after seeing results. First I’ll inspect and rerun the prior diagnostic unchanged; if either reference number fails to reproduce, I’ll stop.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '"'!**/.git/**'"' -g 'scripts/diagnose_v025_c1c2_sufficiency.py' -g 'C1C2-SUFFICIENCY-2026-09-09.md' -g '*.py' | sed -n '1,160p'" in /home/sat/mcrl-v025-replay-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-replay-ws
+src/mcrl/env/tle.py
+src/mcrl/env/mobility.py
+src/mcrl/env/geometry.py
+src/mcrl/env/cells.py
+src/mcrl/env/observation_provenance.py
+src/mcrl/env/keyed_fading.py
+src/mcrl/env/candidates.py
+src/mcrl/env/pointing.py
+src/mcrl/env/d2.py
+src/mcrl/env/__init__.py
+src/mcrl/env/antenna.py
+src/mcrl/env/scenario.py
+src/mcrl/env/action_contract.py
+src/mcrl/env/service.py
+src/mcrl/env/ephemeris.py
+src/mcrl/env/dwell.py
+src/mcrl/env/constants.py
+src/mcrl/env/step.py
+src/mcrl/env/reference_policy.py
+src/mcrl/env/interference.py
+src/mcrl/env/step_types.py
+src/mcrl/env/link_budget.py
+src/mcrl/stagec_v025/learner.py
+src/mcrl/stagec_v025/deployment.py
+src/mcrl/stagec_v025/synthetic.py
+src/mcrl/stagec_v025/state.py
+src/mcrl/stagec_v025/mechanism_corpus.py
+src/mcrl/stagec_v025/arms.py
+src/mcrl/stagec_v025/interfaces.py
+src/mcrl/stagec_v025/__init__.py
+src/mcrl/stagec_v025/canonical.py
+src/mcrl/stagec_v025/coalitions.py
+src/mcrl/stagec_v025/evaluation.py
+src/mcrl/stagec_v025/shards.py
+src/mcrl/stagec_v025/merge.py
+src/mcrl/stagec_v025/experiments.py
+src/mcrl/stagec_v025/acceptance.py
+src/mcrl/errors.py
+src/mcrl/algorithms/ee_axis_relational_zr_c3_head_v019.py
+src/mcrl/algorithms/ee_axis_v04_hybrid.py
+src/mcrl/algorithms/ee_axis_action_shared_meanmax.py
+src/mcrl/algorithms/ee_axis_relational_zr_c3_head.py
+src/mcrl/algorithms/ee_axis_action_shared.py
+src/mcrl/algorithms/ee_axis_v07_c2_fast_q2.py
+src/mcrl/algorithms/ee_axis_pairwise.py
+src/mcrl/algorithms/modqn.py
+src/mcrl/algorithms/ee_axis_v07_c2_focal_next.py
+src/mcrl/algorithms/ee_axis_v014_head.py
+src/mcrl/algorithms/__init__.py
+src/mcrl/algorithms/ee_axis_lcsrs_three_route.py
+src/mcrl/algorithms/ee_axis_v014_q3_support_head.py
+src/mcrl/algorithms/ee_axis_lcsrs_c3_head.py
+src/mcrl/algorithms/ee_axis_v04_c2_parallel.py
+src/mcrl/algorithms/ee_axis_v06_c2_k1.py
+src/mcrl/runtime/training_pipeline.py
+src/mcrl/runtime/ee_axis_v015_c3_reference_state.py
+src/mcrl/runtime/corrected_probes.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_placebo.py
+src/mcrl/runtime/ee_axis_v04_c3_opening_source.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_topology.py
+src/mcrl/runtime/ee_axis_v07_c2_state.py
+src/mcrl/runtime/ee_axis_v014_learnability.py
+src/mcrl/runtime/ee_axis_v05_c2_controlled_tape.py
+src/mcrl/runtime/ee_axis_ops3_live.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_gate_metrics.py
+src/mcrl/runtime/ee_axis_temporal_pairs.py
+src/mcrl/runtime/ee_axis_opening_dataset.py
+src/mcrl/runtime/ee_axis_pilot_runner.py
+src/mcrl/runtime/ee_axis_v014_gate.py
+src/mcrl/runtime/q_network.py
+src/mcrl/runtime/ee_axis_c1_selector.py
+src/mcrl/runtime/collapse_metrics.py
+src/mcrl/runtime/ee_axis_v018_gate.py
+src/mcrl/runtime/ee_axis_v04_c2_q13_continuation.py
+src/mcrl/runtime/trainer_spec.py
+src/mcrl/runtime/ee_axis_v015_c3_csr.py
+src/mcrl/runtime/ee_axis_v014_q2_pairs.py
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py
+src/mcrl/runtime/ee_axis_evaluation.py
+src/mcrl/runtime/ee_surplus_targets.py
+src/mcrl/runtime/ee_axis_v014_q2_state.py
+src/mcrl/runtime/ee_axis_coalition_residual_c3.py
+src/mcrl/runtime/probe_p1.py
+src/mcrl/runtime/ee_axis_zero_marginal_c3_live.py
+src/mcrl/runtime/trainer_env.py
+src/mcrl/runtime/ee_axis_v04_c2_sibling_schedule.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_source_artifact.py
+src/mcrl/runtime/ee_axis_b402_c3_softkl.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_learner_prep.py
+src/mcrl/runtime/ee_axis_v04_c3_schedule.py
+src/mcrl/runtime/ee_axis_v07_c2_parallel_targets.py
+src/mcrl/runtime/objective_math.py
+src/mcrl/runtime/ee_axis_v04_c3_learnability.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_state.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_learner.py
+src/mcrl/runtime/ee_axis_ops3.py
+src/mcrl/runtime/energy_efficiency.py
+src/mcrl/runtime/ee_axis_v04_c3_state.py
+src/mcrl/runtime/ee_axis_e1_c2_schedule.py
+src/mcrl/runtime/ee_axis_v014_q3_state.py
+src/mcrl/runtime/ee_axis_pnfe_live.py
+src/mcrl/runtime/ee_axis_source_selectors.py
+src/mcrl/runtime/ee_axis_v023_episode_screen.py
+src/mcrl/runtime/ee_axis_v07_c2_focal_next.py
+src/mcrl/runtime/probe_p7.py
+src/mcrl/runtime/ee_axis_state.py
+src/mcrl/runtime/probe_p4.py
+src/mcrl/runtime/ee_axis_v07_c2_fast_proxy.py
+src/mcrl/runtime/ee_axis_v015_c3_state.py
+src/mcrl/runtime/ee_axis_v015_c3_pivotal.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_dataset.py
+src/mcrl/runtime/ee_axis_v04_c3_dataset.py
+src/mcrl/runtime/ee_axis_calibration.py
+src/mcrl/runtime/ee_axis_zero_marginal_c3.py
+src/mcrl/runtime/ee_axis_pnfe.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_state_authority.py
+src/mcrl/runtime/ee_axis_temporal_dataset.py
+src/mcrl/runtime/ee_axis_c2_neutral_source.py
+src/mcrl/runtime/ee_axis_reference_probe.py
+src/mcrl/runtime/ee_axis_relational_zr_c3.py
+src/mcrl/runtime/reward_calibration.py
+src/mcrl/runtime/probe_p2.py
+src/mcrl/runtime/__init__.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_teacher.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_pipeline.py
+src/mcrl/runtime/bessel.py
+src/mcrl/runtime/state_encoding.py
+src/mcrl/runtime/ee_axis_v014_q3_pairs.py
+src/mcrl/runtime/probe_p3.py
+src/mcrl/runtime/ee_axis_instrument_validity.py
+src/mcrl/runtime/ee_axis_v016_c3_origin_state.py
+src/mcrl/runtime/ee_axis_opening_source.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_learner_contract_v2.py
+src/mcrl/runtime/ee_axis_matched_opening.py
+src/mcrl/runtime/ee_axis_c1_dull_source.py
+src/mcrl/runtime/ee_axis_v07_c2_dataset.py
+src/mcrl/runtime/finiteness.py
+src/mcrl/runtime/trainer_config_validation.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_formal_verdict_writer.py
+src/mcrl/runtime/ee_axis_opening_pairs.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_encoder.py
+src/mcrl/runtime/ee_axis_v04_c3_selector.py
+src/mcrl/runtime/ee_axis_joint_c3.py
+src/mcrl/runtime/ee_axis_targets.py
+src/mcrl/runtime/ee_axis_v07_c2_d2.py
+src/mcrl/runtime/ee_axis_v015_c3_selector.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_gate_fit.py
+src/mcrl/runtime/probe_p6.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_q13.py
+src/mcrl/runtime/probe_harness.py
+src/mcrl/runtime/replay_buffer.py
+src/mcrl/runtime/ee_axis_training_schedule.py
+src/mcrl/runtime/ee_axis_e1_ladder.py
+src/mcrl/runtime/head_pivotality.py
+src/mcrl/runtime/ee_axis_v07_c2_policy.py
+src/mcrl/runtime/ee_axis_e1_split.py
+src/mcrl/runtime/outage_gate.py
+src/mcrl/runtime/ee_axis_opening_runner.py
+src/mcrl/runtime/ee_axis_temporal_capture.py
+src/mcrl/runtime/ee_axis_e1_statistics.py
+
+exec
+/bin/bash -lc "ls -la && ls -la scripts | sed -n '1,200p' && sed -n '1,260p' /home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py && sed -n '1,260p' /home/sat/mcrl-v025-c1c2suff-ws/C1C2-SUFFICIENCY-2026-09-09.md" in /home/sat/mcrl-v025-replay-ws
+ succeeded in 0ms:
+total 7756
+drwxrwxr-x  18 sat sat    4096 Sep  9 16:28 .
+drwxr-x--- 419 sat sat   36864 Sep  9 16:58 ..
+dr-xr-xr-x   2 sat sat      40 Sep  9 17:22 .agents
+dr-xr-xr-x   2 sat sat      40 Sep  9 17:22 .codex
+drwxrwxr-x   7 sat sat    4096 Sep  9 16:14 .git
+drwxrwxr-x   7 sat sat    4096 Sep  9 16:29 .git-coalgen
+drwxrwxr-x   7 sat sat    4096 Sep  9 16:30 .git-replay
+-rw-rw-r--   1 sat sat     141 Sep  8 13:54 .gitignore
+drwxrwxr-x   3 sat sat    4096 Sep  8 14:25 .pytest_cache
+drwxrwxr-x 125 sat sat   12288 Sep  9 15:26 .scratch
+drwxrwxr-x   5 sat sat    4096 Sep  9 09:14 .tmp
+drwxrwxr-x   2 sat sat    4096 Sep  9 02:24 .tmp-prompts
+drwxrwxr-x   4 sat sat    4096 Sep  8 14:25 .venv
+-rw-rw-r--   1 sat sat    6878 Sep  9 15:23 COALITION-CORPUS-2026-09-09.md
+-rw-rw-r--   1 sat sat      97 Sep  9 15:24 COALITION-CORPUS-2026-09-09.md.sha256
+-rw-rw-r--   1 sat sat    5878 Sep  9 11:42 EPOCH-TREND-2026-09-09.md
+-rw-rw-r--   1 sat sat    5099 Sep  8 13:54 GIT-EXCLUDED-LARGE-FILES-2026-09-07.tsv
+-rw-rw-r--   1 sat sat    7257 Sep  9 16:28 PAIR-REPLAY-2026-09-10.md
+-rw-rw-r--   1 sat sat    7179 Sep  8 13:54 README.md
+-rw-rw-r--   1 sat sat   16952 Sep  9 09:14 V025-PILOT-MIN-REPORT-2026-09-09.md
+-rw-rw-r--   1 sat sat     102 Sep  9 09:04 V025-PILOT-MIN-REPORT-2026-09-09.md.sha256
+-r--r--r--   1 sat sat    2318 Sep  9 02:24 V025-PILOT-TRACK-DECLARATION-2026-09-09.md
+-rw-rw-r--   1 sat sat    5090 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md
+-rw-rw-r--   1 sat sat   13496 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+-rw-rw-r--   1 sat sat    2387 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+-rw-rw-r--   1 sat sat    3623 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+drwxrwxr-x   3 sat sat    4096 Sep  8 13:54 archive
+drwxrwxr-x  94 sat sat   16384 Sep  9 15:23 artifacts
+-rw-rw-r--   1 sat sat   27701 Sep  8 13:54 astra-adjudication-audit-bundle.zip
+-rw-rw-r--   1 sat sat 2724687 Sep  8 13:54 chapter4-0826.pptx
+-rw-rw-r--   1 sat sat 4421142 Sep  8 13:54 chapter5-0826.pptx
+-rw-rw-r--   1 sat sat   31483 Sep  8 13:54 deep-research-report.md
+drwxrwxr-x   3 sat sat   12288 Sep  8 13:54 docs
+-rw-rw-r--   1 sat sat   42603 Sep  8 13:54 gpt-dr.md
+-rw-rw-r--   1 sat sat   17603 Sep  8 13:54 gpt.md
+-rw-rw-r--   1 sat sat  396582 Sep  8 13:54 gpt.pdf
+-rw-rw-r--   1 sat sat     612 Sep  8 13:54 pyproject.toml
+-rw-rw-r--   1 sat sat      83 Sep  8 13:54 replay-world-2026121706.log
+drwxrwxr-x   3 sat sat    4096 Sep  9 16:20 scripts
+drwxrwxr-x   3 sat sat    4096 Sep  8 13:54 src
+drwxrwxr-x   5 sat sat   20480 Sep  9 11:16 tests
+total 340
+drwxrwxr-x  3 sat sat  4096 Sep  9 16:20 .
+drwxrwxr-x 18 sat sat  4096 Sep  9 16:28 ..
+-rw-rw-r--  1 sat sat  5717 Sep  8 13:54 README.md
+drwxrwxr-x  2 sat sat  4096 Sep  9 16:30 __pycache__
+-rw-rw-r--  1 sat sat 47013 Sep  8 13:54 analyze_corrected_postrun.py
+-rw-rw-r--  1 sat sat  5457 Sep  8 13:54 ceiling_and_segments.py
+-rw-rw-r--  1 sat sat  5235 Sep  8 13:54 dt_sweep2.py
+-rw-rw-r--  1 sat sat  3048 Sep  8 13:54 feasibility_is_fading_free.py
+-rw-rw-r--  1 sat sat  2464 Sep  8 13:54 freeze_prereg.py
+-rw-rw-r--  1 sat sat 40032 Sep  9 15:22 generate_mechanism_coalition_corpus.py
+-rw-rw-r--  1 sat sat  2816 Sep  8 13:54 outage_frozen.py
+-rw-rw-r--  1 sat sat  1217 Sep  8 13:54 qe_premise.py
+-rw-rw-r--  1 sat sat  1613 Sep  8 13:54 qe_rekey.py
+-rw-rw-r--  1 sat sat 17784 Sep  9 16:25 replay_pair_selection.py
+-rw-rw-r--  1 sat sat  2463 Sep  8 13:54 run_corrected_probes.py
+-rw-rw-r--  1 sat sat 10964 Sep  8 13:54 run_head_pivotality_probe.py
+-rw-rw-r--  1 sat sat  2691 Sep  8 13:54 run_probe_p3.py
+-rw-rw-r--  1 sat sat  5808 Sep  8 13:54 run_probes.py
+-rw-rw-r--  1 sat sat  3947 Sep  8 13:54 run_server_training.py
+-rw-rw-r--  1 sat sat 99172 Sep  9 08:53 run_v025_pilot_c3.py
+-rw-rw-r--  1 sat sat  4192 Sep  8 13:54 segment_budget.py
+-rw-rw-r--  1 sat sat  2993 Sep  8 13:54 sensitivity_arm.py
+-rw-rw-r--  1 sat sat  4779 Sep  8 13:54 signed_drop_dt30.py
+-rw-rw-r--  1 sat sat  1978 Sep  8 13:54 two_timescale_check.py
+-rw-rw-r--  1 sat sat  6142 Sep  8 13:54 w02_ephemeris_survey.py
+-rw-rw-r--  1 sat sat  3857 Sep  8 13:54 w02_split_shift_check.py
+-rw-rw-r--  1 sat sat  5229 Sep  8 13:54 w04_d2_survey.py
+#!/usr/bin/env python3
+"""No-production-training C1/C2 collision and explainability diagnostic."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass, replace
+from fractions import Fraction
+import json
+from pathlib import Path
+import struct
+import sys
+from typing import Iterable
+
+import numpy as np
+
+from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+from mcrl.physics_v025.tapes import (
+    DEVELOPMENT_WORLD_DOMAINS,
+    REFERENCE_CARRIERS,
+    build_world_tape,
+)
+from mcrl.physics_v025.targets import (
+    NetworkOutcome,
+    OffsetProjection,
+    c1_difference_surplus,
+    c2_persistence_forecast,
+)
+from mcrl.stagec_v025.canonical import canonical_sha256
+from mcrl.stagec_v025.shards import read_source_shard
+from mcrl.stagec_v025.state import (
+    ActionEvaluation,
+    ForecastObservation,
+    PhysicalAction,
+    extract_source_rows,
+    seal_action_evaluation,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import run_v025_pilot_c3 as pilot  # noqa: E402
+
+ETA = Fraction(2)
+KAPPA = Fraction(10)
+ZERO_DIGEST = "0" * 64
+EXISTING_ROWS = (
+    ROOT
+    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1"
+)
+CALIBRATION_PATH = (
+    ROOT
+    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
+    / "PILOT_NOT_CLAIM-calibration.json"
+)
+
+
+def _network(bits: int, joules: int, *, phi: str = "0") -> NetworkOutcome:
+    return NetworkOutcome.build(
+        bits=bits,
+        joules=joules,
+        phi=phi,
+        decoding_availability=1,
+        useful_availability=1,
+        per_user_bits={0: bits // 2, 1: bits - bits // 2},
+    )
+
+
+def _projection(
+    index: int,
+    outcome: NetworkOutcome,
+    *,
+    required_power_w: float,
+) -> OffsetProjection:
+    return OffsetProjection(
+        offset_index=index,
+        valid=True,
+        survives=True,
+        outcome=outcome,
+        background_power_recomputed=True,
+        required_power_w=required_power_w,
+        power_cap_w=1.65,
+        min_decoding_margin_db=4.0 - index,
+        mean_acm_se_bit_s_hz=2.0,
+    )
+
+
+def _encoded_row(*, c1_bits: Fraction, c1_phi: Fraction, c2_bits: Fraction):
+    forecasts = tuple(
+        ForecastObservation(True, True, 4.0 - index, 2.0)
+        for index in (1, 2, 3)
+    )
+    common = ActionEvaluation(
+        action=PhysicalAction(1001, 7),
+        nominal_sinr_margin_at_rate_target_db=4.0,
+        nominal_required_power_over_cap=0.5,
+        nominal_mode_spectral_efficiency=2.0,
+        background_occupancy_excluding_focal=1,
+        beam_active_before_focal=True,
+        satellite_active_before_focal=True,
+        off_axis_angle_rad=0.25,
+        remaining_d2_time_s=60.0,
+        remaining_visibility_time_s=90.0,
+        refresh_phase=2,
+        previous_served_association_for_action=False,
+        previous_served_load_for_action=1,
+        previous_beam_active_for_action=True,
+        previous_satellite_active_for_action=True,
+        previous_beam_max_rf_over_cap=0.4,
+        missing_incumbent=False,
+        candidate_current_nominal_decoding_margin_db=4.0,
+        incumbent_nominal_decoding_margin_db=3.0,
+        forecast_se_trend_bit_s_hz_per_s=0.0,
+        required_power_cap_margin_w=0.825,
+        forecasts=forecasts,
+        c1_label_bits=float(c1_bits),
+        c1_phi_difference=float(c1_phi),
+        c2_label_bits=float(c2_bits),
+    )
+    candidate = seal_action_evaluation(
+        common,
+        source_provenance_sha256=canonical_sha256(
+            {"source": "c1c2-sufficiency-collision", "labels": [str(c1_bits), str(c2_bits)]}
+        ),
+        forecast_method_sha256=canonical_sha256({"method": "three-offset-exact"}),
+    )
+    null = seal_action_evaluation(
+        replace(
+            common,
+            action=PhysicalAction(None, None),
+            background_occupancy_excluding_focal=0,
+            beam_active_before_focal=False,
+            satellite_active_before_focal=False,
+            previous_served_load_for_action=0,
+            previous_beam_active_for_action=False,
+            previous_satellite_active_for_action=False,
+            c1_label_bits=0.0,
+            c1_phi_difference=0.0,
+            c2_label_bits=0.0,
+        ),
+        source_provenance_sha256=canonical_sha256({"source": "collision-null"}),
+        forecast_method_sha256=canonical_sha256({"method": "three-offset-exact"}),
+    )
+    envelope = pilot.AnchorEnvelope(
+        world_id="C1C2_COLLISION/world",
+        split="TRAIN",
+        world_seed=1,
+        anchor_id="collision-anchor",
+        anchor_index=0,
+        decision_time_utc="2026-01-01T00:00:00+00:00",
+        decision_time_ns=0,
+        user_id=0,
+        setting_id="a-r0",
+        code_digest=ZERO_DIGEST,
+        physics_digest=ZERO_DIGEST,
+        launch_digest=ZERO_DIGEST,
+        catalogue_digest=ZERO_DIGEST,
+        setting_digest=ZERO_DIGEST,
+        calibration_digest=ZERO_DIGEST,
+        provider_digest=ZERO_DIGEST,
+        archive_digest=ZERO_DIGEST,
+        allocation_manifest_digest=ZERO_DIGEST,
+        lambda_bits_per_j=float(ETA),
+        eta_ref_bits_per_j=float(ETA),
+        kappa_normalization_bits=float(KAPPA),
+        base_action_index=0,
+        actions=(null, candidate),
+    )
+    return extract_source_rows(envelope)[1]
+
+
+def _packed_hex(values: Iterable[float]) -> str:
+    numbers = tuple(values)
+    return struct.pack(f">{len(numbers)}d", *numbers).hex()
+
+
+def collision_witnesses() -> dict[str, object]:
+    default = _network(200, 20)
+    c1_a = c1_difference_surplus(
+        _network(220, 22, phi="-0.5"),
+        default,
+        lambda_bits_per_j=ETA,
+        eta_ref=ETA,
+        kappa_bits_per_user_step=KAPPA,
+    )
+    c1_b = c1_difference_surplus(
+        _network(180, 24, phi="-0.5"),
+        default,
+        lambda_bits_per_j=ETA,
+        eta_ref=ETA,
+        kappa_bits_per_user_step=KAPPA,
+    )
+    c1_row_a = _encoded_row(
+        c1_bits=c1_a.difference_surplus_bits,
+        c1_phi=c1_a.phi_difference,
+        c2_bits=Fraction(),
+    )
+    c1_row_b = _encoded_row(
+        c1_bits=c1_b.difference_surplus_bits,
+        c1_phi=c1_b.phi_difference,
+        c2_bits=Fraction(),
+    )
+
+    default_future = tuple(_projection(i, default, required_power_w=0.8) for i in (1, 2, 3))
+    candidate_a = tuple(
+        _projection(i, _network(210, 21), required_power_w=0.9)
+        for i in (1, 2, 3)
+    )
+    candidate_b = (
+        _projection(1, _network(180, 25), required_power_w=1.4),
+        _projection(2, _network(190, 24), required_power_w=1.3),
+        _projection(3, _network(195, 23), required_power_w=1.2),
+    )
+    c2_a = c2_persistence_forecast(
+        candidate_a,
+        default_future,
+        lambda_bits_per_j=ETA,
+        eta_ref=ETA,
+        kappa_bits_per_user_step=KAPPA,
+    )
+    c2_b = c2_persistence_forecast(
+        candidate_b,
+        default_future,
+        lambda_bits_per_j=ETA,
+        eta_ref=ETA,
+        kappa_bits_per_user_step=KAPPA,
+    )
+    c2_row_a = _encoded_row(
+        c1_bits=Fraction(), c1_phi=Fraction(),
+        c2_bits=c2_a.forecast_surplus_bits - c2_a.persistence_penalty_bits,
+    )
+    c2_row_b = _encoded_row(
+        c1_bits=Fraction(), c1_phi=Fraction(),
+        c2_bits=c2_b.forecast_surplus_bits - c2_b.persistence_penalty_bits,
+    )
+
+    assert c1_row_a.q1_state == c1_row_b.q1_state
+    assert c1_row_a.q2_state == c1_row_b.q2_state
+    assert c2_row_a.q1_state == c2_row_b.q1_state
+    assert c2_row_a.q2_state == c2_row_b.q2_state
+    assert c1_a.normalized_total != c1_b.normalized_total
+    assert c2_a.normalized_total != c2_b.normalized_total
+
+    q1_bytes = _packed_hex(c1_row_a.q1_state)
+    q2_bytes = _packed_hex(c1_row_a.q2_state)
+    return {
+        "head_auxiliary_inputs": [],
+        "q1_float_hex": [value.hex() for value in c1_row_a.q1_state],
+        "q1_big_endian_float64_bytes_hex": q1_bytes,
+        "q1_bytes_sha256": canonical_sha256({"bytes_hex": q1_bytes}),
+        "q2_float_hex": [value.hex() for value in c1_row_a.q2_state],
+        "q2_big_endian_float64_bytes_hex": q2_bytes,
+        "q2_bytes_sha256": canonical_sha256({"bytes_hex": q2_bytes}),
+        "c1": {
+            "state_a": {
+                "background_associations": {"1": [1001, 7], "2": [2002, 4]},
+                "background_cross_gains_linear": {"1_to_focal": 1e-13, "2_to_focal": 2e-14},
+                "coupled_power_w": {"focal": 0.8, "1": 0.4, "2": 0.3},
+                "candidate_outcome": {"bits": 220, "joules": 22, "phi": -0.5},
+# C1/C2 feature sufficiency diagnostic — 2026-09-09
+
+`DIAGNOSTIC_NOT_CLAIM`
+
+## Verdict first
+
+- **C1 collision found:** yes, at the production target/encoder contract. Two admissible network states have byte-identical 16-scalar Q1 and 22-scalar Q2 rows, while exact `c1_difference_surplus` is `11/10` versus `-33/10`. The gap is `22/5 = 4.4`, so any deterministic scalar predictor on this encoded row incurs squared loss at least `(4.4/2)^2 = 121/25 = 4.84` on one member of the pair. This is a constructed contract-level witness; the separate exhaustive scan of the existing row corpus did not find a naturally occurring C1 collision.
+- **C2 collision found:** yes, including a real legacy-provider/evaluator witness. Two production rows for the same user/action at the same physical step have byte-identical Q1 and Q2 inputs, but exact `c2_persistence_forecast` is approximately `5.4095145003632172` versus `19.346696956352321`. The exact gap is approximately `13.937182455989104`, giving a squared-loss lower bound of approximately `48.561263702882613`.
+- **Regression witness:** with `PILOT_PRIMITIVE_SOURCE_FALLBACK = True`, the new exact-singleton acceptance test fails; after changing only that flag to `False`, all four C1/C2 checks pass; after restoring it to `True`, the same C1 assertion fails again. The flag is restored to `True` in the final tree, so the test intentionally remains red on the defective path.
+
+No production learner was trained. The only fitted estimator was the Task 3 diagnostic k-nearest-neighbor regressor.
+
+## What the heads actually receive
+
+`src/mcrl/stagec_v025/state.py` defines 16 Q1 features and 22 Q2 features. `src/mcrl/stagec_v025/learner.py:271` implements `LinearHead.score(self, state)` using only that one numeric sequence. No action identity, association map, geometry, cross-gain matrix, coupled-power result, network outcome, projected outcome, provenance digest, action mask, or other auxiliary branch enters the scalar head. The pairwise trainer evaluates the same scalar head separately on the reference and candidate rows.
+
+Accordingly, `head_auxiliary_inputs = []` for both witnesses below. The test `tests/stagec_v025/test_c1c2_feature_sufficiency.py` checks the dimensions, absence of an auxiliary input, byte equality, and unequal exact targets.
+
+## Task 1 — C1 collision
+
+### Two states
+
+Both states use the same focal action `(norad_id=1001, beam_chain_id=7)` and the same production `ActionEvaluation` values: current margin `4 dB`, required power/cap `0.5`, mode SE `2 bit/s/Hz`, one background occupant, active beam and satellite, off-axis angle `0.25 rad`, remaining D2/visibility `60/90 s`, phase 2, previous load one, current power-cap margin `0.825 W`, and three valid/surviving forecast summaries with margins `3, 2, 1 dB` and SE `2 bit/s/Hz`.
+
+Only structure discarded by the encoder changes:
+
+| Quantity | State A | State B |
+|---|---:|---:|
+| Background associations | user 1→`(1001,7)`, user 2→`(2002,4)` | user 17→`(1001,7)`, user 23→`(2003,2)` |
+| Example focal cross gains | `1e-13`, `2e-14` | `8e-11`, `3e-11` |
+| Background coupled powers | `0.4 W`, `0.3 W` | `1.4 W`, `1.2 W` |
+| Candidate whole-network outcome | 220 bits, 22 J, Phi `-1/2` | 180 bits, 24 J, Phi `-1/2` |
+| Shared default outcome | 200 bits, 20 J, Phi `0` | 200 bits, 20 J, Phi `0` |
+
+These values are accepted by the production `NetworkOutcome.build`, `OffsetProjection`, `seal_action_evaluation`, and `extract_source_rows` invariants: bits, joules, powers and capacities are nonnegative; availability is in range; projected powers are below the `1.65 W` cap; offsets are ordered; and forecasts are finite and recompute background power. Different background topology and coupled powers can change whole-network bits and joules while preserving the focal aggregate summaries retained by Q1/Q2. This is a target/encoder-contract admissibility proof, not a claim that these two rows were observed in the legacy tape.
+
+With `eta_ref = lambda = 2` and `kappa = 10`, production `c1_difference_surplus` gives:
+
+```text
+C1_A = ((220-200) - 2*(22-20))/10 + (-1/2-0) = 11/10
+C1_B = ((180-200) - 2*(24-20))/10 + (-1/2-0) = -33/10
+absolute difference = 22/5
+squared-loss lower bound = (difference/2)^2 = 121/25
+```
+
+### Identical encoded input, byte for byte
+
+Q1 scalar values, in Python hexadecimal float form, for **both** states:
+
+```text
+[0x1.999999999999ap-3, 0x1.0000000000000p-1,
+ 0x1.0000000000000p-1, 0x1.999999999999ap-4,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.0000000000000p-2, 0x1.0000000000000p-1,
+ 0x1.8000000000000p-1, 0x1.5555555555555p-1,
+ 0x0.0p+0,                0x1.999999999999ap-4,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.999999999999ap-2, 0x0.0p+0]
+```
+
+Q1 as 16 big-endian binary64 values (128 bytes), for both states:
+
+```text
+3fc999999999999a3fe00000000000003fe00000000000003fb999999999999a3ff00000000000003ff00000000000003fd00000000000003fe00000000000003fe80000000000003fe555555555555500000000000000003fb999999999999a3ff00000000000003ff00000000000003fd999999999999a0000000000000000
+```
+
+Q2 scalar values, for **both** states:
+
+```text
+[0x1.999999999999ap-3, 0x0.0p+0,
+ 0x1.0000000000000p-1, 0x1.8000000000000p-1,
+ 0x1.5555555555555p-1, 0x1.999999999999ap-4,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.0000000000000p-1, 0x0.0p+0,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.3333333333333p-3, 0x1.0000000000000p-1,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.999999999999ap-4, 0x1.0000000000000p-1,
+ 0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ 0x1.999999999999ap-5, 0x1.0000000000000p-1]
+```
+
+Q2 as 22 big-endian binary64 values (176 bytes), for both states:
+
+```text
+3fc999999999999a00000000000000003fe00000000000003fe80000000000003fe55555555555553fb999999999999a3ff00000000000003ff00000000000003fe000000000000000000000000000003ff00000000000003ff00000000000003fc33333333333333fe00000000000003ff00000000000003ff00000000000003fb999999999999a3fe00000000000003ff00000000000003ff00000000000003fa999999999999a3fe0000000000000
+```
+
+### Existing-row negative search for C1
+
+I also scanned all 176,223 source rows in the existing two-world corpus, grouping on the exact concatenated Q1+Q2 tuple. There were 5,230 duplicate groups overall and 4,701 among nonreference rows. Every duplicate was another carrier view of the same physical step; there were no cross-step or cross-world duplicate groups. Exact relabeling of the first carrier pair found no C1 difference. Thus the corpus search alone did **not** find an empirical C1 collision; it neither proves nor suggests sufficiency beyond that finite corpus. The constructed admissible contract witness above is the C1 insufficiency proof.
+
+## Task 1 — C2 collision
+
+### Real evaluator states
+
+This witness comes from the existing real legacy-provider tape `V025_PROBE/world/1`, step 0, user 6, action `(65028,44)`. State A is source anchor 0 with carrier rule `nearest-eligible`; state B is source anchor 1 with carrier rule `stay-if-possible`. The production evaluator and `_batched_stage2_forecasts` recomputed both singleton configurations and their three offsets. Among these two anchors there are 62 exact C2 collision groups.
+
+For the selected group, the candidate/default normalized physical terms at offset 1 are the same in both states:
+
+```text
+candidate: bits/kappa=125.63281341025531, eta*joules/kappa=96.27152690774090
+default:   bits/kappa=119.31271970410177, eta*joules/kappa=98.36094770195058
+valid=1 in both
+```
+
+The exact projection says `survives=0` at offset 1 in state A, making later offsets absorbing losses, but `survives=1` at all three offsets in state B. The stored 22-scalar Q2 vectors say valid/surviving at all three offsets in **both** rows, so the head cannot see this difference. Exact production targets are:
+
+```text
+C2_A = 60102789335062397912351470235270 /
+       11110569965387252983357173269901
+     = 5.4095145003632172...
+
+C2_B = 2149528301326970807719944431070731 /
+       111105699653872529833571732699010
+     = 19.346696956352321...
+
+absolute difference =
+  516166802658782276198809909572677 /
+  37035233217957509944523910899670
+  = 13.937182455989104...
+
+squared-loss lower bound = 48.561263702882613...
+```
+
+### Identical real encoded input, byte for byte
+
+Q1 float values for both real states:
+
+```text
+[-0x1.8930fea2e94e6p-3, 0x1.2e7506d9e3e5dp-6,
+  0x1.e8207e761dbfdp-2, 0x0.0p+0,
+  0x0.0p+0,                0x1.0000000000000p+0,
+  0x0.0p+0,                0x1.5acb6f46508e0p+0,
+  0x1.f92c5f92c5f93p+0, 0x0.0p+0,
+  0x0.0p+0,                0x0.0p+0,
+  0x0.0p+0,                0x1.0000000000000p+0,
+  0x1.2e7506d9e3e5dp-6, 0x0.0p+0]
+```
+
+Q1 big-endian binary64 bytes for both real states:
+
+```text
+bfc8930fea2e94e63f92e7506d9e3e5d3fde8207e761dbfd000000000000000000000000000000003ff000000000000000000000000000003ff5acb6f46508e03fff92c5f92c5f9300000000000000000000000000000000000000000000000000000000000000003ff00000000000003f92e7506d9e3e5d0000000000000000
+```
+
+Q2 float values for both real states:
+
+```text
+[-0x1.8930fea2e94e6p-3, 0x1.e6d426f9e31dfp+0,
+  0x1.5acb6f46508e0p+0, 0x1.f92c5f92c5f93p+0,
+  0x0.0p+0,                0x0.0p+0,
+  0x0.0p+0,                0x1.0000000000000p+0,
+  0x1.f68c57c930e0dp-1, 0x0.0p+0,
+  0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ -0x1.88049eca8d9cdp-3, 0x1.e8207e761dbfdp+0,
+  0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ -0x1.ff9e74e3596bdp-2, 0x1.e8207e761dbfdp+0,
+  0x1.0000000000000p+0, 0x1.0000000000000p+0,
+ -0x1.720fc11a780aep-1, 0x1.e8207e761dbfdp+0]
+```
+
+Q2 big-endian binary64 bytes for both real states:
+
+```text
+bfc8930fea2e94e63ffe6d426f9e31df3ff5acb6f46508e03fff92c5f92c5f930000000000000000000000000000000000000000000000003ff00000000000003fef68c57c930e0d00000000000000003ff00000000000003ff0000000000000bfc88049eca8d9cd3ffe8207e761dbfd3ff00000000000003ff0000000000000bfdff9e74e3596bd3ffe8207e761dbfd3ff00000000000003ff0000000000000bfe720fc11a780ae3ffe8207e761dbfd
+```
+
+This is a real, simulator-generated physical collision, not merely a finite-precision near-match.
+
+## Task 2 — missing exact-label acceptance test
+
+Added `tests/stagec_v025/test_c1c2_exact_label_acceptance.py`. It uses two real legacy-provider anchors. To keep runtime bounded, each anchor retains one user and three genuine legal singleton configurations: its reference, one nonreference action, and null. It calls production `_build_anchor_rows`, independently evaluates those configurations with `StepEvaluator`, independently generates future projections with `_batched_stage2_forecasts`, and then calls the public production target definitions `c1_difference_surplus` and `c2_persistence_forecast` as the oracle.
+
+The asserted absolute tolerance is `1e-9` in normalized target units with zero relative tolerance. Production targets are exact `Fraction` arithmetic until the row boundary; the comparison crosses two binary64 conversions. `1e-9` is therefore deliberately looser than expected roundoff but more than seven orders tighter than the smallest observed proxy mismatch (`0.03547`). No physics or acceptance constant was changed.
+
+### Required True → False → True witness
+
+1. With `PILOT_PRIMITIVE_SOURCE_FALLBACK = True`:
+
+   ```text
+   FAILED test_production_c1_labels_equal_exact_evaluator_singletons[0]
+   AssertionError: production C1 label disagrees with exact evaluator singleton:
+   anchor=0 user=0 action=(65028, 55)
+   actual=0.16304247271668615 exact=0.12756951502457881 abs_tol=1e-09
+   ```
+
+   The C2-specific run also fires:
+
+   ```text
+   FAILED test_production_c2_labels_equal_exact_evaluator_singletons[0]
+   AssertionError: production C2 label disagrees with exact evaluator singleton:
+   anchor=0 user=0 action=(65028, 43)
+   actual=0.15938602060975687 exact=-3 abs_tol=1e-09
+   ```
+
+2. After changing only the flag to `False`:
+
+   ```text
+   .... [100%]
+   4 passed
+   ```
+
+3. After restoring the flag to `True`, the first C1 assertion above fails again with the same actual and exact values.
+
+The exact command was:
+
+```text
+nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python \
+  -m pytest -q tests/stagec_v025/test_c1c2_exact_label_acceptance.py -x
+```
+
+## Task 3 — held-out explainability
+
+The diagnostic `scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30` read existing rows from `artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1`, then replaced their proxy labels with exact evaluator C1/C2 targets. It retained 26,345 valid nonreference rows from 30 source anchors (10 physical steps × 3 carrier views).
+
+The deterministic seed was `20260909`. Splitting was by whole physical step—not source shard—so byte-identical carrier views could not leak across partitions:
+
+- train steps: 1, 2, 4, 6, 7, 8, 9;
+- validation step: 5;
+- held-out test steps: 0, 3;
+- held-out rows: 5,280.
+
+The Q-only model was standardized inverse-distance k-nearest-neighbor regression with `k` selected from `{1,3,7,15,31}` on the validation step. The comparator was a fitted ordinary least-squares readout given the discarded exact target-sufficient terms: whole-network candidate/default bits, energy and Phi for C1; and per-offset candidate/default bits, energy, validity and survival with the production absorbing rule expanded for C2.
+
+| Route | Q-only held-out EV | Q-only RMSE | Discarded-structure EV | Structure RMSE | EV gap |
+|---|---:|---:|---:|---:|---:|
+| C1 | `-0.3355476799` | `3.4683937281` | `1.0` | `2.66e-13` | `1.3355476799` |
+| C2 | `0.2106516781` | `3.3856461561` | `1.0` | `1.02e-14` | `0.7893483219` |
+
+Selected `k=31` for both routes. C1 held-out target variance was `8.3419683433`; C2 was `14.3690049981`. The fitted structure coefficients recover the production definitions to rounding: C1 coefficients are intercept approximately zero followed by `[+1,-1,+1,-1,+1,-1]`; C2 coefficients are intercept approximately zero followed by `[+1,+1,+1,-1]` for the three live offset surpluses and lost-offset count.
+
+The large empirical gaps say that, on these anchors, the discarded target structure is binding for this flexible Q-only estimator. Negative C1 explained variance means its residual variance exceeds the variance of the held-out targets. These finite-sample scores are not a mathematical upper bound on every possible architecture; the collision pairs, not the regression, provide the formal impossibility and squared-loss bounds.
+
+## Reproduction and files
+
+```text
+PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python \
+  -m pytest -q tests/stagec_v025/test_c1c2_feature_sufficiency.py
+
+nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python \
+  scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30
+```
+
+Changed or added for this diagnostic:
+
+- `C1C2-SUFFICIENCY-2026-09-09.md` (this report)
+- `scripts/diagnose_v025_c1c2_sufficiency.py`
+- `tests/stagec_v025/test_c1c2_feature_sufficiency.py`
+- `tests/stagec_v025/test_c1c2_exact_label_acceptance.py`
+
+No threshold, sign, seed, horizon, price, service guard, or acceptance rule was changed. The fallback flag is restored to its original `True` value solely to complete the requested red/green/red witness.
+
+exec
+/bin/bash -lc "sed -n '261,760p' /home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py && find artifacts -maxdepth 3 -type f | sed -n '1,160p' && find /home/sat/mcrl-v025-c1c2suff-ws/artifacts -maxdepth 3 -type f | sed -n '1,160p'" in /home/sat/mcrl-v025-replay-ws
+ succeeded in 0ms:
+            },
+            "state_b": {
+                "background_associations": {"17": [1001, 7], "23": [2003, 2]},
+                "background_cross_gains_linear": {"17_to_focal": 8e-11, "23_to_focal": 3e-11},
+                "coupled_power_w": {"focal": 1.5, "17": 1.4, "23": 1.2},
+                "candidate_outcome": {"bits": 180, "joules": 24, "phi": -0.5},
+            },
+            "shared_default_outcome": {"bits": 200, "joules": 20, "phi": 0},
+            "target_a": str(c1_a.normalized_total),
+            "target_b": str(c1_b.normalized_total),
+            "difference": str(abs(c1_a.normalized_total - c1_b.normalized_total)),
+            "squared_loss_lower_bound": str(
+                (abs(c1_a.normalized_total - c1_b.normalized_total) / 2) ** 2
+            ),
+        },
+        "c2": {
+            "state_a_projected_outcomes": [
+                {"offset": i, "bits": 210, "joules": 21, "required_power_w": 0.9}
+                for i in (1, 2, 3)
+            ],
+            "state_b_projected_outcomes": [
+                {"offset": 1, "bits": 180, "joules": 25, "required_power_w": 1.4},
+                {"offset": 2, "bits": 190, "joules": 24, "required_power_w": 1.3},
+                {"offset": 3, "bits": 195, "joules": 23, "required_power_w": 1.2},
+            ],
+            "shared_default_projected_outcomes": [
+                {"offset": i, "bits": 200, "joules": 20, "required_power_w": 0.8}
+                for i in (1, 2, 3)
+            ],
+            "target_a": str(c2_a.normalized_total),
+            "target_b": str(c2_b.normalized_total),
+            "difference": str(abs(c2_a.normalized_total - c2_b.normalized_total)),
+            "squared_loss_lower_bound": str(
+                (abs(c2_a.normalized_total - c2_b.normalized_total) / 2) ** 2
+            ),
+        },
+    }
+
+
+def _fraction(pair: list[int]) -> Fraction:
+    return Fraction(pair[0], pair[1])
+
+
+def _calibration() -> pilot.PilotCalibration:
+    payload = json.loads(CALIBRATION_PATH.read_text())
+    return pilot.PilotCalibration(
+        eta_ref=_fraction(payload["eta_ref"]),
+        lambda_bits_per_j=_fraction(payload["lambda_bits_per_j"]),
+        kappa_bits_per_user_step=_fraction(payload["kappa_bits_per_user_step"]),
+        bits_ref=_fraction(payload["bits_ref"]),
+        joules_ref=_fraction(payload["joules_ref"]),
+        users=int(payload["users"]),
+    )
+
+
+@dataclass(frozen=True)
+class ExactRow:
+    anchor: int
+    user_id: int
+    action: tuple[int, int] | None
+    q1: tuple[float, ...]
+    q2: tuple[float, ...]
+    c1_structure: tuple[float, ...]
+    c2_structure: tuple[float, ...]
+    c1_admissible: tuple[float, ...]
+    c2_admissible: tuple[float, ...]
+    c1_target: float
+    c2_target: float
+    c1_target_exact: str
+    c2_target_exact: str
+
+
+def _f(value: Fraction) -> float:
+    return float(value)
+
+
+def _relabel_anchor(tape, calibration, anchor_index: int) -> list[ExactRow]:
+    step_index, carrier_index = divmod(anchor_index, len(REFERENCE_CARRIERS))
+    carrier = REFERENCE_CARRIERS[carrier_index]
+    setting = pilot.ENGINE._setting("a-r0")
+    run_setting = pilot.ENGINE.run_setting_for("a-r0")
+    shard = read_source_shard(
+        EXISTING_ROWS / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
+    )
+    base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
+    incumbent = pilot.ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+    configs = {base.configuration_id: base}
+    row_configs = []
+    for row in shard.rows:
+        mapping = base.mapping
+        mapping[row.user_id] = pilot._identity(row.action)
+        config = pilot.ENGINE._configuration(base, mapping, kind="sufficiency-replay")
+        configs[config.configuration_id] = config
+        row_configs.append((row, config))
+
+    counter = pilot.ENGINE.EvaluationCounter()
+    evaluator = pilot.ENGINE.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+        field="nominal",
+        counter=counter,
+        run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+    evaluator.evaluate_many(tuple(configs.values()))
+    valid = tuple(
+        config
+        for config in configs.values()
+        if config.configuration_id not in evaluator._invalid
+    )
+    forecasts, _ = pilot.ENGINE._batched_stage2_forecasts(
+        tape=tape,
+        setting=setting,
+        anchor_step=step_index,
+        carrier=carrier,
+        configs=valid,
+        counter=counter,
+        calibration=calibration,
+        run_setting=run_setting,
+    )
+    base_profile = evaluator.evaluate(base)
+    rekeys = pilot.ENGINE._rekeyed_users(tape, step_index)
+    base_outcome = base_profile.outcome(
+        phi=pilot.ENGINE._phi_for(incumbent, base, cell_rekeyed_users=rekeys)
+    )
+    kappa = calibration.kappa_bits_per_user_step
+    eta = calibration.eta_ref
+    result = []
+    for row, config in row_configs:
+        if row.reference_action or config.configuration_id in evaluator._invalid:
+            continue
+        profile = evaluator.evaluate(config)
+        outcome = profile.outcome(
+            phi=pilot.ENGINE._phi_for(incumbent, config, cell_rekeyed_users=rekeys)
+        )
+        c1 = c1_difference_surplus(
+            outcome,
+            base_outcome,
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=eta,
+            kappa_bits_per_user_step=kappa,
+        )
+        candidate_forecasts = forecasts[config.configuration_id]
+        c2 = c2_persistence_forecast(
+            candidate_forecasts,
+            forecasts[base.configuration_id],
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=eta,
+            kappa_bits_per_user_step=kappa,
+        )
+        c1_structure = (
+            _f(outcome.bits / kappa),
+            _f(eta * outcome.joules / kappa),
+            _f(outcome.phi),
+            _f(base_outcome.bits / kappa),
+            _f(eta * base_outcome.joules / kappa),
+            _f(base_outcome.phi),
+            float(profile.required_power_w_max / 1.65),
+            float(profile.score.decoding_time_s.get(row.user_id, 0.0)),
+        )
+        c2_values: list[float] = []
+        for candidate_projection, default_projection in zip(
+            candidate_forecasts, forecasts[base.configuration_id], strict=True
+        ):
+            for projection in (candidate_projection, default_projection):
+                c2_values.extend(
+                    (
+                        _f(projection.outcome.bits / kappa),
+                        _f(eta * projection.outcome.joules / kappa),
+                        _f(projection.outcome.decoding_availability),
+                        _f(projection.outcome.useful_availability),
+                        float(projection.valid),
+                        float(projection.survives),
+                        -1.0 if projection.required_power_w is None else projection.required_power_w / 1.65,
+                    )
+                )
+        result.append(
+            ExactRow(
+                anchor_index,
+                row.user_id,
+                pilot._identity(row.action),
+                row.q1_state,
+                row.q2_state,
+                c1_structure,
+                tuple(c2_values),
+                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
+                (),
+                float(c1.normalized_total),
+                float(c2.normalized_total),
+                str(c1.normalized_total),
+                str(c2.normalized_total),
+            )
+        )
+    return result
+
+
+def _standardize(train: np.ndarray, other: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    mean = train.mean(axis=0)
+    scale = train.std(axis=0)
+    scale[scale < 1e-12] = 1.0
+    return (train - mean) / scale, (other - mean) / scale
+
+
+def _knn_predict(
+    train_x: np.ndarray,
+    train_y: np.ndarray,
+    test_x: np.ndarray,
+    *,
+    neighbors: int,
+    chunk_size: int = 128,
+) -> np.ndarray:
+    predictions = []
+    k = min(neighbors, len(train_x))
+    train_norm = np.einsum("ij,ij->i", train_x, train_x)
+    for start in range(0, len(test_x), chunk_size):
+        chunk = test_x[start : start + chunk_size]
+        distances = (
+            np.einsum("ij,ij->i", chunk, chunk)[:, None]
+            + train_norm[None, :]
+            - 2.0 * chunk @ train_x.T
+        )
+        indices = np.argpartition(distances, kth=k - 1, axis=1)[:, :k]
+        selected_distances = np.take_along_axis(distances, indices, axis=1)
+        weights = 1.0 / np.maximum(selected_distances, 1e-12)
+        selected_y = train_y[indices]
+        predictions.append((weights * selected_y).sum(axis=1) / weights.sum(axis=1))
+    return np.concatenate(predictions)
+
+
+def _explained_variance(actual: np.ndarray, predicted: np.ndarray) -> float:
+    variance = float(np.var(actual))
+    return float("nan") if variance == 0.0 else 1.0 - float(np.var(actual - predicted)) / variance
+
+
+def _fit_route(
+    rows: list[ExactRow],
+    *,
+    route: str,
+    train_anchors: set[int],
+    validation_anchors: set[int],
+    test_anchors: set[int],
+) -> dict[str, object]:
+    q_name = {"C1": "q1", "C2": "q2"}[route]
+    target_name = f"{route.lower()}_target"
+    structure_name = f"{route.lower()}_structure"
+    candidates = (1, 3, 7, 15, 31)
+
+    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+
+    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
+        feature_name = f"{route.lower()}_admissible"
+        return np.asarray(
+            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
+            dtype=np.float64,
+        )
+
+    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+        if route == "C1":
+            # Exact C1 is linear in the six complete network terms.  Retain
+            # the two extra evaluator diagnostics in the stored row, but do
+            # not hand them to this sufficient comparator.
+            return np.asarray(
+                [getattr(row, structure_name)[:6] for row in selected],
+                dtype=np.float64,
+            )
+        values = []
+        for row in selected:
+            raw = getattr(row, structure_name)
+            alive = True
+            live_cores = []
+            lost = 0
+            for offset in range(3):
+                start = offset * 14
+                candidate = raw[start : start + 7]
+                default = raw[start + 7 : start + 14]
+                core = candidate[0] - candidate[1] - default[0] + default[1]
+                live_cores.append(core if alive else 0.0)
+                if alive and not (bool(candidate[4]) and bool(candidate[5])):
+                    alive = False
+                    lost += 1
+                elif not alive:
+                    lost += 1
+            values.append((*live_cores, float(lost)))
+        return np.asarray(values, dtype=np.float64)
+
+    def select(anchors: set[int]) -> list[ExactRow]:
+        return [row for row in rows if row.anchor in anchors]
+
+    fit_rows = select(train_anchors)
+    validation_rows = select(validation_anchors)
+    all_train_rows = select(train_anchors | validation_anchors)
+    test_rows = select(test_anchors)
+    fit_y = np.asarray([getattr(row, target_name) for row in fit_rows])
+    validation_y = np.asarray([getattr(row, target_name) for row in validation_rows])
+    all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+    test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+
+    def fit_knn(matrix, label: str) -> dict[str, object]:
+        fit_x = matrix(fit_rows)
+        validation_x = matrix(validation_rows)
+        fit_x, validation_x = _standardize(fit_x, validation_x)
+        scores = {}
+        for neighbors in candidates:
+            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+            scores[neighbors] = _explained_variance(validation_y, prediction)
+        selected_k = max(scores, key=lambda value: (scores[value], -value))
+        train_x = matrix(all_train_rows)
+        test_x = matrix(test_rows)
+        train_x, test_x = _standardize(train_x, test_x)
+        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+        residual = test_y - prediction
+        return {
+            "model": "standardized inverse-distance k-nearest-neighbor",
+            "features": label,
+            "selected_k": selected_k,
+            "validation_explained_variance_by_k": {
+                str(key): value for key, value in scores.items()
+            },
+            "held_out_explained_variance": _explained_variance(test_y, prediction),
+            "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+            "held_out_mae": float(np.mean(np.abs(residual))),
+        }
+
+    results = {
+        "q_only": fit_knn(q_matrix, f"{q_name} only"),
+        "admissible_repair": fit_knn(
+            repaired_matrix,
+            (
+                f"{q_name} + predecision_network_max_rf_over_cap"
+                if route == "C1"
+                else f"{q_name} only (no admissible C2 feature exists for the witness)"
+            ),
+        ),
+    }
+
+    # The comparator sees the complete outcome terms discarded by Q1/Q2.
+    # Their production target definitions are linear once C2's absorbing
+    # survival state is expanded, so ordinary least squares is sufficient and
+    # avoids attributing k-NN's high-dimensional distance failure to physics.
+    train_structure = structure_matrix(all_train_rows)
+    test_structure = structure_matrix(test_rows)
+    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
+    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
+    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
+    structure_prediction = test_design @ coefficients
+    structure_residual = test_y - structure_prediction
+    results["discarded_structure"] = {
+        "model": "ordinary least squares on exact target-sufficient network terms",
+        "held_out_explained_variance": _explained_variance(
+            test_y, structure_prediction
+        ),
+        "held_out_rmse": float(
+            np.sqrt(np.mean(structure_residual * structure_residual))
+        ),
+        "held_out_mae": float(np.mean(np.abs(structure_residual))),
+        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
+        "coefficients": [float(value) for value in coefficients],
+    }
+    results["held_out_rows"] = len(test_rows)
+    results["held_out_target_variance"] = float(np.var(test_y))
+    results["explained_variance_gap"] = (
+        results["discarded_structure"]["held_out_explained_variance"]
+        - results["q_only"]["held_out_explained_variance"]
+    )
+    return results
+
+
+def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
+    selected = [row for row in rows if row.anchor in {0, 1}]
+    affected_rows = 0
+    survival_offset_mismatches = 0
+    validity_offset_mismatches = 0
+    absorbing_mask_mismatches = 0
+    for row in selected:
+        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
+        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
+        exact_valid = tuple(
+            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
+        )
+        exact_survival = tuple(
+            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
+        )
+        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
+        affected_rows += int(row_mismatch)
+        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
+        survival_offset_mismatches += sum(
+            a != b for a, b in zip(stored_survival, exact_survival)
+        )
+        alive = True
+        exact_absorbing = []
+        for valid, survives in zip(exact_valid, exact_survival, strict=True):
+            exact_absorbing.append(alive and valid and survives)
+            alive = alive and valid and survives
+        absorbing_mask_mismatches += sum(
+            a != b for a, b in zip(stored_survival, exact_absorbing)
+        )
+    return {
+        "compared_rows": len(selected),
+        "affected_rows": affected_rows,
+        "validity_offset_mismatches": validity_offset_mismatches,
+        "survival_offset_mismatches": survival_offset_mismatches,
+        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
+    }
+
+
+def explainability(anchor_count: int) -> dict[str, object]:
+    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+        raise ValueError("anchor_count must be an even integer in [12, 90]")
+    anchor_indices = tuple(range(anchor_count))
+    max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+    tape = build_world_tape(
+        domain=DEVELOPMENT_WORLD_DOMAINS[0],
+        provider=LegacyWorldProvider(role="pilot-source"),
+        steps=max_step + 4,
+        start_time_s=0.0,
+    )
+    calibration = _calibration()
+    rows = []
+    for anchor_index in anchor_indices:
+        rows.extend(_relabel_anchor(tape, calibration, anchor_index))
+        print(
+            json.dumps(
+                {"phase": "exact-relabel", "anchor": anchor_index, "rows": len(rows)}
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+    # Both carrier views of one physical step can have byte-identical Q rows.
+    # Split by step, not by source shard, so those aliases cannot leak between
+    # fitting, model-selection, and held-out sets.
+    rng = np.random.default_rng(20260909)
+    step_count = anchor_count // len(REFERENCE_CARRIERS)
+    shuffled_steps = list(range(step_count))
+    rng.shuffle(shuffled_steps)
+    test_step_count = max(1, step_count // 4)
+    validation_step_count = max(1, step_count // 6)
+    test_steps = set(shuffled_steps[:test_step_count])
+    validation_steps = set(
+        shuffled_steps[test_step_count : test_step_count + validation_step_count]
+    )
+    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
+
+    def anchors_for(steps: set[int]) -> set[int]:
+        return {
+            step * len(REFERENCE_CARRIERS) + carrier
+            for step in steps
+            for carrier in range(len(REFERENCE_CARRIERS))
+        }
+
+    train = anchors_for(train_steps)
+    validation = anchors_for(validation_steps)
+    test = anchors_for(test_steps)
+    return {
+        "source": str(EXISTING_ROWS.relative_to(ROOT)),
+        "world": DEVELOPMENT_WORLD_DOMAINS[0],
+        "anchor_indices": list(anchor_indices),
+        "exact_relabelled_nonreference_valid_rows": len(rows),
+        "split_unit": "whole physical step (both carrier views grouped)",
+        "train_steps": sorted(train_steps),
+        "validation_steps": sorted(validation_steps),
+        "test_steps": sorted(test_steps),
+        "train_anchors": sorted(train),
+        "validation_anchors": sorted(validation),
+        "test_anchors": sorted(test),
+        "split_seed": 20260909,
+        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+        "c1": _fit_route(
+            rows,
+            route="C1",
+            train_anchors=train,
+            validation_anchors=validation,
+            test_anchors=test,
+        ),
+        "c2": _fit_route(
+            rows,
+            route="C2",
+            train_anchors=train,
+            validation_anchors=validation,
+            test_anchors=test,
+        ),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--anchors", type=int, default=12)
+    parser.add_argument("--collisions-only", action="store_true")
+    args = parser.parse_args()
+    payload = {"collisions": collision_witnesses()}
+    if not args.collisions_only:
+        payload["explainability"] = explainability(args.anchors)
+    print(json.dumps(payload, sort_keys=True, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-manifest.json.sha256
+artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-nested-scalar-observations.jsonl
+artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-family-index.jsonl.sha256
+artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-family-index.jsonl
+artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-manifest.json
+artifacts/v025-mechanism-coalition-corpus-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-nested-scalar-observations.jsonl.sha256
+artifacts/multi-catfish-c3s-variants-chatgpt-review-package-20260908-r4.zip
+artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/contracts/REJECTED-PREOUTCOME-LAYOUT-R1.md
+artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/contracts/prereg.sha256
+artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/contracts/REJECTED-PREOUTCOME-LAYOUT-R1-RECEIPT.md
+artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/contracts/MULTI-CATFISH-MCRL-V015-C3-REFERENCE-GATE-PREREG-2026-09-03.md
+artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/MANIFEST-R3.sha256
+artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/MANIFEST-R2.sha256
+artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/server-run-r3/learner-gate.log
+artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/server-run-r3/controller.complete
+artifacts/chinese-word-r1-symbols-20260905-r1/active-symbol-table-r1-20260905.md
+artifacts/chinese-word-r1-symbols-20260905-r1/CHANGE-REPORT-2026-09-05.md
+artifacts/chinese-word-r1-symbols-20260905-r1/CHECKSUMS.sha256
+artifacts/chinese-word-r1-symbols-20260905-r1/mcrl-thesis-ZH-r1-symbols-20260905.docx
+artifacts/chinese-word-r1-symbols-20260905-r1/renders/mcrl-thesis-ZH-r1-symbols-20260905.pdf
+artifacts/chinese-word-r1-symbols-20260905-r1/mcrl-thesis-ZH.docx
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092102/shard-seal.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092103/shard-seal.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092101.log
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092101.exit
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092102.exit
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092102.log
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092103.exit
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092103.log
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092101/shard-seal.json
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/WEB-AGENT-PROMPT.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/MANIFEST.sha256
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/FRESH-READER-QA.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/START-HERE.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/PACKAGE-MANIFEST.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/evidence/10ep-ablation-AUDIT-VOID.json
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_episode_runner.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w40_c2_gate_runner_integrity.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w36_ee_surplus_targets_v03.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_telemetry.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_real_checkpoint_joint_smoke.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w39_c2_keyed_gate.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_joint_transaction.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_runtime_adapter.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_segment_merge.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_core.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_v03_smoke_receipt.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_trainer_backend.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_torch_adapter.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_training_step.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_verify_c2_v03_merged_history.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_forecast_adapter.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_stage0_receipt_adapter.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w38_keyed_fading.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w37_ee_axis_pairwise_trainer.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_chronology.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_combined_carrier.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_option_runner.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_learning_adapter.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_verify_c2_v03_resume_parity.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_selection.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/ACTIVE-SYMBOL-TABLE-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-V0.3-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-GATE-RESULT-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-C3-V03-FORMULA-FIRST-CENSUS-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-REACTIVE-RELEASE-IMPLEMENTATION-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/CURRENT-MULTI-CATFISH-AUTHORITY.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-PRESENTATION-LAYER-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-GATE-CROSS-MODEL-REVIEW-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/DEVIATION-REGISTER.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-OPUS-MAX-SOURCE-CONTROL-REVIEW-2026-08-31.md
+artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/informed-opening-do.json
+artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/receipt.json
+artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/cluster-neutral-opening-do.json
+artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/run.log
+artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/evaluator-code-manifest.json
+artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/result.json
+artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/prepare-seal.json
+artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/result-seal.json
+artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/prepare.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/schedule.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092302.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092305.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092307.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092306.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092301.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092303.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092304.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/receipt.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/receipt-seal.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/prepare-receipt-seal.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-manifest.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/prepare-receipt.json
+artifacts/multi-catfish-v04-route-interaction-diagnostic-20260901-r1/result.json
+artifacts/multi-catfish-v04-route-interaction-diagnostic-20260901-r1/result-seal.json
+artifacts/PREREG-FROZEN-2026-08-25.json
+artifacts/multi-catfish-v04-c2-phase-b-merged-20260901-r1/phase-b-result.json
+artifacts/multi-catfish-v04-c2-phase-b-merged-20260901-r1/phase-b-seal.json
+artifacts/chinese-word-v023-lcsrs-20260905-r2/CHANGE-REPORT.md
+artifacts/chinese-word-v023-lcsrs-20260905-r2/MANIFEST.sha256
+artifacts/chinese-word-v023-lcsrs-20260905-r2/mcrl-thesis-ZH.pdf
+artifacts/chinese-word-v023-lcsrs-20260905-r2/SYMBOL-COLLISION-AND-SINGLE-LETTER-AUDIT.md
+artifacts/chinese-word-v023-lcsrs-20260905-r2/active-symbol-table-v023-20260905.md
+artifacts/chinese-word-v023-lcsrs-20260905-r2/mcrl-thesis-ZH-v023-method-draft-20260905.docx
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-10.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-14.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-11.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-04.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-27.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-22.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-12.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-09.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-01.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-07.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-15.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-24.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-16.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-13.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-21.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-29.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-28.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-34.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-19.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-23.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-25.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-03.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-26.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-08.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-20.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-17.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-02.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-18.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-30.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-31.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-33.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-32.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/contact-sheet-relevant.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-05.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-06.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/mcrl-thesis-ZH.docx
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-10.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-14.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-11.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-04.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-27.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-22.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-12.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-09.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-01.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-07.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-15.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-24.png
+artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-16.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-c3s-variants-chatgpt-review-package-20260908-r4.zip
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/contracts/REJECTED-PREOUTCOME-LAYOUT-R1.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/contracts/prereg.sha256
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/contracts/REJECTED-PREOUTCOME-LAYOUT-R1-RECEIPT.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/contracts/MULTI-CATFISH-MCRL-V015-C3-REFERENCE-GATE-PREREG-2026-09-03.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/MANIFEST-R3.sha256
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/MANIFEST-R2.sha256
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/server-run-r3/learner-gate.log
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/server-run-r3/controller.complete
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-r1-symbols-20260905-r1/active-symbol-table-r1-20260905.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-r1-symbols-20260905-r1/CHANGE-REPORT-2026-09-05.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-r1-symbols-20260905-r1/CHECKSUMS.sha256
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-r1-symbols-20260905-r1/mcrl-thesis-ZH-r1-symbols-20260905.docx
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-r1-symbols-20260905-r1/renders/mcrl-thesis-ZH-r1-symbols-20260905.pdf
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-r1-symbols-20260905-r1/mcrl-thesis-ZH.docx
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092102/shard-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092103/shard-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092101.log
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092101.exit
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092102.exit
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092102.log
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092103.exit
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/logs/init-2026092103.log
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092101/shard-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/WEB-AGENT-PROMPT.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/MANIFEST.sha256
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/FRESH-READER-QA.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/START-HERE.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/PACKAGE-MANIFEST.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/evidence/10ep-ablation-AUDIT-VOID.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_episode_runner.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w40_c2_gate_runner_integrity.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w36_ee_surplus_targets_v03.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_telemetry.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_real_checkpoint_joint_smoke.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w39_c2_keyed_gate.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_joint_transaction.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_runtime_adapter.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_segment_merge.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_core.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_v03_smoke_receipt.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_trainer_backend.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_torch_adapter.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_training_step.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_verify_c2_v03_merged_history.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_forecast_adapter.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_stage0_receipt_adapter.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w38_keyed_fading.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w37_ee_axis_pairwise_trainer.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_chronology.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_combined_carrier.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_option_runner.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_learning_adapter.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_verify_c2_v03_resume_parity.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_c2_temporal_fork_selection.py
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/ACTIVE-SYMBOL-TABLE-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-V0.3-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-GATE-RESULT-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-C3-V03-FORMULA-FIRST-CENSUS-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-REACTIVE-RELEASE-IMPLEMENTATION-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/CURRENT-MULTI-CATFISH-AUTHORITY.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-PRESENTATION-LAYER-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-GATE-CROSS-MODEL-REVIEW-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/DEVIATION-REGISTER.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-OPUS-MAX-SOURCE-CONTROL-REVIEW-2026-08-31.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/informed-opening-do.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/receipt.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/cluster-neutral-opening-do.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/run.log
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/evaluator-code-manifest.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/result.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/prepare-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/result-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/prepare.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/schedule.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092302.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092305.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092307.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092306.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092301.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092303.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/c3-2026092304.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/receipt.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-data/receipt-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/prepare-receipt-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/source-manifest.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c3-source-20260901-r2/prepare-receipt.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-route-interaction-diagnostic-20260901-r1/result.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-route-interaction-diagnostic-20260901-r1/result-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/PREREG-FROZEN-2026-08-25.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-merged-20260901-r1/phase-b-result.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-c2-phase-b-merged-20260901-r1/phase-b-seal.json
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/CHANGE-REPORT.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/MANIFEST.sha256
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/mcrl-thesis-ZH.pdf
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/SYMBOL-COLLISION-AND-SINGLE-LETTER-AUDIT.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/active-symbol-table-v023-20260905.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/mcrl-thesis-ZH-v023-method-draft-20260905.docx
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-10.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-14.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-11.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-04.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-27.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-22.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-12.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-09.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-01.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-07.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-15.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-24.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-16.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-13.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-21.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-29.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-28.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-34.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-19.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-23.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-25.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-03.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-26.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-08.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-20.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-17.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-02.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-18.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-30.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-31.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-33.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-32.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/contact-sheet-relevant.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-05.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders/page-06.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/mcrl-thesis-ZH.docx
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-10.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-14.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-11.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-04.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-27.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-22.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-12.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-09.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-01.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-07.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-15.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-24.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-16.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-13.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-21.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-29.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-28.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-34.png
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/chinese-word-v023-lcsrs-20260905-r2/renders-final/page-19.png
+
+codex
+The prior script reconstructs the exact labels as part of its unchanged diagnostic path; I’m invoking only that existing path with `--anchors 30`, under the required interpreter, `PYTHONPATH=src`, and `nice -n 15`. I will compare the emitted JSON at full precision before writing any audit code.
+exec
+/bin/bash -lc 'nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30' in /home/sat/mcrl-v025-c1c2suff-ws
+codex
+The unchanged replication is still running and has not emitted anchor progress yet. I’m leaving it untouched; the stopping condition remains exact reproduction of both C1 and C2 held-out metrics.
+codex
+Progress is healthy: anchors 0–4 have relabelled 4,424 valid non-reference rows. This confirms the script is reading the intended corpus and following the same whole-step grouping, but I’m withholding any downstream work until the final C1/C2 metrics match.
+codex
+Anchors 0–10 now account for 9,700 rows, with no errors or divergence in row counts. The run remains the unmodified source diagnostic; no ladder fitting has started.
+codex
+Replication has passed the halfway point: 14,114 rows through anchor 15. Row accumulation is consistent with the reported final size of 26,345, so the source inputs appear intact.
