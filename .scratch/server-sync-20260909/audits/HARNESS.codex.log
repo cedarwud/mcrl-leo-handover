@@ -867,3 +867,21 @@ codex
 Stage-C has already emitted a baseline failure marker (`F`) before any probe was inserted. The run is still active; I’m letting it finish so the exact failure, counts, and exit status are captured rather than inferring from partial output.
 codex
 The Stage-C run is slower than its early output suggests and remains active after about 90 seconds. I’m keeping it as the sole test process and preserving the raw log; this baseline failure itself is important evidence that the starting suite is not green.
+codex
+No additional output has appeared, but the process is still alive. I’m avoiding launching any concurrent inspection command; once it exits, subsequent runs will write directly to logs (without `tee`) to keep process count strictly minimal.
+codex
+Stage-C has now run for roughly three minutes with no new terminal output. That is still within a plausible integration-test duration, so I’m not aborting the required baseline; the early `F.` remains the only observed progress signal.
+codex
+The run remains live at about four minutes. I’m preserving it because terminating the baseline would invalidate the requested counts; no probes or source edits have been made.
+codex
+At five minutes, Stage-C still has no additional progress. I’ll give the required untouched run more time; if it is genuinely hung, that will be recorded as a baseline harness error rather than silently treated as a pass.
+codex
+Stage-C remains active at six minutes. Since this audit is explicitly time-bounded, I’m allowing the baseline to continue but will cap a true stall in time to complete the physics baseline and the required mutation checks.
+codex
+Seven minutes elapsed with no further output. This is itself a harness-quality signal (one test may be extremely slow or stuck), but I’m still waiting because pytest’s final accounting is required and the process has not exited.
+codex
+At eight minutes the Stage-C baseline still has not completed. I’m maintaining the single active run and reserving the option to classify it as timed out if it consumes too much of the 45-minute audit window.
+codex
+Nine minutes elapsed. The process is still live and has emitted only `F.`; that means at least one Stage-C test completed and failed, and the next test is the likely long-running point.
+codex
+The Stage-C baseline has reached ten minutes without completing. I’ll allow two more minutes, then interrupt and record a timeout/incomplete baseline so the remaining checks can still be performed within the stated budget.

@@ -3372,3 +3372,660 @@ Filesystem                         Size  Used Avail Use% Mounted on
 /dev/mapper/ubuntu--vg-ubuntu--lv  3.6T  1.7T  1.9T  47% /home/sat/mcrl-v025-pilot-ws
 tmpfs                               46G   26G   21G  56% /tmp
 
+apply patch
+patch: completed
+/home/sat/mcrl-v025-pilot-ws/.scratch/epoch-trend/run_epoch_trend.py
+exec
+/bin/bash -lc 'nice -n 10 env PYTHONPATH=.scratch/epoch-trend/clean-source/src /home/sat/mcrl-leo-handover/.venv/bin/python -m py_compile .scratch/epoch-trend/run_epoch_trend.py && nice -n 10 env PYTHONPATH=.scratch/epoch-trend/clean-source/src /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/epoch-trend/run_epoch_trend.py' in /home/sat/mcrl-v025-pilot-ws
+codex
+The shared run is healthy: the 8-step world-3 tape built in 42 seconds, and the first two of five anchors completed in about 22 seconds each. All five epochs are being scored inside each anchor, so these completions already cover epochs 200 through 2000 for those anchors.
+ succeeded in 167527ms:
+{"event": "tape_build_start", "steps": 8}
+{"event": "tape_build_done", "wall_s": 42.22713486501016}
+{"event": "anchor_done", "anchor": 1, "anchors_total": 5, "wall_s": 21.789782495994586}
+{"event": "anchor_done", "anchor": 2, "anchors_total": 5, "wall_s": 21.247958560008556}
+{"event": "anchor_done", "anchor": 3, "anchors_total": 5, "wall_s": 25.12931836399366}
+{"event": "anchor_done", "anchor": 4, "anchors_total": 5, "wall_s": 28.727080394979566}
+{"event": "anchor_done", "anchor": 5, "anchors_total": 5, "wall_s": 22.064581259008264}
+{"event": "complete", "output": "/home/sat/mcrl-v025-pilot-ws/artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM", "summary_sha256": "d34ce544a5e64d132b8b8e778a6458a21d2fdc28a0b36c910b60896bb4e62ebf"}
+
+exec
+/bin/bash -lc "jq '{wall_s,core_s,receipt_rows,scope,summary}' artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-epoch-trend-summary.json; sha256sum -c artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/*.sha256; git status --short" in /home/sat/mcrl-v025-pilot-ws
+ succeeded in 0ms:
+{
+  "wall_s": 161.18796099702013,
+  "core_s": 161.141118326,
+  "receipt_rows": 300,
+  "scope": {
+    "anchors": 5,
+    "arms": [
+      "FULL",
+      "DROP_C3",
+      "BASELINE"
+    ],
+    "carrier": "nearest-eligible",
+    "catalogue_anchors": [
+      "P-a0",
+      "P-u"
+    ],
+    "epochs": [
+      200,
+      600,
+      1000,
+      1400,
+      2000
+    ],
+    "learner_seed_domains": [
+      "V025_LEARNER/seed/1",
+      "V025_LEARNER/seed/2"
+    ],
+    "tape_steps": 8,
+    "worlds": [
+      "V025_PROBE/world/3"
+    ]
+  },
+  "summary": {
+    "P-a0": {
+      "1000": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7921170212765961,
+            "bits": 1233802694184.9385,
+            "joules": 52607.26579268695,
+            "pooled_ee_bits_per_j": 23453085.34085518
+          },
+          "FULL": {
+            "availability": 0.7671595744680855,
+            "bits": 1144836859480.741,
+            "joules": 65570.5226225913,
+            "pooled_ee_bits_per_j": 17459626.882496513
+          }
+        },
+        "full_mean_selected_coalition_size": 3.1,
+        "full_minus_drop_c3_relative": -0.2555509593408628,
+        "full_selected_coalition_sizes": [
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "1400": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7921170212765961,
+            "bits": 1233802694184.9385,
+            "joules": 52607.26579268695,
+            "pooled_ee_bits_per_j": 23453085.34085518
+          },
+          "FULL": {
+            "availability": 0.7671595744680855,
+            "bits": 1144836859480.741,
+            "joules": 65570.5226225913,
+            "pooled_ee_bits_per_j": 17459626.882496513
+          }
+        },
+        "full_mean_selected_coalition_size": 3.1,
+        "full_minus_drop_c3_relative": -0.2555509593408628,
+        "full_selected_coalition_sizes": [
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "200": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7925000000000004,
+            "bits": 1235131744776.173,
+            "joules": 52519.71621055389,
+            "pooled_ee_bits_per_j": 23517487.02952763
+          },
+          "FULL": {
+            "availability": 0.7437872340425535,
+            "bits": 1341046746202.963,
+            "joules": 39153.83560906806,
+            "pooled_ee_bits_per_j": 34250711.976028614
+          }
+        },
+        "full_mean_selected_coalition_size": 100.0,
+        "full_minus_drop_c3_relative": 0.4563933609498654,
+        "full_selected_coalition_sizes": [
+          100
+        ]
+      },
+      "2000": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7919893617021281,
+            "bits": 1233690246998.025,
+            "joules": 52383.56177008041,
+            "pooled_ee_bits_per_j": 23551095.13959519
+          },
+          "FULL": {
+            "availability": 0.7681914893617025,
+            "bits": 1146661846294.0742,
+            "joules": 65129.94189120491,
+            "pooled_ee_bits_per_j": 17605755.709248044
+          }
+        },
+        "full_mean_selected_coalition_size": 3.0,
+        "full_minus_drop_c3_relative": -0.25244428741454006,
+        "full_selected_coalition_sizes": [
+          2,
+          4,
+          5
+        ]
+      },
+      "600": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7921170212765961,
+            "bits": 1233802694184.9385,
+            "joules": 52607.26579268695,
+            "pooled_ee_bits_per_j": 23453085.34085518
+          },
+          "FULL": {
+            "availability": 0.7644042553191494,
+            "bits": 1251939860982.9631,
+            "joules": 51871.29201976921,
+            "pooled_ee_bits_per_j": 24135505.637797173
+          }
+        },
+        "full_mean_selected_coalition_size": 61.1,
+        "full_minus_drop_c3_relative": 0.029097250405396347,
+        "full_selected_coalition_sizes": [
+          2,
+          5,
+          100
+        ]
+      }
+    },
+    "P-u": {
+      "1000": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7917978723404259,
+            "bits": 1232532268260.9878,
+            "joules": 52337.45185736104,
+            "pooled_ee_bits_per_j": 23549718.691312965
+          },
+          "FULL": {
+            "availability": 0.7645425531914898,
+            "bits": 1140265216088.1484,
+            "joules": 65851.98411103655,
+            "pooled_ee_bits_per_j": 17315578.740429237
+          }
+        },
+        "full_mean_selected_coalition_size": 2.8,
+        "full_minus_drop_c3_relative": -0.2647224806631504,
+        "full_selected_coalition_sizes": [
+          2,
+          3,
+          5
+        ]
+      },
+      "1400": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7912659574468088,
+            "bits": 1232308867732.0989,
+            "joules": 52430.481906075845,
+            "pooled_ee_bits_per_j": 23503672.347312417
+          },
+          "FULL": {
+            "availability": 0.7654574468085109,
+            "bits": 1142886070174.0742,
+            "joules": 65789.98664411335,
+            "pooled_ee_bits_per_j": 17371732.81940977
+          }
+        },
+        "full_mean_selected_coalition_size": 3.0,
+        "full_minus_drop_c3_relative": -0.26089282718425144,
+        "full_selected_coalition_sizes": [
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "200": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7917340425531919,
+            "bits": 1233549133196.173,
+            "joules": 52566.497910553124,
+            "pooled_ee_bits_per_j": 23466450.728659417
+          },
+          "FULL": {
+            "availability": 0.7437872340425535,
+            "bits": 1341046746202.963,
+            "joules": 39153.83560906806,
+            "pooled_ee_bits_per_j": 34250711.976028614
+          }
+        },
+        "full_mean_selected_coalition_size": 100.0,
+        "full_minus_drop_c3_relative": 0.4595608160802285,
+        "full_selected_coalition_sizes": [
+          100
+        ]
+      },
+      "2000": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7917978723404259,
+            "bits": 1232532268260.9878,
+            "joules": 52337.45185736104,
+            "pooled_ee_bits_per_j": 23549718.691312965
+          },
+          "FULL": {
+            "availability": 0.7662553191489365,
+            "bits": 1142998836531.1113,
+            "joules": 65946.47863692786,
+            "pooled_ee_bits_per_j": 17332219.402099654
+          }
+        },
+        "full_mean_selected_coalition_size": 3.0,
+        "full_minus_drop_c3_relative": -0.2640158623850919,
+        "full_selected_coalition_sizes": [
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "600": {
+        "arms": {
+          "BASELINE": {
+            "availability": 0.7631702127659579,
+            "bits": 1137004053305.1853,
+            "joules": 66931.28579478024,
+            "pooled_ee_bits_per_j": 16987632.01399392
+          },
+          "DROP_C3": {
+            "availability": 0.7910957446808514,
+            "bits": 1235047622440.9878,
+            "joules": 52407.911858599444,
+            "pooled_ee_bits_per_j": 23566052.884786572
+          },
+          "FULL": {
+            "availability": 0.7627446808510643,
+            "bits": 1251537550733.3335,
+            "joules": 52019.97135890398,
+            "pooled_ee_bits_per_j": 24058789.6924921
+          }
+        },
+        "full_mean_selected_coalition_size": 61.2,
+        "full_minus_drop_c3_relative": 0.02090875422008498,
+        "full_selected_coalition_sizes": [
+          2,
+          3,
+          5,
+          100
+        ]
+      }
+    }
+  }
+}
+sha256sum: PILOT_NOT_CLAIM-epoch-trend-receipts.jsonl: No such file or directory
+PILOT_NOT_CLAIM-epoch-trend-receipts.jsonl: FAILED open or read
+sha256sum: WARNING: 1 listed file could not be read
+sha256sum: PILOT_NOT_CLAIM-epoch-trend-summary.json: No such file or directory
+sha256sum: WARNING: 1 listed file could not be read
+PILOT_NOT_CLAIM-epoch-trend-summary.json: FAILED open or read
+ M src/mcrl/stagec_v025/coalitions.py
+ M src/mcrl/stagec_v025/learner.py
+ M tests/stagec_v025/test_contract_v1_acceptance.py
+?? .scratch/crossgain-repair/
+?? .scratch/epoch-trend/
+?? artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/
+
+exec
+/bin/bash -lc "cd artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM
+sha256sum -c PILOT_NOT_CLAIM-epoch-trend-receipts.jsonl.sha256
+sha256sum -c PILOT_NOT_CLAIM-epoch-trend-summary.json.sha256
+cd ../..
+jq -n --slurpfile old artifacts/v025-pilot-min-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-summary.json --slurpfile new artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-epoch-trend-summary.json '{\"P-a0\": {full_ee_delta: ("'$new[0].summary["P-a0"]["200"].arms.FULL.pooled_ee_bits_per_j - $old[0].summary.anchors["P-a0"].FULL.pooled_ee_bits_per_j), drop_ee_delta: ($new[0].summary["P-a0"]["200"].arms.DROP_C3.pooled_ee_bits_per_j - $old[0].summary.anchors["P-a0"].DROP_C3.pooled_ee_bits_per_j), baseline_ee_delta: ($new[0].summary["P-a0"]["200"].arms.BASELINE.pooled_ee_bits_per_j - $old[0].summary.anchors["P-a0"].BASELINE.pooled_ee_bits_per_j), full_availability_delta: ($new[0].summary["P-a0"]["200"].arms.FULL.availability - $old[0].summary.anchors["P-a0"].FULL.availability), contrast_delta: ($new[0].summary["P-a0"]["200"].full_minus_drop_c3_relative - $old[0].summary.contrasts["P-a0:FULL-vs-DROP_C3"])}, "P-u": {full_ee_delta: ($new[0].summary["P-u"]["200"].arms.FULL.pooled_ee_bits_per_j - $old[0].summary.anchors["P-u"].FULL.pooled_ee_bits_per_j), drop_ee_delta: ($new[0].summary["P-u"]["200"].arms.DROP_C3.pooled_ee_bits_per_j - $old[0].summary.anchors["P-u"].DROP_C3.pooled_ee_bits_per_j), baseline_ee_delta: ($new[0].summary["P-u"]["200"].arms.BASELINE.pooled_ee_bits_per_j - $old[0].summary.anchors["P-u"].BASELINE.pooled_ee_bits_per_j), full_availability_delta: ($new[0].summary["P-u"]["200"].arms.FULL.availability - $old[0].summary.anchors["P-u"].FULL.availability), contrast_delta: ($new[0].summary["P-u"]["200"].full_minus_drop_c3_relative - $old[0].summary.contrasts["P-u:FULL-vs-DROP_C3"])}}'"'
+jq -s 'map(select(.catalogue_anchor == \"P-a0\" and .arm == \"FULL\")) | group_by(.epoch) | map({epoch: .[0].epoch, sizes: (group_by(.changed_users) | map({size: .[0].changed_users, count: length}))})' artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-epoch-trend-receipts.jsonl
+git rev-parse HEAD
+git diff --name-only -- src/mcrl/stagec_v025/coalitions.py src/mcrl/stagec_v025/learner.py scripts/run_v025_pilot_c3.py" in /home/sat/mcrl-v025-pilot-ws
+ succeeded in 0ms:
+PILOT_NOT_CLAIM-epoch-trend-receipts.jsonl: OK
+PILOT_NOT_CLAIM-epoch-trend-summary.json: OK
+{
+  "P-a0": {
+    "full_ee_delta": 0,
+    "drop_ee_delta": 0,
+    "baseline_ee_delta": 0,
+    "full_availability_delta": 0,
+    "contrast_delta": 0
+  },
+  "P-u": {
+    "full_ee_delta": 0,
+    "drop_ee_delta": 0,
+    "baseline_ee_delta": 0,
+    "full_availability_delta": 0,
+    "contrast_delta": 0
+  }
+}
+[
+  {
+    "epoch": 200,
+    "sizes": [
+      {
+        "size": 100,
+        "count": 10
+      }
+    ]
+  },
+  {
+    "epoch": 600,
+    "sizes": [
+      {
+        "size": 2,
+        "count": 3
+      },
+      {
+        "size": 5,
+        "count": 1
+      },
+      {
+        "size": 100,
+        "count": 6
+      }
+    ]
+  },
+  {
+    "epoch": 1000,
+    "sizes": [
+      {
+        "size": 2,
+        "count": 5
+      },
+      {
+        "size": 3,
+        "count": 1
+      },
+      {
+        "size": 4,
+        "count": 2
+      },
+      {
+        "size": 5,
+        "count": 2
+      }
+    ]
+  },
+  {
+    "epoch": 1400,
+    "sizes": [
+      {
+        "size": 2,
+        "count": 5
+      },
+      {
+        "size": 3,
+        "count": 1
+      },
+      {
+        "size": 4,
+        "count": 2
+      },
+      {
+        "size": 5,
+        "count": 2
+      }
+    ]
+  },
+  {
+    "epoch": 2000,
+    "sizes": [
+      {
+        "size": 2,
+        "count": 6
+      },
+      {
+        "size": 4,
+        "count": 2
+      },
+      {
+        "size": 5,
+        "count": 2
+      }
+    ]
+  }
+]
+857b4bd1c1cc05f5bca0f883af9e028ff825d6df
+src/mcrl/stagec_v025/coalitions.py
+src/mcrl/stagec_v025/learner.py
+
+codex
+The run finished in 161 seconds and produced 300 receipts. Epoch 200 reproduces the prior completed evaluation exactly—zero difference in FULL, DROP_C3, and BASELINE pooled EE, FULL availability, and the FULL-vs-DROP_C3 contrast for both catalogue anchors. The result is unambiguous: the contrast falls from about +46% to about −25%, while FULL’s coalition size collapses from 100 to about 3.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-pilot-ws/EPOCH-TREND-2026-09-09.md
+apply patch
+patch: completed
+/home/sat/mcrl-v025-pilot-ws/EPOCH-TREND-2026-09-09.md
+exec
+/bin/bash -lc "nice -n 10 env PYTHONPATH=.scratch/epoch-trend/clean-source/src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+root = Path('.')
+new = json.loads((root/'artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-epoch-trend-summary.json').read_text())
+old = json.loads((root/'artifacts/v025-pilot-min-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-summary.json').read_text())
+assert new['receipt_rows'] == 300
+assert new['scope']['epochs'] == [200, 600, 1000, 1400, 2000]
+assert new['scope']['arms'] == ['FULL', 'DROP_C3', 'BASELINE']
+for variant in ('P-a0', 'P-u'):
+    now = new['summary'][variant]['200']
+    before = old['summary']['anchors'][variant]
+    for arm in ('FULL', 'DROP_C3', 'BASELINE'):
+        assert now['arms'][arm]['pooled_ee_bits_per_j'] == before[arm]['pooled_ee_bits_per_j']
+        assert now['arms'][arm]['availability'] == before[arm]['availability']
+    assert now['full_minus_drop_c3_relative'] == old['summary']['contrasts'][f'{variant}:FULL-vs-DROP_C3']
+assert [new['summary']['P-a0'][str(e)]['full_minus_drop_c3_relative'] for e in (200,600,1000,1400,2000)] == [0.4563933609498654,0.029097250405396347,-0.2555509593408628,-0.2555509593408628,-0.25244428741454006]
+report = (root/'EPOCH-TREND-2026-09-09.md').read_text()
+for text in ('PILOT_NOT_CLAIM', 'model that could not see the mechanism', 'The contrast trends down', 'selected coalition size changes sharply', 'FULL availability moves upward'):
+    assert text in report
+print('validation: OK')
+PY
+git diff --quiet -- scripts/run_v025_pilot_c3.py
+printf 'original runner unchanged: %s\\n' \""'$?"
+sha256sum .scratch/epoch-trend/clean-source/src/mcrl/stagec_v025/coalitions.py .scratch/epoch-trend/clean-source/src/mcrl/stagec_v025/learner.py
+git show HEAD:src/mcrl/stagec_v025/coalitions.py | sha256sum
+git show HEAD:src/mcrl/stagec_v025/learner.py | sha256sum
+sed -n '"'1,240p' EPOCH-TREND-2026-09-09.md
+git status --short" in /home/sat/mcrl-v025-pilot-ws
+ succeeded in 0ms:
+validation: OK
+original runner unchanged: 0
+7e31dc2a67db44b881f2dfaffbd80dd6b72cdf3a1c307ddf60d6421e36f88e62  .scratch/epoch-trend/clean-source/src/mcrl/stagec_v025/coalitions.py
+a085f1a2fdc91906796b32dee6fdc347efc8e93e09a15da2fe555fe7fa9837fc  .scratch/epoch-trend/clean-source/src/mcrl/stagec_v025/learner.py
+7e31dc2a67db44b881f2dfaffbd80dd6b72cdf3a1c307ddf60d6421e36f88e62  -
+a085f1a2fdc91906796b32dee6fdc347efc8e93e09a15da2fe555fe7fa9837fc  -
+# Epoch trend from existing checkpoints — 2026-09-09
+
+> **PILOT_NOT_CLAIM — critical limitation:** These checkpoints were trained with a coalition feature path that has since been found defective: the pairwise cross-gain terms were summed into a single scalar before the head saw them, which the contract forbids. **This trend therefore describes a model that could not see the mechanism.** It is quarantined engineering evidence, not claim evidence.
+
+## Result
+
+The requested table uses the existing report's `P-a0` catalogue anchor. Pooled energy efficiency (EE) is total bits divided by total joules across 5 world-3 anchors and 2 learner seeds. Availability and FULL coalition size are means across the corresponding 10 anchor-seed receipts.
+
+| Epoch | FULL EE (bit/J) | DROP_C3 EE (bit/J) | BASELINE EE (bit/J) | FULL − DROP_C3 (relative) | FULL availability | DROP_C3 availability | BASELINE availability | FULL mean selected coalition size |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 200 | 34,250,712 | 23,517,487 | 16,987,632 | +45.64% | 74.379% | 79.250% | 76.317% | 100.0 |
+| 600 | 24,135,506 | 23,453,085 | 16,987,632 | +2.91% | 76.440% | 79.212% | 76.317% | 61.1 |
+| 1000 | 17,459,627 | 23,453,085 | 16,987,632 | −25.56% | 76.716% | 79.212% | 76.317% | 3.1 |
+| 1400 | 17,459,627 | 23,453,085 | 16,987,632 | −25.56% | 76.716% | 79.212% | 76.317% | 3.1 |
+| 2000 | 17,605,756 | 23,551,095 | 16,987,632 | −25.24% | 76.819% | 79.199% | 76.317% | 3.0 |
+
+The existing `P-u` catalogue-anchor sensitivity check gives the same conclusion:
+
+| Epoch | FULL EE (bit/J) | DROP_C3 EE (bit/J) | BASELINE EE (bit/J) | FULL − DROP_C3 (relative) | FULL availability | DROP_C3 availability | BASELINE availability | FULL mean selected coalition size |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 200 | 34,250,712 | 23,466,451 | 16,987,632 | +45.96% | 74.379% | 79.173% | 76.317% | 100.0 |
+| 600 | 24,058,790 | 23,566,053 | 16,987,632 | +2.09% | 76.274% | 79.110% | 76.317% | 61.2 |
+| 1000 | 17,315,579 | 23,549,719 | 16,987,632 | −26.47% | 76.454% | 79.180% | 76.317% | 2.8 |
+| 1400 | 17,371,733 | 23,503,672 | 16,987,632 | −26.09% | 76.546% | 79.127% | 76.317% | 3.0 |
+| 2000 | 17,332,219 | 23,549,719 | 16,987,632 | −26.40% | 76.626% | 79.180% | 76.317% | 3.0 |
+
+## Answers
+
+1. **The contrast trends down.** It falls from +45.64% at epoch 200 to +2.91% at epoch 600, reverses to −25.56% at epoch 1000, and then stays roughly flat near −25% through epoch 2000. The epoch-200 FULL advantage does not survive training; within this defective model, it was noise or an early-training artefact. This small evaluation cannot distinguish those two explanations.
+
+2. **Yes, selected coalition size changes sharply with training.** At epoch 200, all 10 FULL decisions select size 100. At epoch 600, 6 of 10 still select size 100, while the other 4 select sizes 2 or 5. From epoch 1000 onward, no decision selects size 100: sizes are 2–5, and the mean is 3.0 at epoch 2000. The all-users behavior does not persist and is therefore a warm-up/early-training artefact for this model, not a stable endpoint behavior.
+
+3. **Yes, FULL availability moves upward; the other arms are essentially flat.** FULL rises from 74.379% at epoch 200 to 76.440% at epoch 600 and 76.819% at epoch 2000. It is the lowest-availability arm only at epoch 200; from epoch 600 onward it slightly exceeds BASELINE, although it remains below DROP_C3. DROP_C3 stays near 79.2%, and BASELINE stays at 76.317%. Thus the epoch-200 efficiency gain coincides with FULL serving fewer users, while the later availability recovery coincides with the EE advantage over DROP_C3 disappearing and reversing.
+
+## Coalition-size detail (`P-a0`)
+
+| Epoch | FULL selected-size counts across 10 decisions |
+|---:|---|
+| 200 | size 100: 10 |
+| 600 | size 2: 3; size 5: 1; size 100: 6 |
+| 1000 | size 2: 5; size 3: 1; size 4: 2; size 5: 2 |
+| 1400 | size 2: 5; size 3: 1; size 4: 2; size 5: 2 |
+| 2000 | size 2: 6; size 4: 2; size 5: 2 |
+
+## Scope and validation
+
+- No training was run. The evaluation restored the existing epoch 200, 600, 1000, 1400, and 2000 checkpoints for 2 seeds × {FULL, DROP_C3}; BASELINE remained the fixed external policy.
+- Scope was world `V025_PROBE/world/3`, 5 anchors, nearest-eligible carrier, and the same 8-step tape prefix (`5 + 3`) that allowed the minimal evaluation to complete. Both existing catalogue anchors, `P-a0` and `P-u`, were retained.
+- Evaluation used `/home/sat/mcrl-leo-handover/.venv/bin/python` with `PYTHONPATH` pointing to an isolated clean snapshot of Git commit `857b4bd1c1cc05f5bca0f883af9e028ff825d6df`. This kept the run on the defective path used by the checkpoints and isolated it from the concurrent coalition-path repair.
+- The targeted evaluator shared the tape, catalogues, and physics cache across checkpoint epochs. It ran as one `nice -n 10` process, finished in 161.19 wall seconds, and emitted 300 receipts.
+- Epoch-200 pooled EE, FULL availability, and FULL − DROP_C3 contrast match the already-completed minimal summary exactly for both `P-a0` and `P-u` (all checked deltas were zero).
+- Statistical power remains minimal: 5 anchors × 2 seeds gives 10 FULL decisions per epoch. No confidence interval or generalization claim is warranted.
+
+Artefacts: [`PILOT_NOT_CLAIM-epoch-trend-summary.json`](artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-epoch-trend-summary.json), [`PILOT_NOT_CLAIM-epoch-trend-receipts.jsonl`](artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-epoch-trend-receipts.jsonl). Both have adjacent SHA-256 sidecars that pass verification.
+
+---
+
+**PILOT_NOT_CLAIM. This report must not be used as paper evidence or as evidence for or against C3.**
+ M src/mcrl/stagec_v025/coalitions.py
+ M src/mcrl/stagec_v025/learner.py
+ M tests/stagec_v025/test_contract_v1_acceptance.py
+?? .scratch/crossgain-repair/
+?? .scratch/epoch-trend/
+?? EPOCH-TREND-2026-09-09.md
+?? artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-pilot-ws/EPOCH-TREND-2026-09-09.md
+codex
+# Epoch trend from existing checkpoints — 2026-09-09
+
+> **PILOT_NOT_CLAIM — critical limitation:** These checkpoints were trained with a coalition feature path that has since been found defective: the pairwise cross-gain terms were summed into a single scalar before the head saw them, which the contract forbids. **This trend therefore describes a model that could not see the mechanism.** It is quarantined engineering evidence, not claim evidence.
+
+## Result
+
+The requested table uses the existing report's `P-a0` catalogue anchor. Pooled energy efficiency (EE) is total bits divided by total joules across 5 world-3 anchors and 2 learner seeds. Availability and FULL coalition size are means across the corresponding 10 anchor-seed receipts.
+
+| Epoch | FULL EE (bit/J) | DROP_C3 EE (bit/J) | BASELINE EE (bit/J) | FULL − DROP_C3 (relative) | FULL availability | DROP_C3 availability | BASELINE availability | FULL mean selected coalition size |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 200 | 34,250,712 | 23,517,487 | 16,987,632 | +45.64% | 74.379% | 79.250% | 76.317% | 100.0 |
+| 600 | 24,135,506 | 23,453,085 | 16,987,632 | +2.91% | 76.440% | 79.212% | 76.317% | 61.1 |
+| 1000 | 17,459,627 | 23,453,085 | 16,987,632 | −25.56% | 76.716% | 79.212% | 76.317% | 3.1 |
+| 1400 | 17,459,627 | 23,453,085 | 16,987,632 | −25.56% | 76.716% | 79.212% | 76.317% | 3.1 |
+| 2000 | 17,605,756 | 23,551,095 | 16,987,632 | −25.24% | 76.819% | 79.199% | 76.317% | 3.0 |
+
+The existing `P-u` catalogue-anchor sensitivity check gives the same conclusion:
+
+| Epoch | FULL EE (bit/J) | DROP_C3 EE (bit/J) | BASELINE EE (bit/J) | FULL − DROP_C3 (relative) | FULL availability | DROP_C3 availability | BASELINE availability | FULL mean selected coalition size |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 200 | 34,250,712 | 23,466,451 | 16,987,632 | +45.96% | 74.379% | 79.173% | 76.317% | 100.0 |
+| 600 | 24,058,790 | 23,566,053 | 16,987,632 | +2.09% | 76.274% | 79.110% | 76.317% | 61.2 |
+| 1000 | 17,315,579 | 23,549,719 | 16,987,632 | −26.47% | 76.454% | 79.180% | 76.317% | 2.8 |
+| 1400 | 17,371,733 | 23,503,672 | 16,987,632 | −26.09% | 76.546% | 79.127% | 76.317% | 3.0 |
+| 2000 | 17,332,219 | 23,549,719 | 16,987,632 | −26.40% | 76.626% | 79.180% | 76.317% | 3.0 |
+
+## Answers
+
+1. **The contrast trends down.** It falls from +45.64% at epoch 200 to +2.91% at epoch 600, reverses to −25.56% at epoch 1000, and then stays roughly flat near −25% through epoch 2000. The epoch-200 FULL advantage does not survive training; within this defective model, it was noise or an early-training artefact. This small evaluation cannot distinguish those two explanations.
+
+2. **Yes, selected coalition size changes sharply with training.** At epoch 200, all 10 FULL decisions select size 100. At epoch 600, 6 of 10 still select size 100, while the other 4 select sizes 2 or 5. From epoch 1000 onward, no decision selects size 100: sizes are 2–5, and the mean is 3.0 at epoch 2000. The all-users behavior does not persist and is therefore a warm-up/early-training artefact for this model, not a stable endpoint behavior.
+
+3. **Yes, FULL availability moves upward; the other arms are essentially flat.** On `P-a0`, FULL rises from 74.379% at epoch 200 to 76.440% at epoch 600 and 76.819% at epoch 2000. It is the lowest-availability arm only at epoch 200; from epoch 600 onward it slightly exceeds BASELINE, although it remains below DROP_C3. On `P-u`, FULL is still just 0.043 percentage point below BASELINE at epoch 600, then rises above it. DROP_C3 stays near 79.2%, and BASELINE stays at 76.317%. Thus the epoch-200 efficiency gain coincides with FULL serving fewer users, while the later availability recovery coincides with the EE advantage over DROP_C3 disappearing and reversing.
+
+## Coalition-size detail (`P-a0`)
+
+| Epoch | FULL selected-size counts across 10 decisions |
+|---:|---|
+| 200 | size 100: 10 |
+| 600 | size 2: 3; size 5: 1; size 100: 6 |
+| 1000 | size 2: 5; size 3: 1; size 4: 2; size 5: 2 |
+| 1400 | size 2: 5; size 3: 1; size 4: 2; size 5: 2 |
+| 2000 | size 2: 6; size 4: 2; size 5: 2 |
+
+## Scope and validation
+
+- No training was run. The evaluation restored the existing epoch 200, 600, 1000, 1400, and 2000 checkpoints for 2 seeds × {FULL, DROP_C3}; BASELINE remained the fixed external policy.
+- Scope was world `V025_PROBE/world/3`, 5 anchors, nearest-eligible carrier, and the same 8-step tape prefix (`5 + 3`) that allowed the minimal evaluation to complete. Both existing catalogue anchors, `P-a0` and `P-u`, were retained.
+- Evaluation used `/home/sat/mcrl-leo-handover/.venv/bin/python` with `PYTHONPATH` pointing to an isolated clean snapshot of Git commit `857b4bd1c1cc05f5bca0f883af9e028ff825d6df`. This kept the run on the defective path used by the checkpoints and isolated it from the concurrent coalition-path repair.
+- The targeted evaluator shared the tape, catalogues, and physics cache across checkpoint epochs. It ran as one `nice -n 10` process, finished in 161.19 wall seconds, and emitted 300 receipts.
+- Epoch-200 pooled EE, FULL availability, and FULL − DROP_C3 contrast match the already-completed minimal summary exactly for both `P-a0` and `P-u` (all checked deltas were zero).
+- Statistical power remains minimal: 5 anchors × 2 seeds gives 10 FULL decisions per epoch. No confidence interval or generalization claim is warranted.
+
+Artefacts: [report](/home/sat/mcrl-v025-pilot-ws/EPOCH-TREND-2026-09-09.md), [summary](/home/sat/mcrl-v025-pilot-ws/artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-epoch-trend-summary.json), [receipts](/home/sat/mcrl-v025-pilot-ws/artifacts/v025-pilot-epoch-trend-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-epoch-trend-receipts.jsonl). The summary and receipts have adjacent SHA-256 sidecars that pass verification.
+
+---
+
+**PILOT_NOT_CLAIM. This report must not be used as paper evidence or as evidence for or against C3.**
+tokens used
+126,358
