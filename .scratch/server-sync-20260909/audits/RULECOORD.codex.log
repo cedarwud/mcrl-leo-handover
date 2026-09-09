@@ -37275,3 +37275,2451 @@ index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407
          ]
      )
 
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+World-1 anchor 1 finalized at 50 moves, RULE 2.198 s. Its shard has started the tenth and final context (64 occupancy candidates). The other active baselines are at 46 and 61+.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+The final context is progressing quickly at 8 moves. The other two active anchors are at 48 and 62+. All 10 RULE decisions have already been scored; only three comparator convergences remain.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+Three remaining comparator depths are 14, 50, and 63+. The final context is advancing several moves per polling interval.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+Remaining depths are 17, 52, and 64+. All three continue normally.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+Current depths are 19, 53, and 65+. The two-anchor world-1 shard is nearing its prior depth but remains under all-legal checking.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+Remaining depths are 22, 55, and 66+. No errors or deadline substitutions.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+The final context is at 26 moves; the other two are at 56 and 67+. All continue exact evaluation.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+Depths are 28, 58, and 68+. The world-1 two-anchor shard has reached its provisional depth but is still checking the complete legal surface.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
+codex
+Current depths are 29, 59+, and 69+. The two deeper anchors are inside their next exact checks and may be close to closure.
+diff --git a/RULE-COORDINATOR-2026-09-09.md b/RULE-COORDINATOR-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..e600cf5b0d72bc4cbbcf189ea9c014307bf27811
+--- /dev/null
++++ b/RULE-COORDINATOR-2026-09-09.md
+@@ -0,0 +1,5 @@
++# Rule coordinator diagnostic — 2026-09-09
++
++Status: `DIAGNOSTIC_NOT_CLAIM` — run in progress.
++
++The required reduced-scope experiment is evaluating occupancy-activation only on 10 real TRAIN anchors with the sealed `a-r0` calibration and production evaluator. This file will be replaced incrementally as anchor receipts complete.
+diff --git a/scripts/run_v025_rule_coordinator.py b/scripts/run_v025_rule_coordinator.py
+index e6710da91ae220214afb050f8cb22a8929c0b5b2..91e04260ad10f2c8d73e36936fc0a407c4707d8b
+--- a/scripts/run_v025_rule_coordinator.py
++++ b/scripts/run_v025_rule_coordinator.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Evaluate the fixed V0.25 coordinator on sealed real TRAIN anchors.
++"""Evaluate the fixed occupancy-activation coordinator on real TRAIN anchors.
+ 
+ This is deliberately a diagnostic, not a claim-panel runner.  It imports the
+ stage-4h engine harness only to reuse its sealed Configuration, StepEvaluator,
+@@ -44,8 +44,6 @@
+ from mcrl.physics_v025.rule_coordinator import (  # noqa: E402
+     RuleCandidate,
+     activation_occupancy,
+-    beam_evacuation_candidates,
+-    multi_aggressor_relief_candidates,
+     occupancy_activation_candidates,
+ )
+ from mcrl.physics_v025.tapes import digest_payload  # noqa: E402
+@@ -63,11 +61,7 @@
+ )
+ DEFAULT_OUTPUT = REPO / ".scratch/multi-catfish-v025-rule-coordinator/results"
+ REPORT_PATH = REPO / "RULE-COORDINATOR-2026-09-09.md"
+-FAMILIES = (
+-    "occupancy_activation",
+-    "multi_aggressor_relief",
+-    "beam_evacuation",
+-)
++FAMILIES = ("occupancy_activation",)
+ DECISION_BUDGET_S = 10.0
+ ALPHA = 0.10
+ SCHEMA = "mcrl-v025-rule-coordinator-diagnostic-v1"
+@@ -259,15 +253,6 @@
+     rate_target_bps: float,
+ ):
+     legal_options, slants, elevations, cap_sinr = _decision_surface(tape, step_index)
+-    legal_best, nullable_best = _best_alternatives(
+-        base.mapping, legal_options, cap_sinr
+-    )
+-    victim_aggressors, victim_census = _qualifying_victim_aggressors(
+-        tape,
+-        step_index,
+-        base.mapping,
+-        rate_target_bps=rate_target_bps,
+-    )
+     families = {
+         "occupancy_activation": occupancy_activation_candidates(
+             base.mapping,
+@@ -276,15 +261,6 @@
+             elevation_deg=elevations,
+             rate_target_bps=rate_target_bps,
+             fading_quantile_alpha=ALPHA,
+-        ),
+-        "multi_aggressor_relief": multi_aggressor_relief_candidates(
+-            base.mapping,
+-            victim_aggressors=victim_aggressors,
+-            best_alternatives=legal_best,
+-        ),
+-        "beam_evacuation": beam_evacuation_candidates(
+-            base.mapping,
+-            best_alternatives=nullable_best,
+         ),
+     }
+     ordered = tuple(row for family in FAMILIES for row in families[family])
+@@ -320,8 +296,6 @@
+         "family_generated": {name: len(families[name]) for name in FAMILIES},
+         "singleton_activation_thresholds": threshold_rows,
+         "starting_occupancy_beam_counts": occupancy_counts,
+-        "qualifying_multi_aggressor_victims": victim_census,
+-        "alternative_definition": "highest alpha=.10 predicted cap-link SINR; physical-ID tie",
+     }, legal_options
+ 
+ 
+@@ -632,16 +606,16 @@
+             cell_rekeys,
+             previously_served,
+         )
+-        unilateral_options, unilateral_census = harness._selection_shortlist(
++        unilateral_options, unilateral_census = harness._legal_options(
+             tape,
+             step_index,
+-            run_setting=run_setting,
+         )
+         rule["census"]["unilateral_action_surface"] = {
+-            "definition": "sealed top-8 live legal options per user by nominal link margin",
++            "definition": "all decision-instant live legal options",
+             "options": sum(len(rows) for rows in unilateral_options.values()),
+-            "legal_options_outside_shortlist": unilateral_census[
+-                "legal_options_outside_selection_shortlist"
++            "legal_options_outside_surface": 0,
++            "full_successor_legal_count": unilateral_census[
++                "full_successor_legal_count"
+             ],
+         }
+         unilateral = _unilateral_to_convergence(
+@@ -734,6 +708,11 @@
+         },
+         "rule": {
+             "order": list(FAMILIES),
++            "implemented_families": list(FAMILIES),
++            "deferred_optional_families": [
++                "multi_aggressor_relief",
++                "beam_evacuation",
++            ],
+             "strict_improvement": True,
+             "service_guard": "decision-instant served count >= BASELINE",
+             "decision_budget_s": DECISION_BUDGET_S,
+@@ -963,11 +942,10 @@
+             "",
+             "## Method and integrity",
+             "",
+-            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the sealed C1 decision-instant exact-engine score over the unchanged top-8 live-legal action shortlist, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
++            f"- Evaluated {result['anchor_count']} real TRAIN anchor/carrier contexts from worlds {result['worlds']} under sealed `a-r0` calibration. Every RULE candidate used the full 48-boundary realised engine. UNILATERAL used the exact decision-instant engine score over all live legal actions, matching the engine's iterated single-user comparator, and its committed configuration then received the same full 48-boundary realised evaluation. No proxy, learned value, model, or head selected either arm.",
+             "- BASELINE is the incumbent fixed reference assignment at that anchor. UNILATERAL repeatedly chooses the best strict exact-objective single-user move in the sealed C1 action surface until none improves, with no deadline fallback. RULE scores all generated candidates, applies the unchanged decision-instant served-count guard, and commits the first strict exact-objective improvement in the declared family order.",
+-            "- Multi-aggressor victims are below the lowest transmitted-mode threshold with interference, clear it in noise, and remain below it after algebraically removing the largest nominal interference contribution. Top aggressors are ranked by received nominal interference watts in the victim's TDM slot; each moves to its highest α=.10 predicted cap-link-SINR legal alternative.",
+-            "- Beam evacuation targets only starting occupancy 2 or 3. Users with no non-origin legal alternative take explicit NULL, which remains subject to the unchanged service guard.",
+-            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipts are under `{DEFAULT_OUTPUT}`. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
++            "- Per the scope reduction, only occupancy activation was implemented and timed. Multi-aggressor relief and beam evacuation were not run.",
++            f"- Merged receipt SHA-256: `{result['receipt_sha256']}`. Raw receipt paths and their digests are recorded in the merged JSON receipt. No large intermediate was created: immutable multi-gigabyte tapes were read in place, and `/tmp` was not used.",
+             "",
+         ]
+     )
+
