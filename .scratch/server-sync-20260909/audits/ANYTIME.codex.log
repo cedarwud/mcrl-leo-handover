@@ -1,0 +1,2569 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-harness-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a087a3-61c0-7471-b319-265a75f7be37
+--------
+user
+Workspace: the current directory, `/home/sat/mcrl-v025-harness-ws`. It contains a standing evaluation harness completed today: `EVAL-HARNESS-2026-09-10.md`, `bin/harness`, a twenty-anchor panel, a `SEALED` variant proved bit-identical, and a `MARGIN_Q` variant. **Read that report first and reuse the harness.** Interpreter `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`, `nice -n 15`. Never modify `/home/sat/mcrl-leo-handover` or its virtual environment.
+
+`DIAGNOSTIC_NOT_CLAIM`. No learner, no training run, no policy run. No sealed constant, threshold, sign, seed, horizon, price, service guard or acceptance rule is changed; no sealed artefact or frozen manifest is modified.
+
+# The question
+
+The decision interval is **30.08 seconds**. The iterated unilateral best-response search converges in about **65 seconds on average**, and its converged fixed point is worth roughly **+442 %** in pooled efficiency over the geometry-only baseline. A project is considering claiming that a learned method wins *within the interval* because the exact search does not fit.
+
+That argument has never been tested, and an external review identified the gap precisely: **time to convergence is not time to a useful decision.** A search taking 65 seconds to certify convergence may have obtained almost all of its eventual improvement far earlier. If most of the value is available by 30 seconds, the deadline argument fails.
+
+**Measure the anytime quality curve of the unilateral search.**
+
+# What to build
+
+Instrument the existing unilateral selector so that it maintains a **feasible incumbent from the first instant** and records, as a function of wall-clock time, the configuration it would commit if interrupted at that instant. Implement it in good faith as an anytime algorithm:
+
+- start from the legal base configuration, which is immediately committable;
+- accept each strictly improving single-user move as soon as it is found, and never discard accepted improvements because a sweep was interrupted;
+- prefer **first-improvement** over completing a best-improvement sweep, and say what difference that makes;
+- use incremental or cached evaluation where the same quantity is recomputed;
+- **do not run the final complete-neighbourhood certification sweep**, which proves optimality but changes no action. Report separately how long that sweep costs.
+
+These are ordinary implementation improvements, not a new algorithm. If any of them changes the fixed point reached, say so explicitly and report both.
+
+# Deliverables
+
+**D1 — the anytime curve.** For each anchor, the true pooled objective of the committed-if-interrupted configuration at wall-clock 1, 2, 5, 10, 20, **30.08**, 45, 60 seconds and at convergence. Pool across the panel the way the project does — summed bits over summed joules — and also give the paired per-anchor distribution. **The reported value must be the true objective of the action it would actually return**, never the best candidate seen with hindsight.
+
+**D2 — the fraction of the prize available at the deadline.** State what fraction of the converged unilateral improvement over baseline is already attained at 30.08 seconds, with the per-anchor spread and the worst anchor.
+
+**D3 — the certification cost, separated.** How much of the 65 seconds is finding improvements and how much is proving none remain. Report the distribution.
+
+**D4 — the seed question.** The bounded joint search is currently seeded from the *converged* unilateral fixed point. Measure what the joint search achieves when seeded instead from the unilateral incumbent available at 10, 20 and 30.08 seconds, with the joint search's own time counted inside the same budget. State the total end-to-end time for each configuration. This is the measurement that determines whether a learned ranker can be given its seed for free.
+
+**D5 — both provisioning rules.** Run everything under `SEALED` and `MARGIN_Q`. A conclusion that holds only under the defective rule is worthless.
+
+# Rules
+
+- **If most of the prize is available well before the deadline, say so in the first line.** That result closes a direction the project is about to invest in, and it is the more valuable outcome.
+- Do not tune the anytime implementation to lose. It is the comparator a referee will demand, and a weak one invalidates the whole comparison.
+- Timing must be honest end-to-end wall clock on the stated hardware, single process, with feature construction and candidate generation counted. State the hardware and thread settings.
+- Every number reproducible from a script left here with exact commands.
+- Say plainly what you did not reach.
+
+Write `ANYTIME-UNILATERAL-2026-09-10.md` in the workspace root and print it in full as your final message. Lead with one line: the fraction of the converged unilateral improvement already available at 30.08 seconds, under each provisioning rule.
+codex
+I’ll begin with the standing report and repository instructions, then trace the existing harness and unilateral selector before making any changes. I’ll preserve every sealed artifact and keep all experimental code and outputs in this workspace.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g 'EVAL-HARNESS-2026-09-10.md' -g '"'!**/.git/**'"' | sort && sed -n '1,260p' EVAL-HARNESS-2026-09-10.md" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-harness-ws
+EVAL-HARNESS-2026-09-10.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+**`SEALED` is bit-identical — proved structurally, on the fixture grid with a positive control, and end-to-end by reproducing all 20 archived anchors and the pooled `+6.3590%` exactly — and a full 20-anchor panel now costs 1141 s the first time a variant is run and 0.49 s (2.2 s wall including interpreter start) every time after.**
+
+# Standing evaluation harness — V0.25 twenty-anchor panel
+
+`DIAGNOSTIC_NOT_CLAIM`. This document describes a measurement instrument. It contains no scientific claim, no efficacy measurement and no training run. No constant, threshold, sign, seed, horizon, price, service guard or acceptance rule in the sealed physics was changed, and no sealed artefact or frozen manifest was modified.
+
+Workspace `/home/sat/mcrl-v025-harness-ws`, commit `1dfc6e07a10d045d5d4ba598d0368038e4787804`. All runs used `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`, `nice -n 15`, one process. Runs completed 2026-09-09T18:0x–18:5xZ. `/home/sat/mcrl-leo-handover` and every sibling `mcrl-v025-*-ws` workspace were read only.
+
+---
+
+## 0. What was built, in one paragraph
+
+`harness/` is 2 010 lines of Python across eleven small modules plus two variant files, driven by one entry point `bin/harness`. It does not restate any physics. The anchor evaluation — the base configuration, the iterated unilateral selector with its complete-neighbourhood certificate, the bounded coalition catalogue, the service guard, the exact `F = B − η_ref·E` objective, the 48-boundary committed endpoint and the pooled summary — is imported verbatim from the archived ladder runner, vendored byte-identically into `sealed/`. What the harness adds around it is: a named anchor panel, a named physics-variant seam, two content-addressed caches, a receipt writer, a declared screen ladder, and a query layer over stored receipts.
+
+| Layer | File | Lines |
+|---|---|---:|
+| Sealed tree loader and manifest verifier | `harness/sealed.py` | 131 |
+| Variant registry (auto-discovering) | `harness/variants/__init__.py` | 67 |
+| Variant `SEALED` | `harness/variants/v_sealed.py` | 22 |
+| Variant `MARGIN_Q` | `harness/variants/v_margin_q.py` | 26 |
+| Anchor panels | `harness/panel.py` | 62 |
+| World and anchor caches | `harness/cache.py` | 148 |
+| Panel run and receipt | `harness/runner.py` | 246 |
+| Pooled figures, gains, tables | `harness/report.py` | 154 |
+| Bit-identity proof | `harness/proof.py` | 260 |
+| Cache variant-independence audit | `harness/cacheaudit.py` | 72 |
+| Profiler | `harness/profile.py` | 138 |
+| Query layer | `harness/query.py` | 94 |
+| Command line | `harness/cli.py` | 572 |
+| Harness self-tests | `tests/harness/test_harness.py` | 137 |
+
+---
+
+## 1. The sealed tree, and why it had to be vendored
+
+The receipts to be reproduced are `original-result.json` and `margin-result.json` from `/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/`. They record `probe_source_sha256 = f4122d67…4c76c`.
+
+This workspace's own `src/mcrl` is **a different sealed version**. Its probe hashes `d430baf3…4786196`, and its `src/mcrl/physics_v025/batch.py` is 506 lines against the ladder's 602 and has no `fading_quantile_alpha` parameter at all. Nine physics modules differ. Running the archived panel against this workspace's `src/` would have failed outright, and if it had not failed it would have produced numbers from different physics under the same name.
+
+So the exact sealed tree that produced the archive was copied into `sealed/`, laid out to mirror the ladder workspace so the archived runner's own relative paths resolve unchanged:
+
+```
+sealed/src/mcrl/…                                                        (the sealed physics)
+sealed/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py                   (the archived eval loop)
+sealed/.scratch/ladder-floor-20260910/margin_batch.py                    (MARGIN_Q's one changed line)
+sealed/fixtures/test_stage4d_gate.py                                     (the ladder's KAT fixture)
+sealed/MANIFEST.sha256                                                   (179 files)
+```
+
+`harness/sealed.py` re-hashes all 179 files on every load and refuses to run on any drift. The probe digest is additionally checked against the constant recorded in the archived receipts.
+
+```
+sealed_manifest_sha256 = d5e94654510225aaf6ca7f8422ecd12ba64e8f3b8690c55a55d791063db8b916
+probe_source_sha256    = f4122d6784cb56de7743c55d51dc80a6c968ccea601d637cd1b41a8b5604c76c   (matches archive)
+```
+
+`sealed/` is written once and never written again. This workspace's `src/`, `archive/`, `docs/` and `tests/physics_v025/` are untouched. The only tracked file this work modified is `.gitignore`, which gained one line (`.harness-cache/`); everything else added is new and untracked: `harness/`, `bin/`, `sealed/`, `receipts/`, `logs/`, `ladder-archive/`, `tests/harness/`, `run-all.sh` and this report.
+
+---
+
+## 2. H1 — one command, one panel, one table
+
+```
+bin/harness run --variant SEALED --panel FULL20 --arms UNILATERAL,ORACLE_SET --out receipts/x.json
+```
+
+Command line as run:
+
+```console
+$ PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.cli \
+    run --variant SEALED --panel FULL20 --arms UNILATERAL,ORACLE_SET --quiet \
+    --out receipts/sealed-full20-two-arms.json
+
+arm                               bits                joules            ee_bit_per_j    served
+UNILATERAL        1660779577104.984619       58332.519445156      28470904.272640795      1939
+ORACLE_SET        1694404970756.871826       55955.362097867      30281369.063313689      1957
+
+pooled relative EE gain                            ratio         percent
+UNILATERAL_over_ORACLE_SET               -0.059788075859        -5.9788%
+ORACLE_SET_over_UNILATERAL                0.063589999578         6.3590%
+
+anchor_id                                  UNILATERAL.ee    served         ORACLE_SET.ee    served
+V025_PROBE_R2/world/1:step/0             31358500.509405        98       32863112.026049        99
+V025_PROBE_R2/world/1:step/1             35289578.212381        99       37285910.241600        99
+…  (20 rows)
+V025_PROBE_R2/world/4:step/4             33250832.238217        97       34010420.256520        97
+
+wall_seconds=0.452  cache={'world_hits': 4, 'anchor_hits': 20, …}
+```
+
+The receipt keeps the archived schema `mcrl-v025-perfect-knowledge-oracle-ceiling-v1` — same `anchors`/`worlds`/`summary` shape, same `committed[ARM]` keys `bits`, `joules`, `ee_bit_per_j`, `served_count` — and adds, inside the file: `receipt_sha256` (SHA-256 over the canonical unsigned JSON), `variant`, `variant_source_sha256`, `panel`, `sealed_manifest_sha256`, `probe_source_sha256`, `reported_arms`, and the per-world `world_sha256` digests. `formulation` is retained with its archived values (`original`, `margin`) so old and new receipts remain comparable.
+
+**Arms are a reporting selection, not a compute selection.** `--arms` restricts the printed table and the pooled gains. All three arms are always computed, because `ORACLE_SET` is defined relative to `UNILATERAL` and both are guarded by the `BASELINE` served count. The receipt says this in `arms_note`.
+
+### Reproducing the archived `+6.3590%` in one command
+
+```console
+$ PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.cli reproduce
+
+{
+  "archive": "/home/sat/mcrl-v025-harness-ws/ladder-archive/original-result.json",
+  "archive_receipt_sha256": "327e2ff15b5acb185f656285ff9ab02a49b615b4f4c676f026498d9c2fe9b5d4",
+  "archived_oracle_over_unilateral": 0.06358999957766232,
+  "archived_percent": "+6.3590%",
+  "produced_oracle_over_unilateral": 0.06358999957766232,
+  "produced_percent": "+6.3590%",
+  "exact_float_match_to_archive": true,
+  "pooled_matches_archive_exactly": true,
+  "per_anchor": { "anchor_count": 20, "scalar_comparisons": 300, "exact_match": true, "mismatches": [] },
+  "verdict": "REPRODUCED",
+  "wall_seconds": 0.4697421570017468
+}
+```
+
+The match is exact at the binary64 level, not to four decimal places: `produced == archived` as Python floats. The comparison covers all 20 anchors × 3 arms × 5 scalars (`bits`, `joules`, `ee_bit_per_j`, `served_count`, `configuration_id`) plus the full assignment vector, and separately the four pooled quantities per arm. The first, uncached execution of this same command is in `logs/02-reproduce-cold.log` and took 1141.18 s.
+
+The same holds for the second archived receipt. `receipts/margin-q-full20.json` against `ladder-archive/margin-result.json`: pooled block identical, per-anchor scalar mismatches **0**, `oracle_set_over_unilateral_relative` `0.005447658598398464` on both sides.
+
+---
+
+## 3. H2 — the named physics-variant seam, and the bit-identity proof
+
+A variant is one named replacement for exactly one object: `probe.evaluate_ar_tdm_catalogue`, the dense catalogue evaluator. Nothing else may differ between variants — not the panel, the anchors, the selector, the guard, the objective or the committed endpoint.
+
+```console
+$ bin/harness variants
+MARGIN_Q
+  source: harness.variants.v_margin_q
+  Provision against Gamma / q, where q is the same alpha-fading product quantile the committed
+  mode selection is judged at (margin_dB = -10 log10 q). All other equations are sealed.
+
+SEALED (default)
+  source: harness.variants.v_sealed
+  The sealed dense catalogue evaluator, unmodified. Provisioning targets the sealed rate-target
+  SINR threshold Gamma exactly as published.
+```
+
+`MARGIN_Q` is one line of difference from the sealed evaluator:
+
+```diff
+-                targets = gamma[np.minimum(occupancy, users)]
++                targets = gamma[np.minimum(occupancy, users)] / quantile
+```
+
+`quantile` is `fading_product_quantile_array(elevations, α)` at the same `α = 0.10` the committed mode selection is later judged at, so the added margin is exactly `−10 log₁₀ q` dB.
+
+**Adding a third variant is one file.** Drop `harness/variants/v_<name>.py` defining `NAME`, `DESCRIPTION` and `build(sealed)`. Discovery is `pkgutil.iter_modules`; no registry list, no CLI change, no runner change, no test change. Its module bytes are hashed into `Variant.source_sha256` automatically and become part of its cache key.
+
+### The proof
+
+```console
+$ PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.cli \
+    verify-sealed --out receipts/sealed-bit-identity.json
+
+{
+  "verdict": "PASS",
+  "sealed_manifest_sha256": "d5e94654510225aaf6ca7f8422ecd12ba64e8f3b8690c55a55d791063db8b916",
+  "probe_source_sha256": "f4122d6784cb56de7743c55d51dc80a6c968ccea601d637cd1b41a8b5604c76c",
+  "structural": {
+    "sealed_variant_is_module_attribute": true,
+    "sealed_variant_is_probe_attribute": true,
+    "independent_reference_is_a_distinct_object": true,
+    "probe_module_file": ".../sealed/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py",
+    "sealed_batch_module_file": "mcrl.physics_v025.batch"
+  },
+  "sealed_fixture_cases_alpha_none": 16,
+  "sealed_all_fields_equal_alpha_none": true,
+  "sealed_all_fields_equal_alpha_0_10": true,
+  "margin_q_all_fields_equal_alpha_none": true,
+  "teeth_positive_control": {
+    "margin_q_alpha_0_10_differs": true,
+    "max_rf_power_w_differs": true,
+    "transmitted_mode_counts_differ": true,
+    "differing_fields": ["attained","bits","cap_hits","certificate_iterations","decoding_time_s",
+      "joules","max_rf_power_w","mean_acm_se_bit_s_hz","min_decoding_margin_db","mode_counts",
+      "pa_j","realised_decode_failures","realised_decode_successes","residual_w",
+      "transmitted_mode_counts"]
+  },
+  "route_ok": true
+}
+```
+
+Four independent legs, all required:
+
+1. **Structural.** `SEALED` resolves to the very object the sealed probe imported (`is` identity against both `mcrl.physics_v025.batch.evaluate_ar_tdm_catalogue` and the pristine probe attribute captured before any variant can be installed). Installing `SEALED` is therefore a no-op on the seam. `install_variant` raises if this ever stops holding, so a mis-registered `SEALED` cannot run at all.
+
+2. **Fixture parity, against an independently re-executed copy.** Comparing a function against itself proves nothing, so the reference side is a *second* execution of `sealed/src/mcrl/physics_v025/batch.py`, loaded from disk under a different module name. Over the ladder's grid — 4 `(ρ, isolated target power)` cases × {`nominal`, `realised`} × {1 boundary, 48 boundaries} = 16 cases, at both `α = None` and `α = 0.10` — **all 23 fields of `BatchARResult` are equal in every case**, with `bits`, `transmissions`, `mode_counts` and `max_rf_power_w` asserted and reported by name. `MARGIN_Q` passes the same 16 cases at `α = None`, where `q = 1` makes its one changed line an identity.
+
+3. **Teeth.** The same assertion is required to **fail** for `MARGIN_Q` at `α = 0.10`, and it does, on 15 of 23 fields including `max_rf_power_w` and `transmitted_mode_counts`. A parity check that cannot fail is not evidence; this one demonstrably can.
+
+4. **Route.** Both real evaluation routes are observed reaching the installed seam with the sealed arguments: the selector at `field="realised"`, `boundary_indices=(0,)`, `α=0.10`, and the committed endpoint at `field="realised"`, 48 boundaries, `α=0.10`.
+
+And the strongest leg of all, which the fixture grid cannot give: **the 20-anchor `SEALED` panel run on the real world tapes reproduces the archived receipt exactly** — 300 scalar comparisons, all assignment vectors, all four pooled quantities per arm, and the headline pooled ratio, bit for bit (§2).
+
+---
+
+## 4. H3 — making the second and later runs cheap
+
+### Where the time actually goes
+
+```console
+$ bin/harness profile --variant SEALED --anchors 1 --no-cache --out receipts/profile-sealed.json
+```
+
+One anchor, world 1 step 0, `cProfile` over the real loop:
+
+| | value |
+|---|---:|
+| Cold world-tape build (1 world, 5 steps) | 25.66 s |
+| One anchor, end to end | 48.07 s |
+| — of which inside `_evaluate_ar_tdm_catalogue_core` (cumulative) | 45.42 s (**94.5 %**) |
+| — `fading_product_quantile_array`, 392 calls (cumulative) | 0.855 s (1.8 %) |
+| — `resolve_configuration` seam overhead itself | 0.025 s |
+| — `_legal_options` | 0.009 s |
+| Selection boundary evaluations in that anchor | 10 324 |
+| Committed boundary evaluations in that anchor | 144 |
+
+Top single line by self time is `batch.py:77(_evaluate_ar_tdm_catalogue_core)` at 36.85 s of 48.07 s; everything else is numpy reduction machinery called from inside it.
+
+### What is cached
+
+Two content-addressed caches under `.harness-cache/`, each keyed by a SHA-256 over a declared input record.
+
+**World tapes** — key `{sealed_manifest_sha256, domain, steps, start_time_s, provider}`. A tape is the geometry, the gains and the per-boundary link inputs: elevations, distances, masks, nominal and realised direct gains, the cross-gain tensor, the identity table. Deliberately **not** keyed by variant.
+
+**Finished anchor rows** — key `{sealed_manifest_sha256, variant, variant_source_sha256, world_sha256, step_index}`. This is variant-dependent by construction and keyed as such, including the variant module's own source bytes, so editing a variant file without renaming it invalidates its rows instead of serving them stale.
+
+### Why the world cache may omit the variant
+
+Structurally: a tape is built by `probe.build_world_tape` from the provider alone, before any evaluator object exists in the call graph, and a variant only ever replaces `probe.evaluate_ar_tdm_catalogue`. Empirically as well —
+
+```console
+$ bin/harness cache-audit --world 1 --out receipts/world-cache-variant-independence.json
+{
+  "check": "world-tape-variant-independence-v1",
+  "verdict": "PASS",
+  "world_digest_identical_across_variants": true,
+  "tape_contents_identical_across_variants": true,
+  "rows": [
+    {"variant": "MARGIN_Q", "installed_evaluator": "harness_variant_margin_q",
+     "world_sha256": "b6d15d06…5eb971f",
+     "tape_content_sha256": "0a04ae93e7b09bf77393a33010cfd08147ab155b1e69ce6bed9b771501bcff94"},
+    {"variant": "SEALED",   "installed_evaluator": "mcrl.physics_v025.batch",
+     "world_sha256": "b6d15d06…5eb971f",
+     "tape_content_sha256": "0a04ae93e7b09bf77393a33010cfd08147ab155b1e69ce6bed9b771501bcff94"}
+  ]
+}
+```
+
+The tape is rebuilt from scratch with each variant installed and compared both on its own digest and on a SHA-256 of its complete serialised contents. Identical.
+
+### Measured before and after
+
+All on this machine, one process, `nice -n 15`. Cold world and anchor costs are carried inside every receipt (`worlds[].construction_wall_seconds`, `anchors[].wall_seconds`), so the "before" column is recoverable from a receipt the harness wrote even after the cache is warm.
+
+| Run | Worlds | Anchors | Measured wall |
+|---|---|---|---:|
+| `SEALED` FULL20, caches empty | 4 built, 101.86 s | 20 solved, 1 038.28 s | **1 141.18 s** (19:02.6 incl. start) |
+| `SEALED` FULL20, warm | 4 loaded, 0.45 s | 20 read | **0.49 s** (2.2 s incl. start) |
+
+exec
+/bin/bash -lc "sed -n '261,620p' EVAL-HARNESS-2026-09-10.md && sed -n '1,240p' bin/harness && rg -n \"unilateral|UNILATERAL|coalition|joint|certificate|assignment|select\" harness sealed/.scratch/ladder-floor-20260910/oracle_runner.py | head -300" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+| `MARGIN_Q` FULL20, worlds warm, anchors cold | 4 loaded, 0.45 s | 20 solved, 711.43 s | **712.83 s** (11:54.5 incl. start) |
+| `MARGIN_Q` FULL20, warm | 4 loaded, 0.43 s | 20 read | **0.47 s** |
+| `SEALED` SCREEN2, cache disabled entirely | 2 built, 67.97 s | 2 solved, 94.40 s | 162.47 s |
+
+Read that as three different questions:
+
+* *Ask the same variant again* — 1 141.18 s → **0.49 s**, a factor of 2 300. Anchors and summary are bit-identical to the cold run (verified: `anchors` and `summary` compare equal element for element).
+* *Change only the provisioning rule* — `MARGIN_Q` would have cost 101.86 + 711.43 = 813.3 s from cold. It cost 712.83 s. The 101.9 s the provisioning rule cannot affect was not spent again; the 711.4 s it does affect was. That is a 12.5 % saving, and it is the honest ceiling for a variant change.
+* *Ask a question that does not need a new run at all* — the query layer (§6) answers in well under a second.
+
+**The caches change no number.** `receipts/sealed-screen2-nocache.json` was produced with the cache disabled entirely, from freshly built tapes, and its two anchor rows are bit-identical to the corresponding rows of the cached FULL20 receipt (`screen_rows_bit_identical_to_full_rows: true` over `bits`, `joules`, `served_count` and `configuration_id`).
+
+### What I expected to be cacheable and is not
+
+**The 94.5 % inside `_evaluate_ar_tdm_catalogue_core` cannot be cached, and no amount of engineering will change that.** It is precisely the quantity the provisioning rule alters. Worse than that, the variant changes the selector's *path*: `MARGIN_Q` reaches different unilateral optima, so it does not even visit the same set of configurations. There is no shared sub-result between `SEALED` and `MARGIN_Q` at the configuration level to memoise.
+
+**The per-boundary fading product quantile is the one thing I expected to cache and did not.** It is genuinely variant-independent — it depends only on the tape's elevations and on `α` — and `margin_batch.py`'s own comment says recomputing it "dominated the real four-worker gate". On this panel it does not. It measures 0.855 s cumulative out of a 48.07 s anchor, 1.8 %, because the sealed `channel` module already memoises it internally in `_cached_fading_product_quantile` (0.788 s of the 0.855 s is the cached lookup path). Adding a harness-level cache in front of it would mean reaching inside sealed physics for a saving smaller than run-to-run noise. I did not do it.
+
+**Cost of the cache.** 481 MB of disk for four world tapes (≈120 MB each) plus 1.5 MB for 40 anchor rows, to save 101.9 s per run. That is a poor ratio in absolute terms and a good one if the panel is run more than a handful of times. There is no eviction policy; deleting `.harness-cache/` is safe and only costs time.
+
+---
+
+## 5. H4 — the declared screen ladder
+
+### The rule, declared before use
+
+The rule is committed as data in `harness/cli.py:PROMOTION_RULE`, printed by `bin/harness rule`, and evaluated mechanically by `bin/harness screen`, which writes its own receipt. It was written before either screen was run.
+
+```json
+{
+  "id": "screen-promotion-rule-v1",
+  "declared": "2026-09-09",
+  "screen_panel": "SCREEN2",
+  "full_panel": "FULL20",
+  "statement": "A variant is promoted from SCREEN2 to FULL20 if and only if all four conditions below hold on the SCREEN2 receipt. The rule is a spend-authorisation rule for compute. It is not evidence about the variant, it does not rank variants, and a variant that fails it may still be run on FULL20 by explicit instruction, which must be recorded as an override in the promotion receipt.",
+  "conditions": [
+    "C1 the SEALED bit-identity proof passes at the same sealed manifest digest",
+    "C2 both SCREEN2 anchors completed with no evaluation error",
+    "C3 both SCREEN2 anchors have a defined ORACLE_SET-over-UNILATERAL gain, that is, UNILATERAL pooled EE is non-zero on the screen",
+    "C4 the screen's two world digests equal the FULL20 world digests for worlds 1 and 2, so the screen rows are literal FULL20 rows"
+  ],
+  "explicitly_not_a_condition": [
+    "the sign of any gain",
+    "the magnitude of any gain",
+    "agreement with any other variant",
+    "whether the result looks favourable"
+  ]
+}
+```
+
+**No condition reads any outcome.** The rule authorises spending compute; it says nothing about whether a variant is good. A harness self-test asserts that the conditions contain no outcome language, so the rule cannot be quietly rewritten into a filter on results.
+
+The screen itself: `SCREEN2` is anchors `(world 1, step 0)` and `(world 2, step 0)`, with world tapes built at the **same 5 steps** as `FULL20`. That makes a screen row a literal `FULL20` row rather than a different computation — verified, `screen_rows_are_subset_of_full: true` and `screen_rows_bit_identical_to_full_rows: true` for both variants. Cost: 162.47 s from completely cold, or two anchor solves (76.95 s for `SEALED`, 58.53 s for `MARGIN_Q`) once the world cache is warm, against 1 141 s and 813 s for the full panels.
+
+Both variants were screened; both satisfy C1–C4; both `promote: true`.
+
+### Measured agreement between screen and full panel
+
+```console
+$ bin/harness agreement --screen receipts/screen2-<v>.json --full receipts/<v>-full20.json
+```
+
+| Pooled gain | `SEALED` screen | `SEALED` full | Δ | sign agrees |
+|---|---:|---:|---:|:--:|
+| ORACLE_SET / UNILATERAL | +3.4902 % | +6.3590 % | −2.869 pp | yes |
+| UNILATERAL / BASELINE | +782.99 % | +664.36 % | +118.6 pp | yes |
+| ORACLE_SET / BASELINE | +813.81 % | +712.96 % | +100.9 pp | yes |
+
+| Pooled gain | `MARGIN_Q` screen | `MARGIN_Q` full | Δ | sign agrees |
+|---|---:|---:|---:|:--:|
+| ORACLE_SET / UNILATERAL | **−2.3837 %** | **+0.5448 %** | −2.928 pp | **no** |
+| UNILATERAL / BASELINE | +478.40 % | +442.14 % | +36.3 pp | yes |
+| ORACLE_SET / BASELINE | +464.61 % | +445.10 % | +19.5 pp | yes |
+
+Sign agreement across all six ordered arm pairs: **6 / 6 for `SEALED`, 4 / 6 for `MARGIN_Q`**. The two disagreements are the `ORACLE_SET`↔`UNILATERAL` pair, which flips sign between the screen and the full panel for `MARGIN_Q`.
+
+That is the honest finding about this screen, and it is why the promotion rule deliberately does not condition on any outcome: on the one variant where the screen and the panel disagree, an outcome-conditioned screen would have made the wrong call. Two anchors out of twenty, on a quantity whose full-panel per-anchor distribution for `MARGIN_Q` contains 7 negative anchors out of 20 (§6), is not a predictor of the pooled sign. **n = 2 variants is not a calibration**; it is two data points, reported as such.
+
+---
+
+## 6. H5 — the query layer
+
+Three questions, answered from stored receipts with no recomputation. These are the figures that were being derived by hand from receipt JSON on every previous question.
+
+**Pooled figures for any stored run.**
+
+```console
+$ bin/harness show receipts/sealed-full20-warm.json
+variant=SEALED  panel=FULL20  anchors=20
+receipt_sha256=a358cda5cf7bbb361b24c2916168f9e7965461ce062cc2daab1fd5b1e62201fe
+
+arm                               bits                joules            ee_bit_per_j    served
+BASELINE           545927267996.825317      146564.590465533       3724823.753560106       826
+UNILATERAL        1660779577104.984619       58332.519445156      28470904.272640795      1939
+ORACLE_SET        1694404970756.871826       55955.362097867      30281369.063313689      1957
+
+pooled relative EE gain                            ratio         percent
+BASELINE_over_UNILATERAL                 -0.869170865882       -86.9171%
+BASELINE_over_ORACLE_SET                 -0.876992888077       -87.6993%
+UNILATERAL_over_BASELINE                  6.643557428839       664.3557%
+UNILATERAL_over_ORACLE_SET               -0.059788075859        -5.9788%
+ORACLE_SET_over_BASELINE                  7.129611242511       712.9611%
+ORACLE_SET_over_UNILATERAL                0.063589999578         6.3590%
+
+recomputed pooled matches stored summary: True
+```
+
+The last line is a standing self-check: the query layer recomputes the pooled block from the anchor rows with `math.fsum` in anchor order and compares it to the `summary` the run stored. If they ever disagree, the receipt is not trustworthy and the harness says so.
+
+**Difference between any two runs.**
+
+```console
+$ bin/harness diff receipts/sealed-full20-warm.json receipts/margin-q-full20.json
+{
+  "anchor_sets_identical": true,
+  "shared_anchor_count": 20,
+  "delta_pooled_right_minus_left": {
+    "BASELINE":   {"bits":  844658166521.90, "joules": 28724.19, "ee_bit_per_j":  4208287.70, "served_count_sum": 339},
+    "UNILATERAL": {"bits": 1541361801792.37, "joules": 16120.60, "ee_bit_per_j": 14537925.33, "served_count_sum":  61},
+    "ORACLE_SET": {"bits": 1507523858979.85, "joules": 18089.44, "ee_bit_per_j": 12961757.96, "served_count_sum":  43}
+  },
+  "delta_pooled_gains_right_minus_left": {
+    "ORACLE_SET_over_UNILATERAL": -0.05814234097926385,
+    "UNILATERAL_over_BASELINE":   -2.2221247620142313,
+    "ORACLE_SET_over_BASELINE":   -2.6786444614028815,
+    "…": "…"
+  }
+}
+```
+
+**Per-anchor distribution of any arm-over-arm gain, including the count of negative anchors.**
+
+```console
+$ bin/harness dist receipts/margin-q-full20.json --over ORACLE_SET --base UNILATERAL
+variant=MARGIN_Q  panel=FULL20  gain=ORACLE_SET over UNILATERAL
+defined=20 undefined=0 negative=7 zero=0 positive=13
+  min    -0.043708314327
+  q25    -0.002074484968
+  median +0.002454546713
+  q75    +0.007234092328
+  max    +0.069427709762
+  mean   +0.004912805426
+  negative anchors:
+    V025_PROBE_R2/world/1:step/0      -0.005227946869
+    V025_PROBE_R2/world/1:step/2      -0.001811277013
+    V025_PROBE_R2/world/2:step/0      -0.043708314327
+    V025_PROBE_R2/world/2:step/1      -0.007137952537
+    V025_PROBE_R2/world/2:step/3      -0.033906153684
+    V025_PROBE_R2/world/2:step/4      -0.002864108836
+    V025_PROBE_R2/world/4:step/3      -0.000577700697
+  per anchor:
+    …  (20 rows)
+```
+
+The same command on `SEALED` gives `defined=20 undefined=0 negative=0 zero=0 positive=20`, min `+0.008476845895`, median `+0.049948090197`, max `+0.174406143956`. `undefined` counts anchors where the reference arm's pooled EE is zero and the ratio does not exist; it is reported separately from `zero` so a missing value can never be silently read as a null result.
+
+---
+
+## 7. Receipts and logs
+
+Every number in this document comes from one of these files, all written by the harness.
+
+| File | `receipt_sha256` |
+|---|---|
+| `receipts/sealed-full20-warm.json` (SEALED FULL20) | `a358cda5cf7bbb361b24c2916168f9e7965461ce062cc2daab1fd5b1e62201fe` |
+| `receipts/sealed-full20.json` (`reproduce`) | `7497c6d0587ca9df2eb2bd301e51bcc0bb790ef9195b8975db371b3fd8915e6f` |
+| `receipts/sealed-full20-two-arms.json` | `f91286fd5a899267be637f522387cec8d30025d9d9b4bc3f393a01f2145f1b02` |
+| `receipts/margin-q-full20.json` | `d0d39ae5b6b7aa7bc9e4849700747704d87b2be7438b40c33ff91e1552c2e1b1` |
+| `receipts/sealed-screen2-nocache.json` (cache disabled) | `33e71bb96182dbcf55c0f89781fc719346efda943c0ec2b0de058a444ea04778` |
+| `receipts/screen2-sealed.json` | `d9b1c97090ad7b7d92cda205e24721d62bba9fd69e7d670688dc03c17b3bcf1c` |
+| `receipts/screen2-margin-q.json` | `5f8baf3cc2bf955412e9a35e5060a9ec352bb671b9342dbf9d09f852a671689d` |
+| `receipts/sealed-bit-identity.json` (file SHA-256) | `21942b85b09874be77e4d5e49a0a04914ab44eefb59a0405097219f95e0d1d23` |
+| `receipts/world-cache-variant-independence.json` (file SHA-256) | `b4381944ae6136fc55dedfbace8ac4e36eef9a66869f66b6016eaacca783d8e3` |
+| `receipts/profile-sealed.json` (file SHA-256) | `6f246323d9bd569bc169ddafa6a3f0e4009984c9831fee6777d74930b31cebdb` |
+
+Run logs, including `/usr/bin/time -v` for the timed runs, are in `logs/00-sequence.log` … `logs/05-screen2-nocache.log`. The archived comparison receipts are copied read-only to `ladder-archive/`.
+
+`tests/harness/test_harness.py` — 11 tests, all passing, no physics evaluated:
+
+```console
+$ PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/harness/test_harness.py -q
+...........                                                              [100%]
+```
+
+---
+
+## 8. What I did not build
+
+* **No parallelism.** Selection runs in one process with `pool=None`, exactly as the archived runs did. `SELECTION_WORKERS` in the sealed runner is 1 and I did not touch it. A four-worker path would be the single largest remaining speed-up on a cold panel and is untouched.
+* **No arm-level compute selection.** `--arms` filters reporting only. Computing `ORACLE_SET` without `UNILATERAL`, or either without `BASELINE`, is not possible under the sealed definitions and was not attempted.
+* **No third variant.** The seam is built and the two required variants are registered. Nothing was screened, ranked or recommended.
+* **No new panels.** Only `FULL20` and `SCREEN2`. There is no way to run an arbitrary subset of anchors by id; a new panel is a small edit to `harness/panel.py`, not a command-line option.
+* **No statistical inference.** No confidence intervals, no hypothesis tests, no bootstrap. The `dist` command reports order statistics and counts, nothing more. Adding inference would make this an experiment rather than an instrument.
+* **No cache management.** No eviction, no size cap, no locking. Two harness processes writing the same cache key concurrently is not guarded against. 481 MB for four tapes.
+* **No verification of the sealed physics itself.** The harness proves that the bytes it runs are the bytes that produced the archive. It says nothing about whether those bytes are physically correct, and the `MARGIN_Q` results are a diagnostic of a provisioning rule, not a finding about it.
+* **No repair of the pre-existing test baseline.** The 2026-09-09 harness audit in this workspace found 6 failing tests and one non-terminating Stage-C test in `tests/physics_v025` and `tests/stagec_v025`. I did not touch those suites and did not fix them. The harness deliberately does not import this workspace's `src/mcrl` at all, so those failures neither affect nor are affected by anything here — but they remain open.
+* **No cross-machine claim.** All timings are from this machine, one process, `nice -n 15`. The archived ladder run of the same panel took 1 598.9 s on its machine; that is not a before/after comparison and is not presented as one.
+* **No receipt immutability beyond SHA-256.** Receipts are plain files. Nothing signs them or prevents them being edited.
+* **No migration of this workspace's `src/` to the sealed version.** They differ in nine physics modules. I vendored rather than replaced, deliberately, because replacing a sealed tree is exactly the thing this brief forbids. Anyone running the repo's own tests is still running the older physics; that divergence is real and unresolved.
+#!/usr/bin/env bash
+# Single entry point.  Uses the pinned interpreter and the pinned niceness.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.cli "$@"
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:102:    selected: object
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:121:def _selection_worker(task):
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:169:            results = [_selection_worker((self.step_index, self.base, missing))]
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:176:                _selection_worker,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:197:                f"invalid selection configuration {config.configuration_id}"
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:228:                    _configuration(base, mapping, "unilateral-coordinate")
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:247:            if best.assignments != current.assignments:
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:261:                    "unique_selection_evaluations": evaluator.physical_evaluations,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:268:    # Every action here was physically evaluated in the terminal certificate.
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:270:    # coalition memberships; users are never ranked by this value.
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:343:def build_joint_candidates(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:344:    *, tape, step_index: int, base, unilateral, best_alternatives
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:349:    current_map = unilateral.mapping
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:360:    def add(mapping, *, family: str, coalition: Sequence[int], detail: str) -> None:
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:368:        assignments = tuple(sorted(mapping.items()))
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:369:        aliases.setdefault(assignments, []).append(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:372:                "coalition_users": list(sorted(coalition)),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:377:        if assignments not in configs:
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:378:            configs[assignments] = _configuration(base, mapping, family)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:384:            for coalition in itertools.combinations(occupants, size):
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:387:                if any(user not in best_alternatives for user in coalition):
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:390:                for user in coalition:
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:395:                    coalition=coalition,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:408:            tape=tape, step_index=step_index, current=unilateral, victim=victim
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:413:            coalition = (victim, *contributors[:count])
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:414:            if any(user not in best_alternatives for user in coalition):
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:417:            for user in coalition:
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:422:                coalition=coalition,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:440:                coalition=occupants,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:463:    selection = ParallelSelectionEvaluator(tape, step_index, base, pool)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:469:        evaluator=selection,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:471:    unilateral = coordinate.selected
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:472:    before_joint_evaluations = selection.physical_evaluations
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:473:    candidates, aliases, family_counts = build_joint_candidates(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:477:        unilateral=unilateral,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:480:    selection.evaluate_many(candidates)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:481:    base_profile = selection.evaluate(base)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:482:    unilateral_profile = selection.evaluate(unilateral)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:484:    best = unilateral
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:485:    best_profile = unilateral_profile
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:487:        profile = selection._evaluated.get(candidate.configuration_id)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:494:            and best is not unilateral
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:499:    coalition_users = tuple(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:501:        for user in sorted(unilateral.mapping)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:502:        if unilateral.mapping[user] != best.mapping[user]
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:506:    if coalition_users:
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:507:        for user in coalition_users:
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:508:            mapping = unilateral.mapping
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:511:            singleton_profile = selection.evaluate(singleton)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:512:            singleton_sum += objective(singleton_profile) - objective(unilateral_profile)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:515:            - objective(unilateral_profile)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:532:        row.configuration_id: row for row in (base, unilateral, best)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:538:        "UNILATERAL": committed.evaluate(unilateral),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:541:    chosen_aliases = aliases.get(best.assignments, ())
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:542:    qualifying = bool(coalition_users) and objective(best_profile) > objective(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:543:        unilateral_profile
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:553:        "selection": {
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:559:            "unilateral_iterations": coordinate.iterations,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:560:            "unilateral_passes": coordinate.passes,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:561:            "unilateral_terminal_certified": True,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:562:            "unilateral_candidate_comparisons": coordinate.candidate_comparisons,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:563:            "joint_catalogue_unique": len(candidates),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:564:            "joint_catalogue_aliases": sum(len(value) for value in aliases.values()),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:565:            "joint_family_unique_counts": family_counts,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:566:            "qualifying_coalition_existed": qualifying,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:567:            "selected_coalition_size": len(coalition_users) if qualifying else 0,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:568:            "selected_coalition_users": list(coalition_users) if qualifying else [],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:569:            "selected_candidate_aliases": list(chosen_aliases) if qualifying else [],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:570:            "selected_joint_served": served(best_profile),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:571:            "selected_joint_F_gain_bits": float(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:572:                objective(best_profile) - objective(unilateral_profile)
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:574:            "selected_singleton_sum_bits": float(singleton_sum),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:575:            "selected_Psi_A_bits": float(psi),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:576:            "selected_Psi_A_exact": frac_payload(psi),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:577:            "unique_selection_configuration_evaluations": selection.physical_evaluations,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:578:            "unilateral_unique_evaluations_before_joint": before_joint_evaluations,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:579:            "new_joint_unique_evaluations": (
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:580:                selection.physical_evaluations - before_joint_evaluations
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:582:            "selection_physical_boundary_evaluations": selection.physical_evaluations,
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:587:                "assignments": list(profile.config.assignments),
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:599:    row["committed"]["ORACLE_SET"]["relative_ee_gain_over_UNILATERAL"] = relative_gain(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:601:        row["committed"]["UNILATERAL"]["ee_bit_per_j"],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:603:    row["committed"]["UNILATERAL"]["relative_ee_gain_over_BASELINE"] = relative_gain(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:604:        row["committed"]["UNILATERAL"]["ee_bit_per_j"],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:608:        raise RuntimeError("ORACLE_SET violated the literal selection-time service guard")
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:609:    if objective(best_profile) < objective(unilateral_profile):
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:610:        raise RuntimeError("ORACLE_SET is worse than its included UNILATERAL reference")
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:621:    selectors = ("BASELINE", "UNILATERAL", "ORACLE_SET")
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:623:    for name in selectors:
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:637:        "qualifying_coalition_anchor_count": sum(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:638:            bool(row["selection"]["qualifying_coalition_existed"]) for row in anchors  # type: ignore[index]
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:641:        "oracle_set_over_unilateral_relative": relative_gain(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:643:            pooled["UNILATERAL"]["ee_bit_per_j"],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:645:        "unilateral_over_baseline_relative": relative_gain(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:646:            pooled["UNILATERAL"]["ee_bit_per_j"],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:650:            "unique_selection_configurations": sum(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:651:                int(row["selection"]["unique_selection_configuration_evaluations"])  # type: ignore[index]
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:654:            "selection_boundary_evaluations": sum(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:655:                int(row["selection"]["selection_physical_boundary_evaluations"])  # type: ignore[index]
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:666:            "unilateral_candidate_comparisons": sum(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:667:                int(row["selection"]["unilateral_candidate_comparisons"])  # type: ignore[index]
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:670:            "joint_unique_candidates": sum(
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:671:                int(row["selection"]["joint_catalogue_unique"])  # type: ignore[index]
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:753:                            "unilateral_iterations": row["selection"]["unilateral_iterations"],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:754:                            "joint_candidates": row["selection"]["joint_catalogue_unique"],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:755:                            "qualifying": row["selection"]["qualifying_coalition_existed"],
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:758:                                if row["committed"]["ORACLE_SET"]["relative_ee_gain_over_UNILATERAL"] is None
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:760:                                * row["committed"]["ORACLE_SET"]["relative_ee_gain_over_UNILATERAL"]
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:795:        "selection_objective": "exact binary64 F = B - eta_ref*E at realised boundary 0, held for 30.08 s",
+sealed/.scratch/ladder-floor-20260910/oracle_runner.py:797:        "service_guard": "selection-time served count >= BASELINE served count",
+harness/sealed.py:78:    The anchor evaluation, the unilateral certificate, the bounded coalition
+harness/profile.py:5:construction, the boundary-0 selector, and the 48-boundary committed
+harness/profile.py:107:    selection_evaluations = sum(
+harness/profile.py:108:        int(row["selection"]["selection_physical_boundary_evaluations"]) for row in rows
+harness/profile.py:125:        "selection_boundary_evaluations": selection_evaluations,
+harness/report.py:11:ARMS = ("BASELINE", "UNILATERAL", "ORACLE_SET")
+harness/cli.py:11:    bin/harness dist      receipts/x.json --over ORACLE_SET --base UNILATERAL
+harness/cli.py:29:ARCHIVED_ORACLE_OVER_UNILATERAL = 0.06358999957766232
+harness/cli.py:49:        "C3 both SCREEN2 anchors have a defined ORACLE_SET-over-UNILATERAL gain, "
+harness/cli.py:50:        "that is, UNILATERAL pooled EE is non-zero on the screen",
+harness/cli.py:196:            if _canonical(row["committed"][arm]["assignments"]) != _canonical(
+harness/cli.py:197:                other["committed"][arm]["assignments"]
+harness/cli.py:200:                    {"anchor_id": row["anchor_id"], "arm": arm, "key": "assignments"}
+harness/cli.py:224:    produced = gains["ORACLE_SET_over_UNILATERAL"]
+harness/cli.py:239:        "target_oracle_over_unilateral": target,
+harness/cli.py:240:        "produced_oracle_over_unilateral": produced,
+harness/cli.py:241:        "archived_oracle_over_unilateral": archive["summary"][
+harness/cli.py:242:            "oracle_set_over_unilateral_relative"
+harness/cli.py:246:            f"{100.0 * archive['summary']['oracle_set_over_unilateral_relative']:+.4f}%"
+harness/cli.py:249:        == archive["summary"]["oracle_set_over_unilateral_relative"],
+harness/cli.py:301:        "C3_gain_defined_on_screen": gains["ORACLE_SET_over_UNILATERAL"] is not None,
+harness/cli.py:510:        "--target", type=float, default=ARCHIVED_ORACLE_OVER_UNILATERAL
+harness/cli.py:559:    dist.add_argument("--base", default="UNILATERAL")
+harness/runner.py:26:ARMS = ("BASELINE", "UNILATERAL", "ORACLE_SET")
+harness/runner.py:155:                        "qualifying": row["selection"]["qualifying_coalition_existed"],
+harness/runner.py:159:                                "relative_ee_gain_over_UNILATERAL"
+harness/runner.py:164:                                "relative_ee_gain_over_UNILATERAL"
+harness/runner.py:190:            "relative to UNILATERAL and both are guarded by the BASELINE "
+harness/runner.py:214:        "selection_objective": (
+harness/runner.py:218:        "service_guard": "selection-time served count >= BASELINE served count",
+harness/proof.py:16:  4. ROUTE.  Both real evaluation routes -- the selector at boundary 0 and the
+harness/proof.py:149:        worker_rows, invalid, _ = reference._selection_worker((0, base, (base,)))
+harness/proof.py:151:            "selector_rows": len(worker_rows),
+harness/proof.py:152:            "selector_invalid": len(invalid),
+harness/proof.py:153:            "selector_bits": float(worker_rows[0].bits) if worker_rows else None,
+harness/proof.py:173:        "selector_route": calls[0] if calls else None,
+harness/proof.py:228:        and route["selector_route"]["boundary_count"] == 1
+harness/proof.py:229:        and route["selector_route"]["fading_quantile_alpha"] == 0.10
+harness/proof.py:232:        and route["selector_route"]["field"] == "realised"
+harness/variants/__init__.py:5:allowed to differ between variants: the panel, the anchors, the selector, the
+harness/variants/v_margin_q.py:7:selection is later judged at.  Exactly one line of the sealed evaluator
+harness/variants/v_margin_q.py:16:    "quantile the committed mode selection is judged at "
+
+codex
+The report confirms the archived selector is best-improvement by complete sweeps and that its terminal sweep is included in the quoted cost. I’m now mapping its exact objective, guard, candidate order, cache behavior, and bounded joint catalogue so the new path remains a faithful drop-in measurement rather than a weakened comparator.
+exec
+/bin/bash -lc "sed -n '1,640p' sealed/.scratch/ladder-floor-20260910/oracle_runner.py && sed -n '1,290p' harness/runner.py && sed -n '1,240p' harness/sealed.py && sed -n '1,130p' harness/panel.py && sed -n '1,140p' harness/variants/__init__.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+#!/usr/bin/env python3
+"""Perfect-knowledge set-interaction ceiling on corrected V0.25 physics.
+
+This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+the ten-second deployment deadline.  Selection uses the exact binary64
+decision-boundary outcomes; committed reporting uses all 48 realised
+boundaries from the same detached world tape.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from dataclasses import dataclass
+from fractions import Fraction
+import hashlib
+import importlib.util
+import itertools
+import json
+import math
+import os
+from pathlib import Path
+import platform
+import subprocess
+import sys
+import time
+from typing import Mapping, Sequence
+
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+PROBE_PATH = (
+    REPO
+    / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+)
+OUTPUT_PATH = HERE / "oracle-ceiling-result.json"
+ETA_REF = Fraction("19720681.00172232")
+ANCHORS_PER_WORLD = 5
+WORLD_COUNT = 4
+SELECTION_WORKERS = 1
+OCCUPANT_SUBSET_MAX_SIZE = 4
+OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+JOINT_CANDIDATE_CAP = 4_096
+CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
+
+
+def _load_probe():
+    spec = importlib.util.spec_from_file_location("oracle_v025_probe", PROBE_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load the pinned V0.25 probe")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+probe = _load_probe()
+
+
+def exact_float(value: float) -> Fraction:
+    """Treat the simulator's finite binary64 result as an exact coefficient."""
+
+    if not math.isfinite(value):
+        raise RuntimeError("non-finite physical coefficient")
+    return Fraction.from_float(float(value))
+
+
+def objective(profile) -> Fraction:
+    return exact_float(profile.bits) - ETA_REF * exact_float(profile.joules)
+
+
+def served(profile) -> int:
+    if isinstance(profile, SelectionMetric):
+        return profile.served_count
+    return sum(bool(value) for value in profile.score.served_phy.values())
+
+
+def ratio(bits: float, joules: float) -> float:
+    if not math.isfinite(bits) or not math.isfinite(joules) or joules <= 0.0:
+        raise RuntimeError("invalid EE components")
+    return bits / joules
+
+
+def relative_gain(numerator: float, denominator: float) -> float | None:
+    """Return an anchor-local gain, or None when the reference EE is zero."""
+
+    if denominator == 0.0:
+        return None
+    return numerator / denominator - 1.0
+
+
+def frac_payload(value: Fraction) -> list[int]:
+    return [value.numerator, value.denominator]
+
+
+def _configuration(base, mapping: Mapping[int, tuple[int, int] | None], kind: str):
+    return probe._configuration(base, dict(mapping), kind=kind)
+
+
+@dataclass(frozen=True)
+class CoordinateResult:
+    selected: object
+    iterations: int
+    passes: int
+    terminal_candidates: tuple[object, ...]
+    best_alternatives: Mapping[int, tuple[int, int]]
+    candidate_comparisons: int
+
+
+@dataclass(frozen=True)
+class SelectionMetric:
+    config: object
+    bits: float
+    joules: float
+    served_count: int
+
+
+_WORKER_TAPE = None
+
+
+def _selection_worker(task):
+    step_index, base, configs = task
+    evaluator = probe.StepEvaluator(
+        _WORKER_TAPE,
+        probe._setting("a-r0"),
+        step_index,
+        transition_from=base,
+        field="realised",
+        run_setting=probe.run_setting_for("a-r0"),
+        boundary_indices=(0,),
+        fading_quantile_alpha=0.10,
+    )
+    evaluator.evaluate_many(configs)
+    rows = []
+    for config in configs:
+        profile = evaluator._evaluated.get(config.configuration_id)
+        if profile is not None:
+            rows.append(
+                SelectionMetric(
+                    config, profile.bits, profile.joules, served(profile)
+                )
+            )
+    return rows, tuple(evaluator._invalid), evaluator.physical_evaluations
+
+
+class ParallelSelectionEvaluator:
+    """Persistent fork workers over one detached tape; exact stable reduction."""
+
+    def __init__(self, tape, step_index: int, base, pool) -> None:
+        self.tape = tape
+        self.step_index = step_index
+        self.base = base
+        self.pool = pool
+        self._evaluated: dict[str, SelectionMetric] = {}
+        self._invalid: set[str] = set()
+        self.physical_evaluations = 0
+
+    def evaluate_many(self, configs: Sequence[object]) -> None:
+        missing_by_id = {
+            row.configuration_id: row
+            for row in configs
+            if row.configuration_id not in self._evaluated
+            and row.configuration_id not in self._invalid
+        }
+        missing = tuple(missing_by_id.values())
+        if not missing:
+            return
+        if self.pool is None:
+            results = [_selection_worker((self.step_index, self.base, missing))]
+        else:
+            shards = tuple(
+                tuple(missing[index::SELECTION_WORKERS])
+                for index in range(SELECTION_WORKERS)
+            )
+            results = self.pool.map(
+                _selection_worker,
+                tuple((self.step_index, self.base, shard) for shard in shards),
+                chunksize=1,
+            )
+        unordered = {}
+        for rows, invalid, evaluations in results:
+            unordered.update((row.config.configuration_id, row) for row in rows)
+            self._invalid.update(invalid)
+            self.physical_evaluations += evaluations
+        for config in missing:
+            if config.configuration_id in unordered:
+                self._evaluated[config.configuration_id] = unordered[
+                    config.configuration_id
+                ]
+
+    def evaluate(self, config) -> SelectionMetric:
+        self.evaluate_many((config,))
+        try:
+            return self._evaluated[config.configuration_id]
+        except KeyError:
+            raise RuntimeError(
+                f"invalid selection configuration {config.configuration_id}"
+            ) from None
+
+
+def coordinate_optimum(*, tape, step_index: int, base, evaluator) -> CoordinateResult:
+    """Deterministic cyclic best responses to a strict local optimum."""
+
+    options, _ = probe._legal_options(tape, step_index)
+    base_profile = evaluator.evaluate(base)
+    guard = served(base_profile)
+    current = base
+    iterations = 0
+    passes = 0
+    comparisons = 0
+    terminal: tuple[object, ...] = ()
+
+    while True:
+        passes += 1
+        pass_moves = 0
+        pass_candidates = []
+        for user in sorted(options):
+            current_profile = evaluator.evaluate(current)
+            current_value = objective(current_profile)
+            candidates = []
+            current_map = current.mapping
+            for identity in options[user]:
+                if identity == current_map[user]:
+                    continue
+                mapping = dict(current_map)
+                mapping[user] = identity
+                candidates.append(
+                    _configuration(base, mapping, "unilateral-coordinate")
+                )
+            evaluator.evaluate_many(candidates)
+            comparisons += len(candidates)
+            pass_candidates.extend(candidates)
+            best = current
+            best_value = current_value
+            for candidate in candidates:
+                profile = evaluator._evaluated.get(candidate.configuration_id)
+                if profile is None or served(profile) < guard:
+                    continue
+                value = objective(profile)
+                if value > best_value or (
+                    value == best_value
+                    and best is not current
+                    and candidate.configuration_id < best.configuration_id
+                ):
+                    best = candidate
+                    best_value = value
+            if best.assignments != current.assignments:
+                current = best
+                iterations += 1
+                pass_moves += 1
+        if pass_moves == 0:
+            terminal = tuple(pass_candidates)
+            break
+        print(
+            json.dumps(
+                {
+                    "coordinate_step": step_index,
+                    "completed_passes": passes,
+                    "moves_in_pass": pass_moves,
+                    "completed_improving_moves": iterations,
+                    "unique_selection_evaluations": evaluator.physical_evaluations,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+
+    # Every action here was physically evaluated in the terminal certificate.
+    # The alternate is chosen per user only to instantiate physically-defined
+    # coalition memberships; users are never ranked by this value.
+    best_alternatives: dict[int, tuple[int, int]] = {}
+    current_map = current.mapping
+    for user in sorted(options):
+        rows = []
+        for identity in options[user]:
+            if identity == current_map[user]:
+                continue
+            mapping = dict(current_map)
+            mapping[user] = identity
+            candidate = _configuration(base, mapping, "terminal-alternate")
+            profile = evaluator._evaluated.get(candidate.configuration_id)
+            if profile is not None:
+                rows.append((objective(profile), candidate.configuration_id, identity))
+        if rows:
+            best_alternatives[user] = min(
+                rows, key=lambda row: (-row[0], row[1])
+            )[2]
+
+    return CoordinateResult(
+        current,
+        iterations,
+        passes,
+        terminal,
+        best_alternatives,
+        comparisons,
+    )
+
+
+def _interference_contributors(
+    *, tape, step_index: int, current, victim: int
+) -> tuple[int, ...]:
+    """Rank users by physical nominal interference, never by reward marginal."""
+
+    mapping = current.mapping
+    victim_beam = mapping[victim]
+    if victim_beam is None:
+        return ()
+    occupancy = Counter(identity for identity in mapping.values() if identity is not None)
+    step = tape.steps[step_index]
+    scores = []
+    if step.arrays is not None:
+        arrays = step.arrays
+        victim_row = arrays._row_index().get((victim, victim_beam))
+        aggressor_of = arrays._aggressor_index()
+        if victim_row is None:
+            return ()
+        for user, beam in sorted(mapping.items()):
+            if user == victim or beam is None or beam == victim_beam:
+                continue
+            aggressor_index = aggressor_of.get(beam)
+            if aggressor_index is None:
+                continue
+            gain = arrays._cross_at_index(0, victim_row, aggressor_index)[0]
+            score = gain / occupancy[beam]
+            if score > 0.0:
+                scores.append((score, user))
+    else:
+        boundary = step.boundary_at(0)
+        by_key = {(row.user_id, row.identity): row for row in boundary.candidates}
+        victim_row = by_key.get((victim, victim_beam))
+        if victim_row is None:
+            return ()
+        cross = dict(victim_row.nominal_cross_gain_by_identity)
+        for user, beam in sorted(mapping.items()):
+            if user == victim or beam is None or beam == victim_beam:
+                continue
+            score = cross.get(beam, 0.0) / occupancy[beam]
+            if score > 0.0:
+                scores.append((score, user))
+    return tuple(user for _score, user in sorted(scores, key=lambda row: (-row[0], row[1])))
+
+
+def build_joint_candidates(
+    *, tape, step_index: int, base, unilateral, best_alternatives
+) -> tuple[tuple[object, ...], Mapping[tuple, tuple[dict[str, object], ...]], dict[str, int]]:
+    """Build a bounded catalogue from occupancy and interference mechanisms."""
+
+    options, _ = probe._legal_options(tape, step_index)
+    current_map = unilateral.mapping
+    by_beam: dict[tuple[int, int], tuple[int, ...]] = {}
+    for beam in sorted({row for row in current_map.values() if row is not None}):
+        by_beam[beam] = tuple(
+            user for user, identity in sorted(current_map.items()) if identity == beam
+        )
+
+    aliases: dict[tuple, list[dict[str, object]]] = {}
+    configs: dict[tuple, object] = {}
+    family_rows = Counter()
+
+    def add(mapping, *, family: str, coalition: Sequence[int], detail: str) -> None:
+        changed = tuple(
+            user
+            for user in sorted(current_map)
+            if mapping[user] != current_map[user]
+        )
+        if len(changed) < 2:
+            return
+        assignments = tuple(sorted(mapping.items()))
+        aliases.setdefault(assignments, []).append(
+            {
+                "family": family,
+                "coalition_users": list(sorted(coalition)),
+                "changed_users": list(changed),
+                "detail": detail,
+            }
+        )
+        if assignments not in configs:
+            configs[assignments] = _configuration(base, mapping, family)
+            family_rows[family] += 1
+
+    occupant_rows = 0
+    for beam, occupants in by_beam.items():
+        for size in range(2, min(OCCUPANT_SUBSET_MAX_SIZE, len(occupants)) + 1):
+            for coalition in itertools.combinations(occupants, size):
+                if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+                    break
+                if any(user not in best_alternatives for user in coalition):
+                    continue
+                mapping = dict(current_map)
+                for user in coalition:
+                    mapping[user] = best_alternatives[user]
+                add(
+                    mapping,
+                    family="beam-occupant-subset",
+                    coalition=coalition,
+                    detail=f"origin={beam[0]}:{beam[1]};size={size}",
+                )
+                occupant_rows += 1
+            if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+                break
+        if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+            break
+
+    for victim in sorted(current_map):
+        if victim not in best_alternatives:
+            continue
+        contributors = _interference_contributors(
+            tape=tape, step_index=step_index, current=unilateral, victim=victim
+        )
+        for count in (2, 3):
+            if len(contributors) < count:
+                continue
+            coalition = (victim, *contributors[:count])
+            if any(user not in best_alternatives for user in coalition):
+                continue
+            mapping = dict(current_map)
+            for user in coalition:
+                mapping[user] = best_alternatives[user]
+            add(
+                mapping,
+                family=f"victim-plus-top-{count}-contributors",
+                coalition=coalition,
+                detail=f"victim={victim};contributors={','.join(map(str, contributors[:count]))}",
+            )
+
+    for beam, occupants in by_beam.items():
+        if len(occupants) < 2:
+            continue
+        common = set(options[occupants[0]])
+        for user in occupants[1:]:
+            common.intersection_update(options[user])
+        common.discard(beam)
+        for destination in sorted(common):
+            mapping = dict(current_map)
+            for user in occupants:
+                mapping[user] = destination
+            add(
+                mapping,
+                family="complete-beam-evacuation",
+                coalition=occupants,
+                detail=(
+                    f"origin={beam[0]}:{beam[1]};"
+                    f"destination={destination[0]}:{destination[1]}"
+                ),
+            )
+
+    ordered = tuple(configs[key] for key in sorted(configs))
+    if len(ordered) > JOINT_CANDIDATE_CAP:
+        raise RuntimeError(
+            f"mechanism catalogue exceeds fixed bound: {len(ordered)} > {JOINT_CANDIDATE_CAP}"
+        )
+    return (
+        ordered,
+        {key: tuple(value) for key, value in aliases.items()},
+        dict(sorted(family_rows.items())),
+    )
+
+
+def evaluate_anchor(*, tape, world_index: int, step_index: int, pool=None) -> dict[str, object]:
+    setting = probe._setting("a-r0")
+    run_setting = probe.run_setting_for("a-r0")
+    base = probe._base_configuration(tape, step_index, "nearest-eligible")
+    selection = ParallelSelectionEvaluator(tape, step_index, base, pool)
+    started = time.perf_counter()
+    coordinate = coordinate_optimum(
+        tape=tape,
+        step_index=step_index,
+        base=base,
+        evaluator=selection,
+    )
+    unilateral = coordinate.selected
+    before_joint_evaluations = selection.physical_evaluations
+    candidates, aliases, family_counts = build_joint_candidates(
+        tape=tape,
+        step_index=step_index,
+        base=base,
+        unilateral=unilateral,
+        best_alternatives=coordinate.best_alternatives,
+    )
+    selection.evaluate_many(candidates)
+    base_profile = selection.evaluate(base)
+    unilateral_profile = selection.evaluate(unilateral)
+    guard = served(base_profile)
+    best = unilateral
+    best_profile = unilateral_profile
+    for candidate in candidates:
+        profile = selection._evaluated.get(candidate.configuration_id)
+        if profile is None or served(profile) < guard:
+            continue
+        value = objective(profile)
+        best_value = objective(best_profile)
+        if value > best_value or (
+            value == best_value
+            and best is not unilateral
+            and candidate.configuration_id < best.configuration_id
+        ):
+            best, best_profile = candidate, profile
+
+    coalition_users = tuple(
+        user
+        for user in sorted(unilateral.mapping)
+        if unilateral.mapping[user] != best.mapping[user]
+    )
+    psi = Fraction()
+    singleton_sum = Fraction()
+    if coalition_users:
+        for user in coalition_users:
+            mapping = unilateral.mapping
+            mapping[user] = best.mapping[user]
+            singleton = _configuration(base, mapping, "oracle-singleton-component")
+            singleton_profile = selection.evaluate(singleton)
+            singleton_sum += objective(singleton_profile) - objective(unilateral_profile)
+        psi = (
+            objective(best_profile)
+            - objective(unilateral_profile)
+            - singleton_sum
+        )
+
+    committed_counter = probe.EvaluationCounter()
+    committed = probe.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=base,
+        field="realised",
+        counter=committed_counter,
+        run_setting=run_setting,
+        boundary_indices=tuple(range(48)),
+        fading_quantile_alpha=0.10,
+    )
+    unique = {
+        row.configuration_id: row for row in (base, unilateral, best)
+    }
+    committed.evaluate_many(tuple(unique.values()))
+
+    profiles = {
+        "BASELINE": committed.evaluate(base),
+        "UNILATERAL": committed.evaluate(unilateral),
+        "ORACLE_SET": committed.evaluate(best),
+    }
+    chosen_aliases = aliases.get(best.assignments, ())
+    qualifying = bool(coalition_users) and objective(best_profile) > objective(
+        unilateral_profile
+    )
+    row = {
+        "anchor_id": f"V025_PROBE_R2/world/{world_index}:step/{step_index}",
+        "world_index": world_index,
+        "world_domain": tape.domain,
+        "world_sha256": tape.digest,
+        "tle_date": tape.tle_date,
+        "training_seed": tape.training_seed,
+        "step_index": step_index,
+        "selection": {
+            "field": "realised",
+            "boundary_indices": [0],
+            "held_snapshot_seconds": 30.08,
+            "eta_ref": frac_payload(ETA_REF),
+            "baseline_served_guard": guard,
+            "unilateral_iterations": coordinate.iterations,
+            "unilateral_passes": coordinate.passes,
+            "unilateral_terminal_certified": True,
+            "unilateral_candidate_comparisons": coordinate.candidate_comparisons,
+            "joint_catalogue_unique": len(candidates),
+            "joint_catalogue_aliases": sum(len(value) for value in aliases.values()),
+            "joint_family_unique_counts": family_counts,
+            "qualifying_coalition_existed": qualifying,
+            "selected_coalition_size": len(coalition_users) if qualifying else 0,
+            "selected_coalition_users": list(coalition_users) if qualifying else [],
+            "selected_candidate_aliases": list(chosen_aliases) if qualifying else [],
+            "selected_joint_served": served(best_profile),
+            "selected_joint_F_gain_bits": float(
+                objective(best_profile) - objective(unilateral_profile)
+            ),
+            "selected_singleton_sum_bits": float(singleton_sum),
+            "selected_Psi_A_bits": float(psi),
+            "selected_Psi_A_exact": frac_payload(psi),
+            "unique_selection_configuration_evaluations": selection.physical_evaluations,
+            "unilateral_unique_evaluations_before_joint": before_joint_evaluations,
+            "new_joint_unique_evaluations": (
+                selection.physical_evaluations - before_joint_evaluations
+            ),
+            "selection_physical_boundary_evaluations": selection.physical_evaluations,
+        },
+        "committed": {
+            name: {
+                "configuration_id": profile.config.configuration_id,
+                "assignments": list(profile.config.assignments),
+                "bits": profile.bits,
+                "joules": profile.joules,
+                "ee_bit_per_j": ratio(profile.bits, profile.joules),
+                "served_count": served(profile),
+            }
+            for name, profile in profiles.items()
+        },
+        "committed_unique_configuration_evaluations": len(unique),
+        "committed_physical_boundary_evaluations": committed_counter.boundary_evaluations,
+        "wall_seconds": time.perf_counter() - started,
+    }
+    row["committed"]["ORACLE_SET"]["relative_ee_gain_over_UNILATERAL"] = relative_gain(
+        row["committed"]["ORACLE_SET"]["ee_bit_per_j"],
+        row["committed"]["UNILATERAL"]["ee_bit_per_j"],
+    )
+    row["committed"]["UNILATERAL"]["relative_ee_gain_over_BASELINE"] = relative_gain(
+        row["committed"]["UNILATERAL"]["ee_bit_per_j"],
+        row["committed"]["BASELINE"]["ee_bit_per_j"],
+    )
+    if served(best_profile) < guard:
+        raise RuntimeError("ORACLE_SET violated the literal selection-time service guard")
+    if objective(best_profile) < objective(unilateral_profile):
+        raise RuntimeError("ORACLE_SET is worse than its included UNILATERAL reference")
+    return row
+
+
+def _git(*args: str) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=REPO, text=True, encoding="utf-8"
+    ).strip()
+
+
+def summarize(anchors: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    selectors = ("BASELINE", "UNILATERAL", "ORACLE_SET")
+    pooled = {}
+    for name in selectors:
+        bits = math.fsum(float(row["committed"][name]["bits"]) for row in anchors)  # type: ignore[index]
+        joules = math.fsum(float(row["committed"][name]["joules"]) for row in anchors)  # type: ignore[index]
+        pooled[name] = {
+            "bits": bits,
+            "joules": joules,
+            "ee_bit_per_j": ratio(bits, joules),
+            "served_count_sum": sum(
+                int(row["committed"][name]["served_count"]) for row in anchors  # type: ignore[index]
+            ),
+        }
+    return {
+        "anchor_count": len(anchors),
+        "world_count": len({str(row["world_domain"]) for row in anchors}),
+        "qualifying_coalition_anchor_count": sum(
+            bool(row["selection"]["qualifying_coalition_existed"]) for row in anchors  # type: ignore[index]
+        ),
+        "pooled": pooled,
+"""One panel run: variant in, receipt out.
+
+The anchor evaluation itself is not restated here.  It is imported verbatim
+from the sealed reference runner (``harness.sealed.reference_runner``), which
+is the exact file that produced the archived twenty-anchor receipts.  This
+module supplies only what surrounds it: the panel, the named variant seam,
+the caches, and the receipt.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import subprocess
+import sys
+import time
+
+from harness import panel as panel_module
+from harness import sealed as sealed_module
+from harness import variants as variants_module
+from harness.cache import HarnessCache
+
+ARMS = ("BASELINE", "UNILATERAL", "ORACLE_SET")
+SCHEMA = "mcrl-v025-perfect-knowledge-oracle-ceiling-v1"
+CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
+REPO = Path(__file__).resolve().parents[1]
+
+# Archived receipts label the two known variants with these formulation names.
+FORMULATION_ALIAS = {"SEALED": "original", "MARGIN_Q": "margin"}
+
+
+def _git(*args: str) -> str:
+    try:
+        return subprocess.check_output(
+            ["git", *args], cwd=REPO, text=True, encoding="utf-8"
+        ).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return "UNAVAILABLE"
+
+
+def install_variant(name: str):
+    """Resolve a named variant and install it on the single physics seam.
+
+    Returns ``(variant, installed, sealed_default)``.  For ``SEALED`` the
+    installed object must be the very object the probe already holds; that
+    identity is asserted here so a mis-registered SEALED cannot run at all.
+    """
+
+    reference = sealed_module.reference_runner()
+    sealed_default = sealed_module.pristine_evaluator()
+    variant = variants_module.get(name)
+    installed = variant.build(sealed_module)
+    if name == variants_module.DEFAULT_VARIANT and installed is not sealed_default:
+        raise RuntimeError(
+            "SEALED must resolve to the sealed evaluator object itself"
+        )
+    reference.probe.evaluate_ar_tdm_catalogue = installed
+    return variant, installed, sealed_default
+
+
+def run_panel(
+    *,
+    variant_name: str = variants_module.DEFAULT_VARIANT,
+    panel_name: str = "FULL20",
+    arms: tuple[str, ...] = ARMS,
+    use_cache: bool = True,
+    output: Path | None = None,
+    progress: bool = True,
+) -> dict:
+    unknown = [arm for arm in arms if arm not in ARMS]
+    if unknown:
+        raise RuntimeError(f"unknown arms: {unknown}; known: {list(ARMS)}")
+    tree = sealed_module.verify()
+    reference = sealed_module.reference_runner()
+    board = panel_module.get(panel_name)
+    variant, installed, sealed_default = install_variant(variant_name)
+    cache = HarnessCache(enabled=use_cache)
+
+    from mcrl.physics_v025.provider_legacy import factory as real_factory
+
+    started = time.perf_counter()
+    anchors: list[dict] = []
+    world_rows: list[dict] = []
+    world_cache_hit: dict[int, bool] = {}
+    anchor_cache_hit: list[bool] = []
+    tapes: dict[int, object] = {}
+
+    for world_index in board.worlds:
+        domain = reference.probe.PROBE_WORLD_DOMAINS[world_index - 1]
+        key = cache.world_key(
+            sealed_manifest=tree.manifest_sha256,
+            domain=domain,
+            steps=board.tape_steps,
+            start_time_s=0.0,
+            provider="mcrl.physics_v025.provider_legacy.factory",
+        )
+
+        def build(domain=domain):
+            return reference.probe.build_world_tape(
+                domain=domain,
+                provider=real_factory(),
+                steps=board.tape_steps,
+                start_time_s=0.0,
+            )
+
+        tape, meta, elapsed, hit = cache.world(key, build)
+        tapes[world_index] = tape
+        world_cache_hit[world_index] = hit
+        world_rows.append({"world_index": world_index, "cache_key": key, **meta})
+        if progress:
+            print(
+                json.dumps(
+                    {
+                        "world": domain,
+                        "world_sha256": tape.digest,
+                        "cache": "hit" if hit else "miss",
+                        "seconds": elapsed,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+    for world_index, step_index in board.anchors:
+        tape = tapes[world_index]
+        key = cache.anchor_key(
+            sealed_manifest=tree.manifest_sha256,
+            variant=variant_name,
+            variant_source=variant.source_sha256,
+            world_sha256=tape.digest,
+            step_index=step_index,
+        )
+
+        def build(tape=tape, world_index=world_index, step_index=step_index):
+            reference._WORKER_TAPE = tape
+            return reference.evaluate_anchor(
+                tape=tape,
+                world_index=world_index,
+                step_index=step_index,
+                pool=None,
+            )
+
+        row, hit = cache.anchor(key, build)
+        anchors.append(row)
+        anchor_cache_hit.append(hit)
+        if progress:
+            print(
+                json.dumps(
+                    {
+                        "anchor": row["anchor_id"],
+                        "cache": "hit" if hit else "miss",
+                        "qualifying": row["selection"]["qualifying_coalition_existed"],
+                        "oracle_ee_gain_pct": (
+                            None
+                            if row["committed"]["ORACLE_SET"][
+                                "relative_ee_gain_over_UNILATERAL"
+                            ]
+                            is None
+                            else 100.0
+                            * row["committed"]["ORACLE_SET"][
+                                "relative_ee_gain_over_UNILATERAL"
+                            ]
+                        ),
+                        "wall_seconds": row["wall_seconds"],
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+    measured = time.perf_counter() - started
+    result = {
+        "schema": SCHEMA,
+        "claim_ceiling": CLAIM_CEILING,
+        "variant": variant_name,
+        "variant_description": variant.description,
+        "variant_source": variant.source,
+        "variant_source_sha256": variant.source_sha256,
+        "formulation": FORMULATION_ALIAS.get(variant_name, variant_name.lower()),
+        "panel": board.name,
+        "panel_description": board.description,
+        "panel_tape_steps": board.tape_steps,
+        "reported_arms": list(arms),
+        "arms_computed": list(ARMS),
+        "arms_note": (
+            "All three arms are always computed: ORACLE_SET is defined "
+            "relative to UNILATERAL and both are guarded by the BASELINE "
+            "served count. --arms restricts reporting, not computation."
+        ),
+        "sealed_manifest_sha256": tree.manifest_sha256,
+        "sealed_file_count": tree.file_count,
+        "probe_source_sha256": tree.probe_sha256,
+        "source_commit": _git("rev-parse", "HEAD"),
+        "source_tree": _git("rev-parse", "HEAD^{tree}"),
+        "python": sys.executable,
+        "python_version": platform.python_version(),
+        "process_limit": 3,
+        "processes_used": 1,
+        "thread_environment": {
+            name: os.environ.get(name)
+            for name in (
+                "OMP_NUM_THREADS",
+                "OPENBLAS_NUM_THREADS",
+                "MKL_NUM_THREADS",
+                "NUMEXPR_NUM_THREADS",
+            )
+        },
+        "test_split_opened": False,
+        "learner_used": False,
+        "ten_second_deadline": "IGNORED_BY_DESIGN_FOR_CEILING",
+        "selection_objective": (
+            "exact binary64 F = B - eta_ref*E at realised boundary 0, held for 30.08 s"
+        ),
+        "committed_endpoint": "corrected causal ACM, realised 48-boundary endpoint",
+        "service_guard": "selection-time served count >= BASELINE served count",
+        "worlds": world_rows,
+        "anchors": anchors,
+        "summary": reference.summarize(anchors),
+        "cache": {
+            "enabled": use_cache,
+            "root": str(cache.root) if use_cache else None,
+            "world_cache_hit": {str(k): v for k, v in sorted(world_cache_hit.items())},
+            "anchor_cache_hits": sum(anchor_cache_hit),
+            "anchor_cache_misses": len(anchor_cache_hit) - sum(anchor_cache_hit),
+            "stats": cache.stats.as_dict(),
+        },
+        "wall_seconds": measured,
+        "wall_seconds_note": (
+            "Measured wall time of this invocation. Anchor rows served from "
+            "the anchor cache carry their original solve time in "
+            "anchors[].wall_seconds; that time was not spent again."
+        ),
+        "synthetic_self_test": False,
+    }
+    unsigned = json.dumps(
+        result, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    ).encode("ascii")
+    result["receipt_sha256"] = hashlib.sha256(unsigned).hexdigest()
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
+            encoding="ascii",
+        )
+    return result
+"""Locate, verify and load the vendored sealed physics tree.
+
+The sealed tree under ``sealed/`` is a byte-identical copy of the source tree
+that produced the archived twenty-anchor receipts.  Nothing in this module
+writes to it.  ``MANIFEST.sha256`` is checked on every load, so any harness
+number can be traced back to an exact set of physics bytes.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import importlib.util
+from pathlib import Path
+import sys
+
+REPO = Path(__file__).resolve().parents[1]
+SEALED_ROOT = REPO / "sealed"
+SEALED_SRC = SEALED_ROOT / "src"
+MANIFEST_PATH = SEALED_ROOT / "MANIFEST.sha256"
+REFERENCE_RUNNER = SEALED_ROOT / ".scratch/ladder-floor-20260910/oracle_runner.py"
+PROBE = SEALED_ROOT / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+
+# Recorded in the archived receipts; the tree is worthless if this drifts.
+EXPECTED_PROBE_SHA256 = "f4122d6784cb56de7743c55d51dc80a6c968ccea601d637cd1b41a8b5604c76c"
+
+
+class SealedTreeError(RuntimeError):
+    """The vendored sealed tree does not match its manifest."""
+
+
+@dataclass(frozen=True)
+class SealedTree:
+    root: Path
+    manifest_sha256: str
+    file_count: int
+    probe_sha256: str
+
+
+def _read_manifest() -> list[tuple[str, str]]:
+    rows = []
+    for line in MANIFEST_PATH.read_text(encoding="ascii").splitlines():
+        if not line.strip():
+            continue
+        digest, _, relative = line.partition("  ")
+        rows.append((digest, relative))
+    return rows
+
+
+def verify() -> SealedTree:
+    """Re-hash every vendored file and compare against the manifest."""
+
+    rows = _read_manifest()
+    for digest, relative in rows:
+        path = SEALED_ROOT / relative
+        if not path.is_file():
+            raise SealedTreeError(f"sealed file is missing: {relative}")
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != digest:
+            raise SealedTreeError(
+                f"sealed file changed: {relative} {actual} != {digest}"
+            )
+    probe_sha256 = hashlib.sha256(PROBE.read_bytes()).hexdigest()
+    if probe_sha256 != EXPECTED_PROBE_SHA256:
+        raise SealedTreeError(
+            f"probe source digest {probe_sha256} != archived {EXPECTED_PROBE_SHA256}"
+        )
+    manifest_sha256 = hashlib.sha256(MANIFEST_PATH.read_bytes()).hexdigest()
+    return SealedTree(SEALED_ROOT, manifest_sha256, len(rows), probe_sha256)
+
+
+_REFERENCE = None
+
+
+def reference_runner():
+    """Import the archived evaluation loop verbatim, from the sealed tree.
+
+    The anchor evaluation, the unilateral certificate, the bounded coalition
+    catalogue and the pooled summary are used exactly as the bytes that
+    produced ``ladder-archive/original-result.json``.  The harness adds the
+    panel, the variant seam, the caches and the receipt around them; it does
+    not restate any physics.
+    """
+
+    global _REFERENCE
+    if _REFERENCE is not None:
+        return _REFERENCE
+    verify()
+    if str(SEALED_SRC) not in sys.path:
+        sys.path.insert(0, str(SEALED_SRC))
+    spec = importlib.util.spec_from_file_location(
+        "harness_sealed_oracle_runner", REFERENCE_RUNNER
+    )
+    if spec is None or spec.loader is None:
+        raise SealedTreeError("cannot load the sealed reference runner")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    # Captured once, before anything can install a variant, so the identity
+    # guard compares against the pristine sealed evaluator rather than
+    # against whatever the previous command happened to leave installed.
+    module.__harness_pristine_evaluator__ = module.probe.evaluate_ar_tdm_catalogue
+    _REFERENCE = module
+    return module
+
+
+def pristine_evaluator():
+    """The sealed ``evaluate_ar_tdm_catalogue`` as first imported."""
+
+    return reference_runner().__harness_pristine_evaluator__
+
+
+def load_module(name: str, path: Path, package: str | None = None):
+    """Load a sealed-tree module by absolute path, with the sealed src on sys.path.
+
+    ``package`` sets ``__package__`` so a sealed module written with relative
+    imports resolves them against the real package, without that module being
+    the one registered under its canonical name.
+    """
+
+    reference_runner()
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise SealedTreeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    if package is not None:
+        importlib.import_module(package)
+        module.__package__ = package
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+"""Fixed anchor panels.
+
+An anchor is a ``(world_index, step_index)`` pair.  Every panel builds its
+world tapes with the same ``tape_steps``, so an anchor row from a small panel
+is bit-identical to the same anchor row from the full panel: a screen is a
+literal subset of the full panel, never a different computation.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+TAPE_STEPS = 5
+WORLD_COUNT = 4
+
+
+@dataclass(frozen=True)
+class Panel:
+    name: str
+    tape_steps: int
+    anchors: tuple[tuple[int, int], ...]
+    description: str
+
+    @property
+    def worlds(self) -> tuple[int, ...]:
+        seen = []
+        for world_index, _ in self.anchors:
+            if world_index not in seen:
+                seen.append(world_index)
+        return tuple(seen)
+
+
+FULL20 = Panel(
+    name="FULL20",
+    tape_steps=TAPE_STEPS,
+    anchors=tuple(
+        (world_index, step_index)
+        for world_index in range(1, WORLD_COUNT + 1)
+        for step_index in range(TAPE_STEPS)
+    ),
+    description="The published panel: 4 real worlds x 5 consecutive anchors.",
+)
+
+# Declared before use; see the screen ladder section of the report.
+SCREEN2 = Panel(
+    name="SCREEN2",
+    tape_steps=TAPE_STEPS,
+    anchors=((1, 0), (2, 0)),
+    description=(
+        "Two anchors, one per world, worlds 1 and 2, step 0. Tapes are built "
+        "with the full panel's 5 steps, so both rows are bit-identical to the "
+        "corresponding FULL20 rows."
+    ),
+)
+
+PANELS = {panel.name: panel for panel in (FULL20, SCREEN2)}
+
+
+def get(name: str) -> Panel:
+    if name not in PANELS:
+        raise KeyError(f"unknown panel {name!r}; known: {', '.join(sorted(PANELS))}")
+    return PANELS[name]
+"""Named physics-variant registry.
+
+A variant is one named replacement for the dense catalogue evaluator seam
+``probe.evaluate_ar_tdm_catalogue``.  Nothing else in the evaluation loop is
+allowed to differ between variants: the panel, the anchors, the selector, the
+service guard, the objective and the committed endpoint are shared.
+
+Adding a variant is one new file in this directory that defines ``NAME``,
+``DESCRIPTION`` and ``build(sealed)``.  Discovery is automatic; no other file
+in the harness changes.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import importlib
+from pathlib import Path
+import pkgutil
+from typing import Callable
+
+DEFAULT_VARIANT = "SEALED"
+
+
+@dataclass(frozen=True)
+class Variant:
+    name: str
+    description: str
+    build: Callable[[object], Callable]
+    source: str
+    source_sha256: str
+
+
+def _discover() -> dict[str, Variant]:
+    found: dict[str, Variant] = {}
+    for info in sorted(pkgutil.iter_modules(__path__), key=lambda row: row.name):
+        module = importlib.import_module(f"{__name__}.{info.name}")
+        name = getattr(module, "NAME", None)
+        if name is None:
+            continue
+        if name in found:
+            raise RuntimeError(f"duplicate variant name: {name}")
+        found[name] = Variant(
+            name=name,
+            description=module.DESCRIPTION,
+            build=module.build,
+            source=f"{__name__}.{info.name}",
+            source_sha256=hashlib.sha256(
+                Path(module.__file__).read_bytes()
+            ).hexdigest(),
+        )
+    return found
+
+
+_REGISTRY: dict[str, Variant] | None = None
+
+
+def registry() -> dict[str, Variant]:
+    global _REGISTRY
+    if _REGISTRY is None:
+        _REGISTRY = _discover()
+    return _REGISTRY
+
+
+def names() -> tuple[str, ...]:
+    return tuple(sorted(registry()))
+
+
+def get(name: str) -> Variant:
+    table = registry()
+    if name not in table:
+        raise KeyError(f"unknown variant {name!r}; known: {', '.join(sorted(table))}")
+    return table[name]
+
+exec
+/bin/bash -lc "git status --short && sed -n '430,625p' sealed/.scratch/ladder-floor-20260910/oracle_runner.py && sed -n '1,180p' harness/cli.py && sed -n '430,610p' harness/cli.py && sed -n '1,220p' tests/harness/test_harness.py && lscpu && free -h && env | rg '"'^(OMP|OPENBLAS|MKL|NUMEXPR|VECLIB|BLIS)_NUM_THREADS='"' | sort" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+ M .gitignore
+?? .scratch/harness-audit-2026-09-09/
+?? EVAL-HARNESS-2026-09-10.md
+?? HARNESS-AUDIT-2026-09-09.md
+?? bin/
+?? harness/
+?? ladder-archive/
+?? logs/
+?? receipts/
+?? run-all.sh
+?? sealed/
+?? tests/harness/
+        for user in occupants[1:]:
+            common.intersection_update(options[user])
+        common.discard(beam)
+        for destination in sorted(common):
+            mapping = dict(current_map)
+            for user in occupants:
+                mapping[user] = destination
+            add(
+                mapping,
+                family="complete-beam-evacuation",
+                coalition=occupants,
+                detail=(
+                    f"origin={beam[0]}:{beam[1]};"
+                    f"destination={destination[0]}:{destination[1]}"
+                ),
+            )
+
+    ordered = tuple(configs[key] for key in sorted(configs))
+    if len(ordered) > JOINT_CANDIDATE_CAP:
+        raise RuntimeError(
+            f"mechanism catalogue exceeds fixed bound: {len(ordered)} > {JOINT_CANDIDATE_CAP}"
+        )
+    return (
+        ordered,
+        {key: tuple(value) for key, value in aliases.items()},
+        dict(sorted(family_rows.items())),
+    )
+
+
+def evaluate_anchor(*, tape, world_index: int, step_index: int, pool=None) -> dict[str, object]:
+    setting = probe._setting("a-r0")
+    run_setting = probe.run_setting_for("a-r0")
+    base = probe._base_configuration(tape, step_index, "nearest-eligible")
+    selection = ParallelSelectionEvaluator(tape, step_index, base, pool)
+    started = time.perf_counter()
+    coordinate = coordinate_optimum(
+        tape=tape,
+        step_index=step_index,
+        base=base,
+        evaluator=selection,
+    )
+    unilateral = coordinate.selected
+    before_joint_evaluations = selection.physical_evaluations
+    candidates, aliases, family_counts = build_joint_candidates(
+        tape=tape,
+        step_index=step_index,
+        base=base,
+        unilateral=unilateral,
+        best_alternatives=coordinate.best_alternatives,
+    )
+    selection.evaluate_many(candidates)
+    base_profile = selection.evaluate(base)
+    unilateral_profile = selection.evaluate(unilateral)
+    guard = served(base_profile)
+    best = unilateral
+    best_profile = unilateral_profile
+    for candidate in candidates:
+        profile = selection._evaluated.get(candidate.configuration_id)
+        if profile is None or served(profile) < guard:
+            continue
+        value = objective(profile)
+        best_value = objective(best_profile)
+        if value > best_value or (
+            value == best_value
+            and best is not unilateral
+            and candidate.configuration_id < best.configuration_id
+        ):
+            best, best_profile = candidate, profile
+
+    coalition_users = tuple(
+        user
+        for user in sorted(unilateral.mapping)
+        if unilateral.mapping[user] != best.mapping[user]
+    )
+    psi = Fraction()
+    singleton_sum = Fraction()
+    if coalition_users:
+        for user in coalition_users:
+            mapping = unilateral.mapping
+            mapping[user] = best.mapping[user]
+            singleton = _configuration(base, mapping, "oracle-singleton-component")
+            singleton_profile = selection.evaluate(singleton)
+            singleton_sum += objective(singleton_profile) - objective(unilateral_profile)
+        psi = (
+            objective(best_profile)
+            - objective(unilateral_profile)
+            - singleton_sum
+        )
+
+    committed_counter = probe.EvaluationCounter()
+    committed = probe.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=base,
+        field="realised",
+        counter=committed_counter,
+        run_setting=run_setting,
+        boundary_indices=tuple(range(48)),
+        fading_quantile_alpha=0.10,
+    )
+    unique = {
+        row.configuration_id: row for row in (base, unilateral, best)
+    }
+    committed.evaluate_many(tuple(unique.values()))
+
+    profiles = {
+        "BASELINE": committed.evaluate(base),
+        "UNILATERAL": committed.evaluate(unilateral),
+        "ORACLE_SET": committed.evaluate(best),
+    }
+    chosen_aliases = aliases.get(best.assignments, ())
+    qualifying = bool(coalition_users) and objective(best_profile) > objective(
+        unilateral_profile
+    )
+    row = {
+        "anchor_id": f"V025_PROBE_R2/world/{world_index}:step/{step_index}",
+        "world_index": world_index,
+        "world_domain": tape.domain,
+        "world_sha256": tape.digest,
+        "tle_date": tape.tle_date,
+        "training_seed": tape.training_seed,
+        "step_index": step_index,
+        "selection": {
+            "field": "realised",
+            "boundary_indices": [0],
+            "held_snapshot_seconds": 30.08,
+            "eta_ref": frac_payload(ETA_REF),
+            "baseline_served_guard": guard,
+            "unilateral_iterations": coordinate.iterations,
+            "unilateral_passes": coordinate.passes,
+            "unilateral_terminal_certified": True,
+            "unilateral_candidate_comparisons": coordinate.candidate_comparisons,
+            "joint_catalogue_unique": len(candidates),
+            "joint_catalogue_aliases": sum(len(value) for value in aliases.values()),
+            "joint_family_unique_counts": family_counts,
+            "qualifying_coalition_existed": qualifying,
+            "selected_coalition_size": len(coalition_users) if qualifying else 0,
+            "selected_coalition_users": list(coalition_users) if qualifying else [],
+            "selected_candidate_aliases": list(chosen_aliases) if qualifying else [],
+            "selected_joint_served": served(best_profile),
+            "selected_joint_F_gain_bits": float(
+                objective(best_profile) - objective(unilateral_profile)
+            ),
+            "selected_singleton_sum_bits": float(singleton_sum),
+            "selected_Psi_A_bits": float(psi),
+            "selected_Psi_A_exact": frac_payload(psi),
+            "unique_selection_configuration_evaluations": selection.physical_evaluations,
+            "unilateral_unique_evaluations_before_joint": before_joint_evaluations,
+            "new_joint_unique_evaluations": (
+                selection.physical_evaluations - before_joint_evaluations
+            ),
+            "selection_physical_boundary_evaluations": selection.physical_evaluations,
+        },
+        "committed": {
+            name: {
+                "configuration_id": profile.config.configuration_id,
+                "assignments": list(profile.config.assignments),
+                "bits": profile.bits,
+                "joules": profile.joules,
+                "ee_bit_per_j": ratio(profile.bits, profile.joules),
+                "served_count": served(profile),
+            }
+            for name, profile in profiles.items()
+        },
+        "committed_unique_configuration_evaluations": len(unique),
+        "committed_physical_boundary_evaluations": committed_counter.boundary_evaluations,
+        "wall_seconds": time.perf_counter() - started,
+    }
+    row["committed"]["ORACLE_SET"]["relative_ee_gain_over_UNILATERAL"] = relative_gain(
+        row["committed"]["ORACLE_SET"]["ee_bit_per_j"],
+        row["committed"]["UNILATERAL"]["ee_bit_per_j"],
+    )
+    row["committed"]["UNILATERAL"]["relative_ee_gain_over_BASELINE"] = relative_gain(
+        row["committed"]["UNILATERAL"]["ee_bit_per_j"],
+        row["committed"]["BASELINE"]["ee_bit_per_j"],
+    )
+    if served(best_profile) < guard:
+        raise RuntimeError("ORACLE_SET violated the literal selection-time service guard")
+    if objective(best_profile) < objective(unilateral_profile):
+        raise RuntimeError("ORACLE_SET is worse than its included UNILATERAL reference")
+    return row
+
+
+def _git(*args: str) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=REPO, text=True, encoding="utf-8"
+    ).strip()
+
+
+def summarize(anchors: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    selectors = ("BASELINE", "UNILATERAL", "ORACLE_SET")
+    pooled = {}
+    for name in selectors:
+        bits = math.fsum(float(row["committed"][name]["bits"]) for row in anchors)  # type: ignore[index]
+        joules = math.fsum(float(row["committed"][name]["joules"]) for row in anchors)  # type: ignore[index]
+"""One command for the whole instrument.
+
+    bin/harness run       --variant SEALED --panel FULL20 --out receipts/x.json
+    bin/harness verify-sealed
+    bin/harness reproduce
+    bin/harness screen    --variant MARGIN_Q
+    bin/harness agreement --screen a.json --full b.json
+    bin/harness profile
+    bin/harness show      receipts/x.json
+    bin/harness diff      receipts/a.json receipts/b.json
+    bin/harness dist      receipts/x.json --over ORACLE_SET --base UNILATERAL
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import sys
+
+from harness import panel as panel_module
+from harness import query as query_module
+from harness import report
+from harness import variants as variants_module
+
+REPO = Path(__file__).resolve().parents[1]
+ARCHIVE_ORIGINAL = REPO / "ladder-archive/original-result.json"
+ARCHIVE_MARGIN = REPO / "ladder-archive/margin-result.json"
+ARCHIVED_ORACLE_OVER_UNILATERAL = 0.06358999957766232
+
+# H4: the screen promotion rule, declared here before any screen was run.
+# It is data, not prose, so it cannot be quietly restated after the fact.
+PROMOTION_RULE = {
+    "id": "screen-promotion-rule-v1",
+    "declared": "2026-09-09",
+    "screen_panel": "SCREEN2",
+    "full_panel": "FULL20",
+    "statement": (
+        "A variant is promoted from SCREEN2 to FULL20 if and only if all four "
+        "conditions below hold on the SCREEN2 receipt. The rule is a "
+        "spend-authorisation rule for compute. It is not evidence about the "
+        "variant, it does not rank variants, and a variant that fails it may "
+        "still be run on FULL20 by explicit instruction, which must be "
+        "recorded as an override in the promotion receipt."
+    ),
+    "conditions": [
+        "C1 the SEALED bit-identity proof passes at the same sealed manifest digest",
+        "C2 both SCREEN2 anchors completed with no evaluation error",
+        "C3 both SCREEN2 anchors have a defined ORACLE_SET-over-UNILATERAL gain, "
+        "that is, UNILATERAL pooled EE is non-zero on the screen",
+        "C4 the screen's two world digests equal the FULL20 world digests for "
+        "worlds 1 and 2, so the screen rows are literal FULL20 rows",
+    ],
+    "explicitly_not_a_condition": [
+        "the sign of any gain",
+        "the magnitude of any gain",
+        "agreement with any other variant",
+        "whether the result looks favourable",
+    ],
+}
+
+
+def _print_json(payload) -> None:
+    print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+
+
+def _arms(value: str | None):
+    if not value:
+        return report.ARMS
+    return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
+def cmd_variants(args) -> int:
+    table = variants_module.registry()
+    for name in sorted(table):
+        variant = table[name]
+        marker = " (default)" if name == variants_module.DEFAULT_VARIANT else ""
+        print(f"{name}{marker}\n  source: {variant.source}\n  {variant.description}\n")
+    return 0
+
+
+def cmd_panels(args) -> int:
+    for name in sorted(panel_module.PANELS):
+        board = panel_module.get(name)
+        print(f"{name}: {len(board.anchors)} anchors, tape_steps={board.tape_steps}")
+        print(f"  {board.description}")
+        print(f"  anchors: {list(board.anchors)}\n")
+    return 0
+
+
+def cmd_run(args) -> int:
+    from harness import runner
+
+    arms = _arms(args.arms)
+    result = runner.run_panel(
+        variant_name=args.variant,
+        panel_name=args.panel,
+        arms=arms,
+        use_cache=not args.no_cache,
+        output=args.out,
+        progress=not args.quiet,
+    )
+    table = report.pooled(result["anchors"], arms)
+    print()
+    print(f"variant={result['variant']}  panel={result['panel']}  "
+          f"anchors={len(result['anchors'])}")
+    print(f"receipt_sha256={result['receipt_sha256']}")
+    print(f"sealed_manifest_sha256={result['sealed_manifest_sha256']}")
+    print(f"world_sha256={[row['world_sha256'] for row in result['worlds']]}")
+    print()
+    print(report.pooled_table(table, arms))
+    print()
+    print(report.gains_table(report.pooled_gains(table, arms)))
+    print()
+    print(report.anchor_table(result["anchors"], arms))
+    print()
+    print(f"wall_seconds={result['wall_seconds']:.3f}  cache={result['cache']['stats']}")
+    if args.out:
+        print(f"receipt written: {args.out}")
+    return 0
+
+
+def cmd_verify_sealed(args) -> int:
+    from harness import proof
+
+    verdict = proof.sealed_bit_identity()
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(
+            json.dumps(verdict, indent=2, sort_keys=True) + "\n", encoding="ascii"
+        )
+    summary = {
+        "verdict": verdict["verdict"],
+        "sealed_manifest_sha256": verdict["sealed_manifest_sha256"],
+        "probe_source_sha256": verdict["probe_source_sha256"],
+        "structural": verdict["structural"],
+        "sealed_fixture_cases_alpha_none": verdict["sealed_fixture_parity_alpha_none"][
+            "case_count"
+        ],
+        "sealed_all_fields_equal_alpha_none": verdict[
+            "sealed_fixture_parity_alpha_none"
+        ]["all_cases_equal"],
+        "sealed_all_fields_equal_alpha_0_10": verdict[
+            "sealed_fixture_parity_alpha_0_10"
+        ]["all_cases_equal"],
+        "margin_q_all_fields_equal_alpha_none": verdict[
+            "margin_q_fixture_parity_alpha_none"
+        ]["all_cases_equal"],
+        "teeth_positive_control": verdict["teeth_positive_control"],
+        "route_ok": verdict["route"]["ok"],
+    }
+    _print_json(summary)
+    if args.out:
+        print(f"proof written: {args.out}")
+    return 0 if verdict["verdict"] == "PASS" else 1
+
+
+def _canonical(value):
+    """Normalise tuple/list shape so a fresh row and a stored row compare equal.
+
+    A freshly evaluated anchor holds Python tuples where a JSON receipt holds
+    lists.  That is a serialisation difference, not a physical one, so both
+    sides are put through the same JSON round trip before comparison.
+    """
+
+    return json.loads(json.dumps(value, allow_nan=False))
+
+
+def _exact_anchor_comparison(produced, archived) -> dict:
+    by_id = {row["anchor_id"]: row for row in archived}
+    scalar_keys = ("bits", "joules", "ee_bit_per_j", "served_count", "configuration_id")
+    mismatches = []
+    compared = 0
+    for row in produced:
+        other = by_id.get(row["anchor_id"])
+        if other is None:
+            mismatches.append({"anchor_id": row["anchor_id"], "reason": "absent-in-archive"})
+            continue
+        if row["world_sha256"] != other["world_sha256"]:
+            mismatches.append(
+    print()
+    print(
+        "recomputed pooled matches stored summary: "
+        f"{payload['recomputed_pooled_matches_stored_summary']}"
+    )
+    return 0
+
+
+def cmd_diff(args) -> int:
+    left = query_module.load(args.left)
+    right = query_module.load(args.right)
+    _print_json(query_module.difference(left, right, _arms(args.arms)))
+    return 0
+
+
+def cmd_dist(args) -> int:
+    receipt = query_module.load(args.receipt)
+    payload = query_module.distribution(receipt, args.over, args.base)
+    if args.json:
+        _print_json(payload)
+        return 0
+    print(f"variant={payload['variant']}  panel={payload['panel']}  "
+          f"gain={args.over} over {args.base}")
+    print(f"receipt_sha256={payload['receipt_sha256']}")
+    print(
+        f"defined={payload['defined_anchor_count']} "
+        f"undefined={payload['undefined_anchor_count']} "
+        f"negative={payload['negative_anchor_count']} "
+        f"zero={payload['zero_anchor_count']} "
+        f"positive={payload['positive_anchor_count']}"
+    )
+    for key in ("min", "q25", "median", "q75", "max", "mean"):
+        value = payload[key]
+        print(f"  {key:<7}{'n/a' if value is None else f'{value:+.12f}'}")
+    print("  negative anchors:")
+    if not payload["negative_anchors"]:
+        print("    (none)")
+    for row in payload["negative_anchors"]:
+        print(f"    {row['anchor_id']:<34}{row['gain']:+.12f}")
+    print("  per anchor:")
+    for row in payload["per_anchor"]:
+        print(f"    {row['anchor_id']:<34}{row['gain']:+.12f}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="harness", description="V0.25 twenty-anchor evaluation harness."
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    run = sub.add_parser("run", help="run a named variant on a named panel")
+    run.add_argument("--variant", default=variants_module.DEFAULT_VARIANT)
+    run.add_argument("--panel", default="FULL20")
+    run.add_argument("--arms", default=None, help="comma separated; default all three")
+    run.add_argument("--out", type=Path, default=None)
+    run.add_argument("--no-cache", action="store_true")
+    run.add_argument("--quiet", action="store_true")
+    run.set_defaults(func=cmd_run)
+
+    sub.add_parser("variants", help="list registered physics variants").set_defaults(
+        func=cmd_variants
+    )
+    sub.add_parser("panels", help="list registered anchor panels").set_defaults(
+        func=cmd_panels
+    )
+    sub.add_parser("rule", help="print the declared screen promotion rule").set_defaults(
+        func=cmd_rule
+    )
+
+    verify = sub.add_parser("verify-sealed", help="prove SEALED is bit-identical")
+    verify.add_argument("--out", type=Path, default=None)
+    verify.set_defaults(func=cmd_verify_sealed)
+
+    reproduce = sub.add_parser(
+        "reproduce", help="reproduce an archived published figure in one command"
+    )
+    reproduce.add_argument("--variant", default="SEALED")
+    reproduce.add_argument("--archive", type=Path, default=ARCHIVE_ORIGINAL)
+    reproduce.add_argument(
+        "--target", type=float, default=ARCHIVED_ORACLE_OVER_UNILATERAL
+    )
+    reproduce.add_argument("--out", type=Path, default=None)
+    reproduce.add_argument("--no-cache", action="store_true")
+    reproduce.add_argument("--quiet", action="store_true")
+    reproduce.set_defaults(func=cmd_reproduce)
+
+    screen = sub.add_parser("screen", help="run the two-anchor screen and apply the rule")
+    screen.add_argument("--variant", default=variants_module.DEFAULT_VARIANT)
+    screen.add_argument("--out", type=Path, default=None)
+    screen.add_argument("--full-receipt", type=Path, default=None)
+    screen.add_argument("--no-cache", action="store_true")
+    screen.add_argument("--quiet", action="store_true")
+    screen.set_defaults(func=cmd_screen)
+
+    agreement = sub.add_parser("agreement", help="screen versus full panel agreement")
+    agreement.add_argument("--screen", type=Path, required=True)
+    agreement.add_argument("--full", type=Path, required=True)
+    agreement.set_defaults(func=cmd_agreement)
+
+    prof = sub.add_parser("profile", help="where the panel time goes")
+    prof.add_argument("--variant", default=variants_module.DEFAULT_VARIANT)
+    prof.add_argument("--anchors", type=int, default=1)
+    prof.add_argument("--out", type=Path, default=None)
+    prof.add_argument("--no-cache", action="store_true")
+    prof.set_defaults(func=cmd_profile)
+
+    audit = sub.add_parser(
+        "cache-audit", help="prove the world-tape cache is variant-independent"
+    )
+    audit.add_argument("--world", type=int, default=1)
+    audit.add_argument("--out", type=Path, default=None)
+    audit.set_defaults(func=cmd_cache_audit)
+
+    show = sub.add_parser("show", help="pooled figures for a stored run")
+    show.add_argument("receipt", type=Path)
+    show.add_argument("--arms", default=None)
+    show.add_argument("--json", action="store_true")
+    show.set_defaults(func=cmd_show)
+
+    diff = sub.add_parser("diff", help="difference between two stored runs")
+    diff.add_argument("left", type=Path)
+    diff.add_argument("right", type=Path)
+    diff.add_argument("--arms", default=None)
+    diff.set_defaults(func=cmd_diff)
+
+    dist = sub.add_parser("dist", help="per-anchor distribution of an arm-over-arm gain")
+    dist.add_argument("receipt", type=Path)
+    dist.add_argument("--over", default="ORACLE_SET")
+    dist.add_argument("--base", default="UNILATERAL")
+    dist.add_argument("--json", action="store_true")
+    dist.set_defaults(func=cmd_dist)
+
+    return parser
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""Fast tests for the harness itself. No physics is evaluated here."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from harness import cache as cache_module
+from harness import panel as panel_module
+from harness import query as query_module
+from harness import report
+from harness import sealed as sealed_module
+from harness import variants as variants_module
+from harness.cli import PROMOTION_RULE
+
+ARCHIVE = Path(__file__).resolve().parents[2] / "ladder-archive/original-result.json"
+
+
+@pytest.fixture(scope="module")
+def archive() -> dict:
+    return json.loads(ARCHIVE.read_text(encoding="ascii"))
+
+
+def test_sealed_tree_matches_its_manifest() -> None:
+    tree = sealed_module.verify()
+    assert tree.file_count > 0
+    assert tree.probe_sha256 == sealed_module.EXPECTED_PROBE_SHA256
+
+
+def test_default_variant_is_sealed_and_registry_is_discovered() -> None:
+    assert variants_module.DEFAULT_VARIANT == "SEALED"
+    assert "SEALED" in variants_module.names()
+    assert "MARGIN_Q" in variants_module.names()
+
+
+def test_unknown_variant_and_panel_are_refused() -> None:
+    with pytest.raises(KeyError):
+        variants_module.get("NOT_A_VARIANT")
+    with pytest.raises(KeyError):
+        panel_module.get("NOT_A_PANEL")
+
+
+def test_screen_is_a_literal_subset_of_the_full_panel() -> None:
+    assert set(panel_module.SCREEN2.anchors) <= set(panel_module.FULL20.anchors)
+    assert panel_module.SCREEN2.tape_steps == panel_module.FULL20.tape_steps
+
+
+def test_pooled_recomputation_reproduces_the_archived_summary(archive) -> None:
+    table = report.pooled(archive["anchors"], report.ARMS)
+    for arm in report.ARMS:
+        for key in ("bits", "joules", "ee_bit_per_j", "served_count_sum"):
+            assert table[arm][key] == archive["summary"]["pooled"][arm][key]
+
+
+def test_pooled_gain_reproduces_the_archived_headline(archive) -> None:
+    gains = report.pooled_gains(report.pooled(archive["anchors"]))
+    assert (
+        gains["ORACLE_SET_over_UNILATERAL"]
+        == archive["summary"]["oracle_set_over_unilateral_relative"]
+    )
+    assert (
+        gains["UNILATERAL_over_BASELINE"]
+        == archive["summary"]["unilateral_over_baseline_relative"]
+    )
+
+
+def test_gain_distribution_counts_every_anchor(archive) -> None:
+    distribution = report.gain_distribution(
+        archive["anchors"], "ORACLE_SET", "UNILATERAL"
+    )
+    assert (
+        distribution["defined_anchor_count"] + distribution["undefined_anchor_count"]
+        == len(archive["anchors"])
+    )
+    assert (
+        distribution["negative_anchor_count"]
+        + distribution["zero_anchor_count"]
+        + distribution["positive_anchor_count"]
+        == distribution["defined_anchor_count"]
+    )
+    assert len(distribution["negative_anchors"]) == distribution["negative_anchor_count"]
+    assert distribution["min"] <= distribution["median"] <= distribution["max"]
+
+
+def test_query_difference_of_a_receipt_with_itself_is_zero(archive) -> None:
+    delta = query_module.difference(archive, archive)
+    assert delta["anchor_sets_identical"] is True
+    for arm in report.ARMS:
+        for value in delta["delta_pooled_right_minus_left"][arm].values():
+            assert value == 0
+    for value in delta["delta_pooled_gains_right_minus_left"].values():
+        assert value == 0
+
+
+def test_cache_keys_are_deterministic_and_input_sensitive() -> None:
+    store = cache_module.HarnessCache(enabled=False)
+    common = dict(
+        sealed_manifest="a" * 64,
+        domain="V025_PROBE_R2/world/1",
+        steps=5,
+        start_time_s=0.0,
+        provider="p",
+    )
+    assert store.world_key(**common) == store.world_key(**common)
+    assert store.world_key(**{**common, "steps": 4}) != store.world_key(**common)
+    anchor = dict(
+        sealed_manifest="a" * 64,
+        variant="SEALED",
+        variant_source="c" * 64,
+        world_sha256="b" * 64,
+        step_index=0,
+    )
+    assert store.anchor_key(**anchor) == store.anchor_key(**anchor)
+    assert (
+        store.anchor_key(**{**anchor, "variant": "MARGIN_Q"})
+        != store.anchor_key(**anchor)
+    )
+    assert (
+        store.anchor_key(**{**anchor, "variant_source": "d" * 64})
+        != store.anchor_key(**anchor)
+    )
+
+
+def test_every_variant_records_its_own_source_digest() -> None:
+    for variant in variants_module.registry().values():
+        assert len(variant.source_sha256) == 64
+
+
+def test_promotion_rule_does_not_condition_on_any_outcome() -> None:
+    text = json.dumps(PROMOTION_RULE["conditions"]).lower()
+    for forbidden in ("gain is positive", "larger", "better", "favourable", "improve"):
+        assert forbidden not in text
+    assert PROMOTION_RULE["screen_panel"] == "SCREEN2"
+    assert PROMOTION_RULE["full_panel"] == "FULL20"
+    assert len(PROMOTION_RULE["conditions"]) == 4
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           42 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  20
+On-line CPU(s) list:                     0-19
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Core(TM) Ultra 7 265KF
+CPU family:                              6
+Model:                                   198
+Thread(s) per core:                      1
+Core(s) per socket:                      20
+Socket(s):                               1
+Stepping:                                2
+CPU(s) scaling MHz:                      95%
+CPU max MHz:                             6500.0000
+CPU min MHz:                             800.0000
+BogoMIPS:                                7756.80
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdt_a rdseed adx smap clflushopt clwb intel_pt sha_ni xsaveopt xsavec xgetbv1 xsaves split_lock_detect user_shstk avx_vnni lam wbnoinvd dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp hwp_pkg_req hfi vnmi umip pku ospke waitpkg gfni vaes vpclmulqdq rdpid bus_lock_detect movdiri movdir64b fsrm md_clear serialize arch_lbr ibt flush_l1d arch_capabilities
+Virtualization:                          VT-x
+L1d cache:                               704 KiB (18 instances)
+L1i cache:                               1.1 MiB (18 instances)
+L2 cache:                                36 MiB (11 instances)
+L3 cache:                                30 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-19
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS Not affected; BHI BHI_DIS_S
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+               total        used        free      shared  buff/cache   available
+Mem:            91Gi        35Gi       6.8Gi        20Gi        70Gi        56Gi
+Swap:          8.0Gi       8.0Gi       6.5Mi
+
