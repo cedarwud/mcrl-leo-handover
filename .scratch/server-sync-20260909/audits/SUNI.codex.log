@@ -1,0 +1,468 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-suni-ws
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: ultra
+reasoning summaries: none
+session id: 01a0867e-8e46-7232-bcfa-cbbf59873cae
+--------
+user
+# Is the coordination comparator valid when it falls back 88 per cent of the time?
+
+Adjudicate. A parallel review by a different model is running; give your own judgement independently.
+
+## The measurement, taken today
+Profiling the certified iterated unilateral best response, `S_UNI`, on 90 real anchors under the unchanged production cutoff:
+
+| quantity | value |
+|---|---:|
+| decisions that fell back to BASE | **79 of 90, 87.8 %** |
+| decisions that actually reached the 10 s budget | **0 of 90, 0.0 %** |
+| decision wall, median / p95 / max | 9.223 / 9.412 / 9.975 s |
+| best-response iterations, median | **0** |
+| anchors with zero iterations | **53 of 90** |
+
+The guard is 0.5 s, so anything finishing after 9.5 s is declared a miss although nothing exceeded 10 s. Removing the cutoff entirely, the same anchors need **up to 876.4 s and 86 best-response iterations** to converge, against a median of 8.9 s for the easy ones. Those are two populations, not one distribution with a tail.
+
+## Why this matters
+Sealed contract C4 makes coordination attribution conditional on `FULL > the S_UNI-equipped comparator` on held-out pooled energy efficiency. If `S_UNI` falls back to BASE on 88 per cent of anchors, that comparison is close to free, and **the error is in the direction that flatters the coordination claim**. The figure specification calls `S_UNI` "the honest comparator".
+
+Contract C2 defines it as "iterated exact unilateral improvement to a local optimum, every legal unilateral alternative evaluated with the same nominal joint physics at each iterate, deterministic improving move, atomic commit of the final profile only, termination certificate reported". That reads like an offline reference quantity, not a deployable policy, but it is nonetheless run under the deployment deadline.
+
+An outside methodological review has already given the general principle: keep deadline-constrained all-anchor performance as the deployment primary, and add a separate offline shadow evaluation, because "the key diagnostic outcome is the separation between the mechanism having value and the deadline-constrained implementation delivering it".
+
+## The controller's proposal, which you should attack rather than confirm
+Split it into two arms: `S_UNI` computed **without** the deadline as the quality comparator, and a separate deadline-limited unilateral arm as the deployability comparator. Report both. The controller believes the present single arm conflates two different questions and that the 88 per cent fallback is the symptom.
+
+## What I need
+1. **Is the proposal right?** If a quality comparator is given unlimited compute while the treatment is not, does `FULL > S_UNI` still mean anything, or has the comparison become unfair in the other direction? Say which asymmetry is worse.
+2. **Is the present arrangement already fatal to the C4 attribution**, or is a fallback-heavy comparator defensible as the honest deployment comparison, since a policy that cannot finish is a policy that does not act?
+3. **The 0.5 s guard against a 10 s budget.** Nothing exceeded 10 s and 88 per cent were declared misses. Is that guard doing legitimate work, or is it manufacturing the fallback rate? Note that changing it to fix a result would be tuning against an observation, so answer on principle.
+4. **Zero best-response iterations at 53 of 90 anchors.** The comparator spent nine seconds and evaluated no improving move at all. Does that make the arm meaningless rather than merely weak?
+5. **Under this project's freeze discipline**, is amending contract C4's comparator definition admissible now, given that no panel outcome exists and the amendment is prompted by a timing measurement rather than by a result? The project has amended sealed documents repeatedly, always outcome-blind.
+6. Every place the controller's framing above is wrong or overstated, quoting the sentence.
+
+Read `/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md` and the CH5 figure specification for the comparator definitions, and verify the profile data in `/home/sat/mcrl-v025-certprofile-ws/.scratch/cert-profile/s-uni-profile.json`.
+
+Read-only; change nothing. Write `SUNI-ADJUDICATION-2026-09-09.md` in the workspace root and print it as your final message, leading with your answer to question 2 in one line.
+codex
+I’ll read the sealed contracts, figure specification, and raw profile, then write an independent adjudication. I’ll focus on whether the deployment comparison supports the coordination attribution, and which claims the timing data actually establish.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '*CH5*' -g '*FIGURE*' -g '*figure*' -g '*CONTRACT*' -g '*freeze*' -g '*FREEZE*' ." in /home/sat/mcrl-v025-suni-ws
+ exited 1 in 0ms:
+/home/sat/mcrl-v025-suni-ws
+
+exec
+/bin/bash -lc 'cat /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md' in /home/sat/mcrl-v025-suni-ws
+ succeeded in 0ms:
+# V025 stages 6–8 contract v1 — source generation, learner, evaluation (controller; sealed 2026-09-08 ≈ 18:45 UTC; supersedes v0; no successor training exists)
+
+Sources folded in: astra contract review (`ADJUDICATION-STAGES-6-8-CONTRACT-CODEX-GPT6-ASTRA-2026-09-08.md`), round-7 outside opinions (Q&A + Deep Research), pipeline audits B/C/D, first-principles review. All three reviewers returned `CONTRACT=REVISE`, `C3_IDENTIFIABLE=NO` as written, `POWERED=NO`; v1 resolves each named item. Nothing here is conditioned on any outcome.
+
+## A. Information interfaces (declared, equalised across arms)
+A1. **I_heads** (per user i, per legal action): the completed Q1 and Q2 schemas of §B; observation access = current nominal geometry of user i's candidates, i's history, the previous committed served set excluding i (b⁻₋ᵢ) at decision time; derived features as frozen; model access = none (no joint physics); compute = one forward pass.
+A2. **I_coordinator** (per anchor): global nominal geometry with beam-specific cross gains, all users' legal sets, b⁻, the reference proposal a⁰, the bounded catalogue 𝒞 (decision 4/CB-2), the nominal model 𝓜 (no realised fading, no future TLE beyond the declared forecast horizon), and the outputs of 𝓜 for each profile in 𝒞 (joint load, coupled powers, interference, activation, service, bits, energy, continuation). Compute = the declared budget (§F).
+A3. **Two distinct references:** a⁰ (the reference proposal for the score decomposition; = the per-user argmax of Q1 + Q2, validated as a profile) and the previous committed association (the reference for handover/Φ/event accounting). Never conflated.
+A4. **Equalised between FULL and every DROP/comparator arm:** primitive access and timestamps, forecast method, physical identities, catalogue construction (authenticated identical catalogues at matched anchors), joint search, guards, tie-breaking, validation, deadline, fallback. Any learned pruning is part of the declared intervention. An exact evaluator may never reinsert a removed score through ranking, pruning or a score-dependent guard.
+
+## B. Stage 6 — rows and labels
+B1. One production builder from tapes; every row carries world/user/action/time/schema/setting/calibration lineage; TRAIN asserted at construction; dependency-allowlist KAT (labels are functions of visible primitives, masks, keyed fading, declared state only).
+B2. **Q1 schema** (per action; scales frozen in the spec v1 draft): nominal rate-target SINR margin, required power / cap, mode SE, occupancy excluding focal, beam- and satellite-active bits before focal insertion, off-axis angle, remaining D2 time, remaining visibility time, refresh phase; history: previous served association one-hot, previous served load per candidate, previous beam/satellite activity, previous beam max RF / cap; `missing_incumbent`. No recurrence power, entry-gain ratio or segment age.
+B3. **Q2 schema:** the frozen 21 fields + `missing_incumbent`; background = b⁻₋ᵢ projected to the decision instant; occupancy excludes focal; activation before focal insertion.
+B4. **F and Φ:** F(a) = B(a) − η_ref·E(a) − Φ(a), with Φ the signed handover/QoS preference in κ units charged exactly once inside F. Unilateral increments dᵢ = F(aᵢ, a⁰₋ᵢ) − F(a⁰); interaction residual Ψ_A = F(a_A, a⁰₋A) − F(a⁰) − Σᵢ∈A dᵢ. **C1(config) = Σᵢ∈A dᵢ; C3(config) = Ψ_A; identity C1 + C3 = F(a_A) − F(a⁰) exactly** (KAT); a second KAT states the physical identity without Φ. C2 = declared continuation value excluding the immediate term (three offsets, −κ per absorbing lost offset). κ per stage-4 item 24; all in bits / κ.
+B5. **C3 training rows** carry the complete coalition context: anchor, a⁰, the changed-user set A, their selected actions a_A, the global resource context (occupancy, activation, shared capacity, interference summary per affected beam), and the label Ψ_A / κ. Coalition size for label computation is capped at |A| ≤ 4 (2^|A| subset evaluations bounded); larger evacuation sets are labelled by the capped decomposition and flagged. Per-user Shapley credit is reporting only (pairs: Ψ/2 each), never a training target.
+
+## C. Stage 7 — learner, arms, deployment
+C1. **Heads:** Q1, Q2 by pairwise zero-bootstrap regression on typed deterministic aggregate batches (legacy heterogeneous design); the deployed two-head action is the per-user masked argmax of the normalised Q1 + Q2, validated as a jointly legal profile (deterministic repair rule for conflicts, KAT with a jointly infeasible pair). This estimates a supervised surrogate of the declared targets, not a Bellman value; the claim is worded accordingly.
+C2. **C3 learner form:** a **set-conditioned scalar interaction head** Ψ̂_θ(Z_t, a⁰, A, a_A): permutation-invariant over A, anchored Ψ̂(∅) = Ψ̂({u}) = 0, trained on the residual Ψ_A / κ over the coalition support of the bounded catalogue; deployed S3 optimises the **complete** score C1 + C2 + Ψ̂ over 𝒞 with the sealed service guard, budget and fallback. S0 = the same selector with the exact Ψ_A in place of Ψ̂. S_UNI = iterated exact unilateral improvement to a local optimum (every legal unilateral alternative evaluated with the same nominal joint physics at each iterate, deterministic improving move, atomic commit of the final profile only, termination certificate reported).
+C3. **Arms and estimands (four named experiments, never conflated):** (i) *learned neutral-source experiment* (primary for the C1/C2/C3 claims): FULL, DROP_C1, DROP_C2, DROP_C3 by neutral-source substitution of the named route with all routes retained, updated and deployed; ALL_NEUTRAL_CONTROL; external BASELINE; claim wording: "informative source training for route x improved pooled EE relative to the specified neutral source training, with the other routes informative and all heads retained"; (ii) *oracle factor-score removal* (physics regime map, stage-4 item 18); (iii) *checkpoint knockout* (secondary: zero the deployed contribution, machinery fixed; measures reliance and exposes hidden score restoration); (iv) *architecture removal* — named, not run.
+C4. **Coordination attribution (beyond the source claim):** FULL (S3) > DROP_C3 **and** FULL > the S_UNI-equipped comparator on held-out realised pooled EE, QoS margins met, plus decision-relevant nonadditivity (the selected profile differs from the additive/unilateral optimum at a reported fraction of anchors, including rejected harmful joint moves) — the requirement "g_I ≠ 0" is withdrawn. **Learned value (S3 vs matched S0)** is one predeclared axis: realised closed-loop pooled EE under equal computation budget including timeouts; matching S0 at lower compute is an acceleration claim, reported separately.
+C5. **Neutral sources** sealed before generation: generator, labels, support, strata, overlap, row weights, optimisation dose; "identical batches across arms" means identical within a route/source identity; every DROP checkpoint retains all heads, the neutral-trained head differs from initialisation and participates in deployment (KATs).
+C6. **Zero results are allowed and informative:** a zero C3 source marginal ends the positive C3 claim under this scope; an interval excluding the practical margin supports "no practically relevant benefit"; a lower-bound failure alone is inconclusive; neither permits changing features, catalogues, sources or regimes until C3 becomes positive.
+C7. **Epochs, checkpoints, seeds:** deterministic aggregate epochs with sealed row counts/order/digests; checkpoints every 100 source epochs with `completed_source_epochs` and batch digests; **12 learner seeds** (§E), each lineage sharing one serialised initialisation and identical source batches per route identity across arms; `learner_seed` and `world_seed` separate everywhere.
+
+## D. Stage 8 — panel, statistics, harness
+D1. **Panel:** 6 arms × 12 learner seeds × 2 worlds per TRAIN date over the ≈ 160 claim dates (≈ 320 worlds per arm-seed; ≈ 30 steps per world), allocation manifest sealed with role-wise date disjointness (claim dates unused by any successor development activity; legacy overlap recorded); no TEST.
+D2. **Estimator:** pooled ΣB/ΣE; primary interval = two-way pigeonhole bootstrap over dates × learner seeds with arms paired within resamples and the ratio recomputed per draw (central 95 % percentile); one-way cluster bootstrap and delta-method supplementary; seedwise paired effects reported; δ = +0.5 % relative with the 2.5th-percentile lower bound (v1.4); QoS margins with additive numerators/denominators inside draws (stage-2 decision 6, item 37).
+D3. **Zero outcomes:** B = 0 with E > 0 is EE = 0 (defined); a draw is undefined only when a denominator (E or the comparator's EE) is 0 — recorded and counted, never substituted (amends decision CD-3).
+D4. **Multiplicity and claim:** the conditional intersection–union conjunction for `a-r0` is the single primary claim; components are reported with their own intervals but no component-wise discovery is claimed; all other cells exploratory; TRAIN-only wording enforced by the report schema.
+D5. **Harness:** attempt registry (STARTED before outcomes), canonical per-step receipts, merge re-aggregation from rows, conformance suite (NULL ≡ BASE per step, real-step dry-run of every arm, write-once sha256 receipts, authority manifest), same physics/endpoint digest as training, one terminal adjudication.
+
+## E. Power (declared prospectively; sensitivities, not measurements)
+Planning alternative Δ* = +2 % relative (both reviewers: a true +1 % is not detectable with ≈ 160 dates under any seed count if the date SD is ≈ 5 %). Variance sensitivities: date SD 3 / 5 / 10 %, seed SD 1 / 2 %. With date SD 5 %, seed SD 1 %, 160 dates, 12 seeds and negligible residual variance, the per-contrast one-sided power at the 2.5 % level is ≈ 0.86 (SE ≈ 0.49 %); the three-contrast conjunction ≈ 0.64 if independent. With 5 seeds it is ≈ 0.70 / 0.34. 12 seeds is the declared design; the date component caps further gains. The crossed-cluster inference test (§G T3) calibrates the actual procedure at 5 and 12 seeds before any real evaluation.
+
+## F. Operational contract (deployability; the benchmark and the operational claim are separate)
+F1. **Benchmark convention:** decision at t from information at t, applied from t (legacy convention, kept for the scientific comparison); TLE nearest-epoch rule labelled retrospective (v1.5 §5). **Operational claim** (if made): a causal-input variant (ephemeris available by decision time, causal forecasts) and an explicit action-effective-time convention.
+F2. **Timing budget:** the coordinator's compute budget is 10 s wall on the declared worker count (the rest of the 30.08 s interval reserved for sensing/transport/validation/commit); BASE (a⁰) is computed, validated and repaired **before** the coordinator starts; the runner enforces the timer (cancel), not the solver; a miss executes the validated a⁰; misses are a co-reported QoS field and their B/E enter the endpoint.
+F3. **Capability manifest fields:** telemetry sources and ages, roster and cross-gain coverage, model assumptions and calibration source, worker hardware/count, catalogue bounds, solver limits, memory, missing-data handling, measured end-to-end latency distribution.
+
+## G. Synthetic acceptance tests — mandatory gate before any real source generation
+T1 **Exhaustive decomposition and intervention:** hand-computed 3-user, 2-action, 3-step fixture with additive / synergistic (F = 0, −1, −1, 2) / antagonistic (0, −1, −1, −4) cases, a dummy user (credit 0), nonzero Φ charged once, a future outage; production target builder and selectors; exact reconstruction of both identities; oracle DROP behaviour as hand-predicted; neutral-source DROP retains and trains the route; knockout removes the deployed contribution.
+T2 **Information twins / interaction reversal / additive placebo through the production path:** paired contexts with identical per-user rows but opposite joint interactions; S3 must separate them using declared coalition context and fail when it is removed; poisoned post-decision outcomes, realised future fading and hidden legacy reset state leave current features and actions unchanged; physical-identity relabelling invariance; jointly infeasible individual proposals repaired; an injected timeout exercises the real fallback; the additive placebo yields Ψ̂ ≈ 0 and S3 = S_UNI decisions.
+T3 **Crossed-cluster inference through the real merger:** synthetic raw receipts with controlled date/seed/world effects for the 3/5/10 % SD scenarios, repeated worlds per cell, unequal energies (pooled ≠ mean EE), identical arms, zero-bit and undefined-denominator cells, injected alternatives, least-favourable conjunction null (one component at the +0.5 % boundary); verify pairing, interval calibration, conjunction power and QoS rejection at 5 and 12 seeds.
+
+## H. Order of operations
+Build 1 (running) → build 2 applies this v1 and implements T1–T3 → fresh-context audit of the build → controller seal of spec v1 → real source generation only after the calibration freeze **and** PHYSICS-GO (a-r0 admission); training in the pipeline session with checkpoints every 100 source epochs; the owner is notified before any long continuation.
+
+Seal: sha256 in the companion `.sha256` file. v0 is retained as history.
+
+exec
+/bin/bash -lc 'cat /home/sat/.codex/skills/research/SKILL.md' in /home/sat/mcrl-v025-suni-ws
+ succeeded in 0ms:
+---
+name: research
+description: Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. Use when the user wants a topic researched, docs or API facts gathered, or reading legwork delegated to a background agent.
+---
+
+<!-- project-skills-adapter:start -->
+Follow this skill subject to user and higher-priority project instructions.
+Set one checkable completion criterion. Inspect bundled helpers only after an
+execution error.
+
+Without a configured, authorized tracker, use `.scratch/<feature>/spec.md`,
+`.scratch/<feature>/issues/`, or `.scratch/<effort>/map.md` as applicable.
+External messages, installs, commits, pushes, branch changes, destructive
+actions, and out-of-scope writes still require authority.
+
+Read the extended
+[runtime contract](../select-project-skill/references/runtime.md) only for a
+cross-skill transition, implementation/review orchestration, handoff
+consumption, or a host-specific prerequisite. Verify the criterion before
+claiming success; missing requirements are `blocked`, not simulated success.
+
+Only when the request explicitly authorizes a controlled Project Skills
+sampling run, read the [feedback instructions](../select-project-skill/references/feedback.md)
+and record its terminal event. Ordinary work does not record events.
+<!-- project-skills-adapter:end -->
+
+Spin up a **background agent** to do the research, so you keep working while it reads.
+
+Its job:
+
+1. Investigate the question against **primary sources** — official docs, source code, specs, first-party APIs — not a secondary write-up of them. Follow every claim back to the source that owns it.
+2. Write the findings to a single Markdown file, citing each claim's source.
+3. Save it where the repo already keeps such notes; match the existing convention, and if there is none, put it somewhere sensible and say where.
+
+exec
+/bin/bash -lc "ls -lh /home/sat/mcrl-v025-certprofile-ws/.scratch/cert-profile/s-uni-profile.json && python - <<'PY'
+import json
+p='/home/sat/mcrl-v025-certprofile-ws/.scratch/cert-profile/s-uni-profile.json'
+d=json.load(open(p))
+print(type(d).__name__)
+if isinstance(d,dict):
+ for k,v in d.items():
+  print(k, type(v).__name__, len(v) if isinstance(v,(dict,list)) else repr(v))
+ print(json.dumps(d,indent=2)[:16000])
+else: print(json.dumps(d[:2],indent=2))
+PY" in /home/sat/mcrl-v025-suni-ws
+ succeeded in 0ms:
+-rw-rw-r-- 1 sat sat 65K Sep  9 14:02 /home/sat/mcrl-v025-certprofile-ws/.scratch/cert-profile/s-uni-profile.json
+dict
+classification str 'DIAGNOSTIC_NOT_CLAIM'
+formal_tape_load_s float 1.0405453060229775
+processes int 1
+production_compute_budget_s float 10.0
+production_guard_s float 0.5
+profile_selection_method str 'two slowest cutoff-screen anchors; then every production-completed anchor in descending wall time; then zero-best-response-iteration cutoff misses in descending wall time; deterministic fill if needed'
+rows list 17
+schema str 'mcrl-v025-s-uni-certification-profile-v1'
+screening list 90
+screening_method str 'all 90 anchors (30 steps x three carriers) under the unchanged production cutoff; rank misses first, then descending observed wall time'
+selected_anchor_count int 20
+selected_from_inventory_count int 90
+source_commit str '75c5c78c'
+world_domain str 'V025_PROBE_R2/world/1'
+world_sha256 str 'a7d222eab02789c26de423f7cd87d7e2f677c574f64fb181bd98ec799fdec704'
+{
+  "classification": "DIAGNOSTIC_NOT_CLAIM",
+  "formal_tape_load_s": 1.0405453060229775,
+  "processes": 1,
+  "production_compute_budget_s": 10.0,
+  "production_guard_s": 0.5,
+  "profile_selection_method": "two slowest cutoff-screen anchors; then every production-completed anchor in descending wall time; then zero-best-response-iteration cutoff misses in descending wall time; deterministic fill if needed",
+  "rows": [
+    {
+      "best_response_iterations": 80,
+      "carrier": "nearest-eligible",
+      "deadline_missed": false,
+      "screened_deadline_missed": true,
+      "screened_wall_s": 9.975345638988074,
+      "selected_configuration_id": "CFG:0:62890:50;1:62890:52;2:62890:38;3:62890:50;4:62890:27;5:62890:38;6:62890:51;7:62591:25;8:62890:43;9:62890:19;10:62890:42;11:62890:50;12:62591:25;13:62890:15;14:62890:53;15:62890:43;16:62890:43;17:62890:40;18:65825:66;19:62890:27;20:62890:38;21:62890:52;22:62890:18;23:62890:42;24:62890:20;25:62890:52;26:62890:18;27:62890:27;28:62890:30;29:62890:38;30:62890:20;31:62890:27;32:62890:38;33:62890:40;34:62890:53;35:62890:41;36:65825:66;37:62890:40;38:62890:28;39:62890:51;40:62591:14;41:62890:28;42:62591:37;43:62890:50;44:62591:37;45:62890:42;46:62890:15;47:62890:47;48:62890:50;49:62890:19;50:62890:49;51:65825:66;52:62591:37;53:62890:27;54:62890:51;55:62890:51;56:62890:41;57:62591:14;58:62890:30;59:62890:19;60:62890:50;61:62591:25;62:62890:20;63:62890:43;64:62890:53;65:62890:41;66:62890:30;67:65825:66;68:62890:42;69:62890:40;70:65825:66;71:62890:30;72:62890:20;73:62890:15;74:62890:20;75:62591:14;76:62890:28;77:62890:15;78:62890:44;79:62890:43;80:62890:50;81:62890:19;82:62890:28;83:62890:20;84:62890:27;85:62890:28;86:62890:15;87:62890:18;88:62890:27;89:62890:53;90:62890:20;91:62890:20;92:62591:25;93:62890:40;94:62591:25;95:62890:51;96:62890:52;97:62890:53;98:62890:30;99:62890:52",
+      "step_index": 25,
+      "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+      "trace": {
+        "clock": "time.perf_counter monotonic offsets from _s_uni_select entry",
+        "counts": {
+          "best_response_iterations": 80,
+          "cache_hits": 221019,
+          "exact_solves": 216510,
+          "fixed_point_iterations": 75750125,
+          "proposed_candidates": 218700,
+          "unique_assignments": 216462
+        },
+        "cutoff_enforced": false,
+        "ledger": {
+          "candidate_generation_s": 5.0919101970794145,
+          "input_and_precompute_s": 0.0023476509959436953,
+          "search_bookkeeping_s": 81.77604162783246,
+          "unique_oracle_solves_critical_path_s": 461.1379118031182,
+          "validation_and_output_s": 0.5507325809739996,
+          "waiting_s": 0.0
+        },
+        "ledger_sum_s": 548.55894386,
+        "reference_procedure": "S_UNI exact unilateral best response",
+        "t_certified_s": 548.55894386,
+        "t_first_s": 0.8665324070025235,
+        "t_total_s": 548.55894386,
+        "t_winner_s": 534.8617794650199,
+        "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+        "winner_configuration_id": "CFG:0:62890:50;1:62890:52;2:62890:38;3:62890:50;4:62890:27;5:62890:38;6:62890:51;7:62591:25;8:62890:43;9:62890:19;10:62890:42;11:62890:50;12:62591:25;13:62890:15;14:62890:53;15:62890:43;16:62890:43;17:62890:40;18:65825:66;19:62890:27;20:62890:38;21:62890:52;22:62890:18;23:62890:42;24:62890:20;25:62890:52;26:62890:18;27:62890:27;28:62890:30;29:62890:38;30:62890:20;31:62890:27;32:62890:38;33:62890:40;34:62890:53;35:62890:41;36:65825:66;37:62890:40;38:62890:28;39:62890:51;40:62591:14;41:62890:28;42:62591:37;43:62890:50;44:62591:37;45:62890:42;46:62890:15;47:62890:47;48:62890:50;49:62890:19;50:62890:49;51:65825:66;52:62591:37;53:62890:27;54:62890:51;55:62890:51;56:62890:41;57:62591:14;58:62890:30;59:62890:19;60:62890:50;61:62591:25;62:62890:20;63:62890:43;64:62890:53;65:62890:41;66:62890:30;67:65825:66;68:62890:42;69:62890:40;70:65825:66;71:62890:30;72:62890:20;73:62890:15;74:62890:20;75:62591:14;76:62890:28;77:62890:15;78:62890:44;79:62890:43;80:62890:50;81:62890:19;82:62890:28;83:62890:20;84:62890:27;85:62890:28;86:62890:15;87:62890:18;88:62890:27;89:62890:53;90:62890:20;91:62890:20;92:62591:25;93:62890:40;94:62591:25;95:62890:51;96:62890:52;97:62890:53;98:62890:30;99:62890:52",
+        "would_have_been_truncated": true
+      },
+      "wall_s": 548.55894386
+    },
+    {
+      "best_response_iterations": 86,
+      "carrier": "nearest-eligible",
+      "deadline_missed": false,
+      "screened_deadline_missed": true,
+      "screened_wall_s": 9.661097589007113,
+      "selected_configuration_id": "CFG:0:62891:50;1:62891:51;2:62589:37;3:62891:50;4:62891:39;5:62589:37;6:62891:51;7:62589:37;8:62891:31;9:62891:19;10:62891:42;11:62891:50;12:62589:25;13:62891:27;14:48382:53;15:64921:43;16:64921:32;17:62891:51;18:48382:54;19:62891:27;20:62891:38;21:48382:53;22:62891:18;23:62891:42;24:62891:31;25:62891:51;26:62891:18;27:62891:27;28:62891:19;29:62589:37;30:64921:32;31:62891:15;32:62891:38;33:62891:39;34:48382:53;35:62891:42;36:48382:54;37:62891:40;38:62891:40;39:62891:51;40:62891:13;41:62891:28;42:62589:37;43:62891:50;44:62891:48;45:64921:43;46:62891:15;47:62891:48;48:62891:50;49:62891:31;50:62891:48;51:48382:54;52:62891:48;53:62891:15;54:62891:51;55:62891:39;56:62891:40;57:62891:13;58:62891:30;59:62891:19;60:62891:50;61:62589:25;62:62891:20;63:64921:43;64:48382:53;65:62891:30;66:62891:30;67:48382:54;68:62891:30;69:62891:40;70:48382:54;71:62891:30;72:62891:20;73:62891:15;74:62891:20;75:62891:13;76:62891:5;77:62891:27;78:64921:32;79:64921:43;80:62891:39;81:62891:31;82:62891:5;83:64921:43;84:62891:38;85:62891:28;86:62891:15;87:62891:5;88:62891:27;89:62891:42;90:64921:32;91:64921:32;92:62891:13;93:62891:28;94:62589:25;95:62891:39;96:62891:51;97:48382:53;98:62891:18;99:62891:40",
+      "step_index": 9,
+      "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+      "trace": {
+        "clock": "time.perf_counter monotonic offsets from _s_uni_select entry",
+        "counts": {
+          "best_response_iterations": 86,
+          "cache_hits": 237393,
+          "exact_solves": 232542,
+          "fixed_point_iterations": 102882003,
+          "proposed_candidates": 234900,
+          "unique_assignments": 232494
+        },
+        "cutoff_enforced": false,
+        "ledger": {
+          "candidate_generation_s": 6.110357954923529,
+          "input_and_precompute_s": 0.0023951999901328236,
+          "search_bookkeeping_s": 93.29439917125273,
+          "unique_oracle_solves_critical_path_s": 639.3048554046836,
+          "validation_and_output_s": 0.803731764171971,
+          "waiting_s": 0.0
+        },
+        "ledger_sum_s": 739.515739495022,
+        "reference_procedure": "S_UNI exact unilateral best response",
+        "t_certified_s": 739.515739495022,
+        "t_first_s": 1.9663037860009354,
+        "t_total_s": 739.515739495022,
+        "t_winner_s": 728.0755551379989,
+        "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+        "winner_configuration_id": "CFG:0:62891:50;1:62891:51;2:62589:37;3:62891:50;4:62891:39;5:62589:37;6:62891:51;7:62589:37;8:62891:31;9:62891:19;10:62891:42;11:62891:50;12:62589:25;13:62891:27;14:48382:53;15:64921:43;16:64921:32;17:62891:51;18:48382:54;19:62891:27;20:62891:38;21:48382:53;22:62891:18;23:62891:42;24:62891:31;25:62891:51;26:62891:18;27:62891:27;28:62891:19;29:62589:37;30:64921:32;31:62891:15;32:62891:38;33:62891:39;34:48382:53;35:62891:42;36:48382:54;37:62891:40;38:62891:40;39:62891:51;40:62891:13;41:62891:28;42:62589:37;43:62891:50;44:62891:48;45:64921:43;46:62891:15;47:62891:48;48:62891:50;49:62891:31;50:62891:48;51:48382:54;52:62891:48;53:62891:15;54:62891:51;55:62891:39;56:62891:40;57:62891:13;58:62891:30;59:62891:19;60:62891:50;61:62589:25;62:62891:20;63:64921:43;64:48382:53;65:62891:30;66:62891:30;67:48382:54;68:62891:30;69:62891:40;70:48382:54;71:62891:30;72:62891:20;73:62891:15;74:62891:20;75:62891:13;76:62891:5;77:62891:27;78:64921:32;79:64921:43;80:62891:39;81:62891:31;82:62891:5;83:64921:43;84:62891:38;85:62891:28;86:62891:15;87:62891:5;88:62891:27;89:62891:42;90:64921:32;91:64921:32;92:62891:13;93:62891:28;94:62589:25;95:62891:39;96:62891:51;97:48382:53;98:62891:18;99:62891:40",
+        "would_have_been_truncated": true
+      },
+      "wall_s": 739.515739495022
+    },
+    {
+      "best_response_iterations": 0,
+      "carrier": "nearest-eligible",
+      "deadline_missed": false,
+      "screened_deadline_missed": false,
+      "screened_wall_s": 9.148208872997202,
+      "selected_configuration_id": "BASE:nearest-eligible",
+      "step_index": 13,
+      "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+      "trace": {
+        "clock": "time.perf_counter monotonic offsets from _s_uni_select entry",
+        "counts": {
+          "best_response_iterations": 0,
+          "cache_hits": 2701,
+          "exact_solves": 2748,
+          "fixed_point_iterations": 1590615,
+          "proposed_candidates": 2700,
+          "unique_assignments": 2700
+        },
+        "cutoff_enforced": false,
+        "ledger": {
+          "candidate_generation_s": 0.09512503299629316,
+          "input_and_precompute_s": 0.0025839440058916807,
+          "search_bookkeeping_s": 0.004321373999118805,
+          "unique_oracle_solves_critical_path_s": 10.972830578219146,
+          "validation_and_output_s": 0.012916110776131973,
+          "waiting_s": 0.0
+        },
+        "ledger_sum_s": 11.087777039996581,
+        "reference_procedure": "S_UNI exact unilateral best response",
+        "t_certified_s": 11.087777039996581,
+        "t_first_s": null,
+        "t_total_s": 11.087777039996581,
+        "t_winner_s": 1.7517482159892097,
+        "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+        "winner_configuration_id": "BASE:nearest-eligible",
+        "would_have_been_truncated": true
+      },
+      "wall_s": 11.087777039996581
+    },
+    {
+      "best_response_iterations": 0,
+      "carrier": "nearest-eligible",
+      "deadline_missed": false,
+      "screened_deadline_missed": false,
+      "screened_wall_s": 9.112573140999302,
+      "selected_configuration_id": "BASE:nearest-eligible",
+      "step_index": 17,
+      "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+      "trace": {
+        "clock": "time.perf_counter monotonic offsets from _s_uni_select entry",
+        "counts": {
+          "best_response_iterations": 0,
+          "cache_hits": 2701,
+          "exact_solves": 2748,
+          "fixed_point_iterations": 1822229,
+          "proposed_candidates": 2700,
+          "unique_assignments": 2700
+        },
+        "cutoff_enforced": false,
+        "ledger": {
+          "candidate_generation_s": 0.08321287899161689,
+          "input_and_precompute_s": 0.0024775959900580347,
+          "search_bookkeeping_s": 0.0039674899890087545,
+          "unique_oracle_solves_critical_path_s": 10.30625715010683,
+          "validation_and_output_s": 0.011945192905841395,
+          "waiting_s": 0.0
+        },
+        "ledger_sum_s": 10.407860307983356,
+        "reference_procedure": "S_UNI exact unilateral best response",
+        "t_certified_s": 10.407860307983356,
+        "t_first_s": null,
+        "t_total_s": 10.407860307983356,
+        "t_winner_s": 0.9944424149871338,
+        "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+        "winner_configuration_id": "BASE:nearest-eligible",
+        "would_have_been_truncated": true
+      },
+      "wall_s": 10.407860307983356
+    },
+    {
+      "best_response_iterations": 0,
+      "carrier": "nearest-eligible",
+      "deadline_missed": false,
+      "screened_deadline_missed": false,
+      "screened_wall_s": 8.27993283001706,
+      "selected_configuration_id": "BASE:nearest-eligible",
+      "step_index": 6,
+      "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+      "trace": {
+        "clock": "time.perf_counter monotonic offsets from _s_uni_select entry",
+        "counts": {
+          "best_response_iterations": 0,
+          "cache_hits": 2701,
+          "exact_solves": 2748,
+          "fixed_point_iterations": 1554413,
+          "proposed_candidates": 2700,
+          "unique_assignments": 2700
+        },
+        "cutoff_enforced": false,
+        "ledger": {
+          "candidate_generation_s": 0.08936736700707115,
+          "input_and_precompute_s": 0.002690053021069616,
+          "search_bookkeeping_s": 0.004048467992106453,
+          "unique_oracle_solves_critical_path_s": 9.14487649689545,
+          "validation_and_output_s": 0.01312816806603223,
+          "waiting_s": 0.0
+        },
+        "ledger_sum_s": 9.254110552981729,
+        "reference_procedure": "S_UNI exact unilateral best response",
+        "t_certified_s": 9.254110552981729,
+        "t_first_s": null,
+        "t_total_s": 9.254110552981729,
+        "t_winner_s": 1.014932558988221,
+        "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+        "winner_configuration_id": "BASE:nearest-eligible",
+        "would_have_been_truncated": false
+      },
+      "wall_s": 9.254110552981729
+    },
+    {
+      "best_response_iterations": 0,
+      "carrier": "nearest-eligible",
+      "deadline_missed": false,
+      "screened_deadline_missed": false,
+      "screened_wall_s": 7.261281942017376,
+      "selected_configuration_id": "BASE:nearest-eligible",
+      "step_index": 29,
+      "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+      "trace": {
+        "clock": "time.perf_counter monotonic offsets from _s_uni_select entry",
+        "counts": {
+          "best_response_iterations": 0,
+          "cache_hits": 2701,
+          "exact_solves": 2748,
+          "fixed_point_iterations": 1811401,
+          "proposed_candidates": 2700,
+          "unique_assignments": 2700
+        },
+        "cutoff_enforced": false,
+        "ledger": {
+          "candidate_generation_s": 0.08904796998831443,
+          "input_and_precompute_s": 0.0026753220008686185,
+          "search_bookkeeping_s": 0.0040466020291205496,
+          "unique_oracle_solves_critical_path_s": 8.33810299797915,
+          "validation_and_output_s": 0.012737673008814454,
+          "waiting_s": 0.0
+        },
+        "ledger_sum_s": 8.446610565006267,
+        "reference_procedure": "S_UNI exact unilateral best response",
+        "t_certified_s": 8.446610565006267,
+        "t_first_s": null,
+        "t_total_s": 8.446610565006267,
+        "t_winner_s": 1.0185126319993287,
+        "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+        "winner_configuration_id": "BASE:nearest-eligible",
+        "would_have_been_truncated": false
+      },
+      "wall_s": 8.446610565006267
+    },
+    {
+      "best_response_iterations": 0,
+      "carrier": "stay-if-possible",
+      "deadline_missed": false,
+      "screened_deadline_missed": false,
+      "screened_wall_s": 6.947004593006568,
+      "selected_configuration_id": "BASE:stay-if-possible",
+      "step_index": 5,
+      "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+      "trace": {
+        "clock": "time.perf_counter monotonic offsets from _s_uni_select entry",
+        "counts": {
+          "best_response_iterations": 0,
+          "cache_hits": 2701,
+          "exact_solves": 2748,
+          "fixed_point_iterations": 986738,
+          "proposed_candidates": 2700,
+          "unique_assignments": 2700
+        },
+        "cutoff_enforced": false,
+        "ledger": {
+          "candidate_generation_s": 0.08646131999557838,
+          "input_and_precompute_s": 0.0026725379866547883,
+          "search_bookkeeping_s": 0.004272608028259128,
+          "unique_oracle_solves_critical_path_s": 7.797534839075524,
+          "validation_and_output_s": 0.012789609929313883,
+          "waiting_s": 0.0
+        },
+        "ledger_sum_s": 7.9037309150153305,
+        "reference_procedure": "S_UNI exact unilateral best response",
+        "t_certified_s": 7.9037309150153305,
+        "t_first_s": null,
+        "t_total_s": 7.9037309150153305,
+        "t_winner_s": 0.9349089890019968,
+        "termination": "NO_IMPROVING_LEGAL_UNILATERAL",
+        "winner_configuration_id": "BASE:stay-if-possible",
+        "would_have_been_truncated": false
+      },
+      "wall_s": 7.9037309150153305
+ 
+
