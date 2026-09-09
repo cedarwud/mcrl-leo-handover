@@ -3351,3 +3351,24 @@ Failed to write file /home/sat/mcrl-v025-pilot-ws/.scratch/epoch-trend-readme.md
 
 patch: failed
 /home/sat/mcrl-v025-pilot-ws/.scratch/epoch-trend-readme.md
+codex
+The mount-capacity failure is persisting for new processes, so I can’t yet create the isolated source snapshot or start Python. The evaluation design is ready and will share the tape/catalogue work across all epochs; once process launch recovers, the actual run should fit comfortably inside the remaining budget.
+codex
+This is still failing before command execution—the same sandbox mount-limit `ENOSPC`, even for a one-word command. I’m continuing to wait for the concurrent workload to release capacity; no repository data has been changed or deleted.
+exec
+/bin/bash -lc pwd in /home/sat/mcrl-v025-pilot-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-pilot-ws
+
+codex
+Process launch has recovered. I’m creating the clean, pre-repair source snapshot now and starting the shared multi-epoch evaluator; the concurrent edits will remain untouched.
+exec
+/bin/bash -lc "mkdir -p .scratch/epoch-trend/clean-source && git archive HEAD src | tar -x -C .scratch/epoch-trend/clean-source && test -f .scratch/epoch-trend/clean-source/src/mcrl/stagec_v025/coalitions.py && git show HEAD:src/mcrl/stagec_v025/coalitions.py | sha256sum && sha256sum .scratch/epoch-trend/clean-source/src/mcrl/stagec_v025/coalitions.py && sed -n '1,2p' artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/checkpoints/PILOT_NOT_CLAIM-seed-6407676579069309528-FULL-epoch-0600.json.sha256 && df -h . /tmp" in /home/sat/mcrl-v025-pilot-ws
+ succeeded in 0ms:
+7e31dc2a67db44b881f2dfaffbd80dd6b72cdf3a1c307ddf60d6421e36f88e62  -
+7e31dc2a67db44b881f2dfaffbd80dd6b72cdf3a1c307ddf60d6421e36f88e62  .scratch/epoch-trend/clean-source/src/mcrl/stagec_v025/coalitions.py
+ae6d12d4171ed42df4986d467350e1a27faaca23da188c784a979c56d4dcd7d4  PILOT_NOT_CLAIM-seed-6407676579069309528-FULL-epoch-0600.json
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv  3.6T  1.7T  1.9T  47% /home/sat/mcrl-v025-pilot-ws
+tmpfs                               46G   26G   21G  56% /tmp
+
