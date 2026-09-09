@@ -88,7 +88,7 @@ The old comparator is exactly the 180 `pair-catalogue` action selections, all si
 | exact | 200 | -18.067% | -2.421% | +0.728% | -1.293% |
 | exact | 1000 | -22.557% | -1.550% | -0.188% | +0.964% |
 | exact | 2000 | -19.310% | +15.555% | -0.424% | +1.724% |
-| proxy | 200 | -6.054% | +0.000% | +0.000% | +0.000% |
+| proxy | 200 | -6.054% | +0.000% | +1.444% | +0.000% |
 | proxy | 1000 | -25.913% | -2.529% | +2.643% | +2.026% |
 | proxy | 2000 | -35.049% | -4.893% | +1.906% | +0.251% |
 
@@ -143,7 +143,6 @@ Training used at most four worker processes and every launched Python process wa
 ## Artifacts and limitations
 
 Raw receipts: `artifacts/v025-retrain-measurement-20260909-PILOT_NOT_CLAIM/evaluation/PILOT_NOT_CLAIM-raw-receipts.jsonl` (600 rows; SHA-256 `c04fee47e3ae02a65c956704f8fe9382df4b0c4a263308a67472f0c758cc357c`).
-
 Run manifest: `artifacts/v025-retrain-measurement-20260909-PILOT_NOT_CLAIM/PILOT_NOT_CLAIM-manifest.json`.
 
 This is a 10-decision-per-condition pilot, so it has no useful claim-level power or uncertainty estimate. The exact/proxy comparison also changes the feature values produced by the inherited fallback, not only its scalar labels, because that flag bypasses the evaluator path that supplies both contracted outcomes and their derived state fields.
