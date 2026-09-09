@@ -34,7 +34,7 @@ If **no** mechanism yields a witness, state clearly whether `Psi_A <= 0` appears
 ## Constraints
 Do not tune `eta_ref`, `lambda`, `kappa`, any threshold, sign, seed or the service guard. Use the sealed calibration values from `/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json`, or recompute them honestly for a synthetic world and say which you did. Do not modify `src/mcrl/physics_v025/`. You may write new scenario-construction and analysis scripts freely.
 
-Write `/home/sat/mcrl-v023-codex-audits/parallel-20260909/PSI-WITNESS-2026-09-09.md` and print it as your final message. Lead with a one-line verdict per mechanism: WITNESS FOUND or IMPOSSIBLE or INCONCLUSIVE. Budget 2 wall hours.
+Write `PSI-WITNESS-REPORT-2026-09-09.md` in your workspace root and print it as your final message. Lead with a one-line verdict per mechanism: WITNESS FOUND or IMPOSSIBLE or INCONCLUSIVE. Budget 2 wall hours.
 
 ---
 

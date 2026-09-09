@@ -1,14 +1,14 @@
 Reading additional input from stdin...
-OpenAI Codex v0.151.0
+OpenAI Codex v0.153.4
 --------
 workdir: /home/sat/mcrl-v025-witness-ws
 model: gpt-6-astra
 provider: openai
 approval: never
-sandbox: danger-full-access
-reasoning effort: max
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: ultra
 reasoning summaries: none
-session id: 01a08547-1daf-7642-aebb-d8aa39fef308
+session id: 01a0854c-d73a-73f1-8589-6ccf297088b6
 --------
 user
 # Constructive existence test: can the corrected physics produce Psi_A > 0 at all, in ANY scenario you are free to design?
@@ -47,7 +47,7 @@ If **no** mechanism yields a witness, state clearly whether `Psi_A <= 0` appears
 ## Constraints
 Do not tune `eta_ref`, `lambda`, `kappa`, any threshold, sign, seed or the service guard. Use the sealed calibration values from `/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json`, or recompute them honestly for a synthetic world and say which you did. Do not modify `src/mcrl/physics_v025/`. You may write new scenario-construction and analysis scripts freely.
 
-Write `/home/sat/mcrl-v023-codex-audits/parallel-20260909/PSI-WITNESS-2026-09-09.md` and print it as your final message. Lead with a one-line verdict per mechanism: WITNESS FOUND or IMPOSSIBLE or INCONCLUSIVE. Budget 2 wall hours.
+Write `PSI-WITNESS-REPORT-2026-09-09.md` in your workspace root and print it as your final message. Lead with a one-line verdict per mechanism: WITNESS FOUND or IMPOSSIBLE or INCONCLUSIVE. Budget 2 wall hours.
 
 ---
 
@@ -78,6 +78,3 @@ Construct a beam holding one or two users pinned at the lowest target mode, so e
 If a witness exists anywhere in this physics, this is the most likely place. Report it with the same evidence the main task asks for: the four evaluations, every `d_i`, `Psi_A`, and the served counts confirming the service guard.
 
 Also report, as a separate line, whether a `NO_MODE` user is counted in the service guard's `served` total. If a coalition's gain comes only from reclassifying users rather than from delivering bits, say so plainly.
-warning: Model metadata for `gpt-6-astra` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
-ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-6-astra' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}}
-ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-6-astra' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again."}}

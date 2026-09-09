@@ -4158,6 +4158,16 @@ def execute_step(
     validation_wait_budget_s = max(
         0.0, DECISION_DEADLINE_S - elapsed_before_validation
     )
+    # Reporting only: what the superseded stage-4h predicate would have decided
+    # on this very anchor, so a before/after fallback-rate comparison is paired
+    # by construction instead of relying on two separately loaded runs.
+    retired_reserve_s = (
+        phase["stage1_scores"] / max(1, len(catalog))
+    ) * validation_rows * 48
+    retired_predicate_would_fall_back = (
+        elapsed_before_validation >= DECISION_DEADLINE_S
+        or elapsed_before_validation + retired_reserve_s >= DECISION_DEADLINE_S
+    )
     validation_within_deadline: bool | None = None
     pre_fallback = {name: row.configuration_id for name, row in selections.items()}
     selections = apply_deadline_fallback(selections, base=base, missed=deadline_missed)
@@ -4587,6 +4597,10 @@ def execute_step(
             # validation is now bounded by a measured preemptive wait.
             "validation_reserve_s": None,
             "validation_deadline_model": "preemptive-measured-wait",
+            "retired_stage4h_reserve_s": retired_reserve_s,
+            "retired_stage4h_predicate_would_fall_back": (
+                retired_predicate_would_fall_back
+            ),
             "validation_rows": validation_rows,
             "validation_wait_budget_s": validation_wait_budget_s,
             "validation_within_deadline": validation_within_deadline,
