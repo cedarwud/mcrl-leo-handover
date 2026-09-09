@@ -27715,3 +27715,2339 @@ index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff
 
 codex
 Two widest-point anchors are complete, with local committed headroom of 35.26% and 38.15%. Anchor 3 has begun; these are still interim, not a recommendation.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+Anchor 3 is at three passes and 71 moves. The terminal sweep is in progress with no failure signal.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+Three widest-point anchors are complete; anchor 3 had 11.27% local headroom. Anchor 4 has nearly stabilized after only 37 moves across two passes.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+World 1 at 6.65° is complete. The fourth anchor’s local headroom was 68.62%, but the very broad beam also severely degrades service; the paired served counts will keep that tradeoff visible. World 2 is starting.
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+Five widest-point anchors are complete. The fifth had 95.36% local headroom, while anchor 6 is nearly converged after 16 moves; this sharp heterogeneity will be contextualized with pooled EE and service, not presented as a standalone win.
+ succeeded in 7247157ms:
+{"completed_improving_moves": 72, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 72, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 98, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 26, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 106, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 8, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/1:step/0", "joint_candidates": 1089, "oracle_ee_gain_pct": 4.798097779556465, "qualifying": true, "unilateral_iterations": 106, "wall_seconds": 54.93639008697937}
+{"completed_improving_moves": 71, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 71, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 101, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 30, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 108, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 7, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 111, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 3, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 112, "completed_passes": 5, "coordinate_step": 1, "moves_in_pass": 1, "unique_selection_evaluations": 13501}
+{"anchor": "V025_PROBE_R2/world/1:step/1", "joint_candidates": 964, "oracle_ee_gain_pct": 5.65700167115768, "qualifying": true, "unilateral_iterations": 112, "wall_seconds": 45.27222469000844}
+{"completed_improving_moves": 66, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 66, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 91, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 25, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 97, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 6, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 102, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 5, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/1:step/2", "joint_candidates": 907, "oracle_ee_gain_pct": 13.947099987470235, "qualifying": true, "unilateral_iterations": 102, "wall_seconds": 51.920306777989026}
+{"completed_improving_moves": 44, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 44, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 65, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 21, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 67, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 2, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/1:step/3", "joint_candidates": 1467, "oracle_ee_gain_pct": 17.440614395643685, "qualifying": true, "unilateral_iterations": 67, "wall_seconds": 77.91622438299237}
+{"completed_improving_moves": 72, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 72, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 99, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 27, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 106, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 7, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/2:step/0", "joint_candidates": 905, "oracle_ee_gain_pct": 2.2481639578978863, "qualifying": true, "unilateral_iterations": 106, "wall_seconds": 46.31169385899557}
+{"completed_improving_moves": 69, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 69, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 80, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 11, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 86, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 6, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 95, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 9, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 96, "completed_passes": 5, "coordinate_step": 1, "moves_in_pass": 1, "unique_selection_evaluations": 13501}
+{"anchor": "V025_PROBE_R2/world/2:step/1", "joint_candidates": 903, "oracle_ee_gain_pct": 3.2897800905932195, "qualifying": true, "unilateral_iterations": 96, "wall_seconds": 38.01689187900047}
+{"completed_improving_moves": 65, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 65, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 90, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 25, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 99, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 9, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 100, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 1, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/2:step/2", "joint_candidates": 892, "oracle_ee_gain_pct": 2.2762304018617785, "qualifying": true, "unilateral_iterations": 100, "wall_seconds": 43.58668942601071}
+{"completed_improving_moves": 53, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 53, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 68, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 15, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 71, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 3, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/2:step/3", "joint_candidates": 1010, "oracle_ee_gain_pct": 3.201306950695759, "qualifying": true, "unilateral_iterations": 71, "wall_seconds": 69.219751104014}
+{
+  "anchor_count": 8,
+  "exact_evaluation_count": {
+    "committed_boundary_evaluations": 1152,
+    "committed_unique_configurations": 24,
+    "joint_unique_candidates": 8137,
+    "selection_boundary_evaluations": 98533,
+    "unilateral_candidate_comparisons": 102600,
+    "unique_selection_configurations": 98533
+  },
+  "oracle_set_over_unilateral_relative": 0.06501816798308657,
+  "pooled": {
+    "BASELINE": {
+      "bits": 218296435265.29095,
+      "ee_bit_per_j": 3861463.0879408796,
+      "interference_structure": {
+        "infeasible_user_steps": 465,
+        "interference_limited_share_of_infeasible": 0.7634408602150538,
+        "interference_limited_user_steps": 355,
+        "top1_aggressor_share": 0.6666310630562223,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 5.54825735451166e-08,
+        "weighted_total_interference_w": 8.322830515990718e-08
+      },
+      "joules": 56532.05282397177,
+      "served_count_sum": 313
+    },
+    "ORACLE_SET": {
+      "bits": 675098265086.7003,
+      "ee_bit_per_j": 28502169.662307005,
+      "interference_structure": {
+        "infeasible_user_steps": 278,
+        "interference_limited_share_of_infeasible": 0.9136690647482014,
+        "interference_limited_user_steps": 254,
+        "top1_aggressor_share": 0.7531186434168377,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 6.453914238736238e-09,
+        "weighted_total_interference_w": 8.56958501180552e-09
+      },
+      "joules": 23685.85525541556,
+      "served_count_sum": 790
+    },
+    "UNILATERAL": {
+      "bits": 656241599257.8644,
+      "ee_bit_per_j": 26762144.08274737,
+      "interference_structure": {
+        "infeasible_user_steps": 306,
+        "interference_limited_share_of_infeasible": 0.9117647058823529,
+        "interference_limited_user_steps": 279,
+        "top1_aggressor_share": 0.7183285310141959,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 7.746082592048602e-09,
+        "weighted_total_interference_w": 1.078348173239345e-08
+      },
+      "joules": 24521.263962588135,
+      "served_count_sum": 779
+    }
+  },
+  "qualifying_coalition_anchor_count": 8,
+  "unilateral_over_baseline_relative": 5.9305709968648825,
+  "world_count": 2
+}
+{"completed_improving_moves": 56, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 56, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 75, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 19, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 82, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 7, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 92, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 10, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 94, "completed_passes": 5, "coordinate_step": 0, "moves_in_pass": 2, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 95, "completed_passes": 6, "coordinate_step": 0, "moves_in_pass": 1, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 97, "completed_passes": 7, "coordinate_step": 0, "moves_in_pass": 2, "unique_selection_evaluations": 18900}
+{"anchor": "V025_PROBE_R2/world/1:step/0", "joint_candidates": 1307, "oracle_ee_gain_pct": 6.850479583317215, "qualifying": true, "unilateral_iterations": 97, "wall_seconds": 143.24406872701366}
+{"completed_improving_moves": 54, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 54, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 82, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 28, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 86, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 4, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/1:step/1", "joint_candidates": 984, "oracle_ee_gain_pct": 15.47912614741296, "qualifying": true, "unilateral_iterations": 86, "wall_seconds": 39.57806785000139}
+{"completed_improving_moves": 52, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 52, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 82, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 30, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 93, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 11, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 100, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 7, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 111, "completed_passes": 5, "coordinate_step": 2, "moves_in_pass": 11, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 116, "completed_passes": 6, "coordinate_step": 2, "moves_in_pass": 5, "unique_selection_evaluations": 16201}
+{"anchor": "V025_PROBE_R2/world/1:step/2", "joint_candidates": 1425, "oracle_ee_gain_pct": 8.276382979790498, "qualifying": true, "unilateral_iterations": 116, "wall_seconds": 214.00973675801652}
+{"completed_improving_moves": 49, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 49, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 91, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 42, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 109, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 18, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 119, "completed_passes": 4, "coordinate_step": 3, "moves_in_pass": 10, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 126, "completed_passes": 5, "coordinate_step": 3, "moves_in_pass": 7, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 130, "completed_passes": 6, "coordinate_step": 3, "moves_in_pass": 4, "unique_selection_evaluations": 16201}
+{"anchor": "V025_PROBE_R2/world/1:step/3", "joint_candidates": 1337, "oracle_ee_gain_pct": 4.713793189078697, "qualifying": true, "unilateral_iterations": 130, "wall_seconds": 181.57736051999382}
+{"completed_improving_moves": 62, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 62, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 78, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 16, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 90, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 12, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 100, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 10, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 102, "completed_passes": 5, "coordinate_step": 0, "moves_in_pass": 2, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 105, "completed_passes": 6, "coordinate_step": 0, "moves_in_pass": 3, "unique_selection_evaluations": 16201}
+{"anchor": "V025_PROBE_R2/world/2:step/0", "joint_candidates": 1398, "oracle_ee_gain_pct": 16.386228703113215, "qualifying": true, "unilateral_iterations": 105, "wall_seconds": 159.02906666102353}
+{"completed_improving_moves": 63, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 63, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 87, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 24, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 93, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 6, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 94, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 1, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 95, "completed_passes": 5, "coordinate_step": 1, "moves_in_pass": 1, "unique_selection_evaluations": 13500}
+{"anchor": "V025_PROBE_R2/world/2:step/1", "joint_candidates": 966, "oracle_ee_gain_pct": 6.638041734784594, "qualifying": true, "unilateral_iterations": 95, "wall_seconds": 71.48236311599612}
+{"completed_improving_moves": 57, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 57, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 76, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 19, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 92, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 16, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 94, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 2, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 95, "completed_passes": 5, "coordinate_step": 2, "moves_in_pass": 1, "unique_selection_evaluations": 13500}
+{"anchor": "V025_PROBE_R2/world/2:step/2", "joint_candidates": 875, "oracle_ee_gain_pct": 8.948700093491668, "qualifying": true, "unilateral_iterations": 95, "wall_seconds": 65.02426936398842}
+{"completed_improving_moves": 54, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 54, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 77, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 23, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 97, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 20, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 104, "completed_passes": 4, "coordinate_step": 3, "moves_in_pass": 7, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 107, "completed_passes": 5, "coordinate_step": 3, "moves_in_pass": 3, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 108, "completed_passes": 6, "coordinate_step": 3, "moves_in_pass": 1, "unique_selection_evaluations": 16201}
+{"anchor": "V025_PROBE_R2/world/2:step/3", "joint_candidates": 1432, "oracle_ee_gain_pct": 31.681653549436373, "qualifying": true, "unilateral_iterations": 108, "wall_seconds": 468.13429009201354}
+{
+  "anchor_count": 8,
+  "exact_evaluation_count": {
+    "committed_boundary_evaluations": 1152,
+    "committed_unique_configurations": 24,
+    "joint_unique_candidates": 9724,
+    "selection_boundary_evaluations": 138390,
+    "unilateral_candidate_comparisons": 140400,
+    "unique_selection_configurations": 138390
+  },
+  "oracle_set_over_unilateral_relative": 0.10396775271425529,
+  "pooled": {
+    "BASELINE": {
+      "bits": 213998720620.7407,
+      "ee_bit_per_j": 3698477.5333345975,
+      "interference_structure": {
+        "infeasible_user_steps": 577,
+        "interference_limited_share_of_infeasible": 1.0,
+        "interference_limited_user_steps": 577,
+        "top1_aggressor_share": 0.49780527165420974,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 1.3177643900583548e-07,
+        "weighted_total_interference_w": 2.64714832303687e-07
+      },
+      "joules": 57861.30068168794,
+      "served_count_sum": 334
+    },
+    "ORACLE_SET": {
+      "bits": 654281820787.0808,
+      "ee_bit_per_j": 28173718.730096202,
+      "interference_structure": {
+        "infeasible_user_steps": 373,
+        "interference_limited_share_of_infeasible": 0.7453083109919572,
+        "interference_limited_user_steps": 278,
+        "top1_aggressor_share": 0.6257444012440194,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 1.2541272126556465e-08,
+        "weighted_total_interference_w": 2.00421643431785e-08
+      },
+      "joules": 23223.126029442217,
+      "served_count_sum": 774
+    },
+    "UNILATERAL": {
+      "bits": 630726747930.2388,
+      "ee_bit_per_j": 25520418.201371618,
+      "interference_structure": {
+        "infeasible_user_steps": 419,
+        "interference_limited_share_of_infeasible": 0.8114558472553699,
+        "interference_limited_user_steps": 340,
+        "top1_aggressor_share": 0.6522194020130226,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 1.6588167516999572e-08,
+        "weighted_total_interference_w": 2.5433416218225843e-08
+      },
+      "joules": 24714.59295664441,
+      "served_count_sum": 761
+    }
+  },
+  "qualifying_coalition_anchor_count": 8,
+  "unilateral_over_baseline_relative": 5.9002496220011,
+  "world_count": 2
+}
+{"completed_improving_moves": 67, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 67, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 85, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 18, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 86, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 1, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 88, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 2, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/1:step/0", "joint_candidates": 1362, "oracle_ee_gain_pct": 12.222850995238922, "qualifying": true, "unilateral_iterations": 88, "wall_seconds": 207.48238143400522}
+{"completed_improving_moves": 56, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 56, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 80, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 24, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 97, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 17, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 109, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 12, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 116, "completed_passes": 5, "coordinate_step": 1, "moves_in_pass": 7, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 119, "completed_passes": 6, "coordinate_step": 1, "moves_in_pass": 3, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 121, "completed_passes": 7, "coordinate_step": 1, "moves_in_pass": 2, "unique_selection_evaluations": 18900}
+{"anchor": "V025_PROBE_R2/world/1:step/1", "joint_candidates": 1339, "oracle_ee_gain_pct": 10.12175179122783, "qualifying": true, "unilateral_iterations": 121, "wall_seconds": 251.2899970790022}
+{"completed_improving_moves": 56, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 56, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 79, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 23, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 86, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 7, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 94, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 8, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 106, "completed_passes": 5, "coordinate_step": 2, "moves_in_pass": 12, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 124, "completed_passes": 6, "coordinate_step": 2, "moves_in_pass": 18, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 127, "completed_passes": 7, "coordinate_step": 2, "moves_in_pass": 3, "unique_selection_evaluations": 18901}
+{"completed_improving_moves": 129, "completed_passes": 8, "coordinate_step": 2, "moves_in_pass": 2, "unique_selection_evaluations": 21601}
+{"completed_improving_moves": 130, "completed_passes": 9, "coordinate_step": 2, "moves_in_pass": 1, "unique_selection_evaluations": 24300}
+{"completed_improving_moves": 134, "completed_passes": 10, "coordinate_step": 2, "moves_in_pass": 4, "unique_selection_evaluations": 27000}
+{"completed_improving_moves": 145, "completed_passes": 11, "coordinate_step": 2, "moves_in_pass": 11, "unique_selection_evaluations": 29700}
+{"completed_improving_moves": 158, "completed_passes": 12, "coordinate_step": 2, "moves_in_pass": 13, "unique_selection_evaluations": 32400}
+{"completed_improving_moves": 165, "completed_passes": 13, "coordinate_step": 2, "moves_in_pass": 7, "unique_selection_evaluations": 35100}
+{"anchor": "V025_PROBE_R2/world/1:step/2", "joint_candidates": 1365, "oracle_ee_gain_pct": 6.645611767236725, "qualifying": true, "unilateral_iterations": 165, "wall_seconds": 597.0922806170129}
+{"completed_improving_moves": 39, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 39, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 68, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 29, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 77, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 9, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 93, "completed_passes": 4, "coordinate_step": 3, "moves_in_pass": 16, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 103, "completed_passes": 5, "coordinate_step": 3, "moves_in_pass": 10, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 106, "completed_passes": 6, "coordinate_step": 3, "moves_in_pass": 3, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 108, "completed_passes": 7, "coordinate_step": 3, "moves_in_pass": 2, "unique_selection_evaluations": 18900}
+{"anchor": "V025_PROBE_R2/world/1:step/3", "joint_candidates": 1342, "oracle_ee_gain_pct": 25.136181324003193, "qualifying": true, "unilateral_iterations": 108, "wall_seconds": 199.17909980702098}
+{"completed_improving_moves": 62, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 62, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 96, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 34, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 111, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 15, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 115, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 4, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 116, "completed_passes": 5, "coordinate_step": 0, "moves_in_pass": 1, "unique_selection_evaluations": 13501}
+{"anchor": "V025_PROBE_R2/world/2:step/0", "joint_candidates": 1375, "oracle_ee_gain_pct": 11.182045693997722, "qualifying": true, "unilateral_iterations": 116, "wall_seconds": 256.7739317329833}
+{"completed_improving_moves": 69, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 69, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 93, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 24, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 105, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 12, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 115, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 10, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/2:step/1", "joint_candidates": 1324, "oracle_ee_gain_pct": -0.30383185982464367, "qualifying": true, "unilateral_iterations": 115, "wall_seconds": 198.6707430339884}
+{"completed_improving_moves": 63, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 63, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 104, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 41, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 132, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 28, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 158, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 26, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 172, "completed_passes": 5, "coordinate_step": 2, "moves_in_pass": 14, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 175, "completed_passes": 6, "coordinate_step": 2, "moves_in_pass": 3, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 177, "completed_passes": 7, "coordinate_step": 2, "moves_in_pass": 2, "unique_selection_evaluations": 18901}
+{"completed_improving_moves": 178, "completed_passes": 8, "coordinate_step": 2, "moves_in_pass": 1, "unique_selection_evaluations": 21599}
+{"anchor": "V025_PROBE_R2/world/2:step/2", "joint_candidates": 1333, "oracle_ee_gain_pct": 20.351659496386198, "qualifying": true, "unilateral_iterations": 178, "wall_seconds": 537.5468025869923}
+{"completed_improving_moves": 15, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 15, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 18, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 3, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 28, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 10, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 51, "completed_passes": 4, "coordinate_step": 3, "moves_in_pass": 23, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 75, "completed_passes": 5, "coordinate_step": 3, "moves_in_pass": 24, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 105, "completed_passes": 6, "coordinate_step": 3, "moves_in_pass": 30, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 127, "completed_passes": 7, "coordinate_step": 3, "moves_in_pass": 22, "unique_selection_evaluations": 18901}
+{"completed_improving_moves": 139, "completed_passes": 8, "coordinate_step": 3, "moves_in_pass": 12, "unique_selection_evaluations": 21601}
+{"completed_improving_moves": 142, "completed_passes": 9, "coordinate_step": 3, "moves_in_pass": 3, "unique_selection_evaluations": 24301}
+{"anchor": "V025_PROBE_R2/world/2:step/3", "joint_candidates": 1349, "oracle_ee_gain_pct": 26.913345691196255, "qualifying": true, "unilateral_iterations": 142, "wall_seconds": 251.99670466798125}
+{
+  "anchor_count": 8,
+  "exact_evaluation_count": {
+    "committed_boundary_evaluations": 1152,
+    "committed_unique_configurations": 24,
+    "joint_unique_candidates": 10789,
+    "selection_boundary_evaluations": 175409,
+    "unilateral_candidate_comparisons": 175500,
+    "unique_selection_configurations": 175409
+  },
+  "oracle_set_over_unilateral_relative": 0.11562912297107886,
+  "pooled": {
+    "BASELINE": {
+      "bits": 97999939489.31216,
+      "ee_bit_per_j": 1387314.0392362904,
+      "interference_structure": {
+        "infeasible_user_steps": 692,
+        "interference_limited_share_of_infeasible": 1.0,
+        "interference_limited_user_steps": 692,
+        "top1_aggressor_share": 0.3985159405919422,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 2.778475410941181e-07,
+        "weighted_total_interference_w": 6.97205589019633e-07
+      },
+      "joules": 70640.05460743456,
+      "served_count_sum": 203
+    },
+    "ORACLE_SET": {
+      "bits": 665697960952.1953,
+      "ee_bit_per_j": 32304457.402080525,
+      "interference_structure": {
+        "infeasible_user_steps": 432,
+        "interference_limited_share_of_infeasible": 0.5509259259259259,
+        "interference_limited_user_steps": 238,
+        "top1_aggressor_share": 0.5991486517171868,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 1.5824691822087468e-08,
+        "weighted_total_interference_w": 2.6411962668585158e-08
+      },
+      "joules": 20607.000224969634,
+      "served_count_sum": 729
+    },
+    "UNILATERAL": {
+      "bits": 634999275028.7128,
+      "ee_bit_per_j": 28956269.37028066,
+      "interference_structure": {
+        "infeasible_user_steps": 467,
+        "interference_limited_share_of_infeasible": 0.6381156316916489,
+        "interference_limited_user_steps": 298,
+        "top1_aggressor_share": 0.5670168765251471,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 2.074261560517864e-08,
+        "weighted_total_interference_w": 3.658200745680752e-08
+      },
+      "joules": 21929.595518974067,
+      "served_count_sum": 701
+    }
+  },
+  "qualifying_coalition_anchor_count": 8,
+  "unilateral_over_baseline_relative": 19.87218074014514,
+  "world_count": 2
+}
+{"completed_improving_moves": 58, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 58, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 103, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 45, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 125, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 22, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 133, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 8, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 147, "completed_passes": 5, "coordinate_step": 0, "moves_in_pass": 14, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 155, "completed_passes": 6, "coordinate_step": 0, "moves_in_pass": 8, "unique_selection_evaluations": 16201}
+{"anchor": "V025_PROBE_R2/world/1:step/0", "joint_candidates": 1350, "oracle_ee_gain_pct": 0.22254435346724666, "qualifying": true, "unilateral_iterations": 155, "wall_seconds": 375.1051163059892}
+{"completed_improving_moves": 68, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 68, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 92, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 24, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 98, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 6, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 106, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 8, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 112, "completed_passes": 5, "coordinate_step": 1, "moves_in_pass": 6, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 115, "completed_passes": 6, "coordinate_step": 1, "moves_in_pass": 3, "unique_selection_evaluations": 16201}
+{"anchor": "V025_PROBE_R2/world/1:step/1", "joint_candidates": 1335, "oracle_ee_gain_pct": 13.953573591752955, "qualifying": true, "unilateral_iterations": 115, "wall_seconds": 317.52847532200394}
+{"completed_improving_moves": 48, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 48, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 83, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 35, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 95, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 12, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 121, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 26, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 128, "completed_passes": 5, "coordinate_step": 2, "moves_in_pass": 7, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 134, "completed_passes": 6, "coordinate_step": 2, "moves_in_pass": 6, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 135, "completed_passes": 7, "coordinate_step": 2, "moves_in_pass": 1, "unique_selection_evaluations": 18901}
+{"anchor": "V025_PROBE_R2/world/1:step/2", "joint_candidates": 1303, "oracle_ee_gain_pct": 8.997339379979818, "qualifying": true, "unilateral_iterations": 135, "wall_seconds": 305.61748317599995}
+{"completed_improving_moves": 37, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 37, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 51, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 14, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 69, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 18, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 92, "completed_passes": 4, "coordinate_step": 3, "moves_in_pass": 23, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 97, "completed_passes": 5, "coordinate_step": 3, "moves_in_pass": 5, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 99, "completed_passes": 6, "coordinate_step": 3, "moves_in_pass": 2, "unique_selection_evaluations": 16201}
+{"anchor": "V025_PROBE_R2/world/1:step/3", "joint_candidates": 1280, "oracle_ee_gain_pct": 35.52791150220818, "qualifying": true, "unilateral_iterations": 99, "wall_seconds": 153.94724701700034}
+{"completed_improving_moves": 55, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 55, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 93, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 38, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 116, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 23, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 124, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 8, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 136, "completed_passes": 5, "coordinate_step": 0, "moves_in_pass": 12, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 160, "completed_passes": 6, "coordinate_step": 0, "moves_in_pass": 24, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 175, "completed_passes": 7, "coordinate_step": 0, "moves_in_pass": 15, "unique_selection_evaluations": 18901}
+{"completed_improving_moves": 191, "completed_passes": 8, "coordinate_step": 0, "moves_in_pass": 16, "unique_selection_evaluations": 21601}
+{"completed_improving_moves": 195, "completed_passes": 9, "coordinate_step": 0, "moves_in_pass": 4, "unique_selection_evaluations": 24301}
+{"anchor": "V025_PROBE_R2/world/2:step/0", "joint_candidates": 1317, "oracle_ee_gain_pct": 1.091987426655483, "qualifying": true, "unilateral_iterations": 195, "wall_seconds": 330.64115950698033}
+{"completed_improving_moves": 48, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 48, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 90, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 42, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 128, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 38, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 146, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 18, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 150, "completed_passes": 5, "coordinate_step": 1, "moves_in_pass": 4, "unique_selection_evaluations": 13501}
+{"anchor": "V025_PROBE_R2/world/2:step/1", "joint_candidates": 1319, "oracle_ee_gain_pct": 32.746618503737835, "qualifying": true, "unilateral_iterations": 150, "wall_seconds": 291.7308149659948}
+{"completed_improving_moves": 44, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 44, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 74, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 30, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 101, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 27, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 130, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 29, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 154, "completed_passes": 5, "coordinate_step": 2, "moves_in_pass": 24, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 173, "completed_passes": 6, "coordinate_step": 2, "moves_in_pass": 19, "unique_selection_evaluations": 16201}
+{"completed_improving_moves": 191, "completed_passes": 7, "coordinate_step": 2, "moves_in_pass": 18, "unique_selection_evaluations": 18901}
+{"completed_improving_moves": 203, "completed_passes": 8, "coordinate_step": 2, "moves_in_pass": 12, "unique_selection_evaluations": 21601}
+{"completed_improving_moves": 204, "completed_passes": 9, "coordinate_step": 2, "moves_in_pass": 1, "unique_selection_evaluations": 24301}
+{"anchor": "V025_PROBE_R2/world/2:step/2", "joint_candidates": 1283, "oracle_ee_gain_pct": 21.972508108692068, "qualifying": true, "unilateral_iterations": 204, "wall_seconds": 198.9716112060123}
+{"completed_improving_moves": 10, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 10, "unique_selection_evaluations": 2701}
+{"anchor": "V025_PROBE_R2/world/2:step/3", "joint_candidates": 1176, "oracle_ee_gain_pct": null, "qualifying": true, "unilateral_iterations": 10, "wall_seconds": 13.761490275006508}
+{
+  "anchor_count": 8,
+  "exact_evaluation_count": {
+    "committed_boundary_evaluations": 1152,
+    "committed_unique_configurations": 24,
+    "joint_unique_candidates": 10363,
+    "selection_boundary_evaluations": 151606,
+    "unilateral_candidate_comparisons": 153900,
+    "unique_selection_configurations": 151606
+  },
+  "oracle_set_over_unilateral_relative": 0.14638802515537197,
+  "pooled": {
+    "BASELINE": {
+      "bits": 24479615082.962967,
+      "ee_bit_per_j": 314796.34316539,
+      "interference_structure": {
+        "infeasible_user_steps": 742,
+        "interference_limited_share_of_infeasible": 1.0,
+        "interference_limited_user_steps": 742,
+        "top1_aggressor_share": 0.3134195656645812,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 4.333861199891459e-07,
+        "weighted_total_interference_w": 1.3827666408451087e-06
+      },
+      "joules": 77763.34005920039,
+      "served_count_sum": 56
+    },
+    "ORACLE_SET": {
+      "bits": 552691558936.3964,
+      "ee_bit_per_j": 22296534.19084438,
+      "interference_structure": {
+        "infeasible_user_steps": 532,
+        "interference_limited_share_of_infeasible": 0.5319548872180451,
+        "interference_limited_user_steps": 283,
+        "top1_aggressor_share": 0.30846352099731333,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 5.637875510597892e-08,
+        "weighted_total_interference_w": 1.8277284433406297e-07
+      },
+      "joules": 24788.227363306894,
+      "served_count_sum": 607
+    },
+    "UNILATERAL": {
+      "bits": 486188250691.66235,
+      "ee_bit_per_j": 19449378.135141015,
+      "interference_structure": {
+        "infeasible_user_steps": 532,
+        "interference_limited_share_of_infeasible": 0.5845864661654135,
+        "interference_limited_user_steps": 311,
+        "top1_aggressor_share": 0.3193132836655788,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 6.680816804645403e-08,
+        "weighted_total_interference_w": 2.0922451856535708e-07
+      },
+      "joules": 24997.62446456941,
+      "served_count_sum": 528
+    }
+  },
+  "qualifying_coalition_anchor_count": 8,
+  "unilateral_over_baseline_relative": 60.784002760548454,
+  "world_count": 2
+}
+{"completed_improving_moves": 53, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 53, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 83, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 30, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 103, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 20, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 113, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 10, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 116, "completed_passes": 5, "coordinate_step": 0, "moves_in_pass": 3, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 120, "completed_passes": 6, "coordinate_step": 0, "moves_in_pass": 4, "unique_selection_evaluations": 16201}
+{"anchor": "V025_PROBE_R2/world/1:step/0", "joint_candidates": 1327, "oracle_ee_gain_pct": 35.25878626034178, "qualifying": true, "unilateral_iterations": 120, "wall_seconds": 233.9070374169969}
+{"completed_improving_moves": 54, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 54, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 84, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 30, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 125, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 41, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 141, "completed_passes": 4, "coordinate_step": 1, "moves_in_pass": 16, "unique_selection_evaluations": 10801}
+{"anchor": "V025_PROBE_R2/world/1:step/1", "joint_candidates": 1357, "oracle_ee_gain_pct": 38.14872977004329, "qualifying": true, "unilateral_iterations": 141, "wall_seconds": 123.11979916400742}
+{"completed_improving_moves": 37, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 37, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 65, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 28, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 71, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 6, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/1:step/2", "joint_candidates": 1383, "oracle_ee_gain_pct": 11.267276384463187, "qualifying": true, "unilateral_iterations": 71, "wall_seconds": 129.02904818300158}
+{"completed_improving_moves": 36, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 36, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 37, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 1, "unique_selection_evaluations": 5401}
+{"anchor": "V025_PROBE_R2/world/1:step/3", "joint_candidates": 1534, "oracle_ee_gain_pct": 68.61922678309422, "qualifying": true, "unilateral_iterations": 37, "wall_seconds": 69.56191019999096}
+{"completed_improving_moves": 18, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 18, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 30, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 12, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 33, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 3, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/2:step/0", "joint_candidates": 1293, "oracle_ee_gain_pct": 95.3639573531322, "qualifying": true, "unilateral_iterations": 33, "wall_seconds": 47.62683817901416}
+{"completed_improving_moves": 12, "completed_passes": 1, "coordinate_step": 1, "moves_in_pass": 12, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 15, "completed_passes": 2, "coordinate_step": 1, "moves_in_pass": 3, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 16, "completed_passes": 3, "coordinate_step": 1, "moves_in_pass": 1, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/2:step/1", "joint_candidates": 1093, "oracle_ee_gain_pct": null, "qualifying": true, "unilateral_iterations": 16, "wall_seconds": 18.201866404997418}
+{"completed_improving_moves": 11, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 11, "unique_selection_evaluations": 2701}
+{"anchor": "V025_PROBE_R2/world/2:step/2", "joint_candidates": 1136, "oracle_ee_gain_pct": null, "qualifying": true, "unilateral_iterations": 11, "wall_seconds": 9.409460157010471}
+{"completed_improving_moves": 11, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 11, "unique_selection_evaluations": 2701}
+{"anchor": "V025_PROBE_R2/world/2:step/3", "joint_candidates": 1135, "oracle_ee_gain_pct": null, "qualifying": true, "unilateral_iterations": 11, "wall_seconds": 9.19217234198004}
+{
+  "anchor_count": 8,
+  "exact_evaluation_count": {
+    "committed_boundary_evaluations": 1152,
+    "committed_unique_configurations": 24,
+    "joint_unique_candidates": 10258,
+    "selection_boundary_evaluations": 87132,
+    "unilateral_candidate_comparisons": 83700,
+    "unique_selection_configurations": 87132
+  },
+  "oracle_set_over_unilateral_relative": 0.41948593298464987,
+  "pooled": {
+    "BASELINE": {
+      "bits": 11962081637.037045,
+      "ee_bit_per_j": 148510.61077733067,
+      "interference_structure": {
+        "infeasible_user_steps": 772,
+        "interference_limited_share_of_infeasible": 1.0,
+        "interference_limited_user_steps": 772,
+        "top1_aggressor_share": 0.22733737768209672,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 5.590254580309172e-07,
+        "weighted_total_interference_w": 2.459012520205302e-06
+      },
+      "joules": 80546.98296926667,
+      "served_count_sum": 19
+    },
+    "ORACLE_SET": {
+      "bits": 201712484862.01904,
+      "ee_bit_per_j": 4465598.769833909,
+      "interference_structure": {
+        "infeasible_user_steps": 664,
+        "interference_limited_share_of_infeasible": 0.9246987951807228,
+        "interference_limited_user_steps": 614,
+        "top1_aggressor_share": 0.2687588068800717,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 2.9590059522694833e-07,
+        "weighted_total_interference_w": 1.1009893914248106e-06
+      },
+      "joules": 45170.31091656302,
+      "served_count_sum": 220
+    },
+    "UNILATERAL": {
+      "bits": 146927073363.21674,
+      "ee_bit_per_j": 3145926.7514151544,
+      "interference_structure": {
+        "infeasible_user_steps": 701,
+        "interference_limited_share_of_infeasible": 0.9286733238231099,
+        "interference_limited_user_steps": 651,
+        "top1_aggressor_share": 0.26512037040125896,
+        "user_steps": 800,
+        "weighted_top1_interference_w": 3.169162600907405e-07,
+        "weighted_total_interference_w": 1.195367446156961e-06
+      },
+      "joules": 46703.907933369235,
+      "served_count_sum": 158
+    }
+  },
+  "qualifying_coalition_anchor_count": 8,
+  "unilateral_over_baseline_relative": 20.183178326106265,
+  "world_count": 2
+}
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+All five points have finished on the matched eight-anchor panel. The pooled coordination-headroom curve is 6.50%, 10.40%, 11.56%, 14.64%, and 41.95% from narrowest to widest. Service deteriorates sharply at the broad end, so that rising headroom will be reported as “coordination matters more under heavier interference,” not as a preferred design.
+
+I’m now validating receipt hashes, matched-anchor identity, source-file immutability, and the exact metric extraction before writing the required root report.
+exec
+/bin/bash -lc "sha256sum src/mcrl/physics_v025/constants_v025.py src/mcrl/physics_v025/channel.py; diff -u .scratch/beamwidth/engine-hashes-before.txt <(sha256sum src/mcrl/physics_v025/constants_v025.py src/mcrl/physics_v025/channel.py); git diff -- src/mcrl/physics_v025/constants_v025.py src/mcrl/physics_v025/channel.py; for f in .scratch/beamwidth/sweep-one-sided-*.json; do jq -r '[.beamwidth_diagnostic.off_axis_half_power_deg,.beamwidth_diagnostic.full_hpbw_deg,.summary.anchor_count,.summary.world_count,.test_split_opened,.learner_used,.processes_used,.receipt_sha256] | @tsv' \""'$f"; done; for f in .scratch/beamwidth/sweep-one-sided-*.json; do jq -r '"'.beamwidth_diagnostic.off_axis_half_power_deg as "'$h | .anchors[] | [$h,.anchor_id,.tle_date,.training_seed] | @tsv'"' \""'$f"; done | sort -k2,2 -k1,1n | sed -n '"'1,80p'" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+7863e136423bfac77a0c710d95f9e8b3fe36b928c0dc1ef1bb3b2f69a0ab1112  src/mcrl/physics_v025/constants_v025.py
+9f29bb063e8e2ce6898ede1a567b638bb0a14e02e1f97616bf3d87ef422d396e  src/mcrl/physics_v025/channel.py
+1.66	3.32	8	2	false	false	3	d515bea4575c8ac918dd4380e9d807419e5e0b4d3baae1e40fbaf7fddda1d449
+2.4	4.8	8	2	false	false	3	a095e4093fe9171fdaa0d2c20e62ca9bf8b4db9b512d83e5944dfab3bd04cf4f
+3.32	6.64	8	2	false	false	3	4ea6cfe717b38797ac4836ebd7cb1bdbbcf0f42735335307a5e72d30c3aafdd1
+4.5	9.0	8	2	false	false	3	f048f37c5b6c538212b9d574158baf4279c10a4b500fe2a16a15eac77d9c21a4
+6.65	13.3	8	2	false	false	3	e88710b2eb5f8107f2432e6702a128b6511ec12032e976d78dcb714f78da0494
+1.66	V025_PROBE_R2/world/1:step/0	2026-05-30	3525272352645343090
+2.4	V025_PROBE_R2/world/1:step/0	2026-05-30	3525272352645343090
+3.32	V025_PROBE_R2/world/1:step/0	2026-05-30	3525272352645343090
+4.5	V025_PROBE_R2/world/1:step/0	2026-05-30	3525272352645343090
+6.65	V025_PROBE_R2/world/1:step/0	2026-05-30	3525272352645343090
+1.66	V025_PROBE_R2/world/1:step/1	2026-05-30	3525272352645343090
+2.4	V025_PROBE_R2/world/1:step/1	2026-05-30	3525272352645343090
+3.32	V025_PROBE_R2/world/1:step/1	2026-05-30	3525272352645343090
+4.5	V025_PROBE_R2/world/1:step/1	2026-05-30	3525272352645343090
+6.65	V025_PROBE_R2/world/1:step/1	2026-05-30	3525272352645343090
+1.66	V025_PROBE_R2/world/1:step/2	2026-05-30	3525272352645343090
+2.4	V025_PROBE_R2/world/1:step/2	2026-05-30	3525272352645343090
+3.32	V025_PROBE_R2/world/1:step/2	2026-05-30	3525272352645343090
+4.5	V025_PROBE_R2/world/1:step/2	2026-05-30	3525272352645343090
+6.65	V025_PROBE_R2/world/1:step/2	2026-05-30	3525272352645343090
+1.66	V025_PROBE_R2/world/1:step/3	2026-05-30	3525272352645343090
+2.4	V025_PROBE_R2/world/1:step/3	2026-05-30	3525272352645343090
+3.32	V025_PROBE_R2/world/1:step/3	2026-05-30	3525272352645343090
+4.5	V025_PROBE_R2/world/1:step/3	2026-05-30	3525272352645343090
+6.65	V025_PROBE_R2/world/1:step/3	2026-05-30	3525272352645343090
+1.66	V025_PROBE_R2/world/2:step/0	2025-07-28	3445540383109071487
+2.4	V025_PROBE_R2/world/2:step/0	2025-07-28	3445540383109071487
+3.32	V025_PROBE_R2/world/2:step/0	2025-07-28	3445540383109071487
+4.5	V025_PROBE_R2/world/2:step/0	2025-07-28	3445540383109071487
+6.65	V025_PROBE_R2/world/2:step/0	2025-07-28	3445540383109071487
+1.66	V025_PROBE_R2/world/2:step/1	2025-07-28	3445540383109071487
+2.4	V025_PROBE_R2/world/2:step/1	2025-07-28	3445540383109071487
+3.32	V025_PROBE_R2/world/2:step/1	2025-07-28	3445540383109071487
+4.5	V025_PROBE_R2/world/2:step/1	2025-07-28	3445540383109071487
+6.65	V025_PROBE_R2/world/2:step/1	2025-07-28	3445540383109071487
+1.66	V025_PROBE_R2/world/2:step/2	2025-07-28	3445540383109071487
+2.4	V025_PROBE_R2/world/2:step/2	2025-07-28	3445540383109071487
+3.32	V025_PROBE_R2/world/2:step/2	2025-07-28	3445540383109071487
+4.5	V025_PROBE_R2/world/2:step/2	2025-07-28	3445540383109071487
+6.65	V025_PROBE_R2/world/2:step/2	2025-07-28	3445540383109071487
+1.66	V025_PROBE_R2/world/2:step/3	2025-07-28	3445540383109071487
+2.4	V025_PROBE_R2/world/2:step/3	2025-07-28	3445540383109071487
+3.32	V025_PROBE_R2/world/2:step/3	2025-07-28	3445540383109071487
+4.5	V025_PROBE_R2/world/2:step/3	2025-07-28	3445540383109071487
+6.65	V025_PROBE_R2/world/2:step/3	2025-07-28	3445540383109071487
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+exec
+/bin/bash -lc "for f in .scratch/beamwidth/sweep-one-sided-*.json; do jq -r '[.beamwidth_diagnostic.off_axis_half_power_deg,.beamwidth_diagnostic.full_hpbw_deg,(.summary.pooled.BASELINE.ee_bit_per_j/1000000),(.summary.pooled.UNILATERAL.ee_bit_per_j/1000000),(.summary.pooled.ORACLE_SET.ee_bit_per_j/1000000),(.summary.oracle_set_over_unilateral_relative*100),.summary.pooled.BASELINE.served_count_sum,.summary.pooled.UNILATERAL.served_count_sum,.summary.pooled.ORACLE_SET.served_count_sum,.summary.qualifying_coalition_anchor_count] | @tsv' \""'$f"; done; for f in .scratch/beamwidth/sweep-one-sided-*.json; do jq -r '"'[.beamwidth_diagnostic.off_axis_half_power_deg,.beamwidth_diagnostic.full_hpbw_deg,(.summary.pooled.BASELINE.interference_structure.interference_limited_share_of_infeasible*100),(.summary.pooled.UNILATERAL.interference_structure.interference_limited_share_of_infeasible*100),(.summary.pooled.ORACLE_SET.interference_structure.interference_limited_share_of_infeasible*100),(.summary.pooled.BASELINE.interference_structure.top1_aggressor_share*100),(.summary.pooled.UNILATERAL.interference_structure.top1_aggressor_share*100),(.summary.pooled.ORACLE_SET.interference_structure.top1_aggressor_share*100),.summary.pooled.BASELINE.interference_structure.infeasible_user_steps,.summary.pooled.UNILATERAL.interference_structure.infeasible_user_steps,.summary.pooled.ORACLE_SET.interference_structure.infeasible_user_steps] | @tsv' \""'$f"; done; /home/sat/mcrl-leo-handover/.venv/bin/python - <<'"'PY'
+import hashlib, json
+from pathlib import Path
+for p in sorted(Path('.scratch/beamwidth').glob('sweep-one-sided-*.json')):
+    row=json.loads(p.read_text())
+    declared=row.pop('receipt_sha256')
+    unsigned=json.dumps(row,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False).encode('ascii')
+    actual=hashlib.sha256(unsigned).hexdigest()
+    print(p.name, 'PASS' if actual == declared else 'FAIL', actual)
+PY
+nice -n 12 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import math
+import mpmath as mp
+mp.mp.dps=50
+mu=mp.mpf('2.07123')
+r=(mp.besselj(1,mu)/(2*mu)+36*mp.besselj(3,mu)/mu**3)**2
+print('normalized_gain_at_theta_3dB =', mp.nstr(r,30))
+print('relative_dB =', mp.nstr(10*mp.log10(r),30))
+print('0.058_rad_deg =', mp.nstr(mp.degrees(mp.mpf('0.058')),30))
+print('0.116_rad_deg =', mp.nstr(mp.degrees(mp.mpf('0.116')),30))
+PY" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+1.66	3.32	3.8614630879408796	26.76214408274737	28.502169662307004	6.501816798308657	313	779	790	8
+2.4	4.8	3.6984775333345974	25.52041820137162	28.1737187300962	10.396775271425529	334	761	774	8
+3.32	6.64	1.3873140392362904	28.956269370280662	32.30445740208052	11.562912297107886	203	701	729	8
+4.5	9.0	0.31479634316539	19.449378135141014	22.29653419084438	14.638802515537197	56	528	607	8
+6.65	13.3	0.14851061077733066	3.1459267514151543	4.4655987698339095	41.948593298464985	19	158	220	8
+1.66	3.32	76.34408602150538	91.17647058823529	91.36690647482014	66.66310630562224	71.83285310141959	75.31186434168376	465	306	278
+2.4	4.8	100	81.14558472553699	74.53083109919572	49.78052716542097	65.22194020130226	62.574440124401946	577	419	373
+3.32	6.64	100	63.811563169164884	55.092592592592595	39.85159405919422	56.70168765251471	59.91486517171868	692	467	432
+4.5	9.0	100	58.45864661654135	53.19548872180451	31.34195656645812	31.93132836655788	30.846352099731334	742	532	532
+6.65	13.3	100	92.86733238231099	92.46987951807229	22.73373776820967	26.512037040125897	26.87588068800717	772	701	664
+sweep-one-sided-1.66.json PASS d515bea4575c8ac918dd4380e9d807419e5e0b4d3baae1e40fbaf7fddda1d449
+sweep-one-sided-2.40.json PASS a095e4093fe9171fdaa0d2c20e62ca9bf8b4db9b512d83e5944dfab3bd04cf4f
+sweep-one-sided-3.32.json PASS 4ea6cfe717b38797ac4836ebd7cb1bdbbcf0f42735335307a5e72d30c3aafdd1
+sweep-one-sided-4.50.json PASS f048f37c5b6c538212b9d574158baf4279c10a4b500fe2a16a15eac77d9c21a4
+sweep-one-sided-6.65.json PASS e88710b2eb5f8107f2432e6702a128b6511ec12032e976d78dcb714f78da0494
+normalized_gain_at_theta_3dB = 0.500000408332786717211714027744
+relative_dB = -3.0102964099077391696814652973
+0.058_rad_deg = 3.32315521175877461085429297922
+0.116_rad_deg = 6.64631042351754922170858595844
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+exec
+/bin/bash -lc "sed -n '68,98p' src/mcrl/physics_v025/constants_v025.py; sed -n '165,200p' src/mcrl/physics_v025/constants_v025.py; sed -n '35,105p' src/mcrl/env/antenna.py; sed -n '35,85p' src/mcrl/env/cells.py; rg -n \"TX_FULL_HPBW_DEG|TX_G0_LINEAR|THETA_3DB_DEG|cell_radius_km|REFERENCE_BEAMS_PER_SATELLITE|HOBS_REFERENCE_MAX_RF_W\" src/mcrl/physics_v025 src/mcrl/env src/mcrl/runtime --glob '*.py'" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+SAME_SATELLITE_INTERRUPTION_S = 0.062  # Provenance: round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE).
+SATELLITE_CHANGE_INTERRUPTION_S = 0.142  # Provenance: round-3 §2.16 conditional ADR-004 electronic handover proxy (VERIFY_SOURCE).
+PHI_SAME_SATELLITE = 0.5  # Provenance: round-3 §2.23 retained benchmark preference; not joules or seconds.
+PHI_SATELLITE_CHANGE = 1.0  # Provenance: round-3 §2.23 retained benchmark preference; not joules or seconds.
+PERSISTENCE_LOSS_UNITS = 1.0  # Provenance: round-3 §2.24 stated one-kappa design preference per lost projected offset.
+FORECAST_OFFSETS = 3  # Provenance: round-3 §2.27 three physical forecast offsets.
+
+TX_G0_LINEAR = 2000.0  # Provenance: round-3 §2.6 retained source-bound transmit pattern benchmark.
+TX_FULL_HPBW_DEG = 3.32  # Provenance: retained HOBS full half-power beamwidth convention.
+RX_GAIN_MAX_DBI = 35.0  # Provenance: round-3 §2.6 retained 0.6-m terminal peak benchmark.
+RX_TERMINAL_DIAMETER_M = 0.6  # Provenance: round-3 §2.6 retained terminal aperture benchmark.
+RX_ENVELOPE_A_DBI = 32.0  # Provenance: round-3 §2.7 retained S.465 engineering extrapolation coefficient.
+RX_ENVELOPE_B = 25.0  # Provenance: round-3 §2.7 retained S.465 engineering extrapolation coefficient.
+RX_GAIN_FLOOR_DBI = -10.0  # Provenance: retained S.465 envelope floor.
+RX_S465_THETA_MIN_DEG = 2.043298703  # Provenance: round-3 §2.7 corrected S.465-6 D/lambda<50 branch.
+ZENITH_GASEOUS_LOSS_DB = 0.25  # Provenance: round-3 §2.6 retained clear-sky TR 38.811/38.821 substitution.
+SCINTILLATION_ELEVATION_DEG = (10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0)  # Provenance: round-3 §2.6 retained TR 38.811 20-GHz table abscissa.
+SCINTILLATION_LOSS_DB = (1.08, 0.48, 0.30, 0.22, 0.17, 0.13, 0.12, 0.12, 0.12)  # Provenance: round-3 §2.6 retained TR 38.811 clear-sky scintillation table.
+SHADOW_SIGMA_ELEVATION_DEG = (10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0)  # Provenance: round-3 §2.6 retained TR 38.811 Ka-LOS table abscissa.
+SHADOW_SIGMA_DB = (1.9, 1.6, 1.9, 2.3, 2.7, 3.1, 3.0, 3.6, 0.4)  # Provenance: round-3 §2.6 retained TR 38.811 Ka-LOS zero-mean-dB shadow table.
+REFERENCE_BEAMS_PER_SATELLITE = 39  # Provenance: round-3 assumption 26 compatibility reference, not a hardware ceiling.
+REFERENCE_AGGREGATE_RF_W = REFERENCE_BEAMS_PER_SATELLITE * BEAM_RF_CAP_W  # Provenance: round-3 assumption 26 identity 39*1.65=64.35 W, not cap derivation.
+HOBS_REFERENCE_MAX_RF_W = 100.0  # Provenance: round-3 assumption 26 retained 50-dBm HOBS reference, not a live clamp.
+
+# EN 302 307-1 V1.4.1 Table 13, normal FEC frames, no pilots.  Each row is
+# (MODCOD, spectral efficiency bit/symbol, ideal Es/N0 dB).
+ACM_TABLE = (  # Provenance: ETSI EN 302 307-1 V1.4.1 Table 13, transcribed 2026-09-08.
+    ("QPSK 1/4", 0.490243, -2.35),
+    ("QPSK 1/3", 0.656448, -1.24),
+    ("QPSK 2/5", 0.789412, -0.30),
+    ("QPSK 1/2", 0.988858, 1.00),
+        "D2_SUBINTERVALS": "round-3 §2.17 native integration count",
+        "D2_THRESHOLD_KM": "round-3 §2.18 retained D2-derived threshold",
+        "D2_HYSTERESIS_KM": "round-3 §2.18 retained D2 hysteresis",
+        "D2_TTT_S": "round-3 §2.18 retained 1.280-s TTT",
+        "MINIMUM_ALTITUDE_KM": "round-3 §2.18 retained altitude floor",
+        "ASSOCIATION_ACTIONS": "round-3 §2.19 retained action count",
+        "CACHED_SATELLITES": "round-3 §2.19 retained satellite cache width",
+        "LOCAL_CELLS": "round-3 §2.19 retained local-cell count",
+        "IDENTITY_REFRESH_DECISIONS": "round-3 §2.19 retained refresh cadence",
+        "PHI_SAME_SATELLITE": "round-3 §2.23 benchmark preference, not energy/time",
+        "PHI_SATELLITE_CHANGE": "round-3 §2.23 benchmark preference, not energy/time",
+        "PERSISTENCE_LOSS_UNITS": "round-3 §2.24 one-kappa preference",
+        "FORECAST_OFFSETS": "round-3 §2.27 three physical offsets",
+        "TX_G0_LINEAR": "round-3 §2.6 retained transmit-pattern peak",
+        "TX_FULL_HPBW_DEG": "retained HOBS full-HPBW convention",
+        "RX_GAIN_MAX_DBI": "round-3 §2.6 retained terminal peak",
+        "RX_TERMINAL_DIAMETER_M": "round-3 §2.6 retained terminal diameter",
+        "RX_ENVELOPE_A_DBI": "round-3 §2.7 retained engineering extrapolation",
+        "RX_ENVELOPE_B": "round-3 §2.7 retained engineering extrapolation",
+        "RX_GAIN_FLOOR_DBI": "retained S.465 envelope floor",
+        "ZENITH_GASEOUS_LOSS_DB": "round-3 §2.6 retained clear-sky substitution",
+        "SCINTILLATION_ELEVATION_DEG": "round-3 §2.6 retained TR 38.811 abscissa",
+        "SCINTILLATION_LOSS_DB": "round-3 §2.6 retained TR 38.811 20-GHz table",
+        "SHADOW_SIGMA_ELEVATION_DEG": "round-3 §2.6 retained TR 38.811 abscissa",
+        "SHADOW_SIGMA_DB": "round-3 §2.6 retained Ka-LOS shadow table",
+        "REFERENCE_BEAMS_PER_SATELLITE": "round-3 assumption 26 compatibility reference",
+        "REFERENCE_AGGREGATE_RF_W": "round-3 assumption 26 identity, not cap derivation",
+        "HOBS_REFERENCE_MAX_RF_W": "round-3 assumption 26 reference, not live clamp",
+        "ACM_TABLE": "ETSI EN 302 307-1 V1.4.1 Table 13, normal frames/no pilots",
+        "ACM_TABLE_SHA256": "frozen SHA-256 of canonical ordered ACM transcription",
+        "BEAM_RF_CAP_W": "round-3 §2.2 inherited benchmark; VERIFY_SOURCE",
+        "PA_OUTPUT_BACKOFF_DB": "round-3 §2.2 inherited engineering assumption; VERIFY_SOURCE",
+        "PA_SATURATION_POWER_W": "round-3 §2.2: 1.65*10^(5/10)",
+        "PA_MAX_EFFICIENCY": "round-3 §2.2 engineering PA assumption; VERIFY_SOURCE",
+        "CIRCUIT_POWER_PER_CHAIN_W": "round-3 §2.12 retained component sum; VERIFY_SOURCE",
+        "BASEBAND_POWER_PER_ACTIVE_SATELLITE_W": "round-3 §2.12 retained component coefficient; VERIFY_SOURCE",
+from ..errors import MCRLContractError
+from ..runtime.bessel import bessel_j_array
+from .link_budget import CARRIER_FREQ_HZ, SPEED_OF_LIGHT_M_S
+
+# ---------------------------------------------------------------------------
+# Transmit pattern (HOBS eq. (3))
+# ---------------------------------------------------------------------------
+
+THETA_3DB_DEG: float = 3.32
+"""**P'** — HOBS, registered as the FULL half-power beamwidth."""
+
+G0_LINEAR: float = 2000.0
+"""**P'** — 2000 linear, 33.010 dBi.  **Not HOBS Table I's 40 dBi.**
+
+The paper now rejects that value: HOBS Table I's aperture, gain and
+beamwidth are mutually inconsistent, and under either dimensionally legal
+reading 40 dBi demands an aperture efficiency above 1 (2.53 on the radius
+reading, 10.13 on the diameter reading).
+
+Re-derived instead from an aperture consistent with the beamwidth,
+``D = 1.0275 λ / θ_3dB = 17.7 λ``, with the Ka-band aperture efficiency
+0.639-0.645 back-computed from TR 38.821's rows, giving ``G_0 = 2000``
+(ruling C-14).
+"""
+
+G0_DBI: float = 10.0 * math.log10(G0_LINEAR)
+
+_BESSEL_MU_COEFFICIENT: float = 2.07123
+"""HOBS eq. (3): ``μ = 2.07123·sin θ / sin θ_half``."""
+
+_MU_LIMIT_EPSILON: float = 1e-10
+"""``ε_μ`` — below this ``μ`` is treated as boresight, where ``F(0) = 1``.
+
+The paper fixes the same 1e-10, so this is a matched constant rather than a
+tolerance of convenience: the bracket is a genuine 0/0 at ``μ = 0`` and the
+limit is exact, not approximated.
+"""
+
+
+def mu_of(theta_deg: np.ndarray, *, theta_3db_deg: float = THETA_3DB_DEG) -> np.ndarray:
+    """Bessel argument for an off-axis angle in **degrees**.
+
+    ``theta_3db_deg`` is the FULL HPBW; it is halved here, once, so no caller
+    can forget to (P-2).
+    """
+    if theta_3db_deg <= 0.0:
+        raise ValueError("theta_3db_deg must be positive")
+    theta = np.asarray(theta_deg, dtype=np.float64)
+    half_power_rad = math.radians(theta_3db_deg / 2.0)
+    return _BESSEL_MU_COEFFICIENT * np.sin(np.radians(theta)) / math.sin(
+        half_power_rad
+    )
+
+
+def transmit_gain_linear(
+    theta_deg: np.ndarray,
+    *,
+    g0_linear: float = G0_LINEAR,
+    theta_3db_deg: float = THETA_3DB_DEG,
+) -> np.ndarray:
+    """``G_T(θ) = G₀·[J₁(μ)/(2μ) + 36·J₃(μ)/μ³]²``, θ in **degrees**.
+
+    The Bessel calls go through :func:`mcrl.runtime.bessel.bessel_j`, which
+    routes ``|μ| > 34`` to Miller recursion (P-1).  ``μ`` reaches 67.3 at the
+    horizon under this paper's conventions, so that routing is load-bearing
+    for every side-lobe evaluation.
+    """
+    if g0_linear <= 0.0:
+        raise ValueError("g0_linear must be positive")
+    theta = np.asarray(theta_deg, dtype=np.float64)
+    if not np.all(np.isfinite(theta)):
+AXIAL_NEIGHBOR_DIRS: tuple[tuple[int, int], ...] = (
+    (1, 0),
+    (1, -1),
+    (0, -1),
+    (-1, 0),
+    (-1, 1),
+    (0, 1),
+)
+"""Fixed six-neighbour axial order (``family_b_geometry.py:78-85``).
+
+SDD §4A.2 requires this order to be **fixed**: ``j`` is meaningless unless
+the same ``j`` always names the same direction from the anchor.
+"""
+
+THETA_3DB_DEG: float = 3.32
+"""**P'** — HOBS full HPBW.  Halved before use (SDD §3.4b, P-2)."""
+
+NUM_NEIGHBORS: int = 6
+
+
+def cell_radius_km(altitude_km: float, theta_3db_deg: float = THETA_3DB_DEG) -> float:
+    """``R_b = h·tan(θ_3dB/2)`` — the HALF-angle convention (P-2)."""
+    if altitude_km <= 0.0:
+        raise ValueError("altitude must be positive")
+    return altitude_km * math.tan(math.radians(theta_3db_deg) / 2.0)
+
+
+@dataclass(frozen=True)
+class CellGrid:
+    """Rectangular-cropped axial hex lattice with a guard ring."""
+
+    cell_radius_km: float
+    pitch_km: float
+    axial: np.ndarray
+    """``(C, 2)`` axial (q, r) coordinates."""
+    centers_km: np.ndarray
+    """``(C, 2)`` local east/north km from the service-area centre."""
+    centers_ecef_km: np.ndarray
+    """``(C, 3)`` ECEF km — the global earth-fixed positions of §4A.2."""
+    colors: np.ndarray
+    in_area: np.ndarray
+    serves_area: np.ndarray
+    neighbor_ids: np.ndarray
+    """``(C, 6)`` neighbour cell ids in ``AXIAL_NEIGHBOR_DIRS`` order, -1 if absent."""
+
+    @property
+    def count(self) -> int:
+        return int(self.axial.shape[0])
+
+    def centers_latlon(self) -> tuple[np.ndarray, np.ndarray]:
+        return local_km_to_geodetic(
+src/mcrl/physics_v025/channel.py:35:    TX_FULL_HPBW_DEG,
+src/mcrl/physics_v025/channel.py:36:    TX_G0_LINEAR,
+src/mcrl/physics_v025/channel.py:105:    half_power = math.radians(TX_FULL_HPBW_DEG / 2.0)
+src/mcrl/physics_v025/channel.py:127:    result = TX_G0_LINEAR * bracket**2
+src/mcrl/physics_v025/channel.py:128:    result[on_axis] = TX_G0_LINEAR
+src/mcrl/physics_v025/constants_v025.py:75:TX_G0_LINEAR = 2000.0  # Provenance: round-3 §2.6 retained source-bound transmit pattern benchmark.
+src/mcrl/physics_v025/constants_v025.py:76:TX_FULL_HPBW_DEG = 3.32  # Provenance: retained HOBS full half-power beamwidth convention.
+src/mcrl/physics_v025/constants_v025.py:88:REFERENCE_BEAMS_PER_SATELLITE = 39  # Provenance: round-3 assumption 26 compatibility reference, not a hardware ceiling.
+src/mcrl/physics_v025/constants_v025.py:89:REFERENCE_AGGREGATE_RF_W = REFERENCE_BEAMS_PER_SATELLITE * BEAM_RF_CAP_W  # Provenance: round-3 assumption 26 identity 39*1.65=64.35 W, not cap derivation.
+src/mcrl/physics_v025/constants_v025.py:90:HOBS_REFERENCE_MAX_RF_W = 100.0  # Provenance: round-3 assumption 26 retained 50-dBm HOBS reference, not a live clamp.
+src/mcrl/physics_v025/constants_v025.py:178:        "TX_G0_LINEAR": "round-3 §2.6 retained transmit-pattern peak",
+src/mcrl/physics_v025/constants_v025.py:179:        "TX_FULL_HPBW_DEG": "retained HOBS full-HPBW convention",
+src/mcrl/physics_v025/constants_v025.py:190:        "REFERENCE_BEAMS_PER_SATELLITE": "round-3 assumption 26 compatibility reference",
+src/mcrl/physics_v025/constants_v025.py:192:        "HOBS_REFERENCE_MAX_RF_W": "round-3 assumption 26 reference, not live clamp",
+src/mcrl/env/antenna.py:43:THETA_3DB_DEG: float = 3.32
+src/mcrl/env/antenna.py:74:def mu_of(theta_deg: np.ndarray, *, theta_3db_deg: float = THETA_3DB_DEG) -> np.ndarray:
+src/mcrl/env/antenna.py:93:    theta_3db_deg: float = THETA_3DB_DEG,
+src/mcrl/env/antenna.py:127:    theta_3db_deg: float = THETA_3DB_DEG,
+src/mcrl/env/cells.py:49:THETA_3DB_DEG: float = 3.32
+src/mcrl/env/cells.py:55:def cell_radius_km(altitude_km: float, theta_3db_deg: float = THETA_3DB_DEG) -> float:
+src/mcrl/env/cells.py:66:    cell_radius_km: float
+src/mcrl/env/cells.py:128:    cell_radius_km_override: float | None = None,
+src/mcrl/env/cells.py:133:    Exactly one of ``altitude_km`` / ``cell_radius_km_override`` is required;
+src/mcrl/env/cells.py:136:    if (altitude_km is None) == (cell_radius_km_override is None):
+src/mcrl/env/cells.py:138:            "pass exactly one of altitude_km or cell_radius_km_override"
+src/mcrl/env/cells.py:141:        float(cell_radius_km_override)
+src/mcrl/env/cells.py:142:        if cell_radius_km_override is not None
+src/mcrl/env/cells.py:143:        else cell_radius_km(float(altitude_km))
+src/mcrl/env/cells.py:199:        cell_radius_km=radius,
+src/mcrl/env/cells.py:237:    return float(np.mean(distance.min(axis=1) <= grid.cell_radius_km))
+src/mcrl/env/cells.py:257:    covers = distance <= grid.cell_radius_km
+src/mcrl/env/cells.py:368:        "cell_radius_km": grid.cell_radius_km,
+src/mcrl/runtime/prereg.py:423:            "theta_3db_deg_full_hpbw": antenna.THETA_3DB_DEG,
+src/mcrl/runtime/prereg.py:633:            "cell_theta_3db_deg": cells.THETA_3DB_DEG,
+src/mcrl/runtime/ee_axis_ops3_live.py:192:        cell_radius_km=float(grid.cell_radius_km),
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+exec
+/bin/bash -lc "jq -n --slurpfile n .scratch/beamwidth/sweep-one-sided-1.66.json --slurpfile w .scratch/beamwidth/sweep-one-sided-6.65.json '{baseline:("'$w[0].summary.pooled.BASELINE.interference_structure.weighted_total_interference_w/$n[0].summary.pooled.BASELINE.interference_structure.weighted_total_interference_w), unilateral:($w[0].summary.pooled.UNILATERAL.interference_structure.weighted_total_interference_w/$n[0].summary.pooled.UNILATERAL.interference_structure.weighted_total_interference_w), oracle:($w[0].summary.pooled.ORACLE_SET.interference_structure.weighted_total_interference_w/$n[0].summary.pooled.ORACLE_SET.interference_structure.weighted_total_interference_w)}'"'; for f in .scratch/beamwidth/sweep-one-sided-*.json; do jq -r '[.beamwidth_diagnostic.off_axis_half_power_deg,(.summary.pooled.BASELINE.interference_structure.weighted_total_interference_w*1000000),(.summary.pooled.UNILATERAL.interference_structure.weighted_total_interference_w*1000000),(.summary.pooled.ORACLE_SET.interference_structure.weighted_total_interference_w*1000000)] | @tsv' \""'$f"; done; /home/sat/mcrl-leo-handover/.venv/bin/python - <<'"'PY'
+from pathlib import Path
+import json
+paths=sorted(Path('.scratch/beamwidth').glob('sweep-one-sided-*.json'))
+base=None
+for p in paths:
+    d=json.loads(p.read_text())
+    ids=[(a['anchor_id'],a['tle_date'],a['training_seed']) for a in d['anchors']]
+    if base is None: base=ids
+    assert ids==base
+    assert d['summary']['anchor_count']==8
+    assert d['summary']['world_count']==2
+    assert d['test_split_opened'] is False and d['learner_used'] is False
+    assert d['processes_used'] <= 3
+    assert d['beamwidth_diagnostic']['constant_file_changed'] is False
+    assert d['beamwidth_diagnostic']['all_other_constants_held_fixed'] is True
+    assert all(a['selection']['unilateral_terminal_certified'] for a in d['anchors'])
+print('SWEEP_INVARIANTS_PASS', len(paths), 'points', len(base), 'matched_real_anchors')
+PY" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+{
+  "baseline": 29.54538741934949,
+  "unilateral": 110.85171522719713,
+  "oracle": 128.4763952872957
+}
+1.66	0.08322830515990719	0.010783481732393449	0.00856958501180552
+2.4	0.264714832303687	0.025433416218225844	0.0200421643431785
+3.32	0.6972055890196329	0.036582007456807515	0.026411962668585157
+4.5	1.3827666408451087	0.2092245185653571	0.18277284433406296
+6.65	2.459012520205302	1.195367446156961	1.1009893914248106
+SWEEP_INVARIANTS_PASS 5 points 8 matched_real_anchors
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+exec
+/bin/bash -lc "jq -n --slurpfile a .scratch/beamwidth/sweep-one-sided-1.66.json --slurpfile b .scratch/beamwidth/sweep-one-sided-3.32.json '{baseline_ee_pct:(("'$b[0].summary.pooled.BASELINE.ee_bit_per_j/$a[0].summary.pooled.BASELINE.ee_bit_per_j-1)*100), unilateral_ee_pct:(($b[0].summary.pooled.UNILATERAL.ee_bit_per_j/$a[0].summary.pooled.UNILATERAL.ee_bit_per_j-1)*100), oracle_ee_pct:(($b[0].summary.pooled.ORACLE_SET.ee_bit_per_j/$a[0].summary.pooled.ORACLE_SET.ee_bit_per_j-1)*100), headroom_pp:(($b[0].summary.oracle_set_over_unilateral_relative-$a[0].summary.oracle_set_over_unilateral_relative)*100)}'"'" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+{
+  "baseline_ee_pct": -64.07283955222076,
+  "unilateral_ee_pct": 8.198615479944916,
+  "oracle_ee_pct": 13.340344909959235,
+  "headroom_pp": 5.0610954987992285
+}
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+exec
+/bin/bash -lc "for f in .scratch/beamwidth/sweep-one-sided-*.json; do jq -r '[.beamwidth_diagnostic.off_axis_half_power_deg,.wall_seconds,.summary.exact_evaluation_count.unique_selection_configurations,.summary.exact_evaluation_count.joint_unique_candidates,.summary.qualifying_coalition_anchor_count] | @tsv' \""'$f"; done; sha256sum .scratch/beamwidth/run_beamwidth_network.py .scratch/beamwidth/sweep-one-sided-*.json '"'.scratch/chinese-word-r1-symbols-20260905-r1/input/thesis-mc/references-pdf/[04]_Energy_Efficient_Joint_Handover_and_Beam_Switching_S.pdf'" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+1.66	487.3794126879948	98533	8137	8
+2.4	1425.3704054179834	138390	9724	8
+3.32	2577.6137947420066	175409	10789	8
+4.5	2049.5788680669793	151606	10363	8
+6.65	699.0983543510083	87132	10258	8
+b26877ff851fac24872bf33bceb556c50850a36a662788ee18c513a261eabfc8  .scratch/beamwidth/run_beamwidth_network.py
+7098f05e6eed8cb6344e93fd69baff88baec104a0d3632ee3f14855474aa47f8  .scratch/beamwidth/sweep-one-sided-1.66.json
+926d39ee3ab9a0da7b0708c8c2541be1b11362a62de431a125477adac0178c93  .scratch/beamwidth/sweep-one-sided-2.40.json
+6efd78cc9cbb43e9de3a10f77c804991174dae566f4d5db32a4839f86856eba6  .scratch/beamwidth/sweep-one-sided-3.32.json
+f1e68e56d03d9e1165160f4515b1fbbb6f54f5578140980be67099057057be65  .scratch/beamwidth/sweep-one-sided-4.50.json
+83c4d6726ffac76e09e726d197b1e4f389774488c0b8d4af25ff1bc47edad351  .scratch/beamwidth/sweep-one-sided-6.65.json
+1b2a8eda4647c4f7b68f8ffb08347aaa9cde18ae32b7d6af84d68f827a0f3089  .scratch/chinese-word-r1-symbols-20260905-r1/input/thesis-mc/references-pdf/[04]_Energy_Efficient_Joint_Handover_and_Beam_Switching_S.pdf
+
+diff --git a/.scratch/beamwidth/run_beamwidth_network.py b/.scratch/beamwidth/run_beamwidth_network.py
+index a0913c555d66fececf83ee0be2cbc4f79765c776..d91c74ea62a5500de577cb96917f927ae2df441a
+--- a/.scratch/beamwidth/run_beamwidth_network.py
++++ b/.scratch/beamwidth/run_beamwidth_network.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Paired beamwidth reading diagnostic on corrected V0.25 physics.
++"""Declared beam half-power-angle sweep on corrected V0.25 physics.
+ 
+ This is a TRAIN-only diagnostic.  It has no learner and intentionally ignores
+ the ten-second deployment deadline.  Selection uses the exact binary64
+@@ -44,6 +44,7 @@
+ OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+ JOINT_CANDIDATE_CAP = 4_096
+ CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++DECLARED_ONE_SIDED_HP_DEG = (1.66, 2.40, 3.32, 4.50, 6.65)
+ 
+ 
+ def _load_probe():
+@@ -819,14 +820,22 @@
+ 
+ 
+ def run(
+-    *, worlds: int, anchors_per_world: int, synthetic: bool, full_hpbw_deg: float
++    *,
++    worlds: int,
++    anchors_per_world: int,
++    synthetic: bool,
++    one_sided_hp_deg: float,
+ ) -> dict[str, object]:
+     from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+     if not 1 <= worlds <= WORLD_COUNT or not 1 <= anchors_per_world <= ANCHORS_PER_WORLD:
+         raise RuntimeError("requested run exceeds the fixed 2-world x 5-anchor panel")
+-    if full_hpbw_deg not in (3.32, 6.64):
+-        raise RuntimeError("diagnostic full HPBW must be exactly 3.32 or 6.64 degrees")
++    if one_sided_hp_deg not in DECLARED_ONE_SIDED_HP_DEG:
++        raise RuntimeError(
++            "diagnostic one-sided half-power angle must be one of "
++            f"{DECLARED_ONE_SIDED_HP_DEG} degrees"
++        )
++    full_hpbw_deg = 2.0 * one_sided_hp_deg
+     # Runtime-only diagnostic override.  The imported function resolves this
+     # module global at call time; no source or constant file is edited.
+     channel_module.TX_FULL_HPBW_DEG = full_hpbw_deg
+@@ -897,11 +906,13 @@
+                 pool_context.close()
+                 pool_context.join()
+     result = {
+-        "schema": "mcrl-v025-beamwidth-reading-network-v1",
++        "schema": "mcrl-v025-beamwidth-design-sweep-network-v2",
+         "claim_ceiling": CLAIM_CEILING,
+         "beamwidth_diagnostic": {
+             "full_hpbw_deg": full_hpbw_deg,
+-            "off_axis_half_power_deg": full_hpbw_deg / 2.0,
++            "off_axis_half_power_deg": one_sided_hp_deg,
++            "input_convention": "one-sided off-boresight half-power angle",
++            "declared_design_axis_deg": list(DECLARED_ONE_SIDED_HP_DEG),
+             "implementation": "runtime-only channel-module global override before tape construction",
+             "constant_file_changed": False,
+             "all_other_constants_held_fixed": True,
+@@ -946,7 +957,7 @@
+     parser.add_argument("--worlds", type=int, default=WORLD_COUNT)
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, default=OUTPUT_PATH)
+-    parser.add_argument("--full-hpbw-deg", type=float, required=True)
++    parser.add_argument("--one-sided-hp-deg", type=float, required=True)
+     parser.add_argument("--self-test", action="store_true")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+@@ -955,7 +966,7 @@
+         worlds=worlds,
+         anchors_per_world=anchors,
+         synthetic=args.self_test,
+-        full_hpbw_deg=args.full_hpbw_deg,
++        one_sided_hp_deg=args.one_sided_hp_deg,
+     )
+     summary = result["summary"]
+     if args.self_test:
+diff --git a/.scratch/beamwidth/spec.md b/.scratch/beamwidth/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e7f65077719efa6c2ef31be61f11dff7f690c4a
+--- /dev/null
++++ b/.scratch/beamwidth/spec.md
+@@ -0,0 +1,13 @@
++# Beam half-power-angle diagnostic completion criterion
++
++`DIAGNOSTIC_NOT_CLAIM`.
++
++One unattended command must evaluate the same eight or more real anchors at
++each declared one-sided off-boresight half-power angle `1.66`, `2.40`, `3.32`,
++`4.50`, and `6.65` degrees. It must report pooled energy efficiency, served
++counts, oracle-over-unilateral coordination headroom, interference-limited
++share, and top-1 aggressor share for BASELINE, the converged iterated
++unilateral selector, and the bounded oracle set selector. The root report must
++also quote the retrievable primary source's equation and Table I entry, resolve
++the source convention by direct pattern evaluation, audit convention-coupled
++constants, and confirm that sealed engine files were unchanged.
+
+codex
+Validation passed: all five receipt hashes recompute, all 40 point-anchor records match the same eight real domain/date/seed/step identities, every unilateral result carries its terminal certificate, and the two sealed engine-file hashes are byte-for-byte unchanged. I’m writing the report now, including the non-monotone interference-share finding and the explicit comment-replacement obligation.
