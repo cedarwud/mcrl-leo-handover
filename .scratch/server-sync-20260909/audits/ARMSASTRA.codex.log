@@ -1,0 +1,436 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-ladder-ws
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: ultra
+reasoning summaries: none
+session id: 01a08790-9298-77b0-b147-c591e08bcbcd
+--------
+user
+You are advising on experiment design. Answer from reasoning and from any code or documents you choose to read in this workspace; no run is authorised and nothing sealed may be modified.
+
+`DIAGNOSTIC_NOT_CLAIM`. This is a design consultation. Do not change any constant, threshold, sign, seed, horizon, price, guard or acceptance rule, and do not modify sealed artefacts, frozen manifests or the contract.
+
+# The system
+
+A LEO satellite handover simulator. At each decision anchor a bounded set-level selector chooses a joint change to several users' beam associations. The pipeline is: an iterated unilateral best-response search runs to a certified fixed point; a hand-written rule set generates a bounded catalogue of joint perturbations **around that fixed point**, with the fixed point itself retained as a fallback; the catalogue is ranked and the best is taken. Three learned components supply the quantities used in that ranking. The headline metric is pooled energy efficiency, total bits over total joules.
+
+# The owner's stated acceptance requirement
+
+Each of the three components must individually improve pooled energy efficiency over a control. Adding two or three components will interact, so the magnitudes will not simply add, but every subset must remain positive, and the ordering must hold:
+
+> FULL  >  (any two components)  >  control
+
+# What the sealed contract currently provides
+
+The primary experiment declares six arms: FULL; three leave-one-out arms in which one named route is trained on a **neutral source** while all routes are retained, updated and deployed; an all-neutral control; and an external geometry-only baseline. The panel is six arms by twelve learner seeds by two worlds per training date over about 160 dates. A relative margin of +0.5 % with a bootstrap lower bound is the declared materiality threshold. There is a separate contract clause requiring FULL to beat a unilateral-equipped comparator, not only the leave-one-out arms.
+
+# Facts you should weigh
+
+- Every arm shares the same non-learned unilateral prefix, which is worth about **+442 %** in pooled efficiency over the geometry-only baseline. The entire span between the certified unilateral fixed point and an exhaustive bounded joint search is about **+0.51 %** under corrected physics.
+- A leave-one-out arm can select a **worse** coalition than the fallback, because ranking uses predicted scores. One pilot measured a leave-one-out gap of **+15.6 %**, far larger than the joint-search span.
+- The score is currently a sum of per-user deviation terms plus an interaction correction. At coalition size 100 those are **+480.1** and **−440.1**, producing **+40.0** — a roughly tenfold cancellation.
+- The source paper the three-component design derives from uses **two** ablation styles: full-minus-one, and single-component-only against a basic baseline. It prescribes no margin, and its weakest component contributes about **0.6 %**.
+
+# What I want from you
+
+Do not assume any particular design is correct, including any you infer I favour. Answer these:
+
+1. **Is the owner's requirement well-posed as stated?** If "individually improve over a control" is ambiguous between more than one experiment, name each reading and say which is the scientifically meaningful one and why.
+2. **Which arms would actually test it?** Say precisely what should be run and what each arm's reference should be. If the existing six arms already answer it, say so and explain how. If arms must be added, name them and say what they hold fixed.
+3. **What could make the result uninterpretable?** In particular: a large full-minus-one gap that comes from the leave-one-out arm degenerating rather than from the component adding value; the shared prefix making the "beats control" half trivially true for every arm; multiplicity across three simultaneous requirements; and any confound you find that I have not listed.
+4. **Is there a cheaper design that answers the same question?** The panel already costs six arms by twelve seeds; adding arms is a large increase. Consider whether some arms can share computation, whether fewer seeds suffice for an ordering test than for a margin test, and whether any arm is redundant.
+5. **What would you refuse to conclude** even if every ordering held with a comfortable margin?
+
+Be blunt and specific. If you think the requirement should be changed rather than tested as stated, say so and give the reason — but distinguish clearly between "this is not measurable as stated" and "I would have designed it differently".
+
+Write your answer as a single self-contained note and print it in full as your final message. Lead with a one-paragraph answer to question 1.
+codex
+I’ll review the relevant contract and design documents read-only, then separate what the existing arms identify from what the owner’s requirement needs. I won’t run experiments or modify files.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '*contract*' -g '*manifest*' -g '*ablat*' -g '*DESIGN*' -g '*README*' -g '*diagnostic*' | head -120" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-ladder-ws
+src/mcrl/env/action_contract.py
+README.md
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_learner_contract_v2.py
+archive/multi-catfish-pre-v03-2026-08-31/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.2-2026-08-31.md
+archive/multi-catfish-pre-v03-2026-08-31/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.1-2026-08-31.md
+archive/multi-catfish-pre-v03-2026-08-31/docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-2026-08-31.md
+archive/multi-catfish-pre-v03-2026-08-31/docs/CATFISH-DESIGN-DATA-PLAN-V0.2-2026-08-26.md
+archive/multi-catfish-pre-v03-2026-08-31/docs/CATFISH-THREE-ROLE-DESIGN-V0.1-2026-08-26.md
+archive/multi-catfish-pre-v03-2026-08-31/docs/CATFISH-DESIGN-FREEZE-GATE-2026-08-26.md
+src/mcrl/physics_v025/parity/README.md
+docs/MULTI-CATFISH-MCRL-V04-C2-DESIGN-EVAL-AMENDMENT-2026-09-01.md
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md
+docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+docs/MULTI-CATFISH-MCRL-V07-C2-FOCAL-NEXT-DESIGN-DECISION-2026-09-02.md
+docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md
+docs/MULTI-CATFISH-C2-PARALLEL-DESIGN-ADJUDICATION-2026-09-02.md
+docs/decisions/ADR-006-e1-instrument-validity-before-ee-ablation.md
+docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-V0.3-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831/docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831/docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-V0.3-2026-08-31.md
+scripts/README.md
+artifacts/multi-catfish-v06-c2-k1-live-smoke-20260902-r2/README.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-V0.3-2026-08-31.md
+artifacts/multi-catfish-v03-web-agent-package-20260831/evidence/c1/exp-corpus/c1-exp-corpus-manifest.json
+artifacts/multi-catfish-v03-web-agent-package-20260831/evidence/c1/README.md
+tests/test_w205_v023_step_result_contract.py
+tests/test_w105_v06_c2_k1_learner_contract_v2.py
+tests/test_w94_route_interaction_diagnostic.py
+tests/test_w175_v018_analytic_diagnostic.py
+tests/test_w72_action_shared_500ep_route_ablation.py
+tests/test_w122_ee_axis_v07_c2_parallel_manifest.py
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/evidence/10ep-ablation-AUDIT-VOID.json
+artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+tests/physics_v025/test_stage4_contract.py
+tests/physics_v025/test_stage4b_contract.py
+tests/physics_v025/test_contract_discriminators.py
+tests/test_w89_ee_axis_v04_five_arm_ablation.py
+tests/test_w66_e1_pretest_diagnostics.py
+tests/test_w67_e1_pretest_diagnostic_runner.py
+archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-figure-drafts/2026-08-27/README.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/evidence/c1/exp-corpus/c1-exp-corpus-manifest.json
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/evidence/c1/README.md
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/evidence/c2-v03b-reactive-keyed-physical-headroom-gate-20260831/source-manifest.json
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3.zip.sha256
+artifacts/multi-catfish-v06-c2-k1-postresult-diagnostics-20260902-r1/loowo-diagnostic.json
+artifacts/multi-catfish-v06-c2-k1-postresult-diagnostics-20260902-r1/d0-diagnostic.json
+artifacts/multi-catfish-v04-c3-source-20260901-r2/source-manifest.json
+artifacts/c2-v03b-reactive-keyed-physical-headroom-gate-20260831/source-manifest.json
+artifacts/multi-catfish-v04-five-arm-ablation-20260901-r1/evaluator-code-manifest.json
+artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+artifacts/fable-51-c2-cleanroom-20260902-r1/oracle/README.md
+artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/evidence/frozen-policy-five-arm/evaluator-code-manifest.json
+artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/evidence/c3-confirmatory/evaluator-code-manifest.json
+artifacts/multi-catfish-v019-relational-q3-learner-20260904-r1/server-run/panel-manifest.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/env/action_contract.py
+artifacts/multi-catfish-v023-successor-gate-chatgpt-review-20260906-r1/five-arm/FIVE-ARM-EVALUATION-README.md
+artifacts/multi-catfish-v03-e1-action-shared-supplement-20260901/source-manifest.json
+artifacts/multi-catfish-v04-web-agent-package-20260901-rc/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+artifacts/multi-catfish-v04-web-agent-package-20260901-rc/docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-V0.3-2026-08-31.md
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_v06_c2_k1_learner_contract_v2.py
+artifacts/multi-catfish-v06-c2-k1-live-smoke-20260901-r1/README.md
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/scripts/README.md
+artifacts/smc-er-c1-authority-20260828/README.md
+artifacts/multi-catfish-v04-web-agent-package-20260901-rc/evidence/c3-confirmatory/evaluator-code-manifest.json
+artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+artifacts/smc-er-c1-authority-20260828/smc-er-c1-exp-corpus-canonical-tle-20260828-v3/c1-exp-corpus-manifest.json
+artifacts/smc-er-c1-authority-20260828/smc-er-c1-exp-corpus-canonical-tle-20260829-v4/c1-exp-corpus-manifest.json
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/docs/MULTI-CATFISH-MCRL-V07-C2-FOCAL-NEXT-DESIGN-DECISION-2026-09-02.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/docs/MULTI-CATFISH-C2-PARALLEL-DESIGN-ADJUDICATION-2026-09-02.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/evidence/v06-d0-diagnostic.json
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/evidence/v06-loowo-diagnostic.json
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/source/env/action_contract.py
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/source/runtime/ee_axis_v07_c2_parallel_manifest.py
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/source/runners/run_v04_five_arm_ablation.py
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/reviews/SOL-ULTRA-C3-STRUCTURAL-REDESIGN-2026-09-03.md
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/reviews/FABLE-51-STRUCTURAL-REDESIGN-REVIEW-PROMPT.md
+artifacts/multi-catfish-v018-r4-equivalence-20260904-r1/server-run-r2/closure/code-manifest-r4-equivalence.sha256
+artifacts/multi-catfish-v04-c2-support-complete-census-20260901-r3/source-manifest.json
+artifacts/multi-catfish-v06-c2-k1-t0-20260901-r1/diagnostic-result.json
+artifacts/multi-catfish-v06-c2-k1-t0-20260901-r1/diagnostic-seal.json
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3.zip
+artifacts/multi-catfish-v04-c3-real-tle-smoke-20260901-r4/source-manifest.json
+artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-manifest.json
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2.zip.sha256
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2.zip
+artifacts/multi-catfish-c3-astra-pro-review-20260905-r1/source/run_v018_analytic_diagnostic.py
+artifacts/multi-catfish-c3-astra-pro-review-20260905-r1/source/action_contract.py
+artifacts/multi-catfish-c3-astra-pro-review-20260905-r1/contracts/03-v021-expected-zr-fast-contract.md
+artifacts/multi-catfish-c3-astra-pro-review-20260905-r1/contracts/02-v020-repriced-c3-contract.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/docs/MULTI-CATFISH-MCRL-V07-C2-FOCAL-NEXT-DESIGN-DECISION-2026-09-02.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/docs/MULTI-CATFISH-C2-PARALLEL-DESIGN-ADJUDICATION-2026-09-02.md
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/evidence/v06-d0-diagnostic.json
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/evidence/v06-loowo-diagnostic.json
+artifacts/multi-catfish-v04-c3-confirmatory-20260901-r1/evaluator-code-manifest.json
+artifacts/multi-catfish-v018-web-agent-package-20260904-r1/source-map/README.md
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/fable-cleanroom-lane/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/fable-cleanroom-lane/FABLE-LANE-README.md
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/evidence/v06-d0-diagnostic.json
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/evidence/v06-loowo-diagnostic.json
+artifacts/multi-catfish-v018-web-agent-package-20260904-r1/evidence/README.md
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/source/env/action_contract.py
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/fable-cleanroom-lane/oracle/README.md
+artifacts/probes-2026-08-25-rerun01/execution-manifest.json
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/source/runners/run_v04_five_arm_ablation.py
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/source/env/action_contract.py
+artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/source/runners/run_v04_five_arm_ablation.py
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/source/runtime/ee_axis_v07_c2_parallel_manifest.py
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/docs/MULTI-CATFISH-MCRL-V07-C2-FOCAL-NEXT-DESIGN-DECISION-2026-09-02.md
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/docs/MULTI-CATFISH-C2-PARALLEL-DESIGN-ADJUDICATION-2026-09-02.md
+artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/contracts/code-manifest-r2-analytic.sha256
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/contracts/code-manifest-r4-equivalence.sha256
+
+exec
+/bin/bash -lc 'for p in /AGENTS.md /home/AGENTS.md /home/sat/AGENTS.md /home/sat/mcrl-v025-ladder-ws/AGENTS.md; do if test -f "$p"; then cat "$p"; fi; done' in /home/sat/mcrl-v025-ladder-ws
+exec
+/bin/bash -lc "rg -n -i --glob '*.md' --glob '"'!archive/**'"' --glob '"'!artifacts/**'"' 'six.arm|all.neutral|neutral.source|sealed|442|480\\.1|440\\.1|15\\.6|0\\.51|160 dates|twelve|12 seeds' docs README.md | head -200" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+ succeeded in 0ms:
+docs/MULTI-CATFISH-MCRL-C1-C3-PAPER-AUTHORING-DELTA-2026-09-01.md:56:| \(M,C\) | matched reference and unilateral candidate branches | schedules are sealed before outcomes |
+docs/MULTI-CATFISH-MCRL-C1-C3-PAPER-AUTHORING-DELTA-2026-09-01.md:145:stores the sealed reference/candidate pair, raw rates and network powers,
+docs/MULTI-CATFISH-MCRL-C1-C3-PAPER-AUTHORING-DELTA-2026-09-01.md:166:It does not establish that EXP/ACRM alone beats a neutral source, that the
+docs/MULTI-CATFISH-MCRL-C1-C3-PAPER-AUTHORING-DELTA-2026-09-01.md:225:legal opening actions at sealed anchors and retains the observed target sign;
+docs/MULTI-CATFISH-MCRL-C1-C3-PAPER-AUTHORING-DELTA-2026-09-01.md:228:The sealed production source uses four TRAIN seeds, three validation seeds,
+docs/MULTI-CATFISH-MCRL-C1-C3-PAPER-AUTHORING-DELTA-2026-09-01.md:238:fresh local victim-burden head selected by the sealed validation decision; C3 is frozen for
+docs/MULTI-CATFISH-MCRL-V03-OPUS-MAX-SOURCE-CONTROL-REVIEW-2026-08-31.md:8:gate are now implemented. That gate is sealed `INDETERMINATE`; the selected
+docs/MULTI-CATFISH-MCRL-V03-OPUS-MAX-SOURCE-CONTROL-REVIEW-2026-08-31.md:32:   Catfish is replaced by its equal-budget neutral source rather than deleting
+docs/MULTI-CATFISH-MCRL-V07-C2-FOCAL-NEXT-DESIGN-DECISION-2026-09-02.md:30:The sealed V0.6 learned deployment remains a valid negative result:
+docs/MULTI-CATFISH-MCRL-V07-C2-FOCAL-NEXT-DESIGN-DECISION-2026-09-02.md:37:Two post-outcome diagnostics used only the already sealed TRAIN/T1 material.
+docs/MULTI-CATFISH-MCRL-V04-C2-FAILURE-FORENSICS-2026-09-01.md:9:The sealed five-arm evaluation found `CONFIRM_C1`, `CONFIRM_C3`, but
+docs/MULTI-CATFISH-MCRL-V04-C2-FAILURE-FORENSICS-2026-09-01.md:15:## Sealed receipt
+docs/MULTI-CATFISH-MCRL-V04-C2-FAILURE-FORENSICS-2026-09-01.md:65:This evidence is consistent with the sealed five-arm outcome: adding Q2 made
+docs/MULTI-CATFISH-MCRL-V04-C2-FAILURE-FORENSICS-2026-09-01.md:101:3. at each sealed C2 anchor/focal state, keep the contemporaneous Main action
+docs/MULTI-CATFISH-MCRL-V04-C2-FAILURE-FORENSICS-2026-09-01.md:116:sealed.  It must enumerate legal temporal siblings on a small non-overlapping
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-BOUNDED-LEARNER-PREREG-2026-09-02.md:29:parameter digests must exist and be independently sealed by SHA-256.  The T1
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-BOUNDED-LEARNER-PREREG-2026-09-02.md:110:Its update-0 parameter digest is sealed before T1 reveal.  The existing
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-BOUNDED-LEARNER-PREREG-2026-09-02.md:136:The 100-update budget is the first rung of the already sealed V0.4
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-BOUNDED-LEARNER-PREREG-2026-09-02.md:172:joined to its sidecar state by the sealed anchor key.  For lineage \(r\), the
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-BOUNDED-LEARNER-PREREG-2026-09-02.md:208:checkpoints are sealed and independently verified.  They are DESIGN-EVAL,
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-BOUNDED-LEARNER-PREREG-2026-09-02.md:263:- before any DESIGN-EVAL seed opens, `DROP_C2` replayed at all 12 sealed T1
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-BOUNDED-LEARNER-PREREG-2026-09-02.md:266:- the learner consumes a sealed formal-verdict artifact and file seal, never
+docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-PREREG-2026-09-01.md:13:Execution is authorized only by the sealed C3 decision `CONFIRM_C3` at
+docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-PREREG-2026-09-01.md:31:  `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`;
+docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-PREREG-2026-09-01.md:66:  `V04_FIVE_ARM_ABLATION_V1`, the sealed C3 confirmatory result SHA-256, and
+docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-RESULT-2026-09-01.md:6:## Sealed authority
+docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-RESULT-2026-09-01.md:49:| FULL vs Main | -21.582% | [-23.442%, -19.706%] | 0/3 diagnostic | 0/30 | `FULL_NOT_BETTER_THAN_MAIN` |
+docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-RESULT-2026-09-01.md:83:1. diagnose C2 against the sealed matched rows without changing C1 or C3;
+docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md:140:All informed and neutral schedules are sealed from predecision information
+docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md:149:| C1 Energy-Frontier | RIS-lineage dull-rollout EXP schedules lower-frontier anchors and users, then compares every sealed legal alternative with frozen Main | uniformly sample eligible Main anchors, users with at least two legal actions, and legal alternatives | only \(Q_1\) with \(\zeta_1\) |
+docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md:151:| C3 Spatial-Externality | use lagged competitive-load anchors, choose users spanning multiple physical alternatives, and enumerate sealed unilateral legal actions | uniformly sample eligible anchors/users and the same number of legal alternatives | only \(Q_3\) with \(\zeta_3\) |
+docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md:238:means replacing its informed source with its equal-budget neutral source; it
+docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md:281:build D^o from sealed C1/C3 opening pairs
+docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md:282:build D^t from sealed C2 native-mask candidate/Main rows at successor slot 1
+docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md:301:- The retained pre-V0.3 C1 lineage has a sealed one-seed, four-episode
+docs/MULTI-CATFISH-C3-V03-FORMULA-FIRST-CENSUS-2026-08-31.md:10:  `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`;
+docs/MULTI-CATFISH-C3-V03-FORMULA-FIRST-CENSUS-2026-08-31.md:15:- census: 10 live Main steps, two sealed focal users per step, every physical
+docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md:4:Status: **V0.3B physical-headroom gate sealed
+docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md:22:re-adjudication of the sealed 2026-08-31 gate. That gate remains
+docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md:27:- the sealed C2 result and exact replay audit;
+docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md:62:At a sealed Main departure anchor:
+docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md:120:seed worlds. Exact quotas and seed IDs must be sealed before results are
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-PAPER-FIGURE-DELTA-2026-09-02.md:54:At a sealed state, reference branch \(M\) plays the frozen Main opening action.
+docs/MULTI-CATFISH-MCRL-V06-C2-K1-PAPER-FIGURE-DELTA-2026-09-02.md:163:1. one sealed opening state and frozen Main reference;
+docs/MULTI-CATFISH-MCRL-V07-C2-PARALLEL-CANDIDATE-CONTRACT-2026-09-02.md:204:If no arm passes, the entire P0/B1/B2 generation is sealed negative before a
+docs/MULTI-CATFISH-MCRL-V07-C2-PARALLEL-CANDIDATE-CONTRACT-2026-09-02.md:212:a receding candidate at otherwise similar current angle/range.  The sealed
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R2-2026-09-05.md:45:After the corrected implementation and regression tests are sealed in a new
+docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md:104:**Required callout:** “Candidate and reference are sealed before outcomes are
+docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md:147:maximum required link power → sealed anchor → unilateral legal-action
+docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md:203:sealed physical source
+docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md:261:is an equal-budget neutral source; it is not a removed head and does not
+docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md:279:unsealed thresholds and formal efficacy results `TBD`.
+docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md:363:  neutral source.)
+docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md:378:sealed receipts provide them:
+docs/MULTI-CATFISH-MCRL-V010-MONE-C3-ORACLE-PREREG-2026-09-03.md:42:the focal entry of `b`.  Evaluate `b` and `b^(u<-a)` with the same sealed
+docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-CENSUS-PREREG-2026-09-01.md:9:The sealed five-arm result found that the frozen C2 head reduced marginal EE.
+docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-CENSUS-PREREG-2026-09-01.md:66:Before any forecast, the sealed schedule binds the complete sorted action
+docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-CENSUS-PREREG-2026-09-01.md:134:Served fraction is reported but is not a gate because the sealed C2 failure
+docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-CENSUS-PREREG-2026-09-01.md:143:Phase B runs only when G-S, G-R, and G-V all pass.  It replays the same sealed
+docs/MULTI-CATFISH-MCRL-V03-C2-COVERAGE-OPUS-MAX-ADJUDICATION-2026-09-01.md:12:unsupported validation contrasts. The locally sealed requirement of at least
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:20:- four arms and ten decisions per episode, for twelve independent episodes;
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:21:- exact source and runner copies sealed before execution;
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:25:All twelve server shards completed. An independent local merge reproduced the
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:31:These values describe what the sealed V0.9 bytes produced; they do not repair
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:55:other legal actions. The sealed runner instead used the Q1 gauge reference as
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:70:gain before applying recurrence power and the beam-power ceiling. The sealed
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:104:4. use a new TRAIN world, a new schema, and a new sealed artifact;
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:112:- sealed package:
+docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:118:- sealed server result SHA-256:
+docs/FABLE-51-C2-CLEANROOM-TAKEOVER-PROMPT-2026-09-02.md:43:Read these sources before deciding. Current source/code and sealed receipts
+docs/MULTI-CATFISH-MCRL-V03-PRESENTATION-LAYER-2026-08-31.md:170:   sealed ablation evidence and mark unresolved gates plainly.
+docs/MULTI-CATFISH-MCRL-V07-C2-D2-FORMULA-SOURCE-PREREG-2026-09-02.md:105:1. replay the sealed Main carrier prefix to the anchor under one keyed random
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:52:At a sealed predecision anchor, identify eligible users and select one focal
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:143:Candidate and reference schedules are sealed before any outcome is read, and
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:176:actions at sealed anchors. These quantities are observations, not action
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:227:| \(D^o\) | one opening matched pair per sealed anchor/action, storing \(\zeta_{1,u}\) and \(\zeta_{3,u}\) once plus common lineage | C1 updates \(Q_1\); C3 updates \(Q_3\) | recomputing or duplicating opening energy in C3 |
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:301:| `N000` | neutral | neutral | neutral | three-head neutral-source control |
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:309:an equal-budget neutral source; the head is not removed and the score is not
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:311:update count, or the one-argmax deployment rule. Exact neutral-source
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:313:sealed.
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:371:Thresholds and source rows remain sealed before any claim-bearing evaluation.
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:402:  not present in a sealed receipt.
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:406:Do not invent numbers. Replace the following placeholders only with sealed
+docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md:444:   route sources with equal-budget neutral sources.
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md:32:   both sealed confirmations are `LIMITED_TO_OLD_Q2_CONTEXT`. In the same sealed 30-world
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md:199:from the sealed constants, no TEST, no gradient, nothing written into the repository.
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md:233:relative error 0.42% and p95 1.35%; the P13 arm's action selection is identical to the sealed
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md:245:Source-closure note: the working tree has 23 modules added since the sealed V0.4 manifest and
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md:250:newly sealed source manifest.
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md:330:(independent replication of the sealed -10.286%), -0.48% on top of Q1+Q2*, -2.69% on top of
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md:370:   -9.7% on top of Q1 alone on fresh worlds, replicating the sealed -10.3%).
+docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md:406:- Retained: C1/C3 bytes and their sealed blocks as old-Q2-context evidence; canonical EE;
+docs/decisions/ADR-002-proposed-hobs-primary-geometry.md:61:`e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`.
+docs/decisions/ADR-002-proposed-hobs-primary-geometry.md:225:6. A new preregistration and matched reference checkpoint are sealed before any
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R5-DEFECT-CORRECTION-2026-09-06.md:24:`124088495.221` bit/J, a relative difference of `+0.0044236%`.  These numbers
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R5-DEFECT-CORRECTION-2026-09-06.md:26:replace a fresh R5 source regeneration and sealed receipt.
+docs/DEVIATION-REGISTER.md:55:生成 48 筆 sealed rows，completed-row action graph 通過原定的
+docs/MULTI-CATFISH-MCRL-V023-EXECUTION-PARAMETER-ADDENDUM-2026-09-05.md:3:Status: `SEALED_BEFORE_SOURCE_OR_LEARNER_OUTCOME`
+docs/MULTI-CATFISH-MCRL-V023-EXECUTION-PARAMETER-ADDENDUM-2026-09-05.md:40:This clarification was sealed before any V0.23 physical source shard or
+docs/MULTI-CATFISH-MCRL-V011-JOINT-C3-ORDERED-ORACLE-PREREG-2026-09-03.md:10:V0.10 exact unilateral MONE failed closed.  Its six-arm receipt showed
+docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-DISPOSITION-2026-09-01.md:15:The sealed disposition receipt is:
+docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-DISPOSITION-2026-09-01.md:87:recomputation receipt is sealed.
+docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-EXPANSION-PREREG-2026-09-01.md:51:2. branch \(C\) holds the sealed candidate physical link while it has one
+docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-EXPANSION-PREREG-2026-09-01.md:112:After the expanded source is sealed, run these arms concurrently:
+docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-EXPANSION-PREREG-2026-09-01.md:171:- the sealed r4 mechanics receipt named in Section 1.
+docs/MULTI-CATFISH-MCRL-V04-C3-CONFIRMATORY-PREREG-2026-09-01.md:10:> Does the already sealed gate-selected C3 head improve canonical
+docs/MULTI-CATFISH-MCRL-V04-C3-CONFIRMATORY-PREREG-2026-09-01.md:53:  `V04_C3_CONFIRMATORY_V1`, sealed gate authority SHA-256, and evaluation seed;
+docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-V0.3-2026-08-31.md:7:gate were subsequently implemented. The sealed gate is `INDETERMINATE`; the
+docs/POST-RUN-CORRECTED-PROBES-2026-08-25.md:4:subsequently sealed and must pass server validation before training.**
+docs/POST-RUN-CORRECTED-PROBES-2026-08-25.md:43:The `c1` comparison was presealed at three decimal places solely because the
+docs/MULTI-CATFISH-MCRL-V04-C2-DESIGN-EVAL-AMENDMENT-2026-09-01.md:10:merge and before any P0/P1/P2 Q2 update. It does not modify the sealed Phase-A
+docs/MULTI-CATFISH-MCRL-V04-C2-DESIGN-EVAL-AMENDMENT-2026-09-01.md:20:  `c07e6f12d87ff2cc2cca5fbb5550264424e2c443979ad8c77f940b75782ed4da`
+docs/MULTI-CATFISH-MCRL-V04-C2-DESIGN-EVAL-AMENDMENT-2026-09-01.md:40:- 100 users, ten steps, and the exact eligible-arm set from sealed Phase B;
+docs/decisions/ADR-003-proposed-specialist-multi-catfish.md:352:segment-start gain or exact current link/beam power. Until a sealed census
+docs/decisions/ADR-003-proposed-specialist-multi-catfish.md:366:and no post-hoc non-inferiority margin is permitted. Failure of that sealed
+docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md:193:2. C2 evaluates a sealed, bounded set of temporal anchors and stores matched
+docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md:196:3. C3 enumerates unilateral opening actions at sealed anchors and stores
+docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md:240:2. Candidate schedules are sealed before outcomes are evaluated.
+docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md:248:   certificate. Downstream held-key support expiry triggers the sealed
+docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md:251:8. The old fixed-hold keyed gate is sealed `INDETERMINATE`; its 5/5
+docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md:276:Thresholds and seed counts must be sealed before the multi-seed gate run. A
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-LAUNCH-DECISION-2026-09-05.md:30:- The implementation snapshot immediately before this decision was sealed as
+docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md:87:- Digest validity is not semantic consistency: the sealed artifact has
+docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md:90:  unambiguous, but the sealed record is internally contradictory.
+docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md:96:| Frozen artifact vs code | Executable values match; the sealed P2 note contradicts its own N=4 fields; P6 is declared but has no runner | Live constants match the resolved mappings; `probe_grid.P6` still carries unimplemented obligations. Digest verification alone did not catch the narrative contradiction. |
+docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md:118:  sealed artifact or any frozen value.  The corresponding N=3 sentence remains
+docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md:119:  inside the sealed artifact and cannot be changed without a controller ruling
+docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md:199:### The sealed record contains a Q-E narrative contradiction
+docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md:206:sealed bytes/digest.  The controller must either declare the P2 sentence a
+docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md:244:A controller ruling must resolve the sealed Q-E sentence, P6 operational
+docs/decisions/ADR-006-e1-instrument-validity-before-ee-ablation.md:27:Run a no-EE E1 gate before any further EE ablation. E1 uses fresh, sealed,
+docs/CONTROLLER-RULINGS-MODQN-RUNTIME-CORRECTION-2026-08-25.md:145:  `2029238.433` only for the presealed comparison with `2471140.576`;
+docs/MULTI-CATFISH-MCRL-V04-C2-PARALLEL-CANDIDATE-PREREG-2026-09-01.md:12:opened.  All candidates reuse the same sealed physical sibling census; the
+docs/MULTI-CATFISH-MCRL-V04-C2-PARALLEL-CANDIDATE-PREREG-2026-09-01.md:26:- the exact sealed 12-cluster, 324-sibling legal-action schedule;
+docs/MULTI-CATFISH-MCRL-V04-C2-PARALLEL-CANDIDATE-PREREG-2026-09-01.md:41:those sealed rows rather than by rerunning or replacing worlds.
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:16:2. The sealed 41 C2 V0.3B traces authorize a later pilot only on
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:18:   generate fresh sealed C2 rows.
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:115:`sample_c1_neutral_source` draws across anchors the treatment never sees. The
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:120:A `sample_c1_cluster_matched_neutral_source` /
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:121:`C1_CLUSTER_NEUTRAL_SOURCE_RULE` has since appeared in
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:160:   "thresholds and seed counts must be sealed before the multi-seed gate run".
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:166:   Meanwhile the sealed reactive gate holds **41 complete traces across 5
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:187:9. **Sealed-manifest break in the C2 provenance chain.** The V0.3B gate sealed
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:194:   - `tests/test_w41_c2_v03b_reactive_gate_integrity.py::test_sealed_v03b_prereg_and_manifest_validate_against_current_source_set`
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:196:   - The sealed gate `result.json` remains valid evidence (it predates the
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:199:   - The ablation's C2 rows are bound to an unsealed manifest, so their
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:203:   gate. Do not generate C2 training rows against an unsealed backend.
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:207:**C2 -- defensible.** Exactly the sealed reactive gate ceiling
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:211:`zeta_2` in 4/5 seeds spanning 8 distinct sealed anchor digests, both source
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:246:4. Resolve the section 7.9 sealed-manifest break. Diff the 22:50 edit to
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:263:- Neutral control: `sample_c1_cluster_matched_neutral_source`, matched on
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:267:- C2: do **not** train on the 41 sealed reactive-gate traces. Their artifact
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:299:Preregistered, sealed thresholds. **Heavy -- Ubuntu server.**
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:321:- `tests/test_w41_c2_v03b_reactive_gate_integrity.py::test_sealed_v03b_prereg_and_manifest_validate_against_current_source_set`
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:322:  -- the section 7.9 sealed-manifest break. **Not cosmetic.**
+docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:330:`sample_c1_cluster_matched_neutral_source` during this audit, and the C2 fork
+docs/MULTI-CATFISH-MCRL-V03-E1-MASKED-MEANMAX-FALLBACK-CONTRACT-2026-09-01.md:9:This contract is admissible only when the sealed V3 action-shared validation
+docs/MULTI-CATFISH-C2-CROSS-SESSION-MERGE-CHECKPOINT-2026-09-02.md:58:result. Inspection of its sealed runner confirms material protocol differences:
+docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-OPUS-MAX-REVIEW-2026-09-01.md:12:claude -p "<sealed documents-first prompt>" --model opus --effort max \
+docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-OPUS-MAX-REVIEW-2026-09-01.md:23:recomputations that are not independently sealed by the repository remain
+docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-OPUS-MAX-REVIEW-2026-09-01.md:55:sealed anchor/focal state becomes a matched temporal sibling against the same
+docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-OPUS-MAX-REVIEW-2026-09-01.md:70:preregistration.  Pairwise MAE skill is not an efficacy gate because the sealed
+docs/MULTI-CATFISH-MCRL-V04-C3-CONFIRMATORY-RESULT-2026-09-01.md:6:## Sealed authority
+docs/MULTI-CATFISH-MCRL-V04-C3-CONFIRMATORY-RESULT-2026-09-01.md:69:This result authorizes one separately sealed frozen-policy evaluation with
+docs/decisions/ADR-007-action-shared-three-q-instrument.md:38:widths `(100, 50, 50)`, and common surplus normalization. A sealed beta screen
+docs/decisions/ADR-007-action-shared-three-q-instrument.md:46:It generates no test outcomes; the existing E1 test split remains sealed and
+docs/decisions/ADR-007-action-shared-three-q-instrument.md:75:  screen passes.  It first evaluates the sealed selected-rung Q3, then may
+docs/MULTI-CATFISH-MCRL-V03-C2-GATE-RESULT-2026-08-31.md:4:Status: **sealed G-C2 result; INDETERMINATE; no training authorization**
+docs/MULTI-CATFISH-MCRL-V03-C2-GATE-RESULT-2026-08-31.md:19:  `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`
+docs/MULTI-CATFISH-MCRL-V03-C2-GATE-RESULT-2026-08-31.md:25:All five seed schedules were sealed before any temporal target was scored.
+docs/MULTI-CATFISH-MCRL-V03-C2-GATE-RESULT-2026-08-31.md:82:held-out ratio-of-sums EE improvement, superiority over a neutral source,
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R3-2026-09-05.md:24:source receipt was sealed.
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R3-2026-09-05.md:89:and reverified a complete sealed result tree. A runtime failure remains a
+docs/POST-RUN-VALIDATION-2026-08-24.md:128:| Last | 7.77 | 8.41 | 0.5112 | 0.5068 | 0.22432 | 0.99627 |
+docs/POST-RUN-VALIDATION-2026-08-24.md:160:| Catastrophic-collapse reproduction | descriptive tail-100 collapse four | main 2.51 to 7.77 beams; agreement 0.7435 to 0.5112 | no frozen categorical cutoff | CAUTION |
+docs/MULTI-CATFISH-MCRL-V03-C2-GATE-CROSS-MODEL-REVIEW-2026-08-31.md:41:   coverage, censoring, error, random-field, and non-mutation gates sealed in
+docs/MULTI-CATFISH-MCRL-V03-C2-GATE-CROSS-MODEL-REVIEW-2026-08-31.md:46:to a neutral source, or held-out ratio-of-sums EE improvement.
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-OBSERVABILITY-GATE-CONTRACT-2026-09-05.md:523:7. equal-budget neutral-source replacement; and
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-OBSERVABILITY-GATE-CONTRACT-2026-09-05.md:529:measured physical target is forced negative. Informed and neutral source arms
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-OBSERVABILITY-GATE-CONTRACT-2026-09-05.md:531:three-network slots. A neutral source is retrained, not edited post hoc.
+docs/MULTI-CATFISH-MCRL-V023-LC-SRS-OBSERVABILITY-GATE-CONTRACT-2026-09-05.md:925:  separately declared neutral-source replacement semantics for later ablation;
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:20:`LIMITED_TO_OLD_Q2_CONTEXT`: its sealed confirmation remains valid for the
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:38:negative result, not a launch or implementation failure. Its sealed
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:210:the V0.7 D2/D3 decision is stable.  Unsealed hyperparameters and every pending
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:242:authorized.  The fresh Q3 gate is sealed
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:247:efficacy evidence.  The bounded real-TLE smoke is sealed `PASS_SMOKE_ONLY` at
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:250:sealed `INDETERMINATE`. Its successor,
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:251:`artifacts/c2-v03b-reactive-keyed-physical-headroom-gate-20260831`, is sealed
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:257:The C2 fork backend has been restored byte-for-byte to the sealed V0.3B copy.
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:263:Claim-bearing E1 requires fresh non-overlapping seeds and a newly sealed
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:269:policy identity. The sealed V0.3 mean/max fallback subsequently retained
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:271:V0.4 therefore carries forward only the exact sealed rung-10 Q1/Q2 heads and
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:278:screen must evaluate the sealed selected-rung hybrid at
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:293:The V0.4 production source is sealed and independently verified at
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:302:The bounded screen is sealed `SCREEN_COMPLETE` at
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:305:At the primary sealed rung-100 point, FULL exceeded DROP-C3 pooled EE by
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:314:the sealed gate-selected rung-100 hybrid.
+docs/CURRENT-MULTI-CATFISH-AUTHORITY.md:351:The post-outcome C2 failure audit is sealed at
+docs/MULTI-CATFISH-MCRL-V03-C2-REACTIVE-RELEASE-IMPLEMENTATION-2026-08-31.md:4:Status: **implementation/test gate complete; sealed physical-headroom gate
+docs/MULTI-CATFISH-MCRL-V03-C2-REACTIVE-RELEASE-IMPLEMENTATION-2026-08-31.md:79:Until that gate is sealed, C2 remains authoring-GO but training-NO-GO.
+
+exec
+/bin/bash -lc "ls -a && rg -n -i --glob '*.md' --glob '*.json' --glob '"'!archive/**'"' --glob '"'!artifacts/**'"' 'N100|N010|N001|FULL.*N011|160|unilateral.equipped|0\\.5.?%|0\\.005|six.arm' . | head -160" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+.
+..
+.agents
+.codex
+.git
+.gitignore
+.scratch
+GIT-EXCLUDED-LARGE-FILES-2026-09-07.tsv
+LADDER-FLOOR-2026-09-10.md
+README.md
+archive
+artifacts
+astra-adjudication-audit-bundle.zip
+chapter4-0826.pptx
+chapter5-0826.pptx
+deep-research-report.md
+docs
+gpt-dr.md
+gpt.md
+gpt.pdf
+pyproject.toml
+replay-world-2026121706.log
+scripts
+src
+tests
+./deep-research-report.md:68:`LITERATURE-SUPPORTED PRINCIPLE`　Foerster et al.，*Counterfactual Multi-Agent Policy Gradients*，AAAI 2018，[DOI 10.1609/aaai.v32i1.11794](https://doi.org/10.1609/aaai.v32i1.11794)，COMA 的 counterfactual baseline 是在**其他 agents 的 actions 固定**時 marginalize 單一 agent 的 action；centralized critic、decentralized actors 是其結構性假設。這個 “keep others fixed” 恰是 Fable CSE 證明義務中不能跳過的一步。COMA 沒有主張多個各自在不同 unilateral world 上計算的 marginal contribution 可以相加成 simultaneous action value。citeturn12view6
+./deep-research-report.md:229:| `LITERATURE-SUPPORTED PRINCIPLE` counterfactual credit 要明確 baseline／fixed background | Wolpert & Tumer, *Advances in Complex Systems*, 2001, [DOI](https://doi.org/10.1142/S0219525901000188); Foerster et al., COMA, AAAI 2018, [DOI](https://doi.org/10.1609/aaai.v32i1.11794). citeturn14search0turn12view6 | useful credit ≠ summed simultaneous exactness |
+./LADDER-FLOOR-2026-09-10.md:89:| 2 | 154,634 / 154,944 (99.800%) | 64,621 / 170,160 (37.977%) | 99.771% | 35.088% |
+./LADDER-FLOOR-2026-09-10.md:117:These pool all three selectors. Percentiles are airtime-weighted, using 0.01 dB bins with at most 0.005 dB rounding; extrema retain full precision in the evidence. NO_MODE has no finite transmitted-mode margin and is counted separately. Negative realised margins are decode failures, so the decoded-only distribution is conditional on success.
+./docs/CONTROLLER-RULINGS-W26-2026-08-23.md:135:`split`(166+160+47 = 373)、`sampling`、`dwell`(N=3)、
+./docs/CONTROLLER-RULINGS-W22-2026-08-23.md:87:| 使用者移動時鐘 | 決策時鐘,揭露 250 m = 遲滯帶 0.50% / 張角 0.0297° = `\|Δθ\|` 中位數 2.5% |
+./docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-PREREG-2026-09-01.md:27:  `019e2160ed7c3802c142a92d4b391d63a0d2e3c0b7cfc0478ab6dbfd0b1178fc`,
+./docs/W19-REPLY-C-COST-2026-08-22.md:107:- 250 m 是遲滯帶的 **0.5%**,是斜距的 **0.03%**。
+./docs/PREREG-DRAFT.md:166:實測分配:**train 166 檔 / test 160 檔 / 禁運 47 檔**;最近的 train–test 日期相距 **2 天**。
+./docs/CONTROLLER-BRIEF-TRAINING-SERVER-2026-08-23.md:124:sed -n '1,160p' artifacts/training-2026-08-24/pipeline-status.json
+./docs/EPHEMERIS-NOTES.md:62:實測分配:**train 166 檔 / test 160 檔 / 禁運 47 檔**(合計 373)。
+./docs/EPHEMERIS-NOTES.md:89:| **分塊交替 7d + 禁運 1d** | 166 / 160 | **×0.988** | ×0.991 | **+5.7 km** |
+./docs/CONTROLLER-RULINGS-W19-2026-08-23.md:31:{0, 40, 64, 80, 100, 128, 160, 256, 320, 480, 512, 640, 1024, 1280, 2560, 5120} ms
+./docs/CONTROLLER-RULINGS-W19-2026-08-23.md:78:你給的 0.5%(對遲滯帶)是對的,但只涵蓋 D2。使用者位置同時進入**偏軸角**,
+./docs/CONTROLLER-RULINGS-W19-2026-08-23.md:81:- **對 D2**:30 km/h × 30 s = 250 m,是 50 km 遲滯帶的 **0.50%**;
+./docs/PATCH-LEDGER.md:90:| 來源行 | `modqn.py`:`:65`(PopArt import)、`:152`、`:160-186`、`:362-571`(兩個休眠選取器與其 helper)、`:596-615`(select_actions 的分派)、`:941-964`(獎勵端 PopArt)、`:1291-1317`(§6.2 擷取);`trainer_spec.py`:`:13-33`(kind 常數)、`:105-199`(四組欄位) |
+./docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md:119:  `35e20d1b0f3e16028619e1f80bcd046d25d2225d1761d07d1bb80073926e9b6c`.
+./docs/MULTI-CATFISH-MCRL-V011-JOINT-C3-ORDERED-ORACLE-PREREG-2026-09-03.md:10:V0.10 exact unilateral MONE failed closed.  Its six-arm receipt showed
+./docs/W19-DONE-2026-08-23.md:111:- 對 D2:250 m = 50 km 遲滯帶的 **0.50%**;
+./docs/W22-REPLY-2026-08-23.md:110:使用者留決策時鐘(揭露 0.50% / 0.0297°)、`segment_age_steps = 6`、
+
+codex
+The key distinction is whether “individually” means adding one informed source to the neutral control or replacing one informed source in FULL. Those measure effects in different contexts, and neither implies the other when components interact. I’m also checking whether the neutral arms retain active predictors, because that limits what “removing a component” can mean.
