@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures.process import BrokenProcessPool
 import datetime as dt
 from dataclasses import dataclass, replace
 from functools import cmp_to_key
@@ -936,6 +937,70 @@ def _selection_worker_validate(
         evaluator=evaluator,
         calibration=context["calibration"],  # type: ignore[arg-type]
         cell_rekeyed_users=context["cell_rekeys"],  # type: ignore[arg-type]
+    )
+    return (
+        tuple(evaluator._evaluated.values()),
+        decomposition,
+        singletons,
+        base_decomposition,
+        counter.boundary_evaluations,
+    )
+
+
+def _validate_committed_serially(
+    *,
+    tape: ExogenousWorldTape,
+    setting: PhysicsSetting,
+    step_index: int,
+    incumbent: Configuration,
+    cell_rekeys: tuple[int, ...],
+    previously_served: tuple[int, ...],
+    run_setting: SealedRunSetting,
+    calibration: CalibrationValues,
+    base: Configuration,
+    unique_selected: tuple[Configuration, ...],
+    full: Configuration,
+    j1: Configuration,
+    u1: Configuration,
+) -> tuple[tuple[EvaluatedProfile, ...], object, tuple[EvaluatedProfile, ...], object, int]:
+    """Recompute the committed validation in this process.
+
+    Used only to rebuild the receipt after a worker is lost to the host; the
+    committed selection has already been fixed by the deadline at that point.
+    The arithmetic is the same ``_selection_worker_validate`` performs.
+    """
+
+    counter = EvaluationCounter()
+    evaluator = StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=cell_rekeys,
+        previously_served_users=previously_served,
+        counter=counter,
+        run_setting=run_setting,
+    )
+    evaluator.evaluate_many(
+        tuple({row.configuration_id: row for row in (*unique_selected, j1, u1)}.values())
+    )
+    if base.configuration_id not in evaluator._evaluated:
+        raise ProbeError("BASE has an invalid committed-profile power certificate")
+    decomposition, singletons = _committed_set_decomposition(
+        base=base,
+        selected=full,
+        incumbent=incumbent,
+        evaluator=evaluator,
+        calibration=calibration,
+        cell_rekeyed_users=cell_rekeys,
+    )
+    base_decomposition, _base_singletons = _committed_set_decomposition(
+        base=base,
+        selected=base,
+        incumbent=incumbent,
+        evaluator=evaluator,
+        calibration=calibration,
+        cell_rekeyed_users=cell_rekeys,
     )
     return (
         tuple(evaluator._evaluated.values()),
@@ -4123,13 +4188,41 @@ def execute_step(
         except FutureTimeoutError:
             validation_within_deadline = False
             deadline_missed = True
-            (
-                validated_profiles,
-                committed_decomposition,
-                singleton_profiles,
-                base_decomposition,
-                validation_evaluations,
-            ) = validation_future.result()
+            try:
+                (
+                    validated_profiles,
+                    committed_decomposition,
+                    singleton_profiles,
+                    base_decomposition,
+                    validation_evaluations,
+                ) = validation_future.result()
+            except BrokenProcessPool:
+                # The committed decision is already fixed at the deadline; the
+                # receipt data is recovered in this process so that a worker
+                # lost to the host (out of memory, external kill) degrades the
+                # audit trail's latency and not its content.
+                pool = None
+                (
+                    validated_profiles,
+                    committed_decomposition,
+                    singleton_profiles,
+                    base_decomposition,
+                    validation_evaluations,
+                ) = _validate_committed_serially(
+                    tape=tape,
+                    setting=setting,
+                    step_index=step_index,
+                    incumbent=incumbent,
+                    cell_rekeys=cell_rekeys,
+                    previously_served=previously_served,
+                    run_setting=active_run,
+                    calibration=calibration,
+                    base=base,
+                    unique_selected=unique_selected,
+                    full=selections["FULL"],
+                    j1=j1.config,
+                    u1=u1.config,
+                )
         counter.boundary_evaluations += validation_evaluations
         evaluated = {
             profile.config.configuration_id: profile

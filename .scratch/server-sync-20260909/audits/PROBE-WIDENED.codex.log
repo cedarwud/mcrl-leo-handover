@@ -187,3 +187,184 @@ b181023 Round 9A/9D filed; v1.7 erratum (margin naming, two decompositions, unca
 edef360 Parallel batch 2026-09-09: astra cross-model review of v1.6, pipeline map v2 (Opus 5), seal-integrity check (Sonnet 5), stage-C cost rehearsal (Opus 5)
 62be8b6 Round-9 prompts collected under dr9-prompts/ with distinct names and a mapping to their packages
 
+exec
+/bin/bash -lc 'git -C /home/sat/mcrl-hub remote -v
+git -C /home/sat/mcrl-hub branch -a --contains HEAD | head -40
+git -C /home/sat/mcrl-hub ls-remote --heads origin | tail -30' in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 685ms:
+94d267a7ca93b56f60b1cbfaf366bab8afefab49	refs/heads/gh/server/audit/differential
+8ca7fb1a47525e1ef7e039d1e8e7c61d5b7cfd07	refs/heads/gh/server/c3s/confirmatory-v2
+fb564c8d4552582089d2090915061b319ea2b566	refs/heads/gh/server/c3s/diag-and-ve
+d59e354d431585f056e5348a65b925c24055105e	refs/heads/gh/server/c3s/diagnostic-arms
+81156e0ead1b5396dacb614f6fd0e3039c462fa7	refs/heads/gh/server/c3s/latency
+375b7b596328d146127fb73f5cc7e50907ae82e0	refs/heads/gh/server/stagea/fix12
+57db3b86dcebd90a5f86f6dcdffd9978bec9978c	refs/heads/gh/server/v024/iteration-2
+350e997c1f17bfa6b9a9a34e7e606cf05fe207d2	refs/heads/gh/server/v025/engine
+350e997c1f17bfa6b9a9a34e7e606cf05fe207d2	refs/heads/gh/server/v025/provider
+350e997c1f17bfa6b9a9a34e7e606cf05fe207d2	refs/heads/gh/server/v025/synth
+bda7aa1bd878a27384147a5d07250b48c0474ebd	refs/heads/gh/wip-multi-catfish-v023-20260907
+42a8247c3fe3078070828f1d3d3f3eec7b4009c2	refs/heads/main
+94d267a7ca93b56f60b1cbfaf366bab8afefab49	refs/heads/server/audit/differential
+8ca7fb1a47525e1ef7e039d1e8e7c61d5b7cfd07	refs/heads/server/c3s/confirmatory-v2
+fb564c8d4552582089d2090915061b319ea2b566	refs/heads/server/c3s/diag-and-ve
+d59e354d431585f056e5348a65b925c24055105e	refs/heads/server/c3s/diagnostic-arms
+81156e0ead1b5396dacb614f6fd0e3039c462fa7	refs/heads/server/c3s/latency
+375b7b596328d146127fb73f5cc7e50907ae82e0	refs/heads/server/stagea/fix12
+57db3b86dcebd90a5f86f6dcdffd9978bec9978c	refs/heads/server/v024/iteration-2
+4586b28ed1b0f055ada70f3bd7fbdf508988a5e8	refs/heads/server/v025/engine
+a11824248ad011b23e802a4f5a4c33b7fb73d42d	refs/heads/server/v025/provider
+d695e612a9ec48190ab6b6b5c7c11009bceeb252	refs/heads/server/v025/stagec
+16e3d48682d5fde9d0adb00ae04338b10bf85e04	refs/heads/server/v025/synth
+d7ed71e4c40c6112cdcce565d3dcea50d82d19bb	refs/heads/wip/multi-catfish-v023-20260907
+
+exec
+/bin/bash -lc 'probe_decl_dir=$(mktemp -d /home/sat/mcrl-v025-probe-ws-widened/.declaration-fetch.XXXXXX)
+git -C "$probe_decl_dir" init -q
+git -C "$probe_decl_dir" fetch -q --depth=1 https://github.com/cedarwud/mcrl-leo-handover.git bda7aa1bd878a27384147a5d07250b48c0474ebd
+git -C "$probe_decl_dir" ls-tree -r --name-only FETCH_HEAD | rg '"'V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09\\.md"'$'"'
+for p in "'$(git -C "$probe_decl_dir" ls-tree -r --name-only FETCH_HEAD | rg '"'V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09\\.md"'$'"'); do git -C \""'$probe_decl_dir" show "FETCH_HEAD:$p"; done' in /home/sat/mcrl-v025-probe-ws-widened
+exec
+/bin/bash -lc "find . -maxdepth 1 -type d -name '.declaration-fetch.*' -print
+ps -eo pid,etime,cmd | rg '[g]it .*declaration-fetch|[g]it-remote-https' || true" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 0ms:
+./.declaration-fetch.bXesmA
+1776696       00:37 git -C /home/sat/mcrl-v025-probe-ws-widened/.declaration-fetch.bXesmA fetch -q --depth=1 https://github.com/cedarwud/mcrl-leo-handover.git bda7aa1bd878a27384147a5d07250b48c0474ebd
+1776699       00:37 /usr/lib/git-core/git-remote-https https://github.com/cedarwud/mcrl-leo-handover.git https://github.com/cedarwud/mcrl-leo-handover.git
+1776720       00:34 /usr/lib/git-core/git --shallow-file /home/sat/mcrl-v025-probe-ws-widened/.declaration-fetch.bXesmA/.git/shallow.lock index-pack --stdin --fix-thin --keep=fetch-pack 1776696 on 5090 --pack_header=2,6913
+
+codex
+Git is fetching the newer sealed controller commit into a temporary repository inside this workspace; the hub itself remains untouched. I’m waiting for that object transfer to finish, then I’ll read the declaration directly from the fetched commit.
+exec
+/bin/bash -lc 'for i in $(seq 1 12); do if ! ps -p 1776696 >/dev/null 2>&1; then break; fi; sleep 5; done
+ps -p 1776696 -o pid=,stat=,etime=,cmd= || true
+git -C .declaration-fetch.bXesmA rev-parse FETCH_HEAD 2>&1 || true
+git -C .declaration-fetch.bXesmA ls-tree -r --name-only FETCH_HEAD 2>/dev/null | rg '"'V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09\\.md"'$'"' || true" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 60063ms:
+1776696 Sl         01:48 git -C /home/sat/mcrl-v025-probe-ws-widened/.declaration-fetch.bXesmA fetch -q --depth=1 https://github.com/cedarwud/mcrl-leo-handover.git bda7aa1bd878a27384147a5d07250b48c0474ebd
+fatal: ambiguous argument 'FETCH_HEAD': unknown revision or path not in the working tree.
+Use '--' to separate paths from revisions, like this:
+'git <command> [<revision>...] -- [<file>...]'
+FETCH_HEAD
+
+web search: 
+web search: https://raw.githubusercontent.com/cedarwud/mcrl-leo-handover/bda7aa1bd878a27384147a5d07250b48c0474ebd/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md
+exec
+/bin/bash -lc "ps -p 1776696 -o pid=,stat=,etime=,cmd= || true
+find .declaration-fetch.bXesmA/.git/objects/pack -maxdepth 1 -type f -printf '%f %s\\n' 2>/dev/null | sort" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 0ms:
+1776696 Sl         02:58 git -C /home/sat/mcrl-v025-probe-ws-widened/.declaration-fetch.bXesmA fetch -q --depth=1 https://github.com/cedarwud/mcrl-leo-handover.git bda7aa1bd878a27384147a5d07250b48c0474ebd
+tmp_pack_1K9FVg 241590271
+
+exec
+/bin/bash -lc 'for i in $(seq 1 10); do if ! ps -p 1776696 >/dev/null 2>&1; then break; fi; sleep 5; done
+ps -p 1776696 -o pid=,stat=,etime=,cmd= || true
+git -C .declaration-fetch.bXesmA rev-parse FETCH_HEAD 2>/dev/null || true' in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 50044ms:
+1776696 Sl         03:56 git -C /home/sat/mcrl-v025-probe-ws-widened/.declaration-fetch.bXesmA fetch -q --depth=1 https://github.com/cedarwud/mcrl-leo-handover.git bda7aa1bd878a27384147a5d07250b48c0474ebd
+FETCH_HEAD
+
+exec
+/bin/bash -lc "curl -L --max-time 20 -sS -o /dev/null -w '%{http_code} %{size_download}\\n' 'https://raw.githubusercontent.com/cedarwud/mcrl-leo-handover/bda7aa1bd878a27384147a5d07250b48c0474ebd/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md'" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 468ms:
+404 14
+
+exec
+/bin/bash -lc "curl -L --max-time 30 -sS 'https://api.github.com/repos/cedarwud/mcrl-leo-handover/git/trees/bda7aa1bd878a27384147a5d07250b48c0474ebd?recursive=1' | rg -o '\"path\": \"["'^"]*V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09'"\\.md\"'" in /home/sat/mcrl-v025-probe-ws-widened
+ exited 1 in 906ms:
+exec
+/bin/bash -lc "curl -L --max-time 30 -sS -D - 'https://api.github.com/repos/cedarwud/mcrl-leo-handover/git/trees/bda7aa1bd878a27384147a5d07250b48c0474ebd?recursive=1' | head -40" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 112ms:
+HTTP/2 200 
+date: Wed, 09 Sep 2026 08:27:20 GMT
+content-type: application/json; charset=utf-8
+cache-control: public, max-age=86400, s-maxage=86400
+vary: Accept,Accept-Encoding, Accept, X-Requested-With
+etag: W/"d187f999b257740fdff8d906d74b1d922a9559fd3400056c0f01b25ec694a99b"
+last-modified: Sun, 23 Aug 2026 13:36:29 GMT
+x-github-media-type: github.v3; format=json
+x-github-api-version-selected: 2022-11-28
+access-control-expose-headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning
+access-control-allow-origin: *
+strict-transport-security: max-age=31536000; includeSubdomains; preload
+x-frame-options: deny
+x-content-type-options: nosniff
+x-xss-protection: 0
+referrer-policy: origin-when-cross-origin, strict-origin-when-cross-origin
+content-security-policy: default-src 'none'
+server: github.com
+accept-ranges: bytes
+x-ratelimit-limit: 60
+x-ratelimit-remaining: 58
+x-ratelimit-used: 2
+x-ratelimit-resource: core
+x-ratelimit-reset: 1788946040
+content-length: 3425381
+x-github-request-id: B654:2465C:4C08A2:579BDA:6AA1186F
+x-github-edge-region: japaneast
+
+{
+  "sha": "bda7aa1bd878a27384147a5d07250b48c0474ebd",
+  "url": "https://api.github.com/repos/cedarwud/mcrl-leo-handover/git/trees/bda7aa1bd878a27384147a5d07250b48c0474ebd",
+  "tree": [
+    {
+      "path": ".gitignore",
+      "mode": "100644",
+      "type": "blob",
+      "sha": "ddc132f35769f7776cc9bea2ada779b0f7d7085d",
+      "size": 141,
+      "url": "https://api.github.com/repos/cedarwud/mcrl-leo-handover/git/blobs/ddc132f35769f7776cc9bea2ada779b0f7d7085d"
+    },
+curl: (23) Failure writing output to destination, passed 1361 returned 1279
+
+exec
+/bin/bash -lc "curl -L --max-time 30 -sS 'https://api.github.com/repos/cedarwud/mcrl-leo-handover/git/trees/bda7aa1bd878a27384147a5d07250b48c0474ebd?recursive=1' | rg -i 'probe.{0,40}neigh|neigh.{0,40}probe|interaction-existence|widened' | head -100" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 420ms:
+exec
+/bin/bash -lc "find /home/sat -path '/home/sat/mcrl-leo-handover/.venv' -prune -o -name 'V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md' -print" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 16191ms:
+exec
+/bin/bash -lc "git -C /home/sat/mcrl-hub log --all --oneline --decorate --grep='neigh\\|existence\\|widen' -i -100
+git -C /home/sat/mcrl-hub fsck --no-reflogs --unreachable 2>/dev/null | head -50" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 7578ms:
+exec
+/bin/bash -lc "git -C /home/sat/mcrl-hub show --stat --oneline 401563b
+git -C /home/sat/mcrl-hub show --name-only --format= 401563b | rg -i 'probe|neigh|existence'" in /home/sat/mcrl-v025-probe-ws-widened
+ exited 1 in 0ms:
+401563b WIP 2026-09-08: C3 path forward (astra ultra PURSUE_NOW_PARALLEL); E1 existence screen dispatched; ChatGPT review prompts
+ .../00-README.md                                   |   9 ++
+ .../PROMPT-CHATGPT-DEEP-RESEARCH.md                |  12 ++
+ .../PROMPT-CHATGPT-QA.md                           |  15 +++
+ ...UTURE-PATH-CODEX-GPT6-ASTRA-ULTRA-2026-09-07.md | 132 +++++++++++++++++++++
+ .../HANDOFF-EXECUTION-CLOSURE-AUDIT-2026-09-07.md  |   8 ++
+ 5 files changed, 176 insertions(+)
+
+exec
+/bin/bash -lc "git -C /home/sat/mcrl-hub log --all --reflog --name-only --pretty=format: | rg 'V025-CONTROLLER-DECISIONS-PROBE|PROBE-NEIGHBOURHOOD|INTERACTION-EXISTENCE|WIDENED' | sort -u" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 0ms:
+web search: 
+web search: "V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md" ...
+exec
+/bin/bash -lc "find /home/sat/mcrl-hub -type f \\( -iname '*probe*neigh*' -o -iname '*neigh*probe*' -o -iname '*interaction*existence*' \\) -print | head -100
+rg -l -i 'HONEST LIMITS|PROBE_NOT_CLAIM|interaction-existence arm|widening an existence' /home/sat/mcrl-hub --glob '*.md' 2>/dev/null | head -100" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 0ms:
+exec
+/bin/bash -lc "git -C /home/sat/mcrl-hub ls-remote --heads origin 'refs/heads/wip/multi-catfish-v023-20260907' 'refs/heads/gh/wip-multi-catfish-v023-20260907'
+ps -p 1776696 -o pid=,stat=,etime=,cmd= || true
+find .declaration-fetch.bXesmA/.git/objects/pack -maxdepth 1 -type f -printf '%f %s\\n' 2>/dev/null | sort" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 486ms:
+bda7aa1bd878a27384147a5d07250b48c0474ebd	refs/heads/gh/wip-multi-catfish-v023-20260907
+d7ed71e4c40c6112cdcce565d3dcea50d82d19bb	refs/heads/wip/multi-catfish-v023-20260907
+1776696 Sl         06:09 git -C /home/sat/mcrl-v025-probe-ws-widened/.declaration-fetch.bXesmA fetch -q --depth=1 https://github.com/cedarwud/mcrl-leo-handover.git bda7aa1bd878a27384147a5d07250b48c0474ebd
+tmp_pack_1K9FVg 582819839
+
+exec
+/bin/bash -lc "curl -L --max-time 30 -sS -w '\\nHTTP %{http_code}\\n' 'https://api.github.com/search/code?q=filename%3AV025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md+repo%3Acedarwud%2Fmcrl-leo-handover' | head -80" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 220ms:
+{
+  "message": "Requires authentication",
+  "documentation_url": "https://docs.github.com/rest",
+  "status": "401"
+}
+HTTP 401
+
+ succeeded in 381603ms:
