@@ -1,0 +1,189 @@
+Reading additional input from stdin...
+OpenAI Codex v0.151.0
+--------
+workdir: /home/sat/mcrl-v025-probe-ws-widened
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08542-7c7c-73d1-8bd5-1066177346fe
+--------
+user
+# WIDENED interaction-existence arm (PROBE_NOT_CLAIM)
+
+Read the sealed declaration `V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md` first. Copy it from `/home/sat/mcrl-hub` or ask git for it. It states exactly what this arm is and why widening an existence search is admissible. Follow it literally.
+
+## Setup
+The workspace `/home/sat/mcrl-v025-probe-ws-widened` is already prepared for you: it is a clean
+`git archive` of engine commit `75c5c78c` ("Finish V0.25 stage 4h physics gate"), which carries the
+corrected causal ACM, with the three existence-probe scripts copied in. Verify before starting:
+`src/mcrl/physics_v025/acm.py` md5 starts `aa58aeeb`, `resolution.py` `e0b1cc50`, `batch.py` `3677d530`;
+`probe/run_v025_matrix_probe.py` is 277,997 bytes with 30 occurrences of `fading_quantile_alpha`.
+If any of that is wrong, stop and report.
+
+Build every world and calibration tape **fresh inside this workspace**; never link or copy one from
+another workspace, because `tapes.py` and `provider_legacy.py` differ between trees. Point the
+calibration cache at a directory inside this workspace that starts empty: the cache is keyed on regime
+name alone with no physics digest and would otherwise silently load pre-fix prices. Raise
+`--uni-budget-s` until `u` is genuinely certified and report the certification rate; an uncertified `u`
+destroys the premise that every legal single move is non-improving there.
+
+Python `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`. Never write into
+`/home/sat/mcrl-leo-handover` or its venv, `/home/sat/mcrl-hub`, `/home/sat/mcrl-v025-codex-ws-engine`,
+`/home/sat/mcrl-v025-probe-ws-acm2`, `/home/sat/mcrl-v025-witness-ws`, or `src/mcrl/env/`.
+
+## What to add to `analyse_anchor_from` in `probe/probe_interaction_existence.py`
+Keep every existing candidate family exactly as it is. **Add** these four, each tagged with its own `kind` string so the census can be read per family:
+
+1. `pairwise-marginal` — the ten users with the **smallest** `|d_i^u|` among those with a legal move, all pairs, each contributing their **top four** ranked options.
+2. `pairwise-straddle` — one user from the smallest-`|d_i|` ten and one from the largest-`|d_i|` ten, all such pairs, top four options each.
+3. `vacate-and-fill` — for each active beam `b`: identify the occupant of `b` whose `|d_i|` is smallest (the most nearly indifferent), and the non-occupant whose best legal option is `b` and whose `d_i` is most negative (the most blocked). Move the first out to their best alternative and the second in to `b`. One candidate per beam.
+4. `triples-marginal` — all triples among the **five** smallest-`|d_i|` users, each contributing their top two options.
+
+## What must not change
+No threshold, sign, seed, horizon, λ, κ, η_ref, service guard, or acceptance rule. The service guard `served >= base_served` stays. The `Psi` decomposition stays. The certified-`u` procedure stays. You are only enlarging the candidate set.
+
+## Report
+`/home/sat/mcrl-v023-codex-audits/parallel-20260909/PROBE-WIDENED-REPORT-2026-09-09.md`, printed as your final message. Per regime and **per candidate family**: improving-move count under `G` and under `F`, the positive-`Psi` census independent of improvement, the max `Psi_A^u` with its coalition size and family, and the number of candidates evaluated. State the total search budget so a null reads as budget-limited. Add an HONEST LIMITS paragraph reproducing the declaration's final section. Label everything `PROBE_NOT_CLAIM`. Never pool these results with the original neighbourhood's.
+
+Regimes: `a-r0`, `R1`, `R3`, `R4`, `R6`, `R7`. Six concurrent processes maximum, `nice -n 10`. Budget 3 wall hours. If a regime crashes, report the traceback and continue with the others.
+codex
+I’ll begin with the sealed declaration, then verify every required workspace fingerprint before changing or generating anything. If any fingerprint differs, I’ll stop immediately as instructed.
+exec
+/bin/bash -lc "sed -n '1,260p' /home/sat/mcrl-hub/V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md" in /home/sat/mcrl-v025-probe-ws-widened
+ exited 2 in 0ms:
+sed: can't read /home/sat/mcrl-hub/V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md: No such file or directory
+
+codex
+The declared path is absent at the hub root. I’m locating the sealed file in that repository (including Git history) before doing any other workspace inspection.
+exec
+/bin/bash -lc "find /home/sat/mcrl-hub -name 'V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md' -print
+git -C /home/sat/mcrl-hub log --all --name-only --pretty=format: -- 'V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md' | sed '/"'^$/d'"' | head -20" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 3ms:
+exec
+/bin/bash -lc "git -C /home/sat/mcrl-hub ls-tree -r --name-only HEAD | rg 'V025|PROBE|NEIGHBOURHOOD|CONTROLLER-DECISIONS' | head -100
+git -C /home/sat/mcrl-hub log --all --oneline --decorate -20" in /home/sat/mcrl-v025-probe-ws-widened
+ succeeded in 0ms:
+.scratch/multi-catfish-v022-c3-coalition-residual/COALITION-RESIDUAL-MECHANICS-PROBE-CONTRACT-2026-09-05.md
+.scratch/multi-catfish-v023-c3-core-problem-chatgpt-package-20260908/package-r6/04-S0-PROBE.md
+.scratch/multi-catfish-v023-c3-probe-results-20260908/PROBE-S0-2026-09-08.md
+.scratch/multi-catfish-v023-c3s-chatgpt-package-20260908/04-S0-PROBE-RESULT.md
+.scratch/multi-catfish-v023-c3s-variants-chatgpt-package-20260908/04-S0-PROBE-RESULT.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/PROBE-CONTROLLER-POSTSHARD-RESULT-2026-09-07.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/PROBE-Q2-DELTA-PRECISION-RESULT-2026-09-07.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/V025-ENGINE-STAGE2-AUDIT-CLAUDE-OPUS-2026-09-08.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/V025-ENGINE-STAGE4C-REPORT-2026-09-08.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/V025-PROVIDER-PREAUDIT-CLAUDE-OPUS-2026-09-08.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/V025-SYNTHETIC-MAP-R1-REPORT-SUPERSEDED-B2-2026-09-08.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/angle-power-ee-20260908/V025-ANGLE-POWER-EE-NOTE-2026-09-08.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/round9/V025-STAGEC-COST-REHEARSAL-2026-09-09.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/stagec-build1-20260908/V025-STAGEC-BUILD1-REPORT-2026-09-08.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/stagec-build1-20260908/V025-STAGES-6-8-SPEC-v1-DRAFT-2026-09-08.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/stagec-build2-20260908/V025-STAGEC-BUILD2-REPORT-2026-09-08.md
+.scratch/multi-catfish-v023-controller-handoff-20260907/stagec-build2-20260908/V025-STAGES-6-8-SPEC-v1-DRAFT-2026-09-08.md
+.scratch/multi-catfish-v024-regime-b-design/PROBE-V1-RUN-NOTE-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-ACM-DEFECT-CONFIRMATION-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-ACM-DEFECT-CONFIRMATION-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-CH5-SWEEP-FIGURE-SPECIFICATION-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-CH5-SWEEP-FIGURE-SPECIFICATION-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-CONTINGENCY-LADDER-AMENDMENT-1-R7-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTINGENCY-LADDER-AMENDMENT-1-R7-2026-09-08.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-CONTINGENCY-LADDER-PREOUTCOME-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTINGENCY-LADDER-PREOUTCOME-2026-09-08.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISION-PROVIDER-READINESS-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-4C-AUDIT-ROWS-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-4C-GATE-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-4D-GATE-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-COMPUTE-BUDGET-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-COUPLED-SOLVE-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-ENGINE-AUDIT-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PIPELINE-AUDIT-A-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PIPELINE-AUDITS-CD-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PROVIDER-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-SELECTION-TIME-APPROXIMATIONS-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-STAGE1-1B-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-STAGE2-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-STAGEC-COST-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-STAGEC-SPEC-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-STAGEC-SPEC-ERRATUM-1-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-DESIGN-FREEZE-AND-CLOSURE-RULE-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-DESIGN-FREEZE-AND-CLOSURE-RULE-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.2-AMENDMENT-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.2-AMENDMENT-2026-09-08.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.3-ERRATUM-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.3-ERRATUM-2026-09-08.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.4-ERRATUM-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.4-ERRATUM-2026-09-08.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.6-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.6-AMENDMENT-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-PILOT-TRACK-DECLARATION-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-PILOT-TRACK-DECLARATION-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-SINGLE-AUTHORITY-REGISTER-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-SINGLE-AUTHORITY-REGISTER-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-physics-successor/V025-SYNTHETIC-MAP-R2-COMPLETION-DECISION-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-SYNTHETIC-MECHANISM-MAP-DECLARATION-2026-09-08.md
+.scratch/multi-catfish-v025-physics-successor/V025-TONIGHT-RUN-DECISION-2026-09-09.md
+.scratch/multi-catfish-v025-physics-successor/V025-TONIGHT-RUN-DECISION-2026-09-09.md.sha256
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10A/V025-CONTROLLER-DECISIONS-STAGEC-SPEC-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10A/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10A/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10A/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10A/V025-STAGES-6-8-SPEC-v1-DRAFT-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10B/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.4-ERRATUM-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10B/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10B/V025-STAGEC-BUILD2-REPORT-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10B/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10B/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10C/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10C/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10D/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10D/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-round10-chatgpt-packages-20260909/package-10D/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+.scratch/multi-catfish-v025-round9-chatgpt-packages-20260909/package-9A/V025-CONTINGENCY-LADDER-PREOUTCOME-2026-09-08.md
+.scratch/multi-catfish-v025-round9-chatgpt-packages-20260909/package-9A/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md
+.scratch/multi-catfish-v025-round9-chatgpt-packages-20260909/package-9A/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.6-AMENDMENT-2026-09-09.md
+.scratch/multi-catfish-v025-round9-chatgpt-packages-20260909/package-9B/V025-CONTROLLER-DECISIONS-4D-GATE-2026-09-09.md
+.scratch/multi-catfish-v025-round9-chatgpt-packages-20260909/package-9B/V025-CONTROLLER-DECISIONS-SELECTION-TIME-APPROXIMATIONS-2026-09-08.md
+.scratch/multi-catfish-v025-round9-chatgpt-packages-20260909/package-9B/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+16e3d48 (origin/server/v025/synth) V025 synthetic map R2 on the stage-4b engine: adapters, dispatch/S0-guard/power-ledger/carrier-multiplier KATs, 145/180 units sealed before the budget abort (E1-E4 not scored); completion authorised after AR0-DONE. codex gpt-5.6-sol, committed by the controller from a snapshot
+d7ed71e (HEAD -> wip/multi-catfish-v023-20260907, origin/wip/multi-catfish-v023-20260907) Tonight-run decision: scientific correctness items are mandatory, the 10 s budget is an engineering target whose miss is recorded, freeze deadline applied, panel order fixed
+12fbf1a CH5 sweep-figure specification sealed (EE vs six x-axis panels, five fixed curves, cumulative reporting arms ONLY_C1/ONLY_C1C2); stage 4i chained to add the arms and the sweep driver
+e03a503 Stage 4h: consolidated final design pass (finish the interrupted 4e work, apply v1.6-v1.9, the confirmed ACM fix, link-closure ledger, quantile sweep, gate, formal steps) with a cross-model Claude audit
+7fefded ACM causality defect confirmed (genie ACM, zero decode reserve, 12-user beam capacity); consequences recorded; fix already pre-declared for stage 4g
+adc5260 Single-authority register: one symbol table, one thesis, one deck style and skeleton, simulator update deferred to after the freeze and admission
+db96428 Paper lane v2: rewrite onto the V0.23 r2 draft with its symbol authority; deck built on the 38-page storyboard and the native-OMML wmnlab pipeline
+65cc6b4 Paper lane launched: result-independent system model, method, assumption tables, deviation-register delta, limitations register, Figures 1-2 and the slide skeleton
+cbe33f4 Detached GitHub replay tool; ledger rows for the quota stop, the replay fix and the pilot start
+61fc5ca Pilot addendum: compare carrier-anchored vs unilateral-optimum-anchored catalogues (where positive interaction must live if it exists); pilot launched on codex due to the Claude session limit
+892f9b3 Pilot track declared (PILOT_NOT_CLAIM, quarantined worlds, 4 seeds, engineering-only consequences) and launched in parallel with the sealed path
+a6848b7 Design freeze at stage 4g with a four-part admissibility test for late findings; defect register commissioned (demonstrated vs precautionary vs rejected)
+2a33f6f Round-10 packages 10A-10D (is this MARL, statistical estimand, external baselines, pre-mortem)
+5644cc7 Stage-C cost decisions (adopt batch hoist and 16-way concurrency; batch cap stays pre-declared; scale correction; mean solve time is the planning number); re-projection and map v2 re-dispatched
+e652b6c Seal integrity: 12/12 sidecars match, one contradiction fixed by stage-C spec erratum 1 (16 learner seeds); astra v1.6 adjudication filed; ledger
+63601c0 v1.9 amendment (margin must not re-solve power; wanted link only; full fading product quantile; per-arm ranking keys; C2 certificate = forecast validity; monotone admission trichotomy; quantile sweep); stage 4g chained
+1081cd8 Round 9B/9C filed; v1.8 amendment (PA saturation-efficiency naming, hardware-mapping assumption, energy boundary sentence, non-cancellation, full-buffer declaration, atomic-application limitation, availability-based causality, pending ACM-causality disposition, link-closure ledger); ACM audit dispatched
+b181023 Round 9A/9D filed; v1.7 erratum (margin naming, two decompositions, uncapped interaction labels, precedence, reporting rules) and contract v1.2 (uncapped Psi labels, cross-gain features, honest S3 axes, one-sided calibration, anti-pattern statistics)
+edef360 Parallel batch 2026-09-09: astra cross-model review of v1.6, pipeline map v2 (Opus 5), seal-integrity check (Sonnet 5), stage-C cost rehearsal (Opus 5)
+62be8b6 Round-9 prompts collected under dr9-prompts/ with distinct names and a mapping to their packages
+

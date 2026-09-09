@@ -1,0 +1,13 @@
+# CH5 figure pipeline (Claude Opus 5, headless): turn the figure specifications into runnable scripts that read receipts
+
+Goal: when result receipts appear, CH5 figures must be produced in minutes, not hours. Build the pipeline now, against the receipt schema, and prove it on synthetic receipts.
+
+Sources: the figure specifications and existing figure code in `/home/sat/mcrl-hub-copy/.scratch/multi-catfish-v025-paper-lane-20260909/figures/` (`figure1_compute.py`, `figure1_render.py` — reuse their style, fonts and Chinese labels); the receipt schema and merge output of the matrix runner `/home/sat/mcrl-v025-stage4d-snapshot-20260909/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py` (canonical per-step rows, arm summaries, the admission function and certificate fields); the sealed rules for what may be plotted (`V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5/-v1.9`, `V025-STAGES-6-8-CONTRACT-v1*`, the reporting rules of the v1.7 erratum item 6 — every interval must carry method, sidedness, nominal level, cluster counts, panel scope and measured coverage).
+Output into `/home/sat/mcrl-hub-copy/.scratch/multi-catfish-v025-paper-lane-20260909/figures/`.
+
+Deliver `make_ch5_figures.py` with a command line `--receipts <dir> --out <dir> --label <PILOT_NOT_CLAIM|MATRIX|CONFIRMATORY>` that produces:
+1. **Fig 3 — physics certificates (a-r0 regime map).** Per setting: U1, J1 − U_all, S0's realised gain over the carrier baseline and over certified S_UNI, and the three factor-oracle marginals, each with its interval; availability and cap-hit alongside; the admission trichotomy's outcome annotated. Reads the matrix merge output.
+2. **Fig 4 — mechanism.** Net collision-avoidance value decomposed into interaction loss avoided and singleton value sacrificed (unclipped), the additive-reversal frequency, and nominal prediction versus realised outcome per anchor. Reads the per-anchor decomposition fields.
+3. **Fig 5 — learned contrasts** (for the confirmatory panel later): FULL versus each DROP with the +0.5 % and zero references, and the aligned QoS contrasts with their margins.
+Every figure: Chinese labels matching the thesis, the label banner (`PILOT_NOT_CLAIM` etc.) rendered visibly on the figure when the label is not CONFIRMATORY, vector + PNG output, and a sidecar `.csv` of every plotted point. If a required field is missing from the receipts, the script must fail loudly naming the field, never silently drop a series.
+Prove it: generate synthetic receipts that exercise every field, run the script, and include the three PNGs in your report as evidence the pipeline works end to end. Write `CH5-FIGURE-PIPELINE-README.md` describing exactly which receipt fields each panel consumes.
