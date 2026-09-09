@@ -46152,3 +46152,719 @@ index 0000000000000000000000000000000000000000..4f2136c8a1153fd1e6aff25d97c8e887
 +- [Copied batch formulation](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/cleared_margin_batch.py), [independent scalar formulation](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar_diagnostics.py), and [selector runner](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/oracle_runner.py).
 +- [Original reproduction audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/original-reproduction-audit.json), [selector/result audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/strict-result-audit.json), [clearance fixture audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/strict-variant-audit.json), and [numerical failure trace](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/uncapped-margin-failure-trace.json).
 
+codex
+The claimed occupancy-activation consolidation mechanism does not survive; oracle-over-unilateral gain falls from +6.359% to +0.513%.
+
+`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
+
+The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. A smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
+
+The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. Those rules include occupant subsets of size 2–4 (cap 1,024), complete-beam evacuations, and a victim plus its top two or three interference contributors (overall catalogue cap 4,096). The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
+
+| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 | Rate target attained / 2,000 |
+|---|---|---:|---:|---:|---:|---:|
+| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 | 0 |
+| Original | UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 | 0 |
+| Original | ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 | 0 |
+| Margin provisioned | BASELINE | 1,390.914269 | 175.288781 | 7.934987 | 1,165 | 426 |
+| Margin provisioned | UNILATERAL | 3,194.986296 | 73.067001 | 43.726802 | 2,000 | 1,364 |
+| Margin provisioned | ORACLE_SET | 3,198.919032 | 72.783895 | 43.950919 | 2,000 | 1,366 |
+
+**The decisive comparison is +6.359000% versus +0.512537%.** EE is the ratio of summed bits to summed joules. The percentage gain is 91.94% smaller. In the variant, ORACLE_SET changes energy by -0.3875% and decoded bits by +0.1231% relative to UNILATERAL. Its realised EE improves on 16 anchors and declines on 4; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. This smaller residual coordination gain does not validate the rejected occupancy-activation mechanism.
+
+The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
+
+The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
+
+```python
+required_se = rate_target_bps * occupancy / full_bandwidth_hz
+eligible = [
+    mode
+    for mode in ACM_MODES
+    if mode.spectral_efficiency_bit_per_s_hz >= required_se
+]
+return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
+```
+
+[architectures.py:727](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
+
+```python
+updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
+```
+
+At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [line 462](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
+
+```python
+return select_mode(nominal_sinr_linear * fading_product_quantile)
+```
+
+`select_mode` explicitly returns `None` when no threshold qualifies ([acm.py:69](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:69)):
+
+```python
+eligible = [mode for mode in ACM_MODES if sinr_linear >= mode.threshold_linear]
+return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
+```
+
+The dense path used by the oracle repeats these equations at [batch.py:301](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
+
+| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
+|---:|---:|---|---:|---:|
+| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
+| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
+| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
+
+Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
+
+The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
+
+At fixed transmit power and otherwise fixed link conditions, the lower required SE is easier to support. The original controller first reduces power to the lower target, then asks the mode selector for a fade allowance without provisioning that allowance.
+
+The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This adds the margin in dB and multiplies the linear target by `1/q`. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped fixed point, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
+
+The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
+
+A numerical trap had to be resolved before this comparison was valid. Simply dividing the target by q while retaining the finite solver unchanged produced **+0.544766%**, but left **1,179 uncapped occupancy-one NO_MODE attempts**. Their deficits below the first threshold were only 5.76e−12 to 2.616e−9 dB, with at least 0.04317 W of cap headroom. The final private variant retains the original solve, then verifies both `SINR_nominal >= Gamma/q` and `q*SINR_nominal >= threshold_target`. It raises only deficient uncapped powers with the existing capped interference update and existing numerical nudge, within the original iteration budget. All selectors were reoptimized after this correction. The uncorrected control is retained separately; it is not the decisive result.
+
+The census covers all 48 boundaries of all 60 committed profiles per formulation. An attempt is one transmission in a native TDM slot at one boundary. Raw counts can repeat a user's transmission when another beam changes the slot partition; airtime shares weight by the slot fraction and trapezoid boundary duration, making them the more comparable exposure measure.
+
+| Formulation | Selector | NO_MODE / attempts | Attempt share | Airtime share | Uncapped NO_MODE |
+|---|---|---:|---:|---:|---:|
+| Original | BASELINE | 396,440 / 507,744 | 78.079% | 78.195% | 212,910 |
+| Original | UNILATERAL | 48,249 / 431,424 | 11.184% | 10.545% | 29,984 |
+| Original | ORACLE_SET | 41,682 / 436,320 | 9.553% | 8.948% | 29,312 |
+| Margin provisioned | BASELINE | 246,525 / 507,744 | 48.553% | 48.448% | 0 |
+| Margin provisioned | UNILATERAL | 58 / 316,652 | 0.018% | 0.016% | 0 |
+| Margin provisioned | ORACLE_SET | 0 / 342,380 | 0.000% | 0.000% | 0 |
+
+Pooling the three selectors, the occupancy breakdown is:
+
+| Occupancy | Original NO_MODE / attempts (share) | Margin NO_MODE / attempts (share) | Original airtime share | Margin airtime share |
+|---:|---:|---:|---:|---:|
+| 1 | 208,608 / 208,608 (100.000%) | 73,227 / 491,138 (14.910%) | 100.000% | 9.022% |
+| 2 | 154,634 / 154,944 (99.800%) | 64,621 / 170,160 (37.977%) | 99.771% | 35.088% |
+| 3 | 59,348 / 344,448 (17.230%) | 49,502 / 337,392 (14.672%) | 21.602% | 9.947% |
+| 4 | 41,078 / 174,720 (23.511%) | 45,211 / 80,544 (56.132%) | 27.313% | 56.566% |
+| 5 | 11,580 / 270,912 (4.274%) | 9,663 / 75,062 (12.873%) | 5.211% | 9.412% |
+| 6 | 3,742 / 125,664 (2.978%) | 1,595 / 2,880 (55.382%) | 3.817% | 61.631% |
+| 7 | 4,873 / 45,888 (10.619%) | 2,764 / 9,600 (28.792%) | 12.157% | 25.087% |
+| 8 | 2,124 / 29,760 (7.137%) | No observations | 5.183% | — |
+| 9 | 384 / 6,528 (5.882%) | No observations | 7.407% | — |
+| 10 | 0 / 5,088 (0.000%) | No observations | 0.000% | — |
+| 11 | 0 / 8,928 (0.000%) | No observations | 0.000% | — |
+
+These pooled rows mix different link geometries and selected assignments, so their relative outage rates also reflect those differences.
+
+**Occupancies one and two are servable under the alternative.** They produce 383,324 and 99,282 decoded attempts respectively. Across the complete variant census there are **zero uncapped NO_MODE attempts and zero uncapped demoted-rate misses**. Remaining NO_MODE attempts occur at the RF cap. Realised fading can still prevent decoding after a mode is selected. In the original, occupancy one has no decoded attempts; occupancy two has 310, confirming that its prohibition was almost universal on these anchors, rather than absolute.
+
+At decision boundary zero, the observed activation signature also disappears: an existing occupancy-one/two beam with no eligible mode becomes decoded after ORACLE_SET increases its occupancy on **3 original transitions versus 0 variant transitions**. The original transitions are W1/step2, occupancy 1→5, and W3/steps1 and2, occupancy 1→3. This narrowly defined count excludes newly populated beams and is not a decomposition of the EE gain. At that same boundary in the variant, ORACLE_SET still reduces the number of occupied beams on 5 anchors, leaves it unchanged on 10, and increases it on 5. Generic consolidation and set interactions therefore remain; the structural floor-activation explanation does not.
+
+The review's adjacent-step margin explanation is not correct. On an original uncapped link, nominal headroom above the transmitted mode is `threshold_target − threshold_tx`; demotion can skip several modes. Actual decoding margin is `10 log10(SINR_realised) − threshold_tx_dB`, which also includes realised desired-link and interference fading. The measured distributions are:
+
+| Formulation | Margin distribution (dB) | Minimum | P05 | Median | P95 | Maximum |
+|---|---|---:|---:|---:|---:|---:|
+| Original | Nominal headroom above transmitted mode | 1.120 | 3.230 | 4.330 | 4.810 | 6.049 |
+| Original | Realised margin, all selected modes | -9.765 | 0.090 | 3.740 | 7.900 | 17.791 |
+| Original | Realised margin, decoded only | 0.000 | 1.020 | 3.830 | 7.980 | 17.791 |
+| Margin provisioned | Nominal headroom above transmitted mode | 1.107 | 2.870 | 3.790 | 4.540 | 5.963 |
+| Margin provisioned | Realised margin, all selected modes | -9.832 | -0.670 | 3.410 | 7.930 | 16.812 |
+| Margin provisioned | Realised margin, decoded only | 0.000 | 0.680 | 3.630 | 8.070 | 16.812 |
+
+These pool all three selectors. Percentiles are airtime-weighted, using 0.01 dB bins with at most 0.005 dB rounding; extrema retain full precision in the evidence. NO_MODE has no finite transmitted-mode margin and is counted separately. Negative realised margins are decode failures, so the decoded-only distribution is conditional on success.
+
+The margins actually applied span 1.107–4.830 dB. The model contains Rician fading, shadowing and scintillation, with no separate rain attenuation term. These results therefore cannot establish Ka-band rain availability. A rain margin depends on location-specific rainfall and the required exceedance probability, among other link parameters ([ITU-R P.618-14, §2.2.1.1](https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.618-14-202308-I!!PDF-E.pdf)).
+
+The rate accounting is explicit. [acm.py:93](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
+
+```python
+decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
+return ACMRealisedOutcome(
+    decoded,
+    realised_sinr_linear,
+    0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz,
+)
+```
+
+The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a mode with a strictly lower threshold cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
+
+The census confirms that all **846,846 original decoded attempts (100%)** use insufficient SE for `r*n/W`. No original user-anchor endpoint attains the 50 Mbit/s average target. In the margin variant, 53,615 of 850,345 decoded attempts (6.305%) miss that SE target, all at the cap. Whole-endpoint rate attainment is reported separately in the first table.
+
+Verification: all 20 original anchors reproduce the archived committed assignments, bits, joules and served counts exactly; internal F/Psi reductions differ by at most 1.91e−5 bit under serial batching, without changing any selection. All 120 original/variant committed scalar replays match batch bits and joules to relative errors at most 8.88e-16 and 8.88e-16, with identical served counts when using the preserved dense definition. The scalar adapter's stricter within-boundary AND service flag differs from the dense OR flag; neither implementation was amended, and the published dense definition is used consistently here. Seven focused fixtures independently verify uncapped target clearance, capped failures, scalar/batch agreement and unchanged uncoupled outputs.
+
+All changes stayed in this workspace. The sealed source tree remains `1728f6b0462f86d85618a4c73f4d1dd2d2c07376`; only diagnostic copies and outputs were added. Runs used the requested Python, `PYTHONPATH=src`, `nice -n 10`, one numerical thread per process and no more than three concurrent worker processes. No TEST split was opened.
+
+Reproducible evidence:
+
+- [Original results](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/original-result.json), [strict margin results](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/margin-cleared-result.json), and [uncorrected numerical control](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/margin-result.json).
+- [Complete census and parity receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json), [compact report data](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/report-data-cleared.json), and [activation transitions](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/activation-signatures-cleared.json).
+- [Copied batch formulation](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/cleared_margin_batch.py), [independent scalar formulation](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar_diagnostics.py), and [selector runner](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/oracle_runner.py).
+- [Original reproduction audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/original-reproduction-audit.json), [selector/result audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/strict-result-audit.json), [clearance fixture audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/strict-variant-audit.json), and [numerical failure trace](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/uncapped-margin-failure-trace.json).
+diff --git a/.scratch/ladder-floor-20260910/activation_signatures.py b/.scratch/ladder-floor-20260910/activation_signatures.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e772892ec3dbcc89a1e569ea25702d0600b833f3
+--- /dev/null
++++ b/.scratch/ladder-floor-20260910/activation_signatures.py
+@@ -0,0 +1,51 @@
++#!/usr/bin/env python3
++"""Count a narrowly defined observed occupancy-activation signature."""
++import argparse
++import json
++from pathlib import Path
++
++
++def summarize(census):
++    out = {}
++    for formulation in census["pooled"]:
++        rows = {
++            (row["anchor_id"], row["selector"]): {
++                tuple(beam["identity"]): beam for beam in row["boundary_zero_beams"]
++            }
++            for row in census["anchors"] if row["formulation"] == formulation
++        }
++        events = []
++        beam_count_changes = []
++        for (anchor, arm), unilateral in rows.items():
++            if arm != "UNILATERAL":
++                continue
++            oracle = rows[(anchor, "ORACLE_SET")]
++            beam_count_changes.append(len(oracle) - len(unilateral))
++            for identity, before in unilateral.items():
++                after = oracle.get(identity)
++                if (before["occupancy"] <= 2 and not before["has_mode_users"]
++                        and after and after["occupancy"] > before["occupancy"]
++                        and after["served_users"]):
++                    events.append({
++                        "anchor_id": anchor, "beam": list(identity),
++                        "before": before, "after": after,
++                    })
++        out[formulation] = {
++            "signature": "Existing occupancy-1/2 beam with no eligible mode in any boundary-zero slot becomes decoded after oracle increases its occupancy",
++            "scope": "Observed UNILATERAL-to-ORACLE transition; excludes newly activated beams and does not prove a unique causal contribution to gain",
++            "count": len(events), "events": events,
++            "oracle_active_beam_count_decreases": sum(x < 0 for x in beam_count_changes),
++            "oracle_active_beam_count_same": sum(x == 0 for x in beam_count_changes),
++            "oracle_active_beam_count_increases": sum(x > 0 for x in beam_count_changes),
++        }
++    return out
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("census", type=Path)
++    parser.add_argument("output", type=Path)
++    args = parser.parse_args()
++    result = summarize(json.loads(args.census.read_text()))
++    args.output.write_text(json.dumps(result, indent=2) + "\n")
++    print(json.dumps(result, indent=2))
+diff --git a/.scratch/ladder-floor-20260910/code-evidence.md b/.scratch/ladder-floor-20260910/code-evidence.md
+index 3732abfd28b6bc1d2639a349210bfe10bb2718b8..cf0608dd4b46f1fe42328a2524078e22a43c6074
+--- a/.scratch/ladder-floor-20260910/code-evidence.md
++++ b/.scratch/ladder-floor-20260910/code-evidence.md
+@@ -102,7 +102,9 @@
+ 
+ Read-only source audit performed in `/home/sat/mcrl-v025-ladder-ws`; no sealed values or source files changed. Numerical real-anchor distributions and optimizer outcomes belong to the parent's independent evaluation. The parent had already run a scalar uncapped reproduction before assigning this source audit.
+ 
+-## Suggested conclusion after the completed margin run
++## Preliminary unchanged-finite-solver control (superseded for the strict variant)
++
++The paragraphs below describe `margin-result.json`, the first Gamma/q control with the inherited stopping rule. The complete census subsequently found 1,179 uncapped occupancy-one NO_MODE attempts caused by deficits of at most 2.616e-9 dB, despite CONVERGED status. This control does not fully implement the requested SINR inequality. The decisive alternative is reoptimized with `cleared_margin_batch.py`; use the workspace-root report and `margin-cleared-result.json` for final conclusions. The control is retained as numerical sensitivity evidence.
+ 
+ **The claimed low-occupancy activation mechanism does not survive margin provisioning; the oracle-over-unilateral EE gain falls from +6.359% to +0.545%, leaving a small residual set-selection advantage.**
+ 
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+diff --git a/.scratch/ladder-floor-20260910/complete_report.py b/.scratch/ladder-floor-20260910/complete_report.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..10cd9e231fe0abd2852439549f5b8b06887c9450
+--- /dev/null
++++ b/.scratch/ladder-floor-20260910/complete_report.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""Fill the diagnostic report from the complete, verified strict experiment."""
++import json
++import math
++from pathlib import Path
++
++HERE = Path(__file__).resolve().parent
++ROOT = HERE.parents[1]
++REPORT = ROOT / "LADDER-FLOOR-2026-09-10.md"
++data = json.loads((HERE / "report-data-cleared.json").read_text())
++census = json.loads((HERE / "scalar-census-summary-cleared.json").read_text())
++activation = json.loads((HERE / "activation-signatures-cleared.json").read_text())
++reproduction = json.loads((HERE / "original-reproduction-audit.json").read_text())
++assert data["complete_20_anchor_panel"] and census["parity_passed"]
++assert reproduction["committed_endpoints_and_configuration_ids_exact"]
++forms = data["formulations"]
++original, margin = forms["original"], forms["margin-cleared"]
++assert margin["arms"]["ALL"]["counts"]["no_mode_uncapped"] == 0
++assert margin["arms"]["ALL"]["counts"]["served_target_miss_uncapped"] == 0
++gain = margin["oracle_over_unilateral_pct"]
++assert 0 < gain < 6.359  # If the completed outcome changes, rewrite the interpretation.
++text = REPORT.read_text()
++text = text.split("\n", 1)[1]
++text = f"The claimed occupancy-activation consolidation mechanism does not survive; oracle-over-unilateral gain falls from +6.359% to {gain:+.3f}%.\n" + text
++
++table = [
++    "| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 | Rate target attained / 2,000 |",
++    "|---|---|---:|---:|---:|---:|---:|",
++]
++for key, label in (("original", "Original"), ("margin-cleared", "Margin provisioned")):
++    for arm in ("BASELINE", "UNILATERAL", "ORACLE_SET"):
++        v = forms[key]["arms"][arm]
++        table.append(f"| {label} | {arm} | {v['bits']/1e9:,.6f} | {v['joules']/1e3:,.6f} | {v['ee_bit_per_j']/1e6:,.6f} | {v['served_count_sum']:,} | {v['rate_target_attained_users_sum']:,} |")
++start = text.index("| Formulation | Selector |")
++end = text.index("\n\n**The decisive comparison", start)
++text = text[:start] + "\n".join(table) + text[end:]
++u, o = (margin["arms"][a] for a in ("UNILATERAL", "ORACLE_SET"))
++energy_change = 100 * (o["joules"] / u["joules"] - 1)
++bits_change = 100 * (o["bits"] / u["bits"] - 1)
++decisive = (
++    f"**The decisive comparison is +6.359000% versus {gain:+.6f}%.** EE is the ratio of summed bits to summed joules. "
++    f"The percentage gain is {100*(1-gain/original['oracle_over_unilateral_pct']):.2f}% smaller. "
++    f"In the variant, ORACLE_SET changes energy by {energy_change:+.4f}% and decoded bits by {bits_change:+.4f}% relative to UNILATERAL. "
++    f"Its realised EE improves on {margin['positive_oracle_ee_anchors']} anchors and declines on {margin['negative_oracle_ee_anchors']}; the original improves on all 20. "
++    f"Positive joint selection-objective improvements still exist on {margin['qualifying_set_count']}/20 variant anchors. "
++    "This smaller residual coordination gain does not validate the rejected occupancy-activation mechanism."
++)
++start = text.index("**The decisive comparison")
++end = text.index("\n\nThe selectors maximize", start)
++text = text[:start] + decisive + text[end:]
++
++lines = [
++    "A numerical trap had to be resolved before this comparison was valid. Simply dividing the target by q while retaining the finite solver unchanged produced **+0.544766%**, but left **1,179 uncapped occupancy-one NO_MODE attempts**. Their deficits below the first threshold were only 5.76e−12 to 2.616e−9 dB, with at least 0.04317 W of cap headroom. The final private variant retains the original solve, then verifies both `SINR_nominal >= Gamma/q` and `q*SINR_nominal >= threshold_target`. It raises only deficient uncapped powers with the existing capped interference update and existing numerical nudge, within the original iteration budget. All selectors were reoptimized after this correction. The uncorrected control is retained separately; it is not the decisive result.",
++    "",
++    "The census covers all 48 boundaries of all 60 committed profiles per formulation. An attempt is one transmission in a native TDM slot at one boundary. Raw counts can repeat a user's transmission when another beam changes the slot partition; airtime shares weight by the slot fraction and trapezoid boundary duration, making them the more comparable exposure measure.",
++    "",
++    "| Formulation | Selector | NO_MODE / attempts | Attempt share | Airtime share | Uncapped NO_MODE |",
++    "|---|---|---:|---:|---:|---:|",
++]
++for key, label in (("original", "Original"), ("margin-cleared", "Margin provisioned")):
++    for arm in ("BASELINE", "UNILATERAL", "ORACLE_SET"):
++        v = forms[key]["arms"][arm]["counts"]
++        lines.append(f"| {label} | {arm} | {v['no_mode']:,} / {v['attempts']:,} | {100*v['no_mode_share']:.3f}% | {100*v['no_mode_duration_share']:.3f}% | {v['no_mode_uncapped']:,} |")
++lines += [
++    "", "Pooling the three selectors, the occupancy breakdown is:", "",
++    "| Occupancy | Original NO_MODE / attempts (share) | Margin NO_MODE / attempts (share) | Original airtime share | Margin airtime share |",
++    "|---:|---:|---:|---:|---:|",
++]
++old_occ = original["arms"]["ALL"]["by_occupancy"]
++new_occ = margin["arms"]["ALL"]["by_occupancy"]
++for n in sorted(set(old_occ) | set(new_occ), key=int):
++    pair = (old_occ.get(n), new_occ.get(n))
++    counts = ["No observations" if not v else f"{v['no_mode']:,} / {v['attempts']:,} ({100*v['no_mode_share']:.3f}%)" for v in pair]
++    exposure = ["—" if not v else f"{100*v['no_mode_duration_share']:.3f}%" for v in pair]
++    lines.append(f"| {n} | " + " | ".join(counts + exposure) + " |")
++lines += [
++    "",
++    "These pooled rows mix different link geometries and selected assignments, so their relative outage rates also reflect those differences.",
++    "",
++    f"**Occupancies one and two are servable under the alternative.** They produce {new_occ['1']['decoded']:,} and {new_occ['2']['decoded']:,} decoded attempts respectively. Across the complete variant census there are **zero uncapped NO_MODE attempts and zero uncapped demoted-rate misses**. Remaining NO_MODE attempts occur at the RF cap. Realised fading can still prevent decoding after a mode is selected. In the original, occupancy one has no decoded attempts; occupancy two has {old_occ['2']['decoded']:,}, confirming that its prohibition was almost universal on these anchors, rather than absolute.",
++    "",
++    f"The observed activation signature also disappears: an existing occupancy-one/two beam with no eligible mode becomes decoded after ORACLE_SET increases its occupancy on **{activation['original']['count']} original transitions versus {activation['margin-cleared']['count']} variant transitions**. The original transitions are W1/step2, occupancy 1→5, and W3/steps1 and2, occupancy 1→3. This narrowly defined count excludes newly populated beams and is not a decomposition of the EE gain. In the variant, ORACLE_SET still reduces the number of occupied beams on {activation['margin-cleared']['oracle_active_beam_count_decreases']} anchors, leaves it unchanged on {activation['margin-cleared']['oracle_active_beam_count_same']}, and increases it on {activation['margin-cleared']['oracle_active_beam_count_increases']}. Generic consolidation and set interactions therefore remain; the structural floor-activation explanation does not.",
++    "",
++    "The review's adjacent-step margin explanation is not correct. On an original uncapped link, nominal headroom above the transmitted mode is `threshold_target − threshold_tx`; demotion can skip several modes. Actual decoding margin is `10 log10(SINR_realised) − threshold_tx_dB`, which also includes realised desired-link and interference fading. The measured distributions are:",
++    "",
++    "| Formulation | Margin distribution (dB) | Minimum | P05 | Median | P95 | Maximum |",
++    "|---|---|---:|---:|---:|---:|---:|",
++]
++for key, label in (("original", "Original"), ("margin-cleared", "Margin provisioned")):
++    for name, title in (("nominal_tx_margin_db", "Nominal headroom above transmitted mode"), ("realised_tx_margin_db", "Realised margin, all selected modes"), ("realised_tx_margin_served_db", "Realised margin, decoded only")):
++        v = forms[key]["arms"]["ALL"]["distributions"][name]["duration_weighted"]
++        lines.append(f"| {label} | {title} | " + " | ".join(f"{v[k]:.3f}" for k in ("min", "P05", "P50", "P95", "max")) + " |")
++lines += [
++    "",
++    "These pool all three selectors. Percentiles are airtime-weighted, using 0.01 dB bins with at most 0.005 dB rounding; extrema retain full precision in the evidence. NO_MODE has no finite transmitted-mode margin and is counted separately. Negative realised margins are decode failures, so the decoded-only distribution is conditional on success.",
++    "",
++    "The margins actually applied span 1.107–4.830 dB. The model contains Rician fading, shadowing and scintillation, with no separate rain attenuation term. These results therefore cannot establish Ka-band rain availability. A rain margin depends on location-specific rainfall and the required exceedance probability, among other link parameters ([ITU-R P.618-14, §2.2.1.1](https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.618-14-202308-I!!PDF-E.pdf)).",
++]
++text = text.replace("<!-- FULL_CENSUS_RESULTS -->", "\n".join(lines))
++old_count = original["arms"]["ALL"]["counts"]
++new_count = margin["arms"]["ALL"]["counts"]
++rates = (
++    f"The census confirms that all **{old_count['decoded']:,} original decoded attempts ({100*old_count['served_target_miss_share_of_decoded']:.0f}%)** use insufficient SE for `r*n/W`. "
++    "No original user-anchor endpoint attains the 50 Mbit/s average target. "
++    f"In the margin variant, {new_count['served_target_miss']:,} of {new_count['decoded']:,} decoded attempts ({100*new_count['served_target_miss_share_of_decoded']:.3f}%) miss that SE target, all at the cap. "
++    "Whole-endpoint rate attainment is reported separately in the first table."
++)
++max_bits = max(abs(v["bits_relative_difference"]) for v in census["parity"])
++max_joules = max(abs(v["joules_relative_difference"]) for v in census["parity"])
++verification = (
++    rates + "\n\n"
++    f"Verification: all 20 original anchors reproduce the archived committed assignments, bits, joules and served counts exactly; internal F/Psi reductions differ by at most 1.91e−5 bit under serial batching, without changing any selection. All 120 original/variant committed scalar replays match batch bits and joules to relative errors at most {max_bits:.2e} and {max_joules:.2e}, with identical served counts when using the preserved dense definition. The scalar adapter's stricter within-boundary AND service flag differs from the dense OR flag; neither implementation was amended, and the published dense definition is used consistently here. Seven focused fixtures independently verify uncapped target clearance, capped failures, scalar/batch agreement and unchanged uncoupled outputs.\n\n"
++    "All changes stayed in this workspace. The sealed source tree remains `1728f6b0462f86d85618a4c73f4d1dd2d2c07376`; only diagnostic copies and outputs were added. Runs used the requested Python, `PYTHONPATH=src`, `nice -n 10`, one numerical thread per process and no more than three concurrent worker processes. No TEST split was opened.\n\n"
++    "Reproducible evidence:\n\n"
++    f"- [Original results]({HERE}/original-result.json), [strict margin results]({HERE}/margin-cleared-result.json), and [uncorrected numerical control]({HERE}/margin-result.json).\n"
++    f"- [Complete census and parity receipt]({HERE}/scalar-census-summary-cleared.json), [compact report data]({HERE}/report-data-cleared.json), and [activation transitions]({HERE}/activation-signatures-cleared.json).\n"
++    f"- [Copied batch formulation]({HERE}/cleared_margin_batch.py), [independent scalar formulation]({HERE}/scalar_diagnostics.py), and [selector runner]({HERE}/oracle_runner.py).\n"
++    f"- [Original reproduction audit]({HERE}/original-reproduction-audit.json), [selector/result audit]({HERE}/strict-result-audit.json), [clearance fixture audit]({HERE}/strict-variant-audit.json), and [numerical failure trace]({HERE}/uncapped-margin-failure-trace.json)."
++)
++text = text.replace("<!-- VERIFICATION_AND_ARTIFACTS -->", verification)
++text = text.replace("[architectures.py:727–742]", "[architectures.py:727]")
++text = text.replace("[lines 462–480]", "[line 462]")
++text = text.replace("[batch.py:301–314 and 395–417]", "[batch.py:301]")
++text = text.replace("[acm.py:93–98]", "[acm.py:93]")
++assert "<!--" not in text
++REPORT.write_text(text)
++print(REPORT)
+diff --git a/.scratch/ladder-floor-20260910/interpretation-review.md b/.scratch/ladder-floor-20260910/interpretation-review.md
+index 1467c830833291704513f82aa07935ea62912aee..9315a39f19738741c7e6b4bb32e9c62a042ac7bb
+--- a/.scratch/ladder-floor-20260910/interpretation-review.md
++++ b/.scratch/ladder-floor-20260910/interpretation-review.md
+@@ -4,4 +4,4 @@
+ 
+ The unchanged service rule recomputes its guard from BASELINE under each formulation. It constrains selection-time served count against BASELINE, not against UNILATERAL and not against rate-target satisfaction. This is reoptimization under a changed physical formulation, not rescoring fixed assignments. Consequently the realized candidate catalogues also differ, while their construction rules remain fixed.
+ 
+-At review time, 10 margin anchors yield −0.244636% pooled oracle-over-unilateral EE, with both serving 1,000/1,000 user-anchor endpoints. All eight completed original anchors match archived configurations and committed outcomes exactly; three contain only approximately 10⁻⁵-bit selection-reduction differences. These partial figures must be replaced by the complete panel before reporting a verdict.
++Final quantitative conclusions belong to `LADDER-FLOOR-2026-09-10.md` in the workspace root. The initial unchanged-finite-solver Gamma/q control must be distinguished from the strict margin variant: the control retained tiny uncapped target deficits that still triggered NO_MODE at the mode-table floor. The strict variant verifies actual clearance and reoptimizes all selectors. Both results are retained rather than silently substituting one for the other.
+diff --git a/.scratch/ladder-floor-20260910/oracle_runner.py b/.scratch/ladder-floor-20260910/oracle_runner.py
+index 989f19b6326913ffe960b3b97c68d7ba2633b6a1..4f80c55b6b185ef69cfe88643d09d26ede7c9c45
+--- a/.scratch/ladder-floor-20260910/oracle_runner.py
++++ b/.scratch/ladder-floor-20260910/oracle_runner.py
+@@ -687,6 +687,9 @@
+     if formulation == "margin":
+         import margin_batch
+         probe.evaluate_ar_tdm_catalogue = margin_batch.evaluate_ar_tdm_catalogue
++    elif formulation == "margin-cleared":
++        import cleared_margin_batch
++        probe.evaluate_ar_tdm_catalogue = cleared_margin_batch.evaluate_ar_tdm_catalogue
+     elif formulation != "original":
+         raise RuntimeError(f"unknown formulation: {formulation}")
+     anchors = []
+@@ -811,7 +814,7 @@
+     parser.add_argument("--anchors-per-world", type=int, default=ANCHORS_PER_WORLD)
+     parser.add_argument("--output", type=Path, required=True)
+     parser.add_argument("--self-test", action="store_true")
+-    parser.add_argument("--formulation", choices=("original", "margin"), default="original")
++    parser.add_argument("--formulation", choices=("original", "margin", "margin-cleared"), default="original")
+     args = parser.parse_args()
+     worlds = 1 if args.self_test else args.worlds
+     anchors = 1 if args.self_test else args.anchors_per_world
+diff --git a/.scratch/ladder-floor-20260910/run_scalar_census.py b/.scratch/ladder-floor-20260910/run_scalar_census.py
+index 4cd9e107a8484b39f9662d1f94c8b2ea5c5f6031..d8b4e7a161f229a3ffa0c10f691900ee6145cdaf
+--- a/.scratch/ladder-floor-20260910/run_scalar_census.py
++++ b/.scratch/ladder-floor-20260910/run_scalar_census.py
+@@ -18,7 +18,7 @@
+ import time
+ 
+ import oracle_runner
+-from scalar_diagnostics import census
++from scalar_diagnostics import census, SCALAR_CLEARANCE_DIAGNOSTICS
+ from mcrl.physics_v025.provider_legacy import factory as real_factory
+ 
+ 
+@@ -101,14 +101,15 @@
+     }
+ 
+ 
+-def run(limit=None):
++def run(limit=None, margin_formulation="margin"):
+     started = time.perf_counter()
+-    results = {formulation: read_result(formulation) for formulation in ("original", "margin")}
++    forms = ("original", margin_formulation)
++    results = {formulation: read_result(formulation) for formulation in forms}
+     anchors = {
+         formulation: {row["anchor_id"]: row for row in result["anchors"]}
+         for formulation, result in results.items()
+     }
+-    common = sorted(set(anchors["original"]) & set(anchors["margin"]))
++    common = sorted(set(anchors["original"]) & set(anchors[margin_formulation]))
+     if limit is None and len(common) != 20:
+         raise RuntimeError(f"full census requires all 20 matched anchors; found {len(common)}")
+     if limit is not None:
+@@ -130,10 +131,10 @@
+             loaded_domain = domain
+             loaded_digest = tape.digest
+             world_digests[domain] = loaded_digest
+-        for formulation in ("original", "margin"):
++        for formulation in forms:
+             if anchors[formulation][anchor_id]["world_sha256"] != loaded_digest:
+                 raise RuntimeError(f"rebuilt tape digest mismatch for {formulation} {anchor_id}")
+-        for formulation in ("original", "margin"):
++        for formulation in forms:
+             anchor = anchors[formulation][anchor_id]
+             step = int(anchor["step_index"])
+             for selector, profile in anchor["committed"].items():
+@@ -165,18 +166,20 @@
+                 selector: summarize(pooled_rows[(formulation, selector)])
+                 for selector in ("BASELINE", "UNILATERAL", "ORACLE_SET")
+             }
+-            for formulation in ("original", "margin")
++            for formulation in forms
+         },
+         "anchors": details, "world_sha256": world_digests, "wall_seconds": time.perf_counter() - started,
++        "scalar_clearance_diagnostics": dict(SCALAR_CLEARANCE_DIAGNOSTICS),
+     }
+-    for formulation in ("original", "margin"):
++    for formulation in forms:
+         result["pooled"][formulation]["ALL"] = summarize([
+             row
+             for selector in ("BASELINE", "UNILATERAL", "ORACLE_SET")
+             for row in pooled_rows[(formulation, selector)]
+         ])
+         result["pooled"][formulation]["ALL"]["unique_anchor_count"] = len(common)
+-    suffix = "" if limit is None else f"-first{limit}"
++    suffix = "-cleared" if margin_formulation == "margin-cleared" else ""
++    suffix += "" if limit is None else f"-first{limit}"
+     hist_output = HERE / f"scalar-census-histograms{suffix}.json.gz"
+     hist_payload = {
+         formulation: {
+@@ -200,5 +203,6 @@
+ if __name__ == "__main__":
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--limit", type=int)
++    parser.add_argument("--margin-formulation", choices=("margin", "margin-cleared"), default="margin")
+     args = parser.parse_args()
+-    run(args.limit)
++    run(args.limit, args.margin_formulation)
+diff --git a/.scratch/ladder-floor-20260910/scalar_diagnostics.py b/.scratch/ladder-floor-20260910/scalar_diagnostics.py
+index 51e03043aa6878724c9f960700634ee18ac4ce8f..0b36e778389cf2559e4d2c5463b84e01832b366c
+--- a/.scratch/ladder-floor-20260910/scalar_diagnostics.py
++++ b/.scratch/ladder-floor-20260910/scalar_diagnostics.py
+@@ -271,6 +271,7 @@
+                         "decode_failure_with_mode": has_mode and not decoded,
+                         "cap_hits": cap_hit,
+                         "served_target_miss": target_miss,
++                        "served_target_miss_uncapped": target_miss and not cap_hit,
+                     }
+                     for name, flag in flags.items():
+                         if flag:
+@@ -337,7 +338,7 @@
+ 
+     count_keys = (
+         "attempts", "no_mode", "no_mode_uncapped", "has_mode", "decoded",
+-        "decode_failure_with_mode", "cap_hits", "served_target_miss",
++        "decode_failure_with_mode", "cap_hits", "served_target_miss", "served_target_miss_uncapped",
+     )
+     def normalize(row):
+         for key in count_keys:
+diff --git a/.scratch/ladder-floor-20260910/summarize_report_data.py b/.scratch/ladder-floor-20260910/summarize_report_data.py
+index c119dcca402da3fd194c7860162469aad53f9dce..286653d4d621369d53063f65e5732fabf30611e3
+--- a/.scratch/ladder-floor-20260910/summarize_report_data.py
++++ b/.scratch/ladder-floor-20260910/summarize_report_data.py
+@@ -12,7 +12,7 @@
+ HERE = Path(__file__).resolve().parent
+ ARMS = ("BASELINE", "UNILATERAL", "ORACLE_SET")
+ FORMS = ("original", "margin")
+-COUNT_KEYS = ("attempts", "no_mode", "no_mode_uncapped", "has_mode", "decoded", "served_target_miss", "decode_failure_with_mode", "cap_hits")
++COUNT_KEYS = ("attempts", "no_mode", "no_mode_uncapped", "has_mode", "decoded", "served_target_miss", "served_target_miss_uncapped", "decode_failure_with_mode", "cap_hits")
+ DISTRIBUTIONS = ("q_margin_db", "elevation_deg", "nominal_tx_margin_db", "realised_tx_margin_db", "realised_tx_margin_served_db", "nominal_target_margin_db", "nominal_provisioned_target_margin_db")
+ 
+ 
+@@ -74,7 +74,8 @@
+     return json.loads(path.read_text())
+ 
+ 
+-def make_report(*, allow_prefix=False, census_path=None):
++def make_report(*, allow_prefix=False, census_path=None, margin_formulation="margin"):
++    forms = ("original", margin_formulation)
+     census_path = census_path or HERE / "scalar-census-summary.json"
+     if allow_prefix and not census_path.exists():
+         census_path = HERE / "scalar-census-summary-first1.json"
+@@ -88,7 +89,7 @@
+         raise RuntimeError("final report requires 20 census anchors")
+     result_paths = {}
+     results = {}
+-    for form in FORMS:
++    for form in forms:
+         path = HERE / f"{form}-result.json"
+         if allow_prefix and not path.exists():
+             path = HERE / f"{form}-result.checkpoint.json"
+@@ -98,11 +99,11 @@
+         if not ids <= set(available) or (not allow_prefix and set(available) != ids):
+             raise RuntimeError(f"{form} anchor coverage mismatch")
+         results[form] = [row for row in source["anchors"] if row["anchor_id"] in ids]
+-    for old, new in zip(results["original"], results["margin"], strict=True):
++    for old, new in zip(results["original"], results[margin_formulation], strict=True):
+         if (old["anchor_id"], old["world_sha256"]) != (new["anchor_id"], new["world_sha256"]):
+             raise RuntimeError("formulations do not share identical anchors and tapes")
+     histogram_payload = None
+-    if any("ALL" not in census["pooled"][form] for form in FORMS):
++    if any("ALL" not in census["pooled"][form] for form in forms):
+         hist_path = census_path.parent / census["histograms_file"]
+         histogram_payload = json.loads(gzip.decompress(hist_path.read_bytes()))
+ 
+@@ -117,7 +118,7 @@
+         "census_source": {"path": str(census_path), "sha256": hashlib.sha256(census_path.read_bytes()).hexdigest()},
+         "formulations": {},
+     }
+-    for form in FORMS:
++    for form in forms:
+         anchors = results[form]
+         arms = {}
+         for arm in ARMS:
+@@ -200,9 +201,10 @@
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--allow-prefix", action="store_true")
+     parser.add_argument("--census", type=Path)
++    parser.add_argument("--margin-formulation", choices=("margin", "margin-cleared"), default="margin")
+     parser.add_argument("--output", type=Path, default=HERE / "report-data.json")
+     args = parser.parse_args()
+-    result = make_report(allow_prefix=args.allow_prefix, census_path=args.census)
++    result = make_report(allow_prefix=args.allow_prefix, census_path=args.census, margin_formulation=args.margin_formulation)
+     args.output.write_text(json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n")
+     table_text = tables(result)
+     args.output.with_suffix(".tables.md").write_text(table_text)
+diff --git a/LADDER-FLOOR-2026-09-10.md b/LADDER-FLOOR-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f2136c8a1153fd1e6aff25d97c8e88786e54b46
+--- /dev/null
++++ b/LADDER-FLOOR-2026-09-10.md
+@@ -0,0 +1,145 @@
++The claimed occupancy-activation consolidation mechanism does not survive; oracle-over-unilateral gain falls from +6.359% to +0.513%.
++
++`DIAGNOSTIC_NOT_CLAIM`. This is a diagnostic variant evaluated on a copy. No sealed source, constant, calibration price, cap, mode-table entry or declared physics was amended.
++
++The proposed explanation that low occupancy is physically unservable is a **table-floor artefact of the power/mode control law**. A smaller positive joint-search benefit remains. That residual does not validate the rejected occupancy-activation explanation.
++
++The same 20 real TRAIN anchors were evaluated: `V025_PROBE_R2/world/1–4`, decision steps `0–4`, with 100 users each. Both formulations use the same exogenous tapes, nearest-eligible BASELINE, exhaustive cyclic unilateral search to a terminal no-improvement pass, and bounded oracle catalogue rules. Those rules include occupant subsets of size 2–4 (cap 1,024), complete-beam evacuations, and a victim plus its top two or three interference contributors (overall catalogue cap 4,096). The catalogue is regenerated from each formulation's unilateral optimum. The RF cap remains 1.65 W, target remains 50 Mbit/s, bandwidth remains 500/3 MHz, and the selection price remains exactly 19,720,681.00172232 bit/J. Neither search has a deadline fallback.
++
++| Formulation | Selector | Decoded bits (Gbit) | Energy (kJ) | Pooled EE (Mbit/J) | Served / 2,000 | Rate target attained / 2,000 |
++|---|---|---:|---:|---:|---:|---:|
++| Original | BASELINE | 545.927268 | 146.564590 | 3.724824 | 826 | 0 |
++| Original | UNILATERAL | 1,660.779577 | 58.332519 | 28.470904 | 1,939 | 0 |
++| Original | ORACLE_SET | 1,694.404971 | 55.955362 | 30.281369 | 1,957 | 0 |
++| Margin provisioned | BASELINE | 1,390.914269 | 175.288781 | 7.934987 | 1,165 | 426 |
++| Margin provisioned | UNILATERAL | 3,194.986296 | 73.067001 | 43.726802 | 2,000 | 1,364 |
++| Margin provisioned | ORACLE_SET | 3,198.919032 | 72.783895 | 43.950919 | 2,000 | 1,366 |
++
++**The decisive comparison is +6.359000% versus +0.512537%.** EE is the ratio of summed bits to summed joules. The percentage gain is 91.94% smaller. In the variant, ORACLE_SET changes energy by -0.3875% and decoded bits by +0.1231% relative to UNILATERAL. Its realised EE improves on 16 anchors and declines on 4; the original improves on all 20. Positive joint selection-objective improvements still exist on 20/20 variant anchors. This smaller residual coordination gain does not validate the rejected occupancy-activation mechanism.
++
++The selectors maximize `F = B − eta_ref E` at realised decision boundary zero; committed outcomes use all 48 realised boundaries over 30.08 s. “Certified” means a coordinate-wise optimum for that fixed objective and the original BASELINE-relative served-count guard, not a global EE optimum. The same guard rule is recomputed under each formulation. Reported served counts retain the original dense evaluator's definition: a user has some successful decoding during the endpoint. They do not mean continuous service or attainment of 50 Mbit/s.
++
++The code establishes the cause directly. Required SE is `r* n/W = 0.3n`. Target selection in [acm.py](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:132) is:
++
++```python
++required_se = rate_target_bps * occupancy / full_bandwidth_hz
++eligible = [
++    mode
++    for mode in ACM_MODES
++    if mode.spectral_efficiency_bit_per_s_hz >= required_se
++]
++return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
++```
++
++[architectures.py:727](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:727) passes that threshold into the nominal coupled power solve. Its update at [line 392](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:392) is:
++
++```python
++updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
++```
++
++At an uncapped fixed point, nominal SINR therefore equals `Gamma(n)`. The same nominal channel is used to recompute SINR, followed by quantile-adjusted selection at [line 462](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/architectures.py:462). [acm.py:83](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:83) then executes:
++
++```python
++return select_mode(nominal_sinr_linear * fading_product_quantile)
++```
++
++`select_mode` explicitly returns `None` when no threshold qualifies ([acm.py:69](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:69)):
++
++```python
++eligible = [mode for mode in ACM_MODES if sinr_linear >= mode.threshold_linear]
++return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
++```
++
++The dense path used by the oracle repeats these equations at [batch.py:301](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:301).
++
++| Occupancy | Required SE | Target mode | Target threshold (dB) | Distance above table floor |
++|---:|---:|---|---:|---:|
++| 1 | 0.3 | QPSK 1/4 | −1.44181246 | 0 dB |
++| 2 | 0.6 | QPSK 2/5 | 0.60818754 | 2.05 dB |
++| 3 | 0.9 | QPSK 3/5 | 3.13818754 | 4.58 dB |
++
++Thus `q*Gamma(1)` falls below the first threshold whenever `q<1` by a meaningful amount. **The structural occupancy-one `NO_MODE` is the table floor; the cap is not necessary to produce it.** Occupancy two similarly loses every mode when its quantile deficit exceeds 2.05 dB. It is not universally unservable: sufficiently high quantiles leave QPSK 1/4 available. An isolated uncapped replay reproduces these outcomes without interference.
++
++The deeper zero-margin reading is correct: **every feasible uncapped occupancy receives essentially zero nominal fade margin above its target mode. Only higher occupancies have lower modes to fall back to.** Capped, target-infeasible links can have negative target margin. The existing `1+2e−9` power-clearance nudge and rounded service floor add only numerical clearance, approximately 10⁻⁸ dB, not an engineering margin. The common 1.7 dB implementation allowance is already inside each mode threshold.
++
++At fixed transmit power and otherwise fixed link conditions, the lower required SE is easier to support. The original controller first reduces power to the lower target, then asks the mode selector for a fade allowance without provisioning that allowance.
++
++The alternative provisions `margin_dB(e) = −10 log10(q_0.10(e))`, so its power-solve target is `Gamma_margin(e,n) = Gamma(n)/q_0.10(e)`. This adds the margin in dB and multiplies the linear target by `1/q`. The existing quantile remains in transmitted-mode selection, and coupled powers are re-solved with the original caps. At an uncapped fixed point, `q*SINR_nominal = Gamma(n)`, making the rate-target mode available even at occupancy one. Cap-limited links retain the existing demotion/failure behavior.
++
++The quantile is the existing deterministic 200,000-draw Rician × shadowing × scintillation product quantile, cached at the nearest 0.5° elevation bin; alpha stays 0.10. Illustrative mappings are 3.6730 dB at 10°, 2.9064 dB at 30°, 4.2224 dB at 60°, and 1.1073 dB at 90°. These are the model's elevation-specific margins, not an assumed Ka-band rain requirement.
++
++A numerical trap had to be resolved before this comparison was valid. Simply dividing the target by q while retaining the finite solver unchanged produced **+0.544766%**, but left **1,179 uncapped occupancy-one NO_MODE attempts**. Their deficits below the first threshold were only 5.76e−12 to 2.616e−9 dB, with at least 0.04317 W of cap headroom. The final private variant retains the original solve, then verifies both `SINR_nominal >= Gamma/q` and `q*SINR_nominal >= threshold_target`. It raises only deficient uncapped powers with the existing capped interference update and existing numerical nudge, within the original iteration budget. All selectors were reoptimized after this correction. The uncorrected control is retained separately; it is not the decisive result.
++
++The census covers all 48 boundaries of all 60 committed profiles per formulation. An attempt is one transmission in a native TDM slot at one boundary. Raw counts can repeat a user's transmission when another beam changes the slot partition; airtime shares weight by the slot fraction and trapezoid boundary duration, making them the more comparable exposure measure.
++
++| Formulation | Selector | NO_MODE / attempts | Attempt share | Airtime share | Uncapped NO_MODE |
++|---|---|---:|---:|---:|---:|
++| Original | BASELINE | 396,440 / 507,744 | 78.079% | 78.195% | 212,910 |
++| Original | UNILATERAL | 48,249 / 431,424 | 11.184% | 10.545% | 29,984 |
++| Original | ORACLE_SET | 41,682 / 436,320 | 9.553% | 8.948% | 29,312 |
++| Margin provisioned | BASELINE | 246,525 / 507,744 | 48.553% | 48.448% | 0 |
++| Margin provisioned | UNILATERAL | 58 / 316,652 | 0.018% | 0.016% | 0 |
++| Margin provisioned | ORACLE_SET | 0 / 342,380 | 0.000% | 0.000% | 0 |
++
++Pooling the three selectors, the occupancy breakdown is:
++
++| Occupancy | Original NO_MODE / attempts (share) | Margin NO_MODE / attempts (share) | Original airtime share | Margin airtime share |
++|---:|---:|---:|---:|---:|
++| 1 | 208,608 / 208,608 (100.000%) | 73,227 / 491,138 (14.910%) | 100.000% | 9.022% |
++| 2 | 154,634 / 154,944 (99.800%) | 64,621 / 170,160 (37.977%) | 99.771% | 35.088% |
++| 3 | 59,348 / 344,448 (17.230%) | 49,502 / 337,392 (14.672%) | 21.602% | 9.947% |
++| 4 | 41,078 / 174,720 (23.511%) | 45,211 / 80,544 (56.132%) | 27.313% | 56.566% |
++| 5 | 11,580 / 270,912 (4.274%) | 9,663 / 75,062 (12.873%) | 5.211% | 9.412% |
++| 6 | 3,742 / 125,664 (2.978%) | 1,595 / 2,880 (55.382%) | 3.817% | 61.631% |
++| 7 | 4,873 / 45,888 (10.619%) | 2,764 / 9,600 (28.792%) | 12.157% | 25.087% |
++| 8 | 2,124 / 29,760 (7.137%) | No observations | 5.183% | — |
++| 9 | 384 / 6,528 (5.882%) | No observations | 7.407% | — |
++| 10 | 0 / 5,088 (0.000%) | No observations | 0.000% | — |
++| 11 | 0 / 8,928 (0.000%) | No observations | 0.000% | — |
++
++These pooled rows mix different link geometries and selected assignments, so their relative outage rates also reflect those differences.
++
++**Occupancies one and two are servable under the alternative.** They produce 383,324 and 99,282 decoded attempts respectively. Across the complete variant census there are **zero uncapped NO_MODE attempts and zero uncapped demoted-rate misses**. Remaining NO_MODE attempts occur at the RF cap. Realised fading can still prevent decoding after a mode is selected. In the original, occupancy one has no decoded attempts; occupancy two has 310, confirming that its prohibition was almost universal on these anchors, rather than absolute.
++
++At decision boundary zero, the observed activation signature also disappears: an existing occupancy-one/two beam with no eligible mode becomes decoded after ORACLE_SET increases its occupancy on **3 original transitions versus 0 variant transitions**. The original transitions are W1/step2, occupancy 1→5, and W3/steps1 and2, occupancy 1→3. This narrowly defined count excludes newly populated beams and is not a decomposition of the EE gain. At that same boundary in the variant, ORACLE_SET still reduces the number of occupied beams on 5 anchors, leaves it unchanged on 10, and increases it on 5. Generic consolidation and set interactions therefore remain; the structural floor-activation explanation does not.
++
++The review's adjacent-step margin explanation is not correct. On an original uncapped link, nominal headroom above the transmitted mode is `threshold_target − threshold_tx`; demotion can skip several modes. Actual decoding margin is `10 log10(SINR_realised) − threshold_tx_dB`, which also includes realised desired-link and interference fading. The measured distributions are:
++
++| Formulation | Margin distribution (dB) | Minimum | P05 | Median | P95 | Maximum |
++|---|---|---:|---:|---:|---:|---:|
++| Original | Nominal headroom above transmitted mode | 1.120 | 3.230 | 4.330 | 4.810 | 6.049 |
++| Original | Realised margin, all selected modes | -9.765 | 0.090 | 3.740 | 7.900 | 17.791 |
++| Original | Realised margin, decoded only | 0.000 | 1.020 | 3.830 | 7.980 | 17.791 |
++| Margin provisioned | Nominal headroom above transmitted mode | 1.107 | 2.870 | 3.790 | 4.540 | 5.963 |
++| Margin provisioned | Realised margin, all selected modes | -9.832 | -0.670 | 3.410 | 7.930 | 16.812 |
++| Margin provisioned | Realised margin, decoded only | 0.000 | 0.680 | 3.630 | 8.070 | 16.812 |
++
++These pool all three selectors. Percentiles are airtime-weighted, using 0.01 dB bins with at most 0.005 dB rounding; extrema retain full precision in the evidence. NO_MODE has no finite transmitted-mode margin and is counted separately. Negative realised margins are decode failures, so the decoded-only distribution is conditional on success.
++
++The margins actually applied span 1.107–4.830 dB. The model contains Rician fading, shadowing and scintillation, with no separate rain attenuation term. These results therefore cannot establish Ka-band rain availability. A rain margin depends on location-specific rainfall and the required exceedance probability, among other link parameters ([ITU-R P.618-14, §2.2.1.1](https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.618-14-202308-I!!PDF-E.pdf)).
++
++The rate accounting is explicit. [acm.py:93](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/acm.py:93) credits the transmitted mode's SE only when that mode decodes:
++
++```python
++decoded = mode is not None and realised_sinr_linear >= mode.threshold_linear
++return ACMRealisedOutcome(
++    decoded,
++    realised_sinr_linear,
++    0.0 if not decoded else mode.spectral_efficiency_bit_per_s_hz,
++)
++```
++
++The scalar endpoint multiplies by bandwidth and TDM fraction; the dense endpoint does the same and integrates the resulting rate into bits ([adapter.py:185](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/adapter.py:185), [batch.py:417](/home/sat/mcrl-v025-ladder-ws/src/mcrl/physics_v025/batch.py:417)). **The code credits the demoted rate, not `r*`.** Because the target is the lowest-threshold mode satisfying the required SE, a mode with a strictly lower threshold cannot satisfy that requirement. Positive decoded service in the original formulation must not be described as meeting its rate target.
++
++The census confirms that all **846,846 original decoded attempts (100%)** use insufficient SE for `r*n/W`. No original user-anchor endpoint attains the 50 Mbit/s average target. In the margin variant, 53,615 of 850,345 decoded attempts (6.305%) miss that SE target, all at the cap. Whole-endpoint rate attainment is reported separately in the first table.
++
++Verification: all 20 original anchors reproduce the archived committed assignments, bits, joules and served counts exactly; internal F/Psi reductions differ by at most 1.91e−5 bit under serial batching, without changing any selection. All 120 original/variant committed scalar replays match batch bits and joules to relative errors at most 8.88e-16 and 8.88e-16, with identical served counts when using the preserved dense definition. The scalar adapter's stricter within-boundary AND service flag differs from the dense OR flag; neither implementation was amended, and the published dense definition is used consistently here. Seven focused fixtures independently verify uncapped target clearance, capped failures, scalar/batch agreement and unchanged uncoupled outputs.
++
++All changes stayed in this workspace. The sealed source tree remains `1728f6b0462f86d85618a4c73f4d1dd2d2c07376`; only diagnostic copies and outputs were added. Runs used the requested Python, `PYTHONPATH=src`, `nice -n 10`, one numerical thread per process and no more than three concurrent worker processes. No TEST split was opened.
++
++Reproducible evidence:
++
++- [Original results](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/original-result.json), [strict margin results](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/margin-cleared-result.json), and [uncorrected numerical control](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/margin-result.json).
++- [Complete census and parity receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json), [compact report data](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/report-data-cleared.json), and [activation transitions](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/activation-signatures-cleared.json).
++- [Copied batch formulation](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/cleared_margin_batch.py), [independent scalar formulation](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar_diagnostics.py), and [selector runner](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/oracle_runner.py).
++- [Original reproduction audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/original-reproduction-audit.json), [selector/result audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/strict-result-audit.json), [clearance fixture audit](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/strict-variant-audit.json), and [numerical failure trace](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/uncapped-margin-failure-trace.json).
+
+tokens used
+628,106

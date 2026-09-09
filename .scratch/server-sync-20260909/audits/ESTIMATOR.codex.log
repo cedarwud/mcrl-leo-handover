@@ -29135,3 +29135,3657 @@ index 0000000000000000000000000000000000000000..69e595bfcf1fedc61e46d01062e77e3b
 +if __name__ == "__main__":
 +    raise SystemExit(main())
 
+apply patch
+patch: completed
+/home/sat/mcrl-v025-replay-ws/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+diff --git a/C1C2-ESTIMATOR-AUDIT-2026-09-10.md b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba77d177fb249e315ed3dd00d659cab390a9ee25
+--- /dev/null
++++ b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+@@ -0,0 +1,124 @@
++C1: `ESTIMATOR_ARTEFACT` | C2: `ESTIMATOR_ARTEFACT`
++
++`DIAGNOSTIC_NOT_CLAIM`
++
++# C1/C2 estimator audit — 2026-09-10
++
++This is an estimator audit on the 26,345 already-defined valid non-reference rows. No production learner, policy, acceptance gate, or fallback flag was changed, and no threshold, sign, seed, horizon, price, guard, or acceptance rule was changed.
++
++## A — unchanged replication
++
++The prior diagnostic was run unchanged from `/home/sat/mcrl-v025-c1c2suff-ws` with 30 anchors. It reproduced the row count, split, selected neighbour count, held-out row count, target variances, explained variances, and RMSEs at full emitted precision:
++
++| Route | Held-out EV | Held-out RMSE | Held-out target variance | Selected k |
++|---|---:|---:|---:|---:|
++| C1 | `-0.33554767986149203` | `3.468393728057137` | `8.34196834334199` | 31 |
++| C2 | `0.21065167813231378` | `3.385646156133314` | `14.369004998057571` | 31 |
++
++The reproduced split was train steps `{1,2,4,6,7,8,9}`, validation step `{5}`, and test steps `{0,3}`, with 5,280 test rows and seed `20260909`. This satisfies the replication prerequisite; the downstream audit uses those same route-specific encoded features and exact targets.
++
++## B — predeclared estimator ladder
++
++Before any ladder model was run, the complete list was declared as: training-mean constant, ordinary least squares, validation-selected ridge, modest-depth validation-early-stopped gradient-boosted trees, and the original k-NN. No sixth model was added, and every result is below.
++
++| Route | Estimator | Held-out EV | Held-out RMSE | Selection detail |
++|---|---|---:|---:|---|
++| C1 | Constant predictor | `0.0000000000` | `2.9584953816` | strict training-split mean |
++| C1 | Ordinary least squares | `0.0892133009` | `2.8688725007` | no hyperparameter |
++| C1 | Ridge | `0.0892133009` | `2.8688725006` | penalty `1e-6` |
++| C1 | Gradient-boosted trees | `0.0235123190` | `2.9187599056` | 151 trees |
++| C1 | Original k-NN | `-0.3355476799` | `3.4683937281` | `k=31` |
++| C2 | Constant predictor | `0.0000000000` | `3.8210027084` | strict training-split mean |
++| C2 | Ordinary least squares | `0.3010404869` | `3.1702888107` | no hyperparameter |
++| C2 | Ridge | `0.3010404862` | `3.1702888117` | penalty `1e-6` |
++| C2 | Gradient-boosted trees | `0.2679215987` | `3.2856117817` | 112 trees |
++| C2 | Original k-NN | `0.2106516781` | `3.3856461561` | `k=31` |
++
++The C1 ridge/OLS difference is only numerical (`1.13e-11` EV); ridge is called the C1 winner solely because its emitted EV is fractionally higher. C2 OLS is the clear winner.
++
++### Fitting and selection details
++
++- Constant uses the mean of strict training steps only. EV is exactly zero for any constant; the training mean determines its reported RMSE.
++- OLS is fit on train plus validation before the untouched test evaluation.
++- Ridge uses standardized features, selects only on validation-step EV from the fixed positive penalty grid `{1e-6,1e-4,1e-2,1e-1,1,10,100,1e3,1e4,1e5,1e6}`, then refits on train plus validation with the selected penalty.
++- The deterministic squared-error histogram gradient booster has depth 3, learning rate `0.05`, at most 500 trees, 64 bins, minimum leaf size 30, and patience 30. It is fit on strict training rows and retains the iteration with minimum validation RMSE: 151 trees for C1 and 112 for C2.
++- k-NN is the original standardized inverse-squared-distance implementation, selects `k` from `{1,3,7,15,31}` by validation EV, and refits on train plus validation. It selects `k=31` for both routes and exactly reproduces A.
++
++The environment contains NumPy `2.5.2` but no scikit-learn, XGBoost, or LightGBM, so the modest-depth histogram booster is implemented transparently in the retained audit script rather than substituting another model family.
++
++## C — split sensitivity for the best ladder estimator
++
++For C1, the numerically best estimator is ridge with the selected penalty frozen at `1e-6`. For C2 it is OLS; each leave-one-step-out fold fits that same estimator on the other nine whole physical steps.
++
++### Original test steps separately
++
++| Route / estimator | Test step | EV | RMSE |
++|---|---:|---:|---:|
++| C1 ridge | 0 | `0.2477220949` | `2.0983022008` |
++| C1 ridge | 3 | `0.0203994950` | `3.4787541212` |
++| C2 OLS | 0 | `0.2129546272` | `4.3548173815` |
++| C2 OLS | 3 | undefined: target variance is zero | `1.0174266391` |
++
++C1 is positive on each originally held-out step separately. The original negative aggregate C1 value is therefore not caused by one unlucky member of `{0,3}` under the better estimator.
++
++### Leave-one-step-out rotation
++
++| Step | C1 ridge EV | C1 RMSE | C2 OLS EV | C2 RMSE |
++|---:|---:|---:|---:|---:|
++| 0 | `0.2453421372` | `2.1688393983` | `0.2166562220` | `4.3447396555` |
++| 1 | `0.1759196119` | `2.2076662595` | `0.2026798344` | `3.8062953661` |
++| 2 | `0.0993443344` | `2.2170766128` | `0.0273528908` | `3.6200239619` |
++| 3 | `0.0167254145` | `3.5099767348` | undefined: variance zero | `0.9719879724` |
++| 4 | `0.2589366346` | `1.7397096330` | `0.2931457791` | `3.8670086432` |
++| 5 | `0.2663861088` | `2.1290793127` | `0.3432062777` | `3.3842954104` |
++| 6 | `0.1061865968` | `1.8917579735` | `0.1597012127` | `3.1748312741` |
++| 7 | `0.0765833532` | `4.6941377409` | undefined: variance zero | `1.1687533139` |
++| 8 | `0.1908808533` | `1.6572850427` | `0.2534634301` | `4.2321130401` |
++| 9 | `0.2076794012` | `2.0039039074` | `0.1264856122` | `3.9779951042` |
++
++C1 EV is positive in all ten rotations: mean `0.1643984446`, standard deviation `0.0810787281`, minimum `0.0167254145`, maximum `0.2663861088`, and range `0.2496606943`. Thus the original negative C1 number does not hold across the rotation for the better estimator; it is estimator-specific, not a single-step accident.
++
++C2 has positive EV in all eight folds where EV is defined: mean `0.2028364074`, standard deviation `0.0929369032`, minimum `0.0273528908`, maximum `0.3432062777`, and range `0.3158533869`. Steps 3 and 7 have exactly zero within-step C2 target variance, so EV is mathematically undefined there; their finite RMSEs are reported rather than inventing an EV.
++
++## D — exact encoded-row collision floor
++
++For route-specific feature vector `x`, the empirical irreducible floor was computed as
++
++`(1/N) * sum_over_collision_groups sum_i (y_i - group_mean)^2`,
++
++where grouping keys are the byte-identical big-endian binary64 feature vectors and target disagreement is checked using the exact rational target strings. The fraction reported is that floor divided by the population variance of the exact targets converted at the row boundary.
++
++| Route | All exact duplicate groups | Groups with differing exact targets | Rows in differing-target groups | Variance floor | Corpus target variance | Floor / variance |
++|---|---:|---:|---:|---:|---:|---:|
++| C1 | 2,666 | 0 | 0 | `0.0` | `7.4428962868` | `0.0%` |
++| C2 | 1,181 | 879 | 1,758 | `0.8931142961` | `16.1198592400` | `5.5404596456%` |
++
++C1 has exact duplicate encoded rows, but none of its duplicate groups has differing exact C1 targets, so this corpus implies no positive C1 collision floor. C2 has 879 differing-target collision groups, implying that at least 5.54% of its corpus target variance is unreachable by any deterministic predictor using only the 22 encoded C2 features.
++
++## Reproduction files and exact commands
++
++Retained files:
++
++- `scripts/audit_v025_c1c2_estimators.py` — the complete ladder, rotation, and collision-floor audit.
++- `artifacts/c1c2-estimator-audit-20260910.json` — full-precision machine-readable results, including every validation candidate.
++- `C1C2-ESTIMATOR-AUDIT-2026-09-10.md` — this report.
++
++Unchanged replication, with working directory `/home/sat/mcrl-v025-c1c2suff-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30
++```
++
++Estimator audit, with working directory `/home/sat/mcrl-v025-replay-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/audit_v025_c1c2_estimators.py --output artifacts/c1c2-estimator-audit-20260910.json
++```
++
++The source diagnostic and `/home/sat/mcrl-leo-handover/.venv` were read/executed but never modified. No sealed artifact or fallback flag was modified.
++
++## Required verdicts
++
++**C1 — `ESTIMATOR_ARTEFACT`.** Positive-penalty ridge achieves held-out EV `0.0892133009` against the constant's `0.0` and the original k-NN's `-0.3355476799`, so the encoded C1 features do carry recoverable predictive value. Its EV is positive on both original test steps and all ten leave-one-step-out folds, so the correction is stable enough to reject the “features carry no predictive value” inference.
++
++**C2 — `ESTIMATOR_ARTEFACT`.** OLS achieves held-out EV `0.3010404869`, improving on both the constant's `0.0` and the original k-NN's `0.2106516781`, so the original estimator understates what the encoded C2 features carry. Every finite leave-one-step-out EV is positive, while the other two folds are undefined only because their targets have zero variance, so the estimator conclusion is not driven by an unstable negative rotation.
+diff --git a/artifacts/c1c2-estimator-audit-20260910.json b/artifacts/c1c2-estimator-audit-20260910.json
+index 050cc22c123007f0b1bd071f138b8e1fe9e649d1..8404cc165654c190103d7144d1c966d61fd2c439
+--- a/artifacts/c1c2-estimator-audit-20260910.json
++++ b/artifacts/c1c2-estimator-audit-20260910.json
+@@ -184,7 +184,7 @@
+         "rmse": 4.354817381451514
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 1.0174266391212345
+       }
+     },
+@@ -307,7 +307,7 @@
+         "rmse": 3.6200239618604226
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 0.9719879723778495
+       },
+       "4": {
+diff --git a/scripts/audit_v025_c1c2_estimators.py b/scripts/audit_v025_c1c2_estimators.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..69e595bfcf1fedc61e46d01062e77e3b6a423c4c
+--- /dev/null
++++ b/scripts/audit_v025_c1c2_estimators.py
+@@ -0,0 +1,539 @@
++#!/usr/bin/env python3
++"""Audit estimators on the exact C1/C2 rows from the sufficiency diagnostic.
++
++DIAGNOSTIC_NOT_CLAIM.  This script performs no training or policy run.  It
++reuses the prior diagnostic's exact-row reconstruction, then fits only the
++predeclared estimator ladder.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from fractions import Fraction
++import argparse
++import importlib.util
++import json
++from pathlib import Path
++import struct
++import sys
++from typing import Callable, Iterable
++
++import numpy as np
++
++
++SEED = 20260909
++STEPS = tuple(range(10))
++TRAIN_STEPS = frozenset((1, 2, 4, 6, 7, 8, 9))
++VALIDATION_STEPS = frozenset((5,))
++TEST_STEPS = frozenset((0, 3))
++RIDGE_PENALTIES = (1e-6, 1e-4, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5, 1e6)
++KNN_NEIGHBORS = (1, 3, 7, 15, 31)
++GBT_MAX_TREES = 500
++GBT_DEPTH = 3
++GBT_LEARNING_RATE = 0.05
++GBT_PATIENCE = 30
++GBT_BINS = 64
++GBT_MIN_LEAF = 30
++
++PRIOR_SCRIPT = Path(
++    "/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py"
++)
++
++
++def _load_prior_module():
++    spec = importlib.util.spec_from_file_location("prior_c1c2_diagnostic", PRIOR_SCRIPT)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {PRIOR_SCRIPT}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def _ev(actual: np.ndarray, predicted: np.ndarray) -> float:
++    variance = float(np.var(actual))
++    return float("nan") if variance == 0.0 else 1.0 - float(np.var(actual - predicted)) / variance
++
++
++def _metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
++    residual = actual - predicted
++    return {
++        "explained_variance": _ev(actual, predicted),
++        "rmse": float(np.sqrt(np.mean(residual * residual))),
++    }
++
++
++def _json_safe(value):
++    """Replace non-finite floats with JSON null while preserving structure."""
++    if isinstance(value, float) and not np.isfinite(value):
++        return None
++    if isinstance(value, dict):
++        return {key: _json_safe(item) for key, item in value.items()}
++    if isinstance(value, list):
++        return [_json_safe(item) for item in value]
++    return value
++
++
++def _standardization(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
++    mean = x.mean(axis=0)
++    scale = x.std(axis=0)
++    scale[scale < 1e-12] = 1.0
++    return mean, scale
++
++
++def _linear_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    penalty: float,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    x = (fit_x - mean) / scale
++    z = (predict_x - mean) / scale
++    y_mean = float(fit_y.mean())
++    centered_y = fit_y - y_mean
++    if penalty == 0.0:
++        coefficients, *_ = np.linalg.lstsq(x, centered_y, rcond=None)
++    else:
++        coefficients = np.linalg.solve(
++            x.T @ x + penalty * np.eye(x.shape[1]), x.T @ centered_y
++        )
++    return y_mean + z @ coefficients
++
++
++def _knn_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    neighbors: int,
++    chunk_size: int = 128,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    train = (fit_x - mean) / scale
++    query = (predict_x - mean) / scale
++    k = min(neighbors, len(train))
++    train_norm = np.einsum("ij,ij->i", train, train)
++    predictions = []
++    for start in range(0, len(query), chunk_size):
++        chunk = query[start : start + chunk_size]
++        distances = (
++            np.einsum("ij,ij->i", chunk, chunk)[:, None]
++            + train_norm[None, :]
++            - 2.0 * chunk @ train.T
++        )
++        indices = np.argpartition(distances, kth=k - 1, axis=1)[:, :k]
++        selected_distances = np.take_along_axis(distances, indices, axis=1)
++        weights = 1.0 / np.maximum(selected_distances, 1e-12)
++        predictions.append(
++            (weights * fit_y[indices]).sum(axis=1) / weights.sum(axis=1)
++        )
++    return np.concatenate(predictions)
++
++
++@dataclass
++class TreeNode:
++    value: float
++    feature: int = -1
++    split_bin: int = -1
++    left: "TreeNode | None" = None
++    right: "TreeNode | None" = None
++
++
++@dataclass
++class BinnedTree:
++    edges: tuple[np.ndarray, ...]
++    root: TreeNode
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        bins = _apply_bins(x, self.edges)
++        result = np.empty(len(x), dtype=np.float64)
++
++        def visit(node: TreeNode, indices: np.ndarray) -> None:
++            if node.feature < 0:
++                result[indices] = node.value
++                return
++            mask = bins[indices, node.feature] <= node.split_bin
++            assert node.left is not None and node.right is not None
++            visit(node.left, indices[mask])
++            visit(node.right, indices[~mask])
++
++        visit(self.root, np.arange(len(x), dtype=np.int64))
++        return result
++
++
++def _bin_edges(x: np.ndarray, max_bins: int) -> tuple[np.ndarray, ...]:
++    quantiles = np.linspace(0.0, 1.0, max_bins + 1)[1:-1]
++    edges = []
++    for feature in range(x.shape[1]):
++        candidate = np.unique(np.quantile(x[:, feature], quantiles))
++        candidate = candidate[
++            (candidate > np.min(x[:, feature])) & (candidate < np.max(x[:, feature]))
++        ]
++        edges.append(candidate)
++    return tuple(edges)
++
++
++def _apply_bins(x: np.ndarray, edges: tuple[np.ndarray, ...]) -> np.ndarray:
++    result = np.empty(x.shape, dtype=np.uint8)
++    for feature, feature_edges in enumerate(edges):
++        result[:, feature] = np.searchsorted(feature_edges, x[:, feature], side="right")
++    return result
++
++
++def _fit_binned_tree(
++    bins: np.ndarray,
++    residual: np.ndarray,
++    edges: tuple[np.ndarray, ...],
++    *,
++    max_depth: int,
++    min_leaf: int,
++) -> BinnedTree:
++    def build(indices: np.ndarray, depth: int) -> TreeNode:
++        values = residual[indices]
++        node = TreeNode(value=float(values.mean()))
++        if depth >= max_depth or len(indices) < 2 * min_leaf:
++            return node
++        total_sum = float(values.sum())
++        total_count = len(indices)
++        baseline = total_sum * total_sum / total_count
++        best_gain = 0.0
++        best_feature = -1
++        best_split = -1
++        for feature, feature_edges in enumerate(edges):
++            if len(feature_edges) == 0:
++                continue
++            feature_bins = bins[indices, feature]
++            bin_count = len(feature_edges) + 1
++            counts = np.bincount(feature_bins, minlength=bin_count).astype(np.int64)
++            sums = np.bincount(feature_bins, weights=values, minlength=bin_count)
++            left_count = np.cumsum(counts)[:-1]
++            left_sum = np.cumsum(sums)[:-1]
++            right_count = total_count - left_count
++            right_sum = total_sum - left_sum
++            valid = (left_count >= min_leaf) & (right_count >= min_leaf)
++            gains = np.full(len(left_count), -np.inf)
++            gains[valid] = (
++                left_sum[valid] ** 2 / left_count[valid]
++                + right_sum[valid] ** 2 / right_count[valid]
++                - baseline
++            )
++            split = int(np.argmax(gains))
++            gain = float(gains[split])
++            if gain > best_gain:
++                best_gain = gain
++                best_feature = feature
++                best_split = split
++        if best_feature < 0:
++            return node
++        left_mask = bins[indices, best_feature] <= best_split
++        node.feature = best_feature
++        node.split_bin = best_split
++        node.left = build(indices[left_mask], depth + 1)
++        node.right = build(indices[~left_mask], depth + 1)
++        return node
++
++    root = build(np.arange(len(bins), dtype=np.int64), 0)
++    return BinnedTree(edges=edges, root=root)
++
++
++@dataclass
++class GBTModel:
++    initial: float
++    trees: list[BinnedTree]
++    learning_rate: float
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        result = np.full(len(x), self.initial, dtype=np.float64)
++        for tree in self.trees:
++            result += self.learning_rate * tree.predict(x)
++        return result
++
++
++def _fit_gbt(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    *,
++    tree_count: int,
++    validation: tuple[np.ndarray, np.ndarray] | None,
++) -> tuple[GBTModel, dict[str, object]]:
++    edges = _bin_edges(fit_x, GBT_BINS)
++    bins = _apply_bins(fit_x, edges)
++    initial = float(fit_y.mean())
++    fit_prediction = np.full(len(fit_y), initial, dtype=np.float64)
++    trees: list[BinnedTree] = []
++    best_count = 0
++    best_rmse = float("inf")
++    stale = 0
++    if validation is not None:
++        validation_x, validation_y = validation
++        validation_prediction = np.full(len(validation_y), initial, dtype=np.float64)
++    for iteration in range(1, tree_count + 1):
++        tree = _fit_binned_tree(
++            bins,
++            fit_y - fit_prediction,
++            edges,
++            max_depth=GBT_DEPTH,
++            min_leaf=GBT_MIN_LEAF,
++        )
++        trees.append(tree)
++        fit_prediction += GBT_LEARNING_RATE * tree.predict(fit_x)
++        if validation is None:
++            continue
++        validation_prediction += GBT_LEARNING_RATE * tree.predict(validation_x)
++        rmse = float(np.sqrt(np.mean((validation_y - validation_prediction) ** 2)))
++        if rmse < best_rmse - 1e-12:
++            best_rmse = rmse
++            best_count = iteration
++            stale = 0
++        else:
++            stale += 1
++        if stale >= GBT_PATIENCE:
++            break
++    if validation is None:
++        best_count = len(trees)
++    model = GBTModel(initial, trees[:best_count], GBT_LEARNING_RATE)
++    return model, {
++        "selected_trees": best_count,
++        "trees_fitted_before_stop": len(trees),
++        "best_validation_rmse": None if validation is None else best_rmse,
++    }
++
++
++def _feature_key(values: Iterable[float]) -> bytes:
++    numbers = tuple(values)
++    return struct.pack(f">{len(numbers)}d", *numbers)
++
++
++def _collision_floor(rows, *, route: str) -> dict[str, object]:
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    exact_name = f"{route.lower()}_target_exact"
++    float_name = f"{route.lower()}_target"
++    groups: dict[bytes, list[tuple[Fraction, float]]] = {}
++    for row in rows:
++        groups.setdefault(_feature_key(getattr(row, q_name)), []).append(
++            (Fraction(getattr(row, exact_name)), getattr(row, float_name))
++        )
++    collision_groups = [
++        values for values in groups.values() if len({value[0] for value in values}) > 1
++    ]
++    y = np.asarray([getattr(row, float_name) for row in rows], dtype=np.float64)
++    sse = 0.0
++    for values in collision_groups:
++        targets = np.asarray([value[1] for value in values], dtype=np.float64)
++        sse += float(np.sum((targets - targets.mean()) ** 2))
++    floor_variance = sse / len(rows)
++    total_variance = float(np.var(y))
++    return {
++        "unique_feature_vectors": len(groups),
++        "duplicate_groups_all": sum(len(values) > 1 for values in groups.values()),
++        "collision_groups_differing_exact_target": len(collision_groups),
++        "rows_in_collision_groups": sum(len(values) for values in collision_groups),
++        "irreducible_variance_floor": floor_variance,
++        "total_target_variance": total_variance,
++        "fraction_of_total_target_variance": floor_variance / total_variance,
++    }
++
++
++def _route_arrays(rows, route: str):
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    y_name = f"{route.lower()}_target"
++    x = np.asarray([getattr(row, q_name) for row in rows], dtype=np.float64)
++    y = np.asarray([getattr(row, y_name) for row in rows], dtype=np.float64)
++    steps = np.asarray([row.anchor // 3 for row in rows], dtype=np.int64)
++    return x, y, steps
++
++
++def _mask(steps: np.ndarray, selected: Iterable[int]) -> np.ndarray:
++    return np.isin(steps, tuple(selected))
++
++
++def _audit_route(rows, route: str) -> dict[str, object]:
++    x, y, steps = _route_arrays(rows, route)
++    train = _mask(steps, TRAIN_STEPS)
++    validation = _mask(steps, VALIDATION_STEPS)
++    test = _mask(steps, TEST_STEPS)
++    development = train | validation
++
++    constant_prediction = np.full(test.sum(), float(y[train].mean()))
++    ols_prediction = _linear_predict(x[development], y[development], x[test], penalty=0.0)
++
++    ridge_validation = {}
++    for penalty in RIDGE_PENALTIES:
++        prediction = _linear_predict(x[train], y[train], x[validation], penalty=penalty)
++        ridge_validation[str(penalty)] = _metrics(y[validation], prediction)
++    selected_penalty = max(
++        RIDGE_PENALTIES,
++        key=lambda penalty: (
++            ridge_validation[str(penalty)]["explained_variance"], -penalty
++        ),
++    )
++    ridge_prediction = _linear_predict(
++        x[development], y[development], x[test], penalty=selected_penalty
++    )
++
++    gbt, gbt_selection = _fit_gbt(
++        x[train],
++        y[train],
++        tree_count=GBT_MAX_TREES,
++        validation=(x[validation], y[validation]),
++    )
++    gbt_prediction = gbt.predict(x[test])
++
++    knn_validation = {}
++    for neighbors in KNN_NEIGHBORS:
++        prediction = _knn_predict(
++            x[train], y[train], x[validation], neighbors=neighbors
++        )
++        knn_validation[str(neighbors)] = _metrics(y[validation], prediction)
++    selected_k = max(
++        KNN_NEIGHBORS,
++        key=lambda neighbors: (
++            knn_validation[str(neighbors)]["explained_variance"], -neighbors
++        ),
++    )
++    knn_prediction = _knn_predict(
++        x[development], y[development], x[test], neighbors=selected_k
++    )
++
++    predictions = {
++        "constant": constant_prediction,
++        "ols": ols_prediction,
++        "ridge": ridge_prediction,
++        "gradient_boosted_trees": gbt_prediction,
++        "knn": knn_prediction,
++    }
++    ladder = {name: _metrics(y[test], prediction) for name, prediction in predictions.items()}
++    ladder["ridge"]["selected_penalty"] = selected_penalty
++    ladder["ridge"]["validation_by_penalty"] = ridge_validation
++    ladder["gradient_boosted_trees"].update(gbt_selection)
++    ladder["knn"]["selected_k"] = selected_k
++    ladder["knn"]["validation_by_k"] = knn_validation
++
++    best_name = max(ladder, key=lambda name: ladder[name]["explained_variance"])
++    best_prediction = predictions[best_name]
++    separate_test_steps = {}
++    test_step_values = steps[test]
++    for step in sorted(TEST_STEPS):
++        selected = test_step_values == step
++        separate_test_steps[str(step)] = _metrics(y[test][selected], best_prediction[selected])
++
++    def fit_selected(fit: np.ndarray, held_out: np.ndarray) -> np.ndarray:
++        if best_name == "constant":
++            return np.full(held_out.sum(), float(y[fit].mean()))
++        if best_name == "ols":
++            return _linear_predict(x[fit], y[fit], x[held_out], penalty=0.0)
++        if best_name == "ridge":
++            return _linear_predict(
++                x[fit], y[fit], x[held_out], penalty=selected_penalty
++            )
++        if best_name == "gradient_boosted_trees":
++            rotation_gbt, _ = _fit_gbt(
++                x[fit],
++                y[fit],
++                tree_count=int(gbt_selection["selected_trees"]),
++                validation=None,
++            )
++            return rotation_gbt.predict(x[held_out])
++        if best_name == "knn":
++            return _knn_predict(x[fit], y[fit], x[held_out], neighbors=selected_k)
++        raise AssertionError(best_name)
++
++    rotation = {}
++    for step in STEPS:
++        held_out = steps == step
++        fit = ~held_out
++        prediction = fit_selected(fit, held_out)
++        rotation[str(step)] = _metrics(y[held_out], prediction)
++    rotation_evs = np.asarray(
++        [rotation[str(step)]["explained_variance"] for step in STEPS]
++    )
++    finite_rotation_evs = rotation_evs[np.isfinite(rotation_evs)]
++
++    return {
++        "rows": len(rows),
++        "feature_dimension": x.shape[1],
++        "split_row_counts": {
++            "train": int(train.sum()),
++            "validation": int(validation.sum()),
++            "test": int(test.sum()),
++        },
++        "ladder": ladder,
++        "best_estimator": best_name,
++        "best_estimator_test_step_metrics": separate_test_steps,
++        "leave_one_step_out": rotation,
++        "leave_one_step_out_ev_spread": {
++            "basis": "finite EV values only; EV is undefined when a step's target variance is zero",
++            "minimum": float(finite_rotation_evs.min()),
++            "maximum": float(finite_rotation_evs.max()),
++            "range": float(np.ptp(finite_rotation_evs)),
++            "mean": float(finite_rotation_evs.mean()),
++            "standard_deviation": float(finite_rotation_evs.std()),
++            "negative_step_count": int(np.sum(finite_rotation_evs < 0.0)),
++            "positive_step_count": int(np.sum(finite_rotation_evs > 0.0)),
++            "undefined_zero_variance_step_count": int(np.sum(~np.isfinite(rotation_evs))),
++        },
++        "collision_floor": _collision_floor(rows, route=route),
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument(
++        "--output",
++        type=Path,
++        default=Path("artifacts/c1c2-estimator-audit-20260910.json"),
++    )
++    args = parser.parse_args()
++    prior = _load_prior_module()
++    tape = prior.build_world_tape(
++        domain=prior.DEVELOPMENT_WORLD_DOMAINS[0],
++        provider=prior.LegacyWorldProvider(role="pilot-source"),
++        steps=13,
++        start_time_s=0.0,
++    )
++    calibration = prior._calibration()
++    rows = []
++    for anchor in range(30):
++        rows.extend(prior._relabel_anchor(tape, calibration, anchor))
++        print(
++            json.dumps({"phase": "exact-relabel", "anchor": anchor, "rows": len(rows)}),
++            file=sys.stderr,
++            flush=True,
++        )
++    if len(rows) != 26345:
++        raise AssertionError(f"expected 26345 rows, got {len(rows)}")
++    result = {
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "seed": SEED,
++        "steps": list(STEPS),
++        "split": {
++            "train_steps": sorted(TRAIN_STEPS),
++            "validation_steps": sorted(VALIDATION_STEPS),
++            "test_steps": sorted(TEST_STEPS),
++        },
++        "model_declaration": [
++            "constant predictor (strict training-split mean)",
++            "ordinary least squares on encoded features",
++            "ridge; penalty selected by validation explained variance only",
++            (
++                "deterministic squared-error histogram gradient-boosted trees; "
++                f"depth={GBT_DEPTH}, learning_rate={GBT_LEARNING_RATE}, "
++                f"max_trees={GBT_MAX_TREES}, patience={GBT_PATIENCE}, "
++                f"bins={GBT_BINS}, min_leaf={GBT_MIN_LEAF}; early stopping by "
++                "validation RMSE only"
++            ),
++            "original standardized inverse-distance k-nearest-neighbor",
++        ],
++        "c1": _audit_route(rows, "C1"),
++        "c2": _audit_route(rows, "C2"),
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(json.dumps(_json_safe(result), indent=2, sort_keys=True) + "\n")
++    print(json.dumps({"output": str(args.output), "rows": len(rows)}, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/C1C2-ESTIMATOR-AUDIT-2026-09-10.md b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba77d177fb249e315ed3dd00d659cab390a9ee25
+--- /dev/null
++++ b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+@@ -0,0 +1,124 @@
++C1: `ESTIMATOR_ARTEFACT` | C2: `ESTIMATOR_ARTEFACT`
++
++`DIAGNOSTIC_NOT_CLAIM`
++
++# C1/C2 estimator audit — 2026-09-10
++
++This is an estimator audit on the 26,345 already-defined valid non-reference rows. No production learner, policy, acceptance gate, or fallback flag was changed, and no threshold, sign, seed, horizon, price, guard, or acceptance rule was changed.
++
++## A — unchanged replication
++
++The prior diagnostic was run unchanged from `/home/sat/mcrl-v025-c1c2suff-ws` with 30 anchors. It reproduced the row count, split, selected neighbour count, held-out row count, target variances, explained variances, and RMSEs at full emitted precision:
++
++| Route | Held-out EV | Held-out RMSE | Held-out target variance | Selected k |
++|---|---:|---:|---:|---:|
++| C1 | `-0.33554767986149203` | `3.468393728057137` | `8.34196834334199` | 31 |
++| C2 | `0.21065167813231378` | `3.385646156133314` | `14.369004998057571` | 31 |
++
++The reproduced split was train steps `{1,2,4,6,7,8,9}`, validation step `{5}`, and test steps `{0,3}`, with 5,280 test rows and seed `20260909`. This satisfies the replication prerequisite; the downstream audit uses those same route-specific encoded features and exact targets.
++
++## B — predeclared estimator ladder
++
++Before any ladder model was run, the complete list was declared as: training-mean constant, ordinary least squares, validation-selected ridge, modest-depth validation-early-stopped gradient-boosted trees, and the original k-NN. No sixth model was added, and every result is below.
++
++| Route | Estimator | Held-out EV | Held-out RMSE | Selection detail |
++|---|---|---:|---:|---|
++| C1 | Constant predictor | `0.0000000000` | `2.9584953816` | strict training-split mean |
++| C1 | Ordinary least squares | `0.0892133009` | `2.8688725007` | no hyperparameter |
++| C1 | Ridge | `0.0892133009` | `2.8688725006` | penalty `1e-6` |
++| C1 | Gradient-boosted trees | `0.0235123190` | `2.9187599056` | 151 trees |
++| C1 | Original k-NN | `-0.3355476799` | `3.4683937281` | `k=31` |
++| C2 | Constant predictor | `0.0000000000` | `3.8210027084` | strict training-split mean |
++| C2 | Ordinary least squares | `0.3010404869` | `3.1702888107` | no hyperparameter |
++| C2 | Ridge | `0.3010404862` | `3.1702888117` | penalty `1e-6` |
++| C2 | Gradient-boosted trees | `0.2679215987` | `3.2856117817` | 112 trees |
++| C2 | Original k-NN | `0.2106516781` | `3.3856461561` | `k=31` |
++
++The C1 ridge/OLS difference is only numerical (`1.13e-11` EV); ridge is called the C1 winner solely because its emitted EV is fractionally higher. C2 OLS is the clear winner.
++
++### Fitting and selection details
++
++- Constant uses the mean of strict training steps only. EV is exactly zero for any constant; the training mean determines its reported RMSE.
++- OLS is fit on train plus validation before the untouched test evaluation.
++- Ridge uses standardized features, selects only on validation-step EV from the fixed positive penalty grid `{1e-6,1e-4,1e-2,1e-1,1,10,100,1e3,1e4,1e5,1e6}`, then refits on train plus validation with the selected penalty.
++- The deterministic squared-error histogram gradient booster has depth 3, learning rate `0.05`, at most 500 trees, 64 bins, minimum leaf size 30, and patience 30. It is fit on strict training rows and retains the iteration with minimum validation RMSE: 151 trees for C1 and 112 for C2.
++- k-NN is the original standardized inverse-squared-distance implementation, selects `k` from `{1,3,7,15,31}` by validation EV, and refits on train plus validation. It selects `k=31` for both routes and exactly reproduces A.
++
++The environment contains NumPy `2.5.2` but no scikit-learn, XGBoost, or LightGBM, so the modest-depth histogram booster is implemented transparently in the retained audit script rather than substituting another model family.
++
++## C — split sensitivity for the best ladder estimator
++
++For C1, the numerically best estimator is ridge with the selected penalty frozen at `1e-6`. For C2 it is OLS; each leave-one-step-out fold fits that same estimator on the other nine whole physical steps.
++
++### Original test steps separately
++
++| Route / estimator | Test step | EV | RMSE |
++|---|---:|---:|---:|
++| C1 ridge | 0 | `0.2477220949` | `2.0983022008` |
++| C1 ridge | 3 | `0.0203994950` | `3.4787541212` |
++| C2 OLS | 0 | `0.2129546272` | `4.3548173815` |
++| C2 OLS | 3 | undefined: target variance is zero | `1.0174266391` |
++
++C1 is positive on each originally held-out step separately. The original negative aggregate C1 value is therefore not caused by one unlucky member of `{0,3}` under the better estimator.
++
++### Leave-one-step-out rotation
++
++| Step | C1 ridge EV | C1 RMSE | C2 OLS EV | C2 RMSE |
++|---:|---:|---:|---:|---:|
++| 0 | `0.2453421372` | `2.1688393983` | `0.2166562220` | `4.3447396555` |
++| 1 | `0.1759196119` | `2.2076662595` | `0.2026798344` | `3.8062953661` |
++| 2 | `0.0993443344` | `2.2170766128` | `0.0273528908` | `3.6200239619` |
++| 3 | `0.0167254145` | `3.5099767348` | undefined: variance zero | `0.9719879724` |
++| 4 | `0.2589366346` | `1.7397096330` | `0.2931457791` | `3.8670086432` |
++| 5 | `0.2663861088` | `2.1290793127` | `0.3432062777` | `3.3842954104` |
++| 6 | `0.1061865968` | `1.8917579735` | `0.1597012127` | `3.1748312741` |
++| 7 | `0.0765833532` | `4.6941377409` | undefined: variance zero | `1.1687533139` |
++| 8 | `0.1908808533` | `1.6572850427` | `0.2534634301` | `4.2321130401` |
++| 9 | `0.2076794012` | `2.0039039074` | `0.1264856122` | `3.9779951042` |
++
++C1 EV is positive in all ten rotations: mean `0.1643984446`, standard deviation `0.0810787281`, minimum `0.0167254145`, maximum `0.2663861088`, and range `0.2496606943`. Thus the original negative C1 number does not hold across the rotation for the better estimator; it is estimator-specific, not a single-step accident.
++
++C2 has positive EV in all eight folds where EV is defined: mean `0.2028364074`, standard deviation `0.0929369032`, minimum `0.0273528908`, maximum `0.3432062777`, and range `0.3158533869`. Steps 3 and 7 have exactly zero within-step C2 target variance, so EV is mathematically undefined there; their finite RMSEs are reported rather than inventing an EV.
++
++## D — exact encoded-row collision floor
++
++For route-specific feature vector `x`, the empirical irreducible floor was computed as
++
++`(1/N) * sum_over_collision_groups sum_i (y_i - group_mean)^2`,
++
++where grouping keys are the byte-identical big-endian binary64 feature vectors and target disagreement is checked using the exact rational target strings. The fraction reported is that floor divided by the population variance of the exact targets converted at the row boundary.
++
++| Route | All exact duplicate groups | Groups with differing exact targets | Rows in differing-target groups | Variance floor | Corpus target variance | Floor / variance |
++|---|---:|---:|---:|---:|---:|---:|
++| C1 | 2,666 | 0 | 0 | `0.0` | `7.4428962868` | `0.0%` |
++| C2 | 1,181 | 879 | 1,758 | `0.8931142961` | `16.1198592400` | `5.5404596456%` |
++
++C1 has exact duplicate encoded rows, but none of its duplicate groups has differing exact C1 targets, so this corpus implies no positive C1 collision floor. C2 has 879 differing-target collision groups, implying that at least 5.54% of its corpus target variance is unreachable by any deterministic predictor using only the 22 encoded C2 features.
++
++## Reproduction files and exact commands
++
++Retained files:
++
++- `scripts/audit_v025_c1c2_estimators.py` — the complete ladder, rotation, and collision-floor audit.
++- `artifacts/c1c2-estimator-audit-20260910.json` — full-precision machine-readable results, including every validation candidate.
++- `C1C2-ESTIMATOR-AUDIT-2026-09-10.md` — this report.
++
++Unchanged replication, with working directory `/home/sat/mcrl-v025-c1c2suff-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30
++```
++
++Estimator audit, with working directory `/home/sat/mcrl-v025-replay-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/audit_v025_c1c2_estimators.py --output artifacts/c1c2-estimator-audit-20260910.json
++```
++
++The source diagnostic and `/home/sat/mcrl-leo-handover/.venv` were read/executed but never modified. No sealed artifact or fallback flag was modified.
++
++## Required verdicts
++
++**C1 — `ESTIMATOR_ARTEFACT`.** Positive-penalty ridge achieves held-out EV `0.0892133009` against the constant's `0.0` and the original k-NN's `-0.3355476799`, so the encoded C1 features do carry recoverable predictive value. Its EV is positive on both original test steps and all ten leave-one-step-out folds, so the correction is stable enough to reject the “features carry no predictive value” inference.
++
++**C2 — `ESTIMATOR_ARTEFACT`.** OLS achieves held-out EV `0.3010404869`, improving on both the constant's `0.0` and the original k-NN's `0.2106516781`, so the original estimator understates what the encoded C2 features carry. Every finite leave-one-step-out EV is positive, while the other two folds are undefined only because their targets have zero variance, so the estimator conclusion is not driven by an unstable negative rotation.
+diff --git a/artifacts/c1c2-estimator-audit-20260910.json b/artifacts/c1c2-estimator-audit-20260910.json
+index 050cc22c123007f0b1bd071f138b8e1fe9e649d1..8404cc165654c190103d7144d1c966d61fd2c439
+--- a/artifacts/c1c2-estimator-audit-20260910.json
++++ b/artifacts/c1c2-estimator-audit-20260910.json
+@@ -184,7 +184,7 @@
+         "rmse": 4.354817381451514
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 1.0174266391212345
+       }
+     },
+@@ -307,7 +307,7 @@
+         "rmse": 3.6200239618604226
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 0.9719879723778495
+       },
+       "4": {
+diff --git a/scripts/audit_v025_c1c2_estimators.py b/scripts/audit_v025_c1c2_estimators.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..69e595bfcf1fedc61e46d01062e77e3b6a423c4c
+--- /dev/null
++++ b/scripts/audit_v025_c1c2_estimators.py
+@@ -0,0 +1,539 @@
++#!/usr/bin/env python3
++"""Audit estimators on the exact C1/C2 rows from the sufficiency diagnostic.
++
++DIAGNOSTIC_NOT_CLAIM.  This script performs no training or policy run.  It
++reuses the prior diagnostic's exact-row reconstruction, then fits only the
++predeclared estimator ladder.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from fractions import Fraction
++import argparse
++import importlib.util
++import json
++from pathlib import Path
++import struct
++import sys
++from typing import Callable, Iterable
++
++import numpy as np
++
++
++SEED = 20260909
++STEPS = tuple(range(10))
++TRAIN_STEPS = frozenset((1, 2, 4, 6, 7, 8, 9))
++VALIDATION_STEPS = frozenset((5,))
++TEST_STEPS = frozenset((0, 3))
++RIDGE_PENALTIES = (1e-6, 1e-4, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5, 1e6)
++KNN_NEIGHBORS = (1, 3, 7, 15, 31)
++GBT_MAX_TREES = 500
++GBT_DEPTH = 3
++GBT_LEARNING_RATE = 0.05
++GBT_PATIENCE = 30
++GBT_BINS = 64
++GBT_MIN_LEAF = 30
++
++PRIOR_SCRIPT = Path(
++    "/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py"
++)
++
++
++def _load_prior_module():
++    spec = importlib.util.spec_from_file_location("prior_c1c2_diagnostic", PRIOR_SCRIPT)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {PRIOR_SCRIPT}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def _ev(actual: np.ndarray, predicted: np.ndarray) -> float:
++    variance = float(np.var(actual))
++    return float("nan") if variance == 0.0 else 1.0 - float(np.var(actual - predicted)) / variance
++
++
++def _metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
++    residual = actual - predicted
++    return {
++        "explained_variance": _ev(actual, predicted),
++        "rmse": float(np.sqrt(np.mean(residual * residual))),
++    }
++
++
++def _json_safe(value):
++    """Replace non-finite floats with JSON null while preserving structure."""
++    if isinstance(value, float) and not np.isfinite(value):
++        return None
++    if isinstance(value, dict):
++        return {key: _json_safe(item) for key, item in value.items()}
++    if isinstance(value, list):
++        return [_json_safe(item) for item in value]
++    return value
++
++
++def _standardization(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
++    mean = x.mean(axis=0)
++    scale = x.std(axis=0)
++    scale[scale < 1e-12] = 1.0
++    return mean, scale
++
++
++def _linear_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    penalty: float,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    x = (fit_x - mean) / scale
++    z = (predict_x - mean) / scale
++    y_mean = float(fit_y.mean())
++    centered_y = fit_y - y_mean
++    if penalty == 0.0:
++        coefficients, *_ = np.linalg.lstsq(x, centered_y, rcond=None)
++    else:
++        coefficients = np.linalg.solve(
++            x.T @ x + penalty * np.eye(x.shape[1]), x.T @ centered_y
++        )
++    return y_mean + z @ coefficients
++
++
++def _knn_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    neighbors: int,
++    chunk_size: int = 128,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    train = (fit_x - mean) / scale
++    query = (predict_x - mean) / scale
++    k = min(neighbors, len(train))
++    train_norm = np.einsum("ij,ij->i", train, train)
++    predictions = []
++    for start in range(0, len(query), chunk_size):
++        chunk = query[start : start + chunk_size]
++        distances = (
++            np.einsum("ij,ij->i", chunk, chunk)[:, None]
++            + train_norm[None, :]
++            - 2.0 * chunk @ train.T
++        )
++        indices = np.argpartition(distances, kth=k - 1, axis=1)[:, :k]
++        selected_distances = np.take_along_axis(distances, indices, axis=1)
++        weights = 1.0 / np.maximum(selected_distances, 1e-12)
++        predictions.append(
++            (weights * fit_y[indices]).sum(axis=1) / weights.sum(axis=1)
++        )
++    return np.concatenate(predictions)
++
++
++@dataclass
++class TreeNode:
++    value: float
++    feature: int = -1
++    split_bin: int = -1
++    left: "TreeNode | None" = None
++    right: "TreeNode | None" = None
++
++
++@dataclass
++class BinnedTree:
++    edges: tuple[np.ndarray, ...]
++    root: TreeNode
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        bins = _apply_bins(x, self.edges)
++        result = np.empty(len(x), dtype=np.float64)
++
++        def visit(node: TreeNode, indices: np.ndarray) -> None:
++            if node.feature < 0:
++                result[indices] = node.value
++                return
++            mask = bins[indices, node.feature] <= node.split_bin
++            assert node.left is not None and node.right is not None
++            visit(node.left, indices[mask])
++            visit(node.right, indices[~mask])
++
++        visit(self.root, np.arange(len(x), dtype=np.int64))
++        return result
++
++
++def _bin_edges(x: np.ndarray, max_bins: int) -> tuple[np.ndarray, ...]:
++    quantiles = np.linspace(0.0, 1.0, max_bins + 1)[1:-1]
++    edges = []
++    for feature in range(x.shape[1]):
++        candidate = np.unique(np.quantile(x[:, feature], quantiles))
++        candidate = candidate[
++            (candidate > np.min(x[:, feature])) & (candidate < np.max(x[:, feature]))
++        ]
++        edges.append(candidate)
++    return tuple(edges)
++
++
++def _apply_bins(x: np.ndarray, edges: tuple[np.ndarray, ...]) -> np.ndarray:
++    result = np.empty(x.shape, dtype=np.uint8)
++    for feature, feature_edges in enumerate(edges):
++        result[:, feature] = np.searchsorted(feature_edges, x[:, feature], side="right")
++    return result
++
++
++def _fit_binned_tree(
++    bins: np.ndarray,
++    residual: np.ndarray,
++    edges: tuple[np.ndarray, ...],
++    *,
++    max_depth: int,
++    min_leaf: int,
++) -> BinnedTree:
++    def build(indices: np.ndarray, depth: int) -> TreeNode:
++        values = residual[indices]
++        node = TreeNode(value=float(values.mean()))
++        if depth >= max_depth or len(indices) < 2 * min_leaf:
++            return node
++        total_sum = float(values.sum())
++        total_count = len(indices)
++        baseline = total_sum * total_sum / total_count
++        best_gain = 0.0
++        best_feature = -1
++        best_split = -1
++        for feature, feature_edges in enumerate(edges):
++            if len(feature_edges) == 0:
++                continue
++            feature_bins = bins[indices, feature]
++            bin_count = len(feature_edges) + 1
++            counts = np.bincount(feature_bins, minlength=bin_count).astype(np.int64)
++            sums = np.bincount(feature_bins, weights=values, minlength=bin_count)
++            left_count = np.cumsum(counts)[:-1]
++            left_sum = np.cumsum(sums)[:-1]
++            right_count = total_count - left_count
++            right_sum = total_sum - left_sum
++            valid = (left_count >= min_leaf) & (right_count >= min_leaf)
++            gains = np.full(len(left_count), -np.inf)
++            gains[valid] = (
++                left_sum[valid] ** 2 / left_count[valid]
++                + right_sum[valid] ** 2 / right_count[valid]
++                - baseline
++            )
++            split = int(np.argmax(gains))
++            gain = float(gains[split])
++            if gain > best_gain:
++                best_gain = gain
++                best_feature = feature
++                best_split = split
++        if best_feature < 0:
++            return node
++        left_mask = bins[indices, best_feature] <= best_split
++        node.feature = best_feature
++        node.split_bin = best_split
++        node.left = build(indices[left_mask], depth + 1)
++        node.right = build(indices[~left_mask], depth + 1)
++        return node
++
++    root = build(np.arange(len(bins), dtype=np.int64), 0)
++    return BinnedTree(edges=edges, root=root)
++
++
++@dataclass
++class GBTModel:
++    initial: float
++    trees: list[BinnedTree]
++    learning_rate: float
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        result = np.full(len(x), self.initial, dtype=np.float64)
++        for tree in self.trees:
++            result += self.learning_rate * tree.predict(x)
++        return result
++
++
++def _fit_gbt(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    *,
++    tree_count: int,
++    validation: tuple[np.ndarray, np.ndarray] | None,
++) -> tuple[GBTModel, dict[str, object]]:
++    edges = _bin_edges(fit_x, GBT_BINS)
++    bins = _apply_bins(fit_x, edges)
++    initial = float(fit_y.mean())
++    fit_prediction = np.full(len(fit_y), initial, dtype=np.float64)
++    trees: list[BinnedTree] = []
++    best_count = 0
++    best_rmse = float("inf")
++    stale = 0
++    if validation is not None:
++        validation_x, validation_y = validation
++        validation_prediction = np.full(len(validation_y), initial, dtype=np.float64)
++    for iteration in range(1, tree_count + 1):
++        tree = _fit_binned_tree(
++            bins,
++            fit_y - fit_prediction,
++            edges,
++            max_depth=GBT_DEPTH,
++            min_leaf=GBT_MIN_LEAF,
++        )
++        trees.append(tree)
++        fit_prediction += GBT_LEARNING_RATE * tree.predict(fit_x)
++        if validation is None:
++            continue
++        validation_prediction += GBT_LEARNING_RATE * tree.predict(validation_x)
++        rmse = float(np.sqrt(np.mean((validation_y - validation_prediction) ** 2)))
++        if rmse < best_rmse - 1e-12:
++            best_rmse = rmse
++            best_count = iteration
++            stale = 0
++        else:
++            stale += 1
++        if stale >= GBT_PATIENCE:
++            break
++    if validation is None:
++        best_count = len(trees)
++    model = GBTModel(initial, trees[:best_count], GBT_LEARNING_RATE)
++    return model, {
++        "selected_trees": best_count,
++        "trees_fitted_before_stop": len(trees),
++        "best_validation_rmse": None if validation is None else best_rmse,
++    }
++
++
++def _feature_key(values: Iterable[float]) -> bytes:
++    numbers = tuple(values)
++    return struct.pack(f">{len(numbers)}d", *numbers)
++
++
++def _collision_floor(rows, *, route: str) -> dict[str, object]:
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    exact_name = f"{route.lower()}_target_exact"
++    float_name = f"{route.lower()}_target"
++    groups: dict[bytes, list[tuple[Fraction, float]]] = {}
++    for row in rows:
++        groups.setdefault(_feature_key(getattr(row, q_name)), []).append(
++            (Fraction(getattr(row, exact_name)), getattr(row, float_name))
++        )
++    collision_groups = [
++        values for values in groups.values() if len({value[0] for value in values}) > 1
++    ]
++    y = np.asarray([getattr(row, float_name) for row in rows], dtype=np.float64)
++    sse = 0.0
++    for values in collision_groups:
++        targets = np.asarray([value[1] for value in values], dtype=np.float64)
++        sse += float(np.sum((targets - targets.mean()) ** 2))
++    floor_variance = sse / len(rows)
++    total_variance = float(np.var(y))
++    return {
++        "unique_feature_vectors": len(groups),
++        "duplicate_groups_all": sum(len(values) > 1 for values in groups.values()),
++        "collision_groups_differing_exact_target": len(collision_groups),
++        "rows_in_collision_groups": sum(len(values) for values in collision_groups),
++        "irreducible_variance_floor": floor_variance,
++        "total_target_variance": total_variance,
++        "fraction_of_total_target_variance": floor_variance / total_variance,
++    }
++
++
++def _route_arrays(rows, route: str):
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    y_name = f"{route.lower()}_target"
++    x = np.asarray([getattr(row, q_name) for row in rows], dtype=np.float64)
++    y = np.asarray([getattr(row, y_name) for row in rows], dtype=np.float64)
++    steps = np.asarray([row.anchor // 3 for row in rows], dtype=np.int64)
++    return x, y, steps
++
++
++def _mask(steps: np.ndarray, selected: Iterable[int]) -> np.ndarray:
++    return np.isin(steps, tuple(selected))
++
++
++def _audit_route(rows, route: str) -> dict[str, object]:
++    x, y, steps = _route_arrays(rows, route)
++    train = _mask(steps, TRAIN_STEPS)
++    validation = _mask(steps, VALIDATION_STEPS)
++    test = _mask(steps, TEST_STEPS)
++    development = train | validation
++
++    constant_prediction = np.full(test.sum(), float(y[train].mean()))
++    ols_prediction = _linear_predict(x[development], y[development], x[test], penalty=0.0)
++
++    ridge_validation = {}
++    for penalty in RIDGE_PENALTIES:
++        prediction = _linear_predict(x[train], y[train], x[validation], penalty=penalty)
++        ridge_validation[str(penalty)] = _metrics(y[validation], prediction)
++    selected_penalty = max(
++        RIDGE_PENALTIES,
++        key=lambda penalty: (
++            ridge_validation[str(penalty)]["explained_variance"], -penalty
++        ),
++    )
++    ridge_prediction = _linear_predict(
++        x[development], y[development], x[test], penalty=selected_penalty
++    )
++
++    gbt, gbt_selection = _fit_gbt(
++        x[train],
++        y[train],
++        tree_count=GBT_MAX_TREES,
++        validation=(x[validation], y[validation]),
++    )
++    gbt_prediction = gbt.predict(x[test])
++
++    knn_validation = {}
++    for neighbors in KNN_NEIGHBORS:
++        prediction = _knn_predict(
++            x[train], y[train], x[validation], neighbors=neighbors
++        )
++        knn_validation[str(neighbors)] = _metrics(y[validation], prediction)
++    selected_k = max(
++        KNN_NEIGHBORS,
++        key=lambda neighbors: (
++            knn_validation[str(neighbors)]["explained_variance"], -neighbors
++        ),
++    )
++    knn_prediction = _knn_predict(
++        x[development], y[development], x[test], neighbors=selected_k
++    )
++
++    predictions = {
++        "constant": constant_prediction,
++        "ols": ols_prediction,
++        "ridge": ridge_prediction,
++        "gradient_boosted_trees": gbt_prediction,
++        "knn": knn_prediction,
++    }
++    ladder = {name: _metrics(y[test], prediction) for name, prediction in predictions.items()}
++    ladder["ridge"]["selected_penalty"] = selected_penalty
++    ladder["ridge"]["validation_by_penalty"] = ridge_validation
++    ladder["gradient_boosted_trees"].update(gbt_selection)
++    ladder["knn"]["selected_k"] = selected_k
++    ladder["knn"]["validation_by_k"] = knn_validation
++
++    best_name = max(ladder, key=lambda name: ladder[name]["explained_variance"])
++    best_prediction = predictions[best_name]
++    separate_test_steps = {}
++    test_step_values = steps[test]
++    for step in sorted(TEST_STEPS):
++        selected = test_step_values == step
++        separate_test_steps[str(step)] = _metrics(y[test][selected], best_prediction[selected])
++
++    def fit_selected(fit: np.ndarray, held_out: np.ndarray) -> np.ndarray:
++        if best_name == "constant":
++            return np.full(held_out.sum(), float(y[fit].mean()))
++        if best_name == "ols":
++            return _linear_predict(x[fit], y[fit], x[held_out], penalty=0.0)
++        if best_name == "ridge":
++            return _linear_predict(
++                x[fit], y[fit], x[held_out], penalty=selected_penalty
++            )
++        if best_name == "gradient_boosted_trees":
++            rotation_gbt, _ = _fit_gbt(
++                x[fit],
++                y[fit],
++                tree_count=int(gbt_selection["selected_trees"]),
++                validation=None,
++            )
++            return rotation_gbt.predict(x[held_out])
++        if best_name == "knn":
++            return _knn_predict(x[fit], y[fit], x[held_out], neighbors=selected_k)
++        raise AssertionError(best_name)
++
++    rotation = {}
++    for step in STEPS:
++        held_out = steps == step
++        fit = ~held_out
++        prediction = fit_selected(fit, held_out)
++        rotation[str(step)] = _metrics(y[held_out], prediction)
++    rotation_evs = np.asarray(
++        [rotation[str(step)]["explained_variance"] for step in STEPS]
++    )
++    finite_rotation_evs = rotation_evs[np.isfinite(rotation_evs)]
++
++    return {
++        "rows": len(rows),
++        "feature_dimension": x.shape[1],
++        "split_row_counts": {
++            "train": int(train.sum()),
++            "validation": int(validation.sum()),
++            "test": int(test.sum()),
++        },
++        "ladder": ladder,
++        "best_estimator": best_name,
++        "best_estimator_test_step_metrics": separate_test_steps,
++        "leave_one_step_out": rotation,
++        "leave_one_step_out_ev_spread": {
++            "basis": "finite EV values only; EV is undefined when a step's target variance is zero",
++            "minimum": float(finite_rotation_evs.min()),
++            "maximum": float(finite_rotation_evs.max()),
++            "range": float(np.ptp(finite_rotation_evs)),
++            "mean": float(finite_rotation_evs.mean()),
++            "standard_deviation": float(finite_rotation_evs.std()),
++            "negative_step_count": int(np.sum(finite_rotation_evs < 0.0)),
++            "positive_step_count": int(np.sum(finite_rotation_evs > 0.0)),
++            "undefined_zero_variance_step_count": int(np.sum(~np.isfinite(rotation_evs))),
++        },
++        "collision_floor": _collision_floor(rows, route=route),
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument(
++        "--output",
++        type=Path,
++        default=Path("artifacts/c1c2-estimator-audit-20260910.json"),
++    )
++    args = parser.parse_args()
++    prior = _load_prior_module()
++    tape = prior.build_world_tape(
++        domain=prior.DEVELOPMENT_WORLD_DOMAINS[0],
++        provider=prior.LegacyWorldProvider(role="pilot-source"),
++        steps=13,
++        start_time_s=0.0,
++    )
++    calibration = prior._calibration()
++    rows = []
++    for anchor in range(30):
++        rows.extend(prior._relabel_anchor(tape, calibration, anchor))
++        print(
++            json.dumps({"phase": "exact-relabel", "anchor": anchor, "rows": len(rows)}),
++            file=sys.stderr,
++            flush=True,
++        )
++    if len(rows) != 26345:
++        raise AssertionError(f"expected 26345 rows, got {len(rows)}")
++    result = {
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "seed": SEED,
++        "steps": list(STEPS),
++        "split": {
++            "train_steps": sorted(TRAIN_STEPS),
++            "validation_steps": sorted(VALIDATION_STEPS),
++            "test_steps": sorted(TEST_STEPS),
++        },
++        "model_declaration": [
++            "constant predictor (strict training-split mean)",
++            "ordinary least squares on encoded features",
++            "ridge; penalty selected by validation explained variance only",
++            (
++                "deterministic squared-error histogram gradient-boosted trees; "
++                f"depth={GBT_DEPTH}, learning_rate={GBT_LEARNING_RATE}, "
++                f"max_trees={GBT_MAX_TREES}, patience={GBT_PATIENCE}, "
++                f"bins={GBT_BINS}, min_leaf={GBT_MIN_LEAF}; early stopping by "
++                "validation RMSE only"
++            ),
++            "original standardized inverse-distance k-nearest-neighbor",
++        ],
++        "c1": _audit_route(rows, "C1"),
++        "c2": _audit_route(rows, "C2"),
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(json.dumps(_json_safe(result), indent=2, sort_keys=True) + "\n")
++    print(json.dumps({"output": str(args.output), "rows": len(rows)}, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The report is drafted with the full ladder, both split diagnostics, all ten rotations, collision floors, and exact commands. I’m doing final consistency checks now: strict JSON parsing, script compilation, Markdown whitespace, and cross-checking every printed table entry against the machine-readable artifact.
+diff --git a/C1C2-ESTIMATOR-AUDIT-2026-09-10.md b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba77d177fb249e315ed3dd00d659cab390a9ee25
+--- /dev/null
++++ b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+@@ -0,0 +1,124 @@
++C1: `ESTIMATOR_ARTEFACT` | C2: `ESTIMATOR_ARTEFACT`
++
++`DIAGNOSTIC_NOT_CLAIM`
++
++# C1/C2 estimator audit — 2026-09-10
++
++This is an estimator audit on the 26,345 already-defined valid non-reference rows. No production learner, policy, acceptance gate, or fallback flag was changed, and no threshold, sign, seed, horizon, price, guard, or acceptance rule was changed.
++
++## A — unchanged replication
++
++The prior diagnostic was run unchanged from `/home/sat/mcrl-v025-c1c2suff-ws` with 30 anchors. It reproduced the row count, split, selected neighbour count, held-out row count, target variances, explained variances, and RMSEs at full emitted precision:
++
++| Route | Held-out EV | Held-out RMSE | Held-out target variance | Selected k |
++|---|---:|---:|---:|---:|
++| C1 | `-0.33554767986149203` | `3.468393728057137` | `8.34196834334199` | 31 |
++| C2 | `0.21065167813231378` | `3.385646156133314` | `14.369004998057571` | 31 |
++
++The reproduced split was train steps `{1,2,4,6,7,8,9}`, validation step `{5}`, and test steps `{0,3}`, with 5,280 test rows and seed `20260909`. This satisfies the replication prerequisite; the downstream audit uses those same route-specific encoded features and exact targets.
++
++## B — predeclared estimator ladder
++
++Before any ladder model was run, the complete list was declared as: training-mean constant, ordinary least squares, validation-selected ridge, modest-depth validation-early-stopped gradient-boosted trees, and the original k-NN. No sixth model was added, and every result is below.
++
++| Route | Estimator | Held-out EV | Held-out RMSE | Selection detail |
++|---|---|---:|---:|---|
++| C1 | Constant predictor | `0.0000000000` | `2.9584953816` | strict training-split mean |
++| C1 | Ordinary least squares | `0.0892133009` | `2.8688725007` | no hyperparameter |
++| C1 | Ridge | `0.0892133009` | `2.8688725006` | penalty `1e-6` |
++| C1 | Gradient-boosted trees | `0.0235123190` | `2.9187599056` | 151 trees |
++| C1 | Original k-NN | `-0.3355476799` | `3.4683937281` | `k=31` |
++| C2 | Constant predictor | `0.0000000000` | `3.8210027084` | strict training-split mean |
++| C2 | Ordinary least squares | `0.3010404869` | `3.1702888107` | no hyperparameter |
++| C2 | Ridge | `0.3010404862` | `3.1702888117` | penalty `1e-6` |
++| C2 | Gradient-boosted trees | `0.2679215987` | `3.2856117817` | 112 trees |
++| C2 | Original k-NN | `0.2106516781` | `3.3856461561` | `k=31` |
++
++The C1 ridge/OLS difference is only numerical (`1.13e-11` EV); ridge is called the C1 winner solely because its emitted EV is fractionally higher. C2 OLS is the clear winner.
++
++### Fitting and selection details
++
++- Constant uses the mean of strict training steps only. EV is exactly zero for any constant; the training mean determines its reported RMSE.
++- OLS is fit on train plus validation before the untouched test evaluation.
++- Ridge uses standardized features, selects only on validation-step EV from the fixed positive penalty grid `{1e-6,1e-4,1e-2,1e-1,1,10,100,1e3,1e4,1e5,1e6}`, then refits on train plus validation with the selected penalty.
++- The deterministic squared-error histogram gradient booster has depth 3, learning rate `0.05`, at most 500 trees, 64 bins, minimum leaf size 30, and patience 30. It is fit on strict training rows and retains the iteration with minimum validation RMSE: 151 trees for C1 and 112 for C2.
++- k-NN is the original standardized inverse-squared-distance implementation, selects `k` from `{1,3,7,15,31}` by validation EV, and refits on train plus validation. It selects `k=31` for both routes and exactly reproduces A.
++
++The environment contains NumPy `2.5.2` but no scikit-learn, XGBoost, or LightGBM, so the modest-depth histogram booster is implemented transparently in the retained audit script rather than substituting another model family.
++
++## C — split sensitivity for the best ladder estimator
++
++For C1, the numerically best estimator is ridge with the selected penalty frozen at `1e-6`. For C2 it is OLS; each leave-one-step-out fold fits that same estimator on the other nine whole physical steps.
++
++### Original test steps separately
++
++| Route / estimator | Test step | EV | RMSE |
++|---|---:|---:|---:|
++| C1 ridge | 0 | `0.2477220949` | `2.0983022008` |
++| C1 ridge | 3 | `0.0203994950` | `3.4787541212` |
++| C2 OLS | 0 | `0.2129546272` | `4.3548173815` |
++| C2 OLS | 3 | undefined: target variance is zero | `1.0174266391` |
++
++C1 is positive on each originally held-out step separately. The original negative aggregate C1 value is therefore not caused by one unlucky member of `{0,3}` under the better estimator.
++
++### Leave-one-step-out rotation
++
++| Step | C1 ridge EV | C1 RMSE | C2 OLS EV | C2 RMSE |
++|---:|---:|---:|---:|---:|
++| 0 | `0.2453421372` | `2.1688393983` | `0.2166562220` | `4.3447396555` |
++| 1 | `0.1759196119` | `2.2076662595` | `0.2026798344` | `3.8062953661` |
++| 2 | `0.0993443344` | `2.2170766128` | `0.0273528908` | `3.6200239619` |
++| 3 | `0.0167254145` | `3.5099767348` | undefined: variance zero | `0.9719879724` |
++| 4 | `0.2589366346` | `1.7397096330` | `0.2931457791` | `3.8670086432` |
++| 5 | `0.2663861088` | `2.1290793127` | `0.3432062777` | `3.3842954104` |
++| 6 | `0.1061865968` | `1.8917579735` | `0.1597012127` | `3.1748312741` |
++| 7 | `0.0765833532` | `4.6941377409` | undefined: variance zero | `1.1687533139` |
++| 8 | `0.1908808533` | `1.6572850427` | `0.2534634301` | `4.2321130401` |
++| 9 | `0.2076794012` | `2.0039039074` | `0.1264856122` | `3.9779951042` |
++
++C1 EV is positive in all ten rotations: mean `0.1643984446`, standard deviation `0.0810787281`, minimum `0.0167254145`, maximum `0.2663861088`, and range `0.2496606943`. Thus the original negative C1 number does not hold across the rotation for the better estimator; it is estimator-specific, not a single-step accident.
++
++C2 has positive EV in all eight folds where EV is defined: mean `0.2028364074`, standard deviation `0.0929369032`, minimum `0.0273528908`, maximum `0.3432062777`, and range `0.3158533869`. Steps 3 and 7 have exactly zero within-step C2 target variance, so EV is mathematically undefined there; their finite RMSEs are reported rather than inventing an EV.
++
++## D — exact encoded-row collision floor
++
++For route-specific feature vector `x`, the empirical irreducible floor was computed as
++
++`(1/N) * sum_over_collision_groups sum_i (y_i - group_mean)^2`,
++
++where grouping keys are the byte-identical big-endian binary64 feature vectors and target disagreement is checked using the exact rational target strings. The fraction reported is that floor divided by the population variance of the exact targets converted at the row boundary.
++
++| Route | All exact duplicate groups | Groups with differing exact targets | Rows in differing-target groups | Variance floor | Corpus target variance | Floor / variance |
++|---|---:|---:|---:|---:|---:|---:|
++| C1 | 2,666 | 0 | 0 | `0.0` | `7.4428962868` | `0.0%` |
++| C2 | 1,181 | 879 | 1,758 | `0.8931142961` | `16.1198592400` | `5.5404596456%` |
++
++C1 has exact duplicate encoded rows, but none of its duplicate groups has differing exact C1 targets, so this corpus implies no positive C1 collision floor. C2 has 879 differing-target collision groups, implying that at least 5.54% of its corpus target variance is unreachable by any deterministic predictor using only the 22 encoded C2 features.
++
++## Reproduction files and exact commands
++
++Retained files:
++
++- `scripts/audit_v025_c1c2_estimators.py` — the complete ladder, rotation, and collision-floor audit.
++- `artifacts/c1c2-estimator-audit-20260910.json` — full-precision machine-readable results, including every validation candidate.
++- `C1C2-ESTIMATOR-AUDIT-2026-09-10.md` — this report.
++
++Unchanged replication, with working directory `/home/sat/mcrl-v025-c1c2suff-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30
++```
++
++Estimator audit, with working directory `/home/sat/mcrl-v025-replay-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/audit_v025_c1c2_estimators.py --output artifacts/c1c2-estimator-audit-20260910.json
++```
++
++The source diagnostic and `/home/sat/mcrl-leo-handover/.venv` were read/executed but never modified. No sealed artifact or fallback flag was modified.
++
++## Required verdicts
++
++**C1 — `ESTIMATOR_ARTEFACT`.** Positive-penalty ridge achieves held-out EV `0.0892133009` against the constant's `0.0` and the original k-NN's `-0.3355476799`, so the encoded C1 features do carry recoverable predictive value. Its EV is positive on both original test steps and all ten leave-one-step-out folds, so the correction is stable enough to reject the “features carry no predictive value” inference.
++
++**C2 — `ESTIMATOR_ARTEFACT`.** OLS achieves held-out EV `0.3010404869`, improving on both the constant's `0.0` and the original k-NN's `0.2106516781`, so the original estimator understates what the encoded C2 features carry. Every finite leave-one-step-out EV is positive, while the other two folds are undefined only because their targets have zero variance, so the estimator conclusion is not driven by an unstable negative rotation.
+diff --git a/artifacts/c1c2-estimator-audit-20260910.json b/artifacts/c1c2-estimator-audit-20260910.json
+index 050cc22c123007f0b1bd071f138b8e1fe9e649d1..8404cc165654c190103d7144d1c966d61fd2c439
+--- a/artifacts/c1c2-estimator-audit-20260910.json
++++ b/artifacts/c1c2-estimator-audit-20260910.json
+@@ -184,7 +184,7 @@
+         "rmse": 4.354817381451514
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 1.0174266391212345
+       }
+     },
+@@ -307,7 +307,7 @@
+         "rmse": 3.6200239618604226
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 0.9719879723778495
+       },
+       "4": {
+diff --git a/scripts/audit_v025_c1c2_estimators.py b/scripts/audit_v025_c1c2_estimators.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..69e595bfcf1fedc61e46d01062e77e3b6a423c4c
+--- /dev/null
++++ b/scripts/audit_v025_c1c2_estimators.py
+@@ -0,0 +1,539 @@
++#!/usr/bin/env python3
++"""Audit estimators on the exact C1/C2 rows from the sufficiency diagnostic.
++
++DIAGNOSTIC_NOT_CLAIM.  This script performs no training or policy run.  It
++reuses the prior diagnostic's exact-row reconstruction, then fits only the
++predeclared estimator ladder.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from fractions import Fraction
++import argparse
++import importlib.util
++import json
++from pathlib import Path
++import struct
++import sys
++from typing import Callable, Iterable
++
++import numpy as np
++
++
++SEED = 20260909
++STEPS = tuple(range(10))
++TRAIN_STEPS = frozenset((1, 2, 4, 6, 7, 8, 9))
++VALIDATION_STEPS = frozenset((5,))
++TEST_STEPS = frozenset((0, 3))
++RIDGE_PENALTIES = (1e-6, 1e-4, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5, 1e6)
++KNN_NEIGHBORS = (1, 3, 7, 15, 31)
++GBT_MAX_TREES = 500
++GBT_DEPTH = 3
++GBT_LEARNING_RATE = 0.05
++GBT_PATIENCE = 30
++GBT_BINS = 64
++GBT_MIN_LEAF = 30
++
++PRIOR_SCRIPT = Path(
++    "/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py"
++)
++
++
++def _load_prior_module():
++    spec = importlib.util.spec_from_file_location("prior_c1c2_diagnostic", PRIOR_SCRIPT)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {PRIOR_SCRIPT}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def _ev(actual: np.ndarray, predicted: np.ndarray) -> float:
++    variance = float(np.var(actual))
++    return float("nan") if variance == 0.0 else 1.0 - float(np.var(actual - predicted)) / variance
++
++
++def _metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
++    residual = actual - predicted
++    return {
++        "explained_variance": _ev(actual, predicted),
++        "rmse": float(np.sqrt(np.mean(residual * residual))),
++    }
++
++
++def _json_safe(value):
++    """Replace non-finite floats with JSON null while preserving structure."""
++    if isinstance(value, float) and not np.isfinite(value):
++        return None
++    if isinstance(value, dict):
++        return {key: _json_safe(item) for key, item in value.items()}
++    if isinstance(value, list):
++        return [_json_safe(item) for item in value]
++    return value
++
++
++def _standardization(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
++    mean = x.mean(axis=0)
++    scale = x.std(axis=0)
++    scale[scale < 1e-12] = 1.0
++    return mean, scale
++
++
++def _linear_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    penalty: float,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    x = (fit_x - mean) / scale
++    z = (predict_x - mean) / scale
++    y_mean = float(fit_y.mean())
++    centered_y = fit_y - y_mean
++    if penalty == 0.0:
++        coefficients, *_ = np.linalg.lstsq(x, centered_y, rcond=None)
++    else:
++        coefficients = np.linalg.solve(
++            x.T @ x + penalty * np.eye(x.shape[1]), x.T @ centered_y
++        )
++    return y_mean + z @ coefficients
++
++
++def _knn_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    neighbors: int,
++    chunk_size: int = 128,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    train = (fit_x - mean) / scale
++    query = (predict_x - mean) / scale
++    k = min(neighbors, len(train))
++    train_norm = np.einsum("ij,ij->i", train, train)
++    predictions = []
++    for start in range(0, len(query), chunk_size):
++        chunk = query[start : start + chunk_size]
++        distances = (
++            np.einsum("ij,ij->i", chunk, chunk)[:, None]
++            + train_norm[None, :]
++            - 2.0 * chunk @ train.T
++        )
++        indices = np.argpartition(distances, kth=k - 1, axis=1)[:, :k]
++        selected_distances = np.take_along_axis(distances, indices, axis=1)
++        weights = 1.0 / np.maximum(selected_distances, 1e-12)
++        predictions.append(
++            (weights * fit_y[indices]).sum(axis=1) / weights.sum(axis=1)
++        )
++    return np.concatenate(predictions)
++
++
++@dataclass
++class TreeNode:
++    value: float
++    feature: int = -1
++    split_bin: int = -1
++    left: "TreeNode | None" = None
++    right: "TreeNode | None" = None
++
++
++@dataclass
++class BinnedTree:
++    edges: tuple[np.ndarray, ...]
++    root: TreeNode
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        bins = _apply_bins(x, self.edges)
++        result = np.empty(len(x), dtype=np.float64)
++
++        def visit(node: TreeNode, indices: np.ndarray) -> None:
++            if node.feature < 0:
++                result[indices] = node.value
++                return
++            mask = bins[indices, node.feature] <= node.split_bin
++            assert node.left is not None and node.right is not None
++            visit(node.left, indices[mask])
++            visit(node.right, indices[~mask])
++
++        visit(self.root, np.arange(len(x), dtype=np.int64))
++        return result
++
++
++def _bin_edges(x: np.ndarray, max_bins: int) -> tuple[np.ndarray, ...]:
++    quantiles = np.linspace(0.0, 1.0, max_bins + 1)[1:-1]
++    edges = []
++    for feature in range(x.shape[1]):
++        candidate = np.unique(np.quantile(x[:, feature], quantiles))
++        candidate = candidate[
++            (candidate > np.min(x[:, feature])) & (candidate < np.max(x[:, feature]))
++        ]
++        edges.append(candidate)
++    return tuple(edges)
++
++
++def _apply_bins(x: np.ndarray, edges: tuple[np.ndarray, ...]) -> np.ndarray:
++    result = np.empty(x.shape, dtype=np.uint8)
++    for feature, feature_edges in enumerate(edges):
++        result[:, feature] = np.searchsorted(feature_edges, x[:, feature], side="right")
++    return result
++
++
++def _fit_binned_tree(
++    bins: np.ndarray,
++    residual: np.ndarray,
++    edges: tuple[np.ndarray, ...],
++    *,
++    max_depth: int,
++    min_leaf: int,
++) -> BinnedTree:
++    def build(indices: np.ndarray, depth: int) -> TreeNode:
++        values = residual[indices]
++        node = TreeNode(value=float(values.mean()))
++        if depth >= max_depth or len(indices) < 2 * min_leaf:
++            return node
++        total_sum = float(values.sum())
++        total_count = len(indices)
++        baseline = total_sum * total_sum / total_count
++        best_gain = 0.0
++        best_feature = -1
++        best_split = -1
++        for feature, feature_edges in enumerate(edges):
++            if len(feature_edges) == 0:
++                continue
++            feature_bins = bins[indices, feature]
++            bin_count = len(feature_edges) + 1
++            counts = np.bincount(feature_bins, minlength=bin_count).astype(np.int64)
++            sums = np.bincount(feature_bins, weights=values, minlength=bin_count)
++            left_count = np.cumsum(counts)[:-1]
++            left_sum = np.cumsum(sums)[:-1]
++            right_count = total_count - left_count
++            right_sum = total_sum - left_sum
++            valid = (left_count >= min_leaf) & (right_count >= min_leaf)
++            gains = np.full(len(left_count), -np.inf)
++            gains[valid] = (
++                left_sum[valid] ** 2 / left_count[valid]
++                + right_sum[valid] ** 2 / right_count[valid]
++                - baseline
++            )
++            split = int(np.argmax(gains))
++            gain = float(gains[split])
++            if gain > best_gain:
++                best_gain = gain
++                best_feature = feature
++                best_split = split
++        if best_feature < 0:
++            return node
++        left_mask = bins[indices, best_feature] <= best_split
++        node.feature = best_feature
++        node.split_bin = best_split
++        node.left = build(indices[left_mask], depth + 1)
++        node.right = build(indices[~left_mask], depth + 1)
++        return node
++
++    root = build(np.arange(len(bins), dtype=np.int64), 0)
++    return BinnedTree(edges=edges, root=root)
++
++
++@dataclass
++class GBTModel:
++    initial: float
++    trees: list[BinnedTree]
++    learning_rate: float
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        result = np.full(len(x), self.initial, dtype=np.float64)
++        for tree in self.trees:
++            result += self.learning_rate * tree.predict(x)
++        return result
++
++
++def _fit_gbt(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    *,
++    tree_count: int,
++    validation: tuple[np.ndarray, np.ndarray] | None,
++) -> tuple[GBTModel, dict[str, object]]:
++    edges = _bin_edges(fit_x, GBT_BINS)
++    bins = _apply_bins(fit_x, edges)
++    initial = float(fit_y.mean())
++    fit_prediction = np.full(len(fit_y), initial, dtype=np.float64)
++    trees: list[BinnedTree] = []
++    best_count = 0
++    best_rmse = float("inf")
++    stale = 0
++    if validation is not None:
++        validation_x, validation_y = validation
++        validation_prediction = np.full(len(validation_y), initial, dtype=np.float64)
++    for iteration in range(1, tree_count + 1):
++        tree = _fit_binned_tree(
++            bins,
++            fit_y - fit_prediction,
++            edges,
++            max_depth=GBT_DEPTH,
++            min_leaf=GBT_MIN_LEAF,
++        )
++        trees.append(tree)
++        fit_prediction += GBT_LEARNING_RATE * tree.predict(fit_x)
++        if validation is None:
++            continue
++        validation_prediction += GBT_LEARNING_RATE * tree.predict(validation_x)
++        rmse = float(np.sqrt(np.mean((validation_y - validation_prediction) ** 2)))
++        if rmse < best_rmse - 1e-12:
++            best_rmse = rmse
++            best_count = iteration
++            stale = 0
++        else:
++            stale += 1
++        if stale >= GBT_PATIENCE:
++            break
++    if validation is None:
++        best_count = len(trees)
++    model = GBTModel(initial, trees[:best_count], GBT_LEARNING_RATE)
++    return model, {
++        "selected_trees": best_count,
++        "trees_fitted_before_stop": len(trees),
++        "best_validation_rmse": None if validation is None else best_rmse,
++    }
++
++
++def _feature_key(values: Iterable[float]) -> bytes:
++    numbers = tuple(values)
++    return struct.pack(f">{len(numbers)}d", *numbers)
++
++
++def _collision_floor(rows, *, route: str) -> dict[str, object]:
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    exact_name = f"{route.lower()}_target_exact"
++    float_name = f"{route.lower()}_target"
++    groups: dict[bytes, list[tuple[Fraction, float]]] = {}
++    for row in rows:
++        groups.setdefault(_feature_key(getattr(row, q_name)), []).append(
++            (Fraction(getattr(row, exact_name)), getattr(row, float_name))
++        )
++    collision_groups = [
++        values for values in groups.values() if len({value[0] for value in values}) > 1
++    ]
++    y = np.asarray([getattr(row, float_name) for row in rows], dtype=np.float64)
++    sse = 0.0
++    for values in collision_groups:
++        targets = np.asarray([value[1] for value in values], dtype=np.float64)
++        sse += float(np.sum((targets - targets.mean()) ** 2))
++    floor_variance = sse / len(rows)
++    total_variance = float(np.var(y))
++    return {
++        "unique_feature_vectors": len(groups),
++        "duplicate_groups_all": sum(len(values) > 1 for values in groups.values()),
++        "collision_groups_differing_exact_target": len(collision_groups),
++        "rows_in_collision_groups": sum(len(values) for values in collision_groups),
++        "irreducible_variance_floor": floor_variance,
++        "total_target_variance": total_variance,
++        "fraction_of_total_target_variance": floor_variance / total_variance,
++    }
++
++
++def _route_arrays(rows, route: str):
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    y_name = f"{route.lower()}_target"
++    x = np.asarray([getattr(row, q_name) for row in rows], dtype=np.float64)
++    y = np.asarray([getattr(row, y_name) for row in rows], dtype=np.float64)
++    steps = np.asarray([row.anchor // 3 for row in rows], dtype=np.int64)
++    return x, y, steps
++
++
++def _mask(steps: np.ndarray, selected: Iterable[int]) -> np.ndarray:
++    return np.isin(steps, tuple(selected))
++
++
++def _audit_route(rows, route: str) -> dict[str, object]:
++    x, y, steps = _route_arrays(rows, route)
++    train = _mask(steps, TRAIN_STEPS)
++    validation = _mask(steps, VALIDATION_STEPS)
++    test = _mask(steps, TEST_STEPS)
++    development = train | validation
++
++    constant_prediction = np.full(test.sum(), float(y[train].mean()))
++    ols_prediction = _linear_predict(x[development], y[development], x[test], penalty=0.0)
++
++    ridge_validation = {}
++    for penalty in RIDGE_PENALTIES:
++        prediction = _linear_predict(x[train], y[train], x[validation], penalty=penalty)
++        ridge_validation[str(penalty)] = _metrics(y[validation], prediction)
++    selected_penalty = max(
++        RIDGE_PENALTIES,
++        key=lambda penalty: (
++            ridge_validation[str(penalty)]["explained_variance"], -penalty
++        ),
++    )
++    ridge_prediction = _linear_predict(
++        x[development], y[development], x[test], penalty=selected_penalty
++    )
++
++    gbt, gbt_selection = _fit_gbt(
++        x[train],
++        y[train],
++        tree_count=GBT_MAX_TREES,
++        validation=(x[validation], y[validation]),
++    )
++    gbt_prediction = gbt.predict(x[test])
++
++    knn_validation = {}
++    for neighbors in KNN_NEIGHBORS:
++        prediction = _knn_predict(
++            x[train], y[train], x[validation], neighbors=neighbors
++        )
++        knn_validation[str(neighbors)] = _metrics(y[validation], prediction)
++    selected_k = max(
++        KNN_NEIGHBORS,
++        key=lambda neighbors: (
++            knn_validation[str(neighbors)]["explained_variance"], -neighbors
++        ),
++    )
++    knn_prediction = _knn_predict(
++        x[development], y[development], x[test], neighbors=selected_k
++    )
++
++    predictions = {
++        "constant": constant_prediction,
++        "ols": ols_prediction,
++        "ridge": ridge_prediction,
++        "gradient_boosted_trees": gbt_prediction,
++        "knn": knn_prediction,
++    }
++    ladder = {name: _metrics(y[test], prediction) for name, prediction in predictions.items()}
++    ladder["ridge"]["selected_penalty"] = selected_penalty
++    ladder["ridge"]["validation_by_penalty"] = ridge_validation
++    ladder["gradient_boosted_trees"].update(gbt_selection)
++    ladder["knn"]["selected_k"] = selected_k
++    ladder["knn"]["validation_by_k"] = knn_validation
++
++    best_name = max(ladder, key=lambda name: ladder[name]["explained_variance"])
++    best_prediction = predictions[best_name]
++    separate_test_steps = {}
++    test_step_values = steps[test]
++    for step in sorted(TEST_STEPS):
++        selected = test_step_values == step
++        separate_test_steps[str(step)] = _metrics(y[test][selected], best_prediction[selected])
++
++    def fit_selected(fit: np.ndarray, held_out: np.ndarray) -> np.ndarray:
++        if best_name == "constant":
++            return np.full(held_out.sum(), float(y[fit].mean()))
++        if best_name == "ols":
++            return _linear_predict(x[fit], y[fit], x[held_out], penalty=0.0)
++        if best_name == "ridge":
++            return _linear_predict(
++                x[fit], y[fit], x[held_out], penalty=selected_penalty
++            )
++        if best_name == "gradient_boosted_trees":
++            rotation_gbt, _ = _fit_gbt(
++                x[fit],
++                y[fit],
++                tree_count=int(gbt_selection["selected_trees"]),
++                validation=None,
++            )
++            return rotation_gbt.predict(x[held_out])
++        if best_name == "knn":
++            return _knn_predict(x[fit], y[fit], x[held_out], neighbors=selected_k)
++        raise AssertionError(best_name)
++
++    rotation = {}
++    for step in STEPS:
++        held_out = steps == step
++        fit = ~held_out
++        prediction = fit_selected(fit, held_out)
++        rotation[str(step)] = _metrics(y[held_out], prediction)
++    rotation_evs = np.asarray(
++        [rotation[str(step)]["explained_variance"] for step in STEPS]
++    )
++    finite_rotation_evs = rotation_evs[np.isfinite(rotation_evs)]
++
++    return {
++        "rows": len(rows),
++        "feature_dimension": x.shape[1],
++        "split_row_counts": {
++            "train": int(train.sum()),
++            "validation": int(validation.sum()),
++            "test": int(test.sum()),
++        },
++        "ladder": ladder,
++        "best_estimator": best_name,
++        "best_estimator_test_step_metrics": separate_test_steps,
++        "leave_one_step_out": rotation,
++        "leave_one_step_out_ev_spread": {
++            "basis": "finite EV values only; EV is undefined when a step's target variance is zero",
++            "minimum": float(finite_rotation_evs.min()),
++            "maximum": float(finite_rotation_evs.max()),
++            "range": float(np.ptp(finite_rotation_evs)),
++            "mean": float(finite_rotation_evs.mean()),
++            "standard_deviation": float(finite_rotation_evs.std()),
++            "negative_step_count": int(np.sum(finite_rotation_evs < 0.0)),
++            "positive_step_count": int(np.sum(finite_rotation_evs > 0.0)),
++            "undefined_zero_variance_step_count": int(np.sum(~np.isfinite(rotation_evs))),
++        },
++        "collision_floor": _collision_floor(rows, route=route),
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument(
++        "--output",
++        type=Path,
++        default=Path("artifacts/c1c2-estimator-audit-20260910.json"),
++    )
++    args = parser.parse_args()
++    prior = _load_prior_module()
++    tape = prior.build_world_tape(
++        domain=prior.DEVELOPMENT_WORLD_DOMAINS[0],
++        provider=prior.LegacyWorldProvider(role="pilot-source"),
++        steps=13,
++        start_time_s=0.0,
++    )
++    calibration = prior._calibration()
++    rows = []
++    for anchor in range(30):
++        rows.extend(prior._relabel_anchor(tape, calibration, anchor))
++        print(
++            json.dumps({"phase": "exact-relabel", "anchor": anchor, "rows": len(rows)}),
++            file=sys.stderr,
++            flush=True,
++        )
++    if len(rows) != 26345:
++        raise AssertionError(f"expected 26345 rows, got {len(rows)}")
++    result = {
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "seed": SEED,
++        "steps": list(STEPS),
++        "split": {
++            "train_steps": sorted(TRAIN_STEPS),
++            "validation_steps": sorted(VALIDATION_STEPS),
++            "test_steps": sorted(TEST_STEPS),
++        },
++        "model_declaration": [
++            "constant predictor (strict training-split mean)",
++            "ordinary least squares on encoded features",
++            "ridge; penalty selected by validation explained variance only",
++            (
++                "deterministic squared-error histogram gradient-boosted trees; "
++                f"depth={GBT_DEPTH}, learning_rate={GBT_LEARNING_RATE}, "
++                f"max_trees={GBT_MAX_TREES}, patience={GBT_PATIENCE}, "
++                f"bins={GBT_BINS}, min_leaf={GBT_MIN_LEAF}; early stopping by "
++                "validation RMSE only"
++            ),
++            "original standardized inverse-distance k-nearest-neighbor",
++        ],
++        "c1": _audit_route(rows, "C1"),
++        "c2": _audit_route(rows, "C2"),
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(json.dumps(_json_safe(result), indent=2, sort_keys=True) + "\n")
++    print(json.dumps({"output": str(args.output), "rows": len(rows)}, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+/bin/bash -lc "env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python -m py_compile scripts/audit_v025_c1c2_estimators.py
+/home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+p=json.loads(Path('artifacts/c1c2-estimator-audit-20260910.json').read_text())
+assert p['c1']['ladder']['knn']['explained_variance'] == -0.33554767986149203
+assert p['c2']['ladder']['knn']['explained_variance'] == 0.21065167813231378
+assert p['c1']['best_estimator'] == 'ridge'
+assert p['c2']['best_estimator'] == 'ols'
+assert p['c1']['leave_one_step_out_ev_spread']['negative_step_count'] == 0
+assert p['c2']['leave_one_step_out_ev_spread']['undefined_zero_variance_step_count'] == 2
+assert p['c1']['collision_floor']['collision_groups_differing_exact_target'] == 0
+assert p['c2']['collision_floor']['collision_groups_differing_exact_target'] == 879
+report=Path('C1C2-ESTIMATOR-AUDIT-2026-09-10.md').read_text()
+assert report.startswith('C1: "'`ESTIMATOR_ARTEFACT` | C2: `ESTIMATOR_ARTEFACT`'"')
+assert report.rstrip().endswith('unstable negative rotation.')
+print('artifact/report assertions: PASS')
+PY
+git diff --check -- scripts/audit_v025_c1c2_estimators.py C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+git status --short -- C1C2-ESTIMATOR-AUDIT-2026-09-10.md scripts/audit_v025_c1c2_estimators.py artifacts/c1c2-estimator-audit-20260910.json
+wc -l C1C2-ESTIMATOR-AUDIT-2026-09-10.md scripts/audit_v025_c1c2_estimators.py artifacts/c1c2-estimator-audit-20260910.json" in /home/sat/mcrl-v025-replay-ws
+ succeeded in 0ms:
+artifact/report assertions: PASS
+?? C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+?? artifacts/c1c2-estimator-audit-20260910.json
+?? scripts/audit_v025_c1c2_estimators.py
+  124 C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+  539 scripts/audit_v025_c1c2_estimators.py
+  395 artifacts/c1c2-estimator-audit-20260910.json
+ 1058 total
+
+diff --git a/C1C2-ESTIMATOR-AUDIT-2026-09-10.md b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba77d177fb249e315ed3dd00d659cab390a9ee25
+--- /dev/null
++++ b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+@@ -0,0 +1,124 @@
++C1: `ESTIMATOR_ARTEFACT` | C2: `ESTIMATOR_ARTEFACT`
++
++`DIAGNOSTIC_NOT_CLAIM`
++
++# C1/C2 estimator audit — 2026-09-10
++
++This is an estimator audit on the 26,345 already-defined valid non-reference rows. No production learner, policy, acceptance gate, or fallback flag was changed, and no threshold, sign, seed, horizon, price, guard, or acceptance rule was changed.
++
++## A — unchanged replication
++
++The prior diagnostic was run unchanged from `/home/sat/mcrl-v025-c1c2suff-ws` with 30 anchors. It reproduced the row count, split, selected neighbour count, held-out row count, target variances, explained variances, and RMSEs at full emitted precision:
++
++| Route | Held-out EV | Held-out RMSE | Held-out target variance | Selected k |
++|---|---:|---:|---:|---:|
++| C1 | `-0.33554767986149203` | `3.468393728057137` | `8.34196834334199` | 31 |
++| C2 | `0.21065167813231378` | `3.385646156133314` | `14.369004998057571` | 31 |
++
++The reproduced split was train steps `{1,2,4,6,7,8,9}`, validation step `{5}`, and test steps `{0,3}`, with 5,280 test rows and seed `20260909`. This satisfies the replication prerequisite; the downstream audit uses those same route-specific encoded features and exact targets.
++
++## B — predeclared estimator ladder
++
++Before any ladder model was run, the complete list was declared as: training-mean constant, ordinary least squares, validation-selected ridge, modest-depth validation-early-stopped gradient-boosted trees, and the original k-NN. No sixth model was added, and every result is below.
++
++| Route | Estimator | Held-out EV | Held-out RMSE | Selection detail |
++|---|---|---:|---:|---|
++| C1 | Constant predictor | `0.0000000000` | `2.9584953816` | strict training-split mean |
++| C1 | Ordinary least squares | `0.0892133009` | `2.8688725007` | no hyperparameter |
++| C1 | Ridge | `0.0892133009` | `2.8688725006` | penalty `1e-6` |
++| C1 | Gradient-boosted trees | `0.0235123190` | `2.9187599056` | 151 trees |
++| C1 | Original k-NN | `-0.3355476799` | `3.4683937281` | `k=31` |
++| C2 | Constant predictor | `0.0000000000` | `3.8210027084` | strict training-split mean |
++| C2 | Ordinary least squares | `0.3010404869` | `3.1702888107` | no hyperparameter |
++| C2 | Ridge | `0.3010404862` | `3.1702888117` | penalty `1e-6` |
++| C2 | Gradient-boosted trees | `0.2679215987` | `3.2856117817` | 112 trees |
++| C2 | Original k-NN | `0.2106516781` | `3.3856461561` | `k=31` |
++
++The C1 ridge/OLS difference is only numerical (`1.13e-11` EV); ridge is called the C1 winner solely because its emitted EV is fractionally higher. C2 OLS is the clear winner.
++
++### Fitting and selection details
++
++- Constant uses the mean of strict training steps only. EV is exactly zero for any constant; the training mean determines its reported RMSE.
++- OLS is fit on train plus validation before the untouched test evaluation.
++- Ridge uses standardized features, selects only on validation-step EV from the fixed positive penalty grid `{1e-6,1e-4,1e-2,1e-1,1,10,100,1e3,1e4,1e5,1e6}`, then refits on train plus validation with the selected penalty.
++- The deterministic squared-error histogram gradient booster has depth 3, learning rate `0.05`, at most 500 trees, 64 bins, minimum leaf size 30, and patience 30. It is fit on strict training rows and retains the iteration with minimum validation RMSE: 151 trees for C1 and 112 for C2.
++- k-NN is the original standardized inverse-squared-distance implementation, selects `k` from `{1,3,7,15,31}` by validation EV, and refits on train plus validation. It selects `k=31` for both routes and exactly reproduces A.
++
++The environment contains NumPy `2.5.2` but no scikit-learn, XGBoost, or LightGBM, so the modest-depth histogram booster is implemented transparently in the retained audit script rather than substituting another model family.
++
++## C — split sensitivity for the best ladder estimator
++
++For C1, the numerically best estimator is ridge with the selected penalty frozen at `1e-6`. For C2 it is OLS; each leave-one-step-out fold fits that same estimator on the other nine whole physical steps.
++
++### Original test steps separately
++
++| Route / estimator | Test step | EV | RMSE |
++|---|---:|---:|---:|
++| C1 ridge | 0 | `0.2477220949` | `2.0983022008` |
++| C1 ridge | 3 | `0.0203994950` | `3.4787541212` |
++| C2 OLS | 0 | `0.2129546272` | `4.3548173815` |
++| C2 OLS | 3 | undefined: target variance is zero | `1.0174266391` |
++
++C1 is positive on each originally held-out step separately. The original negative aggregate C1 value is therefore not caused by one unlucky member of `{0,3}` under the better estimator.
++
++### Leave-one-step-out rotation
++
++| Step | C1 ridge EV | C1 RMSE | C2 OLS EV | C2 RMSE |
++|---:|---:|---:|---:|---:|
++| 0 | `0.2453421372` | `2.1688393983` | `0.2166562220` | `4.3447396555` |
++| 1 | `0.1759196119` | `2.2076662595` | `0.2026798344` | `3.8062953661` |
++| 2 | `0.0993443344` | `2.2170766128` | `0.0273528908` | `3.6200239619` |
++| 3 | `0.0167254145` | `3.5099767348` | undefined: variance zero | `0.9719879724` |
++| 4 | `0.2589366346` | `1.7397096330` | `0.2931457791` | `3.8670086432` |
++| 5 | `0.2663861088` | `2.1290793127` | `0.3432062777` | `3.3842954104` |
++| 6 | `0.1061865968` | `1.8917579735` | `0.1597012127` | `3.1748312741` |
++| 7 | `0.0765833532` | `4.6941377409` | undefined: variance zero | `1.1687533139` |
++| 8 | `0.1908808533` | `1.6572850427` | `0.2534634301` | `4.2321130401` |
++| 9 | `0.2076794012` | `2.0039039074` | `0.1264856122` | `3.9779951042` |
++
++C1 EV is positive in all ten rotations: mean `0.1643984446`, standard deviation `0.0810787281`, minimum `0.0167254145`, maximum `0.2663861088`, and range `0.2496606943`. Thus the original negative C1 number does not hold across the rotation for the better estimator; it is estimator-specific, not a single-step accident.
++
++C2 has positive EV in all eight folds where EV is defined: mean `0.2028364074`, standard deviation `0.0929369032`, minimum `0.0273528908`, maximum `0.3432062777`, and range `0.3158533869`. Steps 3 and 7 have exactly zero within-step C2 target variance, so EV is mathematically undefined there; their finite RMSEs are reported rather than inventing an EV.
++
++## D — exact encoded-row collision floor
++
++For route-specific feature vector `x`, the empirical irreducible floor was computed as
++
++`(1/N) * sum_over_collision_groups sum_i (y_i - group_mean)^2`,
++
++where grouping keys are the byte-identical big-endian binary64 feature vectors and target disagreement is checked using the exact rational target strings. The fraction reported is that floor divided by the population variance of the exact targets converted at the row boundary.
++
++| Route | All exact duplicate groups | Groups with differing exact targets | Rows in differing-target groups | Variance floor | Corpus target variance | Floor / variance |
++|---|---:|---:|---:|---:|---:|---:|
++| C1 | 2,666 | 0 | 0 | `0.0` | `7.4428962868` | `0.0%` |
++| C2 | 1,181 | 879 | 1,758 | `0.8931142961` | `16.1198592400` | `5.5404596456%` |
++
++C1 has exact duplicate encoded rows, but none of its duplicate groups has differing exact C1 targets, so this corpus implies no positive C1 collision floor. C2 has 879 differing-target collision groups, implying that at least 5.54% of its corpus target variance is unreachable by any deterministic predictor using only the 22 encoded C2 features.
++
++## Reproduction files and exact commands
++
++Retained files:
++
++- `scripts/audit_v025_c1c2_estimators.py` — the complete ladder, rotation, and collision-floor audit.
++- `artifacts/c1c2-estimator-audit-20260910.json` — full-precision machine-readable results, including every validation candidate.
++- `C1C2-ESTIMATOR-AUDIT-2026-09-10.md` — this report.
++
++Unchanged replication, with working directory `/home/sat/mcrl-v025-c1c2suff-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30
++```
++
++Estimator audit, with working directory `/home/sat/mcrl-v025-replay-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/audit_v025_c1c2_estimators.py --output artifacts/c1c2-estimator-audit-20260910.json
++```
++
++The source diagnostic and `/home/sat/mcrl-leo-handover/.venv` were read/executed but never modified. No sealed artifact or fallback flag was modified.
++
++## Required verdicts
++
++**C1 — `ESTIMATOR_ARTEFACT`.** Positive-penalty ridge achieves held-out EV `0.0892133009` against the constant's `0.0` and the original k-NN's `-0.3355476799`, so the encoded C1 features do carry recoverable predictive value. Its EV is positive on both original test steps and all ten leave-one-step-out folds, so the correction is stable enough to reject the “features carry no predictive value” inference.
++
++**C2 — `ESTIMATOR_ARTEFACT`.** OLS achieves held-out EV `0.3010404869`, improving on both the constant's `0.0` and the original k-NN's `0.2106516781`, so the original estimator understates what the encoded C2 features carry. Every finite leave-one-step-out EV is positive, while the other two folds are undefined only because their targets have zero variance, so the estimator conclusion is not driven by an unstable negative rotation.
+diff --git a/artifacts/c1c2-estimator-audit-20260910.json b/artifacts/c1c2-estimator-audit-20260910.json
+index 050cc22c123007f0b1bd071f138b8e1fe9e649d1..8404cc165654c190103d7144d1c966d61fd2c439
+--- a/artifacts/c1c2-estimator-audit-20260910.json
++++ b/artifacts/c1c2-estimator-audit-20260910.json
+@@ -184,7 +184,7 @@
+         "rmse": 4.354817381451514
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 1.0174266391212345
+       }
+     },
+@@ -307,7 +307,7 @@
+         "rmse": 3.6200239618604226
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 0.9719879723778495
+       },
+       "4": {
+diff --git a/scripts/audit_v025_c1c2_estimators.py b/scripts/audit_v025_c1c2_estimators.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..69e595bfcf1fedc61e46d01062e77e3b6a423c4c
+--- /dev/null
++++ b/scripts/audit_v025_c1c2_estimators.py
+@@ -0,0 +1,539 @@
++#!/usr/bin/env python3
++"""Audit estimators on the exact C1/C2 rows from the sufficiency diagnostic.
++
++DIAGNOSTIC_NOT_CLAIM.  This script performs no training or policy run.  It
++reuses the prior diagnostic's exact-row reconstruction, then fits only the
++predeclared estimator ladder.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from fractions import Fraction
++import argparse
++import importlib.util
++import json
++from pathlib import Path
++import struct
++import sys
++from typing import Callable, Iterable
++
++import numpy as np
++
++
++SEED = 20260909
++STEPS = tuple(range(10))
++TRAIN_STEPS = frozenset((1, 2, 4, 6, 7, 8, 9))
++VALIDATION_STEPS = frozenset((5,))
++TEST_STEPS = frozenset((0, 3))
++RIDGE_PENALTIES = (1e-6, 1e-4, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5, 1e6)
++KNN_NEIGHBORS = (1, 3, 7, 15, 31)
++GBT_MAX_TREES = 500
++GBT_DEPTH = 3
++GBT_LEARNING_RATE = 0.05
++GBT_PATIENCE = 30
++GBT_BINS = 64
++GBT_MIN_LEAF = 30
++
++PRIOR_SCRIPT = Path(
++    "/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py"
++)
++
++
++def _load_prior_module():
++    spec = importlib.util.spec_from_file_location("prior_c1c2_diagnostic", PRIOR_SCRIPT)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {PRIOR_SCRIPT}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def _ev(actual: np.ndarray, predicted: np.ndarray) -> float:
++    variance = float(np.var(actual))
++    return float("nan") if variance == 0.0 else 1.0 - float(np.var(actual - predicted)) / variance
++
++
++def _metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
++    residual = actual - predicted
++    return {
++        "explained_variance": _ev(actual, predicted),
++        "rmse": float(np.sqrt(np.mean(residual * residual))),
++    }
++
++
++def _json_safe(value):
++    """Replace non-finite floats with JSON null while preserving structure."""
++    if isinstance(value, float) and not np.isfinite(value):
++        return None
++    if isinstance(value, dict):
++        return {key: _json_safe(item) for key, item in value.items()}
++    if isinstance(value, list):
++        return [_json_safe(item) for item in value]
++    return value
++
++
++def _standardization(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
++    mean = x.mean(axis=0)
++    scale = x.std(axis=0)
++    scale[scale < 1e-12] = 1.0
++    return mean, scale
++
++
++def _linear_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    penalty: float,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    x = (fit_x - mean) / scale
++    z = (predict_x - mean) / scale
++    y_mean = float(fit_y.mean())
++    centered_y = fit_y - y_mean
++    if penalty == 0.0:
++        coefficients, *_ = np.linalg.lstsq(x, centered_y, rcond=None)
++    else:
++        coefficients = np.linalg.solve(
++            x.T @ x + penalty * np.eye(x.shape[1]), x.T @ centered_y
++        )
++    return y_mean + z @ coefficients
++
++
++def _knn_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    neighbors: int,
++    chunk_size: int = 128,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    train = (fit_x - mean) / scale
++    query = (predict_x - mean) / scale
++    k = min(neighbors, len(train))
++    train_norm = np.einsum("ij,ij->i", train, train)
++    predictions = []
++    for start in range(0, len(query), chunk_size):
++        chunk = query[start : start + chunk_size]
++        distances = (
++            np.einsum("ij,ij->i", chunk, chunk)[:, None]
++            + train_norm[None, :]
++            - 2.0 * chunk @ train.T
++        )
++        indices = np.argpartition(distances, kth=k - 1, axis=1)[:, :k]
++        selected_distances = np.take_along_axis(distances, indices, axis=1)
++        weights = 1.0 / np.maximum(selected_distances, 1e-12)
++        predictions.append(
++            (weights * fit_y[indices]).sum(axis=1) / weights.sum(axis=1)
++        )
++    return np.concatenate(predictions)
++
++
++@dataclass
++class TreeNode:
++    value: float
++    feature: int = -1
++    split_bin: int = -1
++    left: "TreeNode | None" = None
++    right: "TreeNode | None" = None
++
++
++@dataclass
++class BinnedTree:
++    edges: tuple[np.ndarray, ...]
++    root: TreeNode
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        bins = _apply_bins(x, self.edges)
++        result = np.empty(len(x), dtype=np.float64)
++
++        def visit(node: TreeNode, indices: np.ndarray) -> None:
++            if node.feature < 0:
++                result[indices] = node.value
++                return
++            mask = bins[indices, node.feature] <= node.split_bin
++            assert node.left is not None and node.right is not None
++            visit(node.left, indices[mask])
++            visit(node.right, indices[~mask])
++
++        visit(self.root, np.arange(len(x), dtype=np.int64))
++        return result
++
++
++def _bin_edges(x: np.ndarray, max_bins: int) -> tuple[np.ndarray, ...]:
++    quantiles = np.linspace(0.0, 1.0, max_bins + 1)[1:-1]
++    edges = []
++    for feature in range(x.shape[1]):
++        candidate = np.unique(np.quantile(x[:, feature], quantiles))
++        candidate = candidate[
++            (candidate > np.min(x[:, feature])) & (candidate < np.max(x[:, feature]))
++        ]
++        edges.append(candidate)
++    return tuple(edges)
++
++
++def _apply_bins(x: np.ndarray, edges: tuple[np.ndarray, ...]) -> np.ndarray:
++    result = np.empty(x.shape, dtype=np.uint8)
++    for feature, feature_edges in enumerate(edges):
++        result[:, feature] = np.searchsorted(feature_edges, x[:, feature], side="right")
++    return result
++
++
++def _fit_binned_tree(
++    bins: np.ndarray,
++    residual: np.ndarray,
++    edges: tuple[np.ndarray, ...],
++    *,
++    max_depth: int,
++    min_leaf: int,
++) -> BinnedTree:
++    def build(indices: np.ndarray, depth: int) -> TreeNode:
++        values = residual[indices]
++        node = TreeNode(value=float(values.mean()))
++        if depth >= max_depth or len(indices) < 2 * min_leaf:
++            return node
++        total_sum = float(values.sum())
++        total_count = len(indices)
++        baseline = total_sum * total_sum / total_count
++        best_gain = 0.0
++        best_feature = -1
++        best_split = -1
++        for feature, feature_edges in enumerate(edges):
++            if len(feature_edges) == 0:
++                continue
++            feature_bins = bins[indices, feature]
++            bin_count = len(feature_edges) + 1
++            counts = np.bincount(feature_bins, minlength=bin_count).astype(np.int64)
++            sums = np.bincount(feature_bins, weights=values, minlength=bin_count)
++            left_count = np.cumsum(counts)[:-1]
++            left_sum = np.cumsum(sums)[:-1]
++            right_count = total_count - left_count
++            right_sum = total_sum - left_sum
++            valid = (left_count >= min_leaf) & (right_count >= min_leaf)
++            gains = np.full(len(left_count), -np.inf)
++            gains[valid] = (
++                left_sum[valid] ** 2 / left_count[valid]
++                + right_sum[valid] ** 2 / right_count[valid]
++                - baseline
++            )
++            split = int(np.argmax(gains))
++            gain = float(gains[split])
++            if gain > best_gain:
++                best_gain = gain
++                best_feature = feature
++                best_split = split
++        if best_feature < 0:
++            return node
++        left_mask = bins[indices, best_feature] <= best_split
++        node.feature = best_feature
++        node.split_bin = best_split
++        node.left = build(indices[left_mask], depth + 1)
++        node.right = build(indices[~left_mask], depth + 1)
++        return node
++
++    root = build(np.arange(len(bins), dtype=np.int64), 0)
++    return BinnedTree(edges=edges, root=root)
++
++
++@dataclass
++class GBTModel:
++    initial: float
++    trees: list[BinnedTree]
++    learning_rate: float
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        result = np.full(len(x), self.initial, dtype=np.float64)
++        for tree in self.trees:
++            result += self.learning_rate * tree.predict(x)
++        return result
++
++
++def _fit_gbt(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    *,
++    tree_count: int,
++    validation: tuple[np.ndarray, np.ndarray] | None,
++) -> tuple[GBTModel, dict[str, object]]:
++    edges = _bin_edges(fit_x, GBT_BINS)
++    bins = _apply_bins(fit_x, edges)
++    initial = float(fit_y.mean())
++    fit_prediction = np.full(len(fit_y), initial, dtype=np.float64)
++    trees: list[BinnedTree] = []
++    best_count = 0
++    best_rmse = float("inf")
++    stale = 0
++    if validation is not None:
++        validation_x, validation_y = validation
++        validation_prediction = np.full(len(validation_y), initial, dtype=np.float64)
++    for iteration in range(1, tree_count + 1):
++        tree = _fit_binned_tree(
++            bins,
++            fit_y - fit_prediction,
++            edges,
++            max_depth=GBT_DEPTH,
++            min_leaf=GBT_MIN_LEAF,
++        )
++        trees.append(tree)
++        fit_prediction += GBT_LEARNING_RATE * tree.predict(fit_x)
++        if validation is None:
++            continue
++        validation_prediction += GBT_LEARNING_RATE * tree.predict(validation_x)
++        rmse = float(np.sqrt(np.mean((validation_y - validation_prediction) ** 2)))
++        if rmse < best_rmse - 1e-12:
++            best_rmse = rmse
++            best_count = iteration
++            stale = 0
++        else:
++            stale += 1
++        if stale >= GBT_PATIENCE:
++            break
++    if validation is None:
++        best_count = len(trees)
++    model = GBTModel(initial, trees[:best_count], GBT_LEARNING_RATE)
++    return model, {
++        "selected_trees": best_count,
++        "trees_fitted_before_stop": len(trees),
++        "best_validation_rmse": None if validation is None else best_rmse,
++    }
++
++
++def _feature_key(values: Iterable[float]) -> bytes:
++    numbers = tuple(values)
++    return struct.pack(f">{len(numbers)}d", *numbers)
++
++
++def _collision_floor(rows, *, route: str) -> dict[str, object]:
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    exact_name = f"{route.lower()}_target_exact"
++    float_name = f"{route.lower()}_target"
++    groups: dict[bytes, list[tuple[Fraction, float]]] = {}
++    for row in rows:
++        groups.setdefault(_feature_key(getattr(row, q_name)), []).append(
++            (Fraction(getattr(row, exact_name)), getattr(row, float_name))
++        )
++    collision_groups = [
++        values for values in groups.values() if len({value[0] for value in values}) > 1
++    ]
++    y = np.asarray([getattr(row, float_name) for row in rows], dtype=np.float64)
++    sse = 0.0
++    for values in collision_groups:
++        targets = np.asarray([value[1] for value in values], dtype=np.float64)
++        sse += float(np.sum((targets - targets.mean()) ** 2))
++    floor_variance = sse / len(rows)
++    total_variance = float(np.var(y))
++    return {
++        "unique_feature_vectors": len(groups),
++        "duplicate_groups_all": sum(len(values) > 1 for values in groups.values()),
++        "collision_groups_differing_exact_target": len(collision_groups),
++        "rows_in_collision_groups": sum(len(values) for values in collision_groups),
++        "irreducible_variance_floor": floor_variance,
++        "total_target_variance": total_variance,
++        "fraction_of_total_target_variance": floor_variance / total_variance,
++    }
++
++
++def _route_arrays(rows, route: str):
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    y_name = f"{route.lower()}_target"
++    x = np.asarray([getattr(row, q_name) for row in rows], dtype=np.float64)
++    y = np.asarray([getattr(row, y_name) for row in rows], dtype=np.float64)
++    steps = np.asarray([row.anchor // 3 for row in rows], dtype=np.int64)
++    return x, y, steps
++
++
++def _mask(steps: np.ndarray, selected: Iterable[int]) -> np.ndarray:
++    return np.isin(steps, tuple(selected))
++
++
++def _audit_route(rows, route: str) -> dict[str, object]:
++    x, y, steps = _route_arrays(rows, route)
++    train = _mask(steps, TRAIN_STEPS)
++    validation = _mask(steps, VALIDATION_STEPS)
++    test = _mask(steps, TEST_STEPS)
++    development = train | validation
++
++    constant_prediction = np.full(test.sum(), float(y[train].mean()))
++    ols_prediction = _linear_predict(x[development], y[development], x[test], penalty=0.0)
++
++    ridge_validation = {}
++    for penalty in RIDGE_PENALTIES:
++        prediction = _linear_predict(x[train], y[train], x[validation], penalty=penalty)
++        ridge_validation[str(penalty)] = _metrics(y[validation], prediction)
++    selected_penalty = max(
++        RIDGE_PENALTIES,
++        key=lambda penalty: (
++            ridge_validation[str(penalty)]["explained_variance"], -penalty
++        ),
++    )
++    ridge_prediction = _linear_predict(
++        x[development], y[development], x[test], penalty=selected_penalty
++    )
++
++    gbt, gbt_selection = _fit_gbt(
++        x[train],
++        y[train],
++        tree_count=GBT_MAX_TREES,
++        validation=(x[validation], y[validation]),
++    )
++    gbt_prediction = gbt.predict(x[test])
++
++    knn_validation = {}
++    for neighbors in KNN_NEIGHBORS:
++        prediction = _knn_predict(
++            x[train], y[train], x[validation], neighbors=neighbors
++        )
++        knn_validation[str(neighbors)] = _metrics(y[validation], prediction)
++    selected_k = max(
++        KNN_NEIGHBORS,
++        key=lambda neighbors: (
++            knn_validation[str(neighbors)]["explained_variance"], -neighbors
++        ),
++    )
++    knn_prediction = _knn_predict(
++        x[development], y[development], x[test], neighbors=selected_k
++    )
++
++    predictions = {
++        "constant": constant_prediction,
++        "ols": ols_prediction,
++        "ridge": ridge_prediction,
++        "gradient_boosted_trees": gbt_prediction,
++        "knn": knn_prediction,
++    }
++    ladder = {name: _metrics(y[test], prediction) for name, prediction in predictions.items()}
++    ladder["ridge"]["selected_penalty"] = selected_penalty
++    ladder["ridge"]["validation_by_penalty"] = ridge_validation
++    ladder["gradient_boosted_trees"].update(gbt_selection)
++    ladder["knn"]["selected_k"] = selected_k
++    ladder["knn"]["validation_by_k"] = knn_validation
++
++    best_name = max(ladder, key=lambda name: ladder[name]["explained_variance"])
++    best_prediction = predictions[best_name]
++    separate_test_steps = {}
++    test_step_values = steps[test]
++    for step in sorted(TEST_STEPS):
++        selected = test_step_values == step
++        separate_test_steps[str(step)] = _metrics(y[test][selected], best_prediction[selected])
++
++    def fit_selected(fit: np.ndarray, held_out: np.ndarray) -> np.ndarray:
++        if best_name == "constant":
++            return np.full(held_out.sum(), float(y[fit].mean()))
++        if best_name == "ols":
++            return _linear_predict(x[fit], y[fit], x[held_out], penalty=0.0)
++        if best_name == "ridge":
++            return _linear_predict(
++                x[fit], y[fit], x[held_out], penalty=selected_penalty
++            )
++        if best_name == "gradient_boosted_trees":
++            rotation_gbt, _ = _fit_gbt(
++                x[fit],
++                y[fit],
++                tree_count=int(gbt_selection["selected_trees"]),
++                validation=None,
++            )
++            return rotation_gbt.predict(x[held_out])
++        if best_name == "knn":
++            return _knn_predict(x[fit], y[fit], x[held_out], neighbors=selected_k)
++        raise AssertionError(best_name)
++
++    rotation = {}
++    for step in STEPS:
++        held_out = steps == step
++        fit = ~held_out
++        prediction = fit_selected(fit, held_out)
++        rotation[str(step)] = _metrics(y[held_out], prediction)
++    rotation_evs = np.asarray(
++        [rotation[str(step)]["explained_variance"] for step in STEPS]
++    )
++    finite_rotation_evs = rotation_evs[np.isfinite(rotation_evs)]
++
++    return {
++        "rows": len(rows),
++        "feature_dimension": x.shape[1],
++        "split_row_counts": {
++            "train": int(train.sum()),
++            "validation": int(validation.sum()),
++            "test": int(test.sum()),
++        },
++        "ladder": ladder,
++        "best_estimator": best_name,
++        "best_estimator_test_step_metrics": separate_test_steps,
++        "leave_one_step_out": rotation,
++        "leave_one_step_out_ev_spread": {
++            "basis": "finite EV values only; EV is undefined when a step's target variance is zero",
++            "minimum": float(finite_rotation_evs.min()),
++            "maximum": float(finite_rotation_evs.max()),
++            "range": float(np.ptp(finite_rotation_evs)),
++            "mean": float(finite_rotation_evs.mean()),
++            "standard_deviation": float(finite_rotation_evs.std()),
++            "negative_step_count": int(np.sum(finite_rotation_evs < 0.0)),
++            "positive_step_count": int(np.sum(finite_rotation_evs > 0.0)),
++            "undefined_zero_variance_step_count": int(np.sum(~np.isfinite(rotation_evs))),
++        },
++        "collision_floor": _collision_floor(rows, route=route),
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument(
++        "--output",
++        type=Path,
++        default=Path("artifacts/c1c2-estimator-audit-20260910.json"),
++    )
++    args = parser.parse_args()
++    prior = _load_prior_module()
++    tape = prior.build_world_tape(
++        domain=prior.DEVELOPMENT_WORLD_DOMAINS[0],
++        provider=prior.LegacyWorldProvider(role="pilot-source"),
++        steps=13,
++        start_time_s=0.0,
++    )
++    calibration = prior._calibration()
++    rows = []
++    for anchor in range(30):
++        rows.extend(prior._relabel_anchor(tape, calibration, anchor))
++        print(
++            json.dumps({"phase": "exact-relabel", "anchor": anchor, "rows": len(rows)}),
++            file=sys.stderr,
++            flush=True,
++        )
++    if len(rows) != 26345:
++        raise AssertionError(f"expected 26345 rows, got {len(rows)}")
++    result = {
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "seed": SEED,
++        "steps": list(STEPS),
++        "split": {
++            "train_steps": sorted(TRAIN_STEPS),
++            "validation_steps": sorted(VALIDATION_STEPS),
++            "test_steps": sorted(TEST_STEPS),
++        },
++        "model_declaration": [
++            "constant predictor (strict training-split mean)",
++            "ordinary least squares on encoded features",
++            "ridge; penalty selected by validation explained variance only",
++            (
++                "deterministic squared-error histogram gradient-boosted trees; "
++                f"depth={GBT_DEPTH}, learning_rate={GBT_LEARNING_RATE}, "
++                f"max_trees={GBT_MAX_TREES}, patience={GBT_PATIENCE}, "
++                f"bins={GBT_BINS}, min_leaf={GBT_MIN_LEAF}; early stopping by "
++                "validation RMSE only"
++            ),
++            "original standardized inverse-distance k-nearest-neighbor",
++        ],
++        "c1": _audit_route(rows, "C1"),
++        "c2": _audit_route(rows, "C2"),
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(json.dumps(_json_safe(result), indent=2, sort_keys=True) + "\n")
++    print(json.dumps({"output": str(args.output), "rows": len(rows)}, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+C1: `ESTIMATOR_ARTEFACT` | C2: `ESTIMATOR_ARTEFACT`
+
+`DIAGNOSTIC_NOT_CLAIM`
+
+# C1/C2 estimator audit — 2026-09-10
+
+This is an estimator audit on the 26,345 already-defined valid non-reference rows. No production learner, policy, acceptance gate, or fallback flag was changed, and no threshold, sign, seed, horizon, price, guard, or acceptance rule was changed.
+
+## A — unchanged replication
+
+The prior diagnostic was run unchanged from `/home/sat/mcrl-v025-c1c2suff-ws` with 30 anchors. It reproduced the row count, split, selected neighbour count, held-out row count, target variances, explained variances, and RMSEs at full emitted precision:
+
+| Route | Held-out EV | Held-out RMSE | Held-out target variance | Selected k |
+|---|---:|---:|---:|---:|
+| C1 | `-0.33554767986149203` | `3.468393728057137` | `8.34196834334199` | 31 |
+| C2 | `0.21065167813231378` | `3.385646156133314` | `14.369004998057571` | 31 |
+
+The reproduced split was train steps `{1,2,4,6,7,8,9}`, validation step `{5}`, and test steps `{0,3}`, with 5,280 test rows and seed `20260909`. This satisfies the replication prerequisite; the downstream audit uses those same route-specific encoded features and exact targets.
+
+## B — predeclared estimator ladder
+
+Before any ladder model was run, the complete list was declared as: training-mean constant, ordinary least squares, validation-selected ridge, modest-depth validation-early-stopped gradient-boosted trees, and the original k-NN. No sixth model was added, and every result is below.
+
+| Route | Estimator | Held-out EV | Held-out RMSE | Selection detail |
+|---|---|---:|---:|---|
+| C1 | Constant predictor | `0.0000000000` | `2.9584953816` | strict training-split mean |
+| C1 | Ordinary least squares | `0.0892133009` | `2.8688725007` | no hyperparameter |
+| C1 | Ridge | `0.0892133009` | `2.8688725006` | penalty `1e-6` |
+| C1 | Gradient-boosted trees | `0.0235123190` | `2.9187599056` | 151 trees |
+| C1 | Original k-NN | `-0.3355476799` | `3.4683937281` | `k=31` |
+| C2 | Constant predictor | `0.0000000000` | `3.8210027084` | strict training-split mean |
+| C2 | Ordinary least squares | `0.3010404869` | `3.1702888107` | no hyperparameter |
+| C2 | Ridge | `0.3010404862` | `3.1702888117` | penalty `1e-6` |
+| C2 | Gradient-boosted trees | `0.2679215987` | `3.2856117817` | 112 trees |
+| C2 | Original k-NN | `0.2106516781` | `3.3856461561` | `k=31` |
+
+The C1 ridge/OLS difference is only numerical (`1.13e-11` EV); ridge is called the C1 winner solely because its emitted EV is fractionally higher. C2 OLS is the clear winner.
+
+### Fitting and selection details
+
+- Constant uses the mean of strict training steps only. EV is exactly zero for any constant; the training mean determines its reported RMSE.
+- OLS is fit on train plus validation before the untouched test evaluation.
+- Ridge uses standardized features, selects only on validation-step EV from the fixed positive penalty grid `{1e-6,1e-4,1e-2,1e-1,1,10,100,1e3,1e4,1e5,1e6}`, then refits on train plus validation with the selected penalty.
+- The deterministic squared-error histogram gradient booster has depth 3, learning rate `0.05`, at most 500 trees, 64 bins, minimum leaf size 30, and patience 30. It is fit on strict training rows and retains the iteration with minimum validation RMSE: 151 trees for C1 and 112 for C2.
+- k-NN is the original standardized inverse-squared-distance implementation, selects `k` from `{1,3,7,15,31}` by validation EV, and refits on train plus validation. It selects `k=31` for both routes and exactly reproduces A.
+
+The environment contains NumPy `2.5.2` but no scikit-learn, XGBoost, or LightGBM, so the modest-depth histogram booster is implemented transparently in the retained audit script rather than substituting another model family.
+
+## C — split sensitivity for the best ladder estimator
+
+For C1, the numerically best estimator is ridge with the selected penalty frozen at `1e-6`. For C2 it is OLS; each leave-one-step-out fold fits that same estimator on the other nine whole physical steps.
+
+### Original test steps separately
+
+| Route / estimator | Test step | EV | RMSE |
+|---|---:|---:|---:|
+| C1 ridge | 0 | `0.2477220949` | `2.0983022008` |
+| C1 ridge | 3 | `0.0203994950` | `3.4787541212` |
+| C2 OLS | 0 | `0.2129546272` | `4.3548173815` |
+| C2 OLS | 3 | undefined: target variance is zero | `1.0174266391` |
+
+C1 is positive on each originally held-out step separately. The original negative aggregate C1 value is therefore not caused by one unlucky member of `{0,3}` under the better estimator.
+
+### Leave-one-step-out rotation
+
+| Step | C1 ridge EV | C1 RMSE | C2 OLS EV | C2 RMSE |
+|---:|---:|---:|---:|---:|
+| 0 | `0.2453421372` | `2.1688393983` | `0.2166562220` | `4.3447396555` |
+| 1 | `0.1759196119` | `2.2076662595` | `0.2026798344` | `3.8062953661` |
+| 2 | `0.0993443344` | `2.2170766128` | `0.0273528908` | `3.6200239619` |
+| 3 | `0.0167254145` | `3.5099767348` | undefined: variance zero | `0.9719879724` |
+| 4 | `0.2589366346` | `1.7397096330` | `0.2931457791` | `3.8670086432` |
+| 5 | `0.2663861088` | `2.1290793127` | `0.3432062777` | `3.3842954104` |
+| 6 | `0.1061865968` | `1.8917579735` | `0.1597012127` | `3.1748312741` |
+| 7 | `0.0765833532` | `4.6941377409` | undefined: variance zero | `1.1687533139` |
+| 8 | `0.1908808533` | `1.6572850427` | `0.2534634301` | `4.2321130401` |
+| 9 | `0.2076794012` | `2.0039039074` | `0.1264856122` | `3.9779951042` |
+
+C1 EV is positive in all ten rotations: mean `0.1643984446`, standard deviation `0.0810787281`, minimum `0.0167254145`, maximum `0.2663861088`, and range `0.2496606943`. Thus the original negative C1 number does not hold across the rotation for the better estimator; it is estimator-specific, not a single-step accident.
+
+C2 has positive EV in all eight folds where EV is defined: mean `0.2028364074`, standard deviation `0.0929369032`, minimum `0.0273528908`, maximum `0.3432062777`, and range `0.3158533869`. Steps 3 and 7 have exactly zero within-step C2 target variance, so EV is mathematically undefined there; their finite RMSEs are reported rather than inventing an EV.
+
+## D — exact encoded-row collision floor
+
+For route-specific feature vector `x`, the empirical irreducible floor was computed as
+
+`(1/N) * sum_over_collision_groups sum_i (y_i - group_mean)^2`,
+
+where grouping keys are the byte-identical big-endian binary64 feature vectors and target disagreement is checked using the exact rational target strings. The fraction reported is that floor divided by the population variance of the exact targets converted at the row boundary.
+
+| Route | All exact duplicate groups | Groups with differing exact targets | Rows in differing-target groups | Variance floor | Corpus target variance | Floor / variance |
+|---|---:|---:|---:|---:|---:|---:|
+| C1 | 2,666 | 0 | 0 | `0.0` | `7.4428962868` | `0.0%` |
+| C2 | 1,181 | 879 | 1,758 | `0.8931142961` | `16.1198592400` | `5.5404596456%` |
+
+C1 has exact duplicate encoded rows, but none of its duplicate groups has differing exact C1 targets, so this corpus implies no positive C1 collision floor. C2 has 879 differing-target collision groups, implying that at least 5.54% of its corpus target variance is unreachable by any deterministic predictor using only the 22 encoded C2 features.
+
+## Reproduction files and exact commands
+
+Retained files:
+
+- `scripts/audit_v025_c1c2_estimators.py` — the complete ladder, rotation, and collision-floor audit.
+- `artifacts/c1c2-estimator-audit-20260910.json` — full-precision machine-readable results, including every validation candidate.
+- `C1C2-ESTIMATOR-AUDIT-2026-09-10.md` — this report.
+
+Unchanged replication, with working directory `/home/sat/mcrl-v025-c1c2suff-ws`:
+
+```bash
+nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30
+```
+
+Estimator audit, with working directory `/home/sat/mcrl-v025-replay-ws`:
+
+```bash
+nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/audit_v025_c1c2_estimators.py --output artifacts/c1c2-estimator-audit-20260910.json
+```
+
+The source diagnostic and `/home/sat/mcrl-leo-handover/.venv` were read/executed but never modified. No sealed artifact or fallback flag was modified.
+
+## Required verdicts
+
+**C1 — `ESTIMATOR_ARTEFACT`.** Positive-penalty ridge achieves held-out EV `0.0892133009` against the constant's `0.0` and the original k-NN's `-0.3355476799`, so the encoded C1 features do carry recoverable predictive value. Its EV is positive on both original test steps and all ten leave-one-step-out folds, so the correction is stable enough to reject the “features carry no predictive value” inference.
+
+**C2 — `ESTIMATOR_ARTEFACT`.** OLS achieves held-out EV `0.3010404869`, improving on both the constant's `0.0` and the original k-NN's `0.2106516781`, so the original estimator understates what the encoded C2 features carry. Every finite leave-one-step-out EV is positive, while the other two folds are undefined only because their targets have zero variance, so the estimator conclusion is not driven by an unstable negative rotation.
+diff --git a/C1C2-ESTIMATOR-AUDIT-2026-09-10.md b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba77d177fb249e315ed3dd00d659cab390a9ee25
+--- /dev/null
++++ b/C1C2-ESTIMATOR-AUDIT-2026-09-10.md
+@@ -0,0 +1,124 @@
++C1: `ESTIMATOR_ARTEFACT` | C2: `ESTIMATOR_ARTEFACT`
++
++`DIAGNOSTIC_NOT_CLAIM`
++
++# C1/C2 estimator audit — 2026-09-10
++
++This is an estimator audit on the 26,345 already-defined valid non-reference rows. No production learner, policy, acceptance gate, or fallback flag was changed, and no threshold, sign, seed, horizon, price, guard, or acceptance rule was changed.
++
++## A — unchanged replication
++
++The prior diagnostic was run unchanged from `/home/sat/mcrl-v025-c1c2suff-ws` with 30 anchors. It reproduced the row count, split, selected neighbour count, held-out row count, target variances, explained variances, and RMSEs at full emitted precision:
++
++| Route | Held-out EV | Held-out RMSE | Held-out target variance | Selected k |
++|---|---:|---:|---:|---:|
++| C1 | `-0.33554767986149203` | `3.468393728057137` | `8.34196834334199` | 31 |
++| C2 | `0.21065167813231378` | `3.385646156133314` | `14.369004998057571` | 31 |
++
++The reproduced split was train steps `{1,2,4,6,7,8,9}`, validation step `{5}`, and test steps `{0,3}`, with 5,280 test rows and seed `20260909`. This satisfies the replication prerequisite; the downstream audit uses those same route-specific encoded features and exact targets.
++
++## B — predeclared estimator ladder
++
++Before any ladder model was run, the complete list was declared as: training-mean constant, ordinary least squares, validation-selected ridge, modest-depth validation-early-stopped gradient-boosted trees, and the original k-NN. No sixth model was added, and every result is below.
++
++| Route | Estimator | Held-out EV | Held-out RMSE | Selection detail |
++|---|---|---:|---:|---|
++| C1 | Constant predictor | `0.0000000000` | `2.9584953816` | strict training-split mean |
++| C1 | Ordinary least squares | `0.0892133009` | `2.8688725007` | no hyperparameter |
++| C1 | Ridge | `0.0892133009` | `2.8688725006` | penalty `1e-6` |
++| C1 | Gradient-boosted trees | `0.0235123190` | `2.9187599056` | 151 trees |
++| C1 | Original k-NN | `-0.3355476799` | `3.4683937281` | `k=31` |
++| C2 | Constant predictor | `0.0000000000` | `3.8210027084` | strict training-split mean |
++| C2 | Ordinary least squares | `0.3010404869` | `3.1702888107` | no hyperparameter |
++| C2 | Ridge | `0.3010404862` | `3.1702888117` | penalty `1e-6` |
++| C2 | Gradient-boosted trees | `0.2679215987` | `3.2856117817` | 112 trees |
++| C2 | Original k-NN | `0.2106516781` | `3.3856461561` | `k=31` |
++
++The C1 ridge/OLS difference is only numerical (`1.13e-11` EV); ridge is called the C1 winner solely because its emitted EV is fractionally higher. C2 OLS is the clear winner.
++
++### Fitting and selection details
++
++- Constant uses the mean of strict training steps only. EV is exactly zero for any constant; the training mean determines its reported RMSE.
++- OLS is fit on train plus validation before the untouched test evaluation.
++- Ridge uses standardized features, selects only on validation-step EV from the fixed positive penalty grid `{1e-6,1e-4,1e-2,1e-1,1,10,100,1e3,1e4,1e5,1e6}`, then refits on train plus validation with the selected penalty.
++- The deterministic squared-error histogram gradient booster has depth 3, learning rate `0.05`, at most 500 trees, 64 bins, minimum leaf size 30, and patience 30. It is fit on strict training rows and retains the iteration with minimum validation RMSE: 151 trees for C1 and 112 for C2.
++- k-NN is the original standardized inverse-squared-distance implementation, selects `k` from `{1,3,7,15,31}` by validation EV, and refits on train plus validation. It selects `k=31` for both routes and exactly reproduces A.
++
++The environment contains NumPy `2.5.2` but no scikit-learn, XGBoost, or LightGBM, so the modest-depth histogram booster is implemented transparently in the retained audit script rather than substituting another model family.
++
++## C — split sensitivity for the best ladder estimator
++
++For C1, the numerically best estimator is ridge with the selected penalty frozen at `1e-6`. For C2 it is OLS; each leave-one-step-out fold fits that same estimator on the other nine whole physical steps.
++
++### Original test steps separately
++
++| Route / estimator | Test step | EV | RMSE |
++|---|---:|---:|---:|
++| C1 ridge | 0 | `0.2477220949` | `2.0983022008` |
++| C1 ridge | 3 | `0.0203994950` | `3.4787541212` |
++| C2 OLS | 0 | `0.2129546272` | `4.3548173815` |
++| C2 OLS | 3 | undefined: target variance is zero | `1.0174266391` |
++
++C1 is positive on each originally held-out step separately. The original negative aggregate C1 value is therefore not caused by one unlucky member of `{0,3}` under the better estimator.
++
++### Leave-one-step-out rotation
++
++| Step | C1 ridge EV | C1 RMSE | C2 OLS EV | C2 RMSE |
++|---:|---:|---:|---:|---:|
++| 0 | `0.2453421372` | `2.1688393983` | `0.2166562220` | `4.3447396555` |
++| 1 | `0.1759196119` | `2.2076662595` | `0.2026798344` | `3.8062953661` |
++| 2 | `0.0993443344` | `2.2170766128` | `0.0273528908` | `3.6200239619` |
++| 3 | `0.0167254145` | `3.5099767348` | undefined: variance zero | `0.9719879724` |
++| 4 | `0.2589366346` | `1.7397096330` | `0.2931457791` | `3.8670086432` |
++| 5 | `0.2663861088` | `2.1290793127` | `0.3432062777` | `3.3842954104` |
++| 6 | `0.1061865968` | `1.8917579735` | `0.1597012127` | `3.1748312741` |
++| 7 | `0.0765833532` | `4.6941377409` | undefined: variance zero | `1.1687533139` |
++| 8 | `0.1908808533` | `1.6572850427` | `0.2534634301` | `4.2321130401` |
++| 9 | `0.2076794012` | `2.0039039074` | `0.1264856122` | `3.9779951042` |
++
++C1 EV is positive in all ten rotations: mean `0.1643984446`, standard deviation `0.0810787281`, minimum `0.0167254145`, maximum `0.2663861088`, and range `0.2496606943`. Thus the original negative C1 number does not hold across the rotation for the better estimator; it is estimator-specific, not a single-step accident.
++
++C2 has positive EV in all eight folds where EV is defined: mean `0.2028364074`, standard deviation `0.0929369032`, minimum `0.0273528908`, maximum `0.3432062777`, and range `0.3158533869`. Steps 3 and 7 have exactly zero within-step C2 target variance, so EV is mathematically undefined there; their finite RMSEs are reported rather than inventing an EV.
++
++## D — exact encoded-row collision floor
++
++For route-specific feature vector `x`, the empirical irreducible floor was computed as
++
++`(1/N) * sum_over_collision_groups sum_i (y_i - group_mean)^2`,
++
++where grouping keys are the byte-identical big-endian binary64 feature vectors and target disagreement is checked using the exact rational target strings. The fraction reported is that floor divided by the population variance of the exact targets converted at the row boundary.
++
++| Route | All exact duplicate groups | Groups with differing exact targets | Rows in differing-target groups | Variance floor | Corpus target variance | Floor / variance |
++|---|---:|---:|---:|---:|---:|---:|
++| C1 | 2,666 | 0 | 0 | `0.0` | `7.4428962868` | `0.0%` |
++| C2 | 1,181 | 879 | 1,758 | `0.8931142961` | `16.1198592400` | `5.5404596456%` |
++
++C1 has exact duplicate encoded rows, but none of its duplicate groups has differing exact C1 targets, so this corpus implies no positive C1 collision floor. C2 has 879 differing-target collision groups, implying that at least 5.54% of its corpus target variance is unreachable by any deterministic predictor using only the 22 encoded C2 features.
++
++## Reproduction files and exact commands
++
++Retained files:
++
++- `scripts/audit_v025_c1c2_estimators.py` — the complete ladder, rotation, and collision-floor audit.
++- `artifacts/c1c2-estimator-audit-20260910.json` — full-precision machine-readable results, including every validation candidate.
++- `C1C2-ESTIMATOR-AUDIT-2026-09-10.md` — this report.
++
++Unchanged replication, with working directory `/home/sat/mcrl-v025-c1c2suff-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30
++```
++
++Estimator audit, with working directory `/home/sat/mcrl-v025-replay-ws`:
++
++```bash
++nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/audit_v025_c1c2_estimators.py --output artifacts/c1c2-estimator-audit-20260910.json
++```
++
++The source diagnostic and `/home/sat/mcrl-leo-handover/.venv` were read/executed but never modified. No sealed artifact or fallback flag was modified.
++
++## Required verdicts
++
++**C1 — `ESTIMATOR_ARTEFACT`.** Positive-penalty ridge achieves held-out EV `0.0892133009` against the constant's `0.0` and the original k-NN's `-0.3355476799`, so the encoded C1 features do carry recoverable predictive value. Its EV is positive on both original test steps and all ten leave-one-step-out folds, so the correction is stable enough to reject the “features carry no predictive value” inference.
++
++**C2 — `ESTIMATOR_ARTEFACT`.** OLS achieves held-out EV `0.3010404869`, improving on both the constant's `0.0` and the original k-NN's `0.2106516781`, so the original estimator understates what the encoded C2 features carry. Every finite leave-one-step-out EV is positive, while the other two folds are undefined only because their targets have zero variance, so the estimator conclusion is not driven by an unstable negative rotation.
+diff --git a/artifacts/c1c2-estimator-audit-20260910.json b/artifacts/c1c2-estimator-audit-20260910.json
+index 050cc22c123007f0b1bd071f138b8e1fe9e649d1..8404cc165654c190103d7144d1c966d61fd2c439
+--- a/artifacts/c1c2-estimator-audit-20260910.json
++++ b/artifacts/c1c2-estimator-audit-20260910.json
+@@ -184,7 +184,7 @@
+         "rmse": 4.354817381451514
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 1.0174266391212345
+       }
+     },
+@@ -307,7 +307,7 @@
+         "rmse": 3.6200239618604226
+       },
+       "3": {
+-        "explained_variance": NaN,
++        "explained_variance": null,
+         "rmse": 0.9719879723778495
+       },
+       "4": {
+diff --git a/scripts/audit_v025_c1c2_estimators.py b/scripts/audit_v025_c1c2_estimators.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..69e595bfcf1fedc61e46d01062e77e3b6a423c4c
+--- /dev/null
++++ b/scripts/audit_v025_c1c2_estimators.py
+@@ -0,0 +1,539 @@
++#!/usr/bin/env python3
++"""Audit estimators on the exact C1/C2 rows from the sufficiency diagnostic.
++
++DIAGNOSTIC_NOT_CLAIM.  This script performs no training or policy run.  It
++reuses the prior diagnostic's exact-row reconstruction, then fits only the
++predeclared estimator ladder.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from fractions import Fraction
++import argparse
++import importlib.util
++import json
++from pathlib import Path
++import struct
++import sys
++from typing import Callable, Iterable
++
++import numpy as np
++
++
++SEED = 20260909
++STEPS = tuple(range(10))
++TRAIN_STEPS = frozenset((1, 2, 4, 6, 7, 8, 9))
++VALIDATION_STEPS = frozenset((5,))
++TEST_STEPS = frozenset((0, 3))
++RIDGE_PENALTIES = (1e-6, 1e-4, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1e3, 1e4, 1e5, 1e6)
++KNN_NEIGHBORS = (1, 3, 7, 15, 31)
++GBT_MAX_TREES = 500
++GBT_DEPTH = 3
++GBT_LEARNING_RATE = 0.05
++GBT_PATIENCE = 30
++GBT_BINS = 64
++GBT_MIN_LEAF = 30
++
++PRIOR_SCRIPT = Path(
++    "/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py"
++)
++
++
++def _load_prior_module():
++    spec = importlib.util.spec_from_file_location("prior_c1c2_diagnostic", PRIOR_SCRIPT)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {PRIOR_SCRIPT}")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def _ev(actual: np.ndarray, predicted: np.ndarray) -> float:
++    variance = float(np.var(actual))
++    return float("nan") if variance == 0.0 else 1.0 - float(np.var(actual - predicted)) / variance
++
++
++def _metrics(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
++    residual = actual - predicted
++    return {
++        "explained_variance": _ev(actual, predicted),
++        "rmse": float(np.sqrt(np.mean(residual * residual))),
++    }
++
++
++def _json_safe(value):
++    """Replace non-finite floats with JSON null while preserving structure."""
++    if isinstance(value, float) and not np.isfinite(value):
++        return None
++    if isinstance(value, dict):
++        return {key: _json_safe(item) for key, item in value.items()}
++    if isinstance(value, list):
++        return [_json_safe(item) for item in value]
++    return value
++
++
++def _standardization(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
++    mean = x.mean(axis=0)
++    scale = x.std(axis=0)
++    scale[scale < 1e-12] = 1.0
++    return mean, scale
++
++
++def _linear_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    penalty: float,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    x = (fit_x - mean) / scale
++    z = (predict_x - mean) / scale
++    y_mean = float(fit_y.mean())
++    centered_y = fit_y - y_mean
++    if penalty == 0.0:
++        coefficients, *_ = np.linalg.lstsq(x, centered_y, rcond=None)
++    else:
++        coefficients = np.linalg.solve(
++            x.T @ x + penalty * np.eye(x.shape[1]), x.T @ centered_y
++        )
++    return y_mean + z @ coefficients
++
++
++def _knn_predict(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    predict_x: np.ndarray,
++    *,
++    neighbors: int,
++    chunk_size: int = 128,
++) -> np.ndarray:
++    mean, scale = _standardization(fit_x)
++    train = (fit_x - mean) / scale
++    query = (predict_x - mean) / scale
++    k = min(neighbors, len(train))
++    train_norm = np.einsum("ij,ij->i", train, train)
++    predictions = []
++    for start in range(0, len(query), chunk_size):
++        chunk = query[start : start + chunk_size]
++        distances = (
++            np.einsum("ij,ij->i", chunk, chunk)[:, None]
++            + train_norm[None, :]
++            - 2.0 * chunk @ train.T
++        )
++        indices = np.argpartition(distances, kth=k - 1, axis=1)[:, :k]
++        selected_distances = np.take_along_axis(distances, indices, axis=1)
++        weights = 1.0 / np.maximum(selected_distances, 1e-12)
++        predictions.append(
++            (weights * fit_y[indices]).sum(axis=1) / weights.sum(axis=1)
++        )
++    return np.concatenate(predictions)
++
++
++@dataclass
++class TreeNode:
++    value: float
++    feature: int = -1
++    split_bin: int = -1
++    left: "TreeNode | None" = None
++    right: "TreeNode | None" = None
++
++
++@dataclass
++class BinnedTree:
++    edges: tuple[np.ndarray, ...]
++    root: TreeNode
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        bins = _apply_bins(x, self.edges)
++        result = np.empty(len(x), dtype=np.float64)
++
++        def visit(node: TreeNode, indices: np.ndarray) -> None:
++            if node.feature < 0:
++                result[indices] = node.value
++                return
++            mask = bins[indices, node.feature] <= node.split_bin
++            assert node.left is not None and node.right is not None
++            visit(node.left, indices[mask])
++            visit(node.right, indices[~mask])
++
++        visit(self.root, np.arange(len(x), dtype=np.int64))
++        return result
++
++
++def _bin_edges(x: np.ndarray, max_bins: int) -> tuple[np.ndarray, ...]:
++    quantiles = np.linspace(0.0, 1.0, max_bins + 1)[1:-1]
++    edges = []
++    for feature in range(x.shape[1]):
++        candidate = np.unique(np.quantile(x[:, feature], quantiles))
++        candidate = candidate[
++            (candidate > np.min(x[:, feature])) & (candidate < np.max(x[:, feature]))
++        ]
++        edges.append(candidate)
++    return tuple(edges)
++
++
++def _apply_bins(x: np.ndarray, edges: tuple[np.ndarray, ...]) -> np.ndarray:
++    result = np.empty(x.shape, dtype=np.uint8)
++    for feature, feature_edges in enumerate(edges):
++        result[:, feature] = np.searchsorted(feature_edges, x[:, feature], side="right")
++    return result
++
++
++def _fit_binned_tree(
++    bins: np.ndarray,
++    residual: np.ndarray,
++    edges: tuple[np.ndarray, ...],
++    *,
++    max_depth: int,
++    min_leaf: int,
++) -> BinnedTree:
++    def build(indices: np.ndarray, depth: int) -> TreeNode:
++        values = residual[indices]
++        node = TreeNode(value=float(values.mean()))
++        if depth >= max_depth or len(indices) < 2 * min_leaf:
++            return node
++        total_sum = float(values.sum())
++        total_count = len(indices)
++        baseline = total_sum * total_sum / total_count
++        best_gain = 0.0
++        best_feature = -1
++        best_split = -1
++        for feature, feature_edges in enumerate(edges):
++            if len(feature_edges) == 0:
++                continue
++            feature_bins = bins[indices, feature]
++            bin_count = len(feature_edges) + 1
++            counts = np.bincount(feature_bins, minlength=bin_count).astype(np.int64)
++            sums = np.bincount(feature_bins, weights=values, minlength=bin_count)
++            left_count = np.cumsum(counts)[:-1]
++            left_sum = np.cumsum(sums)[:-1]
++            right_count = total_count - left_count
++            right_sum = total_sum - left_sum
++            valid = (left_count >= min_leaf) & (right_count >= min_leaf)
++            gains = np.full(len(left_count), -np.inf)
++            gains[valid] = (
++                left_sum[valid] ** 2 / left_count[valid]
++                + right_sum[valid] ** 2 / right_count[valid]
++                - baseline
++            )
++            split = int(np.argmax(gains))
++            gain = float(gains[split])
++            if gain > best_gain:
++                best_gain = gain
++                best_feature = feature
++                best_split = split
++        if best_feature < 0:
++            return node
++        left_mask = bins[indices, best_feature] <= best_split
++        node.feature = best_feature
++        node.split_bin = best_split
++        node.left = build(indices[left_mask], depth + 1)
++        node.right = build(indices[~left_mask], depth + 1)
++        return node
++
++    root = build(np.arange(len(bins), dtype=np.int64), 0)
++    return BinnedTree(edges=edges, root=root)
++
++
++@dataclass
++class GBTModel:
++    initial: float
++    trees: list[BinnedTree]
++    learning_rate: float
++
++    def predict(self, x: np.ndarray) -> np.ndarray:
++        result = np.full(len(x), self.initial, dtype=np.float64)
++        for tree in self.trees:
++            result += self.learning_rate * tree.predict(x)
++        return result
++
++
++def _fit_gbt(
++    fit_x: np.ndarray,
++    fit_y: np.ndarray,
++    *,
++    tree_count: int,
++    validation: tuple[np.ndarray, np.ndarray] | None,
++) -> tuple[GBTModel, dict[str, object]]:
++    edges = _bin_edges(fit_x, GBT_BINS)
++    bins = _apply_bins(fit_x, edges)
++    initial = float(fit_y.mean())
++    fit_prediction = np.full(len(fit_y), initial, dtype=np.float64)
++    trees: list[BinnedTree] = []
++    best_count = 0
++    best_rmse = float("inf")
++    stale = 0
++    if validation is not None:
++        validation_x, validation_y = validation
++        validation_prediction = np.full(len(validation_y), initial, dtype=np.float64)
++    for iteration in range(1, tree_count + 1):
++        tree = _fit_binned_tree(
++            bins,
++            fit_y - fit_prediction,
++            edges,
++            max_depth=GBT_DEPTH,
++            min_leaf=GBT_MIN_LEAF,
++        )
++        trees.append(tree)
++        fit_prediction += GBT_LEARNING_RATE * tree.predict(fit_x)
++        if validation is None:
++            continue
++        validation_prediction += GBT_LEARNING_RATE * tree.predict(validation_x)
++        rmse = float(np.sqrt(np.mean((validation_y - validation_prediction) ** 2)))
++        if rmse < best_rmse - 1e-12:
++            best_rmse = rmse
++            best_count = iteration
++            stale = 0
++        else:
++            stale += 1
++        if stale >= GBT_PATIENCE:
++            break
++    if validation is None:
++        best_count = len(trees)
++    model = GBTModel(initial, trees[:best_count], GBT_LEARNING_RATE)
++    return model, {
++        "selected_trees": best_count,
++        "trees_fitted_before_stop": len(trees),
++        "best_validation_rmse": None if validation is None else best_rmse,
++    }
++
++
++def _feature_key(values: Iterable[float]) -> bytes:
++    numbers = tuple(values)
++    return struct.pack(f">{len(numbers)}d", *numbers)
++
++
++def _collision_floor(rows, *, route: str) -> dict[str, object]:
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    exact_name = f"{route.lower()}_target_exact"
++    float_name = f"{route.lower()}_target"
++    groups: dict[bytes, list[tuple[Fraction, float]]] = {}
++    for row in rows:
++        groups.setdefault(_feature_key(getattr(row, q_name)), []).append(
++            (Fraction(getattr(row, exact_name)), getattr(row, float_name))
++        )
++    collision_groups = [
++        values for values in groups.values() if len({value[0] for value in values}) > 1
++    ]
++    y = np.asarray([getattr(row, float_name) for row in rows], dtype=np.float64)
++    sse = 0.0
++    for values in collision_groups:
++        targets = np.asarray([value[1] for value in values], dtype=np.float64)
++        sse += float(np.sum((targets - targets.mean()) ** 2))
++    floor_variance = sse / len(rows)
++    total_variance = float(np.var(y))
++    return {
++        "unique_feature_vectors": len(groups),
++        "duplicate_groups_all": sum(len(values) > 1 for values in groups.values()),
++        "collision_groups_differing_exact_target": len(collision_groups),
++        "rows_in_collision_groups": sum(len(values) for values in collision_groups),
++        "irreducible_variance_floor": floor_variance,
++        "total_target_variance": total_variance,
++        "fraction_of_total_target_variance": floor_variance / total_variance,
++    }
++
++
++def _route_arrays(rows, route: str):
++    q_name = {"C1": "q1", "C2": "q2"}[route]
++    y_name = f"{route.lower()}_target"
++    x = np.asarray([getattr(row, q_name) for row in rows], dtype=np.float64)
++    y = np.asarray([getattr(row, y_name) for row in rows], dtype=np.float64)
++    steps = np.asarray([row.anchor // 3 for row in rows], dtype=np.int64)
++    return x, y, steps
++
++
++def _mask(steps: np.ndarray, selected: Iterable[int]) -> np.ndarray:
++    return np.isin(steps, tuple(selected))
++
++
++def _audit_route(rows, route: str) -> dict[str, object]:
++    x, y, steps = _route_arrays(rows, route)
++    train = _mask(steps, TRAIN_STEPS)
++    validation = _mask(steps, VALIDATION_STEPS)
++    test = _mask(steps, TEST_STEPS)
++    development = train | validation
++
++    constant_prediction = np.full(test.sum(), float(y[train].mean()))
++    ols_prediction = _linear_predict(x[development], y[development], x[test], penalty=0.0)
++
++    ridge_validation = {}
++    for penalty in RIDGE_PENALTIES:
++        prediction = _linear_predict(x[train], y[train], x[validation], penalty=penalty)
++        ridge_validation[str(penalty)] = _metrics(y[validation], prediction)
++    selected_penalty = max(
++        RIDGE_PENALTIES,
++        key=lambda penalty: (
++            ridge_validation[str(penalty)]["explained_variance"], -penalty
++        ),
++    )
++    ridge_prediction = _linear_predict(
++        x[development], y[development], x[test], penalty=selected_penalty
++    )
++
++    gbt, gbt_selection = _fit_gbt(
++        x[train],
++        y[train],
++        tree_count=GBT_MAX_TREES,
++        validation=(x[validation], y[validation]),
++    )
++    gbt_prediction = gbt.predict(x[test])
++
++    knn_validation = {}
++    for neighbors in KNN_NEIGHBORS:
++        prediction = _knn_predict(
++            x[train], y[train], x[validation], neighbors=neighbors
++        )
++        knn_validation[str(neighbors)] = _metrics(y[validation], prediction)
++    selected_k = max(
++        KNN_NEIGHBORS,
++        key=lambda neighbors: (
++            knn_validation[str(neighbors)]["explained_variance"], -neighbors
++        ),
++    )
++    knn_prediction = _knn_predict(
++        x[development], y[development], x[test], neighbors=selected_k
++    )
++
++    predictions = {
++        "constant": constant_prediction,
++        "ols": ols_prediction,
++        "ridge": ridge_prediction,
++        "gradient_boosted_trees": gbt_prediction,
++        "knn": knn_prediction,
++    }
++    ladder = {name: _metrics(y[test], prediction) for name, prediction in predictions.items()}
++    ladder["ridge"]["selected_penalty"] = selected_penalty
++    ladder["ridge"]["validation_by_penalty"] = ridge_validation
++    ladder["gradient_boosted_trees"].update(gbt_selection)
++    ladder["knn"]["selected_k"] = selected_k
++    ladder["knn"]["validation_by_k"] = knn_validation
++
++    best_name = max(ladder, key=lambda name: ladder[name]["explained_variance"])
++    best_prediction = predictions[best_name]
++    separate_test_steps = {}
++    test_step_values = steps[test]
++    for step in sorted(TEST_STEPS):
++        selected = test_step_values == step
++        separate_test_steps[str(step)] = _metrics(y[test][selected], best_prediction[selected])
++
++    def fit_selected(fit: np.ndarray, held_out: np.ndarray) -> np.ndarray:
++        if best_name == "constant":
++            return np.full(held_out.sum(), float(y[fit].mean()))
++        if best_name == "ols":
++            return _linear_predict(x[fit], y[fit], x[held_out], penalty=0.0)
++        if best_name == "ridge":
++            return _linear_predict(
++                x[fit], y[fit], x[held_out], penalty=selected_penalty
++            )
++        if best_name == "gradient_boosted_trees":
++            rotation_gbt, _ = _fit_gbt(
++                x[fit],
++                y[fit],
++                tree_count=int(gbt_selection["selected_trees"]),
++                validation=None,
++            )
++            return rotation_gbt.predict(x[held_out])
++        if best_name == "knn":
++            return _knn_predict(x[fit], y[fit], x[held_out], neighbors=selected_k)
++        raise AssertionError(best_name)
++
++    rotation = {}
++    for step in STEPS:
++        held_out = steps == step
++        fit = ~held_out
++        prediction = fit_selected(fit, held_out)
++        rotation[str(step)] = _metrics(y[held_out], prediction)
++    rotation_evs = np.asarray(
++        [rotation[str(step)]["explained_variance"] for step in STEPS]
++    )
++    finite_rotation_evs = rotation_evs[np.isfinite(rotation_evs)]
++
++    return {
++        "rows": len(rows),
++        "feature_dimension": x.shape[1],
++        "split_row_counts": {
++            "train": int(train.sum()),
++            "validation": int(validation.sum()),
++            "test": int(test.sum()),
++        },
++        "ladder": ladder,
++        "best_estimator": best_name,
++        "best_estimator_test_step_metrics": separate_test_steps,
++        "leave_one_step_out": rotation,
++        "leave_one_step_out_ev_spread": {
++            "basis": "finite EV values only; EV is undefined when a step's target variance is zero",
++            "minimum": float(finite_rotation_evs.min()),
++            "maximum": float(finite_rotation_evs.max()),
++            "range": float(np.ptp(finite_rotation_evs)),
++            "mean": float(finite_rotation_evs.mean()),
++            "standard_deviation": float(finite_rotation_evs.std()),
++            "negative_step_count": int(np.sum(finite_rotation_evs < 0.0)),
++            "positive_step_count": int(np.sum(finite_rotation_evs > 0.0)),
++            "undefined_zero_variance_step_count": int(np.sum(~np.isfinite(rotation_evs))),
++        },
++        "collision_floor": _collision_floor(rows, route=route),
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument(
++        "--output",
++        type=Path,
++        default=Path("artifacts/c1c2-estimator-audit-20260910.json"),
++    )
++    args = parser.parse_args()
++    prior = _load_prior_module()
++    tape = prior.build_world_tape(
++        domain=prior.DEVELOPMENT_WORLD_DOMAINS[0],
++        provider=prior.LegacyWorldProvider(role="pilot-source"),
++        steps=13,
++        start_time_s=0.0,
++    )
++    calibration = prior._calibration()
++    rows = []
++    for anchor in range(30):
++        rows.extend(prior._relabel_anchor(tape, calibration, anchor))
++        print(
++            json.dumps({"phase": "exact-relabel", "anchor": anchor, "rows": len(rows)}),
++            file=sys.stderr,
++            flush=True,
++        )
++    if len(rows) != 26345:
++        raise AssertionError(f"expected 26345 rows, got {len(rows)}")
++    result = {
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "seed": SEED,
++        "steps": list(STEPS),
++        "split": {
++            "train_steps": sorted(TRAIN_STEPS),
++            "validation_steps": sorted(VALIDATION_STEPS),
++            "test_steps": sorted(TEST_STEPS),
++        },
++        "model_declaration": [
++            "constant predictor (strict training-split mean)",
++            "ordinary least squares on encoded features",
++            "ridge; penalty selected by validation explained variance only",
++            (
++                "deterministic squared-error histogram gradient-boosted trees; "
++                f"depth={GBT_DEPTH}, learning_rate={GBT_LEARNING_RATE}, "
++                f"max_trees={GBT_MAX_TREES}, patience={GBT_PATIENCE}, "
++                f"bins={GBT_BINS}, min_leaf={GBT_MIN_LEAF}; early stopping by "
++                "validation RMSE only"
++            ),
++            "original standardized inverse-distance k-nearest-neighbor",
++        ],
++        "c1": _audit_route(rows, "C1"),
++        "c2": _audit_route(rows, "C2"),
++    }
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(json.dumps(_json_safe(result), indent=2, sort_keys=True) + "\n")
++    print(json.dumps({"output": str(args.output), "rows": len(rows)}, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+tokens used
+116,402
