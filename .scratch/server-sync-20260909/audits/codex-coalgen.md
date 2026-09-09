@@ -44,3 +44,6 @@ Coalitions seeded from occupancy-2 beams therefore contribute **negative** inter
 For context: in the census, occupancy 1 accounts for 5,760 of 10,848 beams, that is 53.1 %, so this is the largest bucket and not a corner case.
 
 Compute the activation threshold from the engine tables at each beam's actual elevation rather than from the 10-degree constant, since the quantile varies with elevation.
+
+## Corpus SIZE, not only coverage
+An audit found the interaction component was trained on **180 rows** while the per-user components had **176,223** rows, a ratio of about one to a thousand, and all 180 rows were the same coalition size. Expanding the sizes is necessary but not sufficient. **Target at least several thousand coalition rows**, spread across sizes 2 to 6 and across many coalitions per anchor, and report the final count against that 180 baseline. If the evaluation budget cannot reach several thousand exact labels, say what it can reach and what the limiting cost is, so the gap is on the record rather than hidden.
