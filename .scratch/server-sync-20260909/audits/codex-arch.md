@@ -1,0 +1,46 @@
+# Two alternative interaction models, because the pairwise one is provably misspecified
+
+`DIAGNOSTIC_NOT_CLAIM`. Budget 3 hours. This runs in parallel with a retrain of the current architecture; it is a fallback prepared before that retrain reports, not a reaction to it.
+
+## Why
+An order audit on the rebuilt corpus computed `R3(A) = Psi(A) - sum over pairs in A of Psi(pair)` for every coalition of size three or more, 5,003 of them. The distribution is p05 `-0.787`, p50 about zero, p95 `+4.209`, max `+15.18`, and **`|R3| > 1e-3` in 38.50 % of rows**. The corpus report's own conclusion: a pairwise-only interaction model is **misspecified** for this corpus.
+
+So the architecture currently being retrained has a ceiling set by its form, not by its data or features. Two alternatives are worth having ready.
+
+## Alternative A: resource-aware anchored residual
+Interactions here arise from shared beams, not from agent-to-agent affinity. An anchored residual built on resource load can express orders above two through a nonlinear per-resource function:
+
+```
+Psi_res(A) = sum over resources r of [ g_r(l_r0 + sum_{i in A} d_l_ir)
+                                     - g_r(l_r0)
+                                     - sum_{i in A} ( g_r(l_r0 + d_l_ir) - g_r(l_r0) ) ]
+```
+
+This has exact zeros on the empty set and on singletons by construction, needs no cardinality gate, and its nonlinearity in `g_r` is what carries third and higher order effects. The natural resource here is beam occupancy, since the verified activation mechanism is a threshold in occupancy: a beam at occupancy 1 or 2 selects no transmitted mode and occupancy 3 activates one.
+
+Its assumption is that load changes add and that the chosen resource variables are sufficient. Test that assumption rather than presuming it, and report where it fails.
+
+## Alternative B: ranking instead of regression
+The coordinator does not need an accurate value, only the right ordering at one anchor. A model can be badly wrong about magnitudes and still select correctly. Train a pairwise comparator on ordered candidate pairs **at the same anchor**, learning only which of two is better under the exact score.
+
+## What to report, for both alternatives and for the current pairwise head as a baseline
+Judge them on **selection**, not on fit:
+* realised pooled energy efficiency of the selected configuration at held-out anchors, which is the outcome that matters;
+* regret against the exactly-scored best candidate in the same panel;
+* how often the selection is the exact best, and how often it is in the exact top three;
+* the selected coalition size distribution;
+* held-out R-squared, reported last and labelled as secondary.
+
+Report all of it **within anchor and within coalition size**. Do not report a pooled correlation across anchors: a good pooled number can come entirely from differences between anchors while the model fails at every comparison the coordinator actually makes.
+
+Also report each alternative's numbers **restricted to coalitions with material `|R3|`**, since that is the population the pairwise form cannot represent and where an alternative should show its advantage if it has one.
+
+## Honest reporting
+If neither alternative beats the pairwise baseline on selection, say so plainly. That would be a useful finding: it would mean the third-order structure, though present, is not what limits selection quality, and the effort should go elsewhere.
+
+## Constraints
+Workspace `/home/sat/mcrl-v025-arch-ws`: `cp -a /home/sat/mcrl-v025-coalgen-ws` so you inherit the rebuilt 11,924-row corpus, then `rm -rf .git`, `git init`, commit. Never modify any other workspace; five jobs are running. Never write into `/home/sat/mcrl-leo-handover` or its venv, `/home/sat/mcrl-hub`, or `/home/sat/mcrl-v025-codex-ws-engine`. Python `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`. Large files under `/home/sat/bigtmp`, never `/tmp`, a RAM-backed tmpfs here. At most 3 processes, `nice -n 14`.
+
+Change no threshold, sign, seed, horizon, price, service guard or acceptance rule. Training an alternative model on a copy is a diagnostic; neither alternative is adopted by this task.
+
+Write `ARCH-ALTERNATIVES-2026-09-09.md` in the workspace root and print it as your final message. Lead with the selection-quality table for the three models, then the restriction to material-`R3` coalitions.

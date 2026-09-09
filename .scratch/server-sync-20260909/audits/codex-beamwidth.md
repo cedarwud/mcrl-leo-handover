@@ -35,3 +35,21 @@ Do not change `TX_FULL_HPBW_DEG` in any sealed or engine path; work on a copy. D
 Workspace `/home/sat/mcrl-v025-beam-ws`, built with `git -C /home/sat/mcrl-v025-codex-ws-engine archive 75c5c78c | tar -x -C /home/sat/mcrl-v025-beam-ws`, then `git init` and commit. Never write into `/home/sat/mcrl-leo-handover` or its venv, `/home/sat/mcrl-hub`, `/home/sat/mcrl-v025-codex-ws-engine`, or any other `mcrl-v025-*-ws`. Python `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`. Large files under `/home/sat/bigtmp`, never `/tmp`, a RAM-backed tmpfs here. At most 3 processes, `nice -n 12`.
 
 Write `BEAMWIDTH-READING-2026-09-09.md` in the workspace root and print it as your final message. Lead with what the source actually defines, then the two-reading comparison table.
+
+## Scope change: this is a declared design sweep, not a two-point comparison
+The owner has ruled that the beam half-power angle is a **system design parameter**, not a constant the cited paper binds us to. A satellite designer chooses it. So the task changes shape.
+
+**Sweep it as a declared axis and report every point.** Use at least the one-sided half-power angles `1.66`, `2.40`, `3.32` (the source's value), `4.50` and `6.65` degrees, spanning the current modelled beam through to twice the source's. State the convention explicitly at each point so no reader has to guess whether a number is one-sided or a full span.
+
+At each point report:
+* pooled energy efficiency for BASELINE, the iterated unilateral optimum and the bounded oracle set selector;
+* **the coordination headroom, oracle over unilateral**, which is the quantity the project's result rests on;
+* the served counts, so it stays visible whether any point buys efficiency by serving fewer users;
+* the interference structure: the share of infeasible user-steps that are interference-limited, and the top-1 aggressor share.
+
+**The curve is the deliverable, not a winner.** Do not recommend a value and do not rank the points by which is best for any component. The scientific question the sweep answers is *at what antenna design does set-level coordination have value*, and a result that says coordination matters only in part of the range is a finding, not a weakness. Narrow beams should mean less interference and less for coordination to do; wide beams should mean more interference, more coordination value and worse service. Report whether that expectation holds.
+
+Cover at least 8 anchors per point and say how many. If the budget forces a cut, reduce anchors rather than dropping sweep points, since the shape of the curve is what matters.
+
+## One thing that must change regardless of which value is later chosen
+The code comment asserting that `TX_FULL_HPBW_DEG` retains a HOBS full half-power beamwidth convention is **false**: the source's parameter is a one-sided off-axis angle, proven by the pattern evaluating to exactly one half at that angle. Note in your report that the comment must be replaced with a declaration that the value is a chosen design parameter. Do not edit the sealed engine yourself; just record the obligation.

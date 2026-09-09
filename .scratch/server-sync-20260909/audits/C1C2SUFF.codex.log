@@ -3640,3 +3640,2346 @@ patch: completed
 /home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py
 exec
 /bin/bash -lc 'nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest -q tests/stagec_v025/test_c1c2_exact_label_acceptance.py -x' in /home/sat/mcrl-v025-c1c2suff-ws
+ exited 1 in 43458ms:
+F
+=================================== FAILURES ===================================
+________ test_production_c1_labels_equal_exact_evaluator_singletons[0] _________
+
+real_context = (ExogenousWorldTape(domain='V025_PROBE/world/1', seed=5261619120743994529, split='TRAIN', tle_date='2026-01-07', train...85187, 100000), joules_ref=Fraction(3902502392711469, 500000000000), users=100, source='one-development-anchor-proxy'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7b11af5c2190>
+step_index = 0
+
+    @pytest.mark.parametrize("step_index", ANCHOR_STEPS)
+    def test_production_c1_labels_equal_exact_evaluator_singletons(
+        real_context, monkeypatch: pytest.MonkeyPatch, step_index: int
+    ) -> None:
+        built, tape, setting, run_setting, calibration = _anchor_rows(
+            real_context, monkeypatch, step_index
+        )
+        base, incumbent, evaluator, _forecasts, base_outcome = _exact_singletons(
+            built, tape, setting, run_setting, calibration, step_index
+        )
+        for row in built["rows"]:
+            identity = pilot._identity(row.action)
+            mapping = base.mapping
+            mapping[row.user_id] = identity
+            config = pilot.ENGINE._configuration(base, mapping, kind="acceptance-singleton")
+            if config.configuration_id in evaluator._invalid:
+                continue
+            candidate = evaluator.evaluate(config).outcome(
+                phi=pilot.ENGINE._phi_for(
+                    incumbent,
+                    config,
+                    cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+                )
+            )
+            exact = c1_difference_surplus(
+                candidate,
+                base_outcome,
+                lambda_bits_per_j=calibration.lambda_bits_per_j,
+                eta_ref=calibration.eta_ref,
+                kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
+            )
+            actual = parse_float_hex(
+                row.c1_label_normalized_hex, field="c1_label_normalized_hex"
+            )
+            expected = float(exact.normalized_total)
+>           assert actual == pytest.approx(expected, abs=NORMALIZED_ABS_TOL, rel=0.0), (
+                "production C1 label disagrees with exact evaluator singleton: "
+                f"anchor={step_index} user={row.user_id} action={identity} "
+                f"actual={actual:.17g} exact={expected:.17g} "
+                f"abs_tol={NORMALIZED_ABS_TOL}"
+            )
+E           AssertionError: production C1 label disagrees with exact evaluator singleton: anchor=0 user=0 action=(65028, 55) actual=0.16304247271668615 exact=0.12756951502457881 abs_tol=1e-09
+E           assert 0.16304247271668615 == 0.1275695150245788 ± 1.0e-09
+E             
+E             comparison failed
+E             Obtained: 0.16304247271668615
+E             Expected: 0.1275695150245788 ± 1.0e-09
+
+tests/stagec_v025/test_c1c2_exact_label_acceptance.py:192: AssertionError
+=========================== short test summary info ============================
+FAILED tests/stagec_v025/test_c1c2_exact_label_acceptance.py::test_production_c1_labels_equal_exact_evaluator_singletons[0]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+exec
+/bin/bash -lc "nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+for name in ['scipy','xgboost','lightgbm','catboost']:
+ try:
+  m=__import__(name);print(name,getattr(m,'__version__','ok'))
+ except Exception as e:print(name,type(e).__name__)
+PY" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+scipy ModuleNotFoundError
+xgboost ModuleNotFoundError
+lightgbm ModuleNotFoundError
+catboost ModuleNotFoundError
+
+codex
+The fallback witness is now complete in the required sequence: red with `True`, all four C1/C2 oracle checks green with `False`, and the same C1 assertion red again after restoring `True`. The flag is currently restored. The failure magnitude is orders above the `1e-9` tolerance, ruling out the calibration/rounding hypothesis; exact-mode green also rules out configuration reconstruction and C2 forecast-indexing mismatches.
+
+Next I’m running the held-out diagnostic on existing rows, with exact relabeling through the evaluator. No production head is trained; the flexible comparison is deterministic inverse-distance k-nearest-neighbor regression, with whole physical steps kept together in the split.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+exec
+/bin/bash -lc 'nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 12' in /home/sat/mcrl-v025-c1c2suff-ws
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+codex
+Exact relabeling is still running; the runtime is dominated by recomputing coupled network profiles and all three future offsets, not by the k-nearest-neighbor fit. The split has been corrected to group both carrier views of each physical step, preventing byte-identical rows from leaking across train, validation, and test.
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+ succeeded in 241057ms:
+{"phase": "exact-relabel", "anchor": 0, "rows": 892}
+{"phase": "exact-relabel", "anchor": 1, "rows": 1784}
+{"phase": "exact-relabel", "anchor": 2, "rows": 2655}
+{"phase": "exact-relabel", "anchor": 3, "rows": 3533}
+{"phase": "exact-relabel", "anchor": 4, "rows": 4424}
+{"phase": "exact-relabel", "anchor": 5, "rows": 5301}
+{"phase": "exact-relabel", "anchor": 6, "rows": 6173}
+{"phase": "exact-relabel", "anchor": 7, "rows": 7067}
+{"phase": "exact-relabel", "anchor": 8, "rows": 7940}
+{"phase": "exact-relabel", "anchor": 9, "rows": 8805}
+{"phase": "exact-relabel", "anchor": 10, "rows": 9700}
+{"phase": "exact-relabel", "anchor": 11, "rows": 10565}
+{
+  "collisions": {
+    "c1": {
+      "difference": "22/5",
+      "shared_default_outcome": {
+        "bits": 200,
+        "joules": 20,
+        "phi": 0
+      },
+      "squared_loss_lower_bound": "121/25",
+      "state_a": {
+        "background_associations": {
+          "1": [
+            1001,
+            7
+          ],
+          "2": [
+            2002,
+            4
+          ]
+        },
+        "background_cross_gains_linear": {
+          "1_to_focal": 1e-13,
+          "2_to_focal": 2e-14
+        },
+        "candidate_outcome": {
+          "bits": 220,
+          "joules": 22,
+          "phi": -0.5
+        },
+        "coupled_power_w": {
+          "1": 0.4,
+          "2": 0.3,
+          "focal": 0.8
+        }
+      },
+      "state_b": {
+        "background_associations": {
+          "17": [
+            1001,
+            7
+          ],
+          "23": [
+            2003,
+            2
+          ]
+        },
+        "background_cross_gains_linear": {
+          "17_to_focal": 8e-11,
+          "23_to_focal": 3e-11
+        },
+        "candidate_outcome": {
+          "bits": 180,
+          "joules": 24,
+          "phi": -0.5
+        },
+        "coupled_power_w": {
+          "17": 1.4,
+          "23": 1.2,
+          "focal": 1.5
+        }
+      },
+      "target_a": "11/10",
+      "target_b": "-33/10"
+    },
+    "c2": {
+      "difference": "83/10",
+      "shared_default_projected_outcomes": [
+        {
+          "bits": 200,
+          "joules": 20,
+          "offset": 1,
+          "required_power_w": 0.8
+        },
+        {
+          "bits": 200,
+          "joules": 20,
+          "offset": 2,
+          "required_power_w": 0.8
+        },
+        {
+          "bits": 200,
+          "joules": 20,
+          "offset": 3,
+          "required_power_w": 0.8
+        }
+      ],
+      "squared_loss_lower_bound": "6889/400",
+      "state_a_projected_outcomes": [
+        {
+          "bits": 210,
+          "joules": 21,
+          "offset": 1,
+          "required_power_w": 0.9
+        },
+        {
+          "bits": 210,
+          "joules": 21,
+          "offset": 2,
+          "required_power_w": 0.9
+        },
+        {
+          "bits": 210,
+          "joules": 21,
+          "offset": 3,
+          "required_power_w": 0.9
+        }
+      ],
+      "state_b_projected_outcomes": [
+        {
+          "bits": 180,
+          "joules": 25,
+          "offset": 1,
+          "required_power_w": 1.4
+        },
+        {
+          "bits": 190,
+          "joules": 24,
+          "offset": 2,
+          "required_power_w": 1.3
+        },
+        {
+          "bits": 195,
+          "joules": 23,
+          "offset": 3,
+          "required_power_w": 1.2
+        }
+      ],
+      "target_a": "12/5",
+      "target_b": "-59/10"
+    },
+    "head_auxiliary_inputs": [],
+    "q1_big_endian_float64_bytes_hex": "3fc999999999999a3fe00000000000003fe00000000000003fb999999999999a3ff00000000000003ff00000000000003fd00000000000003fe00000000000003fe80000000000003fe555555555555500000000000000003fb999999999999a3ff00000000000003ff00000000000003fd999999999999a0000000000000000",
+    "q1_bytes_sha256": "40612104aef6aa6e3714d642c7323aae08d26c473a2e89a15aa0b0de5f65e0af",
+    "q1_float_hex": [
+      "0x1.999999999999ap-3",
+      "0x1.0000000000000p-1",
+      "0x1.0000000000000p-1",
+      "0x1.999999999999ap-4",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p-2",
+      "0x1.0000000000000p-1",
+      "0x1.8000000000000p-1",
+      "0x1.5555555555555p-1",
+      "0x0.0p+0",
+      "0x1.999999999999ap-4",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.999999999999ap-2",
+      "0x0.0p+0"
+    ],
+    "q2_big_endian_float64_bytes_hex": "3fc999999999999a00000000000000003fe00000000000003fe80000000000003fe55555555555553fb999999999999a3ff00000000000003ff00000000000003fe000000000000000000000000000003ff00000000000003ff00000000000003fc33333333333333fe00000000000003ff00000000000003ff00000000000003fb999999999999a3fe00000000000003ff00000000000003ff00000000000003fa999999999999a3fe0000000000000",
+    "q2_bytes_sha256": "49b656e2c757357b18f81ef64f43c55ab49e0729d147d2c4a5685af59086ee96",
+    "q2_float_hex": [
+      "0x1.999999999999ap-3",
+      "0x0.0p+0",
+      "0x1.0000000000000p-1",
+      "0x1.8000000000000p-1",
+      "0x1.5555555555555p-1",
+      "0x1.999999999999ap-4",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p-1",
+      "0x0.0p+0",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.3333333333333p-3",
+      "0x1.0000000000000p-1",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.999999999999ap-4",
+      "0x1.0000000000000p-1",
+      "0x1.0000000000000p+0",
+      "0x1.0000000000000p+0",
+      "0x1.999999999999ap-5",
+      "0x1.0000000000000p-1"
+    ]
+  },
+  "explainability": {
+    "anchor_indices": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "c1": {
+      "explained_variance_gap": -0.07992334103751875,
+      "q_only": {
+        "held_out_explained_variance": 0.0673353139580074,
+        "held_out_mae": 1.6281338322353152,
+        "held_out_rmse": 2.378047709534793,
+        "model": "standardized inverse-distance k-nearest-neighbor",
+        "selected_k": 15,
+        "validation_explained_variance_by_k": {
+          "1": -0.4246063205408641,
+          "15": 0.12441178368569517,
+          "3": -0.06249003050200663,
+          "31": 0.12158168318309404,
+          "7": 0.12019232867493357
+        }
+      },
+      "q_plus_discarded_structure": {
+        "held_out_explained_variance": -0.012588027079511344,
+        "held_out_mae": 1.6824885435690566,
+        "held_out_rmse": 2.4321575118225383,
+        "model": "standardized inverse-distance k-nearest-neighbor",
+        "selected_k": 31,
+        "validation_explained_variance_by_k": {
+          "1": -0.5065354069411319,
+          "15": 0.14628574405142292,
+          "3": -0.021766563504373115,
+          "31": 0.15707998701235049,
+          "7": 0.10883815094423444
+        }
+      }
+    },
+    "c2": {
+      "explained_variance_gap": -0.2974564633830924,
+      "q_only": {
+        "held_out_explained_variance": 0.15675057383356317,
+        "held_out_mae": 2.7958117474041537,
+        "held_out_rmse": 4.0116203427792225,
+        "model": "standardized inverse-distance k-nearest-neighbor",
+        "selected_k": 31,
+        "validation_explained_variance_by_k": {
+          "1": -0.5356935112191628,
+          "15": 0.0019081084834545736,
+          "3": -0.4558394573132014,
+          "31": 0.03613014359444866,
+          "7": -0.26653230695827324
+        }
+      },
+      "q_plus_discarded_structure": {
+        "held_out_explained_variance": -0.14070588954952923,
+        "held_out_mae": 3.469052365971562,
+        "held_out_rmse": 4.849738754916745,
+        "model": "standardized inverse-distance k-nearest-neighbor",
+        "selected_k": 31,
+        "validation_explained_variance_by_k": {
+          "1": -2.0326122245293545,
+          "15": -0.07720024024289285,
+          "3": -1.0970962200555587,
+          "31": 0.008521576211881765,
+          "7": -0.3738908528890985
+        }
+      }
+    },
+    "exact_relabelled_nonreference_valid_rows": 10565,
+    "source": "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows/world-1",
+    "split_seed": 20260909,
+    "split_unit": "whole physical step (both carrier views grouped)",
+    "test_anchors": [
+      3,
+      4,
+      5
+    ],
+    "test_steps": [
+      1
+    ],
+    "train_anchors": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "train_steps": [
+      2,
+      3
+    ],
+    "validation_anchors": [
+      0,
+      1,
+      2
+    ],
+    "validation_steps": [
+      0
+    ],
+    "world": "V025_PROBE/world/1"
+  }
+}
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..0732537cbd66cf7a3657361cab525666946553ce
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -553,8 +553,8 @@
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +574,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..6d6d925eb0a3b4aba273dd77bcaa3ec48f25199a
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -495,12 +495,36 @@
+     structure_name = f"{route.lower()}_structure"
+     candidates = (1, 3, 7, 15, 31)
+ 
+-    def matrix(selected: list[ExactRow], include_structure: bool) -> np.ndarray:
++    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
++        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
++
++    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
++        if route == "C1":
++            # Exact C1 is linear in the six complete network terms.  Retain
++            # the two extra evaluator diagnostics in the stored row, but do
++            # not hand them to this sufficient comparator.
++            return np.asarray(
++                [getattr(row, structure_name)[:6] for row in selected],
++                dtype=np.float64,
++            )
+         values = []
+         for row in selected:
+-            q = getattr(row, q_name)
+-            structure = getattr(row, structure_name)
+-            values.append((*q, *structure) if include_structure else q)
++            raw = getattr(row, structure_name)
++            alive = True
++            live_cores = []
++            lost = 0
++            for offset in range(3):
++                start = offset * 14
++                candidate = raw[start : start + 7]
++                default = raw[start + 7 : start + 14]
++                core = candidate[0] - candidate[1] - default[0] + default[1]
++                live_cores.append(core if alive else 0.0)
++                if alive and not (bool(candidate[4]) and bool(candidate[5])):
++                    alive = False
++                    lost += 1
++                elif not alive:
++                    lost += 1
++            values.append((*live_cores, float(lost)))
+         return np.asarray(values, dtype=np.float64)
+ 
+     def select(anchors: set[int]) -> list[ExactRow]:
+@@ -515,27 +539,21 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    results = {}
+-    for name, include_structure in (("q_only", False), ("q_plus_discarded_structure", True)):
+-        fit_x = matrix(fit_rows, include_structure)
+-        validation_x = matrix(validation_rows, include_structure)
+-        fit_x, validation_x = _standardize(fit_x, validation_x)
+-        scores = {}
+-        for neighbors in candidates:
+-            prediction = _knn_predict(
+-                fit_x, fit_y, validation_x, neighbors=neighbors
+-            )
+-            scores[neighbors] = _explained_variance(validation_y, prediction)
+-        selected_k = max(scores, key=lambda value: (scores[value], -value))
+-
+-        train_x = matrix(all_train_rows, include_structure)
+-        test_x = matrix(test_rows, include_structure)
+-        train_x, test_x = _standardize(train_x, test_x)
+-        prediction = _knn_predict(
+-            train_x, all_train_y, test_x, neighbors=selected_k
+-        )
+-        residual = test_y - prediction
+-        results[name] = {
++    fit_x = q_matrix(fit_rows)
++    validation_x = q_matrix(validation_rows)
++    fit_x, validation_x = _standardize(fit_x, validation_x)
++    scores = {}
++    for neighbors in candidates:
++        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++        scores[neighbors] = _explained_variance(validation_y, prediction)
++    selected_k = max(scores, key=lambda value: (scores[value], -value))
++    train_x = q_matrix(all_train_rows)
++    test_x = q_matrix(test_rows)
++    train_x, test_x = _standardize(train_x, test_x)
++    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++    residual = test_y - prediction
++    results = {
++        "q_only": {
+             "model": "standardized inverse-distance k-nearest-neighbor",
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+@@ -545,16 +563,43 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++    }
++
++    # The comparator sees the complete outcome terms discarded by Q1/Q2.
++    # Their production target definitions are linear once C2's absorbing
++    # survival state is expanded, so ordinary least squares is sufficient and
++    # avoids attributing k-NN's high-dimensional distance failure to physics.
++    train_structure = structure_matrix(all_train_rows)
++    test_structure = structure_matrix(test_rows)
++    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
++    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
++    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
++    structure_prediction = test_design @ coefficients
++    structure_residual = test_y - structure_prediction
++    results["discarded_structure"] = {
++        "model": "ordinary least squares on exact target-sufficient network terms",
++        "held_out_explained_variance": _explained_variance(
++            test_y, structure_prediction
++        ),
++        "held_out_rmse": float(
++            np.sqrt(np.mean(structure_residual * structure_residual))
++        ),
++        "held_out_mae": float(np.mean(np.abs(structure_residual))),
++        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
++        "coefficients": [float(value) for value in coefficients],
++    }
++    results["held_out_rows"] = len(test_rows)
++    results["held_out_target_variance"] = float(np.var(test_y))
+     results["explained_variance_gap"] = (
+-        results["q_plus_discarded_structure"]["held_out_explained_variance"]
++        results["discarded_structure"]["held_out_explained_variance"]
+         - results["q_only"]["held_out_explained_variance"]
+     )
+     return results
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +619,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..6d6d925eb0a3b4aba273dd77bcaa3ec48f25199a
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -495,12 +495,36 @@
+     structure_name = f"{route.lower()}_structure"
+     candidates = (1, 3, 7, 15, 31)
+ 
+-    def matrix(selected: list[ExactRow], include_structure: bool) -> np.ndarray:
++    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
++        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
++
++    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
++        if route == "C1":
++            # Exact C1 is linear in the six complete network terms.  Retain
++            # the two extra evaluator diagnostics in the stored row, but do
++            # not hand them to this sufficient comparator.
++            return np.asarray(
++                [getattr(row, structure_name)[:6] for row in selected],
++                dtype=np.float64,
++            )
+         values = []
+         for row in selected:
+-            q = getattr(row, q_name)
+-            structure = getattr(row, structure_name)
+-            values.append((*q, *structure) if include_structure else q)
++            raw = getattr(row, structure_name)
++            alive = True
++            live_cores = []
++            lost = 0
++            for offset in range(3):
++                start = offset * 14
++                candidate = raw[start : start + 7]
++                default = raw[start + 7 : start + 14]
++                core = candidate[0] - candidate[1] - default[0] + default[1]
++                live_cores.append(core if alive else 0.0)
++                if alive and not (bool(candidate[4]) and bool(candidate[5])):
++                    alive = False
++                    lost += 1
++                elif not alive:
++                    lost += 1
++            values.append((*live_cores, float(lost)))
+         return np.asarray(values, dtype=np.float64)
+ 
+     def select(anchors: set[int]) -> list[ExactRow]:
+@@ -515,27 +539,21 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    results = {}
+-    for name, include_structure in (("q_only", False), ("q_plus_discarded_structure", True)):
+-        fit_x = matrix(fit_rows, include_structure)
+-        validation_x = matrix(validation_rows, include_structure)
+-        fit_x, validation_x = _standardize(fit_x, validation_x)
+-        scores = {}
+-        for neighbors in candidates:
+-            prediction = _knn_predict(
+-                fit_x, fit_y, validation_x, neighbors=neighbors
+-            )
+-            scores[neighbors] = _explained_variance(validation_y, prediction)
+-        selected_k = max(scores, key=lambda value: (scores[value], -value))
+-
+-        train_x = matrix(all_train_rows, include_structure)
+-        test_x = matrix(test_rows, include_structure)
+-        train_x, test_x = _standardize(train_x, test_x)
+-        prediction = _knn_predict(
+-            train_x, all_train_y, test_x, neighbors=selected_k
+-        )
+-        residual = test_y - prediction
+-        results[name] = {
++    fit_x = q_matrix(fit_rows)
++    validation_x = q_matrix(validation_rows)
++    fit_x, validation_x = _standardize(fit_x, validation_x)
++    scores = {}
++    for neighbors in candidates:
++        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++        scores[neighbors] = _explained_variance(validation_y, prediction)
++    selected_k = max(scores, key=lambda value: (scores[value], -value))
++    train_x = q_matrix(all_train_rows)
++    test_x = q_matrix(test_rows)
++    train_x, test_x = _standardize(train_x, test_x)
++    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++    residual = test_y - prediction
++    results = {
++        "q_only": {
+             "model": "standardized inverse-distance k-nearest-neighbor",
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+@@ -545,16 +563,43 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++    }
++
++    # The comparator sees the complete outcome terms discarded by Q1/Q2.
++    # Their production target definitions are linear once C2's absorbing
++    # survival state is expanded, so ordinary least squares is sufficient and
++    # avoids attributing k-NN's high-dimensional distance failure to physics.
++    train_structure = structure_matrix(all_train_rows)
++    test_structure = structure_matrix(test_rows)
++    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
++    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
++    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
++    structure_prediction = test_design @ coefficients
++    structure_residual = test_y - structure_prediction
++    results["discarded_structure"] = {
++        "model": "ordinary least squares on exact target-sufficient network terms",
++        "held_out_explained_variance": _explained_variance(
++            test_y, structure_prediction
++        ),
++        "held_out_rmse": float(
++            np.sqrt(np.mean(structure_residual * structure_residual))
++        ),
++        "held_out_mae": float(np.mean(np.abs(structure_residual))),
++        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
++        "coefficients": [float(value) for value in coefficients],
++    }
++    results["held_out_rows"] = len(test_rows)
++    results["held_out_target_variance"] = float(np.var(test_y))
+     results["explained_variance_gap"] = (
+-        results["q_plus_discarded_structure"]["held_out_explained_variance"]
++        results["discarded_structure"]["held_out_explained_variance"]
+         - results["q_only"]["held_out_explained_variance"]
+     )
+     return results
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +619,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+exec
+/bin/bash -lc 'nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30' in /home/sat/mcrl-v025-c1c2suff-ws
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..6d6d925eb0a3b4aba273dd77bcaa3ec48f25199a
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -495,12 +495,36 @@
+     structure_name = f"{route.lower()}_structure"
+     candidates = (1, 3, 7, 15, 31)
+ 
+-    def matrix(selected: list[ExactRow], include_structure: bool) -> np.ndarray:
++    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
++        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
++
++    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
++        if route == "C1":
++            # Exact C1 is linear in the six complete network terms.  Retain
++            # the two extra evaluator diagnostics in the stored row, but do
++            # not hand them to this sufficient comparator.
++            return np.asarray(
++                [getattr(row, structure_name)[:6] for row in selected],
++                dtype=np.float64,
++            )
+         values = []
+         for row in selected:
+-            q = getattr(row, q_name)
+-            structure = getattr(row, structure_name)
+-            values.append((*q, *structure) if include_structure else q)
++            raw = getattr(row, structure_name)
++            alive = True
++            live_cores = []
++            lost = 0
++            for offset in range(3):
++                start = offset * 14
++                candidate = raw[start : start + 7]
++                default = raw[start + 7 : start + 14]
++                core = candidate[0] - candidate[1] - default[0] + default[1]
++                live_cores.append(core if alive else 0.0)
++                if alive and not (bool(candidate[4]) and bool(candidate[5])):
++                    alive = False
++                    lost += 1
++                elif not alive:
++                    lost += 1
++            values.append((*live_cores, float(lost)))
+         return np.asarray(values, dtype=np.float64)
+ 
+     def select(anchors: set[int]) -> list[ExactRow]:
+@@ -515,27 +539,21 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    results = {}
+-    for name, include_structure in (("q_only", False), ("q_plus_discarded_structure", True)):
+-        fit_x = matrix(fit_rows, include_structure)
+-        validation_x = matrix(validation_rows, include_structure)
+-        fit_x, validation_x = _standardize(fit_x, validation_x)
+-        scores = {}
+-        for neighbors in candidates:
+-            prediction = _knn_predict(
+-                fit_x, fit_y, validation_x, neighbors=neighbors
+-            )
+-            scores[neighbors] = _explained_variance(validation_y, prediction)
+-        selected_k = max(scores, key=lambda value: (scores[value], -value))
+-
+-        train_x = matrix(all_train_rows, include_structure)
+-        test_x = matrix(test_rows, include_structure)
+-        train_x, test_x = _standardize(train_x, test_x)
+-        prediction = _knn_predict(
+-            train_x, all_train_y, test_x, neighbors=selected_k
+-        )
+-        residual = test_y - prediction
+-        results[name] = {
++    fit_x = q_matrix(fit_rows)
++    validation_x = q_matrix(validation_rows)
++    fit_x, validation_x = _standardize(fit_x, validation_x)
++    scores = {}
++    for neighbors in candidates:
++        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++        scores[neighbors] = _explained_variance(validation_y, prediction)
++    selected_k = max(scores, key=lambda value: (scores[value], -value))
++    train_x = q_matrix(all_train_rows)
++    test_x = q_matrix(test_rows)
++    train_x, test_x = _standardize(train_x, test_x)
++    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++    residual = test_y - prediction
++    results = {
++        "q_only": {
+             "model": "standardized inverse-distance k-nearest-neighbor",
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+@@ -545,16 +563,43 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++    }
++
++    # The comparator sees the complete outcome terms discarded by Q1/Q2.
++    # Their production target definitions are linear once C2's absorbing
++    # survival state is expanded, so ordinary least squares is sufficient and
++    # avoids attributing k-NN's high-dimensional distance failure to physics.
++    train_structure = structure_matrix(all_train_rows)
++    test_structure = structure_matrix(test_rows)
++    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
++    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
++    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
++    structure_prediction = test_design @ coefficients
++    structure_residual = test_y - structure_prediction
++    results["discarded_structure"] = {
++        "model": "ordinary least squares on exact target-sufficient network terms",
++        "held_out_explained_variance": _explained_variance(
++            test_y, structure_prediction
++        ),
++        "held_out_rmse": float(
++            np.sqrt(np.mean(structure_residual * structure_residual))
++        ),
++        "held_out_mae": float(np.mean(np.abs(structure_residual))),
++        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
++        "coefficients": [float(value) for value in coefficients],
++    }
++    results["held_out_rows"] = len(test_rows)
++    results["held_out_target_variance"] = float(np.var(test_y))
+     results["explained_variance_gap"] = (
+-        results["q_plus_discarded_structure"]["held_out_explained_variance"]
++        results["discarded_structure"]["held_out_explained_variance"]
+         - results["q_only"]["held_out_explained_variance"]
+     )
+     return results
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +619,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..6d6d925eb0a3b4aba273dd77bcaa3ec48f25199a
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -495,12 +495,36 @@
+     structure_name = f"{route.lower()}_structure"
+     candidates = (1, 3, 7, 15, 31)
+ 
+-    def matrix(selected: list[ExactRow], include_structure: bool) -> np.ndarray:
++    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
++        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
++
++    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
++        if route == "C1":
++            # Exact C1 is linear in the six complete network terms.  Retain
++            # the two extra evaluator diagnostics in the stored row, but do
++            # not hand them to this sufficient comparator.
++            return np.asarray(
++                [getattr(row, structure_name)[:6] for row in selected],
++                dtype=np.float64,
++            )
+         values = []
+         for row in selected:
+-            q = getattr(row, q_name)
+-            structure = getattr(row, structure_name)
+-            values.append((*q, *structure) if include_structure else q)
++            raw = getattr(row, structure_name)
++            alive = True
++            live_cores = []
++            lost = 0
++            for offset in range(3):
++                start = offset * 14
++                candidate = raw[start : start + 7]
++                default = raw[start + 7 : start + 14]
++                core = candidate[0] - candidate[1] - default[0] + default[1]
++                live_cores.append(core if alive else 0.0)
++                if alive and not (bool(candidate[4]) and bool(candidate[5])):
++                    alive = False
++                    lost += 1
++                elif not alive:
++                    lost += 1
++            values.append((*live_cores, float(lost)))
+         return np.asarray(values, dtype=np.float64)
+ 
+     def select(anchors: set[int]) -> list[ExactRow]:
+@@ -515,27 +539,21 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    results = {}
+-    for name, include_structure in (("q_only", False), ("q_plus_discarded_structure", True)):
+-        fit_x = matrix(fit_rows, include_structure)
+-        validation_x = matrix(validation_rows, include_structure)
+-        fit_x, validation_x = _standardize(fit_x, validation_x)
+-        scores = {}
+-        for neighbors in candidates:
+-            prediction = _knn_predict(
+-                fit_x, fit_y, validation_x, neighbors=neighbors
+-            )
+-            scores[neighbors] = _explained_variance(validation_y, prediction)
+-        selected_k = max(scores, key=lambda value: (scores[value], -value))
+-
+-        train_x = matrix(all_train_rows, include_structure)
+-        test_x = matrix(test_rows, include_structure)
+-        train_x, test_x = _standardize(train_x, test_x)
+-        prediction = _knn_predict(
+-            train_x, all_train_y, test_x, neighbors=selected_k
+-        )
+-        residual = test_y - prediction
+-        results[name] = {
++    fit_x = q_matrix(fit_rows)
++    validation_x = q_matrix(validation_rows)
++    fit_x, validation_x = _standardize(fit_x, validation_x)
++    scores = {}
++    for neighbors in candidates:
++        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++        scores[neighbors] = _explained_variance(validation_y, prediction)
++    selected_k = max(scores, key=lambda value: (scores[value], -value))
++    train_x = q_matrix(all_train_rows)
++    test_x = q_matrix(test_rows)
++    train_x, test_x = _standardize(train_x, test_x)
++    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++    residual = test_y - prediction
++    results = {
++        "q_only": {
+             "model": "standardized inverse-distance k-nearest-neighbor",
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+@@ -545,16 +563,43 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++    }
++
++    # The comparator sees the complete outcome terms discarded by Q1/Q2.
++    # Their production target definitions are linear once C2's absorbing
++    # survival state is expanded, so ordinary least squares is sufficient and
++    # avoids attributing k-NN's high-dimensional distance failure to physics.
++    train_structure = structure_matrix(all_train_rows)
++    test_structure = structure_matrix(test_rows)
++    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
++    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
++    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
++    structure_prediction = test_design @ coefficients
++    structure_residual = test_y - structure_prediction
++    results["discarded_structure"] = {
++        "model": "ordinary least squares on exact target-sufficient network terms",
++        "held_out_explained_variance": _explained_variance(
++            test_y, structure_prediction
++        ),
++        "held_out_rmse": float(
++            np.sqrt(np.mean(structure_residual * structure_residual))
++        ),
++        "held_out_mae": float(np.mean(np.abs(structure_residual))),
++        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
++        "coefficients": [float(value) for value in coefficients],
++    }
++    results["held_out_rows"] = len(test_rows)
++    results["held_out_target_variance"] = float(np.var(test_y))
+     results["explained_variance_gap"] = (
+-        results["q_plus_discarded_structure"]["held_out_explained_variance"]
++        results["discarded_structure"]["held_out_explained_variance"]
+         - results["q_only"]["held_out_explained_variance"]
+     )
+     return results
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +619,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+codex
+The 30-anchor measurement is underway. This expands the held-out set from the initial smoke run’s single physical step to two full physical steps and gives model selection one separate step, while preserving all three carrier views within a split. The discarded-structure comparator now uses the exact sufficient network terms with a fitted OLS readout, so it measures information availability rather than k-NN distance behavior in a larger feature space.
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..6d6d925eb0a3b4aba273dd77bcaa3ec48f25199a
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -495,12 +495,36 @@
+     structure_name = f"{route.lower()}_structure"
+     candidates = (1, 3, 7, 15, 31)
+ 
+-    def matrix(selected: list[ExactRow], include_structure: bool) -> np.ndarray:
++    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
++        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
++
++    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
++        if route == "C1":
++            # Exact C1 is linear in the six complete network terms.  Retain
++            # the two extra evaluator diagnostics in the stored row, but do
++            # not hand them to this sufficient comparator.
++            return np.asarray(
++                [getattr(row, structure_name)[:6] for row in selected],
++                dtype=np.float64,
++            )
+         values = []
+         for row in selected:
+-            q = getattr(row, q_name)
+-            structure = getattr(row, structure_name)
+-            values.append((*q, *structure) if include_structure else q)
++            raw = getattr(row, structure_name)
++            alive = True
++            live_cores = []
++            lost = 0
++            for offset in range(3):
++                start = offset * 14
++                candidate = raw[start : start + 7]
++                default = raw[start + 7 : start + 14]
++                core = candidate[0] - candidate[1] - default[0] + default[1]
++                live_cores.append(core if alive else 0.0)
++                if alive and not (bool(candidate[4]) and bool(candidate[5])):
++                    alive = False
++                    lost += 1
++                elif not alive:
++                    lost += 1
++            values.append((*live_cores, float(lost)))
+         return np.asarray(values, dtype=np.float64)
+ 
+     def select(anchors: set[int]) -> list[ExactRow]:
+@@ -515,27 +539,21 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    results = {}
+-    for name, include_structure in (("q_only", False), ("q_plus_discarded_structure", True)):
+-        fit_x = matrix(fit_rows, include_structure)
+-        validation_x = matrix(validation_rows, include_structure)
+-        fit_x, validation_x = _standardize(fit_x, validation_x)
+-        scores = {}
+-        for neighbors in candidates:
+-            prediction = _knn_predict(
+-                fit_x, fit_y, validation_x, neighbors=neighbors
+-            )
+-            scores[neighbors] = _explained_variance(validation_y, prediction)
+-        selected_k = max(scores, key=lambda value: (scores[value], -value))
+-
+-        train_x = matrix(all_train_rows, include_structure)
+-        test_x = matrix(test_rows, include_structure)
+-        train_x, test_x = _standardize(train_x, test_x)
+-        prediction = _knn_predict(
+-            train_x, all_train_y, test_x, neighbors=selected_k
+-        )
+-        residual = test_y - prediction
+-        results[name] = {
++    fit_x = q_matrix(fit_rows)
++    validation_x = q_matrix(validation_rows)
++    fit_x, validation_x = _standardize(fit_x, validation_x)
++    scores = {}
++    for neighbors in candidates:
++        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++        scores[neighbors] = _explained_variance(validation_y, prediction)
++    selected_k = max(scores, key=lambda value: (scores[value], -value))
++    train_x = q_matrix(all_train_rows)
++    test_x = q_matrix(test_rows)
++    train_x, test_x = _standardize(train_x, test_x)
++    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++    residual = test_y - prediction
++    results = {
++        "q_only": {
+             "model": "standardized inverse-distance k-nearest-neighbor",
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+@@ -545,16 +563,43 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++    }
++
++    # The comparator sees the complete outcome terms discarded by Q1/Q2.
++    # Their production target definitions are linear once C2's absorbing
++    # survival state is expanded, so ordinary least squares is sufficient and
++    # avoids attributing k-NN's high-dimensional distance failure to physics.
++    train_structure = structure_matrix(all_train_rows)
++    test_structure = structure_matrix(test_rows)
++    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
++    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
++    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
++    structure_prediction = test_design @ coefficients
++    structure_residual = test_y - structure_prediction
++    results["discarded_structure"] = {
++        "model": "ordinary least squares on exact target-sufficient network terms",
++        "held_out_explained_variance": _explained_variance(
++            test_y, structure_prediction
++        ),
++        "held_out_rmse": float(
++            np.sqrt(np.mean(structure_residual * structure_residual))
++        ),
++        "held_out_mae": float(np.mean(np.abs(structure_residual))),
++        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
++        "coefficients": [float(value) for value in coefficients],
++    }
++    results["held_out_rows"] = len(test_rows)
++    results["held_out_target_variance"] = float(np.var(test_y))
+     results["explained_variance_gap"] = (
+-        results["q_plus_discarded_structure"]["held_out_explained_variance"]
++        results["discarded_structure"]["held_out_explained_variance"]
+         - results["q_only"]["held_out_explained_variance"]
+     )
+     return results
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +619,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..6d6d925eb0a3b4aba273dd77bcaa3ec48f25199a
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -495,12 +495,36 @@
+     structure_name = f"{route.lower()}_structure"
+     candidates = (1, 3, 7, 15, 31)
+ 
+-    def matrix(selected: list[ExactRow], include_structure: bool) -> np.ndarray:
++    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
++        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
++
++    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
++        if route == "C1":
++            # Exact C1 is linear in the six complete network terms.  Retain
++            # the two extra evaluator diagnostics in the stored row, but do
++            # not hand them to this sufficient comparator.
++            return np.asarray(
++                [getattr(row, structure_name)[:6] for row in selected],
++                dtype=np.float64,
++            )
+         values = []
+         for row in selected:
+-            q = getattr(row, q_name)
+-            structure = getattr(row, structure_name)
+-            values.append((*q, *structure) if include_structure else q)
++            raw = getattr(row, structure_name)
++            alive = True
++            live_cores = []
++            lost = 0
++            for offset in range(3):
++                start = offset * 14
++                candidate = raw[start : start + 7]
++                default = raw[start + 7 : start + 14]
++                core = candidate[0] - candidate[1] - default[0] + default[1]
++                live_cores.append(core if alive else 0.0)
++                if alive and not (bool(candidate[4]) and bool(candidate[5])):
++                    alive = False
++                    lost += 1
++                elif not alive:
++                    lost += 1
++            values.append((*live_cores, float(lost)))
+         return np.asarray(values, dtype=np.float64)
+ 
+     def select(anchors: set[int]) -> list[ExactRow]:
+@@ -515,27 +539,21 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    results = {}
+-    for name, include_structure in (("q_only", False), ("q_plus_discarded_structure", True)):
+-        fit_x = matrix(fit_rows, include_structure)
+-        validation_x = matrix(validation_rows, include_structure)
+-        fit_x, validation_x = _standardize(fit_x, validation_x)
+-        scores = {}
+-        for neighbors in candidates:
+-            prediction = _knn_predict(
+-                fit_x, fit_y, validation_x, neighbors=neighbors
+-            )
+-            scores[neighbors] = _explained_variance(validation_y, prediction)
+-        selected_k = max(scores, key=lambda value: (scores[value], -value))
+-
+-        train_x = matrix(all_train_rows, include_structure)
+-        test_x = matrix(test_rows, include_structure)
+-        train_x, test_x = _standardize(train_x, test_x)
+-        prediction = _knn_predict(
+-            train_x, all_train_y, test_x, neighbors=selected_k
+-        )
+-        residual = test_y - prediction
+-        results[name] = {
++    fit_x = q_matrix(fit_rows)
++    validation_x = q_matrix(validation_rows)
++    fit_x, validation_x = _standardize(fit_x, validation_x)
++    scores = {}
++    for neighbors in candidates:
++        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++        scores[neighbors] = _explained_variance(validation_y, prediction)
++    selected_k = max(scores, key=lambda value: (scores[value], -value))
++    train_x = q_matrix(all_train_rows)
++    test_x = q_matrix(test_rows)
++    train_x, test_x = _standardize(train_x, test_x)
++    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++    residual = test_y - prediction
++    results = {
++        "q_only": {
+             "model": "standardized inverse-distance k-nearest-neighbor",
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+@@ -545,16 +563,43 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++    }
++
++    # The comparator sees the complete outcome terms discarded by Q1/Q2.
++    # Their production target definitions are linear once C2's absorbing
++    # survival state is expanded, so ordinary least squares is sufficient and
++    # avoids attributing k-NN's high-dimensional distance failure to physics.
++    train_structure = structure_matrix(all_train_rows)
++    test_structure = structure_matrix(test_rows)
++    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
++    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
++    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
++    structure_prediction = test_design @ coefficients
++    structure_residual = test_y - structure_prediction
++    results["discarded_structure"] = {
++        "model": "ordinary least squares on exact target-sufficient network terms",
++        "held_out_explained_variance": _explained_variance(
++            test_y, structure_prediction
++        ),
++        "held_out_rmse": float(
++            np.sqrt(np.mean(structure_residual * structure_residual))
++        ),
++        "held_out_mae": float(np.mean(np.abs(structure_residual))),
++        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
++        "coefficients": [float(value) for value in coefficients],
++    }
++    results["held_out_rows"] = len(test_rows)
++    results["held_out_target_variance"] = float(np.var(test_y))
+     results["explained_variance_gap"] = (
+-        results["q_plus_discarded_structure"]["held_out_explained_variance"]
++        results["discarded_structure"]["held_out_explained_variance"]
+         - results["q_only"]["held_out_explained_variance"]
+     )
+     return results
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +619,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index 5eeab7e3da37b0cbdfcac8248eb828e5ad04673a..6d6d925eb0a3b4aba273dd77bcaa3ec48f25199a
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -495,12 +495,36 @@
+     structure_name = f"{route.lower()}_structure"
+     candidates = (1, 3, 7, 15, 31)
+ 
+-    def matrix(selected: list[ExactRow], include_structure: bool) -> np.ndarray:
++    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
++        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
++
++    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
++        if route == "C1":
++            # Exact C1 is linear in the six complete network terms.  Retain
++            # the two extra evaluator diagnostics in the stored row, but do
++            # not hand them to this sufficient comparator.
++            return np.asarray(
++                [getattr(row, structure_name)[:6] for row in selected],
++                dtype=np.float64,
++            )
+         values = []
+         for row in selected:
+-            q = getattr(row, q_name)
+-            structure = getattr(row, structure_name)
+-            values.append((*q, *structure) if include_structure else q)
++            raw = getattr(row, structure_name)
++            alive = True
++            live_cores = []
++            lost = 0
++            for offset in range(3):
++                start = offset * 14
++                candidate = raw[start : start + 7]
++                default = raw[start + 7 : start + 14]
++                core = candidate[0] - candidate[1] - default[0] + default[1]
++                live_cores.append(core if alive else 0.0)
++                if alive and not (bool(candidate[4]) and bool(candidate[5])):
++                    alive = False
++                    lost += 1
++                elif not alive:
++                    lost += 1
++            values.append((*live_cores, float(lost)))
+         return np.asarray(values, dtype=np.float64)
+ 
+     def select(anchors: set[int]) -> list[ExactRow]:
+@@ -515,27 +539,21 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    results = {}
+-    for name, include_structure in (("q_only", False), ("q_plus_discarded_structure", True)):
+-        fit_x = matrix(fit_rows, include_structure)
+-        validation_x = matrix(validation_rows, include_structure)
+-        fit_x, validation_x = _standardize(fit_x, validation_x)
+-        scores = {}
+-        for neighbors in candidates:
+-            prediction = _knn_predict(
+-                fit_x, fit_y, validation_x, neighbors=neighbors
+-            )
+-            scores[neighbors] = _explained_variance(validation_y, prediction)
+-        selected_k = max(scores, key=lambda value: (scores[value], -value))
+-
+-        train_x = matrix(all_train_rows, include_structure)
+-        test_x = matrix(test_rows, include_structure)
+-        train_x, test_x = _standardize(train_x, test_x)
+-        prediction = _knn_predict(
+-            train_x, all_train_y, test_x, neighbors=selected_k
+-        )
+-        residual = test_y - prediction
+-        results[name] = {
++    fit_x = q_matrix(fit_rows)
++    validation_x = q_matrix(validation_rows)
++    fit_x, validation_x = _standardize(fit_x, validation_x)
++    scores = {}
++    for neighbors in candidates:
++        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++        scores[neighbors] = _explained_variance(validation_y, prediction)
++    selected_k = max(scores, key=lambda value: (scores[value], -value))
++    train_x = q_matrix(all_train_rows)
++    test_x = q_matrix(test_rows)
++    train_x, test_x = _standardize(train_x, test_x)
++    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++    residual = test_y - prediction
++    results = {
++        "q_only": {
+             "model": "standardized inverse-distance k-nearest-neighbor",
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+@@ -545,16 +563,43 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++    }
++
++    # The comparator sees the complete outcome terms discarded by Q1/Q2.
++    # Their production target definitions are linear once C2's absorbing
++    # survival state is expanded, so ordinary least squares is sufficient and
++    # avoids attributing k-NN's high-dimensional distance failure to physics.
++    train_structure = structure_matrix(all_train_rows)
++    test_structure = structure_matrix(test_rows)
++    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
++    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
++    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
++    structure_prediction = test_design @ coefficients
++    structure_residual = test_y - structure_prediction
++    results["discarded_structure"] = {
++        "model": "ordinary least squares on exact target-sufficient network terms",
++        "held_out_explained_variance": _explained_variance(
++            test_y, structure_prediction
++        ),
++        "held_out_rmse": float(
++            np.sqrt(np.mean(structure_residual * structure_residual))
++        ),
++        "held_out_mae": float(np.mean(np.abs(structure_residual))),
++        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
++        "coefficients": [float(value) for value in coefficients],
++    }
++    results["held_out_rows"] = len(test_rows)
++    results["held_out_target_variance"] = float(np.var(test_y))
+     results["explained_variance_gap"] = (
+-        results["q_plus_discarded_structure"]["held_out_explained_variance"]
++        results["discarded_structure"]["held_out_explained_variance"]
+         - results["q_only"]["held_out_explained_variance"]
+     )
+     return results
+ 
+ 
+ def explainability(anchor_count: int) -> dict[str, object]:
+-    if anchor_count < 6 or anchor_count > 90:
+-        raise ValueError("anchor_count must be in [6, 90]")
++    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
++        raise ValueError("anchor_count must be an even integer in [12, 90]")
+     anchor_indices = tuple(range(anchor_count))
+     max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+     tape = build_world_tape(
+@@ -574,20 +619,40 @@
+             file=sys.stderr,
+             flush=True,
+         )
++    # Both carrier views of one physical step can have byte-identical Q rows.
++    # Split by step, not by source shard, so those aliases cannot leak between
++    # fitting, model-selection, and held-out sets.
+     rng = np.random.default_rng(20260909)
+-    shuffled = list(anchor_indices)
+-    rng.shuffle(shuffled)
+-    test_count = max(2, anchor_count // 4)
+-    validation_count = max(1, anchor_count // 6)
+-    test = set(shuffled[:test_count])
+-    validation = set(shuffled[test_count : test_count + validation_count])
+-    train = set(shuffled[test_count + validation_count :])
++    step_count = anchor_count // len(REFERENCE_CARRIERS)
++    shuffled_steps = list(range(step_count))
++    rng.shuffle(shuffled_steps)
++    test_step_count = max(1, step_count // 4)
++    validation_step_count = max(1, step_count // 6)
++    test_steps = set(shuffled_steps[:test_step_count])
++    validation_steps = set(
++        shuffled_steps[test_step_count : test_step_count + validation_step_count]
++    )
++    train_steps = set(shuffled_steps[test_step_count + validation_step_count :])
++
++    def anchors_for(steps: set[int]) -> set[int]:
++        return {
++            step * len(REFERENCE_CARRIERS) + carrier
++            for step in steps
++            for carrier in range(len(REFERENCE_CARRIERS))
++        }
++
++    train = anchors_for(train_steps)
++    validation = anchors_for(validation_steps)
++    test = anchors_for(test_steps)
+     return {
+         "source": str(EXISTING_ROWS.relative_to(ROOT)),
+         "world": DEVELOPMENT_WORLD_DOMAINS[0],
+         "anchor_indices": list(anchor_indices),
+         "exact_relabelled_nonreference_valid_rows": len(rows),
+-        "split_unit": "whole anchor",
++        "split_unit": "whole physical step (both carrier views grouped)",
++        "train_steps": sorted(train_steps),
++        "validation_steps": sorted(validation_steps),
++        "test_steps": sorted(test_steps),
+         "train_anchors": sorted(train),
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+
