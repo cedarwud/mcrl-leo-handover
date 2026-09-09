@@ -249,4 +249,61 @@ sealed `parallel_execution` predicate is untouched.
 
 ## 5. HONEST LIMITS
 
-<!--LIMITS-->
+**I did not demonstrate the budget at the anchor count you asked for.** You
+asked for ≥ 20 real anchors across ≥ 2 worlds. Section 3 reports what actually
+completed. The reason is not the engine: throughout this session the host was
+running eight other concurrent V0.25 probe jobs
+(`/home/sat/mcrl-v025-probe-ws-widened`, `/home/sat/mcrl-v025-pilot-ws`,
+`.work/run_decompose.py`), each pinning a full core, with the 1-minute load
+average between 13 and 75 on 20 cores and **swap 100 % consumed (7 GiB of
+7 GiB)**. Under that, single decisions that the sealed §7 receipt measured at
+5.7–18.1 s took minutes, and one baseline anchor took 908 s. Every wall time in
+section 3 is inflated by that contention and is **not** a deployment-quality
+number. The paired design controls for it — reference and optimised alternate on
+the same anchor, minutes apart — so the *deltas* are meaningful even though the
+*levels* are not. The fallback-rate comparison does not depend on wall time at
+all, because the retired predicate is recomputed inside the same decision.
+
+**The 100 %-fallback null is explained and fixed; the matrix is not yet
+re-run.** Nothing here re-opens FULL, DROP_C1/C2/C3, S0, UNI, ALL_NEUTRAL_CONTROL
+or NULL. Those arms will only stop being bit-identical when the matrix is
+actually re-run on a quiet host. I would not schedule the overnight matrix
+against this box in its current state; the projections in stage-4h §7 and
+stage-4i assume dedicated cores that do not exist right now.
+
+**The preemptive wait is a semantic change I want flagged, not buried.** Under
+the retired predicate a miss was declared *before* the committed validation
+started. Under the new one the coordinator is committed at the ten-second wall
+and the future is then drained to fill the receipt. The committed configuration
+cannot change after the wall — that is enforced and tested — but a deployed
+coordinator would additionally have to *cancel* the worker rather than drain it,
+and the wall-clock cost of that drain is real compute that a satellite would not
+spend. I have kept it because the audit trail needs the non-deployable oracle
+arms (E1_U1, E1_J1, UNION_CATALOGUE_OPTIMUM, RANDOM_FEASIBLE, NOMINAL_GREEDY),
+which are outside the deadline discipline and still need their committed
+profiles. If the deployability story requires hard cancellation, that is a
+follow-up, and it will change no selection.
+
+**Process-level parallelism inside the decision is now used more than stage-4h
+used it.** The four declared workers were already the sealed surface; I extended
+them to the catalogue's ranking pass, which previously ran serially in the
+coordinator while the workers idled. The assumption that four processes are
+available to one coordinator decision is therefore load-bearing in exactly the
+way it already was — but the fraction of the decision that depends on it has
+grown. On a single-core deployment the ranking pass reverts to serial and only
+the k=0 reuse (§2.2) still helps.
+
+**What I did not verify.** I did not counterexample-search a pruning bound,
+because I added no pruning. I did not widen batch-kernel coverage to `a′-r0`,
+`a-γ0` or `b0`, so panel E still pays the ~180× scalar path on three of its four
+x-values; that is the largest remaining win and it is untouched. I did not
+re-derive the stage-4h `q`, the rehearsal core-minutes or the stage-4i
+70.585 core-hour projection, all of which were computed from the pre-fix
+evaluation schedule and are now stale in the conservative direction (fewer
+physical evaluations per anchor, so the true cost is lower than projected).
+
+**The stage-4h report needs an erratum, and I did not write one.** Its §6
+"REAL-ANCHOR GATE PASS" is not supported by its own evidence file, which records
+`"status": "FAIL"`, and its explanation of that FAIL as an aggregate-labelling
+accident is incorrect. Correcting a sealed report is a controller action, not
+mine; I have left the file untouched and am flagging it here.

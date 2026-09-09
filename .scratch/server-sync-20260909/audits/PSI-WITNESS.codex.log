@@ -7438,3 +7438,1139 @@ index 0000000000000000000000000000000000000000..ab51eb24b83cc5ab50774502b68d1c42
 +            assert e['joint']['bits_by_user']['0']>0 and e['joint']['bits_by_user']['1']>0
 +print('PASS: exact identities, decoded-bit traces, unchanged guard, cap persistence, zero-interference isolation, and all witness assertions')
 
+exec
+/bin/bash -lc 'nice -n 10 env PYTHONPATH=src PYTHONDONTWRITEBYTECODE=1 /home/sat/mcrl-leo-handover/.venv/bin/python witness/verify_evidence.py' in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+PASS: exact identities, decoded-bit traces, unchanged guard, cap persistence, zero-interference isolation, and all witness assertions
+
+diff --git a/witness/engine_harness.py b/witness/engine_harness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e32c8c3d20c65dc5222fbf5d7314aa800aa0a4cb
+--- /dev/null
++++ b/witness/engine_harness.py
+@@ -0,0 +1,100 @@
++"""DIAGNOSTIC_NOT_CLAIM: synthetic geometry, unmodified stage-4h scoring."""
++from dataclasses import dataclass
++from fractions import Fraction
++import json
++import math
++from pathlib import Path
++
++import numpy as np
++from mcrl.env.geometry import angle_between_deg
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.channel import transmit_gain_linear, interference_receive_gain_linear, keyed_fading_gain, fading_product_quantile
++from mcrl.physics_v025.architectures import Geometry, Link, RadiationConfig, AngleRateTPC_TDM
++from mcrl.physics_v025.adapter import RadiationBoundary, SharedArchitectureTape, score_setting
++from mcrl.physics_v025.energy import HardwareInventory
++from mcrl.physics_v025.matrix import MATRIX_SETTINGS
++from mcrl.physics_v025.tapes import seed_from_domain, SYNTHETIC_WORLD_DOMAINS
++from mcrl.physics_v025.targets import NetworkOutcome, network_objective, set_score_decomposition, classify_physical_transition, phi_qos
++from mcrl.physics_v025.calibration import CalibrationValues
++
++ROOT = Path(__file__).resolve().parents[1]
++CAL_PATH = Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json')
++CAL = CalibrationValues.from_payload(json.loads(CAL_PATH.read_text())['cells'][0])
++PRICES = dict(eta_ref=CAL.eta_ref, lambda_bits_per_j=CAL.lambda_bits_per_j, kappa_bits_per_user_step=CAL.kappa_bits_per_user_step)
++SETTING = next(x for x in MATRIX_SETTINGS if x.label == 'a-r0')
++SEED = seed_from_domain(SYNTHETIC_WORLD_DOMAINS[0])
++TIMES = tuple(k * .640 for k in range(48))
++GROUND = np.array([6371., 0., 0.])
++
++def satellite(elevation=90., altitude=550., azimuth=0.):
++    e, a = math.radians(elevation), math.radians(azimuth)
++    slant = -6371. * math.sin(e) + math.sqrt((6371. + altitude)**2 - (6371. * math.cos(e))**2)
++    return GROUND + slant * np.array([math.sin(e), math.cos(e)*math.cos(a), math.cos(e)*math.sin(a)])
++
++def ground(y=0., z=0.):
++    return np.array([math.sqrt(6371.**2-y*y-z*z), y, z])
++
++@dataclass
++class World:
++    users: list
++    satellites: dict
++    beams: dict  # name -> (satellite ID, chain ID, reuse color, target ECEF km)
++
++    def payload(self):
++        return dict(users_ecef_km=[list(map(float,x)) for x in self.users], satellites_ecef_km={str(k):list(map(float,v)) for k,v in self.satellites.items()}, beams={k:dict(identity=list(v[:2]),color=v[2],target_ecef_km=list(map(float,v[3]))) for k,v in self.beams.items()}, seed=SEED, seed_domain=SYNTHETIC_WORLD_DOMAINS[0], times_s=TIMES)
++
++    def geometry(self, assignments, time=0.):
++        selected = [(u,self.beams[b]) for u,b in enumerate(assignments) if b is not None]
++        links=[]
++        def path(user, beam):
++            p=np.asarray(self.users[user]); s=np.asarray(self.satellites[beam[0]])
++            delta=s-p; slant=float(np.linalg.norm(delta))
++            elevation=float(np.degrees(np.arcsin(np.dot(delta,p/np.linalg.norm(p))/slant)))
++            off=float(angle_between_deg(s,np.asarray(beam[3]),p))
++            base=float(transmit_gain_linear(off)*LegacyWorldProvider._nominal_path_without_scintillation(np.asarray(slant),np.asarray(elevation),np.asarray(1.)))
++            fade=keyed_fading_gain(world=SEED,user=user,norad=beam[0],absolute_time_ns=round(time*1e9),elevation_deg=elevation)
++            return base,fade,elevation
++        for u,b in selected:
++            base,fade,elevation=path(u,b)
++            links.append(Link(u,b[:2],b[2],base*10**3.5,base*10**3.5*fade,elevation))
++        nominal=np.zeros((len(links),len(links))); realised=nominal.copy()
++        for i,(u,wanted) in enumerate(selected):
++            for j,(_,aggressor) in enumerate(selected):
++                base,fade,_=path(u,aggressor)
++                sep=float(angle_between_deg(np.asarray(self.users[u]),np.asarray(self.satellites[wanted[0]]),np.asarray(self.satellites[aggressor[0]])))
++                rx=float(interference_receive_gain_linear(sep,same_satellite=wanted[0]==aggressor[0]))
++                nominal[i,j]=base*rx; realised[i,j]=base*rx*fade
++        return Geometry(tuple(links),nominal,realised)
++
++def evaluate(world, assignments, anchor, field='margin', trace=False):
++    engine=AngleRateTPC_TDM(); config=RadiationConfig(fading_quantile_alpha=.10)
++    first=engine.radiate(config,world.geometry(assignments),'margin' if field=='margin' else field)
++    rows=tuple(RadiationBoundary(t, first if field!='realised' else engine.radiate(config,world.geometry(assignments,t),field)) for t in TIMES)
++    shared=SharedArchitectureTape('a-r',HardwareInventory.fixed([v[:2] for v in world.beams.values()]),rows,rows[0],tuple(range(len(world.users))))
++    score=score_setting(shared,SETTING)
++    assert score.valid
++    events=[classify_physical_transition(user_id=u,before=None if a is None else world.beams[a][:2],after=None if b is None else world.beams[b][:2],cell_rekey=False,was_previously_served=a is not None) for u,(a,b) in enumerate(zip(anchor,assignments))]
++    phi=phi_qos(events)
++    bits={u:Fraction(str(v)) for u,v in score.bits.items()}
++    outcome=NetworkOutcome.build(bits=sum(bits.values()),joules=score.joules,phi=phi,decoding_availability=sum(score.served_phy.values())/len(world.users),useful_availability=sum(score.served_phy.values())/len(world.users),per_user_bits=bits)
++    core=network_objective(outcome,**PRICES)
++    full=core+CAL.kappa_bits_per_user_step*phi
++    result=dict(assignments=assignments,bits=float(outcome.bits),joules=score.joules,phi_preference=float(phi),phi_cost_bits=float(-CAL.kappa_bits_per_user_step*phi),F_core=float(core),F=float(full),F_exact=str(full),served=sum(score.served_phy.values()),served_by_user=score.served_phy,bits_by_user=score.bits,decoding_time_s=score.decoding_time_s,feasible=score.rate_target_feasible,attained=score.rate_target_attained,max_residual_w=score.certificate_residual_w)
++    if trace:
++        result['boundaries']=[dict(time_s=row.time_s,slots=[dict(fraction=s.fraction,certificate=vars(s.certificate),transmissions=[dict(user=t.user_id,beam=t.beam,power_w=t.rf_power_w,nominal_sinr=t.nominal_sinr,margin_sinr=t.margin_predicted_sinr,actual_sinr=t.sinr,target=None if t.m_target is None else t.m_target.name,tx=None if t.m_tx is None else t.m_tx.name,tx_threshold=None if t.m_tx is None else t.m_tx.threshold_linear,decoded=t.realised_outcome.decoded,interference_w=t.interference_w) for t in s.transmissions]) for s in row.radiation.slots]) for row in (rows if field=='realised' else rows[:1])]
++    return outcome,result
++
++def quartet(world, anchor, moves, field='margin', trace=False):
++    users=tuple(moves); subsets=[frozenset(),*(frozenset([u]) for u in users),frozenset(users)]
++    outcomes={}; rows={}
++    for subset in dict.fromkeys(subsets):
++        a=list(anchor)
++        for u in subset:a[u]=moves[u]
++        key='base' if not subset else 'joint' if subset==frozenset(users) else f'only_{next(iter(subset))}'
++        outcomes[subset],rows[key]=evaluate(world,a,anchor,field,trace)
++    dec=set_score_decomposition(coalition_users=users,outcomes_by_subset=outcomes,**PRICES)
++    joint=rows['joint']; base=rows['base']
++    d={u:Fraction(rows['joint' if len(users)==1 else f'only_{u}']['F_exact'])-Fraction(base['F_exact']) for u in users}
++    psi=Fraction(joint['F_exact'])-Fraction(base['F_exact'])-sum(d.values())
++    assert psi==dec.interaction_bits
++    return dict(classification='DIAGNOSTIC_NOT_CLAIM',field=field,world=world.payload(),anchor=anchor,moves=moves,evaluations=rows,d={u:float(v) for u,v in d.items()},d_exact={u:str(v) for u,v in d.items()},psi=float(psi),psi_exact=str(psi),delta_F=joint['F']-base['F'],delta_core=float(dec.joint_change_bits),psi_bits=joint['bits']-sum(rows[f'only_{u}']['bits'] for u in users)+base['bits'] if len(users)==2 else 0,psi_joules=joint['joules']-sum(rows[f'only_{u}']['joules'] for u in users)+base['joules'] if len(users)==2 else 0,guard={key:r['served']>=base['served'] for key,r in rows.items()},c1=float(dec.c1),c3=float(dec.c3))
+diff --git a/witness/run_witnesses.py b/witness/run_witnesses.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..846b55bf79f1a22f09ae4728e0347250b1d36bfc
+--- /dev/null
++++ b/witness/run_witnesses.py
+@@ -0,0 +1,32 @@
++"""Run the selected constructive tests; no threshold/price/seed fitting."""
++import json
++from engine_harness import *
++
++def scenarios():
++    beams={'X':(1,0,0,GROUND),'Y':(1,1,1,ground(0,5)),'Z':(1,2,2,ground(0,-5))}
++    for incumbents in (1,2):
++        world=World([GROUND]*(incumbents+2),{1:satellite(60)},beams)
++        anchor=['X']*incumbents+['Y','Z']
++        yield f'occupancy_backoff_{incumbents}_incumbent',world,anchor,{incumbents:'X',incumbents+1:'X'}
++        if incumbents==1:
++            yield 'occupancy_backoff_single',world,anchor,{incumbents:'X'}
++    world=World([GROUND]*13,{1:satellite(60)},beams)
++    yield 'occupancy_unload',world,['X']*7+['Y']*3+['Z']*3,{0:'Y',1:'Z'}
++    left,right=ground(0,-15),ground(0,15)
++    world=World([right,left,left,left,right,right],{1:satellite(60)}, {'X':(1,0,0,left),'Y':(1,1,1,right)})
++    yield 'swap',world,['X','X','X','Y','Y','Y'],{0:'Y',3:'X'}
++    world=World([GROUND]*5,{1:satellite(60)}, {'X':(1,0,0,ground(0,45)),'Y':(1,1,1,GROUND)})
++    yield 'cap_release',world,['X','X','Y','Y','Y'],{0:'Y',1:'Y'}
++
++def main():
++    output={}
++    for name,w,a,m in scenarios():
++        output[name]={}
++        for field in ('margin','realised'):
++            result=quartet(w,a,m,field,trace=True)
++            output[name][field]=result
++            print(name,field, 'Psi', result['psi'], 'Delta F', result['delta_F'], 'd',result['d'],'served',[r['served'] for r in result['evaluations'].values()],flush=True)
++    (ROOT/'witness/selected-witnesses.json').write_text(json.dumps(output,indent=2,allow_nan=False)+'\n')
++    (ROOT/'witness/calibration-manifest.json').write_text(CAL_PATH.read_text())
++
++if __name__=='__main__':main()
+diff --git a/witness/verify_evidence.py b/witness/verify_evidence.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab51eb24b83cc5ab50774502b68d1c42afcbc302
+--- /dev/null
++++ b/witness/verify_evidence.py
+@@ -0,0 +1,45 @@
++"""Check recorded witnesses against their physical traces and exact scores."""
++from fractions import Fraction
++import json
++from pathlib import Path
++
++root=Path(__file__).resolve().parent
++data=json.loads((root/'selected-witnesses.json').read_text())
++for name,fields in data.items():
++    for field,r in fields.items():
++        e=r['evaluations']; users=list(r['moves'])
++        f0=Fraction(e['base']['F_exact']); fj=Fraction(e['joint']['F_exact'])
++        ds=[Fraction(v) for v in r['d_exact'].values()]
++        assert fj-f0-sum(ds)==Fraction(r['psi_exact'])
++        assert r['guard']['joint']
++        for row in e.values():
++            assert row['max_residual_w']<=1e-10
++            assert row['served']==sum(row['served_by_user'].values())
++            for boundary in row['boundaries']:
++                for slot in boundary['slots']:
++                    assert slot['certificate']['status']!='INVALID'
++                    for tx in slot['transmissions']:
++                        assert tx['interference_w']==0.0
++                        assert 0<tx['power_w']<=1.65
++                        assert tx['decoded']==(tx['tx'] is not None and tx['actual_sinr']>=tx['tx_threshold'])
++        if name not in ('occupancy_backoff_single','occupancy_backoff_2_incumbent'):
++            assert r['psi']>1e6
++        if name=='occupancy_backoff_single': assert r['psi_exact']=='0'
++        if name=='occupancy_backoff_1_incumbent':
++            assert [v['served'] for v in e.values()]==[0,0,0,3]
++            assert all(e[key]['bits']==0 for key in ('base','only_1','only_2'))
++            assert e['joint']['bits']>1.9e9
++            assert e['joint']['bits_by_user']['0']>0
++        if name=='swap':
++            assert all(d<0 for d in ds) and fj>f0
++            assert [v['served'] for v in e.values()]==[6,4,4,6]
++        if name=='cap_release':
++            assert [v['served'] for v in e.values()]==[3,4,4,5]
++            for key in ('base','only_0','only_1'):
++                for boundary in e[key]['boundaries']:
++                    for slot in boundary['slots']:
++                        source=[tx for tx in slot['transmissions'] if tx['beam']==[1,0]]
++                        assert len(source)==1
++                        assert source[0]['power_w']==1.65 and source[0]['tx'] is None
++            assert e['joint']['bits_by_user']['0']>0 and e['joint']['bits_by_user']['1']>0
++print('PASS: exact identities, decoded-bit traces, unchanged guard, cap persistence, zero-interference isolation, and all witness assertions')
+
+exec
+/bin/bash -lc 'cat witness/mechanism1.py' in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+"""Coordinate-grounded interference cliff diagnostic; all scoring from engine."""
+import sys,json,math
+from pathlib import Path
+import numpy as np
+from engine_harness import *
+from mcrl.physics_v025.architectures import AngleRateTPC_TDM,RadiationConfig
+
+def world_for(y_a=25.,sep=2.,y_src=0.,away_offset=100.,n_src=3,n_dst=3):
+    # Users 0,1 are movers; remaining users keep their physical beam.
+    u=[ground(y_a),ground()]+[ground(y_src) for _ in range(n_src-1)]+[ground() for _ in range(n_dst)]
+    ss={80001:satellite(90.),80002:satellite(90.-sep),80003:satellite(85.,azimuth=180.),80004:satellite(80.,azimuth=90.)}
+    bs={'x':(80001,0,0,ground()),'y':(80002,0,0,ground()),'s':(80003,0,1,ground(y_src)),'away':(80004,0,2,ground(y_a+away_offset))}
+    anchor=['x','s']+['s']*(n_src-1)+['y']*n_dst
+    return World(u,ss,bs),anchor,{0:'away',1:'y'}
+
+def short(world,a,field):
+    r=AngleRateTPC_TDM().radiate(RadiationConfig(fading_quantile_alpha=.10),world.geometry(a),field)
+    return [(round(s.fraction,4),[(t.user_id,round(t.rf_power_w,4),None if t.m_tx is None else t.m_tx.name,round(t.nominal_sinr,4),round(t.sinr,4),t.realised_outcome.decoded) for t in s.transmissions]) for s in r.slots]
+
+def explore():
+    for sep in (1.,2.,3.,4.):
+      for y in (0.,10.,20.,30.,40.,50.):
+        world,a,moves=world_for(y_a=y,sep=sep)
+        _,base=evaluate(world,a,a)
+        joint=a.copy();joint[0]='away';joint[1]='y'
+        _,j=evaluate(world,joint,a)
+        print(sep,y,'base',base['served'],round(base['bits']/1e9,2),'joint',j['served'],round(j['bits']/1e9,2),flush=True)
+        if (sep,y) in ((2.,20.),(2.,30.),(2.,40.)):
+          for aa in (a,[*a[:1],'y',*a[2:]],['away',*a[1:]],joint):print(aa,short(world,aa,'margin'),flush=True)
+
+if __name__=='__main__':
+    explore()
+
+diff --git a/witness/engine_harness.py b/witness/engine_harness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e32c8c3d20c65dc5222fbf5d7314aa800aa0a4cb
+--- /dev/null
++++ b/witness/engine_harness.py
+@@ -0,0 +1,100 @@
++"""DIAGNOSTIC_NOT_CLAIM: synthetic geometry, unmodified stage-4h scoring."""
++from dataclasses import dataclass
++from fractions import Fraction
++import json
++import math
++from pathlib import Path
++
++import numpy as np
++from mcrl.env.geometry import angle_between_deg
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.channel import transmit_gain_linear, interference_receive_gain_linear, keyed_fading_gain, fading_product_quantile
++from mcrl.physics_v025.architectures import Geometry, Link, RadiationConfig, AngleRateTPC_TDM
++from mcrl.physics_v025.adapter import RadiationBoundary, SharedArchitectureTape, score_setting
++from mcrl.physics_v025.energy import HardwareInventory
++from mcrl.physics_v025.matrix import MATRIX_SETTINGS
++from mcrl.physics_v025.tapes import seed_from_domain, SYNTHETIC_WORLD_DOMAINS
++from mcrl.physics_v025.targets import NetworkOutcome, network_objective, set_score_decomposition, classify_physical_transition, phi_qos
++from mcrl.physics_v025.calibration import CalibrationValues
++
++ROOT = Path(__file__).resolve().parents[1]
++CAL_PATH = Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json')
++CAL = CalibrationValues.from_payload(json.loads(CAL_PATH.read_text())['cells'][0])
++PRICES = dict(eta_ref=CAL.eta_ref, lambda_bits_per_j=CAL.lambda_bits_per_j, kappa_bits_per_user_step=CAL.kappa_bits_per_user_step)
++SETTING = next(x for x in MATRIX_SETTINGS if x.label == 'a-r0')
++SEED = seed_from_domain(SYNTHETIC_WORLD_DOMAINS[0])
++TIMES = tuple(k * .640 for k in range(48))
++GROUND = np.array([6371., 0., 0.])
++
++def satellite(elevation=90., altitude=550., azimuth=0.):
++    e, a = math.radians(elevation), math.radians(azimuth)
++    slant = -6371. * math.sin(e) + math.sqrt((6371. + altitude)**2 - (6371. * math.cos(e))**2)
++    return GROUND + slant * np.array([math.sin(e), math.cos(e)*math.cos(a), math.cos(e)*math.sin(a)])
++
++def ground(y=0., z=0.):
++    return np.array([math.sqrt(6371.**2-y*y-z*z), y, z])
++
++@dataclass
++class World:
++    users: list
++    satellites: dict
++    beams: dict  # name -> (satellite ID, chain ID, reuse color, target ECEF km)
++
++    def payload(self):
++        return dict(users_ecef_km=[list(map(float,x)) for x in self.users], satellites_ecef_km={str(k):list(map(float,v)) for k,v in self.satellites.items()}, beams={k:dict(identity=list(v[:2]),color=v[2],target_ecef_km=list(map(float,v[3]))) for k,v in self.beams.items()}, seed=SEED, seed_domain=SYNTHETIC_WORLD_DOMAINS[0], times_s=TIMES)
++
++    def geometry(self, assignments, time=0.):
++        selected = [(u,self.beams[b]) for u,b in enumerate(assignments) if b is not None]
++        links=[]
++        def path(user, beam):
++            p=np.asarray(self.users[user]); s=np.asarray(self.satellites[beam[0]])
++            delta=s-p; slant=float(np.linalg.norm(delta))
++            elevation=float(np.degrees(np.arcsin(np.dot(delta,p/np.linalg.norm(p))/slant)))
++            off=float(angle_between_deg(s,np.asarray(beam[3]),p))
++            base=float(transmit_gain_linear(off)*LegacyWorldProvider._nominal_path_without_scintillation(np.asarray(slant),np.asarray(elevation),np.asarray(1.)))
++            fade=keyed_fading_gain(world=SEED,user=user,norad=beam[0],absolute_time_ns=round(time*1e9),elevation_deg=elevation)
++            return base,fade,elevation
++        for u,b in selected:
++            base,fade,elevation=path(u,b)
++            links.append(Link(u,b[:2],b[2],base*10**3.5,base*10**3.5*fade,elevation))
++        nominal=np.zeros((len(links),len(links))); realised=nominal.copy()
++        for i,(u,wanted) in enumerate(selected):
++            for j,(_,aggressor) in enumerate(selected):
++                base,fade,_=path(u,aggressor)
++                sep=float(angle_between_deg(np.asarray(self.users[u]),np.asarray(self.satellites[wanted[0]]),np.asarray(self.satellites[aggressor[0]])))
++                rx=float(interference_receive_gain_linear(sep,same_satellite=wanted[0]==aggressor[0]))
++                nominal[i,j]=base*rx; realised[i,j]=base*rx*fade
++        return Geometry(tuple(links),nominal,realised)
++
++def evaluate(world, assignments, anchor, field='margin', trace=False):
++    engine=AngleRateTPC_TDM(); config=RadiationConfig(fading_quantile_alpha=.10)
++    first=engine.radiate(config,world.geometry(assignments),'margin' if field=='margin' else field)
++    rows=tuple(RadiationBoundary(t, first if field!='realised' else engine.radiate(config,world.geometry(assignments,t),field)) for t in TIMES)
++    shared=SharedArchitectureTape('a-r',HardwareInventory.fixed([v[:2] for v in world.beams.values()]),rows,rows[0],tuple(range(len(world.users))))
++    score=score_setting(shared,SETTING)
++    assert score.valid
++    events=[classify_physical_transition(user_id=u,before=None if a is None else world.beams[a][:2],after=None if b is None else world.beams[b][:2],cell_rekey=False,was_previously_served=a is not None) for u,(a,b) in enumerate(zip(anchor,assignments))]
++    phi=phi_qos(events)
++    bits={u:Fraction(str(v)) for u,v in score.bits.items()}
++    outcome=NetworkOutcome.build(bits=sum(bits.values()),joules=score.joules,phi=phi,decoding_availability=sum(score.served_phy.values())/len(world.users),useful_availability=sum(score.served_phy.values())/len(world.users),per_user_bits=bits)
++    core=network_objective(outcome,**PRICES)
++    full=core+CAL.kappa_bits_per_user_step*phi
++    result=dict(assignments=assignments,bits=float(outcome.bits),joules=score.joules,phi_preference=float(phi),phi_cost_bits=float(-CAL.kappa_bits_per_user_step*phi),F_core=float(core),F=float(full),F_exact=str(full),served=sum(score.served_phy.values()),served_by_user=score.served_phy,bits_by_user=score.bits,decoding_time_s=score.decoding_time_s,feasible=score.rate_target_feasible,attained=score.rate_target_attained,max_residual_w=score.certificate_residual_w)
++    if trace:
++        result['boundaries']=[dict(time_s=row.time_s,slots=[dict(fraction=s.fraction,certificate=vars(s.certificate),transmissions=[dict(user=t.user_id,beam=t.beam,power_w=t.rf_power_w,nominal_sinr=t.nominal_sinr,margin_sinr=t.margin_predicted_sinr,actual_sinr=t.sinr,target=None if t.m_target is None else t.m_target.name,tx=None if t.m_tx is None else t.m_tx.name,tx_threshold=None if t.m_tx is None else t.m_tx.threshold_linear,decoded=t.realised_outcome.decoded,interference_w=t.interference_w) for t in s.transmissions]) for s in row.radiation.slots]) for row in (rows if field=='realised' else rows[:1])]
++    return outcome,result
++
++def quartet(world, anchor, moves, field='margin', trace=False):
++    users=tuple(moves); subsets=[frozenset(),*(frozenset([u]) for u in users),frozenset(users)]
++    outcomes={}; rows={}
++    for subset in dict.fromkeys(subsets):
++        a=list(anchor)
++        for u in subset:a[u]=moves[u]
++        key='base' if not subset else 'joint' if subset==frozenset(users) else f'only_{next(iter(subset))}'
++        outcomes[subset],rows[key]=evaluate(world,a,anchor,field,trace)
++    dec=set_score_decomposition(coalition_users=users,outcomes_by_subset=outcomes,**PRICES)
++    joint=rows['joint']; base=rows['base']
++    d={u:Fraction(rows['joint' if len(users)==1 else f'only_{u}']['F_exact'])-Fraction(base['F_exact']) for u in users}
++    psi=Fraction(joint['F_exact'])-Fraction(base['F_exact'])-sum(d.values())
++    assert psi==dec.interaction_bits
++    return dict(classification='DIAGNOSTIC_NOT_CLAIM',field=field,world=world.payload(),anchor=anchor,moves=moves,evaluations=rows,d={u:float(v) for u,v in d.items()},d_exact={u:str(v) for u,v in d.items()},psi=float(psi),psi_exact=str(psi),delta_F=joint['F']-base['F'],delta_core=float(dec.joint_change_bits),psi_bits=joint['bits']-sum(rows[f'only_{u}']['bits'] for u in users)+base['bits'] if len(users)==2 else 0,psi_joules=joint['joules']-sum(rows[f'only_{u}']['joules'] for u in users)+base['joules'] if len(users)==2 else 0,guard={key:r['served']>=base['served'] for key,r in rows.items()},c1=float(dec.c1),c3=float(dec.c3))
+diff --git a/witness/run_witnesses.py b/witness/run_witnesses.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..846b55bf79f1a22f09ae4728e0347250b1d36bfc
+--- /dev/null
++++ b/witness/run_witnesses.py
+@@ -0,0 +1,32 @@
++"""Run the selected constructive tests; no threshold/price/seed fitting."""
++import json
++from engine_harness import *
++
++def scenarios():
++    beams={'X':(1,0,0,GROUND),'Y':(1,1,1,ground(0,5)),'Z':(1,2,2,ground(0,-5))}
++    for incumbents in (1,2):
++        world=World([GROUND]*(incumbents+2),{1:satellite(60)},beams)
++        anchor=['X']*incumbents+['Y','Z']
++        yield f'occupancy_backoff_{incumbents}_incumbent',world,anchor,{incumbents:'X',incumbents+1:'X'}
++        if incumbents==1:
++            yield 'occupancy_backoff_single',world,anchor,{incumbents:'X'}
++    world=World([GROUND]*13,{1:satellite(60)},beams)
++    yield 'occupancy_unload',world,['X']*7+['Y']*3+['Z']*3,{0:'Y',1:'Z'}
++    left,right=ground(0,-15),ground(0,15)
++    world=World([right,left,left,left,right,right],{1:satellite(60)}, {'X':(1,0,0,left),'Y':(1,1,1,right)})
++    yield 'swap',world,['X','X','X','Y','Y','Y'],{0:'Y',3:'X'}
++    world=World([GROUND]*5,{1:satellite(60)}, {'X':(1,0,0,ground(0,45)),'Y':(1,1,1,GROUND)})
++    yield 'cap_release',world,['X','X','Y','Y','Y'],{0:'Y',1:'Y'}
++
++def main():
++    output={}
++    for name,w,a,m in scenarios():
++        output[name]={}
++        for field in ('margin','realised'):
++            result=quartet(w,a,m,field,trace=True)
++            output[name][field]=result
++            print(name,field, 'Psi', result['psi'], 'Delta F', result['delta_F'], 'd',result['d'],'served',[r['served'] for r in result['evaluations'].values()],flush=True)
++    (ROOT/'witness/selected-witnesses.json').write_text(json.dumps(output,indent=2,allow_nan=False)+'\n')
++    (ROOT/'witness/calibration-manifest.json').write_text(CAL_PATH.read_text())
++
++if __name__=='__main__':main()
+diff --git a/witness/verify_evidence.py b/witness/verify_evidence.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab51eb24b83cc5ab50774502b68d1c42afcbc302
+--- /dev/null
++++ b/witness/verify_evidence.py
+@@ -0,0 +1,45 @@
++"""Check recorded witnesses against their physical traces and exact scores."""
++from fractions import Fraction
++import json
++from pathlib import Path
++
++root=Path(__file__).resolve().parent
++data=json.loads((root/'selected-witnesses.json').read_text())
++for name,fields in data.items():
++    for field,r in fields.items():
++        e=r['evaluations']; users=list(r['moves'])
++        f0=Fraction(e['base']['F_exact']); fj=Fraction(e['joint']['F_exact'])
++        ds=[Fraction(v) for v in r['d_exact'].values()]
++        assert fj-f0-sum(ds)==Fraction(r['psi_exact'])
++        assert r['guard']['joint']
++        for row in e.values():
++            assert row['max_residual_w']<=1e-10
++            assert row['served']==sum(row['served_by_user'].values())
++            for boundary in row['boundaries']:
++                for slot in boundary['slots']:
++                    assert slot['certificate']['status']!='INVALID'
++                    for tx in slot['transmissions']:
++                        assert tx['interference_w']==0.0
++                        assert 0<tx['power_w']<=1.65
++                        assert tx['decoded']==(tx['tx'] is not None and tx['actual_sinr']>=tx['tx_threshold'])
++        if name not in ('occupancy_backoff_single','occupancy_backoff_2_incumbent'):
++            assert r['psi']>1e6
++        if name=='occupancy_backoff_single': assert r['psi_exact']=='0'
++        if name=='occupancy_backoff_1_incumbent':
++            assert [v['served'] for v in e.values()]==[0,0,0,3]
++            assert all(e[key]['bits']==0 for key in ('base','only_1','only_2'))
++            assert e['joint']['bits']>1.9e9
++            assert e['joint']['bits_by_user']['0']>0
++        if name=='swap':
++            assert all(d<0 for d in ds) and fj>f0
++            assert [v['served'] for v in e.values()]==[6,4,4,6]
++        if name=='cap_release':
++            assert [v['served'] for v in e.values()]==[3,4,4,5]
++            for key in ('base','only_0','only_1'):
++                for boundary in e[key]['boundaries']:
++                    for slot in boundary['slots']:
++                        source=[tx for tx in slot['transmissions'] if tx['beam']==[1,0]]
++                        assert len(source)==1
++                        assert source[0]['power_w']==1.65 and source[0]['tx'] is None
++            assert e['joint']['bits_by_user']['0']>0 and e['joint']['bits_by_user']['1']>0
++print('PASS: exact identities, decoded-bit traces, unchanged guard, cap persistence, zero-interference isolation, and all witness assertions')
+
+exec
+/bin/bash -lc "rg -n 'CELL|BEAM|R_E_KM|SPACING|RADIUS' src/mcrl/env/constants.py | head -60
+rg -n 'cell_reachable|local_cells|cell.*reach' src/mcrl/physics_v025/provider_legacy.py | head -50" in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+20:R_E_KM: float = 6371.0
+54:KM_PER_DEG_LAT: float = math.pi * R_E_KM / 180.0
+283:                        candidate.cell_reachable.reshape(
+719:        cell_reachable = cell_elevation >= 0.0
+879:            cell_reachable=cell_reachable,
+
+diff --git a/witness/engine_harness.py b/witness/engine_harness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e32c8c3d20c65dc5222fbf5d7314aa800aa0a4cb
+--- /dev/null
++++ b/witness/engine_harness.py
+@@ -0,0 +1,100 @@
++"""DIAGNOSTIC_NOT_CLAIM: synthetic geometry, unmodified stage-4h scoring."""
++from dataclasses import dataclass
++from fractions import Fraction
++import json
++import math
++from pathlib import Path
++
++import numpy as np
++from mcrl.env.geometry import angle_between_deg
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.channel import transmit_gain_linear, interference_receive_gain_linear, keyed_fading_gain, fading_product_quantile
++from mcrl.physics_v025.architectures import Geometry, Link, RadiationConfig, AngleRateTPC_TDM
++from mcrl.physics_v025.adapter import RadiationBoundary, SharedArchitectureTape, score_setting
++from mcrl.physics_v025.energy import HardwareInventory
++from mcrl.physics_v025.matrix import MATRIX_SETTINGS
++from mcrl.physics_v025.tapes import seed_from_domain, SYNTHETIC_WORLD_DOMAINS
++from mcrl.physics_v025.targets import NetworkOutcome, network_objective, set_score_decomposition, classify_physical_transition, phi_qos
++from mcrl.physics_v025.calibration import CalibrationValues
++
++ROOT = Path(__file__).resolve().parents[1]
++CAL_PATH = Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json')
++CAL = CalibrationValues.from_payload(json.loads(CAL_PATH.read_text())['cells'][0])
++PRICES = dict(eta_ref=CAL.eta_ref, lambda_bits_per_j=CAL.lambda_bits_per_j, kappa_bits_per_user_step=CAL.kappa_bits_per_user_step)
++SETTING = next(x for x in MATRIX_SETTINGS if x.label == 'a-r0')
++SEED = seed_from_domain(SYNTHETIC_WORLD_DOMAINS[0])
++TIMES = tuple(k * .640 for k in range(48))
++GROUND = np.array([6371., 0., 0.])
++
++def satellite(elevation=90., altitude=550., azimuth=0.):
++    e, a = math.radians(elevation), math.radians(azimuth)
++    slant = -6371. * math.sin(e) + math.sqrt((6371. + altitude)**2 - (6371. * math.cos(e))**2)
++    return GROUND + slant * np.array([math.sin(e), math.cos(e)*math.cos(a), math.cos(e)*math.sin(a)])
++
++def ground(y=0., z=0.):
++    return np.array([math.sqrt(6371.**2-y*y-z*z), y, z])
++
++@dataclass
++class World:
++    users: list
++    satellites: dict
++    beams: dict  # name -> (satellite ID, chain ID, reuse color, target ECEF km)
++
++    def payload(self):
++        return dict(users_ecef_km=[list(map(float,x)) for x in self.users], satellites_ecef_km={str(k):list(map(float,v)) for k,v in self.satellites.items()}, beams={k:dict(identity=list(v[:2]),color=v[2],target_ecef_km=list(map(float,v[3]))) for k,v in self.beams.items()}, seed=SEED, seed_domain=SYNTHETIC_WORLD_DOMAINS[0], times_s=TIMES)
++
++    def geometry(self, assignments, time=0.):
++        selected = [(u,self.beams[b]) for u,b in enumerate(assignments) if b is not None]
++        links=[]
++        def path(user, beam):
++            p=np.asarray(self.users[user]); s=np.asarray(self.satellites[beam[0]])
++            delta=s-p; slant=float(np.linalg.norm(delta))
++            elevation=float(np.degrees(np.arcsin(np.dot(delta,p/np.linalg.norm(p))/slant)))
++            off=float(angle_between_deg(s,np.asarray(beam[3]),p))
++            base=float(transmit_gain_linear(off)*LegacyWorldProvider._nominal_path_without_scintillation(np.asarray(slant),np.asarray(elevation),np.asarray(1.)))
++            fade=keyed_fading_gain(world=SEED,user=user,norad=beam[0],absolute_time_ns=round(time*1e9),elevation_deg=elevation)
++            return base,fade,elevation
++        for u,b in selected:
++            base,fade,elevation=path(u,b)
++            links.append(Link(u,b[:2],b[2],base*10**3.5,base*10**3.5*fade,elevation))
++        nominal=np.zeros((len(links),len(links))); realised=nominal.copy()
++        for i,(u,wanted) in enumerate(selected):
++            for j,(_,aggressor) in enumerate(selected):
++                base,fade,_=path(u,aggressor)
++                sep=float(angle_between_deg(np.asarray(self.users[u]),np.asarray(self.satellites[wanted[0]]),np.asarray(self.satellites[aggressor[0]])))
++                rx=float(interference_receive_gain_linear(sep,same_satellite=wanted[0]==aggressor[0]))
++                nominal[i,j]=base*rx; realised[i,j]=base*rx*fade
++        return Geometry(tuple(links),nominal,realised)
++
++def evaluate(world, assignments, anchor, field='margin', trace=False):
++    engine=AngleRateTPC_TDM(); config=RadiationConfig(fading_quantile_alpha=.10)
++    first=engine.radiate(config,world.geometry(assignments),'margin' if field=='margin' else field)
++    rows=tuple(RadiationBoundary(t, first if field!='realised' else engine.radiate(config,world.geometry(assignments,t),field)) for t in TIMES)
++    shared=SharedArchitectureTape('a-r',HardwareInventory.fixed([v[:2] for v in world.beams.values()]),rows,rows[0],tuple(range(len(world.users))))
++    score=score_setting(shared,SETTING)
++    assert score.valid
++    events=[classify_physical_transition(user_id=u,before=None if a is None else world.beams[a][:2],after=None if b is None else world.beams[b][:2],cell_rekey=False,was_previously_served=a is not None) for u,(a,b) in enumerate(zip(anchor,assignments))]
++    phi=phi_qos(events)
++    bits={u:Fraction(str(v)) for u,v in score.bits.items()}
++    outcome=NetworkOutcome.build(bits=sum(bits.values()),joules=score.joules,phi=phi,decoding_availability=sum(score.served_phy.values())/len(world.users),useful_availability=sum(score.served_phy.values())/len(world.users),per_user_bits=bits)
++    core=network_objective(outcome,**PRICES)
++    full=core+CAL.kappa_bits_per_user_step*phi
++    result=dict(assignments=assignments,bits=float(outcome.bits),joules=score.joules,phi_preference=float(phi),phi_cost_bits=float(-CAL.kappa_bits_per_user_step*phi),F_core=float(core),F=float(full),F_exact=str(full),served=sum(score.served_phy.values()),served_by_user=score.served_phy,bits_by_user=score.bits,decoding_time_s=score.decoding_time_s,feasible=score.rate_target_feasible,attained=score.rate_target_attained,max_residual_w=score.certificate_residual_w)
++    if trace:
++        result['boundaries']=[dict(time_s=row.time_s,slots=[dict(fraction=s.fraction,certificate=vars(s.certificate),transmissions=[dict(user=t.user_id,beam=t.beam,power_w=t.rf_power_w,nominal_sinr=t.nominal_sinr,margin_sinr=t.margin_predicted_sinr,actual_sinr=t.sinr,target=None if t.m_target is None else t.m_target.name,tx=None if t.m_tx is None else t.m_tx.name,tx_threshold=None if t.m_tx is None else t.m_tx.threshold_linear,decoded=t.realised_outcome.decoded,interference_w=t.interference_w) for t in s.transmissions]) for s in row.radiation.slots]) for row in (rows if field=='realised' else rows[:1])]
++    return outcome,result
++
++def quartet(world, anchor, moves, field='margin', trace=False):
++    users=tuple(moves); subsets=[frozenset(),*(frozenset([u]) for u in users),frozenset(users)]
++    outcomes={}; rows={}
++    for subset in dict.fromkeys(subsets):
++        a=list(anchor)
++        for u in subset:a[u]=moves[u]
++        key='base' if not subset else 'joint' if subset==frozenset(users) else f'only_{next(iter(subset))}'
++        outcomes[subset],rows[key]=evaluate(world,a,anchor,field,trace)
++    dec=set_score_decomposition(coalition_users=users,outcomes_by_subset=outcomes,**PRICES)
++    joint=rows['joint']; base=rows['base']
++    d={u:Fraction(rows['joint' if len(users)==1 else f'only_{u}']['F_exact'])-Fraction(base['F_exact']) for u in users}
++    psi=Fraction(joint['F_exact'])-Fraction(base['F_exact'])-sum(d.values())
++    assert psi==dec.interaction_bits
++    return dict(classification='DIAGNOSTIC_NOT_CLAIM',field=field,world=world.payload(),anchor=anchor,moves=moves,evaluations=rows,d={u:float(v) for u,v in d.items()},d_exact={u:str(v) for u,v in d.items()},psi=float(psi),psi_exact=str(psi),delta_F=joint['F']-base['F'],delta_core=float(dec.joint_change_bits),psi_bits=joint['bits']-sum(rows[f'only_{u}']['bits'] for u in users)+base['bits'] if len(users)==2 else 0,psi_joules=joint['joules']-sum(rows[f'only_{u}']['joules'] for u in users)+base['joules'] if len(users)==2 else 0,guard={key:r['served']>=base['served'] for key,r in rows.items()},c1=float(dec.c1),c3=float(dec.c3))
+diff --git a/witness/run_witnesses.py b/witness/run_witnesses.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..846b55bf79f1a22f09ae4728e0347250b1d36bfc
+--- /dev/null
++++ b/witness/run_witnesses.py
+@@ -0,0 +1,32 @@
++"""Run the selected constructive tests; no threshold/price/seed fitting."""
++import json
++from engine_harness import *
++
++def scenarios():
++    beams={'X':(1,0,0,GROUND),'Y':(1,1,1,ground(0,5)),'Z':(1,2,2,ground(0,-5))}
++    for incumbents in (1,2):
++        world=World([GROUND]*(incumbents+2),{1:satellite(60)},beams)
++        anchor=['X']*incumbents+['Y','Z']
++        yield f'occupancy_backoff_{incumbents}_incumbent',world,anchor,{incumbents:'X',incumbents+1:'X'}
++        if incumbents==1:
++            yield 'occupancy_backoff_single',world,anchor,{incumbents:'X'}
++    world=World([GROUND]*13,{1:satellite(60)},beams)
++    yield 'occupancy_unload',world,['X']*7+['Y']*3+['Z']*3,{0:'Y',1:'Z'}
++    left,right=ground(0,-15),ground(0,15)
++    world=World([right,left,left,left,right,right],{1:satellite(60)}, {'X':(1,0,0,left),'Y':(1,1,1,right)})
++    yield 'swap',world,['X','X','X','Y','Y','Y'],{0:'Y',3:'X'}
++    world=World([GROUND]*5,{1:satellite(60)}, {'X':(1,0,0,ground(0,45)),'Y':(1,1,1,GROUND)})
++    yield 'cap_release',world,['X','X','Y','Y','Y'],{0:'Y',1:'Y'}
++
++def main():
++    output={}
++    for name,w,a,m in scenarios():
++        output[name]={}
++        for field in ('margin','realised'):
++            result=quartet(w,a,m,field,trace=True)
++            output[name][field]=result
++            print(name,field, 'Psi', result['psi'], 'Delta F', result['delta_F'], 'd',result['d'],'served',[r['served'] for r in result['evaluations'].values()],flush=True)
++    (ROOT/'witness/selected-witnesses.json').write_text(json.dumps(output,indent=2,allow_nan=False)+'\n')
++    (ROOT/'witness/calibration-manifest.json').write_text(CAL_PATH.read_text())
++
++if __name__=='__main__':main()
+diff --git a/witness/verify_evidence.py b/witness/verify_evidence.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab51eb24b83cc5ab50774502b68d1c42afcbc302
+--- /dev/null
++++ b/witness/verify_evidence.py
+@@ -0,0 +1,45 @@
++"""Check recorded witnesses against their physical traces and exact scores."""
++from fractions import Fraction
++import json
++from pathlib import Path
++
++root=Path(__file__).resolve().parent
++data=json.loads((root/'selected-witnesses.json').read_text())
++for name,fields in data.items():
++    for field,r in fields.items():
++        e=r['evaluations']; users=list(r['moves'])
++        f0=Fraction(e['base']['F_exact']); fj=Fraction(e['joint']['F_exact'])
++        ds=[Fraction(v) for v in r['d_exact'].values()]
++        assert fj-f0-sum(ds)==Fraction(r['psi_exact'])
++        assert r['guard']['joint']
++        for row in e.values():
++            assert row['max_residual_w']<=1e-10
++            assert row['served']==sum(row['served_by_user'].values())
++            for boundary in row['boundaries']:
++                for slot in boundary['slots']:
++                    assert slot['certificate']['status']!='INVALID'
++                    for tx in slot['transmissions']:
++                        assert tx['interference_w']==0.0
++                        assert 0<tx['power_w']<=1.65
++                        assert tx['decoded']==(tx['tx'] is not None and tx['actual_sinr']>=tx['tx_threshold'])
++        if name not in ('occupancy_backoff_single','occupancy_backoff_2_incumbent'):
++            assert r['psi']>1e6
++        if name=='occupancy_backoff_single': assert r['psi_exact']=='0'
++        if name=='occupancy_backoff_1_incumbent':
++            assert [v['served'] for v in e.values()]==[0,0,0,3]
++            assert all(e[key]['bits']==0 for key in ('base','only_1','only_2'))
++            assert e['joint']['bits']>1.9e9
++            assert e['joint']['bits_by_user']['0']>0
++        if name=='swap':
++            assert all(d<0 for d in ds) and fj>f0
++            assert [v['served'] for v in e.values()]==[6,4,4,6]
++        if name=='cap_release':
++            assert [v['served'] for v in e.values()]==[3,4,4,5]
++            for key in ('base','only_0','only_1'):
++                for boundary in e[key]['boundaries']:
++                    for slot in boundary['slots']:
++                        source=[tx for tx in slot['transmissions'] if tx['beam']==[1,0]]
++                        assert len(source)==1
++                        assert source[0]['power_w']==1.65 and source[0]['tx'] is None
++            assert e['joint']['bits_by_user']['0']>0 and e['joint']['bits_by_user']['1']>0
++print('PASS: exact identities, decoded-bit traces, unchanged guard, cap persistence, zero-interference isolation, and all witness assertions')
+
+exec
+/bin/bash -lc "nice -n 10 /home/sat/mcrl-leo-handover/.venv/bin/python -B - <<'PY'
+import json
+p=json.load(open('witness/selected-witnesses.json'))
+for name in ['occupancy_backoff_1_incumbent','occupancy_unload','swap','cap_release']:
+ print(name)
+ for label,row in p[name]['margin']['evaluations'].items():
+  unique=sorted(set((str(t['beam']),t['target'] or 'NO_MODE',t['tx'] or 'NO_MODE',round(t['power_w'],9),round(t['nominal_sinr'],9),round(t['margin_sinr'],9)) for s in row['boundaries'][0]['slots'] for t in s['transmissions']))
+  print(label,unique)
+PY" in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+occupancy_backoff_1_incumbent
+base [('[1, 0]', 'QPSK 1/4', 'NO_MODE', 0.018670088, 0.717494795, 0.271380748), ('[1, 1]', 'QPSK 1/4', 'NO_MODE', 0.019645669, 0.717494795, 0.271380748), ('[1, 2]', 'QPSK 1/4', 'NO_MODE', 0.019645669, 0.717494795, 0.271380748)]
+only_1 [('[1, 0]', 'QPSK 2/5', 'NO_MODE', 0.029932733, 1.150320223, 0.435089933), ('[1, 2]', 'QPSK 1/4', 'NO_MODE', 0.019645669, 0.717494795, 0.271380748)]
+only_2 [('[1, 0]', 'QPSK 2/5', 'NO_MODE', 0.029932733, 1.150320223, 0.435089933), ('[1, 1]', 'QPSK 1/4', 'NO_MODE', 0.019645669, 0.717494795, 0.271380748)]
+joint [('[1, 0]', 'QPSK 3/5', 'QPSK 1/4', 0.053597727, 2.059770125, 0.779074581)]
+occupancy_unload
+base [('[1, 0]', '16APSK 2/3', 'QPSK 4/5', 0.253015058, 9.723413495, 3.677723163), ('[1, 1]', 'QPSK 3/5', 'QPSK 1/4', 0.056398405, 2.059770125, 0.779074581), ('[1, 2]', 'QPSK 3/5', 'QPSK 1/4', 0.056398405, 2.059770125, 0.779074581)]
+only_0 [('[1, 0]', '8PSK 3/4', 'QPSK 2/3', 0.198219496, 7.617610361, 2.881237344), ('[1, 1]', 'QPSK 3/4', 'QPSK 2/5', 0.08536244, 3.117588242, 1.179177096), ('[1, 2]', 'QPSK 3/5', 'QPSK 1/4', 0.056398405, 2.059770125, 0.779074581)]
+only_1 [('[1, 0]', '8PSK 3/4', 'QPSK 2/3', 0.198219496, 7.617610361, 2.881237344), ('[1, 1]', 'QPSK 3/5', 'QPSK 1/4', 0.056398405, 2.059770125, 0.779074581), ('[1, 2]', 'QPSK 3/4', 'QPSK 2/5', 0.08536244, 3.117588242, 1.179177096)]
+joint [('[1, 0]', '8PSK 2/3', 'QPSK 3/5', 0.147280879, 5.660030283, 2.140814487), ('[1, 1]', 'QPSK 3/4', 'QPSK 2/5', 0.08536244, 3.117588242, 1.179177096), ('[1, 2]', 'QPSK 3/4', 'QPSK 2/5', 0.08536244, 3.117588242, 1.179177096)]
+swap
+base [('[1, 0]', 'QPSK 3/5', 'QPSK 1/4', 0.053632262, 2.059770125, 0.779074581), ('[1, 0]', 'QPSK 3/5', 'QPSK 1/4', 0.405647557, 2.059770125, 0.779074581), ('[1, 1]', 'QPSK 3/5', 'QPSK 1/4', 0.053632262, 2.059770125, 0.779074581), ('[1, 1]', 'QPSK 3/5', 'QPSK 1/4', 0.405647557, 2.059770125, 0.779074581)]
+only_0 [('[1, 0]', 'QPSK 2/5', 'NO_MODE', 0.02995202, 1.150320223, 0.435089933), ('[1, 1]', 'QPSK 3/4', 'QPSK 2/5', 0.081175713, 3.117588242, 1.179177096), ('[1, 1]', 'QPSK 3/4', 'QPSK 2/5', 0.613972423, 3.117588242, 1.179177096)]
+only_3 [('[1, 0]', 'QPSK 3/4', 'QPSK 2/5', 0.081175713, 3.117588242, 1.179177096), ('[1, 0]', 'QPSK 3/4', 'QPSK 2/5', 0.613972423, 3.117588242, 1.179177096), ('[1, 1]', 'QPSK 2/5', 'NO_MODE', 0.02995202, 1.150320223, 0.435089933)]
+joint [('[1, 0]', 'QPSK 3/5', 'QPSK 1/4', 0.053632262, 2.059770125, 0.779074581), ('[1, 1]', 'QPSK 3/5', 'QPSK 1/4', 0.053632262, 2.059770125, 0.779074581)]
+cap_release
+base [('[1, 0]', 'QPSK 2/5', 'NO_MODE', 1.65, 0.221160277, 0.083650281), ('[1, 1]', 'QPSK 3/5', 'QPSK 1/4', 0.053597727, 2.059770125, 0.779074581)]
+only_0 [('[1, 0]', 'QPSK 1/4', 'NO_MODE', 1.65, 0.221160277, 0.083650281), ('[1, 1]', 'QPSK 3/4', 'QPSK 2/5', 0.081123442, 3.117588242, 1.179177096)]
+only_1 [('[1, 0]', 'QPSK 1/4', 'NO_MODE', 1.65, 0.221160277, 0.083650281), ('[1, 1]', 'QPSK 3/4', 'QPSK 2/5', 0.081123442, 3.117588242, 1.179177096)]
+joint [('[1, 1]', '8PSK 2/3', 'QPSK 3/5', 0.147280879, 5.660030283, 2.140814487)]
+
+diff --git a/witness/engine_harness.py b/witness/engine_harness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e32c8c3d20c65dc5222fbf5d7314aa800aa0a4cb
+--- /dev/null
++++ b/witness/engine_harness.py
+@@ -0,0 +1,100 @@
++"""DIAGNOSTIC_NOT_CLAIM: synthetic geometry, unmodified stage-4h scoring."""
++from dataclasses import dataclass
++from fractions import Fraction
++import json
++import math
++from pathlib import Path
++
++import numpy as np
++from mcrl.env.geometry import angle_between_deg
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.channel import transmit_gain_linear, interference_receive_gain_linear, keyed_fading_gain, fading_product_quantile
++from mcrl.physics_v025.architectures import Geometry, Link, RadiationConfig, AngleRateTPC_TDM
++from mcrl.physics_v025.adapter import RadiationBoundary, SharedArchitectureTape, score_setting
++from mcrl.physics_v025.energy import HardwareInventory
++from mcrl.physics_v025.matrix import MATRIX_SETTINGS
++from mcrl.physics_v025.tapes import seed_from_domain, SYNTHETIC_WORLD_DOMAINS
++from mcrl.physics_v025.targets import NetworkOutcome, network_objective, set_score_decomposition, classify_physical_transition, phi_qos
++from mcrl.physics_v025.calibration import CalibrationValues
++
++ROOT = Path(__file__).resolve().parents[1]
++CAL_PATH = Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json')
++CAL = CalibrationValues.from_payload(json.loads(CAL_PATH.read_text())['cells'][0])
++PRICES = dict(eta_ref=CAL.eta_ref, lambda_bits_per_j=CAL.lambda_bits_per_j, kappa_bits_per_user_step=CAL.kappa_bits_per_user_step)
++SETTING = next(x for x in MATRIX_SETTINGS if x.label == 'a-r0')
++SEED = seed_from_domain(SYNTHETIC_WORLD_DOMAINS[0])
++TIMES = tuple(k * .640 for k in range(48))
++GROUND = np.array([6371., 0., 0.])
++
++def satellite(elevation=90., altitude=550., azimuth=0.):
++    e, a = math.radians(elevation), math.radians(azimuth)
++    slant = -6371. * math.sin(e) + math.sqrt((6371. + altitude)**2 - (6371. * math.cos(e))**2)
++    return GROUND + slant * np.array([math.sin(e), math.cos(e)*math.cos(a), math.cos(e)*math.sin(a)])
++
++def ground(y=0., z=0.):
++    return np.array([math.sqrt(6371.**2-y*y-z*z), y, z])
++
++@dataclass
++class World:
++    users: list
++    satellites: dict
++    beams: dict  # name -> (satellite ID, chain ID, reuse color, target ECEF km)
++
++    def payload(self):
++        return dict(users_ecef_km=[list(map(float,x)) for x in self.users], satellites_ecef_km={str(k):list(map(float,v)) for k,v in self.satellites.items()}, beams={k:dict(identity=list(v[:2]),color=v[2],target_ecef_km=list(map(float,v[3]))) for k,v in self.beams.items()}, seed=SEED, seed_domain=SYNTHETIC_WORLD_DOMAINS[0], times_s=TIMES)
++
++    def geometry(self, assignments, time=0.):
++        selected = [(u,self.beams[b]) for u,b in enumerate(assignments) if b is not None]
++        links=[]
++        def path(user, beam):
++            p=np.asarray(self.users[user]); s=np.asarray(self.satellites[beam[0]])
++            delta=s-p; slant=float(np.linalg.norm(delta))
++            elevation=float(np.degrees(np.arcsin(np.dot(delta,p/np.linalg.norm(p))/slant)))
++            off=float(angle_between_deg(s,np.asarray(beam[3]),p))
++            base=float(transmit_gain_linear(off)*LegacyWorldProvider._nominal_path_without_scintillation(np.asarray(slant),np.asarray(elevation),np.asarray(1.)))
++            fade=keyed_fading_gain(world=SEED,user=user,norad=beam[0],absolute_time_ns=round(time*1e9),elevation_deg=elevation)
++            return base,fade,elevation
++        for u,b in selected:
++            base,fade,elevation=path(u,b)
++            links.append(Link(u,b[:2],b[2],base*10**3.5,base*10**3.5*fade,elevation))
++        nominal=np.zeros((len(links),len(links))); realised=nominal.copy()
++        for i,(u,wanted) in enumerate(selected):
++            for j,(_,aggressor) in enumerate(selected):
++                base,fade,_=path(u,aggressor)
++                sep=float(angle_between_deg(np.asarray(self.users[u]),np.asarray(self.satellites[wanted[0]]),np.asarray(self.satellites[aggressor[0]])))
++                rx=float(interference_receive_gain_linear(sep,same_satellite=wanted[0]==aggressor[0]))
++                nominal[i,j]=base*rx; realised[i,j]=base*rx*fade
++        return Geometry(tuple(links),nominal,realised)
++
++def evaluate(world, assignments, anchor, field='margin', trace=False):
++    engine=AngleRateTPC_TDM(); config=RadiationConfig(fading_quantile_alpha=.10)
++    first=engine.radiate(config,world.geometry(assignments),'margin' if field=='margin' else field)
++    rows=tuple(RadiationBoundary(t, first if field!='realised' else engine.radiate(config,world.geometry(assignments,t),field)) for t in TIMES)
++    shared=SharedArchitectureTape('a-r',HardwareInventory.fixed([v[:2] for v in world.beams.values()]),rows,rows[0],tuple(range(len(world.users))))
++    score=score_setting(shared,SETTING)
++    assert score.valid
++    events=[classify_physical_transition(user_id=u,before=None if a is None else world.beams[a][:2],after=None if b is None else world.beams[b][:2],cell_rekey=False,was_previously_served=a is not None) for u,(a,b) in enumerate(zip(anchor,assignments))]
++    phi=phi_qos(events)
++    bits={u:Fraction(str(v)) for u,v in score.bits.items()}
++    outcome=NetworkOutcome.build(bits=sum(bits.values()),joules=score.joules,phi=phi,decoding_availability=sum(score.served_phy.values())/len(world.users),useful_availability=sum(score.served_phy.values())/len(world.users),per_user_bits=bits)
++    core=network_objective(outcome,**PRICES)
++    full=core+CAL.kappa_bits_per_user_step*phi
++    result=dict(assignments=assignments,bits=float(outcome.bits),joules=score.joules,phi_preference=float(phi),phi_cost_bits=float(-CAL.kappa_bits_per_user_step*phi),F_core=float(core),F=float(full),F_exact=str(full),served=sum(score.served_phy.values()),served_by_user=score.served_phy,bits_by_user=score.bits,decoding_time_s=score.decoding_time_s,feasible=score.rate_target_feasible,attained=score.rate_target_attained,max_residual_w=score.certificate_residual_w)
++    if trace:
++        result['boundaries']=[dict(time_s=row.time_s,slots=[dict(fraction=s.fraction,certificate=vars(s.certificate),transmissions=[dict(user=t.user_id,beam=t.beam,power_w=t.rf_power_w,nominal_sinr=t.nominal_sinr,margin_sinr=t.margin_predicted_sinr,actual_sinr=t.sinr,target=None if t.m_target is None else t.m_target.name,tx=None if t.m_tx is None else t.m_tx.name,tx_threshold=None if t.m_tx is None else t.m_tx.threshold_linear,decoded=t.realised_outcome.decoded,interference_w=t.interference_w) for t in s.transmissions]) for s in row.radiation.slots]) for row in (rows if field=='realised' else rows[:1])]
++    return outcome,result
++
++def quartet(world, anchor, moves, field='margin', trace=False):
++    users=tuple(moves); subsets=[frozenset(),*(frozenset([u]) for u in users),frozenset(users)]
++    outcomes={}; rows={}
++    for subset in dict.fromkeys(subsets):
++        a=list(anchor)
++        for u in subset:a[u]=moves[u]
++        key='base' if not subset else 'joint' if subset==frozenset(users) else f'only_{next(iter(subset))}'
++        outcomes[subset],rows[key]=evaluate(world,a,anchor,field,trace)
++    dec=set_score_decomposition(coalition_users=users,outcomes_by_subset=outcomes,**PRICES)
++    joint=rows['joint']; base=rows['base']
++    d={u:Fraction(rows['joint' if len(users)==1 else f'only_{u}']['F_exact'])-Fraction(base['F_exact']) for u in users}
++    psi=Fraction(joint['F_exact'])-Fraction(base['F_exact'])-sum(d.values())
++    assert psi==dec.interaction_bits
++    return dict(classification='DIAGNOSTIC_NOT_CLAIM',field=field,world=world.payload(),anchor=anchor,moves=moves,evaluations=rows,d={u:float(v) for u,v in d.items()},d_exact={u:str(v) for u,v in d.items()},psi=float(psi),psi_exact=str(psi),delta_F=joint['F']-base['F'],delta_core=float(dec.joint_change_bits),psi_bits=joint['bits']-sum(rows[f'only_{u}']['bits'] for u in users)+base['bits'] if len(users)==2 else 0,psi_joules=joint['joules']-sum(rows[f'only_{u}']['joules'] for u in users)+base['joules'] if len(users)==2 else 0,guard={key:r['served']>=base['served'] for key,r in rows.items()},c1=float(dec.c1),c3=float(dec.c3))
+diff --git a/witness/run_witnesses.py b/witness/run_witnesses.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..846b55bf79f1a22f09ae4728e0347250b1d36bfc
+--- /dev/null
++++ b/witness/run_witnesses.py
+@@ -0,0 +1,32 @@
++"""Run the selected constructive tests; no threshold/price/seed fitting."""
++import json
++from engine_harness import *
++
++def scenarios():
++    beams={'X':(1,0,0,GROUND),'Y':(1,1,1,ground(0,5)),'Z':(1,2,2,ground(0,-5))}
++    for incumbents in (1,2):
++        world=World([GROUND]*(incumbents+2),{1:satellite(60)},beams)
++        anchor=['X']*incumbents+['Y','Z']
++        yield f'occupancy_backoff_{incumbents}_incumbent',world,anchor,{incumbents:'X',incumbents+1:'X'}
++        if incumbents==1:
++            yield 'occupancy_backoff_single',world,anchor,{incumbents:'X'}
++    world=World([GROUND]*13,{1:satellite(60)},beams)
++    yield 'occupancy_unload',world,['X']*7+['Y']*3+['Z']*3,{0:'Y',1:'Z'}
++    left,right=ground(0,-15),ground(0,15)
++    world=World([right,left,left,left,right,right],{1:satellite(60)}, {'X':(1,0,0,left),'Y':(1,1,1,right)})
++    yield 'swap',world,['X','X','X','Y','Y','Y'],{0:'Y',3:'X'}
++    world=World([GROUND]*5,{1:satellite(60)}, {'X':(1,0,0,ground(0,45)),'Y':(1,1,1,GROUND)})
++    yield 'cap_release',world,['X','X','Y','Y','Y'],{0:'Y',1:'Y'}
++
++def main():
++    output={}
++    for name,w,a,m in scenarios():
++        output[name]={}
++        for field in ('margin','realised'):
++            result=quartet(w,a,m,field,trace=True)
++            output[name][field]=result
++            print(name,field, 'Psi', result['psi'], 'Delta F', result['delta_F'], 'd',result['d'],'served',[r['served'] for r in result['evaluations'].values()],flush=True)
++    (ROOT/'witness/selected-witnesses.json').write_text(json.dumps(output,indent=2,allow_nan=False)+'\n')
++    (ROOT/'witness/calibration-manifest.json').write_text(CAL_PATH.read_text())
++
++if __name__=='__main__':main()
+diff --git a/witness/verify_evidence.py b/witness/verify_evidence.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab51eb24b83cc5ab50774502b68d1c42afcbc302
+--- /dev/null
++++ b/witness/verify_evidence.py
+@@ -0,0 +1,45 @@
++"""Check recorded witnesses against their physical traces and exact scores."""
++from fractions import Fraction
++import json
++from pathlib import Path
++
++root=Path(__file__).resolve().parent
++data=json.loads((root/'selected-witnesses.json').read_text())
++for name,fields in data.items():
++    for field,r in fields.items():
++        e=r['evaluations']; users=list(r['moves'])
++        f0=Fraction(e['base']['F_exact']); fj=Fraction(e['joint']['F_exact'])
++        ds=[Fraction(v) for v in r['d_exact'].values()]
++        assert fj-f0-sum(ds)==Fraction(r['psi_exact'])
++        assert r['guard']['joint']
++        for row in e.values():
++            assert row['max_residual_w']<=1e-10
++            assert row['served']==sum(row['served_by_user'].values())
++            for boundary in row['boundaries']:
++                for slot in boundary['slots']:
++                    assert slot['certificate']['status']!='INVALID'
++                    for tx in slot['transmissions']:
++                        assert tx['interference_w']==0.0
++                        assert 0<tx['power_w']<=1.65
++                        assert tx['decoded']==(tx['tx'] is not None and tx['actual_sinr']>=tx['tx_threshold'])
++        if name not in ('occupancy_backoff_single','occupancy_backoff_2_incumbent'):
++            assert r['psi']>1e6
++        if name=='occupancy_backoff_single': assert r['psi_exact']=='0'
++        if name=='occupancy_backoff_1_incumbent':
++            assert [v['served'] for v in e.values()]==[0,0,0,3]
++            assert all(e[key]['bits']==0 for key in ('base','only_1','only_2'))
++            assert e['joint']['bits']>1.9e9
++            assert e['joint']['bits_by_user']['0']>0
++        if name=='swap':
++            assert all(d<0 for d in ds) and fj>f0
++            assert [v['served'] for v in e.values()]==[6,4,4,6]
++        if name=='cap_release':
++            assert [v['served'] for v in e.values()]==[3,4,4,5]
++            for key in ('base','only_0','only_1'):
++                for boundary in e[key]['boundaries']:
++                    for slot in boundary['slots']:
++                        source=[tx for tx in slot['transmissions'] if tx['beam']==[1,0]]
++                        assert len(source)==1
++                        assert source[0]['power_w']==1.65 and source[0]['tx'] is None
++            assert e['joint']['bits_by_user']['0']>0 and e['joint']['bits_by_user']['1']>0
++print('PASS: exact identities, decoded-bit traces, unchanged guard, cap persistence, zero-interference isolation, and all witness assertions')
+
+2026-09-09T09:15:39.675974Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-09-09T09:20:25.783346Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-09-09T09:25:30.559143Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+exec
+/bin/bash -lc "sed -n '448,477p' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+sed -n '1,120p' witness/engine_harness.py | tail -35" in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+    m_tx_counts: Mapping[str, int] = None  # type: ignore[assignment]
+    realised_decode_successes: int = 0
+    realised_decode_failures: int = 0
+
+    @property
+    def bits(self) -> float:
+        return math.fsum(self.score.bits.values())
+
+    @property
+    def joules(self) -> float:
+        return self.score.joules
+
+    def outcome(self, *, phi: Fraction = Fraction()) -> NetworkOutcome:
+        opportunities = max(1, len(self.score.bits)) * DECISION_INTERVAL_S
+        decoding = math.fsum(self.score.decoding_time_s.values()) / opportunities
+        useful = math.fsum(self.score.useful_time_s.values()) / opportunities
+        return NetworkOutcome.build(
+            bits=sum((Fraction(str(value)) for value in self.score.bits.values()), Fraction()),
+            joules=self.joules,
+            phi=phi,
+            decoding_availability=min(1.0, max(0.0, decoding)),
+            useful_availability=min(1.0, max(0.0, useful)),
+            per_user_bits=self.score.bits,
+        )
+
+
+@dataclass(frozen=True)
+class SelectionProfile:
+    """Minimal stage-1 result transferred from a worker to the coordinator."""
+
+                nominal[i,j]=base*rx; realised[i,j]=base*rx*fade
+        return Geometry(tuple(links),nominal,realised)
+
+def evaluate(world, assignments, anchor, field='margin', trace=False):
+    engine=AngleRateTPC_TDM(); config=RadiationConfig(fading_quantile_alpha=.10)
+    first=engine.radiate(config,world.geometry(assignments),'margin' if field=='margin' else field)
+    rows=tuple(RadiationBoundary(t, first if field!='realised' else engine.radiate(config,world.geometry(assignments,t),field)) for t in TIMES)
+    shared=SharedArchitectureTape('a-r',HardwareInventory.fixed([v[:2] for v in world.beams.values()]),rows,rows[0],tuple(range(len(world.users))))
+    score=score_setting(shared,SETTING)
+    assert score.valid
+    events=[classify_physical_transition(user_id=u,before=None if a is None else world.beams[a][:2],after=None if b is None else world.beams[b][:2],cell_rekey=False,was_previously_served=a is not None) for u,(a,b) in enumerate(zip(anchor,assignments))]
+    phi=phi_qos(events)
+    bits={u:Fraction(str(v)) for u,v in score.bits.items()}
+    outcome=NetworkOutcome.build(bits=sum(bits.values()),joules=score.joules,phi=phi,decoding_availability=sum(score.served_phy.values())/len(world.users),useful_availability=sum(score.served_phy.values())/len(world.users),per_user_bits=bits)
+    core=network_objective(outcome,**PRICES)
+    full=core+CAL.kappa_bits_per_user_step*phi
+    result=dict(assignments=assignments,bits=float(outcome.bits),joules=score.joules,phi_preference=float(phi),phi_cost_bits=float(-CAL.kappa_bits_per_user_step*phi),F_core=float(core),F=float(full),F_exact=str(full),served=sum(score.served_phy.values()),served_by_user=score.served_phy,bits_by_user=score.bits,decoding_time_s=score.decoding_time_s,feasible=score.rate_target_feasible,attained=score.rate_target_attained,max_residual_w=score.certificate_residual_w)
+    if trace:
+        result['boundaries']=[dict(time_s=row.time_s,slots=[dict(fraction=s.fraction,certificate=vars(s.certificate),transmissions=[dict(user=t.user_id,beam=t.beam,power_w=t.rf_power_w,nominal_sinr=t.nominal_sinr,margin_sinr=t.margin_predicted_sinr,actual_sinr=t.sinr,target=None if t.m_target is None else t.m_target.name,tx=None if t.m_tx is None else t.m_tx.name,tx_threshold=None if t.m_tx is None else t.m_tx.threshold_linear,decoded=t.realised_outcome.decoded,interference_w=t.interference_w) for t in s.transmissions]) for s in row.radiation.slots]) for row in (rows if field=='realised' else rows[:1])]
+    return outcome,result
+
+def quartet(world, anchor, moves, field='margin', trace=False):
+    users=tuple(moves); subsets=[frozenset(),*(frozenset([u]) for u in users),frozenset(users)]
+    outcomes={}; rows={}
+    for subset in dict.fromkeys(subsets):
+        a=list(anchor)
+        for u in subset:a[u]=moves[u]
+        key='base' if not subset else 'joint' if subset==frozenset(users) else f'only_{next(iter(subset))}'
+        outcomes[subset],rows[key]=evaluate(world,a,anchor,field,trace)
+    dec=set_score_decomposition(coalition_users=users,outcomes_by_subset=outcomes,**PRICES)
+    joint=rows['joint']; base=rows['base']
+    d={u:Fraction(rows['joint' if len(users)==1 else f'only_{u}']['F_exact'])-Fraction(base['F_exact']) for u in users}
+    psi=Fraction(joint['F_exact'])-Fraction(base['F_exact'])-sum(d.values())
+    assert psi==dec.interaction_bits
+    return dict(classification='DIAGNOSTIC_NOT_CLAIM',field=field,world=world.payload(),anchor=anchor,moves=moves,evaluations=rows,d={u:float(v) for u,v in d.items()},d_exact={u:str(v) for u,v in d.items()},psi=float(psi),psi_exact=str(psi),delta_F=joint['F']-base['F'],delta_core=float(dec.joint_change_bits),psi_bits=joint['bits']-sum(rows[f'only_{u}']['bits'] for u in users)+base['bits'] if len(users)==2 else 0,psi_joules=joint['joules']-sum(rows[f'only_{u}']['joules'] for u in users)+base['joules'] if len(users)==2 else 0,guard={key:r['served']>=base['served'] for key,r in rows.items()},c1=float(dec.c1),c3=float(dec.c3))
+
+diff --git a/witness/engine_harness.py b/witness/engine_harness.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e32c8c3d20c65dc5222fbf5d7314aa800aa0a4cb
+--- /dev/null
++++ b/witness/engine_harness.py
+@@ -0,0 +1,100 @@
++"""DIAGNOSTIC_NOT_CLAIM: synthetic geometry, unmodified stage-4h scoring."""
++from dataclasses import dataclass
++from fractions import Fraction
++import json
++import math
++from pathlib import Path
++
++import numpy as np
++from mcrl.env.geometry import angle_between_deg
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.channel import transmit_gain_linear, interference_receive_gain_linear, keyed_fading_gain, fading_product_quantile
++from mcrl.physics_v025.architectures import Geometry, Link, RadiationConfig, AngleRateTPC_TDM
++from mcrl.physics_v025.adapter import RadiationBoundary, SharedArchitectureTape, score_setting
++from mcrl.physics_v025.energy import HardwareInventory
++from mcrl.physics_v025.matrix import MATRIX_SETTINGS
++from mcrl.physics_v025.tapes import seed_from_domain, SYNTHETIC_WORLD_DOMAINS
++from mcrl.physics_v025.targets import NetworkOutcome, network_objective, set_score_decomposition, classify_physical_transition, phi_qos
++from mcrl.physics_v025.calibration import CalibrationValues
++
++ROOT = Path(__file__).resolve().parents[1]
++CAL_PATH = Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json')
++CAL = CalibrationValues.from_payload(json.loads(CAL_PATH.read_text())['cells'][0])
++PRICES = dict(eta_ref=CAL.eta_ref, lambda_bits_per_j=CAL.lambda_bits_per_j, kappa_bits_per_user_step=CAL.kappa_bits_per_user_step)
++SETTING = next(x for x in MATRIX_SETTINGS if x.label == 'a-r0')
++SEED = seed_from_domain(SYNTHETIC_WORLD_DOMAINS[0])
++TIMES = tuple(k * .640 for k in range(48))
++GROUND = np.array([6371., 0., 0.])
++
++def satellite(elevation=90., altitude=550., azimuth=0.):
++    e, a = math.radians(elevation), math.radians(azimuth)
++    slant = -6371. * math.sin(e) + math.sqrt((6371. + altitude)**2 - (6371. * math.cos(e))**2)
++    return GROUND + slant * np.array([math.sin(e), math.cos(e)*math.cos(a), math.cos(e)*math.sin(a)])
++
++def ground(y=0., z=0.):
++    return np.array([math.sqrt(6371.**2-y*y-z*z), y, z])
++
++@dataclass
++class World:
++    users: list
++    satellites: dict
++    beams: dict  # name -> (satellite ID, chain ID, reuse color, target ECEF km)
++
++    def payload(self):
++        return dict(users_ecef_km=[list(map(float,x)) for x in self.users], satellites_ecef_km={str(k):list(map(float,v)) for k,v in self.satellites.items()}, beams={k:dict(identity=list(v[:2]),color=v[2],target_ecef_km=list(map(float,v[3]))) for k,v in self.beams.items()}, seed=SEED, seed_domain=SYNTHETIC_WORLD_DOMAINS[0], times_s=TIMES)
++
++    def geometry(self, assignments, time=0.):
++        selected = [(u,self.beams[b]) for u,b in enumerate(assignments) if b is not None]
++        links=[]
++        def path(user, beam):
++            p=np.asarray(self.users[user]); s=np.asarray(self.satellites[beam[0]])
++            delta=s-p; slant=float(np.linalg.norm(delta))
++            elevation=float(np.degrees(np.arcsin(np.dot(delta,p/np.linalg.norm(p))/slant)))
++            off=float(angle_between_deg(s,np.asarray(beam[3]),p))
++            base=float(transmit_gain_linear(off)*LegacyWorldProvider._nominal_path_without_scintillation(np.asarray(slant),np.asarray(elevation),np.asarray(1.)))
++            fade=keyed_fading_gain(world=SEED,user=user,norad=beam[0],absolute_time_ns=round(time*1e9),elevation_deg=elevation)
++            return base,fade,elevation
++        for u,b in selected:
++            base,fade,elevation=path(u,b)
++            links.append(Link(u,b[:2],b[2],base*10**3.5,base*10**3.5*fade,elevation))
++        nominal=np.zeros((len(links),len(links))); realised=nominal.copy()
++        for i,(u,wanted) in enumerate(selected):
++            for j,(_,aggressor) in enumerate(selected):
++                base,fade,_=path(u,aggressor)
++                sep=float(angle_between_deg(np.asarray(self.users[u]),np.asarray(self.satellites[wanted[0]]),np.asarray(self.satellites[aggressor[0]])))
++                rx=float(interference_receive_gain_linear(sep,same_satellite=wanted[0]==aggressor[0]))
++                nominal[i,j]=base*rx; realised[i,j]=base*rx*fade
++        return Geometry(tuple(links),nominal,realised)
++
++def evaluate(world, assignments, anchor, field='margin', trace=False):
++    engine=AngleRateTPC_TDM(); config=RadiationConfig(fading_quantile_alpha=.10)
++    first=engine.radiate(config,world.geometry(assignments),'margin' if field=='margin' else field)
++    rows=tuple(RadiationBoundary(t, first if field!='realised' else engine.radiate(config,world.geometry(assignments,t),field)) for t in TIMES)
++    shared=SharedArchitectureTape('a-r',HardwareInventory.fixed([v[:2] for v in world.beams.values()]),rows,rows[0],tuple(range(len(world.users))))
++    score=score_setting(shared,SETTING)
++    assert score.valid
++    events=[classify_physical_transition(user_id=u,before=None if a is None else world.beams[a][:2],after=None if b is None else world.beams[b][:2],cell_rekey=False,was_previously_served=a is not None) for u,(a,b) in enumerate(zip(anchor,assignments))]
++    phi=phi_qos(events)
++    bits={u:Fraction(str(v)) for u,v in score.bits.items()}
++    outcome=NetworkOutcome.build(bits=sum(bits.values()),joules=score.joules,phi=phi,decoding_availability=sum(score.served_phy.values())/len(world.users),useful_availability=sum(score.served_phy.values())/len(world.users),per_user_bits=bits)
++    core=network_objective(outcome,**PRICES)
++    full=core+CAL.kappa_bits_per_user_step*phi
++    result=dict(assignments=assignments,bits=float(outcome.bits),joules=score.joules,phi_preference=float(phi),phi_cost_bits=float(-CAL.kappa_bits_per_user_step*phi),F_core=float(core),F=float(full),F_exact=str(full),served=sum(score.served_phy.values()),served_by_user=score.served_phy,bits_by_user=score.bits,decoding_time_s=score.decoding_time_s,feasible=score.rate_target_feasible,attained=score.rate_target_attained,max_residual_w=score.certificate_residual_w)
++    if trace:
++        result['boundaries']=[dict(time_s=row.time_s,slots=[dict(fraction=s.fraction,certificate=vars(s.certificate),transmissions=[dict(user=t.user_id,beam=t.beam,power_w=t.rf_power_w,nominal_sinr=t.nominal_sinr,margin_sinr=t.margin_predicted_sinr,actual_sinr=t.sinr,target=None if t.m_target is None else t.m_target.name,tx=None if t.m_tx is None else t.m_tx.name,tx_threshold=None if t.m_tx is None else t.m_tx.threshold_linear,decoded=t.realised_outcome.decoded,interference_w=t.interference_w) for t in s.transmissions]) for s in row.radiation.slots]) for row in (rows if field=='realised' else rows[:1])]
++    return outcome,result
++
++def quartet(world, anchor, moves, field='margin', trace=False):
++    users=tuple(moves); subsets=[frozenset(),*(frozenset([u]) for u in users),frozenset(users)]
++    outcomes={}; rows={}
++    for subset in dict.fromkeys(subsets):
++        a=list(anchor)
++        for u in subset:a[u]=moves[u]
++        key='base' if not subset else 'joint' if subset==frozenset(users) else f'only_{next(iter(subset))}'
++        outcomes[subset],rows[key]=evaluate(world,a,anchor,field,trace)
++    dec=set_score_decomposition(coalition_users=users,outcomes_by_subset=outcomes,**PRICES)
++    joint=rows['joint']; base=rows['base']
++    d={u:Fraction(rows['joint' if len(users)==1 else f'only_{u}']['F_exact'])-Fraction(base['F_exact']) for u in users}
++    psi=Fraction(joint['F_exact'])-Fraction(base['F_exact'])-sum(d.values())
++    assert psi==dec.interaction_bits
++    return dict(classification='DIAGNOSTIC_NOT_CLAIM',field=field,world=world.payload(),anchor=anchor,moves=moves,evaluations=rows,d={u:float(v) for u,v in d.items()},d_exact={u:str(v) for u,v in d.items()},psi=float(psi),psi_exact=str(psi),delta_F=joint['F']-base['F'],delta_core=float(dec.joint_change_bits),psi_bits=joint['bits']-sum(rows[f'only_{u}']['bits'] for u in users)+base['bits'] if len(users)==2 else 0,psi_joules=joint['joules']-sum(rows[f'only_{u}']['joules'] for u in users)+base['joules'] if len(users)==2 else 0,guard={key:r['served']>=base['served'] for key,r in rows.items()},c1=float(dec.c1),c3=float(dec.c3))
+diff --git a/witness/run_witnesses.py b/witness/run_witnesses.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..846b55bf79f1a22f09ae4728e0347250b1d36bfc
+--- /dev/null
++++ b/witness/run_witnesses.py
+@@ -0,0 +1,32 @@
++"""Run the selected constructive tests; no threshold/price/seed fitting."""
++import json
++from engine_harness import *
++
++def scenarios():
++    beams={'X':(1,0,0,GROUND),'Y':(1,1,1,ground(0,5)),'Z':(1,2,2,ground(0,-5))}
++    for incumbents in (1,2):
++        world=World([GROUND]*(incumbents+2),{1:satellite(60)},beams)
++        anchor=['X']*incumbents+['Y','Z']
++        yield f'occupancy_backoff_{incumbents}_incumbent',world,anchor,{incumbents:'X',incumbents+1:'X'}
++        if incumbents==1:
++            yield 'occupancy_backoff_single',world,anchor,{incumbents:'X'}
++    world=World([GROUND]*13,{1:satellite(60)},beams)
++    yield 'occupancy_unload',world,['X']*7+['Y']*3+['Z']*3,{0:'Y',1:'Z'}
++    left,right=ground(0,-15),ground(0,15)
++    world=World([right,left,left,left,right,right],{1:satellite(60)}, {'X':(1,0,0,left),'Y':(1,1,1,right)})
++    yield 'swap',world,['X','X','X','Y','Y','Y'],{0:'Y',3:'X'}
++    world=World([GROUND]*5,{1:satellite(60)}, {'X':(1,0,0,ground(0,45)),'Y':(1,1,1,GROUND)})
++    yield 'cap_release',world,['X','X','Y','Y','Y'],{0:'Y',1:'Y'}
++
++def main():
++    output={}
++    for name,w,a,m in scenarios():
++        output[name]={}
++        for field in ('margin','realised'):
++            result=quartet(w,a,m,field,trace=True)
++            output[name][field]=result
++            print(name,field, 'Psi', result['psi'], 'Delta F', result['delta_F'], 'd',result['d'],'served',[r['served'] for r in result['evaluations'].values()],flush=True)
++    (ROOT/'witness/selected-witnesses.json').write_text(json.dumps(output,indent=2,allow_nan=False)+'\n')
++    (ROOT/'witness/calibration-manifest.json').write_text(CAL_PATH.read_text())
++
++if __name__=='__main__':main()
+diff --git a/witness/verify_evidence.py b/witness/verify_evidence.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ab51eb24b83cc5ab50774502b68d1c42afcbc302
+--- /dev/null
++++ b/witness/verify_evidence.py
+@@ -0,0 +1,45 @@
++"""Check recorded witnesses against their physical traces and exact scores."""
++from fractions import Fraction
++import json
++from pathlib import Path
++
++root=Path(__file__).resolve().parent
++data=json.loads((root/'selected-witnesses.json').read_text())
++for name,fields in data.items():
++    for field,r in fields.items():
++        e=r['evaluations']; users=list(r['moves'])
++        f0=Fraction(e['base']['F_exact']); fj=Fraction(e['joint']['F_exact'])
++        ds=[Fraction(v) for v in r['d_exact'].values()]
++        assert fj-f0-sum(ds)==Fraction(r['psi_exact'])
++        assert r['guard']['joint']
++        for row in e.values():
++            assert row['max_residual_w']<=1e-10
++            assert row['served']==sum(row['served_by_user'].values())
++            for boundary in row['boundaries']:
++                for slot in boundary['slots']:
++                    assert slot['certificate']['status']!='INVALID'
++                    for tx in slot['transmissions']:
++                        assert tx['interference_w']==0.0
++                        assert 0<tx['power_w']<=1.65
++                        assert tx['decoded']==(tx['tx'] is not None and tx['actual_sinr']>=tx['tx_threshold'])
++        if name not in ('occupancy_backoff_single','occupancy_backoff_2_incumbent'):
++            assert r['psi']>1e6
++        if name=='occupancy_backoff_single': assert r['psi_exact']=='0'
++        if name=='occupancy_backoff_1_incumbent':
++            assert [v['served'] for v in e.values()]==[0,0,0,3]
++            assert all(e[key]['bits']==0 for key in ('base','only_1','only_2'))
++            assert e['joint']['bits']>1.9e9
++            assert e['joint']['bits_by_user']['0']>0
++        if name=='swap':
++            assert all(d<0 for d in ds) and fj>f0
++            assert [v['served'] for v in e.values()]==[6,4,4,6]
++        if name=='cap_release':
++            assert [v['served'] for v in e.values()]==[3,4,4,5]
++            for key in ('base','only_0','only_1'):
++                for boundary in e[key]['boundaries']:
++                    for slot in boundary['slots']:
++                        source=[tx for tx in slot['transmissions'] if tx['beam']==[1,0]]
++                        assert len(source)==1
++                        assert source[0]['power_w']==1.65 and source[0]['tx'] is None
++            assert e['joint']['bits_by_user']['0']>0 and e['joint']['bits_by_user']['1']>0
++print('PASS: exact identities, decoded-bit traces, unchanged guard, cap persistence, zero-interference isolation, and all witness assertions')
+

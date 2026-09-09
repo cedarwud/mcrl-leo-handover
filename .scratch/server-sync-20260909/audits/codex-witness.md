@@ -1,67 +1,40 @@
-# Constructive existence test: can the corrected physics produce Psi_A > 0 at all, in ANY scenario you are free to design?
+# Verify ONE predicted configuration. This is not a search.
 
-`DIAGNOSTIC_NOT_CLAIM`. This is the most decisive test available, and it is cheap.
+`DIAGNOSTIC_NOT_CLAIM`. Budget 45 minutes. Completion beats completeness.
 
-## The idea
-Every C3 search so far has looked for positive interaction in worlds we did not choose. That confounds two very different failures: "the mechanism exists but the search missed it" and "the physics cannot produce it at all".
+An outside structural review produced a counterexample showing positive interaction is possible under our scoring equations, and a separate check confirmed our own fading quantile sits inside the window the counterexample needs. **So we already know what configuration to build.** Build it, score it with the real engine, and report the number. Do not search a neighbourhood. Do not enumerate candidates.
 
-This task removes the confound. You may **design the scenario freely**. Place the satellites, the users, the demand and the geometry wherever you like, within the sealed physics. The only rule is that the scoring must go through the **real engine code**, never a reimplementation.
+## The prediction, from the engine's own constants
+At 10 degrees elevation the engine's `channel.fading_product_quantile` gives `q10 = 0.42923539`. The lowest mode threshold is `gamma_min = 0.7174947935` linear, `-1.441812` dB. The rate-target mode thresholds by beam occupancy are:
 
-* If you can exhibit a configuration with `Psi_A > 0` under the service guard, you have proved the mechanism exists and you have identified exactly what creates it. Every later search becomes targeted instead of blind.
-* If you cannot produce `Psi_A > 0` even in a scenario built specifically to maximise it, that is a **structural impossibility result**, and it is far stronger than any number of search nulls. It would settle C3 today.
+| occupancy | target mode | Gamma(n), dB | q*Gamma(n) | vs gamma_min | predicted |
+|---:|---|---:|---:|---|---|
+| 1 | QPSK 1/4 | -1.441812 | 0.30797 | below | **NO_MODE** |
+| 2 | QPSK 2/5 | +0.608188 | 0.49382 | below | **NO_MODE** |
+| 3 | QPSK 3/5 | +3.138188 | 0.88407 | above | **mode selected** |
 
-## Definitions, from the sealed declarations
-`F = B − eta_ref·E − Phi`. For a coalition `A` moving from anchor `a0` to `a_A`:
-`d_i = F(a_i, a0_-i) − F(a0)` and `Psi_A = F(a_A) − F(a0) − sum_i d_i`.
-`Psi_A` is exactly the part of the joint change that is **not** the sum of the individual changes. `C1 + C3 = Delta F` identically. Positive `Psi_A` means the moves are super-additive.
+So a beam needs **two arrivals** to become usable and one arrival achieves nothing. That is the super-additive structure.
 
-## Workspace
-Create `/home/sat/mcrl-v025-witness-ws` and populate it with `git -C /home/sat/mcrl-v025-codex-ws-engine archive 75c5c78c | tar -x -C /home/sat/mcrl-v025-witness-ws`. That is the corrected stage-4h physics. Python `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`. Never write into `/home/sat/mcrl-leo-handover` or its venv, `/home/sat/mcrl-hub`, `/home/sat/mcrl-v025-codex-ws-engine`, `/home/sat/mcrl-v025-probe-ws-acm2`, `/home/sat/mcrl-v025-headroom-ws`, or `src/mcrl/env/`. At most 2 concurrent processes, `nice -n 10`. This is a small-scenario task; it should need very little compute.
+## What to build
+Workspace `/home/sat/mcrl-v025-witness-ws`, already a clean checkout of engine commit `75c5c78c` with the corrected causal ACM. Python `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`. Never write into `/home/sat/mcrl-leo-handover` or its venv, `/home/sat/mcrl-hub`, `/home/sat/mcrl-v025-codex-ws-engine`, `/home/sat/mcrl-v025-probe-ws-acm2`, or `src/mcrl/env/`. Two processes maximum.
 
-## Test each mechanism separately and name which one works
-1. **Decode-threshold cliff via interference.** Two users on different beams. Neither alone can clear `threshold(m_tx)`. Design it so that when user A moves away, user B crosses the threshold and gets credited bits, while A alone loses and B alone gains nothing. Does `Psi > 0`?
-2. **Airtime cliff via occupancy.** This is the mechanism the rate-target physics was introduced to create. Under equal-airtime TDM, a user on a beam with `n` occupants must transmit at `r*·n` during its slot, so occupancy directly sets the required instantaneous rate, the target MODCOD and hence the power. Design a case where removing one user from a congested beam drops the remaining users' target mode enough to save more energy than the mover loses, in a way that is **not** the sum of the individual moves. Does `Psi > 0`?
-3. **Exchange / swap.** Users A and B swap beams. Each move alone collides and is non-improving. Together they are improving. Does `Psi > 0`?
-4. **Cap release.** A user pinned at the 1.65 W cap with `m_tx = NO_MODE` burns full power for zero credited bits. Design a joint move that converts such a user into a served one, or removes it from the denominator, in a super-additive way.
+Three users, three beams on one satellite, homogeneous channels at 10 degrees elevation, no interference between the three beams if the geometry permits it, otherwise state what interference exists.
 
-For each mechanism report either:
-* a **witness**: the exact configuration, the four evaluations `F(a0)`, `F(a_A)`, `F(a_i, a0_-i)` for each `i`, the resulting `d_i`, `Psi_A`, the served counts confirming the service guard holds, and a plain-language sentence naming the physical effect that produced it; or
-* an **impossibility argument**: what property of the engine's scoring makes `Psi_A <= 0` for that mechanism, backed by an executed test rather than an assertion. Say explicitly whether the blocker is in the physics, in the score decomposition, or in the service guard.
+* **Anchor**: one user on each of beams X, Y, Z. Occupancy (1,1,1). All three should be `NO_MODE`, delivering zero bits while consuming power.
+* **Single move A**: the Y user moves to X. Occupancy (2,1,0).
+* **Single move B**: the Z user moves to X. Occupancy (2,0,1).
+* **Joint move**: both move to X. Occupancy (3,0,0). Beam X should activate.
 
-## The question I most need answered
-If **no** mechanism yields a witness, state clearly whether `Psi_A <= 0` appears to hold **identically** in this engine, and if so, identify the structural reason. A score that is additively separable across users, or an evaluator that resolves each beam independently, would make `Psi` identically zero by construction, and that would be a defect in the instrument rather than a fact about satellites. Distinguish those two cases: a real physical additivity, versus an implementation that cannot represent coupling.
+## What to report
+1. **First, confirm the prediction.** For each of the four states, the per-beam occupancy, the target mode, the transmitted mode, whether it is `NO_MODE`, and the credited bits. If the engine does **not** reproduce the NO_MODE-at-1-and-2, mode-at-3 pattern, stop and report that. A prediction that fails is the most valuable outcome available, so report it clearly rather than adjusting the scenario until it works.
+2. **The four score evaluations** `F(anchor)`, `F(A)`, `F(B)`, `F(joint)`, using the engine's own `_objective` and the sealed calibration values from `/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json`. State which calibration you used.
+3. **`d_A`, `d_B`, and `Psi = F(joint) - F(anchor) - d_A - d_B`.** This is the headline number.
+4. **Run it twice**: once with the engine's real signalling penalty, and once with that penalty set to zero, so the physics is separated from the handover price. Report both `Psi` values. Do not change any other quantity.
+5. **The decomposition** `Psi_B - eta*Psi_E - Psi_Phi`, so it is clear whether a positive result comes from credited bits, from energy, or from the penalty.
+6. **Energy detail**: the power-amplifier, per-chain circuit and per-satellite baseband energy in each of the four states. Beams Y and Z close in the joint move, so their circuit power should disappear; say whether it does.
+7. Whether the service guard, served count not below the anchor's, holds in each state.
 
-## Constraints
-Do not tune `eta_ref`, `lambda`, `kappa`, any threshold, sign, seed or the service guard. Use the sealed calibration values from `/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/calibration-manifest.json`, or recompute them honestly for a synthetic world and say which you did. Do not modify `src/mcrl/physics_v025/`. You may write new scenario-construction and analysis scripts freely.
+## Rules
+Do not tune `eta_ref`, `lambda`, `kappa`, any threshold, sign, seed, horizon or the service guard. Do not modify `src/mcrl/physics_v025/`. You may write new scenario-construction scripts freely. If the engine's API makes the minimal scenario hard to express, say so and build the smallest thing that goes through the real evaluator rather than reimplementing the physics.
 
-Write `PSI-WITNESS-REPORT-2026-09-09.md` in your workspace root and print it as your final message. Lead with a one-line verdict per mechanism: WITNESS FOUND or IMPOSSIBLE or INCONCLUSIVE. Budget 2 wall hours.
-
----
-
-# ADDENDUM: a specific mechanism found by local analysis. Aim mechanism 2 here first.
-
-This was derived after the task above was written, by recomputing the paper's mechanism figure locally. It tells you where the interaction most likely lives, so spend your budget here before the generic cases.
-
-## The rate back-off corollary
-Sealed v1.9 item 1 forbids re-solving the fading margin into transmit power. Power stays at its nominal value, and reliability is bought by **demoting the transmitted mode** instead. The rate-target controller solves the power so the nominal signal-to-noise-and-interference ratio lands **exactly** on the target mode's threshold. Therefore applying any wanted-link reserve `q < 1` strictly lowers the transmitted mode below the target mode, at every operating point.
-
-The corollary: **a user whose target mode is already the lowest mode has nothing to back off to, so it gets no transmitted mode at all, for any reserve.** Verified locally on the figure's own mode table: at occupancy 1 the target mode is the lowest mode, and a reserve of 1.0 dB credits exactly zero bits.
-
-This predicts the corrected engine's observed behaviour, which nobody had explained: `m_tx = NO_MODE` for about 62 % of transmissions, and `rate_target_feasible = false` for 40.8 % of user-steps, at a mean beam occupancy of only 2.44.
-
-## Why this inverts the usual load intuition, and why it is a coordination lever
-Occupancy sets the target mode, because under equal-airtime TDM a user on a beam with `n` occupants must carry `r*·n` during its slot. So:
-
-**raising a beam's occupancy raises its target mode, which creates the back-off room its users need to transmit at all.**
-
-That is the opposite of load balancing. It means:
-* moving a user **onto** a lightly loaded beam can lift that beam's target mode enough that previously undecodable users become decodable;
-* the benefit lands on users **other than** the one that moved;
-* it may take two movers before any user crosses a threshold, which is exactly the shape of a super-additive interaction.
-
-## What to build for mechanism 2
-Construct a beam holding one or two users pinned at the lowest target mode, so every one of them is `NO_MODE` and burning power for zero credited bits. Then move one user from elsewhere onto that beam. Check whether the raised target mode gives the incumbents enough back-off room to become served, and whether the gain exceeds what the mover loses. Test both a single move and a pair of moves, and report `Psi` for each.
-
-If a witness exists anywhere in this physics, this is the most likely place. Report it with the same evidence the main task asks for: the four evaluations, every `d_i`, `Psi_A`, and the served counts confirming the service guard.
-
-Also report, as a separate line, whether a `NO_MODE` user is counted in the service guard's `served` total. If a coalition's gain comes only from reclassifying users rather than from delivering bits, say so plainly.
+Write `PSI-WITNESS-REPORT-2026-09-09.md` in the workspace root and print it as your final message. Lead with one line: `PSI POSITIVE`, `PSI NON-POSITIVE`, or `PREDICTION NOT REPRODUCED`. Then the numbers. Then an HONEST LIMITS paragraph saying what a three-user synthetic scenario does and does not establish about the hundred-user system.
