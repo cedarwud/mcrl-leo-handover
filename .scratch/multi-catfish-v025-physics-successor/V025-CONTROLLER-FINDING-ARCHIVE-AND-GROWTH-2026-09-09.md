@@ -1,4 +1,5 @@
-# Controller finding — the ephemeris archive is 124 times larger than our usage, and the constellation grew 34 % across it
+# Controller finding — the ephemeris archive is far larger than one experiment needs, and the constellation grew 34 % across it
+> **Erratum, 2026-09-10.** The original title and one sentence below claimed the archive is 124 times our usage. That comparison is misleading and is corrected in the erratum block at the end of this record. The original wording is preserved below so the audit trail is intact.
 Recorded 2026-09-09. Verified by reading the archive and counting the files. `DIAGNOSTIC_NOT_CLAIM`.
 
 ## What is on disk
@@ -28,9 +29,20 @@ The existing sealed world manifests already span 2025-07 to 2026-05, so this con
 ## Which archive to use, and why it is not a freshness question
 **Continue using the frozen archive.** Its purpose is reproducibility: a live archive grows daily, so the same experiment re-run tomorrow would build different worlds. The sealed declarations also carry a TLE date convention and forbid a TEST split, and selecting dates from a moving archive risks drawing a date that was meant to be held out.
 
-Data volume was never the constraint. 373 days is 124 times our current usage.
+Data volume was never the constraint. ~~373 days is 124 times our current usage.~~ **[Corrected — see the erratum at the end of this record.]**
 
 The 19 extra live days have one legitimate use, later: an external freshness check against the current constellation, explicitly outside the frozen set and carrying no statistical claim. Doing it now would add a variable to an experiment that has not started, and would require freezing and hashing a new archive version.
 
 ## Standing
 No threshold, sign, seed, horizon, price, service guard, acceptance rule or claim condition changes. No run is authorised. Whether to generate more worlds, and how many, is the owner's decision once the per-world cost measurement lands.
+
+---
+
+## Erratum — 2026-09-10: the 124× comparison is misleading
+The figure divided the whole 373-day archive by the days one already-run experiment happened to consume. That is the wrong denominator for the only question the number was used to answer, which is **whether the archive constrains the planned claim panel**.
+
+Against that question the archive is nearly exhausted, not abundant. Of the 373 files, **166 are TRAIN, 160 are TEST and 47 are embargo**. The TEST split is never to be opened, and the embargo days are not selectable, so the usable pool is the **166 TRAIN days**. The declared claim panel is about **160 dates**. Usable headroom is therefore roughly **1.04×**, not 124×.
+
+The practical consequences the original figure obscured: there is almost no slack for discarding a date that turns out defective, for a second independent panel, or for holding dates back for a confirmatory evaluation after a development phase. A later external freshness check against the live constellation remains available and remains outside the frozen set.
+
+Nothing else in this record changes. The constellation-growth confound it documents is unaffected, and the recommendation to continue using the frozen archive stands — for reproducibility, which was always the real reason, rather than for abundance.
