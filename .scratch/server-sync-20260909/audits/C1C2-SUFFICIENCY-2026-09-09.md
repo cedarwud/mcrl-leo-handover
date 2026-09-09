@@ -250,5 +250,3 @@ Changed or added for this diagnostic:
 - `tests/stagec_v025/test_c1c2_exact_label_acceptance.py`
 
 No threshold, sign, seed, horizon, price, service guard, or acceptance rule was changed. The fallback flag is restored to its original `True` value solely to complete the requested red/green/red witness.
-
-Goal completed in 37m 14s. Commit: `7cc9371`.
