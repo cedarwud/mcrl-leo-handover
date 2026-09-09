@@ -9157,3 +9157,479 @@ The unchanged service rule recomputes its guard from BASELINE under each formula
 
 At review time, 10 margin anchors yield −0.244636% pooled oracle-over-unilateral EE, with both serving 1,000/1,000 user-anchor endpoints. All eight completed original anchors match archived configurations and committed outcomes exactly; three contain only approximately 10⁻⁵-bit selection-reduction differences. These partial figures must be replaced by the complete panel before reporting a verdict.
 
+exec
+/bin/bash -lc 'tail -n 3 .scratch/ladder-floor-20260910/original-run.log; tail -n 3 .scratch/ladder-floor-20260910/margin-run.log' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 85, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 14, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 89, "completed_passes": 3, "coordinate_step": 0, "moves_in_pass": 4, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 90, "completed_passes": 4, "coordinate_step": 0, "moves_in_pass": 1, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 127, "completed_passes": 2, "coordinate_step": 4, "moves_in_pass": 33, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 128, "completed_passes": 3, "coordinate_step": 4, "moves_in_pass": 1, "unique_selection_evaluations": 8101}
+{"anchor": "V025_PROBE_R2/world/3:step/4", "joint_candidates": 603, "oracle_ee_gain_pct": 1.0276147003047686, "qualifying": true, "unilateral_iterations": 128, "wall_seconds": 13.065888934012037}
+
+codex
+All ten completed original anchors have reproduced their committed profiles and outcomes exactly. The margin run has reached 15 anchors. Both searches are running to full unilateral convergence, with the original deadline disabled, so timeout fallbacks cannot determine this result.
+exec
+/bin/bash -lc 'tail -n 2 .scratch/ladder-floor-20260910/original-run.log; tail -n 2 .scratch/ladder-floor-20260910/margin-run.log' in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 95, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 8, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 96, "completed_passes": 4, "coordinate_step": 2, "moves_in_pass": 1, "unique_selection_evaluations": 10801}
+{"completed_improving_moves": 125, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 35, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 134, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 9, "unique_selection_evaluations": 8101}
+
+codex
+One distinction matters for the final number: both selectors optimize the sealed `B − ηE` objective at decision boundary zero, then report EE over all 48 boundaries. A joint move can improve that objective while lowering realised EE. I’m preserving those rules and will report the pooled outcome directly.
+exec
+/bin/bash -lc "tail -n 2 .scratch/ladder-floor-20260910/original-run.log; tail -n 4 .scratch/ladder-floor-20260910/margin-run.log; rg -c '\"anchor\":' .scratch/ladder-floor-20260910/{original,margin}-run.log; sed -n '1,210p' .scratch/ladder-floor-20260910/summarize_report_data.py" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 78, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 14, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 88, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 10, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 88, "completed_passes": 1, "coordinate_step": 3, "moves_in_pass": 88, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 125, "completed_passes": 2, "coordinate_step": 3, "moves_in_pass": 37, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 145, "completed_passes": 3, "coordinate_step": 3, "moves_in_pass": 20, "unique_selection_evaluations": 8101}
+{"completed_improving_moves": 152, "completed_passes": 4, "coordinate_step": 3, "moves_in_pass": 7, "unique_selection_evaluations": 10801}
+.scratch/ladder-floor-20260910/margin-run.log:18
+.scratch/ladder-floor-20260910/original-run.log:13
+"""Produce compact report inputs; full mode requires all 20 matched anchors."""
+from __future__ import annotations
+
+import argparse
+from collections import Counter, defaultdict
+import gzip
+import hashlib
+import json
+import math
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+ARMS = ("BASELINE", "UNILATERAL", "ORACLE_SET")
+FORMS = ("original", "margin")
+COUNT_KEYS = ("attempts", "no_mode", "no_mode_uncapped", "has_mode", "decoded", "served_target_miss", "decode_failure_with_mode", "cap_hits")
+DISTRIBUTIONS = ("q_margin_db", "elevation_deg", "nominal_tx_margin_db", "realised_tx_margin_db", "realised_tx_margin_served_db", "nominal_target_margin_db", "nominal_provisioned_target_margin_db")
+
+
+def counts(rows):
+    out = {}
+    for key in COUNT_KEYS:
+        out[key] = sum(int(row.get(key, 0)) for row in rows)
+        out[key + "_duration_s"] = math.fsum(float(row.get(key + "_duration_s", 0.0)) for row in rows)
+    for key in ("no_mode", "no_mode_uncapped", "decoded"):
+        out[key + "_share"] = out[key] / out["attempts"] if out["attempts"] else None
+        out[key + "_duration_share"] = out[key + "_duration_s"] / out["attempts_duration_s"] if out["attempts_duration_s"] else None
+    out["served_target_miss_share_of_decoded"] = out["served_target_miss"] / out["decoded"] if out["decoded"] else None
+    return out
+
+
+def compact_distribution(hist):
+    def five(quantiles):
+        return {"min": hist["min"], "P05": quantiles["0.05"], "P50": quantiles["0.5"], "P95": quantiles["0.95"], "max": hist["max"]}
+    return {
+        "count": hist["count"], "duration_s": hist["weight_s"],
+        "attempt_weighted": five(hist["quantiles"]),
+        "duration_weighted": five(hist["duration_weighted_quantiles"]),
+        "quantile_bin_width": hist["quantile_bin_width"],
+    }
+
+
+def merged_distribution(form, name, census, histogram_payload):
+    """Development fallback for first1 sample made before ALL was added."""
+    hists = [census["pooled"][form][arm]["distributions"][name] for arm in ARMS]
+    bins = defaultdict(lambda: [0, []])
+    for arm in ARMS:
+        for value, count, weight in histogram_payload[form][arm][name]:
+            bins[value][0] += count
+            bins[value][1].append(weight)
+    ordered = [[key, val[0], math.fsum(val[1])] for key, val in sorted(bins.items())]
+    def quantile(probability, column):
+        if not ordered:
+            return None
+        target = math.fsum(row[column] for row in ordered) * probability
+        cumulative = 0.0
+        for row in ordered:
+            cumulative += row[column]
+            if cumulative >= target:
+                return row[0]
+        return ordered[-1][0]
+    present = [h for h in hists if h["count"]]
+    return compact_distribution({
+        "count": sum(h["count"] for h in hists),
+        "weight_s": math.fsum(h["weight_s"] for h in hists),
+        "min": min(h["min"] for h in present) if present else None,
+        "max": max(h["max"] for h in present) if present else None,
+        "quantiles": {str(p): quantile(p, 1) for p in (0.05, 0.5, 0.95)},
+        "duration_weighted_quantiles": {str(p): quantile(p, 2) for p in (0.05, 0.5, 0.95)},
+        "quantile_bin_width": 0.01,
+    })
+
+
+def load_json(path):
+    return json.loads(path.read_text())
+
+
+def make_report(*, allow_prefix=False, census_path=None):
+    census_path = census_path or HERE / "scalar-census-summary.json"
+    if allow_prefix and not census_path.exists():
+        census_path = HERE / "scalar-census-summary-first1.json"
+    census = load_json(census_path)
+    if not census["parity_passed"]:
+        raise RuntimeError("scalar/batch parity failed")
+    ids = {row["anchor_id"] for row in census["anchors"]}
+    if len(ids) != census["anchor_count"]:
+        raise RuntimeError("census anchor count mismatch")
+    if not allow_prefix and len(ids) != 20:
+        raise RuntimeError("final report requires 20 census anchors")
+    result_paths = {}
+    results = {}
+    for form in FORMS:
+        path = HERE / f"{form}-result.json"
+        if allow_prefix and not path.exists():
+            path = HERE / f"{form}-result.checkpoint.json"
+        result_paths[form] = path
+        source = load_json(path)
+        available = {row["anchor_id"]: row for row in source["anchors"]}
+        if not ids <= set(available) or (not allow_prefix and set(available) != ids):
+            raise RuntimeError(f"{form} anchor coverage mismatch")
+        results[form] = [row for row in source["anchors"] if row["anchor_id"] in ids]
+    for old, new in zip(results["original"], results["margin"], strict=True):
+        if (old["anchor_id"], old["world_sha256"]) != (new["anchor_id"], new["world_sha256"]):
+            raise RuntimeError("formulations do not share identical anchors and tapes")
+    histogram_payload = None
+    if any("ALL" not in census["pooled"][form] for form in FORMS):
+        hist_path = census_path.parent / census["histograms_file"]
+        histogram_payload = json.loads(gzip.decompress(hist_path.read_bytes()))
+
+    out = {
+        "claim_ceiling": "DIAGNOSTIC_NOT_CLAIM", "anchor_count": len(ids),
+        "complete_20_anchor_panel": len(ids) == 20 and not allow_prefix,
+        "census_parity_passed": True,
+        "counts_unit": "one transmission in a native scalar TDM slot at one boundary",
+        "duration_weights": "native TDM fraction times trapezoid boundary weight; primary comparable NO_MODE share",
+        "served_count_definition": "dense committed endpoint: any decoded attempt contributes service; separate from rate-target attainment",
+        "sources": {form: {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for form, path in result_paths.items()},
+        "census_source": {"path": str(census_path), "sha256": hashlib.sha256(census_path.read_bytes()).hexdigest()},
+        "formulations": {},
+    }
+    for form in FORMS:
+        anchors = results[form]
+        arms = {}
+        for arm in ARMS:
+            bits = math.fsum(row["committed"][arm]["bits"] for row in anchors)
+            joules = math.fsum(row["committed"][arm]["joules"] for row in anchors)
+            values = census["pooled"][form][arm]
+            arms[arm] = {
+                "bits": bits, "joules": joules, "ee_bit_per_j": bits / joules,
+                "served_count_sum": sum(row["committed"][arm]["served_count"] for row in anchors),
+                "rate_target_attained_users_sum": values["rate_target_attained_users_sum"],
+                "counts": counts([values["counts"]]),
+                "by_occupancy": {n: counts([local]) for n, local in values["by_occupancy"].items()},
+                "distributions": {name: compact_distribution(values["distributions"][name]) for name in DISTRIBUTIONS},
+            }
+        all_occupancies = sorted({n for arm in ARMS for n in arms[arm]["by_occupancy"]}, key=int)
+        arms["ALL"] = {
+            "rate_target_attained_users_sum": sum(arms[arm]["rate_target_attained_users_sum"] for arm in ARMS),
+            "counts": counts([arms[arm]["counts"] for arm in ARMS]),
+            "by_occupancy": {n: counts([arms[arm]["by_occupancy"].get(n, {}) for arm in ARMS]) for n in all_occupancies},
+            "distributions": {
+                name: compact_distribution(census["pooled"][form]["ALL"]["distributions"][name])
+                if "ALL" in census["pooled"][form]
+                else merged_distribution(form, name, census, histogram_payload)
+                for name in DISTRIBUTIONS
+            },
+        }
+        gains = [row["committed"]["ORACLE_SET"]["ee_bit_per_j"] / row["committed"]["UNILATERAL"]["ee_bit_per_j"] - 1 for row in anchors]
+        primary_families = Counter()
+        all_alias_families = Counter()
+        for row in anchors:
+            aliases = row["selection"]["selected_candidate_aliases"]
+            primary_families[aliases[0]["family"] if aliases else "UNILATERAL_RETAINED"] += 1
+            all_alias_families.update(alias["family"] for alias in aliases)
+        out["formulations"][form] = {
+            "arms": arms,
+            "oracle_over_unilateral_pct": 100 * (arms["ORACLE_SET"]["ee_bit_per_j"] / arms["UNILATERAL"]["ee_bit_per_j"] - 1),
+            "unilateral_over_baseline_pct": 100 * (arms["UNILATERAL"]["ee_bit_per_j"] / arms["BASELINE"]["ee_bit_per_j"] - 1),
+            "positive_oracle_ee_anchors": sum(g > 0 for g in gains),
+            "negative_oracle_ee_anchors": sum(g < 0 for g in gains),
+            "zero_oracle_ee_anchors": sum(g == 0 for g in gains),
+            "qualifying_set_count": sum(row["selection"]["qualifying_coalition_existed"] for row in anchors),
+            "selected_primary_families": dict(primary_families),
+            "selected_all_alias_families": dict(all_alias_families),
+        }
+    return out
+
+
+def fmt(value, digits=6):
+    return "NA" if value is None else f"{value:.{digits}f}"
+
+
+def tables(data):
+    lines = [f"Panel: {data['anchor_count']} anchors; final={data['complete_20_anchor_panel']}", "", "| Formulation | Arm | Bits | J | EE bit/J | Served | Rate attained |", "|---|---|---:|---:|---:|---:|---:|"]
+    for form, result in data["formulations"].items():
+        for arm in ARMS:
+            row = result["arms"][arm]
+            lines.append(f"| {form} | {arm} | {fmt(row['bits'],3)} | {fmt(row['joules'])} | {fmt(row['ee_bit_per_j'])} | {row['served_count_sum']} | {row['rate_target_attained_users_sum']} |")
+    lines.append("")
+    for form, result in data["formulations"].items():
+        lines.append(f"{form}: O/U={result['oracle_over_unilateral_pct']:+.6f}%; U/B={result['unilateral_over_baseline_pct']:+.6f}%; positive/negative/zero EE anchors={result['positive_oracle_ee_anchors']}/{result['negative_oracle_ee_anchors']}/{result['zero_oracle_ee_anchors']}; qualifying={result['qualifying_set_count']}; families={result['selected_primary_families']}")
+    lines += ["", "| Form | Arm | NO_MODE / attempts | Attempt % | Duration % | Uncapped NO_MODE | Decoded | Served rate miss |", "|---|---|---:|---:|---:|---:|---:|---:|"]
+    for form, result in data["formulations"].items():
+        for arm, values in result["arms"].items():
+            row = values["counts"]
+            lines.append(f"| {form} | {arm} | {row['no_mode']} / {row['attempts']} | {fmt(100*row['no_mode_share'],3)} | {fmt(100*row['no_mode_duration_share'],3)} | {row['no_mode_uncapped']} | {row['decoded']} | {row['served_target_miss']} |")
+    lines += ["", "| Form | Occupancy, ALL arms | NO_MODE / attempts | Attempt % | Duration % | Uncapped NO_MODE | Decoded |", "|---|---:|---:|---:|---:|---:|---:|"]
+    for form, result in data["formulations"].items():
+        for n, row in result["arms"]["ALL"]["by_occupancy"].items():
+            lines.append(f"| {form} | {n} | {row['no_mode']} / {row['attempts']} | {fmt(100*row['no_mode_share'],3)} | {fmt(100*row['no_mode_duration_share'],3)} | {row['no_mode_uncapped']} | {row['decoded']} |")
+    lines += ["", "Distributions below use duration weighting for P05/P50/P95; min/max are unrounded extrema. All distributions and both weightings are in report-data.json.", "", "| Form | Arm | Distribution | min | P05 | P50 | P95 | max |", "|---|---|---|---:|---:|---:|---:|---:|"]
+    for form, result in data["formulations"].items():
+        for arm, values in result["arms"].items():
+            for name in DISTRIBUTIONS[:5]:
+                row = values["distributions"][name]["duration_weighted"]
+                lines.append(f"| {form} | {arm} | {name} | " + " | ".join(fmt(row[key],3) for key in ("min","P05","P50","P95","max")) + " |")
+    return "\n".join(lines) + "\n"
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--allow-prefix", action="store_true")
+    parser.add_argument("--census", type=Path)
+    parser.add_argument("--output", type=Path, default=HERE / "report-data.json")
+    args = parser.parse_args()
+    result = make_report(allow_prefix=args.allow_prefix, census_path=args.census)
+    args.output.write_text(json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n")
+    table_text = tables(result)
+    args.output.with_suffix(".tables.md").write_text(table_text)
+    print(table_text)
+
+ succeeded in 1013267ms:
+exec
+/bin/bash -lc "tail -n 2 .scratch/ladder-floor-20260910/original-run.log; tail -n 5 .scratch/ladder-floor-20260910/margin-run.log; rg -c '\"anchor\":' .scratch/ladder-floor-20260910/{original,margin}-run.log" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 103, "completed_passes": 2, "coordinate_step": 4, "moves_in_pass": 21, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 114, "completed_passes": 3, "coordinate_step": 4, "moves_in_pass": 11, "unique_selection_evaluations": 8101}
+  },
+  "qualifying_coalition_anchor_count": 20,
+  "unilateral_over_baseline_relative": 4.421432666824897,
+  "world_count": 4
+}
+.scratch/ladder-floor-20260910/margin-run.log:20
+.scratch/ladder-floor-20260910/original-run.log:14
+
+exec
+/bin/bash -lc "nice -n 10 env PYTHONDONTWRITEBYTECODE=1 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json
+from pathlib import Path
+x=json.loads(Path('.scratch/ladder-floor-20260910/margin-result.json').read_text())
+print(json.dumps(x['summary'],indent=2))
+print('wall',x['wall_seconds'])
+print('worlds',[(v['world_index'],v['tle_date']) for v in x['worlds']])
+print('gains', [round(100*v['committed']['ORACLE_SET']['relative_ee_gain_over_UNILATERAL'],6) for v in x['anchors']])
+PY" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{
+  "anchor_count": 20,
+  "exact_evaluation_count": {
+    "committed_boundary_evaluations": 2880,
+    "committed_unique_configurations": 60,
+    "joint_unique_candidates": 13783,
+    "selection_boundary_evaluations": 272534,
+    "unilateral_candidate_comparisons": 283500,
+    "unique_selection_configurations": 272534
+  },
+  "oracle_set_over_unilateral_relative": 0.005447658598398464,
+  "pooled": {
+    "BASELINE": {
+      "bits": 1390585434518.7302,
+      "ee_bit_per_j": 7933111.456602224,
+      "joules": 175288.78071685662,
+      "served_count_sum": 1165
+    },
+    "ORACLE_SET": {
+      "bits": 3201928829736.721,
+      "ee_bit_per_j": 43243127.02076574,
+      "joules": 74044.80319379138,
+      "served_count_sum": 2000
+    },
+    "UNILATERAL": {
+      "bits": 3202141378897.3564,
+      "ee_bit_per_j": 43008829.600386135,
+      "joules": 74453.11599152672,
+      "served_count_sum": 2000
+    }
+  },
+  "qualifying_coalition_anchor_count": 20,
+  "unilateral_over_baseline_relative": 4.421432666824897,
+  "world_count": 4
+}
+wall 1011.5498265020142
+worlds [(1, '2026-05-30'), (2, '2025-07-28'), (3, '2026-05-01'), (4, '2026-05-28')]
+gains [-0.522795, 0.586053, -0.181128, 4.921841, 0.200377, -4.370831, -0.713795, 0.453309, -3.390615, -0.286411, 0.290532, 0.049385, 0.39277, 1.815335, 1.027615, 0.124754, 0.622007, 6.942771, -0.05777, 1.922206]
+
+codex
+The complete margin run gives **+0.544766% oracle-over-unilateral pooled EE**, versus the original **+6.359000%**. Both margin-provisioned optimized selectors serve **2,000/2,000 user-anchor endpoints**.
+
+The original gain therefore falls sharply, although a smaller positive joint-search gain remains. The occupancy-activation mechanism is removed by margin provisioning. I’m finishing the original replay and the full occupancy and margin census before writing the report.
+exec
+/bin/bash -lc "tail -n 2 .scratch/ladder-floor-20260910/original-run.log; rg -c '\"anchor\":' .scratch/ladder-floor-20260910/original-run.log; sed -n '1,150p' .scratch/ladder-floor-20260910/compare_original.py" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 77, "completed_passes": 1, "coordinate_step": 0, "moves_in_pass": 77, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 100, "completed_passes": 2, "coordinate_step": 0, "moves_in_pass": 23, "unique_selection_evaluations": 5401}
+15
+"""Check every completed original anchor against the +6.359% source receipt."""
+import json
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
+completed = HERE / "original-result.json"
+current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+reference = json.loads(REFERENCE.read_text())
+current = json.loads(current_path.read_text())
+reports = []
+committed_mismatches = []
+discrete_mismatches = []
+max_internal_difference = 0.0
+internal_float_keys = {
+    "selected_Psi_A_bits", "selected_joint_F_gain_bits", "selected_singleton_sum_bits"
+}
+for old, new in zip(reference["anchors"], current["anchors"], strict=False):
+    assert old["anchor_id"] == new["anchor_id"]
+    differences = []
+    for name in old["committed"]:
+        for key, value in old["committed"][name].items():
+            if value != new["committed"][name][key]:
+                item = {"path": f"committed.{name}.{key}", "reference": value, "current": new["committed"][name][key]}
+                differences.append(item)
+                committed_mismatches.append({"anchor_id": old["anchor_id"], **item})
+    for key, value in old["selection"].items():
+        if value != new["selection"][key]:
+            item = {"path": f"selection.{key}", "reference": value, "current": new["selection"][key]}
+            differences.append(item)
+            if key in internal_float_keys:
+                max_internal_difference = max(max_internal_difference, abs(value - new["selection"][key]))
+            elif key != "selected_Psi_A_exact":
+                discrete_mismatches.append({"anchor_id": old["anchor_id"], **item})
+    reports.append({"anchor_id": old["anchor_id"], "differences": differences})
+result = {
+    "status": "PASS" if all(not row["differences"] for row in reports) else "DIFFERENCES",
+    "current_path": str(current_path),
+    "reference_path": str(REFERENCE),
+    "completed_anchors": len(reports),
+    "committed_endpoints_and_configuration_ids_exact": not committed_mismatches,
+    "discrete_search_path_counts_exact": not discrete_mismatches,
+    "max_abs_internal_F_or_Psi_difference_bits": max_internal_difference,
+    "committed_mismatches": committed_mismatches,
+    "discrete_search_path_mismatches": discrete_mismatches,
+    "anchors": reports,
+}
+(HERE / "original-reproduction-audit.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+print(json.dumps({key: value for key, value in result.items() if key != "anchors"}))
+for row in reports:
+    if row["differences"]:
+        print(json.dumps(row))
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/compare_original.py
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+
+codex
+The final margin result has a small energy advantage: ORACLE_SET uses 0.548% less energy than UNILATERAL, with almost unchanged bits. That preserves a small set-selection benefit, but it does not preserve the table-floor activation mechanism.
+
+I’ll state both plainly in the report: the proposed low-occupancy physics explanation fails, while generic coordination retains a +0.545% gain on this panel.
+exec
+/bin/bash -lc "tail -n 2 .scratch/ladder-floor-20260910/original-run.log; rg -c '\"anchor\":' .scratch/ladder-floor-20260910/original-run.log" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 109, "completed_passes": 5, "coordinate_step": 1, "moves_in_pass": 5, "unique_selection_evaluations": 13501}
+{"completed_improving_moves": 111, "completed_passes": 6, "coordinate_step": 1, "moves_in_pass": 2, "unique_selection_evaluations": 16201}
+16
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+
+exec
+/bin/bash -lc "tail -n 3 .scratch/ladder-floor-20260910/original-run.log; rg -c '\"anchor\":' .scratch/ladder-floor-20260910/original-run.log" in /home/sat/mcrl-v025-ladder-ws
+ succeeded in 0ms:
+{"completed_improving_moves": 67, "completed_passes": 1, "coordinate_step": 2, "moves_in_pass": 67, "unique_selection_evaluations": 2701}
+{"completed_improving_moves": 85, "completed_passes": 2, "coordinate_step": 2, "moves_in_pass": 18, "unique_selection_evaluations": 5401}
+{"completed_improving_moves": 88, "completed_passes": 3, "coordinate_step": 2, "moves_in_pass": 3, "unique_selection_evaluations": 8101}
+17
+
+diff --git a/.scratch/ladder-floor-20260910/compare_original.py b/.scratch/ladder-floor-20260910/compare_original.py
+index 3cc5c7772462091ce04aad355a34bed173754abf..a79894916bd6f4f6cb76d2829864104833621c95
+--- a/.scratch/ladder-floor-20260910/compare_original.py
++++ b/.scratch/ladder-floor-20260910/compare_original.py
+@@ -3,7 +3,7 @@
+ from pathlib import Path
+ 
+ HERE = Path(__file__).resolve().parent
+-REFERENCE = Path("/home/sat/mcrl-v025-oracle-ws/.scratch/oracle-ceiling/oracle-ceiling-result.json")
++REFERENCE = HERE / "reference-oracle-result.json"
+ completed = HERE / "original-result.json"
+ current_path = completed if completed.exists() else HERE / "original-result.checkpoint.json"
+ reference = json.loads(REFERENCE.read_text())
+

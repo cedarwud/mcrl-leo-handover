@@ -3537,3 +3537,2858 @@ for v in cs:
    print('c1struct',x.c1_structure)
    print('c2struct',x.c2_structure)
 PY" in /home/sat/mcrl-v025-c1c2suff-ws
+codex
+The exact two-anchor replay is still running under the sealed interpreter at low priority. It is evaluating only the already-authorized diagnostic path; no learner training is occurring. Once it returns, I’ll use its per-offset fields to count row-level mismatches and identify which current-state aggregate distinguishes the real collision without using future coupled outcomes.
+ succeeded in 95652ms:
+anchor 0 rows 892
+anchor 1 rows 892
+collisions 62
+W 0 6 (65028, 44) 60102789335062397912351470235270/11110569965387252983357173269901
+c1struct (119.24963955953491, 97.88433903279375, -0.5, 113.25473421670489, 100.18757889587187, 0.0, 1.0, 30.080000000000002)
+c2struct (125.63281341025531, 96.2715269077409, 0.69, 0.69, 1.0, 0.0, 1.0, 119.31271970410177, 98.36094770195058, 0.67, 0.67, 1.0, 0.0, 1.0, 123.94878268919214, 97.20242651332048, 0.7, 0.7, 1.0, 0.0, 1.0, 118.27224061171991, 99.64271285463604, 0.69, 0.69, 1.0, 0.0, 1.0, 84.63047120454985, 112.1313202961907, 0.55, 0.55, 1.0, 0.0, 1.0, 82.18212538226668, 112.50332851110882, 0.54, 0.54, 1.0, 0.0, 1.0)
+W 1 6 (65028, 44) 2149528301326970807719944431070731/111105699653872529833571732699010
+c1struct (119.24963955953491, 97.88433903279375, -0.5, 113.25473421670489, 100.18757889587187, 0.0, 1.0, 30.080000000000002)
+c2struct (125.63281341025531, 96.2715269077409, 0.69, 0.69, 1.0, 1.0, 1.0, 119.31271970410177, 98.36094770195058, 0.67, 0.67, 1.0, 1.0, 1.0, 123.94878268919214, 97.20242651332048, 0.7, 0.7, 1.0, 1.0, 1.0, 118.27224061171991, 99.64271285463604, 0.69, 0.69, 1.0, 1.0, 1.0, 84.63047120454985, 112.1313202961907, 0.55, 0.55, 1.0, 1.0, 1.0, 82.18212538226668, 112.50332851110882, 0.54, 0.54, 1.0, 1.0, 1.0)
+
+exec
+/bin/bash -lc 'nice -n 15 env PYTHONPATH=src /home/s Walt?' in /home/sat/mcrl-v025-c1c2suff-ws
+ exited 127 in 0ms:
+env: ‘/home/s’: No such file or directory
+
+2026-09-09T17:11:04.397269Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"Failed to create unified exec process: No such file or directory (os error 2)\")" }
+exec
+/bin/bash -lc 'nice -n комиссия' in /home/sat/mcrl-v025-c1c2suff-ws
+ exited 125 in 0ms:
+nice: invalid adjustment ‘комиссия’
+
+exec
+/bin/bash -lc "nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PYlkj'" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+/bin/bash: line 1: warning: here-document at line 1 delimited by end-of-file (wanted `PYlkj')
+
+exec
+/bin/bash -lc "nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+from collections import Counter
+from scripts.diagnose_v025_c1c2_sufficiency import build_world_tape, DEVELOPMENT_WORLD_DOMAINS, LegacyWorldProvider, REFERENCE_CARRIERS, pilot
+
+tape = build_world_tape(domain=DEVELOPMENT_WORLD_DOMAINS[0], provider=LegacyWorldProvider(role='pilot-source'), steps=5, start_time_s=0.0)
+for a, carrier in enumerate(REFERENCE_CARRIERS[:2]):
+    base = pilot.ENGINE._base_configuration(tape, 0, carrier)
+    m = base.mapping
+    beams = Counter(x for x in m.values() if x is not None)
+    sats = Counter(x[0] for x in m.values() if x is not None)
+    print('anchor', a, 'carrier', carrier, 'served', sum(x is not None for x in m.values()), 'beams', len(beams), 'sats', len(sats), 'maxbeam', max(beams.values()), 'maxsat', max(sats.values()))
+    print('user6', m[6], 'candidate background beam', beams[(65028,44)] - (m[6] == (65028,44)), 'candidate sat load', sats[65028] - (m[6] is not None and m[6][0] == 65028))
+    print('mapping', sorted(m.items()))
+    for off in (1,2,3):
+        trans = pilot.ENGINE._base_configuration(tape, off, carrier).mapping
+        cm = dict(m); cm[6]=(65028,44)
+        changed=tuple(u for u in cm if cm[u] "'!= trans.get(u))
+        print('"'off',off,'changed',changed,'focal_changed',6 in changed)
+PY" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 46908ms:
+anchor 0 carrier nearest-eligible served 100 beams 41 sats 3 maxbeam 5 maxsat 92
+user6 (65028, 32) candidate background beam 0 candidate sat load 91
+mapping [(0, (65028, 43)), (1, (65028, 52)), (2, (65028, 51)), (3, (65028, 25)), (4, (65028, 26)), (5, (65028, 52)), (6, (65028, 32)), (7, (65028, 31)), (8, (65028, 48)), (9, (65028, 55)), (10, (65028, 51)), (11, (65028, 14)), (12, (65028, 39)), (13, (65028, 9)), (14, (65028, 27)), (15, (65028, 51)), (16, (65028, 49)), (17, (65028, 48)), (18, (65028, 36)), (19, (65028, 42)), (20, (65028, 15)), (21, (65028, 25)), (22, (65028, 30)), (23, (65028, 4)), (24, (65028, 19)), (25, (65028, 27)), (26, (63319, 47)), (27, (65028, 43)), (28, (65028, 15)), (29, (65028, 55)), (30, (65028, 53)), (31, (65028, 55)), (32, (65028, 4)), (33, (63319, 47)), (34, (65028, 43)), (35, (65028, 50)), (36, (65028, 39)), (37, (65028, 39)), (38, (65028, 18)), (39, (65028, 26)), (40, (65028, 16)), (41, (65028, 52)), (42, (65028, 7)), (43, (65028, 7)), (44, (65028, 18)), (45, (65028, 17)), (46, (65028, 50)), (47, (65028, 25)), (48, (65028, 17)), (49, (65028, 54)), (50, (65028, 24)), (51, (65028, 49)), (52, (65028, 26)), (53, (62045, 35)), (54, (65028, 20)), (55, (65028, 37)), (56, (65028, 6)), (57, (62045, 12)), (58, (65028, 43)), (59, (65028, 41)), (60, (65028, 14)), (61, (63319, 48)), (62, (65028, 27)), (63, (65028, 15)), (64, (65028, 37)), (65, (65028, 18)), (66, (65028, 26)), (67, (65028, 6)), (68, (65028, 30)), (69, (62045, 13)), (70, (65028, 51)), (71, (65028, 49)), (72, (65028, 18)), (73, (65028, 18)), (74, (65028, 7)), (75, (62045, 13)), (76, (63319, 47)), (77, (65028, 30)), (78, (65028, 9)), (79, (65028, 49)), (80, (65028, 3)), (81, (65028, 15)), (82, (65028, 25)), (83, (65028, 31)), (84, (65028, 30)), (85, (65028, 36)), (86, (65028, 32)), (87, (65028, 4)), (88, (65028, 50)), (89, (65028, 25)), (90, (65028, 31)), (91, (65028, 24)), (92, (65028, 49)), (93, (65028, 40)), (94, (65028, 28)), (95, (65028, 14)), (96, (65028, 40)), (97, (65028, 53)), (98, (65028, 50)), (99, (65028, 2))]
+off 1 changed (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 55, 56, 57, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 79, 80, 81, 82, 83, 84, 85, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99) focal_changed True
+off 2 changed (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 55, 56, 57, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 79, 80, 81, 82, 83, 84, 85, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99) focal_changed True
+off 3 changed (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 55, 56, 57, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 79, 80, 81, 82, 83, 84, 85, 87, 88, 89, 91, 92, 93, 94, 95, 96, 97, 98, 99) focal_changed True
+anchor 1 carrier stay-if-possible served 100 beams 41 sats 3 maxbeam 5 maxsat 92
+user6 (65028, 32) candidate background beam 0 candidate sat load 91
+mapping [(0, (65028, 43)), (1, (65028, 52)), (2, (65028, 51)), (3, (65028, 25)), (4, (65028, 26)), (5, (65028, 52)), (6, (65028, 32)), (7, (65028, 31)), (8, (65028, 48)), (9, (65028, 55)), (10, (65028, 51)), (11, (65028, 14)), (12, (65028, 39)), (13, (65028, 9)), (14, (65028, 27)), (15, (65028, 51)), (16, (65028, 49)), (17, (65028, 48)), (18, (65028, 36)), (19, (65028, 42)), (20, (65028, 15)), (21, (65028, 25)), (22, (65028, 30)), (23, (65028, 4)), (24, (65028, 19)), (25, (65028, 27)), (26, (63319, 47)), (27, (65028, 43)), (28, (65028, 15)), (29, (65028, 55)), (30, (65028, 53)), (31, (65028, 55)), (32, (65028, 4)), (33, (63319, 47)), (34, (65028, 43)), (35, (65028, 50)), (36, (65028, 39)), (37, (65028, 39)), (38, (65028, 18)), (39, (65028, 26)), (40, (65028, 16)), (41, (65028, 52)), (42, (65028, 7)), (43, (65028, 7)), (44, (65028, 18)), (45, (65028, 17)), (46, (65028, 50)), (47, (65028, 25)), (48, (65028, 17)), (49, (65028, 54)), (50, (65028, 24)), (51, (65028, 49)), (52, (65028, 26)), (53, (62045, 35)), (54, (65028, 20)), (55, (65028, 37)), (56, (65028, 6)), (57, (62045, 12)), (58, (65028, 43)), (59, (65028, 41)), (60, (65028, 14)), (61, (63319, 48)), (62, (65028, 27)), (63, (65028, 15)), (64, (65028, 37)), (65, (65028, 18)), (66, (65028, 26)), (67, (65028, 6)), (68, (65028, 30)), (69, (62045, 13)), (70, (65028, 51)), (71, (65028, 49)), (72, (65028, 18)), (73, (65028, 18)), (74, (65028, 7)), (75, (62045, 13)), (76, (63319, 47)), (77, (65028, 30)), (78, (65028, 9)), (79, (65028, 49)), (80, (65028, 3)), (81, (65028, 15)), (82, (65028, 25)), (83, (65028, 31)), (84, (65028, 30)), (85, (65028, 36)), (86, (65028, 32)), (87, (65028, 4)), (88, (65028, 50)), (89, (65028, 25)), (90, (65028, 31)), (91, (65028, 24)), (92, (65028, 49)), (93, (65028, 40)), (94, (65028, 28)), (95, (65028, 14)), (96, (65028, 40)), (97, (65028, 53)), (98, (65028, 50)), (99, (65028, 2))]
+off 1 changed (6,) focal_changed True
+off 2 changed (6,) focal_changed True
+off 3 changed (6,) focal_changed True
+
+exec
+/bin/bash -lc "sed -n '180,370p' src/mcrl/physics_v025/batch.py && rg -n \"class .*Result|return .*Result|power\" src/mcrl/physics_v025/batch.py | head -n 100 && sed -n '1,180p' src/mcrl/physics_v025/batch.py" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+    row_satellite = np.asarray(
+        [satellite_of.get(int(identity[0]), 0) for identity in arrays.identities],
+        dtype=np.int64,
+    )
+    user_axis = np.arange(users, dtype=np.int64)
+    lower_user = user_axis[None, None, :] < user_axis[None, :, None]
+
+    for low in range(0, configurations, chunk_size):
+        high = min(configurations, low + chunk_size)
+        selected = rows_all[low:high]
+        count = high - low
+        valid_assignment = selected >= 0
+        safe_rows = np.maximum(selected, 0)
+        aggressor = row_aggressor[safe_rows]
+        safe_aggressor = np.maximum(aggressor, 0)
+        beam_code = row_beam_code[safe_rows]
+        victim_color = arrays.colors[safe_rows]
+        wanted_slot = arrays.row_wanted_slot[safe_rows]
+        aggressor_color = victim_color
+        aggressor_satellite = row_satellite[safe_rows]
+        aggressor_norad = arrays.identities[safe_rows, 0]
+        previous_rate = previous_decode = previous_energy = None
+
+        previous_boundary = None
+        for boundary in boundary_indices:
+            live = valid_assignment & arrays.visible[boundary, safe_rows] \
+                & arrays.d2_eligible[boundary, safe_rows] \
+                & arrays.cell_reachable[boundary, safe_rows]
+            same_beam = beam_code[:, :, None] == beam_code[:, None, :]
+            occupancy = np.sum(same_beam & live[:, None, :], axis=2)
+            maximum = int(np.max(occupancy, initial=1))
+            fractions, midpoints = _slot_grid(maximum)
+            boundary_rate = np.zeros((count, users), dtype=np.float64)
+            boundary_decode = np.zeros((count, users), dtype=np.bool_)
+            boundary_feasible = np.zeros((count, users), dtype=np.bool_)
+            boundary_energy = np.zeros((count, 3), dtype=np.float64)
+            rank = np.sum(same_beam & live[:, None, :] & lower_user, axis=2)
+            direct_nominal = arrays.nominal_gain[boundary, safe_rows]
+            direct_field = (
+                direct_nominal
+                if field == "nominal"
+                else arrays.realised_gain[boundary, safe_rows]
+            )
+            base_cross = arrays.cross_base_nominal[
+                boundary,
+                user_axis[None, :, None],
+                safe_aggressor[:, None, :],
+            ]
+            receive = arrays.receive_gain_by_wanted_slot[
+                boundary,
+                user_axis[None, :, None],
+                wanted_slot[:, :, None],
+                aggressor_satellite[:, None, :],
+            ]
+            nominal_cross = base_cross * receive
+            colour_mask = victim_color[:, :, None] == aggressor_color[:, None, :]
+            available_aggressor = aggressor[:, None, :] >= 0
+            nominal_cross *= colour_mask & ~same_beam & available_aggressor
+            if field == "realised":
+                field_cross = nominal_cross * arrays.fading_by_satellite[
+                    boundary,
+                    user_axis[None, :, None],
+                    aggressor_satellite[:, None, :],
+                ]
+            else:
+                field_cross = nominal_cross
+
+            for fraction, midpoint in zip(fractions, midpoints, strict=True):
+                active = live & (rank == np.floor(midpoint * occupancy).astype(np.int64))
+                active_pair = active[:, :, None] & active[:, None, :]
+                coupling = nominal_cross * active_pair
+                targets = gamma[np.minimum(occupancy, users)]
+                forced = active & np.isnan(targets)
+                targets = np.nan_to_num(targets, nan=1.0)
+                power = np.zeros((count, users), dtype=np.float64)
+                residual = np.full(count, math.inf, dtype=np.float64)
+                done = np.zeros(count, dtype=np.bool_)
+                invalid = np.zeros(count, dtype=np.bool_)
+                recent_changes: list[np.ndarray] = []
+                for iteration in range(1, POWER_SOLVER_ITERATION_CAP + 1):
+                    interference = np.matmul(coupling, power[..., None])[..., 0]
+                    updated = np.minimum(
+                        BEAM_RF_CAP_W,
+                        targets * (noise + interference) / direct_nominal,
+                    )
+                    updated = np.where(active, updated, 0.0)
+                    updated[forced] = BEAM_RF_CAP_W
+                    bad = ~np.all(np.isfinite(updated), axis=1) | np.any(
+                        updated + POWER_SOLVER_TOLERANCE_W < power, axis=1
+                    )
+                    invalid |= bad
+                    change = np.abs(updated - power)
+                    next_residual = np.max(change, axis=1)
+                    relative = np.max(
+                        change
+                        / np.maximum(np.abs(updated), np.finfo(float).tiny),
+                        axis=1,
+                    )
+                    newly_done = (~invalid) & (
+                        (next_residual <= POWER_SOLVER_TOLERANCE_W)
+                        | (relative <= 1.0e-9)
+                    )
+                    active_solver = ~(done | invalid)
+                    power = np.where(active_solver[:, None], updated, power)
+                    residual = np.where(active_solver, next_residual, residual)
+                    done |= newly_done
+                    recent_changes.append(next_residual.copy())
+                    if len(recent_changes) > 1_000:
+                        recent_changes.pop(0)
+                    if bool(np.all(done | invalid)):
+                        break
+                slow = np.zeros(count, dtype=np.bool_)
+                unfinished = ~(done | invalid)
+                if np.any(unfinished) and len(recent_changes) == 1_000:
+                    history = np.stack(recent_changes, axis=0)
+                    monotone = np.all(
+                        history[1:] <= history[:-1] + np.finfo(float).eps,
+                        axis=0,
+                    )
+                    slow = unfinished & (np.max(history, axis=0) < 1.0e-6) & monotone
+                    done |= slow
+                invalid |= ~done
+                slot_status = np.where(invalid, 0, np.where(slow, 2, 1)).astype(np.int8)
+                destination = slice(low, high)
+                certificate_status[destination] = np.where(
+                    (certificate_status[destination] == 0) | (slot_status == 0),
+                    0,
+                    np.maximum(certificate_status[destination], slot_status),
+                )
+                certificate_iterations[destination] += iteration
+                residual_max[low:high] = np.maximum(residual_max[low:high], residual)
+                valid_result[low:high] &= ~invalid
+                # Preserve the pre-stage-4c full-path endpoint exactly: both
+                # scalar and batch paths take one final fixed-point update
+                # before the target-clearance nudge.  Status classification
+                # still uses the bounded loop above.
+                final = np.minimum(
+                    BEAM_RF_CAP_W,
+                    targets
+                    * (
+                        noise
+                        + np.matmul(coupling, power[..., None])[..., 0]
+                    )
+                    / direct_nominal,
+                )
+                final = np.where(active, final, 0.0)
+                final[forced] = BEAM_RF_CAP_W
+                power = np.minimum(
+                    BEAM_RF_CAP_W,
+                    np.nextafter(final * (1.0 + 2.0e-9), np.inf),
+                )
+                power = np.where(active, power, 0.0)
+                power[forced] = BEAM_RF_CAP_W
+                realised_interference = np.matmul(
+                    field_cross * active_pair, power[..., None]
+                )[..., 0]
+                sinr = np.where(
+                    active,
+                    power * direct_field / (noise + realised_interference),
+                    0.0,
+                )
+                safe_sinr = np.maximum(sinr, np.finfo(float).tiny)
+                active_margin = np.where(
+                    active,
+                    10.0 * np.log10(safe_sinr) - SINR_MIN_DB,
+                    np.inf,
+                )
+                min_decoding_margin_db[low:high] = np.minimum(
+                    min_decoding_margin_db[low:high],
+                    np.min(active_margin, axis=1),
+                )
+                max_rf_power_w[low:high] = np.maximum(
+                    max_rf_power_w[low:high], np.max(power, axis=1)
+                )
+                eligible_modes = sinr[:, :, None] >= thresholds[None, None, :]
+                mode_index = np.argmax(
+                    np.where(eligible_modes, efficiencies[None, None, :], -1.0),
+                    axis=2,
+                )
+                served = active & np.any(eligible_modes, axis=2)
+                chosen_efficiency = efficiencies[mode_index]
+                slot_rate = np.where(served, chosen_efficiency * BEAM_BANDWIDTH_HZ, 0.0)
+                acm_se_sum[low:high] += np.sum(
+                    np.where(active & served, chosen_efficiency, 0.0), axis=1
+                )
+                acm_se_count[low:high] += np.sum(active, axis=1)
+                boundary_rate += fraction * slot_rate
+                boundary_decode |= served
+                nominal_sinr = np.where(
+                    active,
+                    power
+19:from .channel import noise_power_w
+37:class BatchARResult:
+54:    max_rf_power_w: np.ndarray
+80:    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+115:    noise = noise_power_w(BEAM_BANDWIDTH_HZ)
+131:    max_rf_power_w = np.zeros(configurations, dtype=np.float64)
+254:                power = np.zeros((count, users), dtype=np.float64)
+260:                    interference = np.matmul(coupling, power[..., None])[..., 0]
+268:                        updated + POWER_SOLVER_TOLERANCE_W < power, axis=1
+271:                    change = np.abs(updated - power)
+283:                    power = np.where(active_solver[:, None], updated, power)
+321:                        + np.matmul(coupling, power[..., None])[..., 0]
+327:                power = np.minimum(
+331:                power = np.where(active, power, 0.0)
+332:                power[forced] = BEAM_RF_CAP_W
+334:                    field_cross * active_pair, power[..., None]
+338:                    power * direct_field / (noise + realised_interference),
+351:                max_rf_power_w[low:high] = np.maximum(
+352:                    max_rf_power_w[low:high], np.max(power, axis=1)
+370:                    power
+374:                        + np.matmul(coupling, power[..., None])[..., 0]
+391:                    active & (power >= BEAM_RF_CAP_W - 1.0e-9), axis=1
+395:                        active & (power > 0.0),
+396:                        np.sqrt(power * PA_SATURATION_POWER_W) / PA_MAX_EFFICIENCY,
+401:                circuit_w = np.sum(active & (power > 0.0), axis=1) * circuit_power_per_active_chain_w
+441:    return BatchARResult(
+461:                max_rf_power_w[inverse_order],
+485:    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+498:        batch_circuit_power_per_active_chain_w=circuit_power_per_active_chain_w,
+"""Dense catalogue evaluation for the V0.25 rate-target TDM architecture.
+
+This module is deliberately narrow: it implements the exact ``a-r`` radiation
+and integration equations for a whole configuration catalogue backed by a
+``PrimitiveStepArrays`` object.  The scalar object path remains the authority
+used by KATs; this path removes per-row Python objects from real-world units.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import math
+
+import numpy as np
+
+from mcrl.errors import MCRLContractError
+
+from .acm import ACM_MODES, rate_target_sinr
+from .channel import noise_power_w
+from .constants_v025 import (
+    BASEBAND_POWER_PER_ACTIVE_SATELLITE_W,
+    BEAM_BANDWIDTH_HZ,
+    BEAM_RF_CAP_W,
+    CIRCUIT_POWER_PER_CHAIN_W,
+    D2_MEASUREMENT_STEP_S,
+    PA_MAX_EFFICIENCY,
+    PA_SATURATION_POWER_W,
+    POWER_SOLVER_ITERATION_CAP,
+    POWER_SOLVER_TOLERANCE_W,
+    RATE_TARGET_BPS,
+    SINR_MIN_DB,
+)
+from .tapes import PrimitiveStepArrays
+
+
+@dataclass(frozen=True)
+class BatchARResult:
+    bits: np.ndarray
+    joules: np.ndarray
+    pa_j: np.ndarray
+    circuit_j: np.ndarray
+    baseband_j: np.ndarray
+    decoding_time_s: np.ndarray
+    feasible: np.ndarray
+    attained: np.ndarray
+    residual_w: np.ndarray
+    mode_counts: np.ndarray
+    plateau_users: np.ndarray
+    transmissions: np.ndarray
+    cap_hits: np.ndarray
+    valid: np.ndarray
+    certificate_status: np.ndarray
+    certificate_iterations: np.ndarray
+    max_rf_power_w: np.ndarray
+    min_decoding_margin_db: np.ndarray
+    mean_acm_se_bit_s_hz: np.ndarray
+
+
+def _readonly(value: np.ndarray) -> np.ndarray:
+    result = np.asarray(value)
+    result.setflags(write=False)
+    return result
+
+
+def _slot_grid(maximum_occupancy: int) -> tuple[np.ndarray, np.ndarray]:
+    boundaries = {0.0, 1.0}
+    for occupancy in range(1, maximum_occupancy + 1):
+        boundaries.update(index / occupancy for index in range(1, occupancy))
+    ordered = np.asarray(sorted(boundaries), dtype=np.float64)
+    return (ordered[1:] - ordered[:-1], (ordered[1:] + ordered[:-1]) / 2.0)
+
+
+def _evaluate_ar_tdm_catalogue_core(
+    arrays: PrimitiveStepArrays,
+    selected_rows: np.ndarray,
+    *,
+    field: str = "realised",
+    chunk_size: int = 256,
+    rate_target_bps: float = RATE_TARGET_BPS,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+    boundary_indices: tuple[int, ...] = tuple(range(48)),
+) -> BatchARResult:
+    """Evaluate ``C x U`` selected candidate-row indices without row objects.
+
+    A row index of ``-1`` is the explicit null action.  The common rational
+    TDM partition is an exact refinement of every configuration's scalar slot
+    partition, so splitting a constant slot cannot alter rates or energy.
+    """
+
+    rows_all = np.asarray(selected_rows, dtype=np.int64)
+    if rows_all.ndim != 2 or rows_all.shape[1] != arrays.users.size:
+        raise MCRLContractError("selected_rows must have shape (configurations, users)")
+    if field not in {"nominal", "realised"}:
+        raise MCRLContractError("batch field must be nominal or realised")
+    if (
+        not boundary_indices
+        or tuple(sorted(set(boundary_indices))) != boundary_indices
+        or boundary_indices[0] < 0
+        or boundary_indices[-1] >= 48
+    ):
+        raise MCRLContractError("boundary indices must be unique, ordered, and in 0..47")
+    configurations, users = rows_all.shape
+    modes = ACM_MODES
+    thresholds = np.asarray([row.threshold_linear for row in modes])
+    efficiencies = np.asarray([row.spectral_efficiency_bit_per_s_hz for row in modes])
+    gamma = np.asarray(
+        [0.0]
+        + [
+            np.nan if rate_target_sinr(rate_target_bps, BEAM_BANDWIDTH_HZ, n) is None
+            else float(rate_target_sinr(rate_target_bps, BEAM_BANDWIDTH_HZ, n))
+            for n in range(1, users + 1)
+        ],
+        dtype=np.float64,
+    )
+    noise = noise_power_w(BEAM_BANDWIDTH_HZ)
+    bits = np.zeros((configurations, users), dtype=np.float64)
+    decoding = np.zeros_like(bits)
+    feasible_all = np.ones((configurations, users), dtype=np.bool_)
+    residual_max = np.zeros(configurations, dtype=np.float64)
+    components = np.zeros((configurations, 3), dtype=np.float64)
+    mode_counts = np.zeros((configurations, len(modes) + 1), dtype=np.int64)
+    plateau = np.ones((configurations, users), dtype=np.bool_)
+    seen = np.zeros((configurations, users), dtype=np.bool_)
+    transmissions = np.zeros(configurations, dtype=np.int64)
+    cap_hits = np.zeros(configurations, dtype=np.int64)
+    valid_result = np.ones(configurations, dtype=np.bool_)
+    # 0=INVALID, 1=CONVERGED, 2=CONVERGED_SLOW.  A configuration receives
+    # the worst certificate observed over its slots and selected boundaries.
+    certificate_status = np.ones(configurations, dtype=np.int8)
+    certificate_iterations = np.zeros(configurations, dtype=np.int64)
+    max_rf_power_w = np.zeros(configurations, dtype=np.float64)
+    min_decoding_margin_db = np.full(configurations, np.inf, dtype=np.float64)
+    acm_se_sum = np.zeros(configurations, dtype=np.float64)
+    acm_se_count = np.zeros(configurations, dtype=np.int64)
+    row_to_aggressor = {
+        (int(identity[0]), int(identity[1])): index
+        for index, identity in enumerate(arrays.aggressor_identities)
+    }
+    row_aggressor = np.asarray(
+        [
+            row_to_aggressor.get((int(identity[0]), int(identity[1])), -1)
+            for identity in arrays.identities
+        ],
+        dtype=np.int64,
+    )
+    beam_code_of = {
+        identity: index
+        for index, identity in enumerate(
+            sorted({(int(row[0]), int(row[1])) for row in arrays.identities.tolist()})
+        )
+    }
+    row_beam_code = np.asarray(
+        [
+            beam_code_of[(int(identity[0]), int(identity[1]))]
+            for identity in arrays.identities
+        ],
+        dtype=np.int64,
+    )
+    # Keep rare high-occupancy evacuation profiles out of ordinary chunks;
+    # otherwise one such row forces every neighbouring unilateral through a
+    # much finer universal rational slot grid.
+    initial_maximum = np.zeros(configurations, dtype=np.int64)
+    for config_index, selected in enumerate(rows_all):
+        selected_codes = row_beam_code[selected[selected >= 0]]
+        if selected_codes.size:
+            initial_maximum[config_index] = int(
+                np.max(np.unique(selected_codes, return_counts=True)[1])
+            )
+    order = np.argsort(initial_maximum, kind="stable")
+    inverse_order = np.argsort(order)
+    rows_all = rows_all[order]
+    satellite_of = {
+        int(identity[0]): int(column)
+        for identity, column in zip(
+            arrays.aggressor_identities,
+            arrays.aggressor_satellite_column,
+            strict=True,
+        )
+    }
+    row_satellite = np.asarray(
+
+codex
+Feature declaration, before measurement:
+
+- C1 variant (one scalar only): `predecision_network_max_rf_over_cap = max RF power already present in the committed network / 1.65 W`. It is derived from the current base-state evaluation, never from the focal candidate evaluation. For the constructed witness it is `0.8/1.65` versus `1.5/1.65`.
+- C2: no admissible feature variant. The two real rows have the same physical decision-time tape, committed mapping, incumbent mapping, and focal candidate action; their exact targets diverge only because the target projection compares against different future carrier transitions. Encoding that carrier/future result would violate the stated admissibility rule.
+
+I’m freezing those choices now and will report the C2 “after” score unchanged, rather than tune around the result.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..7f447b5019cd9211efd6202214d6741924f3e081
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(ex(exact_valid, exact_survival):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..7f447b5019cd9211efd6202214d6741924f3e081
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(ex(exact_valid, exact_survival):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+exec
+/bin/bash -lc "sed -n '315,470p' scripts/diagnose_v025_c1c2_sufficiency.py && sed -n '490,680p' scripts/diagnose_v025_c1c2_sufficiency.py" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+
+@dataclass(frozen=True)
+class ExactRow:
+    anchor: int
+    user_id: int
+    action: tuple[int, int] | None
+    q1: tuple[float, ...]
+    q2: tuple[float, ...]
+    c1_structure: tuple[float, ...]
+    c2_structure: tuple[float, ...]
+    c1_admissible: tuple[float, ...]
+    c2_admissible: tuple[float, ...]
+    c1_target: float
+    c2_target: float
+    c1_target_exact: str
+    c2_target_exact: str
+
+
+def _f(value: Fraction) -> float:
+    return float(value)
+
+
+def _relabel_anchor(tape, calibration, anchor_index: int) -> list[ExactRow]:
+    step_index, carrier_index = divmod(anchor_index, len(REFERENCE_CARRIERS))
+    carrier = REFERENCE_CARRIERS[carrier_index]
+    setting = pilot.ENGINE._setting("a-r0")
+    run_setting = pilot.ENGINE.run_setting_for("a-r0")
+    shard = read_source_shard(
+        EXISTING_ROWS / f"PILOT_NOT_CLAIM-source-anchor-{anchor_index:03d}.jsonl"
+    )
+    base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
+    incumbent = pilot.ENGINE._base_configuration(tape, max(0, step_index - 1), carrier)
+    configs = {base.configuration_id: base}
+    row_configs = []
+    for row in shard.rows:
+        mapping = base.mapping
+        mapping[row.user_id] = pilot._identity(row.action)
+        config = pilot.ENGINE._configuration(base, mapping, kind="sufficiency-replay")
+        configs[config.configuration_id] = config
+        row_configs.append((row, config))
+
+    counter = pilot.ENGINE.EvaluationCounter()
+    evaluator = pilot.ENGINE.StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
+        field="nominal",
+        counter=counter,
+        run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+    evaluator.evaluate_many(tuple(configs.values()))
+    valid = tuple(
+        config
+        for config in configs.values()
+        if config.configuration_id not in evaluator._invalid
+    )
+    forecasts, _ = pilot.ENGINE._batched_stage2_forecasts(
+        tape=tape,
+        setting=setting,
+        anchor_step=step_index,
+        carrier=carrier,
+        configs=valid,
+        counter=counter,
+        calibration=calibration,
+        run_setting=run_setting,
+    )
+    base_profile = evaluator.evaluate(base)
+    rekeys = pilot.ENGINE._rekeyed_users(tape, step_index)
+    base_outcome = base_profile.outcome(
+        phi=pilot.ENGINE._phi_for(incumbent, base, cell_rekeyed_users=rekeys)
+    )
+    kappa = calibration.kappa_bits_per_user_step
+    eta = calibration.eta_ref
+    result = []
+    for row, config in row_configs:
+        if row.reference_action or config.configuration_id in evaluator._invalid:
+            continue
+        profile = evaluator.evaluate(config)
+        outcome = profile.outcome(
+            phi=pilot.ENGINE._phi_for(incumbent, config, cell_rekeyed_users=rekeys)
+        )
+        c1 = c1_difference_surplus(
+            outcome,
+            base_outcome,
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=eta,
+            kappa_bits_per_user_step=kappa,
+        )
+        candidate_forecasts = forecasts[config.configuration_id]
+        c2 = c2_persistence_forecast(
+            candidate_forecasts,
+            forecasts[base.configuration_id],
+            lambda_bits_per_j=calibration.lambda_bits_per_j,
+            eta_ref=eta,
+            kappa_bits_per_user_step=kappa,
+        )
+        c1_structure = (
+            _f(outcome.bits / kappa),
+            _f(eta * outcome.joules / kappa),
+            _f(outcome.phi),
+            _f(base_outcome.bits / kappa),
+            _f(eta * base_outcome.joules / kappa),
+            _f(base_outcome.phi),
+            float(profile.required_power_w_max / 1.65),
+            float(profile.score.decoding_time_s.get(row.user_id, 0.0)),
+        )
+        c2_values: list[float] = []
+        for candidate_projection, default_projection in zip(
+            candidate_forecasts, forecasts[base.configuration_id], strict=True
+        ):
+            for projection in (candidate_projection, default_projection):
+                c2_values.extend(
+                    (
+                        _f(projection.outcome.bits / kappa),
+                        _f(eta * projection.outcome.joules / kappa),
+                        _f(projection.outcome.decoding_availability),
+                        _f(projection.outcome.useful_availability),
+                        float(projection.valid),
+                        float(projection.survives),
+                        -1.0 if projection.required_power_w is None else projection.required_power_w / 1.65,
+                    )
+                )
+        result.append(
+            ExactRow(
+                anchor_index,
+                row.user_id,
+                pilot._identity(row.action),
+                row.q1_state,
+                row.q2_state,
+                c1_structure,
+                tuple(c2_values),
+                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
+                (),
+                float(c1.normalized_total),
+                float(c2.normalized_total),
+                str(c1.normalized_total),
+                str(c2.normalized_total),
+            )
+        )
+    return result
+
+
+def _standardize(train: np.ndarray, other: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    mean = train.mean(axis=0)
+    scale = train.std(axis=0)
+    scale[scale < 1e-12] = 1.0
+    return (train - mean) / scale, (other - mean) / scale
+
+
+def _knn_predict(
+    train_x: np.ndarray,
+    train_y: np.ndarray,
+    test_x: np.ndarray,
+    return np.concatenate(predictions)
+
+
+def _explained_variance(actual: np.ndarray, predicted: np.ndarray) -> float:
+    variance = float(np.var(actual))
+    return float("nan") if variance == 0.0 else 1.0 - float(np.var(actual - predicted)) / variance
+
+
+def _fit_route(
+    rows: list[ExactRow],
+    *,
+    route: str,
+    train_anchors: set[int],
+    validation_anchors: set[int],
+    test_anchors: set[int],
+) -> dict[str, object]:
+    q_name = {"C1": "q1", "C2": "q2"}[route]
+    target_name = f"{route.lower()}_target"
+    structure_name = f"{route.lower()}_structure"
+    candidates = (1, 3, 7, 15, 31)
+
+    def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+        return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+
+    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
+        feature_name = f"{route.lower()}_admissible"
+        return np.asarray(
+            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
+            dtype=np.float64,
+        )
+
+    def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+        if route == "C1":
+            # Exact C1 is linear in the six complete network terms.  Retain
+            # the two extra evaluator diagnostics in the stored row, but do
+            # not hand them to this sufficient comparator.
+            return np.asarray(
+                [getattr(row, structure_name)[:6] for row in selected],
+                dtype=np.float64,
+            )
+        values = []
+        for row in selected:
+            raw = getattr(row, structure_name)
+            alive = True
+            live_cores = []
+            lost = 0
+            for offset in range(3):
+                start = offset * 14
+                candidate = raw[start : start + 7]
+                default = raw[start + 7 : start + 14]
+                core = candidate[0] - candidate[1] - default[0] + default[1]
+                live_cores.append(core if alive else 0.0)
+                if alive and not (bool(candidate[4]) and bool(candidate[5])):
+                    alive = False
+                    lost += 1
+                elif not alive:
+                    lost += 1
+            values.append((*live_cores, float(lost)))
+        return np.asarray(values, dtype=np.float64)
+
+    def select(anchors: set[int]) -> list[ExactRow]:
+        return [row for row in rows if row.anchor in anchors]
+
+    fit_rows = select(train_anchors)
+    validation_rows = select(validation_anchors)
+    all_train_rows = select(train_anchors | validation_anchors)
+    test_rows = select(test_anchors)
+    fit_y = np.asarray([getattr(row, target_name) for row in fit_rows])
+    validation_y = np.asarray([getattr(row, target_name) for row in validation_rows])
+    all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+    test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+
+    def fit_knn(matrix, label: str) -> dict[str, object]:
+        fit_x = matrix(fit_rows)
+        validation_x = matrix(validation_rows)
+        fit_x, validation_x = _standardize(fit_x, validation_x)
+        scores = {}
+        for neighbors in candidates:
+            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+            scores[neighbors] = _explained_variance(validation_y, prediction)
+        selected_k = max(scores, key=lambda value: (scores[value], -value))
+        train_x = matrix(all_train_rows)
+        test_x = matrix(test_rows)
+        train_x, test_x = _standardize(train_x, test_x)
+        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+        residual = test_y - prediction
+        return {
+            "model": "standardized inverse-distance k-nearest-neighbor",
+            "features": label,
+            "selected_k": selected_k,
+            "validation_explained_variance_by_k": {
+                str(key): value for key, value in scores.items()
+            },
+            "held_out_explained_variance": _explained_variance(test_y, prediction),
+            "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+            "held_out_mae": float(np.mean(np.abs(residual))),
+        }
+
+    results = {
+        "q_only": fit_knn(q_matrix, f"{q_name} only"),
+        "admissible_repair": fit_knn(
+            repaired_matrix,
+            (
+                f"{q_name} + predecision_network_max_rf_over_cap"
+                if route == "C1"
+                else f"{q_name} only (no admissible C2 feature exists for the witness)"
+            ),
+        ),
+    }
+
+    # The comparator sees the complete outcome terms discarded by Q1/Q2.
+    # Their production target definitions are linear once C2's absorbing
+    # survival state is expanded, so ordinary least squares is sufficient and
+    # avoids attributing k-NN's high-dimensional distance failure to physics.
+    train_structure = structure_matrix(all_train_rows)
+    test_structure = structure_matrix(test_rows)
+    train_design = np.column_stack((np.ones(len(train_structure)), train_structure))
+    test_design = np.column_stack((np.ones(len(test_structure)), test_structure))
+    coefficients, *_ = np.linalg.lstsq(train_design, all_train_y, rcond=None)
+    structure_prediction = test_design @ coefficients
+    structure_residual = test_y - structure_prediction
+    results["discarded_structure"] = {
+        "model": "ordinary least squares on exact target-sufficient network terms",
+        "held_out_explained_variance": _explained_variance(
+            test_y, structure_prediction
+        ),
+        "held_out_rmse": float(
+            np.sqrt(np.mean(structure_residual * structure_residual))
+        ),
+        "held_out_mae": float(np.mean(np.abs(structure_residual))),
+        "held_out_max_abs_error": float(np.max(np.abs(structure_residual))),
+        "coefficients": [float(value) for value in coefficients],
+    }
+    results["held_out_rows"] = len(test_rows)
+    results["held_out_target_variance"] = float(np.var(test_y))
+    results["explained_variance_gap"] = (
+        results["discarded_structure"]["held_out_explained_variance"]
+        - results["q_only"]["held_out_explained_variance"]
+    )
+    return results
+
+
+def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
+    selected = [row for row in rows if row.anchor in {0, 1}]
+    affected_rows = 0
+    survival_offset_mismatches = 0
+    validity_offset_mismatches = 0
+    absorbing_mask_mismatches = 0
+    for row in selected:
+        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
+        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
+        exact_valid = tuple(
+            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
+        )
+        exact_survival = tuple(
+            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
+        )
+        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
+        affected_rows += int(row_mismatch)
+        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
+        survival_offset_mismatches += sum(
+            a != b for a, b in zip(stored_survival, exact_survival)
+        )
+        alive = True
+        exact_absorbing = []
+        for valid, survives in zip(ex(exact_valid, exact_survival):
+            exact_absorbing.append(alive and valid and survives)
+            alive = alive and valid and survives
+        absorbing_mask_mismatches += sum(
+            a != b for a, b in zip(stored_survival, exact_absorbing)
+        )
+    return {
+        "compared_rows": len(selected),
+        "affected_rows": affected_rows,
+        "validity_offset_mismatches": validity_offset_mismatches,
+        "survival_offset_mismatches": survival_offset_mismatches,
+        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
+    }
+
+
+def explainability(anchor_count: int) -> dict[str, object]:
+    if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+        raise ValueError("anchor_count must be an even integer in [12, 90]")
+    anchor_indices = tuple(range(anchor_count))
+    max_step = max(index // len(REFERENCE_CARRIERS) for index in anchor_indices)
+    tape = build_world_tape(
+        domain=DEVELOPMENT_WORLD_DOMAINS[0],
+        provider=LegacyWorldProvider(role="pilot-source"),
+        steps=max_step + 4,
+        start_time_s=0.0,
+    )
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..7f447b5019cd9211efd6202214d6741924f3e081
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(ex(exact_valid, exact_survival):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/diagnose_v025_c1c2_sufficiency.py
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+exec
+/bin/bash -lc "env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python -m py_compile scripts/diagnose_v025_c1c2_sufficiency.py && git diff --check && git diff -- scripts/diagnose_v025_c1c2_sufficiency.py | sed -n '1,260p'" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5..57dc209 100644
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@ from typing import Iterable
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@ class ExactRow:
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@ def _relabel_anchor(tape, calibration, anchor_index: int) -> list[ExactRow]:
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@ def _fit_route(
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@ def _fit_route(
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@ def _fit_route(
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@ def _fit_route(
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@ def explainability(anchor_count: int) -> dict[str, object]:
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+exec
+/bin/bash -lc 'nice -n 15 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python scripts/diagnose_v025_c1c2_sufficiency.py --anchors 30' in /home/sat/mcrl-v025-c1c2suff-ws
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+codex
+The feature set is frozen and the 30-anchor held-out replay is underway. The early two-anchor inspection already showed the decisive target-side input difference: anchor 0 tests survival over 94 users whose candidate mapping differs from its future `nearest-eligible` transition, while anchor 1 tests only focal user 6 against `stay-if-possible`; the candidate configuration and current committed mapping are otherwise identical.
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
+codex
+The fixed 30-anchor run has begun successfully and is replaying exact labels anchor by anchor (3/30 complete). The diagnostic extension compiles cleanly. The C1 repair is being evaluated with its own validation-selected `k`; C2 intentionally receives zero new dimensions, so its before/after identity is an explicit control.
+diff --git a/scripts/diagnose_v025_c1c2_sufficiency.py b/scripts/diagnose_v025_c1c2_sufficiency.py
+index dd678b5b243473440aa35df64f2a122ccd58be39..57dc20940139049e8c1d1d3e8e56782ef92fbeb4
+--- a/scripts/diagnose_v025_c1c2_sufficiency.py
++++ b/scripts/diagnose_v025_c1c2_sufficiency.py
+@@ -15,6 +15,7 @@
+ import numpy as np
+ 
+ from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
+ from mcrl.physics_v025.tapes import (
+     DEVELOPMENT_WORLD_DOMAINS,
+     REFERENCE_CARRIERS,
+@@ -321,6 +322,8 @@
+     q2: tuple[float, ...]
+     c1_structure: tuple[float, ...]
+     c2_structure: tuple[float, ...]
++    c1_admissible: tuple[float, ...]
++    c2_admissible: tuple[float, ...]
+     c1_target: float
+     c2_target: float
+     c1_target_exact: str
+@@ -443,6 +446,8 @@
+                 row.q2_state,
+                 c1_structure,
+                 tuple(c2_values),
++                (float(base_profile.required_power_w_max / BEAM_RF_CAP_W),),
++                (),
+                 float(c1.normalized_total),
+                 float(c2.normalized_total),
+                 str(c1.normalized_total),
+@@ -506,6 +511,13 @@
+     def q_matrix(selected: list[ExactRow]) -> np.ndarray:
+         return np.asarray([getattr(row, q_name) for row in selected], dtype=np.float64)
+ 
++    def repaired_matrix(selected: list[ExactRow]) -> np.ndarray:
++        feature_name = f"{route.lower()}_admissible"
++        return np.asarray(
++            [(*getattr(row, q_name), *getattr(row, feature_name)) for row in selected],
++            dtype=np.float64,
++        )
++
+     def structure_matrix(selected: list[ExactRow]) -> np.ndarray:
+         if route == "C1":
+             # Exact C1 is linear in the six complete network terms.  Retain
+@@ -547,22 +559,23 @@
+     all_train_y = np.asarray([getattr(row, target_name) for row in all_train_rows])
+     test_y = np.asarray([getattr(row, target_name) for row in test_rows])
+ 
+-    fit_x = q_matrix(fit_rows)
+-    validation_x = q_matrix(validation_rows)
+-    fit_x, validation_x = _standardize(fit_x, validation_x)
+-    scores = {}
+-    for neighbors in candidates:
+-        prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
+-        scores[neighbors] = _explained_variance(validation_y, prediction)
+-    selected_k = max(scores, key=lambda value: (scores[value], -value))
+-    train_x = q_matrix(all_train_rows)
+-    test_x = q_matrix(test_rows)
+-    train_x, test_x = _standardize(train_x, test_x)
+-    prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
+-    residual = test_y - prediction
+-    results = {
+-        "q_only": {
++    def fit_knn(matrix, label: str) -> dict[str, object]:
++        fit_x = matrix(fit_rows)
++        validation_x = matrix(validation_rows)
++        fit_x, validation_x = _standardize(fit_x, validation_x)
++        scores = {}
++        for neighbors in candidates:
++            prediction = _knn_predict(fit_x, fit_y, validation_x, neighbors=neighbors)
++            scores[neighbors] = _explained_variance(validation_y, prediction)
++        selected_k = max(scores, key=lambda value: (scores[value], -value))
++        train_x = matrix(all_train_rows)
++        test_x = matrix(test_rows)
++        train_x, test_x = _standardize(train_x, test_x)
++        prediction = _knn_predict(train_x, all_train_y, test_x, neighbors=selected_k)
++        residual = test_y - prediction
++        return {
+             "model": "standardized inverse-distance k-nearest-neighbor",
++            "features": label,
+             "selected_k": selected_k,
+             "validation_explained_variance_by_k": {
+                 str(key): value for key, value in scores.items()
+@@ -571,6 +584,17 @@
+             "held_out_rmse": float(np.sqrt(np.mean(residual * residual))),
+             "held_out_mae": float(np.mean(np.abs(residual))),
+         }
++
++    results = {
++        "q_only": fit_knn(q_matrix, f"{q_name} only"),
++        "admissible_repair": fit_knn(
++            repaired_matrix,
++            (
++                f"{q_name} + predecision_network_max_rf_over_cap"
++                if route == "C1"
++                else f"{q_name} only (no admissible C2 feature exists for the witness)"
++            ),
++        ),
+     }
+ 
+     # The comparator sees the complete outcome terms discarded by Q1/Q2.
+@@ -605,6 +629,44 @@
+     return results
+ 
+ 
++def _survival_mismatch_summary(rows: list[ExactRow]) -> dict[str, object]:
++    selected = [row for row in rows if row.anchor in {0, 1}]
++    affected_rows = 0
++    survival_offset_mismatches = 0
++    validity_offset_mismatches = 0
++    absorbing_mask_mismatches = 0
++    for row in selected:
++        stored_valid = tuple(bool(row.q2[10 + 4 * offset]) for offset in range(3))
++        stored_survival = tuple(bool(row.q2[11 + 4 * offset]) for offset in range(3))
++        exact_valid = tuple(
++            bool(row.c2_structure[14 * offset + 4]) for offset in range(3)
++        )
++        exact_survival = tuple(
++            bool(row.c2_structure[14 * offset + 5]) for offset in range(3)
++        )
++        row_mismatch = stored_valid != exact_valid or stored_survival != exact_survival
++        affected_rows += int(row_mismatch)
++        validity_offset_mismatches += sum(a != b for a, b in zip(stored_valid, exact_valid))
++        survival_offset_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_survival)
++        )
++        alive = True
++        exact_absorbing = []
++        for valid, survives in zip(exact_valid, exact_survival, strict=True):
++            exact_absorbing.append(alive and valid and survives)
++            alive = alive and valid and survives
++        absorbing_mask_mismatches += sum(
++            a != b for a, b in zip(stored_survival, exact_absorbing)
++        )
++    return {
++        "compared_rows": len(selected),
++        "affected_rows": affected_rows,
++        "validity_offset_mismatches": validity_offset_mismatches,
++        "survival_offset_mismatches": survival_offset_mismatches,
++        "stored_survival_vs_exact_absorbing_mask_offset_mismatches": absorbing_mask_mismatches,
++    }
++
++
+ def explainability(anchor_count: int) -> dict[str, object]:
+     if anchor_count < 12 or anchor_count > 90 or anchor_count % len(REFERENCE_CARRIERS):
+         raise ValueError("anchor_count must be an even integer in [12, 90]")
+@@ -665,6 +727,7 @@
+         "validation_anchors": sorted(validation),
+         "test_anchors": sorted(test),
+         "split_seed": 20260909,
++        "two_anchor_survival_mismatch": _survival_mismatch_summary(rows),
+         "c1": _fit_route(
+             rows,
+             route="C1",
+
