@@ -1,6 +1,6 @@
 # Generate a training corpus that contains the mechanism
 
-`PILOT_NOT_CLAIM`. Budget 2 hours. Wait for the cross-gain repair to land first: poll for `/home/sat/mcrl-v025-pilot-ws/CROSSGAIN-REPAIR-2026-09-09.md` every 2 minutes for up to 45 minutes, then proceed regardless and say what you found.
+`PILOT_NOT_CLAIM`. Budget 2 hours. **Do not wait for anything.** The coalition labels are exact evaluations of the sealed objective and do not depend on the encoder feature path, so this runs in parallel with the feature repair.
 
 ## The defect
 An audit of the existing corpus found **180 coalition rows, every one of size exactly two, one per anchor**. The generator builds the bounded catalogue, discards every configuration that does not change exactly two users, and keeps the lexicographically smallest configuration ID.

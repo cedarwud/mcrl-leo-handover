@@ -3287,3 +3287,1905 @@ The isolated Stage-C pipeline file is healthy on the untouched snapshot: 12/12 p
 apply patch
 patch: completed
 /home/sat/mcrl-v025-harness-ws/src/mcrl/stagec_v025/coalitions.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025/test_contract_v1_acceptance.py::test_T2_information_twins_reversal_and_additive_placebo -q > .scratch/harness-audit-2026-09-09/mutation-coalition-features.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/mutation-coalition-features.log
+tail -100 .scratch/harness-audit-2026-09-09/mutation-coalition-features.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 1701ms:
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_T2_information_twins_reversal_and_additive_placebo ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-sat/pytest-123/test_T2_information_twins_reve0')
+
+    
+    def test_T2_information_twins_reversal_and_additive_placebo(tmp_path) -> None:
+        rows = tuple(_coalition_row(kind) for kind in ("synergy", "antagonistic", "additive"))
+        assert float.fromhex(rows[0].objective_delta_normalized_hex) > 0.0
+        assert float.fromhex(rows[1].objective_delta_normalized_hex) < 0.0
+        held_out_path = tmp_path / "held-out-twins.jsonl"
+        write_coalition_shard(held_out_path, rows)
+        values = [json.loads(line) for line in held_out_path.read_text(encoding="ascii").splitlines()]
+        values[0]["context_schema"] = "mcrl-v025-stagec-c3-coalition-context-v1"
+        stale_bytes = b"\n".join(canonical_json_bytes(value) for value in values) + b"\n"
+        stale_path = tmp_path / "stale-context-shard.jsonl"
+        stale_path.write_bytes(stale_bytes)
+        stale_path.with_name(stale_path.name + ".sha256").write_text(
+            f"{hashlib.sha256(stale_bytes).hexdigest()}  {stale_path.name}\n",
+            encoding="ascii",
+        )
+        with pytest.raises(
+            StageCContractError,
+            match=r"schema drifted: expected .*context-v2.*got .*context-v1",
+>       ):
+E       AssertionError: assert 0.33046152284904623 > 1.0
+E        +  where 0.33046152284904623 = interaction(CoalitionContext(anchor_id='information-twin-anchor', reference_profile=((0, PhysicalAction(norad_id=None, beam_chain_...0.5, 0.5), pairwise_cross_gain_terms=(('beam-a', 'victim', 0.7), ('beam-b', 'victim', 0.1), ('beam-c', 'victim', 0.1))))
+E        +    where interaction = V1ThreeRouteModel(q1=AdamMLPHead(weights=[array([[ 0.32130372,  0.01679836, -0.19090876, -0.65637763, -0.75731291,\n   ... adam_step=800), member_width=8), checkpoint_sha256='d34ef19cdf5a889dc9e3c047f02409f145e3e4e6de5ac4234382135945ea43e5').interaction
+
+../mcrl-v025-pilot-ws/tests/stagec_v025/test_contract_v1_acceptance.py:651: AssertionError
+=========================== short test summary info ============================
+FAILED tests/stagec_v025/test_contract_v1_acceptance.py::test_T2_information_twins_reversal_and_additive_placebo
+
+HARNESS_EXIT_STATUS=1
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/src/mcrl/physics_v025/targets.py
+/home/sat/mcrl-v025-harness-ws/src/mcrl/stagec_v025/coalitions.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/physics_v025/test_stage4b_contract.py::test_v15_set_decomposition_and_factor_identity_are_exact tests/physics_v025/test_stage4d_gate.py::test_large_set_decomposition_is_linear_and_has_no_credit_split tests/physics_v025/test_stage4d_gate.py::test_small_set_shapley_is_reporting_only_and_exact -q > .scratch/harness-audit-2026-09-09/mutation-score-decomposition.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/mutation-score-decomposition.log
+tail -120 .scratch/harness-audit-2026-09-09/mutation-score-decomposition.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 147ms:
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+___________ test_v15_set_decomposition_and_factor_identity_are_exact ___________
+
+    def test_v15_set_decomposition_and_factor_identity_are_exact() -> None:
+        values = {
+            frozenset(): 0,
+            frozenset({0}): 2,
+            frozenset({1}): 3,
+            frozenset({2}): 5,
+            frozenset({0, 1}): 8,
+            frozenset({0, 2}): 11,
+            frozenset({1, 2}): 13,
+            frozenset({0, 1, 2}): 25,
+        }
+        result = set_score_decomposition(
+            coalition_users=(0, 1, 2),
+            outcomes_by_subset={key: _outcome(value) for key, value in values.items()},
+            lambda_bits_per_j=1,
+            eta_ref=1,
+            kappa_bits_per_user_step=2,
+            phi_difference=Fraction(-1, 2),
+        )
+>       assert dict(result.d_by_user) == {0: 2, 1: 3, 2: 5}
+E       assert {} == {0: 2, 1: 3, 2: 5}
+E         
+E         Right contains 3 more items:
+E         {0: 2, 1: 3, 2: 5}
+E         Use -v to get more diff
+
+tests/physics_v025/test_stage4b_contract.py:82: AssertionError
+________ test_large_set_decomposition_is_linear_and_has_no_credit_split ________
+
+    def test_large_set_decomposition_is_linear_and_has_no_credit_split() -> None:
+        users = tuple(range(6))
+        outcomes = {frozenset(): _outcome(0), frozenset(users): _outcome(40)}
+        outcomes.update({frozenset((user,)): _outcome(user + 1) for user in users})
+        result = set_score_decomposition(
+            coalition_users=users,
+            outcomes_by_subset=outcomes,
+            lambda_bits_per_j=1,
+            eta_ref=1,
+            kappa_bits_per_user_step=1,
+        )
+        assert len(outcomes) == len(users) + 2
+>       assert dict(result.d_by_user) == {user: user + 1 for user in users}
+E       assert {} == {0: 1, 1: 2, 2: 3, 3: 4, ...}
+E         
+E         Right contains 6 more items:
+E         {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6}
+E         Use -v to get more diff
+
+tests/physics_v025/test_stage4d_gate.py:129: AssertionError
+______________ test_small_set_shapley_is_reporting_only_and_exact ______________
+
+    def test_small_set_shapley_is_reporting_only_and_exact() -> None:
+        values = {
+            frozenset(): 0,
+            frozenset({0}): 2,
+            frozenset({1}): 3,
+            frozenset({0, 1}): 9,
+        }
+        result = set_score_decomposition(
+            coalition_users=(0, 1),
+            outcomes_by_subset={key: _outcome(value) for key, value in values.items()},
+            lambda_bits_per_j=1,
+            eta_ref=1,
+            kappa_bits_per_user_step=1,
+        )
+>       assert result.interaction_bits == 4
+E       AssertionError: assert Fraction(0, 1) == 4
+E        +  where Fraction(0, 1) = SetScoreDecomposition(coalition_users=(), d_by_user=(), interaction_bits=Fraction(0, 1), shapley_interaction_by_user=(...TATED_CONSTANT', joint_change_bits=Fraction(0, 1), phi_difference=Fraction(0, 1), c1=Fraction(0, 1), c3=Fraction(0, 1)).interaction_bits
+
+tests/physics_v025/test_stage4d_gate.py:149: AssertionError
+=========================== short test summary info ============================
+FAILED tests/physics_v025/test_stage4b_contract.py::test_v15_set_decomposition_and_factor_identity_are_exact
+FAILED tests/physics_v025/test_stage4d_gate.py::test_large_set_decomposition_is_linear_and_has_no_credit_split
+FAILED tests/physics_v025/test_stage4d_gate.py::test_small_set_shapley_is_reporting_only_and_exact
+
+HARNESS_EXIT_STATUS=1
+
+exec
+/bin/bash -lc "sed -n '260,365p' tests/stagec_v025/test_stagec_pipeline.py
+rg -n \"guard\\s*=|service_guard=.*False|service_guard=.*"'!=|def guard|lambda .*: False" tests/stagec_v025 tests/physics_v025 tests/test_w*.py | head -300' in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+    assert _metrics(
+        AdditiveTotals(bits=0.0, joules=1.0),
+        AdditiveTotals(bits=1.0, joules=1.0),
+    )["ee_relative"] == -1.0
+    assert _metrics(
+        AdditiveTotals(bits=1.0, joules=1.0),
+        AdditiveTotals(bits=0.0, joules=1.0),
+    )["ee_relative"] is None
+
+
+def test_two_user_independent_argmax_cannot_commit_jointly_infeasible_profile() -> None:
+    q1_dimension = len(Q1_FEATURES)
+    q2_dimension = len(Q2_FEATURES)
+    c3_dimension = q1_dimension + q2_dimension
+    model = ThreeRouteModel(
+        {
+            "C1": LinearHead(np.ones(q1_dimension), 0.0),
+            "C2": LinearHead(np.ones(q2_dimension), 0.0),
+            "C3": LinearHead(np.zeros(c3_dimension), 0.0),
+        }
+    )
+    tables = tuple(
+        UserActionTable(
+            user_id=user,
+            actions=(
+                PhysicalAction(100 + user, 10 + user),
+                PhysicalAction(200 + user, 20 + user),
+                PhysicalAction(None, None),
+            ),
+            action_mask=(True, True, True),
+            q1_states=(
+                tuple(np.zeros(q1_dimension)),
+                tuple(np.ones(q1_dimension)),
+                tuple(np.zeros(q1_dimension)),
+            ),
+            q2_states=(
+                tuple(np.zeros(q2_dimension)),
+                tuple(np.ones(q2_dimension)),
+                tuple(np.zeros(q2_dimension)),
+            ),
+        )
+        for user in range(2)
+    )
+    decision = DeploymentAdapter().select(
+        model=model,
+        tables=tables,
+        base_profile=(0, 0),
+        catalogue=((0, 0),),
+        jointly_legal=lambda profile: profile != (1, 1),
+        resolve_profile=lambda profile: ResolvedProfile(profile, 2),
+    )
+
+    assert decision.independent_profile == (1, 1)
+    assert decision.profile == (0, 0)
+    assert decision.jointly_legal is True
+    assert decision.used_fallback is True
+    assert decision.fallback_reason == "independent_profile_jointly_infeasible"
+
+
+def test_deployment_validation_exception_commits_base_atomically() -> None:
+    dimension_q1 = len(Q1_FEATURES)
+    dimension_q2 = len(Q2_FEATURES)
+    model = ThreeRouteModel(
+        {
+            "C1": LinearHead(np.ones(dimension_q1), 0.0),
+            "C2": LinearHead(np.ones(dimension_q2), 0.0),
+            "C3": LinearHead(np.zeros(dimension_q1 + dimension_q2), 0.0),
+        }
+    )
+    table = UserActionTable(
+        user_id=8,
+        actions=(PhysicalAction(1, 1), PhysicalAction(2, 2), PhysicalAction(None, None)),
+        action_mask=(True, True, True),
+        q1_states=(
+            tuple(np.zeros(dimension_q1)),
+            tuple(np.ones(dimension_q1)),
+            tuple(np.zeros(dimension_q1)),
+        ),
+        q2_states=(
+            tuple(np.zeros(dimension_q2)),
+            tuple(np.ones(dimension_q2)),
+            tuple(np.zeros(dimension_q2)),
+        ),
+    )
+
+    def resolve(profile: tuple[int, ...]) -> ResolvedProfile:
+        if profile == (1,):
+            raise RuntimeError("synthetic resolver failure")
+        return ResolvedProfile(profile, 1)
+
+    decision = DeploymentAdapter().select(
+        model=model,
+        tables=(table,),
+        base_profile=(0,),
+        catalogue=((1,),),
+        jointly_legal=lambda profile: profile in {(0,), (1,)},
+        resolve_profile=resolve,
+    )
+
+    assert decision.profile == (0,)
+    assert decision.used_fallback is True
+    assert decision.fallback_reason == "validation_failure:RuntimeError"
+
+
+def test_drop_arms_retain_and_update_all_heads(tmp_path: Path) -> None:
+    orchestrator, _ = _training_fixture(tmp_path)
+tests/test_w39_c2_keyed_gate.py:114:    receipts, z2, service_guard = probe._trace_receipts(
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:347:    guard = runner.enforce_zero_loss_service_guard(full, drop)
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:353:    failed_guard = runner.enforce_zero_loss_service_guard(full, drop)
+tests/test_w81_ee_axis_v04_c3_source_runner.py:62:    def __init__(self, *, evaluate_guard=None) -> None:
+tests/test_w81_ee_axis_v04_c3_source_runner.py:147:    def __init__(self, *, evaluate_guard=None) -> None:
+tests/test_w81_ee_axis_v04_c3_source_runner.py:148:        fake = _FakeEnvironment(evaluate_guard=evaluate_guard)
+tests/test_w81_ee_axis_v04_c3_source_runner.py:170:def _runtime(runner, *, evaluate_guard=None):
+tests/test_w81_ee_axis_v04_c3_source_runner.py:186:        return _FakeWrapped(evaluate_guard=evaluate_guard)
+tests/test_w81_ee_axis_v04_c3_source_runner.py:427:def _prepare(runner, tmp_path, monkeypatch, *, evaluate_guard=None):
+tests/test_w81_ee_axis_v04_c3_source_runner.py:447:    runtime, trainer = _runtime(runner, evaluate_guard=evaluate_guard)
+tests/test_w81_ee_axis_v04_c3_source_runner.py:473:        runner, tmp_path, monkeypatch, evaluate_guard=forbidden
+tests/test_w81_ee_axis_v04_c3_source_runner.py:839:    runtime, trainer = _runtime(runner, evaluate_guard=None)
+tests/test_w02_altitude_chain.py:76:    bare, with_guard = cells_for_coverage(altitude_km)
+tests/test_w02_altitude_chain.py:78:    assert with_guard == pytest.approx(guarded, abs=0.05)
+tests/stagec_v025/test_contract_v1_acceptance.py:441:    guard = lambda profile: True
+tests/stagec_v025/test_contract_v1_acceptance.py:447:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:453:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:465:        jointly_legal=legal, service_guard=guard, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:494:            service_guard=lambda profile: True, model=route_model,
+tests/stagec_v025/test_contract_v1_acceptance.py:668:        service_guard=lambda profile: True, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:686:            service_guard=lambda profile: True, model=model,
+tests/stagec_v025/test_contract_v1_acceptance.py:842:        service_guard=lambda profile: True,
+tests/stagec_v025/test_contract_v1_acceptance.py:867:        jointly_legal=lambda profile: True, service_guard=lambda profile: True,
+tests/stagec_v025/test_contract_v1_acceptance.py:876:        jointly_legal=lambda profile: True, service_guard=lambda profile: True,
+
+exec
+/bin/bash -lc "rg -n \"def enforce_zero_loss_service_guard|enforce_zero_loss_service_guard\" src/mcrl tests/test_w87_ee_axis_v04_c3_500_update_screen.py
+sed -n '320,365p' tests/test_w87_ee_axis_v04_c3_500_update_screen.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:347:    guard = runner.enforce_zero_loss_service_guard(full, drop)
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:353:    failed_guard = runner.enforce_zero_loss_service_guard(full, drop)
+    assert restored.q3_update_count == 15
+    for before, network in zip(frozen, restored.q_nets[:2], strict=True):
+        assert all(torch.equal(before[name], network.state_dict()[name]) for name in before)
+
+    drifted = copy.deepcopy(state)
+    drifted["q_networks"][0][next(iter(drifted["q_networks"][0]))].view(-1)[0] += 1.0
+    with pytest.raises(runner.V04C3ScreenError, match="frozen-head tensor drifted"):
+        runner.restore_screen_hybrid_state(
+            restored,
+            drifted,
+            gate_selected_q3_rung=10,
+            screen_updates_completed=5,
+        )
+
+
+def test_pooled_ratio_of_sums_and_zero_loss_service_guard_are_explicit():
+    runner = _module()
+    full = [
+        _row(policy="FULL", seed=1, init=11, update=100, bits=10.0, energy=2.0, served=8),
+        _row(policy="FULL", seed=2, init=11, update=100, bits=20.0, energy=5.0, served=7),
+    ]
+    drop = [
+        _row(policy="DROP_C3", seed=1, init=11, update=100, bits=9.0, energy=1.0, served=8),
+        _row(policy="DROP_C3", seed=2, init=11, update=100, bits=20.0, energy=4.0, served=6),
+    ]
+    summary = runner.aggregate_policy_rows(full)
+    assert summary["pooled_ratio_of_sums_ee_bits_per_j"] == pytest.approx(30.0 / 7.0)
+    guard = runner.enforce_zero_loss_service_guard(full, drop)
+    assert guard["pass"] is True
+    assert guard["per_pair_pass"] is True
+    assert guard["pooled_pass"] is True
+
+    drop[1]["served_user_steps"] = 8
+    failed_guard = runner.enforce_zero_loss_service_guard(full, drop)
+    assert failed_guard["pass"] is False
+    assert failed_guard["per_pair_pass"] is False
+    assert failed_guard["pooled_pass"] is False
+    assert failed_guard["violations"]
+
+
+def test_primary_selected_rung_is_zero_update_ee_evaluation_and_guard_failure_is_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    runner = _module()
+    trainer = _hybrid(tmp_path)
+    trainer.q3_update_count = 10
+
+exec
+/bin/bash -lc "sed -n '1,80p' tests/test_w87_ee_axis_v04_c3_500_update_screen.py
+rg -n \"def enforce_zero_loss_service_guard\" scripts src .scratch --glob '*.py' | head -50" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+"""W-87 -- the bounded post-GO V0.4 C3 consumer contract.
+
+These tests deliberately exercise only the new consumer seams.  They do not
+open TLE data, run an episode, or call the source/gate runners.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+import torch
+
+from mcrl.algorithms.ee_axis_action_shared import EEAxisActionSharedConfig
+from mcrl.algorithms.ee_axis_action_shared_meanmax import (
+    EEAxisMaskedMeanMaxConfig,
+    EEAxisMaskedMeanMaxTrainer,
+)
+from mcrl.algorithms.ee_axis_pairwise import EEAxisPairBatch
+from mcrl.algorithms.ee_axis_v04_hybrid import (
+    EEAxisV04HybridTrainer,
+    FrozenMeanMaxCheckpointSpec,
+)
+
+
+REPO = Path(__file__).resolve().parents[1]
+RUNNER = REPO / ".scratch" / "c3-v04" / "run_v04_c3_500_update_screen.py"
+SEED = 2026092101
+AUTHORITY = "a" * 64
+
+
+def _module():
+    spec = importlib.util.spec_from_file_location("v04_c3_screen_w87", RUNNER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _canonical(payload: object) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+        + b"\n"
+    )
+
+
+def _write_json(path: Path, payload: object) -> str:
+    encoded = _canonical(payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(encoded)
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _gate_fixture(tmp_path: Path, runner, *, status: str | None = None) -> Path:
+    gate = tmp_path / "gate"
+    gate.mkdir(parents=True)
+    digest = "b" * 64
+    source = {
+        "source_dir": "artifacts/fake-v04-source",
+        "source_manifest_sha256": digest,
+        "source_manifest_file_sha256": digest,
+        "schedule_sha256": digest,
+        "schedule_file_sha256": digest,
+        "seed_split": {
+            **{str(seed): "train" for seed in runner.TRAIN_SOURCE_SEEDS},
+            **{str(seed): "validation" for seed in runner.VALIDATION_SOURCE_SEEDS},
+        },
+    }
+    authority = {
+.scratch/c3-v04/run_v04_c3_500_update_screen.py:601:def enforce_zero_loss_service_guard(
+
+exec
+/bin/bash -lc "sed -n '580,665p' .scratch/c3-v04/run_v04_c3_500_update_screen.py
+rg -n \"spec_from_file_location|run_path\\(|SourceFileLoader|\\.scratch.*\\.py|artifacts.*read_|read_text\\(|read_bytes\\(|np\\.load\\(|torch\\.load\\(|load_checkpoint\\(\" tests --glob '*.py'" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+        raise V04C3ScreenError("policy service counts are malformed")
+    return {
+        "rows": len(rows),
+        "decision_count": decisions,
+        "served_user_steps": served,
+        "served_fraction": served / decisions,
+        "outage_fraction": 1.0 - served / decisions,
+        "total_bits": bits,
+        "total_energy_j": energy,
+        "pooled_ratio_of_sums_ee_bits_per_j": bits / energy if energy else 0.0,
+    }
+
+
+def _pair_key(row: Mapping[str, Any]) -> tuple[int, int, int]:
+    return (
+        _validate_nonnegative_int(row.get("initialization_seed"), field="initialization_seed"),
+        _validate_nonnegative_int(row.get("evaluation_seed"), field="evaluation_seed"),
+        _validate_nonnegative_int(row.get("checkpoint_update"), field="checkpoint_update"),
+    )
+
+
+def enforce_zero_loss_service_guard(
+    full_rows: Sequence[Mapping[str, Any]],
+    drop_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Report the zero-loss service guard without hiding a negative result.
+
+    Pairing/schema failures still fail closed because they invalidate the
+    comparison.  A genuine service loss is scientific evidence, however, so
+    it is returned as ``pass: false`` together with every violation; callers
+    must still publish the EE rows and summaries.
+    """
+
+    full_by_key = {_pair_key(row): row for row in full_rows}
+    drop_by_key = {_pair_key(row): row for row in drop_rows}
+    if len(full_by_key) != len(full_rows) or len(drop_by_key) != len(drop_rows):
+        raise V04C3ScreenError("service guard received duplicate paired evaluation rows")
+    if set(full_by_key) != set(drop_by_key):
+        raise V04C3ScreenError("service guard FULL/DROP_C3 pair keys do not match")
+    violations = []
+    for key in sorted(full_by_key):
+        full_served = _validate_nonnegative_int(
+            full_by_key[key].get("served_user_steps"), field="FULL.served_user_steps"
+        )
+        drop_served = _validate_nonnegative_int(
+            drop_by_key[key].get("served_user_steps"), field="DROP_C3.served_user_steps"
+        )
+        if full_served + SERVICE_GUARD_MARGIN < drop_served:
+            violations.append(
+                {
+                    "pair": list(key),
+                    "full_served_user_steps": full_served,
+                    "drop_c3_served_user_steps": drop_served,
+                }
+            )
+    full_summary = aggregate_policy_rows(full_rows)
+    drop_summary = aggregate_policy_rows(drop_rows)
+    pooled_pass = (
+        full_summary["served_user_steps"] + SERVICE_GUARD_MARGIN
+        >= drop_summary["served_user_steps"]
+    )
+    passed = not violations and pooled_pass
+    return {
+        "margin_served_user_steps": SERVICE_GUARD_MARGIN,
+        "pairs": len(full_rows),
+        "pass": passed,
+        "per_pair_pass": not violations,
+        "pooled_pass": pooled_pass,
+        "full_served_user_steps": full_summary["served_user_steps"],
+        "drop_c3_served_user_steps": drop_summary["served_user_steps"],
+        "violations": violations,
+    }
+
+
+def _write_once_torch(path: Path, payload: object) -> str:
+    """Write one binary checkpoint without ever replacing an existing file."""
+
+    destination = Path(path)
+    if destination.exists() or destination.is_symlink():
+        raise V04C3ScreenError(f"refusing to overwrite screen checkpoint: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+tests/test_w138_v011_joint_c3_ordered_oracle.py:21:SPEC = importlib.util.spec_from_file_location(
+tests/test_w30_server_training_cli.py:13:    spec = importlib.util.spec_from_file_location("run_server_training", path)
+tests/test_w65_e1_route_aware_test_evaluator.py:26:    spec = importlib.util.spec_from_file_location(
+tests/test_w65_e1_route_aware_test_evaluator.py:55:    return hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w65_e1_route_aware_test_evaluator.py:87:        opening_file_sha256s[str(seed)] = hashlib.sha256(opening.read_bytes()).hexdigest()
+tests/test_w65_e1_route_aware_test_evaluator.py:88:        temporal_file_sha256s[str(seed)] = hashlib.sha256(temporal.read_bytes()).hexdigest()
+tests/test_w65_e1_route_aware_test_evaluator.py:134:            "file_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+tests/test_w65_e1_route_aware_test_evaluator.py:253:        EVALUATOR.read_bytes()
+tests/test_w65_e1_route_aware_test_evaluator.py:567:        EVALUATOR.read_bytes()
+tests/test_w65_e1_route_aware_test_evaluator.py:624:        opening_receipt.read_bytes()
+tests/test_w65_e1_route_aware_test_evaluator.py:661:    spec = importlib.util.spec_from_file_location(
+tests/test_w65_e1_route_aware_test_evaluator.py:671:        ".scratch/ee-axis-redesign/run_v03_e1_route_aware_test_evaluator.py"
+tests/test_w195_ee_axis_lcsrs_c3_source_artifact.py:69:    assert hashlib.sha256(EXECUTION_ADDENDUM.read_bytes()).hexdigest() == (
+tests/test_w195_ee_axis_lcsrs_c3_source_artifact.py:171:    sidecar_sha = hashlib.sha256(sidecar.read_bytes()).hexdigest()
+tests/test_w195_ee_axis_lcsrs_c3_source_artifact.py:248:    sidecar.write_bytes(sidecar.read_bytes() + b"tamper")
+tests/test_w195_ee_axis_lcsrs_c3_source_artifact.py:255:    payload = json.loads(index.read_text(encoding="ascii"))
+tests/test_w119_ee_axis_v07_c2_d2_runner_integration.py:28:RUNNER = ROOT / ".scratch" / "c3-v04" / "run_v07_c2_d2.py"
+tests/test_w119_ee_axis_v07_c2_d2_runner_integration.py:29:SPEC = importlib.util.spec_from_file_location("v07_c2_d2_runner_w119", RUNNER)
+tests/test_w72_action_shared_500ep_route_ablation.py:12:    / ".scratch/ee-axis-redesign/run_v03_action_shared_500ep_route_ablation.py"
+tests/test_w72_action_shared_500ep_route_ablation.py:14:SPEC = importlib.util.spec_from_file_location("action_shared_500", RUNNER)
+tests/test_w142_v012_zero_energy_c3_oracle.py:20:SPEC = importlib.util.spec_from_file_location(
+tests/test_w142_v012_zero_energy_c3_oracle.py:220:    source = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w142_v012_zero_energy_c3_oracle.py:245:    source = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w95_ee_axis_v04_c2_phase_b.py:24:SPEC = importlib.util.spec_from_file_location(
+tests/test_w95_ee_axis_v04_c2_phase_b.py:26:    REPO / ".scratch/c3-v04/run_v04_c2_phase_b.py",
+tests/test_w95_ee_axis_v04_c2_phase_b.py:203:            "file_sha256": hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w95_ee_axis_v04_c2_phase_b.py:261:            "file_sha256": hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w134_pnfe_v09_integrated_oracle.py:18:_RUNNER_PATH = _ROOT / ".scratch" / "pnfe-v09" / "run_v09_integrated_oracle.py"
+tests/test_w134_pnfe_v09_integrated_oracle.py:19:_SPEC = importlib.util.spec_from_file_location("run_v09_integrated_oracle", _RUNNER_PATH)
+tests/test_w134_pnfe_v09_integrated_oracle.py:171:    source = _RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w70_e1_action_shared_validation.py:12:    / ".scratch/ee-axis-redesign/run_v03_e1_action_shared_validation.py"
+tests/test_w70_e1_action_shared_validation.py:14:SPEC = importlib.util.spec_from_file_location("e1_action_shared_validation", RUNNER)
+tests/test_w99_v05_c2_controlled_source.py:19:SPEC = importlib.util.spec_from_file_location(
+tests/test_w99_v05_c2_controlled_source.py:21:    REPO / ".scratch/c3-v04/run_v05_c2_controlled_source.py",
+tests/test_w99_v05_c2_controlled_source.py:180:    payload = json.loads(output.read_text(encoding="ascii"))
+tests/test_w99_v05_c2_controlled_source.py:201:    assert target.read_bytes() == b"winner"
+tests/test_w39_c2_keyed_gate.py:22:        (ROOT / "artifacts/c2-v03-gate-20260831/prereg.json").read_text()
+tests/test_w109_v06_c2_k1_bounded_episode.py:15:    / ".scratch/c3-v04/run_v06_c2_k1_bounded_learner.py"
+tests/test_w109_v06_c2_k1_bounded_episode.py:17:SPEC = importlib.util.spec_from_file_location(
+tests/test_w178_ee_axis_relational_zr_c3_r4_bounds.py:104:    w173 = runpy.run_path(
+tests/test_w125_ee_axis_v07_c2_b1_fast_live.py:16:LIVE = ROOT / ".scratch" / "c3-v04" / "v07_c2_b1_fast_live.py"
+tests/test_w125_ee_axis_v07_c2_b1_fast_live.py:17:SPEC = importlib.util.spec_from_file_location("v07_c2_b1_fast_live", LIVE)
+tests/test_w172_ee_axis_v017_c3_softkl_gate.py:24:SPEC = importlib.util.spec_from_file_location(
+tests/test_w172_ee_axis_v017_c3_softkl_gate.py:33:SOURCE_SPEC = importlib.util.spec_from_file_location(
+tests/test_w172_ee_axis_v017_c3_softkl_gate.py:47:OLD_SPEC = importlib.util.spec_from_file_location(
+tests/test_w172_ee_axis_v017_c3_softkl_gate.py:433:    runner_text = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w172_ee_axis_v017_c3_softkl_gate.py:441:    contract = gate.CONTRACT_PATH.read_text(encoding="utf-8")
+tests/test_w172_ee_axis_v017_c3_softkl_gate.py:511:    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+tests/test_w172_ee_axis_v017_c3_softkl_gate.py:579:        (tmp_path / "result" / "result.json").read_text(encoding="ascii")
+tests/test_w81_ee_axis_v04_c3_source_runner.py:33:RUNNER = REPO / ".scratch" / "c3-v04" / "run_v04_c3_source.py"
+tests/test_w81_ee_axis_v04_c3_source_runner.py:37:    spec = importlib.util.spec_from_file_location(
+tests/test_w81_ee_axis_v04_c3_source_runner.py:320:    file_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w81_ee_axis_v04_c3_source_runner.py:535:    payload = json.loads(receipt_path.read_text(encoding="ascii"))
+tests/test_w81_ee_axis_v04_c3_source_runner.py:715:    payload = json.loads(receipt_path.read_text(encoding="ascii"))
+tests/test_w81_ee_axis_v04_c3_source_runner.py:808:    source = RUNNER.read_text(encoding="utf-8")
+tests/test_w81_ee_axis_v04_c3_source_runner.py:820:    assert ".scratch/c3-v04/run_v04_c3_source.py" in labels
+tests/test_w81_ee_axis_v04_c3_source_runner.py:934:        (output / "smoke-schedule.json").read_text(encoding="ascii")
+tests/test_w81_ee_axis_v04_c3_source_runner.py:936:    receipt = json.loads((output / "receipt.json").read_text(encoding="ascii"))
+tests/test_w136_v010_mone_c3_oracle.py:14:RUNNER_PATH = REPO / ".scratch" / "mone-v010" / "run_v010_mone_c3_oracle.py"
+tests/test_w136_v010_mone_c3_oracle.py:15:SPEC = importlib.util.spec_from_file_location("run_v010_mone_c3_oracle", RUNNER_PATH)
+tests/test_w183_ee_axis_lcsrs_c3_head.py:73:    assert "positive_credit" not in source.read_text(encoding="utf-8")
+tests/test_w73_e1_action_graph_coverage_census.py:10:    / ".scratch/ee-axis-redesign/census_v03_e1_action_graph_coverage.py"
+tests/test_w73_e1_action_graph_coverage_census.py:12:SPEC = importlib.util.spec_from_file_location("e1_action_graph_census", RUNNER)
+tests/test_w108_v06_c2_k1_bounded_runner_freeze.py:17:    / ".scratch/c3-v04/run_v06_c2_k1_bounded_learner.py"
+tests/test_w108_v06_c2_k1_bounded_runner_freeze.py:19:SPEC = importlib.util.spec_from_file_location(
+tests/test_w108_v06_c2_k1_bounded_runner_freeze.py:116:    checkpoint.write_bytes(checkpoint.read_bytes() + b"tamper")
+tests/test_w108_v06_c2_k1_bounded_runner_freeze.py:151:    payload = json.loads(freeze_path.read_text(encoding="ascii"))
+tests/test_w145_v013_result_verifier.py:25:SPEC = importlib.util.spec_from_file_location("v013_result_verifier", VERIFIER_PATH)
+tests/test_w145_v013_result_verifier.py:333:    payload = json.loads(shards[0].read_text(encoding="ascii"))
+tests/test_w145_v013_result_verifier.py:342:    payload = json.loads(shards[0].read_text(encoding="ascii"))
+tests/test_w145_v013_result_verifier.py:361:    payload = json.loads(target.read_text(encoding="ascii"))
+tests/test_w145_v013_result_verifier.py:384:    result = json.loads(merged.read_text(encoding="ascii"))
+tests/test_w145_v013_result_verifier.py:395:    payload = json.loads(shards[0].read_text(encoding="ascii"))
+tests/test_w145_v013_result_verifier.py:404:    source = VERIFIER_PATH.read_text(encoding="utf-8")
+tests/test_w110_v06_c2_k1_simulator_baseline.py:16:    / ".scratch/c3-v04/v06_c2_k1_simulator_baseline.py"
+tests/test_w110_v06_c2_k1_simulator_baseline.py:18:SPEC = importlib.util.spec_from_file_location("v06_c2_k1_baseline_w110", HELPER)
+tests/test_w33_r7_500_control_plane.py:17:SPEC = importlib.util.spec_from_file_location("_r7_500_control_plane_tests", SOURCE)
+tests/test_w52_ee_axis_temporal_dataset.py:123:    payload = json.loads(destination.read_text(encoding="ascii"))
+tests/test_w40_c2_gate_runner_integrity.py:87:    assert json.loads(path.read_text(encoding="utf-8")) == schedule
+tests/test_w40_c2_gate_runner_integrity.py:135:    path.write_text(path.read_text(encoding="utf-8").replace('"step_index": 2', '"step_index": 9'), encoding="utf-8")
+tests/test_w89_ee_axis_v04_five_arm_ablation.py:21:RUNNER = REPO / ".scratch" / "c3-v04" / "run_v04_five_arm_ablation.py"
+tests/test_w89_ee_axis_v04_five_arm_ablation.py:25:    spec = importlib.util.spec_from_file_location("v04_five_arm_w89", RUNNER)
+tests/test_w103_v06_c2_k1_live_adapter.py:16:LIVE = ROOT / ".scratch" / "c3-v04" / "v06_c2_k1_live_adapter.py"
+tests/test_w103_v06_c2_k1_live_adapter.py:17:spec = importlib.util.spec_from_file_location("v06_live_adapter", LIVE)
+tests/test_w103_v06_c2_k1_live_adapter.py:110:    source = LIVE.read_text(encoding="utf-8")
+tests/test_w164_ee_axis_v015_c3_reference_source_shard.py:21:SPEC = importlib.util.spec_from_file_location("v015_reference_source_shard", RUNNER_PATH)
+tests/test_w164_ee_axis_v015_c3_reference_source_shard.py:111:    metadata = json.loads((output / RUNNER.METADATA_FILENAME).read_text())
+tests/test_w164_ee_axis_v015_c3_reference_source_shard.py:116:    ).read_text()
+tests/test_w164_ee_axis_v015_c3_reference_source_shard.py:158:    metadata = json.loads(path.read_text())
+tests/test_w164_ee_axis_v015_c3_reference_source_shard.py:259:    text = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_ruling_no_beam_count_cap.py:69:        text = path.read_text().lower()
+tests/test_ruling_no_beam_count_cap.py:94:    source = (SRC / "env" / "action_contract.py").read_text()
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:32:RUNNER = REPO / ".scratch" / "c3-v04" / "run_v04_c3_500_update_screen.py"
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:38:    spec = importlib.util.spec_from_file_location("v04_c3_screen_w87", RUNNER)
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:120:            "file_sha256": hashlib.sha256(selected_path.read_bytes()).hexdigest(),
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:199:        sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+tests/test_w29_prereg_frozen.py:77:    assert hashlib.sha256(FROZEN.read_bytes()).hexdigest() == CORRECTIVE_R2_BYTE_SHA256
+tests/test_w29_prereg_frozen.py:90:    payload = LEGACY_FROZEN.read_bytes()
+tests/test_w29_prereg_frozen.py:99:    payload = PROTOCOL_COMPLETE_FROZEN.read_bytes()
+tests/test_w29_prereg_frozen.py:108:    payload = RUNTIME_CORRECTED_FROZEN.read_bytes()
+tests/test_w29_prereg_frozen.py:220:    payload = json.loads(FROZEN.read_text(encoding="utf-8"))
+tests/test_w203_ee_axis_lcsrs_source_stage.py:22:    spec = importlib.util.spec_from_file_location("test_w203_source_stage", SOURCE_STAGE_PATH)
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:30:    return hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:59:    raw = path.read_bytes()
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:82:        prepare_path.read_bytes()
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:86:        t1_prereg_path.read_bytes()
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:221:        json.loads(paths["source_seal"].read_text(encoding="ascii"))
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:254:    source_seal = json.loads(paths["source_seal"].read_text(encoding="ascii"))
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:280:    artifact_before = (paths["output"] / "formal-verdict.json").read_bytes()
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:281:    seal_before = (paths["output"] / "formal-verdict-seal.json").read_bytes()
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:290:    assert (paths["output"] / "formal-verdict.json").read_bytes() == artifact_before
+tests/test_w107_v06_c2_k1_formal_verdict_writer.py:291:    assert (paths["output"] / "formal-verdict-seal.json").read_bytes() == seal_before
+tests/test_w88_ee_axis_v04_c3_confirmatory.py:20:RUNNER = REPO / ".scratch" / "c3-v04" / "run_v04_c3_confirmatory.py"
+tests/test_w88_ee_axis_v04_c3_confirmatory.py:25:    spec = importlib.util.spec_from_file_location("v04_c3_confirmatory_w88", RUNNER)
+tests/test_w88_ee_axis_v04_c3_confirmatory.py:288:    assert ".scratch/c3-v04/run_v04_c3_confirmatory.py" in manifest["files"]
+tests/test_w88_ee_axis_v04_c3_confirmatory.py:291:    tampered["files"][".scratch/c3-v04/run_v04_c3_confirmatory.py"] = "f" * 64
+tests/test_w66_e1_pretest_diagnostics.py:18:    REPO / ".scratch" / "ee-axis-redesign" / "run_v03_e1_pretest_diagnostics.py"
+tests/test_w66_e1_pretest_diagnostics.py:23:    spec = importlib.util.spec_from_file_location("w66_e1_pretest_diagnostics", RUNNER)
+tests/test_w200_ee_axis_lcsrs_composition_runtime.py:31:    spec = importlib.util.spec_from_file_location(name, path)
+tests/test_w200_ee_axis_lcsrs_composition_runtime.py:374:spec = importlib.util.spec_from_file_location('isolated_v023_runtime', path)
+tests/test_w155_v014_five_arm_evaluation.py:20:SPEC = importlib.util.spec_from_file_location("mcrl_v014_five_arm_w155", RUNNER_PATH)
+tests/test_w91_ee_axis_v04_c2_sibling_schedule.py:139:    assert file_sha == hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w91_ee_axis_v04_c2_sibling_schedule.py:209:    on_disk = json.loads(path.read_text(encoding="ascii"))
+tests/test_w96_ee_axis_v04_c2_parallel_screen.py:19:SPEC = importlib.util.spec_from_file_location(
+tests/test_w96_ee_axis_v04_c2_parallel_screen.py:21:    REPO / ".scratch/c3-v04/run_v04_c2_parallel_screen.py",
+tests/test_w165_ee_axis_v015_c3_reference_gate.py:20:SPEC = importlib.util.spec_from_file_location("mcrl_v015_reference_gate_w165", RUNNER)
+tests/test_w165_ee_axis_v015_c3_reference_gate.py:27:SOURCE_SPEC = importlib.util.spec_from_file_location(
+tests/test_w69_e1_action_shared_source_supplement.py:11:    / ".scratch/ee-axis-redesign/run_v03_e1_action_shared_sources.py"
+tests/test_w69_e1_action_shared_source_supplement.py:13:SPEC = importlib.util.spec_from_file_location("e1_action_shared_sources", RUNNER)
+tests/test_w64_e1_validation_ladder_driver.py:14:RUNNER = REPO / ".scratch" / "ee-axis-redesign" / "run_v03_e1_validation_ladder.py"
+tests/test_w64_e1_validation_ladder_driver.py:18:    spec = importlib.util.spec_from_file_location("run_v03_e1_validation_ladder_test", RUNNER)
+tests/test_w64_e1_validation_ladder_driver.py:27:        runner.sources.CALIBRATION_RECEIPT.read_text(encoding="utf-8")
+tests/test_w64_e1_validation_ladder_driver.py:51:    assert ".scratch/ee-axis-redesign/run_v03_e1_validation_ladder.py" in paths
+tests/test_w30_training_pipeline.py:235:    status = json.loads((tmp_path / "status.json").read_text(encoding="utf-8"))
+tests/test_w30_training_pipeline.py:257:        (tmp_path / "pipeline-status.json").read_text(encoding="utf-8")
+tests/test_w30_training_pipeline.py:279:        (tmp_path / "pipeline-status.json").read_text(encoding="utf-8")
+tests/test_w30_training_pipeline.py:307:        (tmp_path / "pipeline-status.json").read_text(encoding="utf-8")
+tests/test_w30_training_pipeline.py:723:        (tmp_path / "pipeline-status.json").read_text(encoding="utf-8")
+tests/test_w154_v014_learnability_gate_runner.py:14:RUNNER_PATH = REPO / ".scratch" / "multi-catfish-v014-learner" / "run_v014_learner_gate.py"
+tests/test_w154_v014_learnability_gate_runner.py:15:SPEC = importlib.util.spec_from_file_location("mcrl_v014_learnability_gate_w154", RUNNER_PATH)
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:21:SPEC = importlib.util.spec_from_file_location(
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:159:    receipt = RUNNER.CONTRACT_RECEIPT_PATH.read_text(encoding="ascii").split()
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:175:        (output / RUNNER.METADATA_FILENAME).read_text(encoding="ascii")
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:189:    ).read_text(encoding="ascii")
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:264:    npz.write_bytes(npz.read_bytes() + b"tampered")
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:271:    metadata = json.loads(metadata_path.read_text(encoding="ascii"))
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:298:    metadata = json.loads(metadata_path.read_text(encoding="ascii"))
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:314:    text = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py:326:    text = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w205_v023_step_result_contract.py:16:    spec = importlib.util.spec_from_file_location(name, path)
+tests/test_w41_c2_v03b_reactive_gate_integrity.py:180:        (ROOT / "artifacts/c2-v03-gate-20260831/prereg.json").read_text()
+tests/test_w41_c2_v03b_reactive_gate_integrity.py:252:    assert ".scratch/catfish-stage0/c3_reward_aligned_v3_trainer_backend.py" in relative
+tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py:13:VERIFY_PATH = ROOT / ".scratch/c3-v04/verify_v05_c2_controlled_tape_mechanics.py"
+tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py:14:_SPEC = importlib.util.spec_from_file_location("v05_c2_mechanics_verifier", VERIFY_PATH)
+tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py:50:    payload = json.loads(source.read_text(encoding="ascii"))
+tests/test_w167_ee_axis_v016_c3_origin_source_shard.py:21:SPEC = importlib.util.spec_from_file_location("v016_origin_source_shard", RUNNER_PATH)
+tests/test_w167_ee_axis_v016_c3_origin_source_shard.py:111:    metadata = json.loads((output / RUNNER.METADATA_FILENAME).read_text())
+tests/test_w167_ee_axis_v016_c3_origin_source_shard.py:118:    ).read_text()
+tests/test_w167_ee_axis_v016_c3_origin_source_shard.py:160:    metadata = json.loads(path.read_text())
+tests/test_w167_ee_axis_v016_c3_origin_source_shard.py:261:    text = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w92_ee_axis_v04_c2_support_complete_census.py:17:SPEC = importlib.util.spec_from_file_location(
+tests/test_w92_ee_axis_v04_c2_support_complete_census.py:19:    REPO / ".scratch/c3-v04/run_v04_c2_support_complete_census.py",
+tests/test_w92_ee_axis_v04_c2_support_complete_census.py:180:    payload = json.loads(path.read_text(encoding="ascii"))
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:46:_SPEC = importlib.util.spec_from_file_location("v023_lcsrs_fit_adapter_test", ADAPTER_PATH)
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:223:    sidecar_sha = hashlib.sha256(sidecar.read_bytes()).hexdigest()
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:302:                "sha256": hashlib.sha256(index.read_bytes()).hexdigest(),
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:404:    with np.load(output.with_suffix(".metrics.npz"), allow_pickle=False) as values:
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:418:    runner_spec = importlib.util.spec_from_file_location(
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:442:    assert json.loads(output.read_text(encoding="ascii"))["status"] == "PASS"
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:454:    runner_spec = importlib.util.spec_from_file_location(
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:478:    model.write_bytes(model.read_bytes() + b"tamper")
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:490:    runner_spec = importlib.util.spec_from_file_location(
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:514:    metrics.write_bytes(metrics.read_bytes() + b"tamper")
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:564:    child.write_bytes(child.read_bytes().replace(b'"pair_count":18', b'"pair_count":19'))
+tests/test_w201_ee_axis_lcsrs_final_verifier.py:16:VERIFIER_PATH = REPO / ".scratch" / "multi-catfish-v023-c3-observability" / "verify_v023_lcsrs_final.py"
+tests/test_w201_ee_axis_lcsrs_final_verifier.py:17:SPEC = importlib.util.spec_from_file_location("v023_final_test_module", VERIFIER_PATH)
+tests/test_w201_ee_axis_lcsrs_final_verifier.py:302:    npz_path.write_bytes(npz_path.read_bytes() + b"tamper")
+tests/test_w71_e1_action_shared_independent_source_verifier.py:9:    / ".scratch/ee-axis-redesign/verify_v03_e1_action_shared_sources.py"
+tests/test_w71_e1_action_shared_independent_source_verifier.py:11:SPEC = importlib.util.spec_from_file_location("e1_action_shared_verifier", RUNNER)
+tests/test_w168_ee_axis_v016_c3_origin_gate.py:20:SPEC = importlib.util.spec_from_file_location("mcrl_v016_origin_gate_w168", RUNNER)
+tests/test_w168_ee_axis_v016_c3_origin_gate.py:27:SOURCE_SPEC = importlib.util.spec_from_file_location(
+tests/test_w168_ee_axis_v016_c3_origin_gate.py:239:    runner_text = RUNNER.read_text(encoding="utf-8")
+tests/test_w168_ee_axis_v016_c3_origin_gate.py:247:    contract = gate.CONTRACT_PATH.read_text(encoding="utf-8")
+tests/test_w139_v011_result_verifier.py:14:VERIFIER_PATH = REPO / ".scratch" / "joint-c3-v011" / "verify_v011_result.py"
+tests/test_w139_v011_result_verifier.py:18:    spec = importlib.util.spec_from_file_location("v011_result_verifier_w139", VERIFIER_PATH)
+tests/test_w139_v011_result_verifier.py:291:    source = VERIFIER_PATH.read_text(encoding="utf-8")
+tests/test_w139_v011_result_verifier.py:293:    assert "spec_from_file_location" not in source
+tests/test_w63_e1_fresh_source_runner_integrity.py:17:RUNNER = REPO / ".scratch" / "ee-axis-redesign" / "run_v03_e1_fresh_sources.py"
+tests/test_w63_e1_fresh_source_runner_integrity.py:21:    spec = importlib.util.spec_from_file_location("run_v03_e1_fresh_sources_test", RUNNER)
+tests/test_w63_e1_fresh_source_runner_integrity.py:32:    assert ".scratch/ee-axis-redesign/run_v03_e1_fresh_sources.py" in paths
+tests/test_w63_e1_fresh_source_runner_integrity.py:58:    checkpoint = json.loads(runner.CALIBRATION_RECEIPT.read_text(encoding="utf-8"))[
+tests/test_w63_e1_fresh_source_runner_integrity.py:121:    assert digest == hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w63_e1_fresh_source_runner_integrity.py:122:    assert path.read_bytes() == b'{"a":1,"b":2}\n'
+tests/physics_v025/test_provider_legacy.py:408:    assert provider.provider_source_sha256() == hashlib.sha256(source.read_bytes()).hexdigest()
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:28:SPEC = importlib.util.spec_from_file_location("v023_fit_independent_test", VERIFIER_PATH)
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:78:    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:326:            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:494:    metrics_sha = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:519:    fit_sha = hashlib.sha256(fit_path.read_bytes()).hexdigest()
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:525:    metrics_sha = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:558:    placebo_sha = hashlib.sha256(placebo_path.read_bytes()).hexdigest()
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:603:                str(world): hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:638:    tree = ast.parse(VERIFIER_PATH.read_text(encoding="utf-8"))
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:696:    payload = json.loads(receipt.read_text(encoding="ascii"))
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:699:        target.write_bytes(target.read_bytes() + b"tamper")
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:702:        target.write_bytes(target.read_bytes() + b"tamper")
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:705:        body = json.loads(target.read_text(encoding="ascii"))
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:710:        body = json.loads(target.read_text(encoding="ascii"))
+tests/test_w199_ee_axis_lcsrs_fit_independent.py:740:    payload = json.loads(receipt.read_text(encoding="ascii"))
+tests/test_w80_ee_axis_v04_c3_dataset.py:214:    assert path.read_bytes() == reversed_path.read_bytes()
+tests/test_w80_ee_axis_v04_c3_dataset.py:239:    stale_source = json.loads(path.read_text(encoding="ascii"))
+tests/test_w80_ee_axis_v04_c3_dataset.py:248:    tampered = json.loads(path.read_text(encoding="ascii"))
+tests/test_w169_ee_axis_v016_origin_physical_five_arm.py:22:SPEC = importlib.util.spec_from_file_location("mcrl_v016_origin_physical_w169", RUNNER_PATH)
+tests/test_w169_ee_axis_v016_origin_physical_five_arm.py:218:    payload = json.loads(result.read_text(encoding="ascii"))
+tests/test_w169_ee_axis_v016_origin_physical_five_arm.py:221:    receipt_payload = json.loads(receipt.read_text(encoding="ascii"))
+tests/test_w117_ee_axis_v07_c2_d2_runner.py:14:RUNNER = ROOT / ".scratch" / "c3-v04" / "run_v07_c2_d2.py"
+tests/test_w117_ee_axis_v07_c2_d2_runner.py:15:SPEC = importlib.util.spec_from_file_location("v07_c2_d2_runner", RUNNER)
+tests/test_w117_ee_axis_v07_c2_d2_runner.py:89:    source = RUNNER.read_text(encoding="utf-8")
+tests/physics_v025/test_stage4_contract.py:29:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage4_contract.py:43:    spec = importlib.util.spec_from_file_location("v025_stage4_runner", RUNNER)
+tests/test_w44_ee_axis_opening_dataset.py:328:    assert first_path.read_bytes() == second_path.read_bytes()
+tests/test_w44_ee_axis_opening_dataset.py:339:    original_bytes = first_path.read_bytes()
+tests/test_w44_ee_axis_opening_dataset.py:342:    assert first_path.read_bytes() == original_bytes
+tests/test_w44_ee_axis_opening_dataset.py:353:    payload = json.loads(path.read_text(encoding="utf-8"))
+tests/test_w44_ee_axis_opening_dataset.py:361:    clean = json.loads(clean_path.read_text(encoding="utf-8"))
+tests/test_w197_ee_axis_lcsrs_composition_adapter.py:23:_SPEC = importlib.util.spec_from_file_location(
+tests/test_w197_ee_axis_lcsrs_composition_adapter.py:651:    with np.load(result.arrays_path, allow_pickle=False) as arrays:
+tests/test_w197_ee_axis_lcsrs_composition_adapter.py:766:    result.arrays_path.write_bytes(result.arrays_path.read_bytes() + b"tamper")
+tests/test_w197_ee_axis_lcsrs_composition_adapter.py:789:    return hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w197_ee_axis_lcsrs_composition_adapter.py:1088:    sidecar.write_bytes(sidecar.read_bytes() + b"tamper")
+tests/test_w197_ee_axis_lcsrs_composition_adapter.py:1227:    model_path.write_bytes(model_path.read_bytes() + b"tamper")
+tests/physics_v025/test_stage3_parity_uncertainty.py:31:RUNNER_PATH = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage3_parity_uncertainty.py:35:    spec = importlib.util.spec_from_file_location("v025_stage3_runner", RUNNER_PATH)
+tests/test_w10_state_encoding.py:225:    source = __import__("pathlib").Path(trainer.__file__).read_text()
+tests/physics_v025/test_stage2_runner.py:12:RUNNER_PATH = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage2_runner.py:16:    spec = importlib.util.spec_from_file_location("v025_matrix_runner", RUNNER_PATH)
+tests/test_w202_ee_axis_lcsrs_server_launch_glue.py:29:    spec = importlib.util.spec_from_file_location(
+tests/test_w202_ee_axis_lcsrs_server_launch_glue.py:223:        text = path.read_text(encoding="utf-8")
+tests/test_w202_ee_axis_lcsrs_server_launch_glue.py:228:    sync_text = SYNC_PATH.read_text(encoding="utf-8")
+tests/test_w202_ee_axis_lcsrs_server_launch_glue.py:231:    assert ".scratch/multi-catfish-v023-c3-observability/test_v023_lcsrs_source_adapter.py" in sync_text
+tests/test_w202_ee_axis_lcsrs_server_launch_glue.py:242:    finalize_text = FINALIZE_PATH.read_text(encoding="utf-8")
+tests/test_w202_ee_axis_lcsrs_server_launch_glue.py:257:    text = FULL_GATE_PATH.read_text(encoding="utf-8")
+tests/test_w204_ee_axis_lcsrs_result_seal.py:20:    spec = importlib.util.spec_from_file_location("test_w204_result_seal", MODULE_PATH)
+tests/test_w204_ee_axis_lcsrs_result_seal.py:95:    lines = manifest.read_text(encoding="ascii").splitlines()
+tests/test_w204_ee_axis_lcsrs_result_seal.py:106:    assert complete.read_text(encoding="ascii").split()[0] == module.file_sha256(manifest)
+tests/test_w204_ee_axis_lcsrs_result_seal.py:107:    result = json.loads((root / "result.json").read_text(encoding="ascii"))
+tests/test_w204_ee_axis_lcsrs_result_seal.py:110:    verification = json.loads((root / "verification.json").read_text(encoding="ascii"))
+tests/test_w204_ee_axis_lcsrs_result_seal.py:160:    result = json.loads((root / "result.json").read_text(encoding="ascii"))
+tests/test_w204_ee_axis_lcsrs_result_seal.py:232:    copied_contract.write_bytes(copied_contract.read_bytes() + b"tamper")
+tests/test_w67_e1_pretest_diagnostic_runner.py:17:    REPO / ".scratch" / "ee-axis-redesign" / "run_v03_e1_pretest_diagnostics.py"
+tests/test_w67_e1_pretest_diagnostic_runner.py:22:    spec = importlib.util.spec_from_file_location("w67_e1_pretest_runner", RUNNER)
+tests/test_w67_e1_pretest_diagnostic_runner.py:63:    source = RUNNER.read_text(encoding="utf-8")
+tests/test_w67_e1_pretest_diagnostic_runner.py:216:    assert ".scratch/ee-axis-redesign/run_v03_e1_pretest_diagnostics.py" in paths
+tests/test_w61_ee_axis_e1_c2_schedule.py:295:    assert file_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w61_ee_axis_e1_c2_schedule.py:319:    payload = json.loads(path.read_text(encoding="ascii"))
+tests/physics_v025/test_stage4b_contract.py:40:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage4b_contract.py:41:FIGURE_BUILDER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/build_off_axis_figure.py"
+tests/physics_v025/test_stage4b_contract.py:45:    spec = importlib.util.spec_from_file_location(name, path)
+tests/physics_v025/test_stage4b_contract.py:294:    receipt = json.loads((FIGURE_BUILDER.parent / "figures/a-r0-off-axis-kat.json").read_text())
+tests/test_w02_ephemeris.py:391:    assert json.loads(path.read_text())["file_set_sha256"] == manifest[
+tests/test_w12_checkpoints.py:221:    trainer.load_checkpoint(path)
+tests/physics_v025/test_stage4d_gate.py:45:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage4d_gate.py:49:    spec = importlib.util.spec_from_file_location(name, RUNNER)
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:23:_SPEC = importlib.util.spec_from_file_location("v023_scientific_verifier_test", VERIFIER_PATH)
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:56:    authority = json.loads(authority_path.read_text(encoding="ascii"))
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:62:    checkpoint_sha = hashlib.sha256(checkpoint_path.read_bytes()).hexdigest()
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:90:        "fit_runner_path": ".scratch/multi-catfish-v020-c3-source-audit/run_v020_repriced_q1_q2.py",
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:125:    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:681:    metrics_sha = hashlib.sha256(metrics_path.read_bytes()).hexdigest()
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:709:    payload = json.loads(path.read_text(encoding="ascii"))
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:717:    payload = json.loads(path.read_text(encoding="ascii"))
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:722:    with np.load(path.parent / npz_name, allow_pickle=False) as archive:
+tests/test_w151_v014_source_shard.py:14:RUNNER_PATH = REPO / ".scratch" / "multi-catfish-v014-learner" / "run_v014_source_shard.py"
+tests/test_w151_v014_source_shard.py:15:SPEC = importlib.util.spec_from_file_location("mcrl_v014_source_shard", RUNNER_PATH)
+tests/test_w151_v014_source_shard.py:76:    with np.load(output / "source.npz", allow_pickle=False) as loaded:
+tests/test_w75_masked_meanmax_fallback.py:13:    / ".scratch/ee-axis-redesign/run_v03_e1_masked_meanmax_fallback.py"
+tests/test_w75_masked_meanmax_fallback.py:15:SPEC = importlib.util.spec_from_file_location("masked_meanmax_fallback", RUNNER)
+tests/physics_v025/test_contract_discriminators.py:90:    path = Path(__file__).resolve().parents[2] / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_contract_discriminators.py:91:    spec = importlib.util.spec_from_file_location("v025_deadline_runner", path)
+tests/test_w90_ee_axis_v04_c2_failure_forensics.py:13:SPEC = importlib.util.spec_from_file_location(
+tests/test_w90_ee_axis_v04_c2_failure_forensics.py:15:    REPO / ".scratch/c3-v04/run_v04_c2_failure_forensics.py",
+tests/test_w94_route_interaction_diagnostic.py:13:RUNNER = REPO / ".scratch" / "c3-v04" / "run_v04_route_interaction_diagnostic.py"
+tests/test_w94_route_interaction_diagnostic.py:17:    spec = importlib.util.spec_from_file_location("v04_route_interaction_w94", RUNNER)
+tests/test_w175_v018_analytic_diagnostic.py:19:_SPEC = importlib.util.spec_from_file_location("test_v018_diagnostic_runner", RUNNER_PATH)
+tests/test_w175_v018_analytic_diagnostic.py:195:        runner.V018_CONTRACT_PATH.read_text(encoding="utf-8") + "\n",
+tests/test_g6_forbidden_list.py:63:        text = path.read_text().lower()
+tests/test_g6_forbidden_list.py:80:        text = (SRC / relative).read_text().lower()
+tests/test_g6_forbidden_list.py:156:        text = (SRC / relative).read_text().lower()
+tests/test_w99_ee_axis_v05_c2_controlled_screen.py:11:SCRIPT = ROOT / ".scratch/c3-v04/run_v05_c2_controlled_screen.py"
+tests/test_w99_ee_axis_v05_c2_controlled_screen.py:12:spec = importlib.util.spec_from_file_location("w99_v05_c2_controlled_screen", SCRIPT)
+tests/test_w86_ee_axis_v04_c3_learnability_gate.py:18:RUNNER = REPO / ".scratch" / "c3-v04" / "run_v04_c3_learnability_gate.py"
+tests/test_w86_ee_axis_v04_c3_learnability_gate.py:22:    spec = importlib.util.spec_from_file_location("v04_c3_gate_w86", RUNNER)
+tests/test_w86_ee_axis_v04_c3_learnability_gate.py:208:    assert ".scratch/c3-v04/run_v04_c3_learnability_gate.py" in authority[
+tests/test_w29_beam_power_budget.py:76:        if "HOBS_LEO_MAX_TRANSMIT_POWER_W" in path.read_text(encoding="utf-8")
+tests/test_w102_v06_c2_k1_t1_runner.py:20:RUNNER = ROOT / ".scratch" / "c3-v04" / "run_v06_c2_k1_t1.py"
+tests/test_w102_v06_c2_k1_t1_runner.py:21:spec = importlib.util.spec_from_file_location("v06_c2_k1_t1_runner", RUNNER)
+tests/test_w102_v06_c2_k1_t1_runner.py:434:        launcher.read_bytes()).hexdigest()
+tests/test_w102_v06_c2_k1_t1_runner.py:436:              "MULTI-CATFISH-MCRL-V06-C2-K1-T1-PREREG-2026-09-01.md").read_text()
+tests/test_w102_v06_c2_k1_t1_runner.py:877:        t1_prereg_sha256=hashlib.sha256(prereg.read_bytes()).hexdigest())
+tests/test_w102_v06_c2_k1_t1_runner.py:886:            prepare_path.read_bytes()).hexdigest(),
+tests/test_w102_v06_c2_k1_t1_runner.py:948:        simulator_prereg_sha256=hashlib.sha256(prereg.read_bytes()).hexdigest())
+tests/test_w173_ee_axis_relational_zr_c3.py:409:    text = source.read_text(encoding="utf-8")
+tests/test_w176_ee_axis_relational_zr_c3_head.py:134:    text = source.read_text(encoding="utf-8")
+tests/test_w156_v014_learner_gate_verifier.py:14:GATE_PATH = REPO / ".scratch" / "multi-catfish-v014-learner" / "run_v014_learner_gate.py"
+tests/test_w156_v014_learner_gate_verifier.py:15:VERIFY_PATH = REPO / ".scratch" / "multi-catfish-v014-learner" / "verify_v014_learner_gate.py"
+tests/test_w156_v014_learner_gate_verifier.py:19:    spec = importlib.util.spec_from_file_location(name, path)
+tests/test_w156_v014_learner_gate_verifier.py:102:    checkpoint.write_bytes(checkpoint.read_bytes() + b"tamper")
+tests/test_w13_prereg.py:302:    payload = json.loads(path.read_text())
+tests/test_w177_ee_axis_relational_zr_c3_performance.py:22:_W173 = runpy.run_path(
+tests/test_w128_ee_axis_v07_c2_native28_source.py:17:RUNNER = ROOT / ".scratch" / "c3-v04" / "run_v07_c2_fast_iteration.py"
+tests/test_w128_ee_axis_v07_c2_native28_source.py:18:SPEC = importlib.util.spec_from_file_location("v07_c2_fast_iteration_w128", RUNNER)
+tests/test_no_shim_remains.py:79:    source = (SRC / "env" / "step.py").read_text()
+tests/test_no_shim_remains.py:113:    tree = ast.parse((TESTS / "conftest.py").read_text())
+tests/test_w31_corrected_probe_runner.py:38:    spec = importlib.util.spec_from_file_location("run_corrected_probes", path)
+tests/test_w31_corrected_probe_runner.py:387:    assert json.loads((output / "status.json").read_text())["status"] == "complete"
+tests/test_w116_ee_axis_v07_c2_live_adapter.py:18:LIVE = ROOT / ".scratch" / "c3-v04" / "v07_c2_focal_next_live_adapter.py"
+tests/test_w116_ee_axis_v07_c2_live_adapter.py:19:SPEC = importlib.util.spec_from_file_location("v07_c2_live_adapter", LIVE)
+tests/test_w116_ee_axis_v07_c2_live_adapter.py:268:    source = LIVE.read_text(encoding="utf-8")
+tests/test_w105_v06_c2_k1_learner_contract_v2.py:68:    return hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w105_v06_c2_k1_learner_contract_v2.py:106:    source_seal_file_sha = hashlib.sha256(source_seal_path.read_bytes()).hexdigest()
+tests/test_w105_v06_c2_k1_learner_contract_v2.py:377:    seal = json.loads(seal_path.read_text(encoding="ascii"))
+tests/test_w105_v06_c2_k1_learner_contract_v2.py:386:    source = json.loads(source_path.read_text(encoding="ascii"))
+tests/test_w105_v06_c2_k1_learner_contract_v2.py:405:    artifact = json.loads(artifact_path.read_text(encoding="ascii"))
+tests/test_w105_v06_c2_k1_learner_contract_v2.py:411:    seal = json.loads(seal_path.read_text(encoding="ascii"))
+tests/test_w105_v06_c2_k1_learner_contract_v2.py:413:    seal["verdict_file_sha256"] = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+tests/test_w157_v014_q3_support_probe.py:19:SPEC = importlib.util.spec_from_file_location("v014_q3_support_probe", SCRIPT)
+tests/test_w156_v014_physical_five_arm.py:32:SPEC = importlib.util.spec_from_file_location("mcrl_v014_physical_w156", RUNNER_PATH)
+tests/test_w83_ee_axis_v04_hybrid.py:62:    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w100_v05_c2_controlled_support_failure_seal.py:12:SCRIPT = REPO / ".scratch" / "c3-v04" / "seal_v05_c2_controlled_support_failure.py"
+tests/test_w100_v05_c2_controlled_support_failure_seal.py:16:    spec = importlib.util.spec_from_file_location("v05_support_failure_seal", SCRIPT)
+tests/test_w100_v05_c2_controlled_support_failure_seal.py:73:    assert json.loads(target.read_text(encoding="ascii")) == {"a": 1}
+tests/test_w143_v012_result_verifier.py:19:SPEC = importlib.util.spec_from_file_location("v012_result_verifier", VERIFIER_PATH)
+tests/test_w143_v012_result_verifier.py:224:    payload = json.loads(shards[0].read_text(encoding="ascii"))
+tests/test_w143_v012_result_verifier.py:234:    payload = json.loads(shards[0].read_text(encoding="ascii"))
+tests/test_w143_v012_result_verifier.py:246:    payload = json.loads(shards[0].read_text(encoding="ascii"))
+tests/test_w143_v012_result_verifier.py:272:    payload = json.loads(shards[0].read_text(encoding="ascii"))
+tests/test_w143_v012_result_verifier.py:295:    result = json.loads(merged.read_text(encoding="ascii"))
+tests/test_w143_v012_result_verifier.py:307:    source = VERIFIER_PATH.read_text(encoding="utf-8")
+tests/test_w144_v013_zero_energy_c3_oracle.py:21:    REPO / ".scratch" / "zero-energy-c3-v013" / "run_v013_zero_energy_c3_oracle.py"
+tests/test_w144_v013_zero_energy_c3_oracle.py:23:SPEC = importlib.util.spec_from_file_location(
+tests/test_w144_v013_zero_energy_c3_oracle.py:69:    text = RUNNER.CONTRACT_PATH.read_text(encoding="utf-8")
+tests/test_w144_v013_zero_energy_c3_oracle.py:117:    source = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w144_v013_zero_energy_c3_oracle.py:325:    assert destination.read_bytes() == RUNNER._canonical_bytes(
+tests/test_w144_v013_zero_energy_c3_oracle.py:483:    source = RUNNER_PATH.read_text(encoding="utf-8")
+tests/test_w144_v013_zero_energy_c3_oracle.py:496:    ).read_text(encoding="utf-8")
+tests/test_w144_v013_zero_energy_c3_oracle.py:502:    ).read_text(encoding="utf-8")
+tests/test_w144_v013_zero_energy_c3_oracle.py:525:    ).read_text(encoding="utf-8")
+tests/test_w144_v013_zero_energy_c3_oracle.py:540:    ).read_text(encoding="utf-8")
+tests/test_w179_v018_analytic_r2_provenance.py:22:_SPEC = importlib.util.spec_from_file_location("test_v018_r2_provenance_runner", RUNNER_PATH)
+tests/test_w179_v018_analytic_r2_provenance.py:41:    return hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w179_v018_analytic_r2_provenance.py:104:    sync = (root / "sync_v018_analytic_server.sh").read_text(encoding="utf-8")
+tests/test_w179_v018_analytic_r2_provenance.py:105:    run = (root / "run_v018_analytic_panel_server.sh").read_text(encoding="utf-8")
+tests/test_w179_v018_analytic_r2_provenance.py:106:    finalize = (root / "finalize_v018_analytic_server.sh").read_text(encoding="utf-8")
+tests/test_w02_g1_sgp4.py:50:        for line in _VER_TLE.read_text().splitlines()
+tests/test_w02_g1_sgp4.py:65:    for line in _TCPPVER.read_text().splitlines():
+tests/test_w100_v06_c2_k1_t0.py:13:RUNNER = ROOT / ".scratch" / "c3-v04" / "run_v06_c2_k1_t0.py"
+tests/test_w100_v06_c2_k1_t0.py:14:spec = importlib.util.spec_from_file_location("v06_c2_k1_t0", RUNNER)
+tests/test_w79_ee_axis_v04_c3_schedule.py:136:    assert file_sha == hashlib.sha256(path.read_bytes()).hexdigest()
+tests/test_w79_ee_axis_v04_c3_schedule.py:206:    payload = json.loads(path.read_text(encoding="ascii"))
+tests/stagec_v025/test_contract_v1_acceptance.py:526:    resumed.load_checkpoint(checkpoint_path)
+tests/stagec_v025/test_stagec_pipeline.py:455:    clone.load_checkpoint(checkpoint)
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/.scratch/c3-v04/run_v04_c3_500_update_screen.py
+/home/sat/mcrl-v025-harness-ws/src/mcrl/physics_v025/targets.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/test_w87_ee_axis_v04_c3_500_update_screen.py::test_pooled_ratio_of_sums_and_zero_loss_service_guard_are_explicit -q > .scratch/harness-audit-2026-09-09/mutation-service-guard.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/mutation-service-guard.log
+tail -100 .scratch/harness-audit-2026-09-09/mutation-service-guard.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 2255ms:
+F                                                                        [100%]
+=================================== FAILURES ===================================
+______ test_pooled_ratio_of_sums_and_zero_loss_service_guard_are_explicit ______
+
+    def test_pooled_ratio_of_sums_and_zero_loss_service_guard_are_explicit():
+        runner = _module()
+        full = [
+            _row(policy="FULL", seed=1, init=11, update=100, bits=10.0, energy=2.0, served=8),
+            _row(policy="FULL", seed=2, init=11, update=100, bits=20.0, energy=5.0, served=7),
+        ]
+        drop = [
+            _row(policy="DROP_C3", seed=1, init=11, update=100, bits=9.0, energy=1.0, served=8),
+            _row(policy="DROP_C3", seed=2, init=11, update=100, bits=20.0, energy=4.0, served=6),
+        ]
+        summary = runner.aggregate_policy_rows(full)
+        assert summary["pooled_ratio_of_sums_ee_bits_per_j"] == pytest.approx(30.0 / 7.0)
+        guard = runner.enforce_zero_loss_service_guard(full, drop)
+        assert guard["pass"] is True
+        assert guard["per_pair_pass"] is True
+        assert guard["pooled_pass"] is True
+    
+        drop[1]["served_user_steps"] = 8
+        failed_guard = runner.enforce_zero_loss_service_guard(full, drop)
+>       assert failed_guard["pass"] is False
+E       assert True is False
+
+tests/test_w87_ee_axis_v04_c3_500_update_screen.py:354: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_w87_ee_axis_v04_c3_500_update_screen.py::test_pooled_ratio_of_sums_and_zero_loss_service_guard_are_explicit
+
+HARNESS_EXIT_STATUS=1
+
+codex
+All three extreme mutations were caught:
+
+- Coalition invariant features zeroed: T2 information-twin test failed, exit 1.
+- Set-score decomposition replaced by a zero constant: all 3 targeted decomposition tests failed, exit 1.
+- Zero-loss service guard forced to always pass: its negative-case test failed, exit 1.
+
+I’m restoring the last mutation and checking the restored tests before inventorying disk-backed artifacts.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-harness-ws/.scratch/c3-v04/run_v04_c3_500_update_screen.py
+exec
+/bin/bash -lc 'PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025/test_contract_v1_acceptance.py::test_T2_information_twins_reversal_and_additive_placebo tests/physics_v025/test_stage4b_contract.py::test_v15_set_decomposition_and_factor_identity_are_exact tests/physics_v025/test_stage4d_gate.py::test_large_set_decomposition_is_linear_and_has_no_credit_split tests/physics_v025/test_stage4d_gate.py::test_small_set_shapley_is_reporting_only_and_exact tests/test_w87_ee_axis_v04_c3_500_update_screen.py::test_pooled_ratio_of_sums_and_zero_loss_service_guard_are_explicit -q > .scratch/harness-audit-2026-09-09/restoration-check.log 2>&1
+audit_status=$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/restoration-check.log
+cat .scratch/harness-audit-2026-09-09/restoration-check.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ succeeded in 5762ms:
+.....                                                                    [100%]
+
+HARNESS_EXIT_STATUS=0
+
+exec
+/bin/bash -lc "for audit_file in tests/physics_v025/test_stage2_runner.py tests/physics_v025/test_stage3_parity_uncertainty.py tests/physics_v025/test_stage4_contract.py tests/physics_v025/test_stage4b_contract.py tests/physics_v025/test_stage4d_gate.py tests/physics_v025/test_contract_discriminators.py; do
+  printf '%s\\n' \""'$audit_file"
+  rg -n "RUNNER|FIGURE_BUILDER|_runner'"\\(|_load_runner\\(|_module\\(|read_text\\(\" \""'$audit_file"
+done
+rg -n "(''^|/)artifacts/|REPO / '"\\\"artifacts|ROOT / \\\"artifacts|Path\\(["'^'"\\n]*artifacts\" tests --glob '*.py'
+rg -n \"torch\\.load\\(|np\\.load\\(|load_checkpoint\\(\" tests --glob '*.py'" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+tests/physics_v025/test_stage2_runner.py
+12:RUNNER_PATH = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+15:def _load_runner():
+16:    spec = importlib.util.spec_from_file_location("v025_matrix_runner", RUNNER_PATH)
+20:    spec.loader.exec_module(module)
+25:    runner = _load_runner()
+34:    runner = _load_runner()
+48:    runner = _load_runner()
+tests/physics_v025/test_stage3_parity_uncertainty.py
+31:RUNNER_PATH = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+34:def _runner():
+35:    spec = importlib.util.spec_from_file_location("v025_stage3_runner", RUNNER_PATH)
+39:    spec.loader.exec_module(module)
+147:        [sys.executable, str(RUNNER_PATH), "--dry-run"],
+176:    runner = _runner()
+185:    runner = _runner()
+207:    runner = _runner()
+222:    runner = _runner()
+232:    runner = _runner()
+262:    runner = _runner()
+310:    runner = _runner()
+361:    runner = _runner()
+378:    runner = _runner()
+tests/physics_v025/test_stage4_contract.py
+29:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+42:def _runner():
+43:    spec = importlib.util.spec_from_file_location("v025_stage4_runner", RUNNER)
+47:    spec.loader.exec_module(module)
+146:    runner = _runner()
+tests/physics_v025/test_stage4b_contract.py
+40:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+41:FIGURE_BUILDER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/build_off_axis_figure.py"
+49:    spec.loader.exec_module(module)
+145:    runner = _load(RUNNER, "v025_stage4b_runner")
+170:    runner = _load(RUNNER, "v025_stage4b_zero_runner")
+179:    runner = _load(RUNNER, "v025_stage4b_admission_runner")
+208:    runner = _load(RUNNER, "v025_stage4b_allocation_runner")
+287:    builder = _load(FIGURE_BUILDER, "v025_off_axis_builder")
+294:    receipt = json.loads((FIGURE_BUILDER.parent / "figures/a-r0-off-axis-kat.json").read_text())
+tests/physics_v025/test_stage4d_gate.py
+45:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+48:def _load_runner(name: str):
+49:    spec = importlib.util.spec_from_file_location(name, RUNNER)
+53:    spec.loader.exec_module(module)
+187:    runner = _load_runner("v025_stage4d_top_m")
+227:    runner = _load_runner("v025_stage4d_grid")
+262:    runner = _load_runner("v025_stage4d_s_uni")
+308:    runner = _load_runner("v025_stage4d_s_uni_phi")
+359:    runner = _load_runner("v025_stage4d_events")
+415:    runner = _load_runner("v025_stage4d_zero_legal")
+451:    runner = _load_runner("v025_stage4d_conformance")
+465:    runner = _load_runner("v025_stage4d_reaggregation")
+478:    runner = _load_runner("v025_stage4d_reaggregate_distributions")
+512:    runner = _load_runner("v025_stage4d_domains")
+532:    runner = _load_runner("v025_stage4d_prepared_world")
+586:    runner = _load_runner("v025_stage4d_invalid_forecast")
+tests/physics_v025/test_contract_discriminators.py
+95:    spec.loader.exec_module(runner)
+tests/test_w29_prereg_frozen.py:34:ARTIFACTS = Path(__file__).resolve().parents[1] / "artifacts"
+tests/test_w39_c2_keyed_gate.py:22:        (ROOT / "artifacts/c2-v03-gate-20260831/prereg.json").read_text()
+tests/test_w41_c2_v03b_reactive_gate_integrity.py:180:        (ROOT / "artifacts/c2-v03-gate-20260831/prereg.json").read_text()
+tests/test_w41_c2_v03b_reactive_gate_integrity.py:299:    artifact_dir = ROOT / "artifacts" / "c2-v03b-reactive-keyed-physical-headroom-gate-20260831"
+tests/test_w52_c2_real_temporal_pair_smoke.py:89:_REAL_CHECKPOINT = ROOT / "artifacts" / "training-2026-08-25-rerun01" / "main" / "final-checkpoint.pt"
+tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py:20:OUTPUT_DIR = ROOT / "artifacts/multi-catfish-v05-c2-controlled-tape-mechanics-20260901-r4"
+tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py:21:SCHEDULE = ROOT / "artifacts/multi-catfish-v04-c2-support-complete-census-20260901-r3/schedule.json"
+tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py:22:PREPARE = ROOT / "artifacts/multi-catfish-v04-c2-support-complete-census-20260901-r3/prepare-receipt.json"
+tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py:23:Q13_GATE = ROOT / "artifacts/multi-catfish-v04-c3-learnability-20260901-r2/result.json"
+tests/test_w86_ee_axis_v04_c3_learnability_gate.py:173:        source_dir=REPO / "artifacts" / "not-opened-source",
+tests/test_w179_v018_analytic_r2_provenance.py:32:R4_ROOT = REPO / "artifacts/multi-catfish-v018-r4-equivalence-20260904-r1/server-run-r2"
+tests/test_w179_v018_analytic_r2_provenance.py:35:R4_MANIFEST = REPO / "artifacts/multi-catfish-v018-r4-equivalence-20260904-r1/MANIFEST-R2.sha256"
+tests/test_w202_ee_axis_lcsrs_server_launch_glue.py:65:            str(REPO / "artifacts/PREREG-FROZEN-2026-08-25-R2.json"),
+tests/test_w202_ee_axis_lcsrs_server_launch_glue.py:118:        "prereg": (REPO / "artifacts/PREREG-FROZEN-2026-08-25-R2.json").resolve(),
+tests/test_w31_corrected_probe_runner.py:33:PREREG = REPO / "artifacts" / "PREREG-FROZEN-2026-08-25.json"
+tests/test_w172_ee_axis_v017_c3_softkl_gate.py:511:    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+tests/test_w196_ee_axis_lcsrs_fit_adapter.py:404:    with np.load(output.with_suffix(".metrics.npz"), allow_pickle=False) as values:
+tests/test_w197_ee_axis_lcsrs_composition_adapter.py:651:    with np.load(result.arrays_path, allow_pickle=False) as arrays:
+tests/test_w12_checkpoints.py:221:    trainer.load_checkpoint(path)
+tests/test_w198_ee_axis_lcsrs_scientific_verifier.py:722:    with np.load(path.parent / npz_name, allow_pickle=False) as archive:
+tests/test_w151_v014_source_shard.py:76:    with np.load(output / "source.npz", allow_pickle=False) as loaded:
+tests/stagec_v025/test_stagec_pipeline.py:455:    clone.load_checkpoint(checkpoint)
+tests/stagec_v025/test_contract_v1_acceptance.py:526:    resumed.load_checkpoint(checkpoint_path)
+
+exec
+/bin/bash -lc "sed -n '1,150p' tests/test_w52_c2_real_temporal_pair_smoke.py
+sed -n '1,130p' tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py
+sed -n '1,130p' tests/test_w29_prereg_frozen.py
+sed -n '1,80p' tests/physics_v025/test_stage4b_contract.py
+sed -n '270,305p' tests/physics_v025/test_stage4b_contract.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+"""W-52 -- real C2 backend to current Q2 temporal-pair smoke seam."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import os
+import sys
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+
+from mcrl.env.constants import TLE_ROOT_DEFAULT
+
+
+ROOT = Path(__file__).resolve().parents[1]
+C2_ROOT = ROOT / ".scratch" / "c2-v03"
+if str(C2_ROOT) not in sys.path:
+    sys.path.insert(0, str(C2_ROOT))
+
+import run_c2_v03_real_temporal_pair_smoke as smoke  # noqa: E402
+
+
+def test_public_adapter_helper_keeps_required_call_order(monkeypatch):
+    """The parent runner cannot accidentally forecast before capturing state."""
+
+    events: list[str] = []
+    captured = object()
+    pair = SimpleNamespace(
+        source_route="C2",
+        state=np.zeros(228, dtype=np.float32),
+    )
+    route_batch = SimpleNamespace(
+        route="C2",
+        pair_batch=SimpleNamespace(states=np.zeros((1, 228), dtype=np.float32)),
+    )
+    route_batch.verify = lambda: events.append("batch_verify")
+
+    def fake_capture(prepared, **kwargs):
+        assert prepared is prepared_fork
+        assert kwargs["anchor_schedule_sha256"] == "a" * 64
+        events.append("capture")
+        return captured
+
+    def fake_forecast():
+        events.append("forecast")
+        return object()
+
+    def fake_materialize(capture, prepared, **kwargs):
+        assert capture is captured
+        assert prepared is prepared_fork
+        events.append("materialize")
+        return pair
+
+    def fake_route_batch(rows):
+        assert tuple(rows) == (pair,)
+        events.append("route_batch")
+        return route_batch
+
+    prepared_fork = SimpleNamespace(run_forecast=fake_forecast)
+    monkeypatch.setattr(smoke, "capture_temporal_anchor", fake_capture)
+    monkeypatch.setattr(smoke, "materialize_temporal_pair", fake_materialize)
+    monkeypatch.setattr(smoke, "build_temporal_route_batch", fake_route_batch)
+
+    result = smoke.capture_and_materialize_q2_pair(
+        prepared_fork,
+        anchor_schedule_sha256="a" * 64,
+        source_manifest_sha256="b" * 64,
+        lambda_bits_per_j=1.0,
+        interval_s=1.0,
+    )
+
+    assert events == ["capture", "forecast", "materialize", "route_batch", "batch_verify"]
+    assert result.capture is captured
+    assert result.pair is pair
+    assert result.route_batch is route_batch
+
+
+def test_real_smoke_payload_contract_is_explicit():
+    """Keep the CLI's claim and route contract visible to reviewers."""
+
+    assert smoke.SCHEMA == "mcrl-multi-catfish-v03-real-temporal-pair-smoke-v1"
+    assert "no training" in smoke.CLAIM_CEILING
+    assert smoke.KEYED_FADING == "keyed-branch-independent-v1"
+
+
+_RUN_REAL = os.environ.get("MCRL_RUN_REAL_C2_TEMPORAL_SMOKE") == "1"
+_REAL_TLE_ROOT = Path(TLE_ROOT_DEFAULT).expanduser()
+_REAL_CHECKPOINT = ROOT / "artifacts" / "training-2026-08-25-rerun01" / "main" / "final-checkpoint.pt"
+requires_real_loader = pytest.mark.skipif(
+    not _RUN_REAL or not _REAL_TLE_ROOT.is_dir() or not _REAL_CHECKPOINT.is_file(),
+    reason="set MCRL_RUN_REAL_C2_TEMPORAL_SMOKE=1 with the frozen TLE/checkpoint to run the bounded real loader",
+)
+
+
+@requires_real_loader
+def test_real_c2_backend_materializes_a_228d_q2_pair():
+    payload = smoke.run_real_temporal_pair_smoke(
+        users=10,
+        max_anchor_steps=6,
+        max_candidates=1,
+    )
+
+    assert payload["status"] == "PASS"
+    assert payload["training_or_replay_write"] is False
+    assert payload["pair"]["source_route"] == "C2"
+    assert payload["pair"]["state_shape"] == [228]
+    assert payload["q2_route_batch"]["route"] == "C2"
+    assert payload["q2_route_batch"]["states_shape"] == [1, 228]
+    assert payload["main_networks_bitwise_unchanged"] is True
+    assert payload["main_replay_unchanged"] is True
+"""W-98 -- independent persisted V0.5 controlled-tape hard gate."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+VERIFY_PATH = ROOT / ".scratch/c3-v04/verify_v05_c2_controlled_tape_mechanics.py"
+_SPEC = importlib.util.spec_from_file_location("v05_c2_mechanics_verifier", VERIFY_PATH)
+assert _SPEC is not None and _SPEC.loader is not None
+verifier = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(verifier)
+
+
+OUTPUT_DIR = ROOT / "artifacts/multi-catfish-v05-c2-controlled-tape-mechanics-20260901-r4"
+SCHEDULE = ROOT / "artifacts/multi-catfish-v04-c2-support-complete-census-20260901-r3/schedule.json"
+PREPARE = ROOT / "artifacts/multi-catfish-v04-c2-support-complete-census-20260901-r3/prepare-receipt.json"
+Q13_GATE = ROOT / "artifacts/multi-catfish-v04-c3-learnability-20260901-r2/result.json"
+
+
+def _batch_kwargs(*, main: Path | None = None) -> dict[str, object]:
+    return {
+        "main_path": main or OUTPUT_DIR / "main.json",
+        "q13_paths": [OUTPUT_DIR / f"q13-{seed}.json" for seed in (2026092101, 2026092102, 2026092103)],
+        "schedule_path": SCHEDULE,
+        "prepare_receipt_path": PREPARE,
+        "q13_gate_path": Q13_GATE,
+    }
+
+
+def test_real_r4_batch_passes_48_row_mechanics_only() -> None:
+    pytest.importorskip("torch")
+    receipt = verifier.verify_lockstep_batch(**_batch_kwargs())
+
+    assert receipt["status"] == "PASS_MECHANICS_ONLY"
+    assert receipt["row_count"] == 48
+    assert receipt["target_signs_inspected"] is False
+    assert receipt["training_run"] is False
+    assert receipt["test_split_opened"] is False
+    assert receipt["held_out_ee_evaluated"] is False
+
+
+def test_tampered_nonfocal_receipt_fails_closed(tmp_path: Path) -> None:
+    source = OUTPUT_DIR / "main.json"
+    payload = json.loads(source.read_text(encoding="ascii"))
+    payload["rows"][0]["pair_plan"]["steps"][0]["nonfocal_equal"] = False
+    tampered = tmp_path / "main-tampered.json"
+    tampered.write_bytes(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii") + b"\n"
+    )
+
+    with pytest.raises(verifier.MechanicsVerificationError, match="nonfocal_equal"):
+        verifier.verify_lockstep_batch(**_batch_kwargs(main=tampered))
+"""The frozen PREREG on disk, and the drift it exists to catch (W-29).
+
+`artifacts/PREREG-FROZEN-2026-08-25-R2.json` is the post-probe corrective
+canonical record.  The original, protocol-completion, and first runtime-
+corrected records remain byte-preserved and independently verifiable: each
+correction is a visible superseding freeze, never an in-place edit.  From a
+freeze onward the risk changes shape: nobody will edit the JSON, they will edit
+the **code** it describes, and the record will quietly become a description of
+a system that no longer exists.
+
+W-27 §5 named that the more dangerous of the two failure modes -- "描述錯而
+行為對", because the PREREG outlives the program.  So these tests do not check
+that the file parses.  They check that each value the record *resolved* still
+equals the live constant that implements it, and they push the record into the
+tampered state rather than waiting for it.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+
+from mcrl.runtime.prereg import (
+    PreregFreezeError,
+    PreregRecord,
+    read_prereg,
+    write_prereg,
+)
+
+ARTIFACTS = Path(__file__).resolve().parents[1] / "artifacts"
+FROZEN = ARTIFACTS / "PREREG-FROZEN-2026-08-25-R2.json"
+CORRECTIVE_R2_BYTE_SHA256 = (
+    "8bf13e289e18d663699a39c778dfe5af5b7538781c08b42bf5d085776cd44543"
+)
+CORRECTIVE_R2_RECORD_DIGEST = (
+    "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4"
+)
+RUNTIME_CORRECTED_FROZEN = ARTIFACTS / "PREREG-FROZEN-2026-08-25.json"
+PROTOCOL_COMPLETE_FROZEN = ARTIFACTS / "PREREG-FROZEN-2026-08-24.json"
+LEGACY_FROZEN = ARTIFACTS / "PREREG-FROZEN-2026-08-23.json"
+RUNTIME_CORRECTED_BYTE_SHA256 = (
+    "2f8377d73a1ae0190df13a2b59b7d02803dd5769a7d577d94e17e1b613a8c8c2"
+)
+RUNTIME_CORRECTED_RECORD_DIGEST = (
+    "d469d81fab617485b86897180ff52bacc2c514ca604bb676ab1585c8b15560f6"
+)
+PROTOCOL_COMPLETE_BYTE_SHA256 = (
+    "8c5603c94ecdebf65d5c5aee72fcd0c0feb0cfb94eeea6f0cfe6a0f11a3478b3"
+)
+PROTOCOL_COMPLETE_RECORD_DIGEST = (
+    "01b0d85cedbd67f80a24c2adf7ff4181c728070111d06334e8dc55f07f52c022"
+)
+LEGACY_BYTE_SHA256 = "0deefc4473772bc8e512cd839a57a6d0a7838da766f17688dec19ab1fdc5877d"
+LEGACY_RECORD_DIGEST = "d35ddaffda580c8c109f758372956d41aa947b9eb3915d742f3f5f9b7aaecf08"
+
+requires_frozen = pytest.mark.skipif(
+    not FROZEN.exists(), reason="PREREG has not been frozen in this checkout"
+)
+
+
+@pytest.fixture(scope="module")
+def record():
+    if not FROZEN.exists():
+        pytest.skip("PREREG has not been frozen in this checkout")
+    return read_prereg(FROZEN)
+
+
+def test_the_corrective_r2_record_exists():
+    assert FROZEN.exists(), "the deterministic Q-F corrective seal was not written"
+
+
+def test_the_corrective_r2_bytes_and_record_digest_are_fixed(record):
+    assert hashlib.sha256(FROZEN.read_bytes()).hexdigest() == CORRECTIVE_R2_BYTE_SHA256
+    assert record.digest == CORRECTIVE_R2_RECORD_DIGEST
+
+
+@requires_frozen
+def test_the_frozen_record_still_hashes_to_its_own_digest(record):
+    """`read_prereg` verifies on load; this states the guarantee out loud."""
+    record.verify()
+    assert len(record.digest) == 64
+
+
+def test_the_superseded_record_is_byte_preserved_and_still_verifies():
+    assert LEGACY_FROZEN.exists(), "the original sealed evidence was removed"
+    payload = LEGACY_FROZEN.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == LEGACY_BYTE_SHA256
+    legacy = read_prereg(LEGACY_FROZEN)
+    legacy.verify()
+    assert legacy.digest == LEGACY_RECORD_DIGEST
+
+
+def test_the_protocol_complete_record_is_byte_preserved_and_still_verifies():
+    assert PROTOCOL_COMPLETE_FROZEN.exists()
+    payload = PROTOCOL_COMPLETE_FROZEN.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == PROTOCOL_COMPLETE_BYTE_SHA256
+    protocol_complete = read_prereg(PROTOCOL_COMPLETE_FROZEN)
+    protocol_complete.verify()
+    assert protocol_complete.digest == PROTOCOL_COMPLETE_RECORD_DIGEST
+
+
+def test_the_runtime_corrected_record_is_byte_preserved_and_still_verifies():
+    assert RUNTIME_CORRECTED_FROZEN.exists()
+    payload = RUNTIME_CORRECTED_FROZEN.read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == RUNTIME_CORRECTED_BYTE_SHA256
+    runtime_corrected = read_prereg(RUNTIME_CORRECTED_FROZEN)
+    runtime_corrected.verify()
+    assert runtime_corrected.digest == RUNTIME_CORRECTED_RECORD_DIGEST
+
+
+@requires_frozen
+def test_the_corrective_r2_record_matches_the_current_freeze_source(
+    record, tmp_path
+):
+    """No implementation/protocol edit may slip in after the corrected seal.
+
+    ``tle_root`` is a host mount location rather than scientific input.  The
+    launcher independently verifies every TLE byte, date, split, sampling
+    field, and SGP4 setting, so a server under ``/home/sat`` must normalize
+    only that recorded path before comparing the source-derived digest.
+    """
+    from mcrl.env.ephemeris import EphemerisConfig
+    from mcrl.runtime.prereg_draft import build_draft, freeze
+
+    # The host mount is append-only and may contain dates acquired after the
+    # seal.  Rebuild against the exact manifest committed by the record, so
+from __future__ import annotations
+
+from fractions import Fraction
+import importlib.util
+import json
+import math
+from pathlib import Path
+import sys
+
+import numpy as np
+import pytest
+
+from mcrl.errors import MCRLContractError
+from mcrl.physics_v025.adapter import (
+    build_shared_tape,
+    discontinuities_from_event_ledger,
+    score_setting,
+)
+from mcrl.physics_v025.architectures import Geometry, Link
+from mcrl.physics_v025.energy import HardwareInventory
+from mcrl.physics_v025.integration import BoundarySample, InterruptionEvent
+from mcrl.physics_v025.matrix import (
+    ALL_SEALED_RUN_SETTINGS,
+    LAUNCH_RUN_ORDER,
+    MATRIX_SETTINGS,
+    REGIME_RUN_SETTINGS,
+    run_setting_for,
+    shared_computation_plan,
+)
+from mcrl.physics_v025.tapes import (
+    PROBE_WORLD_DOMAINS,
+    ProviderProtocolOutputs,
+    TinySyntheticProvider,
+    build_world_tape,
+)
+from mcrl.physics_v025.targets import NetworkOutcome, set_score_decomposition
+
+
+REPO = Path(__file__).resolve().parents[2]
+RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+FIGURE_BUILDER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/build_off_axis_figure.py"
+
+
+def _load(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _outcome(value: int) -> NetworkOutcome:
+    return NetworkOutcome.build(
+        bits=value + 100,
+        joules=100,
+        phi=0,
+        decoding_availability=1,
+        useful_availability=1,
+    )
+
+
+def test_v15_set_decomposition_and_factor_identity_are_exact() -> None:
+    values = {
+        frozenset(): 0,
+        frozenset({0}): 2,
+        frozenset({1}): 3,
+        frozenset({2}): 5,
+        frozenset({0, 1}): 8,
+        frozenset({0, 2}): 11,
+        frozenset({1, 2}): 13,
+        frozenset({0, 1, 2}): 25,
+    }
+    result = set_score_decomposition(
+        coalition_users=(0, 1, 2),
+        outcomes_by_subset={key: _outcome(value) for key, value in values.items()},
+        lambda_bits_per_j=1,
+        eta_ref=1,
+        kappa_bits_per_user_step=2,
+        phi_difference=Fraction(-1, 2),
+    )
+    wired = score_setting(tape, setting, discontinuities=discontinuities)
+    assert wired.joules != plain.joules
+    assert wired.bits != plain.bits
+    ledger_limits = discontinuities_from_event_ledger(
+        tape,
+        (InterruptionEvent(0, 0.32, "same_satellite_beam_change"),),
+        exact_limits_by_time={0.32: discontinuities},
+    )
+    assert len(ledger_limits) == 2
+    assert ledger_limits[0].time_s == ledger_limits[1].time_s == 0.32
+    from_ledger = score_setting(tape, setting, discontinuities=ledger_limits)
+    assert from_ledger.bits == wired.bits
+    assert from_ledger.joules == wired.joules
+
+
+def test_sealed_off_axis_kat_uses_a_r0_and_changes_power_and_ee() -> None:
+    builder = _load(FIGURE_BUILDER, "v025_off_axis_builder")
+    rows = builder.off_axis_rows()
+    assert all(
+        left["required_power_w"] < right["required_power_w"]
+        and left["pooled_ee_bits_per_j"] > right["pooled_ee_bits_per_j"]
+        for left, right in zip(rows, rows[1:])
+    )
+    receipt = json.loads((FIGURE_BUILDER.parent / "figures/a-r0-off-axis-kat.json").read_text())
+    assert receipt["setting"]["run_id"] == "a-r0"
+    assert receipt["identities"] == {
+        "pooled_ee_strictly_decreases": True,
+        "required_power_strictly_increases": True,
+    }
+
+exec
+/bin/bash -lc "sed -n '1,110p' tests/physics_v025/test_provider_legacy.py
+sed -n '160,245p' src/mcrl/physics_v025/provider_legacy.py
+rg -n \"TLE_ROOT|tle_root|Path\\(\" src/mcrl/physics_v025/provider_legacy.py | head -120
+find src tests/physics_v025 tests/stagec_v025 .scratch/multi-catfish-v025-physics-successor/probe -type f \\( -name '*.npz' -o -name '*.npy' -o -name '*.pt' -o -name '*.pth' -o -name '*.ckpt' -o -name '*feature*' -o -name '*fixture*' \\) -print | sort | head -300" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+"""Non-tautological KATs for the TRAIN-only legacy primitive provider.
+
+Provenance: copied from ``/home/sat/mcrl-v025-codex-ws-provider`` after the
+``PROVIDER-FIX-DONE`` marker on 2026-09-08.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import inspect
+import json
+import math
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import numpy as np
+import pytest
+
+from mcrl.errors import MCRLContractError
+from mcrl.env.action_contract import NUM_BEAM_SLOTS, NUM_SATELLITE_SLOTS
+from mcrl.env.antenna import transmit_gain_linear as legacy_transmit_gain
+from mcrl.env.d2 import elevation_for_slant_range
+from mcrl.env.ephemeris import TEST, TRAIN, BlockAlternatingSplit, EpisodeStartSampler, step_times
+from mcrl.env.interference import beam_field_at_users, build_radiating_beams, co_channel_interference, received_power_terms
+from mcrl.env.link_budget import link_power_factor
+from mcrl.env.mobility import MobilityConfig
+from mcrl.env.scenario import ScenarioConfig, ScenarioDriver
+from mcrl.env.tle import TleArchive
+from mcrl.physics_v025.channel import (
+    keyed_component_seed,
+    keyed_fading_gain,
+    rician_power_gain,
+    scintillation_loss_db,
+    shadow_sigma_db,
+    transmit_gain_linear,
+)
+from mcrl.physics_v025.constants_v025 import (
+    CARRIER_FREQUENCY_HZ,
+    D2_HYSTERESIS_KM,
+    D2_THRESHOLD_KM,
+    RX_GAIN_MAX_DBI,
+    SPEED_OF_LIGHT_M_S,
+    ZENITH_GASEOUS_LOSS_DB,
+)
+from mcrl.physics_v025.energy import SENSITIVITY_IDLE_POWER_W, EnergyInterval, HardwareInventory, interval_energy
+from mcrl.physics_v025.provider_legacy import CANONICAL_STEPS, DEFAULT_TLE_ROOT, LegacyWorldProvider
+from mcrl.physics_v025.tapes import build_world_tape, seed_from_domain
+from mcrl.runtime.training_pipeline import _evaluation_rngs
+
+
+WORLD_DOMAIN = "V025_PROBE/world/1"
+WORLD_SEED = seed_from_domain(WORLD_DOMAIN)
+
+
+@pytest.fixture(scope="module")
+def real_world():
+    archive = TleArchive(DEFAULT_TLE_ROOT)
+    split = BlockAlternatingSplit.for_archive(archive)
+    env_rng, mobility_rng, _action_rng, _control_rng = _evaluation_rngs(WORLD_SEED)
+    start = EpisodeStartSampler.for_archive(
+        archive, split, TRAIN, time_step_s=30.08
+    ).draw(env_rng)
+    driver = ScenarioDriver(
+        archive,
+        ScenarioConfig(mobility=MobilityConfig(), steps_per_episode=CANONICAL_STEPS),
+    )
+    decisions = []
+    user_ecef = []
+    candidate = driver.reset(start, mobility_rng)
+    for step in range(CANONICAL_STEPS):
+        if step:
+            candidate = driver.step(mobility_rng)
+        decisions.append(candidate)
+        user_ecef.append(driver.user_ecef_km().copy())
+    provider = LegacyWorldProvider(steps=3)
+    assert provider.start_utc(world_seed=WORLD_SEED) == start
+    return provider, driver, tuple(decisions), tuple(user_ecef), start
+
+
+@pytest.fixture(scope="module")
+def step0(real_world):
+    provider, _driver, _decisions, _users, _start = real_world
+    return provider.step_arrays(world_seed=WORLD_SEED, step_index=0, start_time_s=0.0)
+
+
+def _row_lookup(arrays):
+    return {
+        (int(arrays.users[int(arrays.row_user_column[row])]), int(arrays.legacy_action_index[row])): row
+        for row in range(arrays.identities.shape[0])
+        if int(arrays.legacy_action_index[row]) >= 0
+    }
+
+
+def _hex_distance(grid, first: int, second: int) -> int:
+    dq, dr = (grid.axial[first] - grid.axial[second]).tolist()
+    return int((abs(dq) + abs(dr) + abs(dq + dr)) // 2)
+
+
+def test_decision_geometry_and_scintillation_free_nominal_match_legacy(real_world, step0) -> None:
+    _provider, _driver, decisions, _users, _start = real_world
+    oracle = decisions[0]
+    rows = _row_lookup(step0)
+    peak = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+    for user, action in zip(*np.nonzero(oracle.masks), strict=True):
+        row = rows[(int(user), int(action))]
+        satellite_slot, beam_slot = divmod(int(action), NUM_BEAM_SLOTS)
+        elevation = float(oracle.elevation_deg[user, satellite_slot])
+
+    @property
+    def opened_dates(self) -> tuple[dt.date, ...]:
+        return tuple(sorted(self._opened_dates))
+
+    def index_sha256(self) -> str:
+        """Bind the frozen archive index without reading TEST file contents."""
+
+        return hashlib.sha256(
+            canonical_bytes(
+                [
+                    [file_date.isoformat(), path.name]
+                    for file_date, path in sorted(self._paths.items())
+                ]
+            )
+        ).hexdigest()
+
+
+class LegacyWorldProvider:
+    """Real TRAIN-only primitive provider using the legacy world generator.
+
+    ``start_utc`` is a test/audit seam.  Normal worlds leave it unset and the
+    legacy TRAIN sampler derives the epoch from ``world_seed``.  A supplied
+    TEST or embargo date is rejected before a TLE file is loaded.
+    """
+
+    def __init__(
+        self,
+        *,
+        tle_root: str | Path = DEFAULT_TLE_ROOT,
+        start_utc: dt.datetime | dt.date | str | None = None,
+        steps: int = CANONICAL_STEPS,
+        role: str = "physics-matrix",
+        learner_seed: int | None = None,
+    ) -> None:
+        if type(steps) is not int or steps < 1:
+            raise ValueError("steps must be a positive exact integer")
+        self.tle_root = Path(tle_root).expanduser()
+        self.requested_steps = steps
+        if not role:
+            raise ValueError("role must be nonempty")
+        if learner_seed is not None and (type(learner_seed) is not int or learner_seed < 0):
+            raise ValueError("learner_seed must be None or a nonnegative exact integer")
+        if role == "physics-matrix" and learner_seed is not None:
+            raise MCRLContractError("the learner-free physics matrix must attest learner_seed=None")
+        self.role = role
+        self.learner_seed = learner_seed
+        # Controller T6: a shortened rehearsal truncates a canonical world;
+        # it must never change the 30-step shortlist/inventory universe.
+        self.steps = CANONICAL_STEPS
+        self._forced_start = None if start_utc is None else _parse_start(start_utc)
+        self._archive = _TrainOnlyArchive(self.tle_root)
+        self._split = BlockAlternatingSplit.for_archive(self._archive)
+        if self._forced_start is not None:
+            part = self._split.part_for(self._forced_start.date())
+            if part != TRAIN or not self._archive.has(self._forced_start.date()):
+                raise MCRLContractError(
+                    f"legacy provider is TRAIN-only; {self._forced_start.date()} is {part}"
+                )
+        self._world_seed: int | None = None
+        self._world: _WorldState | None = None
+        self._time_origin_s: float | None = None
+
+    def _start_for(self, world_seed: int) -> dt.datetime:
+        if self._forced_start is not None:
+            return self._forced_start
+        env_rng = _evaluation_rngs(world_seed)[0]
+        sampler = EpisodeStartSampler.for_archive(
+            self._archive, self._split, TRAIN, time_step_s=DECISION_INTERVAL_S
+        )
+        result = sampler.draw(env_rng)
+        if self._split.part_for(result.date()) != TRAIN:
+            raise MCRLContractError("TRAIN sampler returned a non-TRAIN date")
+        return result
+
+    def _ensure(self, world_seed: int) -> _WorldState:
+        seed = int(world_seed)
+        if seed != world_seed or seed < 0:
+            raise MCRLContractError("world_seed must be a nonnegative exact integer")
+        if self._world is not None:
+            if self._world_seed != seed:
+                raise MCRLContractError("one provider instance binds exactly one world seed")
+            return self._world
+
+        start = self._start_for(seed)
+        # Child zero owns the exact TRAIN epoch draw in _start_for; child one
+86:DEFAULT_TLE_ROOT = Path("~/demo/tle_data/starlink/tle")
+189:        tle_root: str | Path = DEFAULT_TLE_ROOT,
+197:        self.tle_root = Path(tle_root).expanduser()
+211:        self._archive = _TrainOnlyArchive(self.tle_root)
+420:        path = Path(ephemeris.__file__).resolve()
+451:            provider_source_file=Path(__file__).name,
+969:        return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+1013:    "DEFAULT_TLE_ROOT",
+
+codex
+Restoration is verified: the five mutation-sensitive tests pass again. The stale-artifact scan is finding two distinct risks in the audited subsets: real physics tests depend on a pre-existing TLE archive under `~/demo/tle_data/starlink/tle`, and several tests dynamically load repository `.scratch` runners; one test also reads a precomputed off-axis JSON result. Temporary shards/checkpoints created inside each test are not being counted as stale.
+exec
+/bin/bash -lc "date -u +'%Y-%m-%dT%H:%M:%SZ'
+git status --short
+git diff -- tests src .scratch/c3-v04/run_v04_c3_500_update_screen.py
+rg -n \"pytestmark|pytest\\.mark\\.(skip|skipif|xfail)|pytest\\.skip\" tests/stagec_v025 tests/physics_v025 || true
+find src tests -type f -name '*.pyc' -printf '%p\\n' | sort | head -80
+PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import mcrl
+from mcrl.physics_v025 import targets
+print('mcrl.__file__=' + str(mcrl.__file__))
+print('set_score_decomposition.co_filename=' + targets.set_score_decomposition.__code__.co_filename)
+PY" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 54ms:
+mcrl.__file__=/home/sat/mcrl-v025-harness-ws/src/mcrl/__init__.py
+set_score_decomposition.co_filename=/home/sat/mcrl-v025-harness-ws/src/mcrl/physics_v025/targets.py
+
+exec
+/bin/bash -lc "PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025 -k 'not test_T3_crossed_cluster_real_merger_coverage_and_power' -ra > .scratch/harness-audit-2026-09-09/baseline-stagec-except-t3.log 2>&1
+audit_status="'$?
+printf '"'\\nHARNESS_EXIT_STATUS=%s\\n' \""'$audit_status" >> .scratch/harness-audit-2026-09-09/baseline-stagec-except-t3.log
+tail -160 .scratch/harness-audit-2026-09-09/baseline-stagec-except-t3.log
+exit "$audit_status"' in /home/sat/mcrl-v025-harness-ws
+ exited 1 in 23333ms:
+F.............                                                           [100%]
+=================================== FAILURES ===================================
+______________ test_T1_exhaustive_decomposition_and_intervention _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-sat/pytest-125/test_T1_exhaustive_decompositi0')
+
+    
+    
+    def test_T1_exhaustive_decomposition_and_intervention(tmp_path) -> None:
+        synergy = _coalition_row("synergy")
+        antagonistic = _coalition_row("antagonistic")
+        additive = _coalition_row("additive")
+    
+        # Exact B4 identity with nonzero Phi charged once, and the second physical
+        # identity without Phi.  Values are normalized by kappa=2.
+        assert float.fromhex(synergy.c1_normalized_hex) == -1.0
+        assert float.fromhex(synergy.psi_normalized_hex) == 2.0
+        assert float.fromhex(synergy.objective_delta_normalized_hex) == 1.0
+        assert float.fromhex(synergy.physical_c1_normalized_hex) == -0.5
+        assert float.fromhex(synergy.physical_psi_normalized_hex) == 2.5
+        assert float.fromhex(synergy.physical_delta_normalized_hex) == 2.0
+        assert float.fromhex(antagonistic.psi_normalized_hex) == -1.0
+        assert float.fromhex(additive.psi_normalized_hex) == 0.0
+        # Exhaust all 2^3 profiles at each of the three hand-computed steps.  User
+        # 2 is a dummy, so toggling only that bit never changes F or Psi.
+        joint_f = {"additive": -2.0, "synergy": 2.0, "antagonistic": -4.0}
+        for kind, profile in product(joint_f, product((0, 1), repeat=3)):
+            u0, u1, dummy = profile
+            value = joint_f[kind] if u0 and u1 else -float(u0 + u1)
+            without_dummy = (u0, u1, 0)
+            value_without_dummy = (
+                joint_f[kind]
+                if without_dummy[0] and without_dummy[1]
+                else -float(without_dummy[0] + without_dummy[1])
+            )
+            assert value == value_without_dummy
+            psi = value - (-float(u0)) - (-float(u1))
+            assert psi == (joint_f[kind] + 2.0 if u0 and u1 else 0.0)
+        assert kappa_normalization_bits(2.0) == pytest.approx(60.16)
+        reporting_credit = pair_reporting_credit(
+            psi_normalized=2.0, coalition_users=(0, 1), roster=(0, 1, 2)
+        )
+        assert reporting_credit == {0: 1.0, 1: 1.0, 2: 0.0}
+        shapley = exact_shapley_reporting_credit(
+            coalition_users=(0, 1),
+            subset_values={
+                frozenset(): 0.0,
+                frozenset({0}): -1.0,
+                frozenset({1}): -1.0,
+                frozenset({0, 1}): 2.0,
+            },
+            roster=(0, 1, 2),
+        )
+        assert shapley == {0: 1.0, 1: 1.0, 2: 0.0}
+        dummy_row = _coalition_row("synergy", tmp_count=3, members=(0, 1, 2))
+>       assert float.fromhex(dummy_row.psi_normalized_hex) == 2.0
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../mcrl-v025-pilot-ws/tests/stagec_v025/test_contract_v1_acceptance.py:386: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../mcrl-v025-pilot-ws/tests/stagec_v025/test_contract_v1_acceptance.py:170: in _coalition_row
+    "additive": _outcome(physical_f=-2.0, phi=0.0),      # F=-2
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+context = CoalitionContext(anchor_id='information-twin-anchor', reference_profile=((0, PhysicalAction(norad_id=None, beam_chain_...0.5, 0.5), pairwise_cross_gain_terms=(('beam-a', 'victim', 0.7), ('beam-b', 'victim', 0.1), ('beam-c', 'victim', 0.1)))
+reference_outcome = NetworkOutcome(bits=Fraction(100, 1), joules=Fraction(100, 1), phi=Fraction(0, 1), decoding_availability=Fraction(1, 1), useful_availability=Fraction(1, 1), per_user_bits=())
+unilateral_outcomes = {0: NetworkOutcome(bits=Fraction(100, 1), joules=Fraction(100, 1), phi=Fraction(-1, 2), decoding_availability=Fraction...0, 1), phi=Fraction(0, 1), decoding_availability=Fraction(1, 1), useful_availability=Fraction(1, 1), per_user_bits=())}
+coalition_outcome = NetworkOutcome(bits=Fraction(104, 1), joules=Fraction(100, 1), phi=Fraction(-1, 1), decoding_availability=Fraction(1, 1), useful_availability=Fraction(1, 1), per_user_bits=())
+original_changed_user_count = 5, original_changed_users = (0, 1, 2, 3, 4)
+world_id = 'synthetic/synergy/0x1.0000000000000p+0', world_seed = 11
+anchor_index = 0, decision_time_utc = '2026-01-01T00:00:00Z'
+decision_time_ns = 0, setting_id = 'synthetic', lambda_bits_per_j = 1.0
+eta_ref_bits_per_j = 1.0, kappa_normalization_bits = 2.0
+code_digest = '51d46c80dca591555644ae79edfc1155e80fea2af9a9c5ac9715925b0c501ad1'
+physics_digest = '2d9ce88a0462211cd1d304ec768d006d92ef4f406fe4c2e7afe7fc08ca672399'
+catalogue_digest = 'dc62cb78a2544368328b432c7d5c9e4d872ab0f16897f493127c591ed8413213'
+setting_digest = '038539a2252dcbeccf6cc34d8ed94469fc7dcd0051c420fe5b7c9fc7342e227a'
+calibration_digest = 'eefcfa26a8fa80cbaeea19acfe22beeb8eb28f2d0168b8699eebfc8485b98c6a'
+allocation_manifest_digest = 'b22bc64335d20b2a575693599c93a437b0b9c202cbf0c847d05afe49f3aeee82'
+
+    def build_coalition_row(
+        *,
+        context: CoalitionContext,
+        reference_outcome: NetworkOutcome,
+        unilateral_outcomes: Mapping[int, NetworkOutcome],
+        coalition_outcome: NetworkOutcome,
+        original_changed_user_count: int | None = None,
+        original_changed_users: Sequence[int] | None = None,
+        world_id: str,
+        world_seed: int,
+        anchor_index: int,
+        decision_time_utc: str,
+        decision_time_ns: int,
+        setting_id: str,
+        lambda_bits_per_j: float,
+        eta_ref_bits_per_j: float,
+        kappa_normalization_bits: float,
+        code_digest: str,
+        physics_digest: str,
+        catalogue_digest: str,
+        setting_digest: str,
+        calibration_digest: str,
+        allocation_manifest_digest: str,
+    ) -> CoalitionRow:
+        """Production B4/B5 builder from nominal counterfactual outcomes."""
+    
+        identity = coalition_identity(
+            coalition_users=context.changed_users,
+            reference=reference_outcome,
+            unilateral_by_user=unilateral_outcomes,
+            coalition=coalition_outcome,
+            lambda_bits_per_j=lambda_bits_per_j,
+            eta_ref=eta_ref_bits_per_j,
+            kappa_bits_per_user_s=kappa_normalization_bits,
+        )
+        kappa = Fraction(str(kappa_normalization_bits))
+        original_users = (
+            context.changed_users
+            if original_changed_users is None
+            else tuple(sorted(int(user) for user in original_changed_users))
+        )
+        original_count = len(original_users) if original_changed_user_count is None else original_changed_user_count
+        if original_count != len(original_users):
+            raise StageCContractError("original changed-user count requires the complete user inventory")
+        decomposition = dict(capped_coalition_decomposition(original_users))
+        if context.changed_users not in decomposition:
+>           raise StageCContractError("coalition context is absent from the sealed capped decomposition")
+E           mcrl.stagec_v025.canonical.StageCContractError: coalition context is absent from the sealed capped decomposition
+
+src/mcrl/stagec_v025/coalitions.py:428: StageCContractError
+=========================== short test summary info ============================
+FAILED tests/stagec_v025/test_contract_v1_acceptance.py::test_T1_exhaustive_decomposition_and_intervention
+1 failed, 13 passed, 1 deselected in 23.30s
+
+HARNESS_EXIT_STATUS=1
+
+exec
+/bin/bash -lc "PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import ast
+from pathlib import Path
+p=Path('tests/physics_v025/test_provider_legacy.py')
+t=ast.parse(p.read_text())
+for n in t.body:
+    if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef)) and n.name.startswith('test_'):
+        args=[a.arg for a in n.args.args]
+        if {'real_world','step0'} & set(args) or n.name in {'test_manifest_and_boundary_arrays_are_deterministic_across_processes'}:
+            print(n.name)
+PY
+rg -l \"spec_from_file_location|runpy\\.run_path\" tests/physics_v025 tests/stagec_v025 --glob '*.py' | sort
+rg -n \"\\.scratch|artifacts/|DEFAULT_TLE_ROOT|load_checkpoint|np\\.load|torch\\.load|read_coalition_shard|read_source_shard|read_text\\(|read_bytes\\(\" tests/physics_v025 tests/stagec_v025 --glob '*.py'" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+test_decision_geometry_and_scintillation_free_nominal_match_legacy
+test_forward_boundary_ecef_matches_direct_sgp4
+test_mask_is_nonvacuous_and_matches_legacy_at_decision
+test_entry_elevation_and_d2_distance_use_legacy_slant_definition
+test_aggressor_uses_own_cell_boresight_at_one_and_two_rings
+test_per_chain_colour_filter_and_same_satellite_p10_match_legacy
+test_inventory_is_exact_realisable_union_and_standby_energy
+test_fixed_forward_horizon_has_explicit_right_censoring
+test_user_motion_is_recorded_per_step_and_user_count_is_sourced
+test_exact_train_timestamp_and_test_date_rejection
+test_nonzero_origin_and_forward_prime_seam_have_no_backward_jump
+test_canonical_horizon_is_invariant_to_requested_rehearsal_length
+test_manifest_and_boundary_arrays_are_deterministic_across_processes
+test_build_world_tape_uses_array_storage_and_input_digest
+test_tle_split_and_provider_source_hashes_are_recorded
+tests/physics_v025/test_contract_discriminators.py
+tests/physics_v025/test_stage2_runner.py
+tests/physics_v025/test_stage3_parity_uncertainty.py
+tests/physics_v025/test_stage4_contract.py
+tests/physics_v025/test_stage4b_contract.py
+tests/physics_v025/test_stage4d_gate.py
+tests/stagec_v025/test_stagec_pipeline.py:38:from mcrl.stagec_v025.shards import read_source_shard, write_source_shard
+tests/stagec_v025/test_stagec_pipeline.py:58:    reopened = read_source_shard(shard.path)
+tests/stagec_v025/test_stagec_pipeline.py:455:    clone.load_checkpoint(checkpoint)
+tests/physics_v025/test_contract_discriminators.py:90:    path = Path(__file__).resolve().parents[2] / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage3_parity_uncertainty.py:31:RUNNER_PATH = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_provider_legacy.py:49:from mcrl.physics_v025.provider_legacy import CANONICAL_STEPS, DEFAULT_TLE_ROOT, LegacyWorldProvider
+tests/physics_v025/test_provider_legacy.py:60:    archive = TleArchive(DEFAULT_TLE_ROOT)
+tests/physics_v025/test_provider_legacy.py:339:    archive = TleArchive(DEFAULT_TLE_ROOT); split = BlockAlternatingSplit.for_archive(archive)
+tests/physics_v025/test_provider_legacy.py:408:    assert provider.provider_source_sha256() == hashlib.sha256(source.read_bytes()).hexdigest()
+tests/stagec_v025/test_contract_v1_acceptance.py:36:    read_coalition_shard,
+tests/stagec_v025/test_contract_v1_acceptance.py:424:    reopened = read_coalition_shard(shard.path)
+tests/stagec_v025/test_contract_v1_acceptance.py:526:    resumed.load_checkpoint(checkpoint_path)
+tests/physics_v025/test_stage4_contract.py:29:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage4b_contract.py:40:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage4b_contract.py:41:FIGURE_BUILDER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/build_off_axis_figure.py"
+tests/physics_v025/test_stage4b_contract.py:294:    receipt = json.loads((FIGURE_BUILDER.parent / "figures/a-r0-off-axis-kat.json").read_text())
+tests/physics_v025/test_stage4d_gate.py:45:RUNNER = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+tests/physics_v025/test_stage2_runner.py:12:RUNNER_PATH = REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+
+exec
+/bin/bash -lc "printf 'pyc_count='; find src tests -type f -name '*.pyc' | wc -l
+rg -a -l '/home/sat/mcrl-v025-pilot-ws' src tests --glob '*.pyc' | sort | head -80
+printf 'pilot_embedded_count='; rg -a -l '/home/sat/mcrl-v025-pilot-ws' src tests --glob '*.pyc' | wc -l
+sha256sum .scratch/multi-catfish-v025-physics-successor/probe/figures/a-r0-off-axis-kat.json .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py .scratch/c3-v04/run_v04_c3_500_update_screen.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+pyc_count=104
+pilot_embedded_count=0
+87e8bb4598c1212c823469f33775dc8650dbc7667c2e2623c3ef44d4ad8e7d03  .scratch/multi-catfish-v025-physics-successor/probe/figures/a-r0-off-axis-kat.json
+d430baf38eee7973aa56a503e905548bbf55ae4a5eb6f2435c2a2543d4786196  .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+eb50f573f929800291882fb44aa3ae566e8c0bc7084ca84c2ebdc09e673dc666  .scratch/c3-v04/run_v04_c3_500_update_screen.py
+
+exec
+/bin/bash -lc "find tests/stagec_v025/__pycache__ -type f -maxdepth 1 -printf '%f\\n' | sort
+strings tests/stagec_v025/__pycache__/test_contract_v1_acceptance.cpython-313-pytest-9.1.1.pyc | rg 'mcrl-v025-(pilot|harness)-ws' | head -20 || true
+stat -c '%n %s %y' tests/stagec_v025/test_contract_v1_acceptance.py tests/stagec_v025/__pycache__/test_contract_v1_acceptance.cpython-313-pytest-9.1.1.pyc" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+test_contract_v1_acceptance.cpython-313-pytest-9.1.1.pyc
+test_stagec_pipeline.cpython-313-pytest-9.1.1.pyc
+M/home/sat/mcrl-v025-pilot-ws/tests/stagec_v025/test_contract_v1_acceptance.py
+tests/stagec_v025/test_contract_v1_acceptance.py 46059 2026-09-09 11:19:02.616330524 +0000
+tests/stagec_v025/__pycache__/test_contract_v1_acceptance.cpython-313-pytest-9.1.1.pyc 140431 2026-09-09 11:19:07.875950621 +0000
+
+2026-09-09T12:01:17.429398Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-09-09T12:05:53.847227Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-09-09T12:10:45.105383Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-09-09T12:16:28.822672Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+exec
+/bin/bash -lc 'audit_count=0
+while IFS= read -r audit_pyc; do
+  if strings "$audit_pyc" | rg -q '"'/home/sat/mcrl-v025-pilot-ws'; then
+    audit_count="'$((audit_count + 1))
+  fi
+done < <(find src tests -type f -name '"'*.pyc')
+printf 'pilot_embedded_pyc_count=%s\\n' \""'$audit_count"' in /home/sat/mcrl-v025-harness-ws
+ succeeded in 250ms:
+pilot_embedded_pyc_count=27
+
+codex
+The copied tree contains 104 bytecode files. At least the rewritten Stage-C test bytecode embeds the pilot-workspace filename, which explains why failure tracebacks displayed `../mcrl-v025-pilot-ws/...` even though `mcrl.__file__` resolved locally. I’m finishing that inventory and will flag it as a diagnostic-staleness risk, not as proof that the live pilot code was imported.
+codex
+I’ve completed the evidence collection. No probe or mutation remains in tracked code, and the restoration check is green. I’m writing the report now with the Stage-C timeout represented explicitly as “no result,” rather than counting it as passed, skipped, xfailed, or errored.
