@@ -14157,3 +14157,1439 @@ class EpisodeStartSampler:
     available_dates: tuple[dt.date, ...]
     time_step_s: float = DECISION_STEP_S
 
+exec
+/bin/bash -lc "PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+from mcrl.env.tle import TleArchive
+from mcrl.env.ephemeris import BlockAlternatingSplit,TRAIN,TEST
+from mcrl.physics_v025.tapes import seed_from_domain
+from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+from pathlib import Path
+import numpy as np
+archive=TleArchive(Path('/home/sat/mcrl-runtime/tle-frozen-20260820'))
+split=BlockAlternatingSplit.for_archive(archive)
+tr=split.available_dates(archive,TRAIN)
+te=split.available_dates(archive,TEST)
+em=split.embargoed_dates(archive)
+print('split',split.as_dict(),'counts',len(tr),len(te),len(em),'gap',split.minimum_gap_days(archive))
+print('recent train',*[d.isoformat() for d in tr if d.year==2026 and d.month==8])
+print('recent test',*[d.isoformat() for d in te if d.year==2026 and d.month==8])
+print('recent embargo',*[d.isoformat() for d in em if d.year==2026 and d.month==8])
+# nearest available TRAIN dates to evenly spaced archive positions
+first,last=archive.date_range
+selected=[]
+for x in np.linspace(0,(last-first).days,12):
+ target=first+__import__('datetime').timedelta(days=round(float(x)))
+ d=min(tr,key=lambda a:(abs((a-target).days),a))
+ if d not in selected:selected.append(d)
+print('wide',*[d.isoformat() for d in selected])
+print('world3',LegacyWorldProvider()._start_for(seed_from_domain('V025_PROBE/world/3')).isoformat())
+PY" in /home/sat/mcrl-v025-dates-ws
+ succeeded in 1220ms:
+split {'scheme': 'block-alternating-with-embargo', 'first_date': '2025-07-27', 'last_date': '2026-08-20', 'block_days': 7, 'embargo_days': 1, 'first_block_part': 'train', 'cycle_days': 16} counts 166 160 47 gap 2
+recent train 2026-08-01 2026-08-02 2026-08-03 2026-08-05 2026-08-15 2026-08-16 2026-08-17 2026-08-18 2026-08-19 2026-08-20
+recent test 2026-08-07 2026-08-08 2026-08-09 2026-08-10 2026-08-11 2026-08-12 2026-08-13
+recent embargo 2026-08-06 2026-08-14
+wide 2025-07-27 2025-08-31 2025-10-05 2025-11-06 2025-12-18 2026-01-20 2026-02-24 2026-03-30 2026-05-01 2026-06-12 2026-07-16 2026-08-20
+world3 2025-11-16T01:35:45.280000+00:00
+
+exec
+/bin/bash -lc "rg -n \"EVAL.*STEP|ANCHOR|anchor_steps|range\\(0,.*step|EVALUATION\" /home/sat/mcrl-v025-pilot-ws/scripts/run_v025_pilot_c3.py | sed -n '1,250p' && sed -n '50,95p' /home/sat/mcrl-v025-pilot-ws/scripts/run_v025_pilot_c3.py && sed -n '1630,1765p' /home/sat/mcrl-v025-pilot-ws/scripts/run_v025_pilot_c3.py" in /home/sat/mcrl-v025-dates-ws
+ succeeded in 0ms:
+74:EVALUATION_WORLDS = DEVELOPMENT_WORLD_DOMAINS[2:4]
+81:EVAL_ANCHOR_STEPS = 30
+85:ROW_ANCHOR_LIMIT = None
+86:EVAL_TAPE_STEPS = 33
+137:        "evaluation_worlds": EVALUATION_WORLDS,
+1253:        for path in sorted((output / "rows").glob(f"{ROW_WORLD_GLOB}/*source-anchor-*.jsonl"))[:ROW_ANCHOR_LIMIT]
+1257:        for path in sorted((output / "rows").glob(f"{ROW_WORLD_GLOB}/*coalition-anchor-*.jsonl"))[:ROW_ANCHOR_LIMIT]
+1591:    for world_offset, domain in enumerate(EVALUATION_WORLDS, start=3):
+1595:                          "steps": EVAL_TAPE_STEPS}), flush=True)
+1599:            steps=EVAL_TAPE_STEPS,
+1606:        for step_index in range(EVAL_ANCHOR_STEPS):
+1972:        f"**Scope of this run.** Evaluation worlds {list(EVALUATION_WORLDS)}; "
+1973:        f"{EVAL_ANCHOR_STEPS} anchor steps x "
+1979:        f"(first {ROW_ANCHOR_LIMIT} anchor shards)."
+1980:        if EVAL_ANCHOR_STEPS < 30 else
+2116:        global EVALUATION_WORLDS, LEARNER_DOMAINS, LEARNER_SEEDS, REPORTED_ARMS
+2117:        global PILOT_ARMS, EVAL_ANCHOR_STEPS, EVAL_CARRIER_LIMIT, EVAL_EPOCH
+2118:        global ROW_WORLD_GLOB, ROW_ANCHOR_LIMIT, REPORT_PATH
+2119:        EVALUATION_WORLDS = DEVELOPMENT_WORLD_DOMAINS[2:3]
+2124:        EVAL_ANCHOR_STEPS = 5
+2128:        ROW_ANCHOR_LIMIT = 5
+2129:        global EVAL_TAPE_STEPS
+2130:        EVAL_TAPE_STEPS = EVAL_ANCHOR_STEPS + 3
+    PairwiseBatch,
+    ROUTES,
+    SOURCE_MAP,
+    V1LineageOrchestrator,
+    build_pairwise_batches,
+    default_synthetic_neutral_sources,
+)
+from mcrl.stagec_v025.shards import read_source_shard, write_source_shard
+from mcrl.stagec_v025.state import (
+    ActionEvaluation,
+    ForecastObservation,
+    PhysicalAction,
+    extract_source_rows,
+    seal_action_evaluation,
+)
+
+
+LABEL = "PILOT_NOT_CLAIM"
+PILOT_SCHEMA = "mcrl-v025-learned-c3-real-physics-pilot-v1"
+ROOT = Path(__file__).resolve().parents[1]
+ENGINE_PATH = ROOT / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+DEFAULT_OUTPUT = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
+REPORT_PATH = ROOT / "V025-PILOT-C3-REPORT-2026-09-09.md"
+TRAIN_WORLDS = DEVELOPMENT_WORLD_DOMAINS[:2]
+EVALUATION_WORLDS = DEVELOPMENT_WORLD_DOMAINS[2:4]
+LEARNER_DOMAINS = tuple(f"V025_LEARNER/seed/{index}" for index in range(1, 5))
+LEARNER_SEEDS = tuple(seed_from_domain(domain) for domain in LEARNER_DOMAINS)
+REPORTED_ARMS = (*LEARNED_ARMS, "BASELINE", "S0", "S_UNI")
+# --- minimal-pilot scale knobs (engineering only; overridden from main()) ---
+# Defaults reproduce the original full-scale pilot exactly.
+PILOT_ARMS = tuple(LEARNED_ARMS)
+EVAL_ANCHOR_STEPS = 30
+EVAL_CARRIER_LIMIT = None
+EVAL_EPOCH = LEGACY_EPOCH_BUDGET
+ROW_WORLD_GLOB = "world-*"
+ROW_ANCHOR_LIMIT = None
+EVAL_TAPE_STEPS = 33
+PILOT_FORECAST_BOUNDARIES = (0,)
+PILOT_AGGREGATE_PAIR_LIMIT = 4_096
+PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+
+
+def _engine() -> ModuleType:
+    name = "mcrl_v025_pilot_matrix_engine"
+    if name in sys.modules:
+        return sys.modules[name]
+                    carrier_base,
+                    setting=setting,
+                    calibration=calibration,
+                    run_setting=run_setting,
+                )
+                exact_a0 = _structural_interactions(
+                    carrier_base, standard_catalogue
+                )
+                exact_s0 = _exact_s0_boundary0(
+                    carrier_base, standard_catalogue, current, rows
+                )
+                standard_wall = time.perf_counter() - standard_started
+                u, u_iterations, u_wall, u_missed, u_certificate = ENGINE._s_uni_select(
+                    base=carrier_base,
+                    incumbent=incumbent,
+                    tape=tape,
+                    step_index=step_index,
+                    evaluator=current,
+                    calibration=calibration,
+                    compute_budget_s=5.0,
+                    run_setting=run_setting,
+                    cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+                )
+                u_catalogue, ranked_users, u_catalogue_wall = _build_u_catalogue(
+                    tape, step_index, carrier_base, u, standard_catalogue,
+                    current, calibration, rows,
+                )
+                exact_u = _structural_interactions(u, u_catalogue)
+                u_joint_catalogue = tuple(
+                    row for row in u_catalogue
+                    if len(exact_u[row.configuration_id]["changed"]) >= 2
+                )
+                exact_u.update(
+                    _exact_interactions(
+                        u, incumbent, u_joint_catalogue, current, calibration
+                    )
+                )
+                u_positive_joint_rows = [
+                    row for row in exact_u.values()
+                    if len(row["changed"]) >= 2 and row["joint"] > 0.0
+                ]
+                u_positive_joint_sizes = sorted(
+                    {len(row["changed"]) for row in u_positive_joint_rows}
+                )
+                variants = {
+                    "P-a0": (carrier_base, standard_catalogue, exact_a0),
+                    "P-u": (u, u_catalogue, exact_u),
+                }
+                realised = ENGINE.StepEvaluator(
+                    tape,
+                    setting,
+                    step_index,
+                    transition_from=incumbent,
+                    cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+                    field="realised",
+                    run_setting=run_setting,
+                )
+                for variant, (catalogue_anchor, catalogue, exact) in variants.items():
+                    selections, diagnostics = _select_for_anchor(
+                        variant,
+                        catalogue_anchor,
+                        catalogue,
+                        exact,
+                        models,
+                        rows,
+                        tape,
+                        step_index,
+                        exact_s0,
+                    )
+                    selected_full_catalogue = tuple({
+                        selections[(seed, "FULL")].assignments:
+                        selections[(seed, "FULL")]
+                        for seed in LEARNER_SEEDS
+                    }.values())
+                    exact.update(
+                        _exact_interactions(
+                            catalogue_anchor, incumbent, selected_full_catalogue,
+                            current, calibration,
+                        )
+                    )
+                    for seed in LEARNER_SEEDS:
+                        selections[(seed, "BASELINE")] = carrier_base
+                        selections[(seed, "S_UNI")] = u
+                    additive_configs = {
+                        row["additive_choice"].assignments: row["additive_choice"]
+                        for row in diagnostics.values()
+                    }
+                    realised.evaluate_many(
+                        tuple({
+                            **{row.assignments: row for row in selections.values()},
+                            **additive_configs,
+                        }.values())
+                    )
+                    for seed in LEARNER_SEEDS:
+                        for arm in REPORTED_ARMS:
+                            config = selections[(seed, arm)]
+                            profile = realised.evaluate(config)
+                            outcome = profile.outcome()
+                            handovers = ENGINE._physical_events(
+                                incumbent,
+                                config,
+                                cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+                            )
+                            exact_row = exact.get(config.configuration_id, {"psi": 0.0, "joint": 0.0, "changed": ()})
+                            records.append(
+                                {
+                                    "artifact_label": LABEL,
+                                    "world_id": domain,
+                                    "world_seed": tape.seed,
+                                    "anchor_index": anchor_index,
+                                    "step_index": step_index,
+                                    "carrier": carrier,
+                                    "catalogue_anchor": variant,
+                                    "learner_seed": seed,
+                                    "arm": arm,
+                                    "configuration_id": config.configuration_id,
+                                    "changed_users": config.changed_users,
+                                    "bits": profile.bits,
+                                    "joules": profile.joules,
+                                    "pooled_ee_bits_per_j": None if profile.joules == 0 else profile.bits / profile.joules,
+                                    "availability": float(outcome.useful_availability),
+                                    "handover_count": sum(event.kind in {"beam_change", "satellite_change", "reentry"} for event in handovers),
+                                    "handover_opportunities": len(handovers),
+                                    "rf_cap_hits": profile.rf_cap_hits,
+                                    "rf_transmission_observations": profile.rf_transmission_observations,
+                                    "psi_anchor_normalized": exact_row["psi"],
+                                    "joint_delta_anchor_normalized": exact_row["joint"],
+                                    "top_choice_agreement": diagnostics.get(seed, {}).get("top_choice_agreement") if arm == "FULL" else None,
+                                    "c2_tie_break": diagnostics.get(seed, {}).get("c2_tie") if arm == "FULL" else None,
+                                    "u_any_positive_joint_escape": bool(u_positive_joint_rows),
+                                    "u_positive_joint_sizes": u_positive_joint_sizes,
+                                    "s_uni_iterations": u_iterations,
+                                    "s_uni_wall_s": u_wall,
+                                    "s_uni_deadline_missed": u_missed,
+                                    "s_uni_termination_certificate": u_certificate,
+                                }
+
+codex
+The required stop condition has triggered. The repository unambiguously separates TRAIN from TEST, but it does not define a training-source versus evaluation-date partition inside TRAIN; the current contract instead places evaluation on TRAIN dates, while the claim-date guard excludes development roles but not training-source dates. That does not prove an evaluation date cannot collide with a training date, so I am stopping before any tape generation or TLE-file opening. I’ll finish the requested report with the exact inventory and code citations only.
+collab: Wait
+collab: Wait
+exec
+/bin/bash -lc "sed -n '1,240p' .scratch/date-variance/inventory.md && git diff --check && git status --short" in /home/sat/mcrl-v025-dates-ws
+ succeeded in 0ms:
+# Date-variance inventory and split audit
+
+Status: **STOP — the requested train/validation/test date separation is not defined, and the current V0.25 evaluation contract does not prevent evaluation/training date reuse.** This is a read-only, filename-only audit. No TLE file was opened, sampled, or used to generate a world.
+
+## Completion criterion
+
+This note is complete when it identifies the active date-partition rule, states whether it proves evaluation/training date disjointness, enumerates the available archive dates from filenames alone, and records the dates already attached to declared/sealed V0.25 world domains with reproducible source locations.
+
+## 1. Split verdict
+
+The ephemeris layer defines exactly two sampling parts, `TRAIN` and `TEST`; `EMBARGO` is a non-sampling label and there is **no validation-date part** (`src/mcrl/env/ephemeris.py:163-179`). The frozen calendar rule is:
+
+- archive first date = `2025-07-27`;
+- 7 calendar days TRAIN;
+- 1 calendar day embargo;
+- 7 calendar days TEST;
+- 1 calendar day embargo;
+- repeat with a 16-day cycle.
+
+That rule and its defaults are executable at `src/mcrl/env/ephemeris.py:182-266`; available dates are filtered from actual archive filenames at `src/mcrl/env/ephemeris.py:268-283`; its serialized identity is at `src/mcrl/env/ephemeris.py:301-310`. The frozen preregistration independently records `block_days=7`, `embargo_days=1`, `first_block_part=train`, 166 TRAIN files, 160 TEST files, 47 embargo files, and a minimum TRAIN/TEST gap of two days (`artifacts/PREREG-FROZEN-2026-08-25-R2.json:2794-2805`).
+
+The normal V0.25 provider is fail-closed against TEST content: it precomputes the TEST-date set and refuses `load()` for those dates (`src/mcrl/physics_v025/provider_legacy.py:145-158`); a forced non-TRAIN start is rejected before a TLE load (`src/mcrl/physics_v025/provider_legacy.py:161-195`); and the normal seed-derived start is drawn only from the TRAIN date list and checked again (`src/mcrl/physics_v025/provider_legacy.py:201-211`). Thus a world built through this provider cannot have a TEST start date or read a TEST file. Because of the one-day embargo, its date-1/date/date+1 element window also cannot reach a TEST day from a TRAIN start.
+
+However, this does **not** establish the separation asked for in the task:
+
+1. There is no validation-date partition in the ephemeris code. The unrelated E1 `train/validation/test` split is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
+2. The current V0.25 stages 6–8 contract explicitly places the evaluation panel on roughly 600 **TRAIN** worlds over roughly 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
+3. The V0.25 role-disjointness check only rejects a `CLAIM_PANEL` date shared with a successor *development role* (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`). It does not compare claim/evaluation dates with future training-source dates. The governing amendment likewise promises claim-date freshness only from probe, calibration, rehearsal, KAT, and synthetic-real development (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
+
+**Conclusion:** the two-way ephemeris split itself is clear and TEST is technically protected, but a three-way date convention and an evaluation-versus-training date exclusion are absent. Therefore the repository does not unambiguously guarantee that an evaluation date cannot collide with a training date. Per the task's explicit stop rule, no candidate dates should be generated or evaluated until the owner states the intended non-TEST evaluation-date pool and its exclusion from the training corpus.
+
+## 2. Filename-only TLE inventory
+
+`TleArchive` recognizes only filenames matching `starlink_YYYYMMDD.tle`, extracts the date from the name, and sorts those dates without reading file contents (`src/mcrl/env/tle.py:42,254-283`). A metadata-only directory listing found **373** matching filenames spanning **2025-07-27 through 2026-08-20**, consistent with the module's corpus declaration (`src/mcrl/env/tle.py:1-5`).
+
+The following is an exact compact enumeration: every calendar date in the inclusive span exists **except** these 17 dates:
+
+`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
+
+Applying the executable split to filenames only gives 166 TRAIN files, 160 TEST files, and 47 embargo files. Calendar blocks below are inclusive; dates in the 17-date missing list remain unavailable.
+
+### TRAIN calendar blocks (eligible for the TRAIN-only provider)
+
+`2025-07-27..2025-08-02`; `2025-08-12..2025-08-18`; `2025-08-28..2025-09-03`; `2025-09-13..2025-09-19`; `2025-09-29..2025-10-05`; `2025-10-15..2025-10-21`; `2025-10-31..2025-11-06`; `2025-11-16..2025-11-22`; `2025-12-02..2025-12-08`; `2025-12-18..2025-12-24`; `2026-01-03..2026-01-09`; `2026-01-19..2026-01-25`; `2026-02-04..2026-02-10`; `2026-02-20..2026-02-26`; `2026-03-08..2026-03-14`; `2026-03-24..2026-03-30`; `2026-04-09..2026-04-15`; `2026-04-25..2026-05-01`; `2026-05-11..2026-05-17`; `2026-05-27..2026-06-02`; `2026-06-12..2026-06-18`; `2026-06-28..2026-07-04`; `2026-07-14..2026-07-20`; `2026-07-30..2026-08-05`; `2026-08-15..2026-08-20`.
+
+### TEST calendar blocks — reserved; not opened in this audit
+
+`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
+
+### Embargo calendar dates
+
+`2025-08-03`, `2025-08-11`, `2025-08-19`, `2025-08-27`, `2025-09-04`, `2025-09-12`, `2025-09-20`, `2025-09-28`, `2025-10-06`, `2025-10-14`, `2025-10-22`, `2025-10-30`, `2025-11-07`, `2025-11-15`, `2025-11-23`, `2025-12-01`, `2025-12-09`, `2025-12-17`, `2025-12-25`, `2026-01-02`, `2026-01-10`, `2026-01-18`, `2026-01-26`, `2026-02-03`, `2026-02-11`, `2026-02-19`, `2026-02-27`, `2026-03-07`, `2026-03-15`, `2026-03-23`, `2026-03-31`, `2026-04-08`, `2026-04-16`, `2026-04-24`, `2026-05-02`, `2026-05-10`, `2026-05-18`, `2026-05-26`, `2026-06-03`, `2026-06-11`, `2026-06-19`, `2026-06-27`, `2026-07-05`, `2026-07-13`, `2026-07-21`, `2026-07-29`, `2026-08-06`, `2026-08-14`.
+
+`2026-03-15` is both a calendar embargo date and absent from the archive, hence the 47 existing embargo files rather than 48 calendar embargo positions.
+
+## 3. Dates already used or reserved by V0.25 worlds
+
+The six current formal domain manifests are reported open and immutable at `.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:65-82`. The actual ignored `.tmp/stage4h-formal/*.json` files are not present in this archived checkout, so their start dates cannot be quoted directly from the manifest bytes here. The table below is an exact deterministic reconstruction from primary code, using only archive filenames:
+
+1. domain strings are frozen at `src/mcrl/physics_v025/tapes.py:37-53`;
+2. domain -> world seed is the first eight SHA-256 bytes, masked to 63 bits (`src/mcrl/physics_v025/tapes.py:58-65`);
+3. the evaluation RNG is `SeedSequence(seed).spawn(4)`, child 0 (`src/mcrl/runtime/training_pipeline.py:868-872` and `src/mcrl/physics_v025/provider_legacy.py:201-208`);
+4. the date is uniform over filename-present TRAIN dates and the time is a uniform second floored to a 30.08-second boundary (`src/mcrl/env/ephemeris.py:381-427`);
+5. the tape records that sampled date/time into `tle_date` and `start_utc` (`src/mcrl/physics_v025/tapes.py:978-1042`).
+
+### Formal sealed manifests
+
+| Role/domain | World seed | Reconstructed start UTC | Date part |
+|---|---:|---|---|
+| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
+| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
+| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
+
+The reconstruction is cross-checked by the stage-4h report's independent statement that `V025_CAL_R2/world/1` resolves to `2026-08-05` (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-84`).
+
+### Earlier `V025_PROBE` development namespace
+
+The controller quarantined `V025_PROBE/world/{1..4}` after world 1 was opened before sealing and moved the formal matrix to the fresh `_R2` domains (`.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PIPELINE-AUDITS-CD-2026-09-08.md:5-10`). Deterministic starts are:
+
+| Domain | World seed | Reconstructed start UTC | Known use from task/context |
+|---|---:|---|---|
+| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
+| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
+| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | the one completed evaluation date named in the task |
+| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
+
+All four dates are TRAIN under the executable split. The world-3 reconstruction agrees with the task's stated completed date, `2025-11-16`.
+
+### Other dates reserved in the reported 24-identity allocation
+
+The stage-4h report says the immutable allocation contains PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). Applying the same deterministic reconstruction gives:
+
+| Role/domains | Dates |
+|---|---|
+| REHEARSAL `V025_PROBE/world/1` | 2026-01-07 |
+| KAT `V025_KAT/world/{1..4}` | 2025-12-24, 2026-04-30, 2025-11-02, 2025-10-31 |
+| KAT `V025_PROVIDER_KAT/world/{1..4}` | 2025-07-28, 2026-02-08, 2025-08-14, 2026-01-20 |
+| SYNTHETIC_REAL `V025_SYNTHETIC_REAL/world/{1..4}` | 2026-01-23, 2026-06-15, 2025-12-23, 2025-08-14 |
+| SMOKE `V025_SMOKE/world/1` | 2025-10-02 |
+| CLAIM_PANEL `V025_CLAIM_PANEL/world/{2,3,4,5}` | 2026-02-06, 2026-01-25, 2026-03-28, 2025-12-05 |
+
+Claim world 1 is not in the active claim tuple: source comments say it collides with calibration world 1, and the active tuple replaces it with world 5 (`src/mcrl/physics_v025/tapes.py:48-53`). The report confirms rejected claim world 1 = `2026-08-05` and replacement world 5 = `2025-12-05` (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-84`). No claim-panel outcome was opened there.
+
+For collision avoidance, the **22 distinct dates in the reported active 24-identity allocation** are:
+
+`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
+
+The earlier development/training/evaluation namespace additionally uses `2026-03-11` and `2025-11-16`; `2026-01-07` and `2026-03-28` are already in the allocation list. Therefore the conservative union of dates already used or reserved is **24 distinct TRAIN dates**.
+
+## 4. Reproducibility and non-access statement
+
+The archive inventory and every reconstructed start used directory entry names only. No call was made to `TleArchive.load`, `TleDailyFile.load`, `select_elements`, `ScenarioDriver`, `LegacyWorldProvider._ensure`, or `build_world_tape`; no TLE bytes were read. In particular, no TEST-reserved TLE was opened, sampled, or used for generation.
+
+The completion criterion is met for inventory, provenance, and the split verdict. Generation/evaluation is deliberately blocked by the missing date-level validation/evaluation convention described in section 1.
+?? .scratch/date-variance/
+
+codex
+I’m writing the root report now. It will lead with “not measured, n=0,” enumerate the filename-only archive and sealed/reserved dates, identify the precise missing rule, and explicitly mark constellation confounding and build-cost measurements as unrun consequences of the mandated stop.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-dates-ws/DATE-VARIANCE-2026-09-09.md
+diff --git a/DATE-VARIANCE-2026-09-09.md b/DATE-VARIANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f72d0e0cf61464a47743b93c36d39a35b1bdb3bf
+--- /dev/null
++++ b/DATE-VARIANCE-2026-09-09.md
+@@ -0,0 +1,109 @@
++# Date-variance diagnostic — stopped at split audit
++
++**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
++
++## Why execution stopped
++
++The active ephemeris rule is unambiguous but only two-way:
++
++- 7 calendar days TRAIN;
++- 1 embargo day;
++- 7 calendar days TEST;
++- 1 embargo day;
++- repeat every 16 days from archive date `2025-07-27`.
++
++The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
++
++That protection does not establish evaluation-versus-training disjointness:
++
++1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
++2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
++3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
++4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
++
++Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
++
++## Filename-only TLE inventory
++
++`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
++
++This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
++
++`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
++
++Applying the executable split to filenames only gives:
++
++| Part | Existing files | May be opened by this diagnostic? |
++|---|---:|---|
++| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
++| EMBARGO | 47 | No start dates |
++| TEST | 160 | **No — reserved and untouched** |
++
++The TEST calendar blocks, listed so the prohibition is auditable, are:
++
++`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
++
++## Dates already used or reserved
++
++The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
++
++### Formal sealed provider manifests
++
++| Role/domain | World seed | Start UTC | Date part |
++|---|---:|---|---|
++| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
++| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
++| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
++
++### Earlier V0.25 development namespace
++
++| Domain | World seed | Start UTC | Recorded use |
++|---|---:|---|---|
++| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
++| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
++| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
++| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
++
++All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
++
++### Full reported allocation ledger
++
++The reported active 24-identity allocation covers 22 distinct dates:
++
++`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
++
++It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
++
++## Requested measurements not run
++
++The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
++
++| Requested output | Status |
++|---|---|
++| World tapes on at least 12 dates | Not generated |
++| World digest and start time per candidate date | Not generated |
++| Satellite count per used ephemeris file | Not measured; no TLE content opened |
++| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
++| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
++| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
++| Wide-date versus within-month variance | Not measured |
++| One-tape wall time, core time, and peak disk | Not measured |
++| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
++
++No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
++
++## Required owner decision to resume
++
++Specify a prospective, outcome-blind partition of non-TEST dates into at least:
++
++- dates eligible for training-source generation; and
++- dates eligible for this learner-free evaluation diagnostic,
++
++with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
++
++The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
+
+diff --git a/DATE-VARIANCE-2026-09-09.md b/DATE-VARIANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f72d0e0cf61464a47743b93c36d39a35b1bdb3bf
+--- /dev/null
++++ b/DATE-VARIANCE-2026-09-09.md
+@@ -0,0 +1,109 @@
++# Date-variance diagnostic — stopped at split audit
++
++**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
++
++## Why execution stopped
++
++The active ephemeris rule is unambiguous but only two-way:
++
++- 7 calendar days TRAIN;
++- 1 embargo day;
++- 7 calendar days TEST;
++- 1 embargo day;
++- repeat every 16 days from archive date `2025-07-27`.
++
++The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
++
++That protection does not establish evaluation-versus-training disjointness:
++
++1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
++2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
++3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
++4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
++
++Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
++
++## Filename-only TLE inventory
++
++`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
++
++This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
++
++`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
++
++Applying the executable split to filenames only gives:
++
++| Part | Existing files | May be opened by this diagnostic? |
++|---|---:|---|
++| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
++| EMBARGO | 47 | No start dates |
++| TEST | 160 | **No — reserved and untouched** |
++
++The TEST calendar blocks, listed so the prohibition is auditable, are:
++
++`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
++
++## Dates already used or reserved
++
++The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
++
++### Formal sealed provider manifests
++
++| Role/domain | World seed | Start UTC | Date part |
++|---|---:|---|---|
++| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
++| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
++| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
++
++### Earlier V0.25 development namespace
++
++| Domain | World seed | Start UTC | Recorded use |
++|---|---:|---|---|
++| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
++| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
++| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
++| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
++
++All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
++
++### Full reported allocation ledger
++
++The reported active 24-identity allocation covers 22 distinct dates:
++
++`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
++
++It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
++
++## Requested measurements not run
++
++The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
++
++| Requested output | Status |
++|---|---|
++| World tapes on at least 12 dates | Not generated |
++| World digest and start time per candidate date | Not generated |
++| Satellite count per used ephemeris file | Not measured; no TLE content opened |
++| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
++| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
++| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
++| Wide-date versus within-month variance | Not measured |
++| One-tape wall time, core time, and peak disk | Not measured |
++| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
++
++No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
++
++## Required owner decision to resume
++
++Specify a prospective, outcome-blind partition of non-TEST dates into at least:
++
++- dates eligible for training-source generation; and
++- dates eligible for this learner-free evaluation diagnostic,
++
++with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
++
++The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
+
+exec
+/bin/bash -lc 'git diff --check && wc -l DATE-VARIANCE-2026-09-09.md && sha256sum DATE-VARIANCE-2026-09-09.md .scratch/date-variance/inventory.md && git status --short' in /home/sat/mcrl-v025-dates-ws
+ succeeded in 0ms:
+109 DATE-VARIANCE-2026-09-09.md
+e66e0cab0001443d669528a6138b6d8ca9f96d42cc08f7e8b60368fcaf2aaf21  DATE-VARIANCE-2026-09-09.md
+a68e8dcd8841a49c4d297bebf03a26a0b2142346f2c17bf46fb0eac469320b1d  .scratch/date-variance/inventory.md
+?? .scratch/date-variance/
+?? DATE-VARIANCE-2026-09-09.md
+
+diff --git a/DATE-VARIANCE-2026-09-09.md b/DATE-VARIANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f72d0e0cf61464a47743b93c36d39a35b1bdb3bf
+--- /dev/null
++++ b/DATE-VARIANCE-2026-09-09.md
+@@ -0,0 +1,109 @@
++# Date-variance diagnostic — stopped at split audit
++
++**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
++
++## Why execution stopped
++
++The active ephemeris rule is unambiguous but only two-way:
++
++- 7 calendar days TRAIN;
++- 1 embargo day;
++- 7 calendar days TEST;
++- 1 embargo day;
++- repeat every 16 days from archive date `2025-07-27`.
++
++The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
++
++That protection does not establish evaluation-versus-training disjointness:
++
++1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
++2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
++3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
++4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
++
++Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
++
++## Filename-only TLE inventory
++
++`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
++
++This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
++
++`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
++
++Applying the executable split to filenames only gives:
++
++| Part | Existing files | May be opened by this diagnostic? |
++|---|---:|---|
++| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
++| EMBARGO | 47 | No start dates |
++| TEST | 160 | **No — reserved and untouched** |
++
++The TEST calendar blocks, listed so the prohibition is auditable, are:
++
++`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
++
++## Dates already used or reserved
++
++The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
++
++### Formal sealed provider manifests
++
++| Role/domain | World seed | Start UTC | Date part |
++|---|---:|---|---|
++| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
++| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
++| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
++
++### Earlier V0.25 development namespace
++
++| Domain | World seed | Start UTC | Recorded use |
++|---|---:|---|---|
++| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
++| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
++| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
++| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
++
++All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
++
++### Full reported allocation ledger
++
++The reported active 24-identity allocation covers 22 distinct dates:
++
++`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
++
++It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
++
++## Requested measurements not run
++
++The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
++
++| Requested output | Status |
++|---|---|
++| World tapes on at least 12 dates | Not generated |
++| World digest and start time per candidate date | Not generated |
++| Satellite count per used ephemeris file | Not measured; no TLE content opened |
++| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
++| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
++| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
++| Wide-date versus within-month variance | Not measured |
++| One-tape wall time, core time, and peak disk | Not measured |
++| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
++
++No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
++
++## Required owner decision to resume
++
++Specify a prospective, outcome-blind partition of non-TEST dates into at least:
++
++- dates eligible for training-source generation; and
++- dates eligible for this learner-free evaluation diagnostic,
++
++with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
++
++The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-dates-ws/DATE-VARIANCE-2026-09-09.md
+diff --git a/DATE-VARIANCE-2026-09-09.md b/DATE-VARIANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f292d3df33c793a54e4f4c903e57fd452a0d288
+--- /dev/null
++++ b/DATE-VARIANCE-2026-09-09.md
+@@ -0,0 +1,111 @@
++# Date-variance diagnostic — stopped at split audit
++
++**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
++
++## Why execution stopped
++
++The active ephemeris rule is unambiguous but only two-way:
++
++- 7 calendar days TRAIN;
++- 1 embargo day;
++- 7 calendar days TEST;
++- 1 embargo day;
++- repeat every 16 days from archive date `2025-07-27`.
++
++The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
++
++That protection does not establish evaluation-versus-training disjointness:
++
++1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
++2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
++3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
++4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
++
++Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
++
++## Filename-only TLE inventory
++
++`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
++
++This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
++
++`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
++
++Applying the executable split to filenames only gives:
++
++| Part | Existing files | May be opened by this diagnostic? |
++|---|---:|---|
++| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
++| EMBARGO | 47 | No start dates |
++| TEST | 160 | **No — reserved and untouched** |
++
++The TEST calendar blocks, listed so the prohibition is auditable, are:
++
++`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
++
++## Dates already used or reserved
++
++The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
++
++### Formal sealed provider manifests
++
++| Role/domain | World seed | Start UTC | Date part |
++|---|---:|---|---|
++| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
++| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
++| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
++
++### Earlier V0.25 development namespace
++
++| Domain | World seed | Start UTC | Recorded use |
++|---|---:|---|---|
++| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
++| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
++| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
++| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
++
++All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
++
++### Full reported allocation ledger
++
++The reported active 24-identity allocation covers 22 distinct dates:
++
++`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
++
++It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
++
++## Requested measurements not run
++
++The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
++
++| Requested output | Status |
++|---|---|
++| World tapes on at least 12 dates | Not generated |
++| World digest and start time per candidate date | Not generated |
++| Satellite count per used ephemeris file | Not measured; no TLE content opened |
++| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
++| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
++| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
++| Wide-date versus within-month variance | Not measured |
++| One-tape wall time, core time, and peak disk | Not measured |
++| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
++
++No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
++
++## Required owner decision to resume
++
++Specify a prospective, outcome-blind partition of non-TEST dates into at least:
++
++- dates eligible for training-source generation; and
++- dates eligible for this learner-free evaluation diagnostic,
++
++with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
++
++The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
++
++Method note: the research workflow's primary-source requirement is why every substantive split and inventory conclusion above is tied directly to executable repository code or an immutable project record.
+
+diff --git a/DATE-VARIANCE-2026-09-09.md b/DATE-VARIANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f292d3df33c793a54e4f4c903e57fd452a0d288
+--- /dev/null
++++ b/DATE-VARIANCE-2026-09-09.md
+@@ -0,0 +1,111 @@
++# Date-variance diagnostic — stopped at split audit
++
++**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
++
++## Why execution stopped
++
++The active ephemeris rule is unambiguous but only two-way:
++
++- 7 calendar days TRAIN;
++- 1 embargo day;
++- 7 calendar days TEST;
++- 1 embargo day;
++- repeat every 16 days from archive date `2025-07-27`.
++
++The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
++
++That protection does not establish evaluation-versus-training disjointness:
++
++1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
++2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
++3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
++4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
++
++Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
++
++## Filename-only TLE inventory
++
++`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
++
++This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
++
++`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
++
++Applying the executable split to filenames only gives:
++
++| Part | Existing files | May be opened by this diagnostic? |
++|---|---:|---|
++| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
++| EMBARGO | 47 | No start dates |
++| TEST | 160 | **No — reserved and untouched** |
++
++The TEST calendar blocks, listed so the prohibition is auditable, are:
++
++`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
++
++## Dates already used or reserved
++
++The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
++
++### Formal sealed provider manifests
++
++| Role/domain | World seed | Start UTC | Date part |
++|---|---:|---|---|
++| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
++| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
++| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
++
++### Earlier V0.25 development namespace
++
++| Domain | World seed | Start UTC | Recorded use |
++|---|---:|---|---|
++| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
++| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
++| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
++| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
++
++All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
++
++### Full reported allocation ledger
++
++The reported active 24-identity allocation covers 22 distinct dates:
++
++`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
++
++It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
++
++## Requested measurements not run
++
++The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
++
++| Requested output | Status |
++|---|---|
++| World tapes on at least 12 dates | Not generated |
++| World digest and start time per candidate date | Not generated |
++| Satellite count per used ephemeris file | Not measured; no TLE content opened |
++| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
++| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
++| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
++| Wide-date versus within-month variance | Not measured |
++| One-tape wall time, core time, and peak disk | Not measured |
++| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
++
++No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
++
++## Required owner decision to resume
++
++Specify a prospective, outcome-blind partition of non-TEST dates into at least:
++
++- dates eligible for training-source generation; and
++- dates eligible for this learner-free evaluation diagnostic,
++
++with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
++
++The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
++
++Method note: the research workflow's primary-source requirement is why every substantive split and inventory conclusion above is tied directly to executable repository code or an immutable project record.
+
+exec
+/bin/bash -lc "git diff --check && sed -n '1,240p' DATE-VARIANCE-2026-09-09.md" in /home/sat/mcrl-v025-dates-ws
+ succeeded in 0ms:
+# Date-variance diagnostic — stopped at split audit
+
+**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
+
+`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
+
+## Why execution stopped
+
+The active ephemeris rule is unambiguous but only two-way:
+
+- 7 calendar days TRAIN;
+- 1 embargo day;
+- 7 calendar days TEST;
+- 1 embargo day;
+- repeat every 16 days from archive date `2025-07-27`.
+
+The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
+
+That protection does not establish evaluation-versus-training disjointness:
+
+1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
+2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
+3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
+4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
+
+Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
+
+## Filename-only TLE inventory
+
+`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
+
+This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
+
+`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
+
+Applying the executable split to filenames only gives:
+
+| Part | Existing files | May be opened by this diagnostic? |
+|---|---:|---|
+| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
+| EMBARGO | 47 | No start dates |
+| TEST | 160 | **No — reserved and untouched** |
+
+The TEST calendar blocks, listed so the prohibition is auditable, are:
+
+`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
+
+## Dates already used or reserved
+
+The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
+
+### Formal sealed provider manifests
+
+| Role/domain | World seed | Start UTC | Date part |
+|---|---:|---|---|
+| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
+| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
+| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
+
+### Earlier V0.25 development namespace
+
+| Domain | World seed | Start UTC | Recorded use |
+|---|---:|---|---|
+| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
+| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
+| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
+| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
+
+All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
+
+### Full reported allocation ledger
+
+The reported active 24-identity allocation covers 22 distinct dates:
+
+`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
+
+It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
+
+## Requested measurements not run
+
+The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
+
+| Requested output | Status |
+|---|---|
+| World tapes on at least 12 dates | Not generated |
+| World digest and start time per candidate date | Not generated |
+| Satellite count per used ephemeris file | Not measured; no TLE content opened |
+| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
+| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
+| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
+| Wide-date versus within-month variance | Not measured |
+| One-tape wall time, core time, and peak disk | Not measured |
+| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
+
+No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
+
+## Required owner decision to resume
+
+Specify a prospective, outcome-blind partition of non-TEST dates into at least:
+
+- dates eligible for training-source generation; and
+- dates eligible for this learner-free evaluation diagnostic,
+
+with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
+
+The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
+
+Method note: the research workflow's primary-source requirement is why every substantive split and inventory conclusion above is tied directly to executable repository code or an immutable project record.
+
+diff --git a/DATE-VARIANCE-2026-09-09.md b/DATE-VARIANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f292d3df33c793a54e4f4c903e57fd452a0d288
+--- /dev/null
++++ b/DATE-VARIANCE-2026-09-09.md
+@@ -0,0 +1,111 @@
++# Date-variance diagnostic — stopped at split audit
++
++**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
++
++## Why execution stopped
++
++The active ephemeris rule is unambiguous but only two-way:
++
++- 7 calendar days TRAIN;
++- 1 embargo day;
++- 7 calendar days TEST;
++- 1 embargo day;
++- repeat every 16 days from archive date `2025-07-27`.
++
++The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
++
++That protection does not establish evaluation-versus-training disjointness:
++
++1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
++2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
++3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
++4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
++
++Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
++
++## Filename-only TLE inventory
++
++`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
++
++This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
++
++`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
++
++Applying the executable split to filenames only gives:
++
++| Part | Existing files | May be opened by this diagnostic? |
++|---|---:|---|
++| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
++| EMBARGO | 47 | No start dates |
++| TEST | 160 | **No — reserved and untouched** |
++
++The TEST calendar blocks, listed so the prohibition is auditable, are:
++
++`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
++
++## Dates already used or reserved
++
++The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
++
++### Formal sealed provider manifests
++
++| Role/domain | World seed | Start UTC | Date part |
++|---|---:|---|---|
++| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
++| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
++| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
++
++### Earlier V0.25 development namespace
++
++| Domain | World seed | Start UTC | Recorded use |
++|---|---:|---|---|
++| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
++| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
++| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
++| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
++
++All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
++
++### Full reported allocation ledger
++
++The reported active 24-identity allocation covers 22 distinct dates:
++
++`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
++
++It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
++
++## Requested measurements not run
++
++The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
++
++| Requested output | Status |
++|---|---|
++| World tapes on at least 12 dates | Not generated |
++| World digest and start time per candidate date | Not generated |
++| Satellite count per used ephemeris file | Not measured; no TLE content opened |
++| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
++| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
++| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
++| Wide-date versus within-month variance | Not measured |
++| One-tape wall time, core time, and peak disk | Not measured |
++| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
++
++No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
++
++## Required owner decision to resume
++
++Specify a prospective, outcome-blind partition of non-TEST dates into at least:
++
++- dates eligible for training-source generation; and
++- dates eligible for this learner-free evaluation diagnostic,
++
++with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
++
++The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
++
++Method note: the research workflow's primary-source requirement is why every substantive split and inventory conclusion above is tied directly to executable repository code or an immutable project record.
+
+codex
+# Date-variance diagnostic — stopped at split audit
+
+**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
+
+`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
+
+## Why execution stopped
+
+The active ephemeris rule is unambiguous but only two-way:
+
+- 7 calendar days TRAIN;
+- 1 embargo day;
+- 7 calendar days TEST;
+- 1 embargo day;
+- repeat every 16 days from archive date `2025-07-27`.
+
+The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
+
+That protection does not establish evaluation-versus-training disjointness:
+
+1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
+2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
+3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
+4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
+
+Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
+
+## Filename-only TLE inventory
+
+`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
+
+This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
+
+`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
+
+Applying the executable split to filenames only gives:
+
+| Part | Existing files | May be opened by this diagnostic? |
+|---|---:|---|
+| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
+| EMBARGO | 47 | No start dates |
+| TEST | 160 | **No — reserved and untouched** |
+
+The TEST calendar blocks, listed so the prohibition is auditable, are:
+
+`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
+
+## Dates already used or reserved
+
+The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
+
+### Formal sealed provider manifests
+
+| Role/domain | World seed | Start UTC | Date part |
+|---|---:|---|---|
+| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
+| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
+| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
+
+### Earlier V0.25 development namespace
+
+| Domain | World seed | Start UTC | Recorded use |
+|---|---:|---|---|
+| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
+| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
+| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
+| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
+
+All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
+
+### Full reported allocation ledger
+
+The reported active 24-identity allocation covers 22 distinct dates:
+
+`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
+
+It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
+
+## Requested measurements not run
+
+The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
+
+| Requested output | Status |
+|---|---|
+| World tapes on at least 12 dates | Not generated |
+| World digest and start time per candidate date | Not generated |
+| Satellite count per used ephemeris file | Not measured; no TLE content opened |
+| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
+| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
+| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
+| Wide-date versus within-month variance | Not measured |
+| One-tape wall time, core time, and peak disk | Not measured |
+| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
+
+No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
+
+## Required owner decision to resume
+
+Specify a prospective, outcome-blind partition of non-TEST dates into at least:
+
+- dates eligible for training-source generation; and
+- dates eligible for this learner-free evaluation diagnostic,
+
+with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
+
+The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
+
+Method note: the research workflow's primary-source requirement is why every substantive split and inventory conclusion above is tied directly to executable repository code or an immutable project record.
+diff --git a/DATE-VARIANCE-2026-09-09.md b/DATE-VARIANCE-2026-09-09.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f292d3df33c793a54e4f4c903e57fd452a0d288
+--- /dev/null
++++ b/DATE-VARIANCE-2026-09-09.md
+@@ -0,0 +1,111 @@
++# Date-variance diagnostic — stopped at split audit
++
++**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
++
++`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
++
++## Why execution stopped
++
++The active ephemeris rule is unambiguous but only two-way:
++
++- 7 calendar days TRAIN;
++- 1 embargo day;
++- 7 calendar days TEST;
++- 1 embargo day;
++- repeat every 16 days from archive date `2025-07-27`.
++
++The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
++
++That protection does not establish evaluation-versus-training disjointness:
++
++1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
++2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
++3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
++4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
++
++Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
++
++## Filename-only TLE inventory
++
++`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
++
++This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
++
++`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
++
++Applying the executable split to filenames only gives:
++
++| Part | Existing files | May be opened by this diagnostic? |
++|---|---:|---|
++| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
++| EMBARGO | 47 | No start dates |
++| TEST | 160 | **No — reserved and untouched** |
++
++The TEST calendar blocks, listed so the prohibition is auditable, are:
++
++`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
++
++## Dates already used or reserved
++
++The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
++
++### Formal sealed provider manifests
++
++| Role/domain | World seed | Start UTC | Date part |
++|---|---:|---|---|
++| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
++| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
++| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
++| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
++
++### Earlier V0.25 development namespace
++
++| Domain | World seed | Start UTC | Recorded use |
++|---|---:|---|---|
++| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
++| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
++| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
++| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
++
++All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
++
++### Full reported allocation ledger
++
++The reported active 24-identity allocation covers 22 distinct dates:
++
++`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
++
++It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
++
++## Requested measurements not run
++
++The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
++
++| Requested output | Status |
++|---|---|
++| World tapes on at least 12 dates | Not generated |
++| World digest and start time per candidate date | Not generated |
++| Satellite count per used ephemeris file | Not measured; no TLE content opened |
++| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
++| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
++| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
++| Wide-date versus within-month variance | Not measured |
++| One-tape wall time, core time, and peak disk | Not measured |
++| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
++
++No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
++
++## Required owner decision to resume
++
++Specify a prospective, outcome-blind partition of non-TEST dates into at least:
++
++- dates eligible for training-source generation; and
++- dates eligible for this learner-free evaluation diagnostic,
++
++with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
++
++The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
++
++Method note: the research workflow's primary-source requirement is why every substantive split and inventory conclusion above is tied directly to executable repository code or an immutable project record.
+
+tokens used
+186,681
