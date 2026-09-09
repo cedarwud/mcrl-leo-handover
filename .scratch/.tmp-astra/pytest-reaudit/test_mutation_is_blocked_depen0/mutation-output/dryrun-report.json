@@ -1,0 +1,128 @@
+{
+  "claim_ceiling": "ENGINEERING_LANE_READ_ONLY_NO_SCIENTIFIC_OUTPUT",
+  "input_identities": {
+    "real_root": {
+      "files": [
+        {
+          "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact/payload.txt",
+          "relative_path": "payload.txt",
+          "sha256": "9b9d40ab931b8a06f908689f7f89b9dbec69d41f75060095615d7ac67ae288d0",
+          "size": 22
+        }
+      ],
+      "kind": "directory",
+      "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact",
+      "sha256": "81efaf5658527096ecd65e6ff036d51bd9f774886e39b092c95c13176e669851",
+      "status": "PRESENT"
+    }
+  },
+  "input_integrity": {
+    "real_root": {
+      "after": {
+        "files": [
+          {
+            "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact/payload.txt",
+            "relative_path": "payload.txt",
+            "sha256": "9b9d40ab931b8a06f908689f7f89b9dbec69d41f75060095615d7ac67ae288d0",
+            "size": 22
+          }
+        ],
+        "kind": "directory",
+        "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact",
+        "sha256": "81efaf5658527096ecd65e6ff036d51bd9f774886e39b092c95c13176e669851",
+        "status": "PRESENT"
+      },
+      "before": {
+        "files": [
+          {
+            "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact/payload.txt",
+            "relative_path": "payload.txt",
+            "sha256": "9b9d40ab931b8a06f908689f7f89b9dbec69d41f75060095615d7ac67ae288d0",
+            "size": 22
+          }
+        ],
+        "kind": "directory",
+        "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact",
+        "sha256": "81efaf5658527096ecd65e6ff036d51bd9f774886e39b092c95c13176e669851",
+        "status": "PRESENT"
+      },
+      "status": "PASS"
+    }
+  },
+  "name": "MUTATION_NEGATIVE",
+  "repo": "/home/u24/papers/mcrl-leo-handover",
+  "schema": "multi-catfish-v023-offline-realartifact-dryrun-v1",
+  "scientific_output": false,
+  "scratch_output": "/home/u24/papers/mcrl-leo-handover/.scratch/.tmp-astra/pytest-reaudit/test_mutation_is_blocked_depen0/mutation-output",
+  "spec": {
+    "path": "/home/u24/papers/mcrl-leo-handover/.scratch/.tmp-astra/pytest-reaudit/test_mutation_is_blocked_depen0/mutation.json",
+    "sha256": "94606ca3b18524a9452970ec96cd6d7c53fcf19a59b97c24aa51744eb937e7d8"
+  },
+  "steps": [
+    {
+      "exception": {
+        "text": "engineering dry-run blocked write into input artifact: /home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact/payload.txt",
+        "traceback": "Traceback (most recent call last):\n  File \"/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/offline_realartifact_dryrun.py\", line 418, in _run_step\n    result = function(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/dryrun_chain.py\", line 73, in attempt_input_write\n    (root / \"payload.txt\").write_text(\"mutated\", encoding=\"utf-8\")\n  File \"/usr/lib/python3.12/pathlib.py\", line 1049, in write_text\n    with self.open(mode='w', encoding=encoding, errors=errors, newline=newline) as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/pathlib.py\", line 1015, in open\n    return io.open(self, mode, buffering, encoding, errors, newline)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/offline_realartifact_dryrun.py\", line 138, in __call__\n    raise PermissionError(f\"engineering dry-run blocked write into input artifact: {args[0]}\")\nPermissionError: engineering dry-run blocked write into input artifact: /home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact/payload.txt\n",
+        "type": "PermissionError"
+      },
+      "input_identities": {
+        "real_root": {
+          "files": [
+            {
+              "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact/payload.txt",
+              "relative_path": "payload.txt",
+              "sha256": "9b9d40ab931b8a06f908689f7f89b9dbec69d41f75060095615d7ac67ae288d0",
+              "size": 22
+            }
+          ],
+          "kind": "directory",
+          "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact",
+          "sha256": "81efaf5658527096ecd65e6ff036d51bd9f774886e39b092c95c13176e669851",
+          "status": "PRESENT"
+        }
+      },
+      "name": "forbidden_write",
+      "status": "FAIL"
+    },
+    {
+      "exception": {
+        "text": "required prior result is unavailable: forbidden_write",
+        "type": "StepBlocked"
+      },
+      "input_identities": {},
+      "name": "blocked_dependent",
+      "status": "BLOCKED"
+    },
+    {
+      "exception": null,
+      "input_identities": {
+        "real_root": {
+          "files": [
+            {
+              "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact/payload.txt",
+              "relative_path": "payload.txt",
+              "sha256": "9b9d40ab931b8a06f908689f7f89b9dbec69d41f75060095615d7ac67ae288d0",
+              "size": 22
+            }
+          ],
+          "kind": "directory",
+          "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact",
+          "sha256": "81efaf5658527096ecd65e6ff036d51bd9f774886e39b092c95c13176e669851",
+          "status": "PRESENT"
+        }
+      },
+      "name": "independent_after_failure",
+      "result": {
+        "path": "/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v023-engineering-lane/fixtures/real-artifact",
+        "type": "pathlib.PosixPath"
+      },
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "blocked": 1,
+    "failed": 1,
+    "passed": 1
+  },
+  "verdict": "FAIL"
+}

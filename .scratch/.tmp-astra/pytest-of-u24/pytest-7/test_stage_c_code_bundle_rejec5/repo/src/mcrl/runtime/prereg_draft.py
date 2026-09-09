@@ -1,0 +1,947 @@
+"""The §7.1 pre-registration content, as code awaiting sign-off.
+
+Everything derivable from the implementation is derived —
+:func:`~mcrl.runtime.prereg.build_prereg_sections` reads the frozen
+constants back out of the modules that own them, so the document cannot
+drift from the code.  What is left is the part that exists *only* because
+it is pre-registered: the probe grid, the thresholds, the stopping rules,
+the deterministic selection mappings, the reference policy and its seed,
+and the hold-out commitment.
+
+**This module is the draft, not the freeze.**  Nothing here is sealed until
+:func:`freeze` is called, and that is deliberate: §7.1's whole value is that
+these choices were committed *before* the probes ran, so a value chosen —
+or revised — after seeing probe output is the leak, not a correction.  Every
+entry therefore carries the reasoning that would otherwise be invented
+afterwards.
+
+At freeze time, Q-D and Q-E were not values at all: they were outputs of P3
+and the Q-E selection mapping.  Requiring their answers before the owning
+measurements would have been circular.  §7.1 accepts
+"門檻**或**決定性的選取映射" for exactly this case, and what was frozen is
+the **rule that turns the measured input into the decision**.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+from typing import Any
+
+from ..env.dwell import DWELL_N_CANDIDATES
+from ..env.ephemeris import (
+    TRAIN,
+    BlockAlternatingSplit,
+    EphemerisConfig,
+    EpisodeStartSampler,
+    build_freeze_manifest,
+)
+from ..env.tle import MAX_MALFORMED_RECORD_FRACTION
+from .outage_gate import OUTAGE_RATE_NEGLIGIBLE_DEFAULT
+from .probe_p6 import (
+    MAIN_ENV_SEED,
+    MAIN_MOBILITY_SEED,
+    MAIN_TRAIN_SEED,
+    P6_ENV_SEED,
+    P6_EVALUATION_SEEDS,
+    P6_LEARNING_RATES,
+    P6_MOBILITY_SEED,
+    P6_NEAR_TIE_FRACTION,
+    P6_PERTURBATION_REPLICATES,
+    P6_PERTURBATION_STD_FRACTION,
+    P6_SELECTION_RULE,
+    P6_TRAIN_SEED,
+)
+from .prereg import (
+    PreregRecord,
+    ReferencePolicy,
+    build_prereg_sections,
+    freeze_prereg,
+)
+
+# ---------------------------------------------------------------------------
+# The probe grid (SDD §4)
+# ---------------------------------------------------------------------------
+#
+# ⚠ **Every number here was cross-checked against SDD §4's own table on
+# 2026-08-23, and four of the six had drifted.**  The controller caught P5;
+# checking the rest the same way turned up three more, all the same shape —
+# a probe number carrying an obligation the PREREG had quietly dropped:
+#
+#   P5  taken over completely.  SDD's P5 is the receive-angle distribution
+#       against S.465's theta^R_min, which discharges (3.10c)'s ANGULAR
+#       applicability disclosure.  The action-set-contraction probe that had
+#       taken the slot is real and stays -- as P7.
+#   P3  narrowed.  SDD's P3 is B17 Q3, "does the new r3 discriminate?",
+#       measured as the width of U_{b_u} across one user's 28 candidates AND
+#       the per-decision argmax agreement with r1.  The PREREG had it as the
+#       Q-D scale only; the argmax-agreement measurement had no owner.
+#   P2  narrowed.  SDD asks for the P^N swing amplitude and the angle-aware
+#       EE dynamic range per N.  Both were dropped when P2 was rebased from
+#       "closes Q-E" to "sensitivity" -- but Q-E closing elsewhere does not
+#       discharge P2's measurements.
+#   P6  narrowed.  SDD's r2 revision adds a random-tie-break control arm,
+#       perturbation stability, and cross-seed ranking consistency.  None
+#       had an owner.
+#
+# The lesson is the controller's: check that a number is vacant before
+# reusing it, and check that a number you keep still carries what it did.
+
+PROBE_GRID: dict[str, Any] = {
+    "P1": {
+        "question": "Q-A/Q-B: visibility and D2 event rate under a fixed policy",
+        "sdd_definition": (
+            "per-step visible-satellite distribution, handover event rate, "
+            "elevation and angular-rate distributions"
+        ),
+        "measures": [
+            "D2-eligible satellites per user per step",
+            "valid actions per user per step, and the starvation rate",
+            "handover events split phi1 / phi2 / re-entry, from realised "
+            "associations and never from indices",
+            "elevation and its rate of change",
+            "outage_infeasible rate -- the §4A.5a(4) input",
+        ],
+        "policy": "all three reference policies, reported separately",
+        "episodes": 200,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": ["Q-A", "Q-B"],
+        "ablation_dimension": None,
+        "implemented": "runtime/probe_p1.py",
+    },
+    "P2": {
+        "question": "sensitivity of the results to the dwell length N",
+        "sdd_definition": (
+            "P^N swing amplitude and angle-aware EE dynamic range for each "
+            "N in {2,3,4}"
+        ),
+        "sweep": {"dwell_steps": list(DWELL_N_CANDIDATES)},
+        "measures": [
+            "P^N swing amplitude per N  (SDD, restored)",
+            "angle-aware EE dynamic range per N  (SDD, restored)",
+            "re-key rate and the fraction of re-keys that move j = 0",
+            "handover rate attributable to re-keying rather than to geometry",
+            "the headline metrics under each N, as a sensitivity band",
+        ],
+        "policy": "stay-if-possible",
+        "episodes": 200,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": [],
+        "ablation_dimension": "dwell_steps",
+        "note": (
+            "Q-E is closed at N = 4 after completing the frozen mapping "
+            "with its 100-user, separated-stream measurement conditions.  "
+            "P2 reports sensitivity rather than exercising a new choice -- "
+            "but closing Q-E does NOT discharge the two additional P2 "
+            "measurements, so they are restored above."
+        ),
+    },
+    "P3": {
+        "question": (
+            "B17 Q3: does the counting-form r3 discriminate?  And Q-D: what "
+            "scale does it enter training at?"
+        ),
+        "sdd_definition": (
+            "width of the U_{b_u} distribution across one user's 28 "
+            "candidate actions; per-decision argmax agreement rate with r1"
+        ),
+        "measures": [
+            "width of U_{b_u} across a user's 28 candidates  (SDD, restored)",
+            "per-decision argmax agreement between r1 and r3  (SDD, restored)",
+            "distribution of realised U_{b_u} across the population",
+            "p95 of |r3| over served steps -- the Q-D selection mapping's input",
+            "|r1|, |r2|, |r3| magnitudes on the same steps",
+            "correlation between r1 and r3 across steps -- they must be "
+            "separable, which is what F-2's per-link power sum destroyed",
+        ],
+        "policy": "all three reference policies",
+        "episodes": 200,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": ["Q-D", "B17-Q3", "B17-Q4"],
+        "ablation_dimension": None,
+        "note": (
+            "the two questions share one measurement -- the U_{b_u} "
+            "distribution -- which is why they can sit in one probe; but the "
+            "argmax-agreement half is SDD's and was missing."
+        ),
+        "b17_q4_answer": {
+            "question": (
+                "is the configuration with high system EE the same as the "
+                "one that spreads load well?  B17 says this decides whether "
+                "the follow-on method should STRENGTHEN EXPLORATION (the "
+                "keying is already right) or CHANGE THE KEYING -- and that "
+                "getting it wrong binds the wrong thing"
+            ),
+            "answer": (
+                "YES at the candidate level: argmax(r1) lies in r3's best "
+                "set 100.00% of the time, against an 81.1% null.  Both are "
+                "dominated by the same B^w/U divisor, so the EE-best "
+                "candidate is always among the load-best ones.  => the "
+                "keying is already right; the follow-on method should "
+                "strengthen exploration, not replace the keying."
+            ),
+            "scope_limit": (
+                "⚠ This is the CANDIDATE level -- the immediate reward.  On "
+                "the realised TRAJECTORY r1 and r3 correlate only +0.25, so "
+                "'they never conflict at the point of choice' does NOT mean "
+                "'r3 is redundant': under stay-if-possible users sit on "
+                "load-3 beams while ~23 load-1 candidates are available, and "
+                "closing that gap is exactly what the third objective is "
+                "for."
+            ),
+            "source": "artifacts/probe-p3-2026-08-23.json",
+            "note": (
+                "recorded under B17 Q4 on 2026-08-23.  The number was "
+                "produced by the run submitted to close Q-D, so the answer "
+                "sat inside that report with no owner -- and B17 warns that "
+                "taking the wrong branch here binds the wrong thing in the "
+                "follow-on design."
+            ),
+        },
+    },
+    "P4": {
+        "question": "does the interference model bind?  which term dominates?",
+        "measures": [
+            "I^intra / I^inter split per served link",
+            "SINR distribution with and without the co-colour sum",
+            "how often two satellites illuminate one cell -- (3.12b)'s v' = v",
+        ],
+        "policy": "all three reference policies",
+        "episodes": 100,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": [],
+        "ablation_dimension": "co_colour_interference_enabled",
+        "note": (
+            "⚠ SDD §4 retired the OLD P4 series at r5 (dispersion-vs-EE, the "
+            "EE-optimal beam count, the source of the 3.9x) as post-baseline "
+            "ANALYSIS questions.  The number is genuinely vacant and is "
+            "reused here with the controller's approval -- but this probe is "
+            "UNRELATED to those, and saying so is the point of this note."
+        ),
+    },
+    "P5": {
+        "question": (
+            "receive-angle distribution against S.465-6's theta^R_min -- "
+            "does the envelope get evaluated where it is defined?"
+        ),
+        "sdd_definition": (
+            "fraction of link evaluations falling at theta^R < 2.05 deg"
+        ),
+        "measures": [
+            "distribution of the at-user inter-satellite separation angle "
+            "over every interference term evaluated",
+            "fraction of evaluations below theta^R_min",
+            "how much received interference power those evaluations carry -- "
+            "a rare-but-dominant tail reads differently from a rare-and-"
+            "negligible one",
+        ],
+        "policy": "all three reference policies",
+        "episodes": 100,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": [],
+        "ablation_dimension": None,
+        "discharges": "eq. (3.10c)'s ANGULAR applicability disclosure",
+        "note": (
+            "⚠ RESTORED 2026-08-23.  This probe had been displaced by the "
+            "action-set-contraction probe, which now holds P7.  ch3 "
+            "currently discloses only (3.10c)'s FREQUENCY range (2-31 GHz "
+            "per ITU-R S.465-6) and says nothing about its angular range, "
+            "so this obligation had no owner at all.  ⚠ And "
+            "``theta^R_min`` does not yet exist in env/antenna.py -- the "
+            "restored probe exposes a missing constant, not just a missing "
+            "measurement."
+        ),
+    },
+    "P6": {
+        "question": "the learning-rate sweep (ruling C-13)",
+        "sdd_definition": (
+            "alpha in {0.01, 0.003, 0.001} over short runs; report all four "
+            "G-3 collapse metrics with q_margin NORMALISED; plus an r2 "
+            "control arm that breaks near-ties at random, perturbation "
+            "stability, and cross-seed ranking consistency"
+        ),
+        "sweep": {"learning_rate": list(P6_LEARNING_RATES)},
+        "measures": [
+            "q_margin, NORMALISED  (SDD emphasis, restored)",
+            "collapse metrics (G-3, all four)",
+            "scalar reward",
+            "control arm: a policy that breaks near-ties at RANDOM  (SDD r2, "
+            "restored) -- if it reproduces the same EE the dispersion was "
+            "noise; if it cannot, there is a weak learned ordering",
+            "perturbation stability  (SDD r2, restored)",
+            "cross-seed ranking consistency  (SDD r2, restored)",
+        ],
+        "episodes": 9000,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": [],
+        "ablation_dimension": "learning_rate",
+        "operational_protocol": {
+            "device": "cpu",
+            "matched_training_seeds": {
+                "train": P6_TRAIN_SEED,
+                "environment": P6_ENV_SEED,
+                "mobility": P6_MOBILITY_SEED,
+            },
+            "evaluation_split": TRAIN,
+            "evaluation_seeds": list(P6_EVALUATION_SEEDS),
+            "evaluated_policy": "final-episode greedy policy",
+            "near_tie_control": {
+                "threshold": P6_NEAR_TIE_FRACTION,
+                "definition": (
+                    "valid action a is in the near-tie set iff "
+                    "(Q_top-Q_a)/(Q_top-Q_bottom) <= 0.01; a flat valid Q "
+                    "surface puts every valid action in the set"
+                ),
+                "randomisation": (
+                    "uniform over the near-tie set from a dedicated RNG "
+                    "stream; environment and mobility streams are matched "
+                    "to the greedy control"
+                ),
+                "reported": (
+                    "paired per-seed delta in system EE (r1) and calibrated "
+                    "scalar reward, near-tie prevalence, and intervention rate"
+                ),
+            },
+            "perturbation_stability": {
+                "target": "scalarized Q over currently valid actions",
+                "distribution": "iid zero-mean Gaussian",
+                "std_fraction_of_valid_q_range": P6_PERTURBATION_STD_FRACTION,
+                "replicates_per_user_decision": P6_PERTURBATION_REPLICATES,
+                "statistics": [
+                    "greedy-action retention rate",
+                    "Kendall tau over originally non-tied valid-action pairs",
+                ],
+                "pass_rule": None,
+            },
+            "cross_seed_ranking": {
+                "ranked_objects": "finite learning-rate arms",
+                "score": (
+                    "final-policy calibrated scalar reward, independently "
+                    "on each shared evaluation seed"
+                ),
+                "statistics": ["modal-order fraction", "Kendall W"],
+                "pass_rule": None,
+            },
+            "learning_rate_selection": P6_SELECTION_RULE,
+            "main_training_seeds": {
+                "train": MAIN_TRAIN_SEED,
+                "environment": MAIN_ENV_SEED,
+                "mobility": MAIN_MOBILITY_SEED,
+            },
+        },
+        "note": (
+            "the only probe that needs training, so it is heavy compute and "
+            "belongs on the server, not in the local probe pass"
+        ),
+    },
+    "P7": {
+        "question": "does anything actually constrain the action set?",
+        "measures": [
+            "per-term mask attrition: slot occupied / cell exists / cell "
+            "visible, reported separately",
+            "power-feasibility outage rate, both warm-start arms",
+            "in-segment gain excursion against the 3.010 dB budget, and the "
+            "required power of the steps judged infeasible",
+        ],
+        "policy": "random-masked, which stresses the mask hardest",
+        "episodes": 100,
+        "users": 100,
+        "split_part": TRAIN,
+        "closes": [],
+        "ablation_dimension": "segment_warm_start",
+        "note": (
+            "⚠ NEW NUMBER 2026-08-23.  This was P5 and had displaced SDD's "
+            "own P5; the number is vacated and the probe keeps its content. "
+            "W-17 measured all three geometric terms and the power gate as "
+            "non-binding at one hand-picked epoch, and W-19/W-22 then found "
+            "the power gate DOES fire once segments are warm-started "
+            "(0.94% main arm, 0.81% sensitivity arm).  P7 turns both into "
+            "numbers over the frozen sampling distribution."
+        ),
+        "prototypes": [
+            "scripts/outage_frozen.py",
+            "scripts/ceiling_and_segments.py",
+            "scripts/sensitivity_arm.py",
+        ],
+    },
+}
+
+SELECTION_MAPPING_POLICY: str = (
+    "A selection mapping must freeze its MEASUREMENT CONDITIONS along with "
+    "its rule.  'Take the largest N whose X is at or below a threshold' is "
+    "not a complete rule until the conditions X is measured under are "
+    "pinned: Q-E's rule selected N = 3 from a 60-user single-stream script "
+    "and N = 4 from probe P2 at 100 users with separated streams, and those "
+    "are not two measurements disagreeing -- one was taken under conditions "
+    "that are not this scenario.  ⚠ And a rule whose output looks "
+    "inconsequential is still followed: 'the rule says 4 but 3 changes no "
+    "reported result' puts the boundary of the exception at 'was this "
+    "important', which is precisely the discretion pre-registration exists "
+    "to remove."
+)
+"""§7.1 methodology note (ruling W-28 §1).
+
+Frozen with the record because it is the rule that would have prevented
+the one correction the mappings actually needed.
+"""
+
+TEST_VALIDITY_POLICY: str = (
+    "A test that only works because the system happens to be in some state "
+    "is testing the environment, not the code.  It must put the system into "
+    "that state itself, and it must assert BOTH that the controlled quantity "
+    "is unchanged AND that the manipulated quantity moved -- an ablation "
+    "test asserting only 'the two sides agree' also passes when the thing "
+    "being ablated was never wired up.  Three instances in this project: "
+    "nine gate assertions went vacuous the day Q-D and Q-E closed; the "
+    "fading-ablation test would have passed with fading disconnected; and "
+    "the PREREG stand-in mappings would have drifted out of sync with the "
+    "live question set without a key-set assertion."
+)
+"""§7.1 methodology note (ruling W-27 §5), promoted from three incidents.
+
+Frozen with the record because the probes are the place it bites: P2, P4,
+P6 and P7 are ablation-shaped, and an ablation test that cannot fail is
+worse than no test — it certifies the thing it never checked.
+"""
+
+PROBE_RNG_POLICY: str = (
+    "Every probe with an ablation_dimension draws its sampling randomness "
+    "from streams that are INDEPENDENT of the swept quantity: env_rng "
+    "(fading), mobility_rng (users), a spawned stream for the warm-start "
+    "ages, and the policy's own generator.  Measured with one shared "
+    "generator on 2026-08-23, switching fading off also re-drew every later "
+    "episode's segment ages and moved the outage count by 11 -- so the "
+    "'fading ablation' had measured fading plus a different set of ages.  "
+    "One generator produces numbers that look reasonable and are attributed "
+    "wrongly, which is the hardest kind of error to see."
+)
+"""§7.1 methodology note (ruling W-23 §1), not a parameter.
+
+It is frozen with the grid because P2, P4, P6 and P7 are all ablation-shaped
+and would each carry the same defect if they shared a stream with the thing
+they sweep.
+"""
+
+# ---------------------------------------------------------------------------
+# Thresholds
+# ---------------------------------------------------------------------------
+
+THRESHOLDS: dict[str, Any] = {
+    "outage_dropped_transition_rate": {
+        "value": OUTAGE_RATE_NEGLIGIBLE_DEFAULT,
+        "class": "S",
+        "meaning": (
+            "above this, PATCH P-03's plain drop is inadmissible and the "
+            "semi-MDP transition becomes mandatory (§4A.5a(4))"
+        ),
+        "rationale": (
+            "1e-3 is one outage per hundred episodes at 100 users x 10 "
+            "steps, too rare for a policy to find and exploit inside 9000 "
+            "episodes.  It must be frozen BEFORE P1 because choosing it "
+            "after seeing the rate is the leak §7.1 names."
+        ),
+    },
+    "tle_malformed_record_fraction": {
+        "value": MAX_MALFORMED_RECORD_FRACTION,
+        "class": "S",
+        "meaning": "quarantine ceiling; above it the corpus is rejected",
+        "rationale": (
+            "measured: exactly one malformed record in 3,545,756 (a BSTAR "
+            "field overflowing its fixed width), i.e. 2.8e-7 — so 1e-3 "
+            "leaves three orders of headroom over the observed rate while "
+            "still failing loudly on a corrupt file"
+        ),
+    },
+    "minimum_altitude_km": {
+        "value": 300.0,
+        "class": "S",
+        "meaning": "D2 floor; below it a satellite is decaying, not serving",
+        "rationale": (
+            "the corpus contains healthy satellites at 156 km, so a naive "
+            "'> 200 km' screen would have admitted them; 300 km is above "
+            "the observed decay band and below every operational shell"
+        ),
+    },
+    "coverage_target_fraction": {
+        "value": 0.95,
+        "class": "D",
+        "meaning": "what V = 39 was sized to achieve",
+        "measured": 0.9517,
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Stopping rules
+# ---------------------------------------------------------------------------
+
+STOPPING_RULES: dict[str, Any] = {
+    "training": {
+        "episodes": 9000,
+        "rule": "fixed episode count, no early stopping",
+        "rationale": (
+            "Table I fixes the budget.  Early stopping on a validation "
+            "metric would make the stopping point a function of the data, "
+            "which is the same leak as an adaptive threshold."
+        ),
+    },
+    "checkpoint_selection": {
+        "primary": "final-episode-policy",
+        "secondary": "best-weighted-reward-on-eval",
+        "assumption_id": "ASSUME-MODQN-REP-015",
+        "rationale": (
+            "the primary report is the final policy, so no selection over "
+            "eval output enters the headline; the best-eval checkpoint is "
+            "reported beside it and labelled as selected."
+        ),
+    },
+    "probe": {
+        "rule": "run the pre-registered episode count; no peeking, no extension",
+        "rationale": (
+            "extending a probe until a rate crosses a threshold is the "
+            "adaptive-sampling leak in its purest form."
+        ),
+    },
+    "abort": {
+        "rule": (
+            "a run aborts on any MCRLContractError and the abort is "
+            "reported; it is never retried with a relaxed guard"
+        ),
+        "rationale": "P-3/G-11: a violated contract is a result, not a nuisance",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# The two selection mappings (§7.1's "決定性的選取映射")
+# ---------------------------------------------------------------------------
+
+SELECTION_MAPPINGS: dict[str, Any] = {
+    "Q-E dwell N": {
+        "probe": "P2 under the frozen 100-user, separated-stream conditions",
+        "candidates": list(DWELL_N_CANDIDATES),
+        "rule": (
+            "take the LARGEST N in {2, 3, 4} whose re-key rate -- the "
+            "fraction of dwell boundaries at which j = 0 moves -- is at or "
+            "below 5%; if none qualifies, take the smallest"
+        ),
+        "measurement_conditions": (
+            "measured in the FROZEN scenario: 100 users, dt = 30.08 s, "
+            "streams separated per rng_policy, driven through "
+            "StepEnvironment by probe P2.  ⚠ Frozen WITH the rule: 'largest "
+            "N with X <= threshold' is not a complete rule until X's "
+            "measurement conditions are pinned, and this mapping proves it "
+            "-- the same rule selected 3 from a 60-user single-stream "
+            "script and 4 from P2."
+        ),
+        "rationale": (
+            "independent of EE, throughput and every reported metric.  "
+            "SDD 4A.2 gives dwell exactly one job: freeze j -> cell_id "
+            "between boundaries so an action index keeps naming the same "
+            "cell, which larger N serves better.  Its only cost is "
+            "staleness -- the frozen map being wrong when the anchor should "
+            "have moved -- and the re-key rate measures exactly that.  So "
+            "the rule is 'as stable as possible, subject to not being "
+            "stale': a correctness bound on the mechanism's own validity, "
+            "not a performance target.  Monotone in N, so it cannot tie.  "
+            "The earlier proposal (maximise the angle-aware EE dynamic "
+            "range) was withdrawn: it selected on the effect the paper sets "
+            "out to demonstrate."
+        ),
+        "resolved": 4,
+        "measured_rekey_rate": {
+            "authoritative_probe_P2_100_users_separated_streams": {
+                "N=2": 0.02050, "N=3": 0.02875, "N=4": 0.03250,
+            },
+            "superseded_qe_rekey_script_60_users_single_stream": {
+                "N=2": 0.02708, "N=3": 0.03819, "N=4": 0.05417,
+            },
+            "why_they_differ": (
+                "conditions, not sampling noise: 60 vs 100 users, and one "
+                "shared generator versus three separated ones.  Both are "
+                "kept so that re-running P2 and finding a different N than "
+                "an older note says does not look like a records error."
+            ),
+        },
+        "p2_sensitivity_at_the_chosen_N": {
+            "system_power_swing_w": {"N=2": 83.33, "N=3": 83.33, "N=4": 78.82},
+            "angle_aware_ee_dynamic_range": {
+                "N=2": 2.599e6, "N=3": 2.599e6, "N=4": 2.607e6,
+            },
+            "handover_rate_per_decision": {"N=2": 0.1133, "N=3": 0.1133, "N=4": 0.1133},
+            "note": (
+                "⚠ NOT 'no measurable effect': N = 4 lowers the P^N swing by "
+                "5.4% and moves the EE dynamic range by 0.3%.  Only the "
+                "handover rate is identical across N.  The differences are "
+                "small but real, and calling them zero would make a later "
+                "reader think the record was wrong."
+            ),
+        },
+        "note": (
+            "the rate depends only on the product N*dt -- a user travels at "
+            "most 14.3% of a cell radius within a segment at any (N, dt) "
+            "swept -- so this is a live decision only at dt >= 30 s.  At the "
+            "former 1 s clock every candidate sat below 0.1% and the rule "
+            "would have returned N = 4 by default."
+        ),
+        "unfreezes": "env.dwell.DWELL_N_IS_FROZEN",
+    },
+    "Q-F c1 calibration scale": {
+        "probe": "P3 corrected formal grid (2026-08-25 rerun01)",
+        "rule": (
+            "c_1 = the p95 of r1 over served steps, from P3's r1 quantiles"
+        ),
+        "rationale": (
+            "The three scales cannot share one statistic, and the reason is "
+            "structural rather than stylistic: r2 is bounded by a frozen "
+            "parameter, r3 by the population, and r1 by nothing at all.  "
+            "The common INTENT is that each normalised objective spans "
+            "roughly unit range, so that omega_j means what Table I says it "
+            "means -- the effective trade-off is omega_j / c_j, so c_1 "
+            "directly sets how much of the headline result the first "
+            "objective accounts for.  r1 = R_u/P^N is strictly positive and "
+            "unbounded above, with a right tail driven by the best link "
+            "geometry, so it has no analytic bound to normalise against; "
+            "p95 spans the range while staying robust to that tail, which "
+            "the max would track instead.  Same reasoning, same statistic, "
+            "as the already-frozen c_3."
+        ),
+        "unfreezes": "trainer_spec.TrainerConfig.reward_calibration_scales[0]",
+        "resolved": 2029238.4328742754,
+        "measured_r1_over_served_steps": {
+            "min": 12908.071054631488,
+            "p05": 54000.9223856431,
+            "p50": 337778.8807027624,
+            "p95": 2029238.4328742754,
+            "max": 5975520.541068027,
+            "mean": 602617.3232185947,
+            "count": 198910.0,
+            "decision_steps": 200000,
+            "selection_mapping_policy": "stay-if-possible",
+            "source": (
+                "artifacts/probes-2026-08-25-rerun01/"
+                "p3-stay-if-possible.json"
+            ),
+            "source_sha256": (
+                "1f49d8cb81854fac882f6203365808e7b94bc11195fa65d6a25fe9996b1a37c9"
+            ),
+        },
+        "corrective_resolution": {
+            "source_prereg_digest": (
+                "d469d81fab617485b86897180ff52bacc2c514ca604bb676ab1585c8b15560f6"
+            ),
+            "corrective_protocol_digest": (
+                "0d778ccdbbaf016310e1b541c421d98f95b06c993bc509a637ef37d386824560"
+            ),
+            "execution_manifest_digest": (
+                "e78371f1725697d6c12f521af49d9f365bd6156eb62871ceb78e477e4f3049af"
+            ),
+            "comparison_precision_only": {
+                "decimals": 3,
+                "rounding": "ROUND_HALF_UP",
+                "observed": "2029238.433",
+                "frozen": "2471140.576",
+                "matches": False,
+            },
+            "applied_value_policy": (
+                "retain the full raw continuous p95; three decimals were only "
+                "the presealed old-literal mismatch test"
+            ),
+        },
+        "not_rounded_because": (
+            "r3 is a head count and rounding keeps its scale countable; r1 "
+            "is a continuous bit/J ratio with no unit to round to"
+        ),
+        "supersedes": {
+            "legacy_c1": 117217362.202,
+            "why": (
+                "measured r1 has p50 = 5.09e5, so the legacy value is 230x "
+                "too large; dividing by it would put r1's median at 0.0043 "
+                "against |r3|'s 0.500 and crush the first objective.  "
+                "'Invalid by construction' is now a measurement, not an "
+                "inference."
+            ),
+        },
+        "disclosure": (
+            "⚠ P3 had already run when this rule was written, so r1's "
+            "distribution was VISIBLE -- 'the rule preceded the numbers' is "
+            "not literally true here the way it is for c_3.  What protects "
+            "it: the rule is structural (unbounded -> p95; bounded -> the "
+            "bound); c_1 and c_3 share the p95 rule while c_2 is "
+            "separate because its distribution shape forbids it -- NOT "
+            "all three alike; and it was not selected from among "
+            "alternatives by checking which produced a preferred "
+            "balance, which is how the leak actually happens."
+        ),
+    },
+    "Q-G c2 calibration scale": {
+        "probe": "none -- closed analytically, no measurement needed",
+        "rule": "c_2 = phi2, the larger handover penalty",
+        "rationale": (
+            "r2 is the one objective **bounded by construction**: (3.27) "
+            "gives r2 in {0, -phi1, -phi2}, so |r2| <= phi2 always and "
+            "dividing by phi2 normalises it to [0, 1] exactly.  Its scale is "
+            "a frozen parameter, not a statistic, and closing it needs no "
+            "probe at all -- it was determined the moment phi1 and phi2 "
+            "were frozen.  ⚠ And the p95 rule CANNOT be transplanted here: "
+            "r2's signed p95 is 0 because most steps have no handover, so "
+            "'divide by the p95' would divide by zero.  The sign convention "
+            "puts r2's informative end at p05, and p05 is exactly -phi2 by "
+            "construction -- which is why the analytic bound is both simpler "
+            "and exact."
+        ),
+        "unfreezes": "trainer_spec.TrainerConfig.reward_calibration_scales[1]",
+        "resolved": 1.0,
+        "measured_r2_over_all_steps": {
+            "p05": -1.0, "p50": -0.0, "p95": 0.0, "mean": -0.11175,
+            "note": "reported for the record; the rule uses none of it",
+        },
+    },
+    "Q-D r3 calibration scale": {
+        "probe": "P3",
+        "rule": (
+            "scale = the p95 of |r3| = U_{b_u} measured over P3's served "
+            "steps, rounded to the nearest integer; r3 enters training as "
+            "-U_{b_u} / scale"
+        ),
+        "rationale": (
+            "B13 changed r3's units from a normalised gap to a raw user "
+            "count, so the inherited scale means nothing for it.  p95 rather "
+            "than max because the max is a single congested beam and would "
+            "make the scale a function of one outlier; rounding to an "
+            "integer keeps the divisor a countable quantity rather than a "
+            "fitted one."
+        ),
+        "unfreezes": "env.service.R3_SCALE_IS_FROZEN",
+        "resolved": 6,
+        "measured_abs_r3_over_served_steps": {
+            "p05": 1.0, "p50": 3.0, "p95": 6.0, "max": 8.0,
+            "count": 11898.0, "source": "probe P3, 12000 decision steps",
+        },
+        "note": (
+            "CLOSED by probe P3 on 2026-08-23 -- the first question here "
+            "closed by a probe rather than a ruling.  The scale is applied "
+            "through TrainerConfig.reward_calibration_*, which is why that "
+            "surface survived P-05.  Measured under the reference policy at "
+            "the frozen scenario; a trained policy spreads load differently "
+            "but the scale stays frozen, because re-deriving it from "
+            "training output would make the reward scale a function of the "
+            "run it is scoring."
+        ),
+    },
+}
+
+SEGMENT_WARM_START: dict[str, Any] = {
+    "historical_position_identity": ["segment_age_steps", "norad_id"],
+    "main_arm": {
+        "mode": "uniform-episode-length",
+        "rule": "segment age a ~ Uniform{0, ..., H-1} at episode reset",
+        "rationale": (
+            "without it p(0) = p0 for 100% of users in every episode, which "
+            "is an artefact of the episode boundary rather than a property "
+            "of the geometry -- the same defect W-04 fixed for the D2 "
+            "latches by priming them before step 0.  Parameter-free: it "
+            "reuses H, so step 0 looks like a uniformly random step of an "
+            "ongoing episode.  a = 0 keeps positive probability, so a "
+            "genuinely fresh segment still occurs."
+        ),
+    },
+    "sensitivity_arm": {
+        "mode": "uniform-segment-length",
+        "segment_age_steps": 6,
+        "rule": "a ~ Uniform{0, ..., L-1} with L the UNCENSORED segment length",
+        "L_provenance": (
+            "6 steps: the median length of segments that end NATURALLY (by "
+            "handover or outage) at dt = 30.08 s, measured under the "
+            "reference policy at freeze time.  NOT the 5 of the pooled "
+            "median -- 49.0% of segments are cut by the episode boundary "
+            "and ran only 4.24 steps, so the pooled figure estimates a "
+            "truncated quantity rather than the inter-renewal time this "
+            "parameter is defined as."
+        ),
+        "rationale": (
+            "For a deterministic segment length L the equilibrium age of an "
+            "in-progress segment is Uniform{0, ..., L-1}, so this arm is not "
+            "an alternative -- it IS the equilibrium distribution, with mean "
+            "age 2.5 steps.  The two arms therefore carry complementary "
+            "defects rather than one being better: the main arm is "
+            "policy-independent by construction but draws ages 1.8x older "
+            "than equilibrium (4.5 vs 2.5), which pushes p away from p0 and "
+            "makes the mechanism look MORE active; this arm is the correct "
+            "distribution but its L is measured UNDER THE REFERENCE POLICY, "
+            "which is how a policy re-enters the initial state distribution. "
+            "The main arm stays the headline because it is the "
+            "pre-registered main arm -- switching after seeing a result is "
+            "the thing pre-registration exists to prevent."
+        ),
+        "caveat": (
+            "a trained policy will not hold links for the same length, so L "
+            "is frozen as a reference-policy measurement and must be "
+            "reported as one"
+        ),
+    },
+    "user_position_in_the_back_projection": (
+        "held at its current value; users travel 250 m per decision step, "
+        "subtending 0.0297 deg at 483 km against a median per-step |dtheta| "
+        "of 1.194 deg -- 2.5%, the same ratio that justifies leaving "
+        "mobility on the decision clock"
+    ),
+}
+
+# ---------------------------------------------------------------------------
+# Reference policy and hold-out
+# ---------------------------------------------------------------------------
+
+REFERENCE_POLICY_SEED: int = 20260822
+"""**S** — arbitrary but frozen; the date, so it is obviously not fitted."""
+
+HOLDOUT_SEED: int = 8_140_291
+"""**S** — the seed for the held-out evaluation draw, committed by hash.
+
+Its value is sealed in the record as a salted digest rather than in the
+clear, so the commitment can be verified afterwards without the number
+having been available to anyone tuning against it (§7.1).
+"""
+
+HOLDOUT_SALT: str = "mcrl-leo-handover-2026-08-22"
+
+
+# ---------------------------------------------------------------------------
+# Assembly
+# ---------------------------------------------------------------------------
+
+
+def build_draft(
+    *,
+    ephemeris: EphemerisConfig | None = None,
+    reference_policy_name: str = "stay-if-possible",
+) -> dict[str, Any]:
+    """Assemble the complete freeze-ready section set.
+
+    Derivable values come from :func:`build_prereg_sections`, which reads
+    them out of the modules that own them; only the pre-registration-only
+    pieces above are supplied here.
+    """
+    config = ephemeris or EphemerisConfig()
+    archive = config.archive()
+    split = BlockAlternatingSplit.for_archive(archive)
+    manifest = build_freeze_manifest(config, split)
+    manifest = dict(manifest)
+    manifest["sampling"] = EpisodeStartSampler.for_archive(
+        archive, split, TRAIN
+    ).as_dict()
+
+    return build_prereg_sections(
+        reference_policy=ReferencePolicy(
+            name=reference_policy_name,
+            seed=REFERENCE_POLICY_SEED,
+            description="hold the previous association while it stays valid",
+        ),
+        probe_grid=PROBE_GRID
+        | {
+            "rng_policy": PROBE_RNG_POLICY,
+            "test_validity_policy": TEST_VALIDITY_POLICY,
+            "selection_mapping_policy": SELECTION_MAPPING_POLICY,
+        },
+        thresholds=THRESHOLDS,
+        stopping_rules=STOPPING_RULES,
+        ephemeris_manifest=manifest,
+    ) | {
+        "selection_mappings": SELECTION_MAPPINGS,
+        "segment_warm_start": SEGMENT_WARM_START,
+        "refreeze_provenance": {
+            "date": "2026-08-25",
+            "kind": "deterministic-selection-mapping-application",
+            "supersedes": "artifacts/PREREG-FROZEN-2026-08-25.json",
+            "superseded_digest": (
+                "d469d81fab617485b86897180ff52bacc2c514ca604bb676ab1585c8b15560f6"
+            ),
+            "superseded_byte_sha256": (
+                "2f8377d73a1ae0190df13a2b59b7d02803dd5769a7d577d94e17e1b613a8c8c2"
+            ),
+            "authority": (
+                "controller instruction '按照你的建議進行' authorized following "
+                "the corrected-probe gate through its predeclared deterministic "
+                "mapping before P6"
+            ),
+            "reasons": [
+                "the formal corrected P3 used the frozen stay-if-possible policy for 200 episodes and 200000 decision rows",
+                "served-step r1 p95 was 2029238.4328742754, which mismatched the prior 2471140.576 at the presealed three-decimal comparison precision",
+                "Q-F already required the raw continuous served-step p95, so this seal applies that rule without choosing a new rule or tuning a value",
+            ],
+            "applied_mapping": {
+                "question": "Q-F c1 calibration scale",
+                "rule": "c_1 = the p95 of r1 over served steps",
+                "observed_raw": 2029238.4328742754,
+                "resolved": 2029238.4328742754,
+                "representation": "full raw continuous p95",
+            },
+            "corrected_probe_evidence": {
+                "summary": {
+                    "path": "artifacts/probes-2026-08-25-rerun01/summary.json",
+                    "byte_sha256": (
+                        "8fb0ac591b3d2297747699e54520c090e2aa0e7cb5830b120ab634ee41fa4028"
+                    ),
+                },
+                "execution_manifest": {
+                    "path": (
+                        "artifacts/probes-2026-08-25-rerun01/"
+                        "execution-manifest.json"
+                    ),
+                    "byte_sha256": (
+                        "5390ac254b79ebb0d17175e5adc588afc3c5564adb4823a6205dff58d45013e7"
+                    ),
+                    "self_digest": (
+                        "e78371f1725697d6c12f521af49d9f365bd6156eb62871ceb78e477e4f3049af"
+                    ),
+                },
+                "p3_selection_mapping": {
+                    "path": (
+                        "artifacts/probes-2026-08-25-rerun01/"
+                        "p3-stay-if-possible.json"
+                    ),
+                    "byte_sha256": (
+                        "1f49d8cb81854fac882f6203365808e7b94bc11195fa65d6a25fe9996b1a37c9"
+                    ),
+                    "policy": "stay-if-possible",
+                    "decision_steps": 200000,
+                    "served_steps": 198910,
+                },
+                "protocol": {
+                    "path": (
+                        "artifacts/CORRECTED-PROBE-PROTOCOL-2026-08-25.json"
+                    ),
+                    "byte_sha256": (
+                        "d8ca39b43fa7e6368ae4c25d28aa386fbe2b61a65318631d055633809de1ffb9"
+                    ),
+                    "self_digest": (
+                        "0d778ccdbbaf016310e1b541c421d98f95b06c993bc509a637ef37d386824560"
+                    ),
+                },
+            },
+            "preservation": (
+                "the 2026-08-23, 2026-08-24 and first 2026-08-25 artifacts "
+                "remain byte-preserved; only Q-F's resolved value, corrected "
+                "measurement evidence and resolution provenance change. All "
+                "other numerical values, seeds, thresholds, stopping rules, "
+                "learning-rate arms and the P6 selection rule are unchanged"
+            ),
+        },
+    }
+
+
+def freeze(sections: dict[str, Any] | None = None) -> PreregRecord:
+    """Seal the draft.  **Irreversible in the way that matters.**
+
+    After this the probes may run, and any later change to a threshold or a
+    selection mapping is a change made with knowledge of the data — which is
+    what §7.1 exists to prevent.  Call it once, deliberately.
+    """
+    return freeze_prereg(
+        sections if sections is not None else build_draft(),
+        holdout_seed=HOLDOUT_SEED,
+        salt=HOLDOUT_SALT,
+    )
