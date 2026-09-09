@@ -21234,3 +21234,396 @@ exec
  exited 130 in 270400ms:
 load 0.8873782400041819 V025_PROBE_R2/world/1 33
 
+2026-09-09T12:36:08.909827Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+exec
+/bin/bash -lc "nice -n 10 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import importlib.util,pickle,sys,time
+from pathlib import Path
+p=Path('.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py'); s=importlib.util.spec_from_file_location('probe',p); m=importlib.util.module_from_spec(s);sys.modules[s.name]=m;s.loader.exec_module(m)
+with Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/world-tapes/r2-world-1.pickle').open('rb') as f:tape=pickle.load(f)
+setting=m._setting('a-r0');rs=m.run_setting_for('a-r0');base=m._base_configuration(tape,0,'nearest-eligible');opts,_=m._legal_options(tape,0);cs=[]
+for u in sorted(opts):
+ for ident in opts[u]:
+  if ident"'!=base.mapping[u]:
+   mp=base.mapping;mp[u]=ident;cs.append(m._configuration(base,mp,kind='"'bench'))
+ev=m.StepEvaluator(tape,setting,0,transition_from=base,field='margin',run_setting=rs,boundary_indices=(0,),fading_quantile_alpha=.10)
+t=time.perf_counter();ev.evaluate_many((base,*cs));print(len(cs)+1,time.perf_counter()-t,len(ev._evaluated),len(ev._invalid),flush=True)
+PY" in /home/sat/mcrl-v025-rule-ws
+codex
+The benchmark confirms that “all physical legal identities” is much larger than the sealed controller’s legal action surface and would not match C1’s actual action inventory. The production controller defines each user’s legal action set as the sealed top-8 live actions; I’m binding UNILATERAL and every “best legal alternative” to that unchanged action surface. This is not pruning invented for the rule—it is the engine’s sealed legal-action contract and is necessary for the stated C1 comparison.
+ exited 130 in 92771ms:
+exec
+/bin/bash -lc "nice -n 10 env PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import importlib.util,pickle,sys,time
+from pathlib import Path
+p=Path('.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py'); s=importlib.util.spec_from_file_location('probe',p); m=importlib.util.module_from_spec(s);sys.modules[s.name]=m;s.loader.exec_module(m)
+with Path('/home/sat/mcrl-v025-codex-ws-engine/.tmp/stage4h-formal/world-tapes/r2-world-1.pickle').open('rb') as f:tape=pickle.load(f)
+setting=m._setting('a-r0');rs=m.run_setting_for('a-r0');base=m._base_configuration(tape,0,'nearest-eligible');opts,_=m._selection_shortlist(tape,0,run_setting=rs);cs=[]
+for u in sorted(opts):
+ for ident in opts[u]:
+  if ident"'!=base.mapping[u]:
+   mp=base.mapping;mp[u]=ident;cs.append(m._configuration(base,mp,kind='"'bench'))
+print('candidates',len(cs)+1,flush=True)
+ev=m.StepEvaluator(tape,setting,0,transition_from=base,field='margin',run_setting=rs,boundary_indices=(0,),fading_quantile_alpha=.10)
+t=time.perf_counter();ev.evaluate_many((base,*cs));print('eval',time.perf_counter()-t,len(ev._evaluated),len(ev._invalid),flush=True)
+PY" in /home/sat/mcrl-v025-rule-ws
+ succeeded in 29739ms:
+candidates 1180
+eval 28.841198869020445 1180 0
+
+exec
+/bin/bash -lc "tail -n 80 src/mcrl/physics_v025/architectures.py
+sed -n '1,150p' src/mcrl/physics_v025/matrix.py
+sed -n '1,120p' src/mcrl/physics_v025/energy.py" in /home/sat/mcrl-v025-rule-ws
+ succeeded in 0ms:
+            geometry, active, nominal_or_realised, overlap
+        )
+        slot = RadiationSlot(
+            0.0,
+            1.0,
+            tuple(sorted(beam_power.items())),
+            _transmissions(
+                geometry,
+                active,
+                power,
+                geometry.gains(
+                    nominal_or_realised,
+                    fading_quantile_alpha=config.fading_quantile_alpha,
+                )[list(active)]
+                if active
+                else np.zeros(0),
+                field_coupling,
+                noise,
+                bandwidth,
+                subbands,
+                nominal_direct=nominal_direct,
+                nominal_coupling=nominal_coupling,
+                fading_quantile_alpha=config.fading_quantile_alpha,
+                rate_target_bps=config.rate_target_bps,
+                rate_target_sinr_values=reported_targets,
+                rate_target_feasible=_target_feasibility(
+                    power,
+                    nominal_direct,
+                    nominal_coupling,
+                    noise,
+                    reported_targets,
+                ),
+                m_target_values=target_modes,
+            ),
+            certificate,
+        )
+        return RadiationResult(
+            self.code,
+            nominal_or_realised,
+            (slot,),
+            certificate,
+            config.rate_target_bps,
+        )
+
+
+def architecture_for(code: str) -> RadiationArchitecture:
+    """Return the declared architecture without aliases or module mutation."""
+
+    if code == "b":
+        return FixedRF()
+    if code == "a-\u03b3":
+        return AngleTPC_TDM()
+    if code == "a\u2032-\u03b3":
+        return AngleTPC_FDM()
+    if code == "a-r":
+        return AngleRateTPC_TDM()
+    if code == "a\u2032-r":
+        return AngleRateTPC_FDM()
+    raise MCRLContractError(f"unknown V0.25 architecture {code!r}")
+
+
+__all__ = [
+    "AngleRateTPC_FDM",
+    "AngleRateTPC_TDM",
+    "AngleTPC_FDM",
+    "AngleTPC_TDM",
+    "ArchitectureCode",
+    "BeamIdentity",
+    "FieldKind",
+    "FixedRF",
+    "Geometry",
+    "Link",
+    "PowerCertificate",
+    "RadiationArchitecture",
+    "RadiationConfig",
+    "RadiationResult",
+    "RadiationSlot",
+    "Transmission",
+    "architecture_for",
+]
+"""Predeclared V0.25 v1.2 physics matrix and shared-tape hooks."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+from typing import Literal
+
+from mcrl.errors import MCRLContractError
+
+ArchitectureCode = Literal["b", "a-\u03b3", "a\u2032-\u03b3", "a-r", "a\u2032-r"]
+IntegrationCode = Literal["0", "T"]
+StandbyCode = Literal["0", "f"]
+InterruptionCode = Literal["off", "on"]
+RateCode = Literal["ACM", "U-cap", "U-margin"]
+
+
+@dataclass(frozen=True)
+class PhysicsSetting:
+    architecture: ArchitectureCode
+    integration: IntegrationCode
+    standby: StandbyCode
+    interruption: InterruptionCode
+    rate: RateCode
+
+    def __post_init__(self) -> None:
+        if self.architecture not in {"b", "a-\u03b3", "a\u2032-\u03b3", "a-r", "a\u2032-r"}:
+            raise MCRLContractError("architecture is outside the sealed V0.25 v1.2 matrix")
+        if self.integration not in {"0", "T"}:
+            raise MCRLContractError("integration must be 0 or T")
+        if self.standby not in {"0", "f"}:
+            raise MCRLContractError("standby must be 0 or f")
+        if self.interruption not in {"off", "on"}:
+            raise MCRLContractError("interruption must be off or on")
+        if self.rate not in {"ACM", "U-cap", "U-margin"}:
+            raise MCRLContractError("rate must be ACM, U-cap, or U-margin")
+
+    @property
+    def treatment(self) -> str:
+        signature = (self.integration, self.standby, self.interruption, self.rate)
+        mapping = {
+            ("0", "0", "off", "ACM"): "0",
+            ("T", "0", "off", "ACM"): "T",
+            ("0", "f", "off", "ACM"): "S",
+            ("0", "0", "on", "ACM"): "H",
+            ("0", "f", "on", "ACM"): "SH",
+            ("0", "0", "off", "U-cap"): "U-cap",
+            ("0", "0", "off", "U-margin"): "U-margin",
+        }
+        try:
+            treatment = mapping[signature]
+        except KeyError:
+            raise MCRLContractError("setting is outside the predeclared fractional matrix") from None
+        if treatment.startswith("U") and self.architecture in {"a-r", "a\u2032-r"}:
+            raise MCRLContractError("split-U diagnostics apply only to the original architectures")
+        return treatment
+
+    @property
+    def label(self) -> str:
+        return f"{self.architecture}{self.treatment}"
+
+    def payload(self) -> dict[str, str]:
+        return {
+            "architecture": self.architecture,
+            "integration": self.integration,
+            "standby": self.standby,
+            "interruption": self.interruption,
+            "rate": self.rate,
+            "treatment": self.treatment,
+        }
+
+    @property
+    def digest(self) -> str:
+        encoded = json.dumps(self.payload(), sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+        return hashlib.sha256(encoded).hexdigest()
+
+
+def _setting(architecture: ArchitectureCode, treatment: str) -> PhysicsSetting:
+    terms = {
+        "0": ("0", "0", "off", "ACM"),
+        "T": ("T", "0", "off", "ACM"),
+        "S": ("0", "f", "off", "ACM"),
+        "H": ("0", "0", "on", "ACM"),
+        "SH": ("0", "f", "on", "ACM"),
+        "U-cap": ("0", "0", "off", "U-cap"),
+        "U-margin": ("0", "0", "off", "U-margin"),
+    }
+    integration, standby, interruption, rate = terms[treatment]
+    return PhysicsSetting(architecture, integration, standby, interruption, rate)  # type: ignore[arg-type]
+
+
+# Sealed v1.2 explicit priority order. Its prose count is arithmetically
+# inconsistent; the listed amendments enumerate 25 eligible settings plus
+# six split-U diagnostics, hence 31 settings until the controller corrects it.
+MATRIX_SETTINGS = tuple(
+    _setting(architecture, treatment)
+    for treatment in ("0", "S", "H", "SH", "T")
+    for architecture in ("a-r", "a\u2032-r", "a-\u03b3", "b", "a\u2032-\u03b3")
+) + tuple(
+    _setting(architecture, treatment)
+    for treatment in ("U-cap", "U-margin")
+    for architecture in ("a-\u03b3", "b", "a\u2032-\u03b3")
+)
+
+
+@dataclass(frozen=True)
+class SealedRunSetting:
+    """A sealed executable setting, including prospective regime overrides."""
+
+    run_id: str
+    base_cell: str
+    claim_classification: Literal["PRIMARY", "EXPLORATORY_SENSITIVITY"]
+    regime: str
+    rate_target_bps: float = 50_000_000.0
+    user_count: int = 100
+    circuit_power_per_active_chain_w: float = 0.338
+    c2_horizon_offsets: int = 3
+
+    def __post_init__(self) -> None:
+        if self.base_cell not in {row.label for row in MATRIX_SETTINGS}:
+            raise MCRLContractError("sealed run setting names an unknown base cell")
+        if self.claim_classification == "PRIMARY" and self.run_id != "a-r0":
+            raise MCRLContractError("a-r0 is the only primary run setting")
+        if self.claim_classification != "PRIMARY" and self.run_id == "a-r0":
+            raise MCRLContractError("a-r0 cannot be exploratory")
+        if self.rate_target_bps <= 0 or self.user_count <= 0:
+            raise MCRLContractError("regime rate target and user count must be positive")
+        if self.circuit_power_per_active_chain_w < 0:
+            raise MCRLContractError("regime circuit power must be nonnegative")
+        if self.c2_horizon_offsets not in {1, 2, 3}:
+            raise MCRLContractError("C2 horizon must contain the first 1, 2, or 3 offsets")
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "run_id": self.run_id,
+            "base_cell": self.base_cell,
+            "claim_classification": self.claim_classification,
+            "regime": self.regime,
+            "rate_target_bps": self.rate_target_bps,
+            "user_count": self.user_count,
+            "circuit_power_per_active_chain_w": self.circuit_power_per_active_chain_w,
+            "c2_horizon_offsets": self.c2_horizon_offsets,
+        }
+
+    @property
+    def digest(self) -> str:
+        encoded = json.dumps(
+            self.payload(), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        ).encode("ascii")
+"""Partial-payload energy accounting for the V0.25 engine."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import math
+from typing import Iterable, Mapping
+
+from mcrl.errors import MCRLContractError
+
+from .architectures import BeamIdentity
+from .constants_v025 import (
+    BASEBAND_POWER_PER_ACTIVE_SATELLITE_W,
+    BEAM_RF_CAP_W,
+    CIRCUIT_POWER_PER_CHAIN_W,
+    PA_MAX_EFFICIENCY,
+    PA_SATURATION_POWER_W,
+    P_BUS_W,
+    STANDBY_FRACTION,
+)
+
+
+def pa_efficiency(rf_power_w: float) -> float:
+    """Square-root PA efficiency; zero RF has zero efficiency."""
+
+    if not math.isfinite(rf_power_w) or rf_power_w < 0.0:
+        raise MCRLContractError("RF power must be finite and nonnegative")
+    if rf_power_w == 0.0:
+        return 0.0
+    return min(PA_MAX_EFFICIENCY, PA_MAX_EFFICIENCY * math.sqrt(rf_power_w / PA_SATURATION_POWER_W))
+
+
+def pa_supply_power_w(rf_power_w: float) -> float:
+    """``sqrt(p*p_sat)/eta_max`` for positive RF, exactly zero at zero."""
+
+    if not math.isfinite(rf_power_w) or rf_power_w < 0.0:
+        raise MCRLContractError("RF power must be finite and nonnegative")
+    return 0.0 if rf_power_w == 0.0 else math.sqrt(rf_power_w * PA_SATURATION_POWER_W) / PA_MAX_EFFICIENCY
+
+
+PRIMARY_IDLE_POWER_W = 0.0
+SENSITIVITY_IDLE_POWER_W = STANDBY_FRACTION * pa_supply_power_w(BEAM_RF_CAP_W)
+
+
+@dataclass(frozen=True)
+class HardwareInventory:
+    """Physical beam-chain identities fixed before actions and horizons."""
+
+    chains: tuple[BeamIdentity, ...]
+
+    def __post_init__(self) -> None:
+        if len(set(self.chains)) != len(self.chains):
+            raise MCRLContractError("hardware inventory contains duplicate identities")
+        if tuple(sorted(self.chains)) != self.chains:
+            raise MCRLContractError("hardware inventory must use frozen sorted identity order")
+        if any(len(identity) != 2 for identity in self.chains):
+            raise MCRLContractError("inventory identities must be (NORAD, beam-chain)")
+
+    @classmethod
+    def fixed(cls, identities: Iterable[BeamIdentity]) -> "HardwareInventory":
+        return cls(tuple(sorted((int(norad), int(chain)) for norad, chain in identities)))
+
+
+@dataclass(frozen=True)
+class EnergyInterval:
+    duration_s: float
+    beam_rf_w: Mapping[BeamIdentity, float]
+
+
+@dataclass(frozen=True)
+class EnergyReceipt:
+    joules: float
+    pa_j: float
+    circuit_j: float
+    standby_j: float
+    baseband_j: float
+    bus_j: float
+
+    def verify(self) -> None:
+        components = (self.pa_j, self.circuit_j, self.standby_j, self.baseband_j, self.bus_j)
+        if any(not math.isfinite(value) or value < 0.0 for value in components):
+            raise MCRLContractError("energy components must be finite and nonnegative")
+        if not math.isclose(math.fsum(components), self.joules, rel_tol=0.0, abs_tol=1.0e-12):
+            raise MCRLContractError("energy receipt components do not sum to joules")
+
+
+def interval_energy(
+    inventory: HardwareInventory,
+    interval: EnergyInterval,
+    *,
+    idle_power_w: float = PRIMARY_IDLE_POWER_W,
+    bus_power_w: float = P_BUS_W,
+    circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+) -> EnergyReceipt:
+    """Evaluate the declared physical-inventory formula for one interval."""
+
+    if not math.isfinite(interval.duration_s) or interval.duration_s < 0.0:
+        raise MCRLContractError("interval duration must be finite and nonnegative")
+    if not math.isfinite(idle_power_w) or idle_power_w < 0.0:
+        raise MCRLContractError("idle power must be finite and nonnegative")
+    if not math.isfinite(circuit_power_per_active_chain_w) or circuit_power_per_active_chain_w < 0.0:
+        raise MCRLContractError("active-chain circuit power must be finite and nonnegative")
+    if bus_power_w != 0.0:
+        raise MCRLContractError("V0.25 stage-1 endpoint declares P_bus=0 exclusion")
+    inventory_set = set(inventory.chains)
+    supplied = set(interval.beam_rf_w)
+    if not supplied <= inventory_set:
+        raise MCRLContractError("radiation names a chain outside the fixed inventory")
+    if any(not math.isfinite(value) or value < 0.0 for value in interval.beam_rf_w.values()):
+        raise MCRLContractError("beam RF values must be finite and nonnegative")
+    duration = interval.duration_s
+    pa_j = circuit_j = standby_j = 0.0
+    active_satellites: set[int] = set()
+    active_by_satellite: dict[int, int] = {}
+    for identity, raw_rf in interval.beam_rf_w.items():
+        rf = float(raw_rf)
+        if rf > 0.0:
+            active_satellites.add(identity[0])
+            active_by_satellite[identity[0]] = active_by_satellite.get(identity[0], 0) + 1
+            pa_j += max(idle_power_w, pa_supply_power_w(rf)) * duration
+
