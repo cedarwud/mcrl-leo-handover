@@ -59,7 +59,9 @@ def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
         "provider_digest", "archive_digest",
         "allocation_manifest_digest", "lambda_bits_per_j_hex", "eta_ref_bits_per_j_hex",
         "kappa_normalization_bits_hex", "c1_label_bits_hex", "c1_phi_difference_hex", "c2_label_bits_hex",
-        "c1_label_normalized_hex", "c2_label_normalized_hex", "terminal", "null_action", "outage",
+        "c1_label_normalized_hex", "c2_label_normalized_hex",
+        "source_provenance_sha256", "forecast_method_sha256", "visible_primitives_sha256",
+        "tle_provenance", "future_tle_access", "terminal", "null_action", "outage",
     }
     if set(payload) != expected:
         raise StageCContractError("source row schema drifted")
@@ -126,6 +128,11 @@ def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
         c2_label_bits_hex=str(payload["c2_label_bits_hex"]),
         c1_label_normalized_hex=str(payload["c1_label_normalized_hex"]),
         c2_label_normalized_hex=str(payload["c2_label_normalized_hex"]),
+        source_provenance_sha256=str(payload["source_provenance_sha256"]),
+        forecast_method_sha256=str(payload["forecast_method_sha256"]),
+        visible_primitives_sha256=str(payload["visible_primitives_sha256"]),
+        tle_provenance=str(payload["tle_provenance"]),
+        future_tle_access=str(payload["future_tle_access"]),
         terminal=bool(payload["terminal"]),
         null_action=bool(payload["null_action"]),
         outage=bool(payload["outage"]),
@@ -139,8 +146,18 @@ def _row_from_payload(payload: Mapping[str, object]) -> SourceRow:
         "setting_digest", "calibration_digest",
         "provider_digest", "archive_digest",
         "allocation_manifest_digest",
+        "source_provenance_sha256", "forecast_method_sha256", "visible_primitives_sha256",
     ):
         _parse_digest(getattr(row, field), field=field)
+    if (
+        row.tle_provenance
+        not in {
+            "nearest_epoch_retrospective_benchmark",
+            "causal_ephemeris_available_by_decision_time",
+        }
+        or row.future_tle_access != "declared_forecast_horizon_only"
+    ):
+        raise StageCContractError("source row TLE provenance/access drifted")
     if row.null_action != row.action.is_null:
         raise StageCContractError("null-action flag disagrees with physical identity")
     if (

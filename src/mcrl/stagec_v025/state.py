@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 import math
 from typing import Protocol, Sequence, runtime_checkable
@@ -147,6 +147,56 @@ class ActionEvaluation:
     legal: bool = True
     terminal: bool = False
     outage: bool = False
+    source_provenance_sha256: str = ""
+    forecast_method_sha256: str = ""
+    visible_primitives_sha256: str = ""
+    tle_provenance: str = "nearest_epoch_retrospective_benchmark"
+    future_tle_access: str = "declared_forecast_horizon_only"
+
+
+def _action_visible_payload(item: ActionEvaluation) -> dict[str, object]:
+    """Exact B1 dependency allowlist: every value consumed by Q1/Q2/labels."""
+
+    omitted = {
+        "source_provenance_sha256",
+        "forecast_method_sha256",
+        "visible_primitives_sha256",
+        "tle_provenance",
+        "future_tle_access",
+    }
+    payload = {
+        name: value
+        for name, value in asdict(item).items()
+        if name not in omitted
+    }
+    payload["action"] = item.action.payload()
+    return payload
+
+
+def seal_action_evaluation(
+    item: ActionEvaluation,
+    *,
+    source_provenance_sha256: str,
+    forecast_method_sha256: str,
+    tle_provenance: str = "nearest_epoch_retrospective_benchmark",
+    future_tle_access: str = "declared_forecast_horizon_only",
+) -> ActionEvaluation:
+    """Bind one engine-adapter row to the exact visible primitive values."""
+
+    for field, value in (
+        ("source_provenance_sha256", source_provenance_sha256),
+        ("forecast_method_sha256", forecast_method_sha256),
+    ):
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+            raise StageCContractError(f"{field} must be a lowercase SHA-256")
+    return replace(
+        item,
+        source_provenance_sha256=source_provenance_sha256,
+        forecast_method_sha256=forecast_method_sha256,
+        visible_primitives_sha256=canonical_sha256(_action_visible_payload(item)),
+        tle_provenance=tle_provenance,
+        future_tle_access=future_tle_access,
+    )
 
 
 @runtime_checkable
@@ -217,6 +267,11 @@ class SourceRow:
     c2_label_bits_hex: str
     c1_label_normalized_hex: str
     c2_label_normalized_hex: str
+    source_provenance_sha256: str
+    forecast_method_sha256: str
+    visible_primitives_sha256: str
+    tle_provenance: str
+    future_tle_access: str
     terminal: bool
     null_action: bool
     outage: bool
@@ -311,6 +366,23 @@ def extract_source_rows(anchor: PerAnchorEvaluation) -> tuple[SourceRow, ...]:
             continue
         if len(item.forecasts) != 3:
             raise StageCContractError("Q2 requires exactly three forecast offsets")
+        for field in (
+            "source_provenance_sha256",
+            "forecast_method_sha256",
+            "visible_primitives_sha256",
+        ):
+            value = getattr(item, field)
+            if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+                raise StageCContractError(f"action {field} is not bound")
+        if item.visible_primitives_sha256 != canonical_sha256(_action_visible_payload(item)):
+            raise StageCContractError("dependency-allowlist provenance does not match consumed values")
+        if item.future_tle_access != "declared_forecast_horizon_only":
+            raise StageCContractError("future TLE access exceeds the declared horizon")
+        if item.tle_provenance not in {
+            "nearest_epoch_retrospective_benchmark",
+            "causal_ephemeris_available_by_decision_time",
+        }:
+            raise StageCContractError("TLE provenance is undeclared")
         if (
             item.refresh_phase not in range(4)
             or item.background_occupancy_excluding_focal < 0
@@ -407,6 +479,11 @@ def extract_source_rows(anchor: PerAnchorEvaluation) -> tuple[SourceRow, ...]:
                     labels[0] / kappa + item.c1_phi_difference
                 ),
                 c2_label_normalized_hex=float_hex(labels[1] / kappa),
+                source_provenance_sha256=item.source_provenance_sha256,
+                forecast_method_sha256=item.forecast_method_sha256,
+                visible_primitives_sha256=item.visible_primitives_sha256,
+                tle_provenance=item.tle_provenance,
+                future_tle_access=item.future_tle_access,
                 terminal=item.terminal,
                 null_action=item.action.is_null,
                 outage=item.outage,
@@ -445,4 +522,5 @@ __all__ = [
     "extract_source_rows",
     "kappa_normalization_bits",
     "schema_manifest",
+    "seal_action_evaluation",
 ]

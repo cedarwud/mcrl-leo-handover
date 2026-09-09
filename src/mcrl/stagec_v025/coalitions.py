@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from fractions import Fraction
+from itertools import combinations
 import json
 import math
 from pathlib import Path
@@ -212,6 +213,9 @@ class CoalitionRow:
     context: CoalitionContext
     original_changed_user_count: int
     capped_decomposition: bool
+    original_changed_users: tuple[int, ...]
+    decomposition_id: str
+    decomposition_weight_hex: str
     lambda_bits_per_j_hex: str
     eta_ref_bits_per_j_hex: str
     kappa_normalization_bits_hex: str
@@ -238,6 +242,24 @@ class CoalitionRow:
             raise StageCContractError("original coalition count cannot be smaller than its cap")
         if self.capped_decomposition != (self.original_changed_user_count > size):
             raise StageCContractError("larger-set capped-decomposition flag is inconsistent")
+        if self.original_changed_user_count != len(self.original_changed_users):
+            raise StageCContractError("larger-set original user inventory is incomplete")
+        if not set(self.context.changed_users) <= set(self.original_changed_users):
+            raise StageCContractError("capped subset is not drawn from the original evacuation")
+        weight = parse_float_hex(self.decomposition_weight_hex, field="decomposition_weight")
+        if not self.decomposition_id or weight <= 0.0 or weight > 1.0:
+            raise StageCContractError("capped decomposition identity/weight is invalid")
+        expected = capped_coalition_decomposition(self.original_changed_users)
+        expected_weights = {users: value for users, value in expected}
+        if expected_weights.get(self.context.changed_users) != weight:
+            raise StageCContractError("capped decomposition subset or row weight drifted")
+        expected_id = canonical_sha256({
+            "schema": "mcrl-v025-stagec-capped-coalition-decomposition-v1",
+            "original_changed_users": list(self.original_changed_users),
+            "subsets": [list(users) for users, _ in expected],
+        })
+        if self.decomposition_id != expected_id:
+            raise StageCContractError("capped decomposition digest drifted")
         for field in (
             "code_digest",
             "physics_digest",
@@ -278,6 +300,7 @@ def build_coalition_row(
     unilateral_outcomes: Mapping[int, NetworkOutcome],
     coalition_outcome: NetworkOutcome,
     original_changed_user_count: int | None = None,
+    original_changed_users: Sequence[int] | None = None,
     world_id: str,
     world_seed: int,
     anchor_index: int,
@@ -306,7 +329,17 @@ def build_coalition_row(
         kappa_bits_per_user_s=kappa_normalization_bits,
     )
     kappa = Fraction(str(kappa_normalization_bits))
-    original_count = len(context.members) if original_changed_user_count is None else original_changed_user_count
+    original_users = (
+        context.changed_users
+        if original_changed_users is None
+        else tuple(sorted(int(user) for user in original_changed_users))
+    )
+    original_count = len(original_users) if original_changed_user_count is None else original_changed_user_count
+    if original_count != len(original_users):
+        raise StageCContractError("original changed-user count requires the complete user inventory")
+    decomposition = dict(capped_coalition_decomposition(original_users))
+    if context.changed_users not in decomposition:
+        raise StageCContractError("coalition context is absent from the sealed capped decomposition")
     return CoalitionRow(
         schema=COALITION_ROW_SCHEMA,
         split="TRAIN",
@@ -321,6 +354,13 @@ def build_coalition_row(
         context=context,
         original_changed_user_count=original_count,
         capped_decomposition=original_count > len(context.members),
+        original_changed_users=original_users,
+        decomposition_id=canonical_sha256({
+            "schema": "mcrl-v025-stagec-capped-coalition-decomposition-v1",
+            "original_changed_users": list(original_users),
+            "subsets": [list(users) for users, _ in capped_coalition_decomposition(original_users)],
+        }),
+        decomposition_weight_hex=float_hex(decomposition[context.changed_users]),
         lambda_bits_per_j_hex=float_hex(lambda_bits_per_j),
         eta_ref_bits_per_j_hex=float_hex(eta_ref_bits_per_j),
         kappa_normalization_bits_hex=float_hex(kappa_normalization_bits),
@@ -337,6 +377,21 @@ def build_coalition_row(
         calibration_digest=calibration_digest,
         allocation_manifest_digest=allocation_manifest_digest,
     )
+
+
+def capped_coalition_decomposition(
+    changed_users: Sequence[int],
+) -> tuple[tuple[tuple[int, ...], float], ...]:
+    """B5 frozen rule: all lexicographic size-four subsets, equal row weight."""
+
+    users = tuple(sorted(int(user) for user in changed_users))
+    if len(set(users)) != len(users) or len(users) < 2:
+        raise StageCContractError("capped decomposition requires unique changed users")
+    subsets = (users,) if len(users) <= MAX_LABEL_COALITION_SIZE else tuple(
+        combinations(users, MAX_LABEL_COALITION_SIZE)
+    )
+    weight = 1.0 / len(subsets)
+    return tuple((tuple(subset), weight) for subset in subsets)
 
 
 def pair_reporting_credit(
@@ -530,6 +585,9 @@ def read_coalition_shard(path: str | Path) -> CoalitionShard:
             raise StageCContractError("coalition row schema drifted")
         context = _context(payload["context"])
         scalar = {key: value for key, value in payload.items() if key != "context"}
+        scalar["original_changed_users"] = tuple(
+            int(user) for user in scalar["original_changed_users"]
+        )
         rows.append(CoalitionRow(context=context, **scalar))
     material = tuple(rows)
     rows_sha256 = canonical_sha256([row.payload() for row in material])
@@ -548,6 +606,7 @@ __all__ = [
     "CoalitionShard",
     "MAX_LABEL_COALITION_SIZE",
     "build_coalition_row",
+    "capped_coalition_decomposition",
     "exact_shapley_reporting_credit",
     "pair_reporting_credit",
     "read_coalition_shard",

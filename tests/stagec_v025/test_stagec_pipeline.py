@@ -23,6 +23,7 @@ from mcrl.stagec_v025.evaluation import (
     StepOutcome,
     _step_payload,
 )
+from mcrl.stagec_v025.experiments import BoundExperiment
 from mcrl.stagec_v025.learner import (
     LEARNED_ARMS,
     LEARNER_SEEDS,
@@ -62,7 +63,7 @@ def _training_fixture(tmp_path: Path) -> tuple[LineageOrchestrator, object]:
 def test_synthetic_end_to_end_twelve_seeds_six_arms(tmp_path: Path) -> None:
     report = run_synthetic_pipeline(tmp_path, epochs=3, bootstrap_draws=32)
 
-    assert report["schema"] == "mcrl-v025-stagec-terminal-report-v1"
+    assert report["schema"] == "mcrl-v025-stagec-terminal-report-v2"
     assert report["cluster_count"] == 24
     assert report["world_count"] == 48
     assert report["synthetic"]["learner_seeds"] == sorted(LEARNER_SEEDS)
@@ -138,9 +139,12 @@ def test_golden_tape_to_row_all_q1_q2_fields_and_authorities() -> None:
         for field in (
             "code_digest", "physics_digest", "launch_digest", "catalogue_digest",
             "setting_digest", "calibration_digest", "provider_digest", "archive_digest",
-            "allocation_manifest_digest",
+            "allocation_manifest_digest", "source_provenance_sha256",
+            "forecast_method_sha256", "visible_primitives_sha256",
         )
     )
+    assert row.tle_provenance == "nearest_epoch_retrospective_benchmark"
+    assert row.future_tle_access == "declared_forecast_horizon_only"
     candidate = rows[1]
     assert candidate.user_id == 0
     assert candidate.action_index == 1
@@ -167,6 +171,9 @@ def test_noncontiguous_disconnected_partial_service_roster_is_preserved() -> Non
         "e", "p", "c", "u", "w", "2026-01-01T00:00:00Z", "2026-01-01",
         "TRAIN", "synthetic", digest, digest, digest, digest, digest, digest, digest,
         digest, digest, 101, 1,
+        "mcrl-v025-learned-neutral-source-experiment-v1", digest,
+        "learned_neutral_source", None, digest,
+        "nearest_epoch_retrospective_benchmark",
     )
     row = _step_payload(
         unit=unit,
@@ -182,6 +189,7 @@ def test_noncontiguous_disconnected_partial_service_roster_is_preserved() -> Non
             useful_user_seconds=1.0,
             opportunity_user_seconds=2.0,
             jointly_legal=True,
+            coordinator_latency_s=0.001,
         ),
         previous=None,
         ever_served=set(),
@@ -200,6 +208,9 @@ def test_all_temporal_event_identities_are_derived_from_committed_history() -> N
         "e", "p", "c", "events", "w", "2026-01-01T00:00:00Z", "2026-01-01",
         "TRAIN", "synthetic", digest, digest, digest, digest, digest, digest, digest,
         digest, digest, 101, 1,
+        "mcrl-v025-learned-neutral-source-experiment-v1", digest,
+        "learned_neutral_source", None, digest,
+        "nearest_epoch_retrospective_benchmark",
     )
     before = (
         PhysicalAction(1, 1), PhysicalAction(2, 1), PhysicalAction(3, 1),
@@ -225,6 +236,7 @@ def test_all_temporal_event_identities_are_derived_from_committed_history() -> N
             useful_user_seconds=7.0,
             opportunity_user_seconds=7.0,
             jointly_legal=True,
+            coordinator_latency_s=0.001,
             cell_rekey_users=frozenset({13}),
         ),
         previous=before,
@@ -389,6 +401,13 @@ def test_summary_mutation_is_rejected_even_when_receipt_hash_is_recomputed(
         units,
         bootstrap_draws=int(allocation_payload["bootstrap_draws"]),
         bootstrap_seed=int(allocation_payload["bootstrap_seed"]),
+        experiment_bindings=tuple(
+            BoundExperiment(**payload)
+            for payload in allocation_payload["experiment_bindings"]
+        ),
+        training_physics_digest=str(allocation_payload["training_physics_digest"]),
+        baseline_implementation_sha256=str(allocation_payload["baseline_implementation_sha256"]),
+        successor_development_dates=allocation_payload["successor_development_dates"],
     )
     assert manifest.digest == allocation_payload["allocation_manifest_sha256"]
 

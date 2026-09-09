@@ -81,7 +81,7 @@ Event QoS uses Φ1 = 0.5κ for a same-satellite beam change and Φ2 = 1.0κ for 
 
 ### Q1/Q2 action row
 
-Schema `mcrl-v025-stagec-source-row-v1`. Fields: `schema`, `split=TRAIN`, `world_id`, `world_seed`, nullable lineage-independent `learner_seed`, `anchor_id`, `anchor_index`, `decision_time_utc`, `decision_time_ns`, `user_id`, `action_index`, physical `action{norad_id,beam_chain_id}`, `reference_action`, complete `action_mask`, `q1_state[16]`, `q2_state[22]`, `incumbent_context_nominal_decoding_margin_db_hex`, both schema digests, `setting_id`, code/physics/launch/catalogue/setting/calibration/provider/archive/allocation digests, hexadecimal lambda/eta/κ, raw C1 physical surplus, C1 phi difference, C2 bits, normalized C1/C2, and terminal/null/outage flags. C3 fields are forbidden in this per-action schema; they exist only in the coalition schema below.
+Schema `mcrl-v025-stagec-source-row-v1`. Fields: `schema`, `split=TRAIN`, `world_id`, `world_seed`, nullable lineage-independent `learner_seed`, `anchor_id`, `anchor_index`, `decision_time_utc`, `decision_time_ns`, `user_id`, `action_index`, physical `action{norad_id,beam_chain_id}`, `reference_action`, complete `action_mask`, `q1_state[16]`, `q2_state[22]`, `incumbent_context_nominal_decoding_margin_db_hex`, both schema digests, `setting_id`, code/physics/launch/catalogue/setting/calibration/provider/archive/allocation digests, `source_provenance_sha256`, `forecast_method_sha256`, `visible_primitives_sha256`, `tle_provenance`, the literal future-TLE restriction `declared_forecast_horizon_only`, hexadecimal lambda/eta/κ, raw C1 physical surplus, C1 phi difference, C2 bits, normalized C1/C2, and terminal/null/outage flags. The visible-primitives digest is recomputed from exactly the fields consumed by the row builder. C3 fields are forbidden in this per-action schema; they exist only in the coalition schema below.
 
 Action shard schema `mcrl-v025-stagec-source-shard-v1`: header fields are schema, TRAIN split, row count/digest, Q1/Q2 schema digests, setting/calibration inventories, and source-authority digest. JSONL and immediate SHA-256 sidecars are canonical/write-once.
 
@@ -89,7 +89,7 @@ Action shard schema `mcrl-v025-stagec-source-shard-v1`: header fields are schema
 
 Schema `mcrl-v025-stagec-c3-coalition-row-v1`. Fields: schema/TRAIN; world and separate seeds; anchor ID/index/times; setting ID; complete `context`; original changed-user count and capped flag; hexadecimal lambda, eta_ref, κ, C1, Ψ, total F delta, physical C1, physical Ψ, physical total delta; and code/physics/catalogue/setting/calibration/allocation digests.
 
-`context` contains anchor; complete physical a0; changed set A; for each member its user ID, reference/selected physical actions, selected Q1 row, incumbent Q1 row, and `missing_incumbent`; affected-beam rows with occupancy before/after, activation before/after, shared capacity, interference summary, and capacity margin; and global resource features. Trainable A has size 2–4. Larger evacuation sets use a declared ≤4 capped decomposition and set `capped_decomposition=true`. Pair reporting credit is Ψ/2 each; Shapley credit is exact over all subsets for |A|≤4 and reporting-only.
+`context` contains anchor; complete physical a0; changed set A; for each member its user ID, reference/selected physical actions, selected Q1 row, incumbent Q1 row, and `missing_incumbent`; affected-beam rows with occupancy before/after, activation before/after, shared capacity, interference summary, and capacity margin; and global resource features. Trainable A has size 2–4. An evacuation with more than four changed users is decomposed into every lexicographically ordered size-four subset; each row authenticates the complete original changed-user inventory, a common decomposition ID, and exact uniform row weight `1 / choose(|A|, 4)`, and sets `capped_decomposition=true`. Pair reporting credit is Ψ/2 each; Shapley credit is exact over all subsets for |A|≤4 and reporting-only.
 
 Coalition shard `mcrl-v025-stagec-c3-coalition-shard-v1` authenticates row count/digest, row schema, TRAIN, and maximum coalition size four. `CoalitionBatch` stores invariant vectors, scalar Ψ/κ targets, stable identities, source identity, and authority digest.
 
@@ -97,7 +97,19 @@ Coalition shard `mcrl-v025-stagec-c3-coalition-shard-v1` authenticates row count
 
 Q1/Q2 use deterministic pairwise zero-bootstrap regression with a BASE-zero gauge. The claim is a supervised surrogate claim, not a Bellman-value or optimality claim. C3 is `PsiHat_theta(Z_t,a0,A,a_A)`: one scalar set-conditioned head. Its input is symmetric sum/max pooling over changed-user vectors (selected Q1 row, incumbent row, `missing_incumbent`) concatenated with masked/padded ≤4 affected-resource rows (occupancy before/after, activation change, shared capacity, interference summary, cap margin). A two-layer MLP consumes that vector. Physical IDs remain authenticated in rows but are not arbitrary numeric features. The output is multiplied by `1[|A|>=2]`, giving exact empty/singleton zeros.
 
-One source epoch is C1 → C2 → C3. Checkpoints every 100 epochs store completed epochs, `route_update_count=3*epochs`, batch/schema/neutral digests, learner seed, shared initialization, all retained heads, source map, optimizer state, and `zero_bootstrap=true`.
+The frozen heterogeneous trainer literals are copied without tuning, except that the three input widths are supplied by the Stage-C schemas. C1 is an `(8,)` ReLU MLP, Adam learning rate `1e-2`, gauge beta `0.2`, and effective loss weight `1`; C2 is a `(100,50,50)` tanh MLP, Adam learning rate `1e-3`, gauge beta `0.1`, and an unweighted objective (effective weight `1`); C3 is a `(64,64)` ReLU set MLP, Adam learning rate `1e-3`, and an unweighted objective (effective weight `1`). The legacy Q1 configuration carries the declared `(1,2,3)` loss-weight vector, but the heterogeneous seam consumes only entry zero for C1; its C2 and delegated C3 update implementations do not multiply by entries one or two. Every Adam instance uses betas `(0.9,0.999)`, epsilon `1e-8`, and weight decay zero. One deterministic source epoch is C1 → C2 → C3. The budget is exactly 2,000 epochs with no early selection. Checkpoints are written automatically every 100 completed epochs and authenticate completed epochs, `route_update_count=3*epochs`, batch/schema/neutral/physics/literal digests, learner seed, shared initialization, all retained heads, source map, full Adam state, the source cursor, and `zero_bootstrap=true`; loading restores those values exactly.
+
+Legacy file:line provenance (absolute source tree supplied by the controller):
+
+| Literal or behavior | Provenance |
+|---|---|
+| Heterogeneous trainer delegates the three existing heads/optimizers and adds no replacement checkpoint format | `/home/sat/mcrl-v023-codex-ws-c3s-baselines/.scratch/multi-catfish-v023-heterogeneous-trainer/v023_heterogeneous_trainer.py:1-14,64-75` |
+| Concrete Q1 architecture, learning rate, beta and loss weights | `/home/sat/mcrl-v023-codex-ws-c3s-baselines/.scratch/multi-catfish-v023-heterogeneous-trainer/test_v023_heterogeneous_trainer.py:43-54` |
+| Q2 `(100,50,50)` tanh, learning rate `1e-3`, beta `0.1` | `/home/sat/mcrl-v023-codex-ws-c3s-baselines/src/mcrl/algorithms/ee_axis_lcsrs_three_route.py:206-230` |
+| C3 `(64,64)` ReLU architecture | `/home/sat/mcrl-v023-codex-ws-c3s-baselines/src/mcrl/algorithms/ee_axis_lcsrs_c3_head.py:24-46,49-61` |
+| Per-route Adam ownership and C3 Adam betas/epsilon/weight decay | `/home/sat/mcrl-v023-codex-ws-c3s-baselines/src/mcrl/algorithms/ee_axis_lcsrs_three_route.py:255-276`; validation in the scratch trainer at `:124-182` |
+| Exactly 2,000 updates and no early selection | `/home/sat/mcrl-v023-codex-ws-c3s-baselines/src/mcrl/runtime/ee_axis_lcsrs_c3_learner.py:32,347-402` |
+| Heads plus optimizer state checkpoint/load representation | `/home/sat/mcrl-v023-codex-ws-c3s-baselines/src/mcrl/algorithms/ee_axis_lcsrs_three_route.py:442-488`; delegation in the scratch trainer at `:444-455` |
 
 The 12 learner seed domains are exactly `V025_LEARNER/seed/{1..12}` and use the repository domain-SHA seed rule. Their derived integers are `6407676579069309528, 925030429265975792, 5166716249291843642, 7234013715671416945, 3155344545377116990, 6114226365011333154, 2539879246662512149, 2306713132836500212, 1437152739566466432, 389903013832883586, 7291913070596938501, 5683607794651051129` in domain order. Each lineage serializes one initialization and clones it into all learned arms. World and learner seeds remain separate; BASELINE's implementation SHA is bound in the allocation manifest.
 
@@ -110,7 +122,9 @@ Every neutral source seal has exactly: `generator`, `labels`, `support`, `strata
 | Learned neutral-source | `mcrl-v025-learned-neutral-source-experiment-v1` | FULL, DROP_C1, DROP_C2, DROP_C3, ALL_NEUTRAL_CONTROL, external BASELINE. Route DROP substitutes its sealed neutral source; all heads remain. Primary wording is the contract's informative-source wording. |
 | Oracle factor-score removal | `mcrl-v025-oracle-factor-score-removal-v1` | Same selector/catalogue; remove exactly one exact C1/C2/C3 score. Physics regime map only. |
 | Checkpoint knockout | `mcrl-v025-checkpoint-knockout-v1` | Zero one deployed checkpoint contribution with machinery fixed. Reliance/hidden restoration only. |
-| Architecture removal | `mcrl-v025-architecture-removal-v1` | Named `NAMED_NOT_RUN`; outside build 2. |
+| Architecture removal | `mcrl-v025-architecture-removal-v1` | Named `NAMED_NOT_RUN`; outside the Stage-C claim scope. |
+
+Every named experiment is canonicalized into a bound record containing experiment ID, schema, definition SHA-256, execution kind, run eligibility, and any required checkpoint SHA-256. Allocation units, attempt records, conformance records, and terminal receipts repeat that record exactly. A schema, execution-kind, definition, route, or checkpoint mismatch is rejected before outcome work; `NAMED_NOT_RUN` cannot be allocated.
 
 Zero C3 marginal ends the positive C3 claim in this scope. An upper interval excluding the margin supports no practically relevant benefit; lower-bound failure alone is inconclusive. No outcome-contingent redesign is allowed.
 
@@ -118,13 +132,13 @@ Zero C3 marginal ends the positive C3 claim in this scope. An upper interval exc
 
 `ProfileSelector` supplies S3, S0, and S_UNI modes. S3 optimizes complete normalized C1+C2+PsiHat over the common catalogue. S0 substitutes exact Ψ. S_UNI starts at BASE, evaluates every legal unilateral alternative with the same nominal physics at each iterate, takes the stable strict improvement, atomically commits only the final profile, and reports local-optimum certification.
 
-BASE/a0 is constructed, conflict-repaired, resolved, and validated before the coordinator begins. The runner owns a 10.0 s wall timer and cancellation; the remaining 20.08 s is reserved for sensing, transport, validation, and commit. Timeout executes the prevalidated a0; misses and their B/E/QoS remain in the endpoint.
+BASE/a0 is constructed, conflict-repaired, resolved, and validated before the coordinator begins. The runner owns a 10.0 s wall timer around `ProfileSelector`: selection executes in a process worker, and expiry kills and joins that worker before returning the prevalidated a0. The remaining 20.08 s is reserved for sensing, transport, validation, and commit. Timeout executes the prevalidated a0; misses and their B/E/QoS remain in the endpoint.
 
 Capability manifest `mcrl-v025-stagec-deployment-capability-v1` fields are: schema; code/physics/catalogue digests; coordinator wall budget and decision interval; reserved interval use; inputs/capabilities; timer enforcement; BASE-first rule; deadline fallback; telemetry sources and ages; roster and beam-specific cross-gain coverage; model assumptions; calibration source; worker hardware/count (`sat`, four processes); cache policy (`cold_per_anchor_no_warm_cache`); catalogue bounds; solver limits; memory limit; missing-data handling; measured end-to-end latency samples/count/p50/max; manifest digest.
 
 ## 9. Panel, estimator, and decision
 
-D1 claim panel: six arms × 12 learner seeds × two worlds per TRAIN date over approximately 160 dates (150–170 accepted by the manifest validator), approximately 30 steps/world, no TEST. Claim dates are disjoint from probe, calibration, rehearsal, and KAT activity; legacy overlap is disclosed.
+D1 claim panel: six arms × 12 learner seeds × two worlds per TRAIN date over approximately 160 dates (150–170 accepted by the manifest validator), approximately 30 steps/world, no TEST. Claim dates are disjoint from probe, calibration, rehearsal, KAT activity, and the complete supplied successor-development date history; legacy overlap is disclosed. The allocation authenticates the external BASELINE implementation SHA-256, each experiment binding, the A4 matched-information digest, retrospective/causal TLE provenance, and one training-physics digest equal to every evaluation unit's physics digest.
 
 D2 endpoint is pooled ΣB/ΣE. Primary interval is the arms-paired two-way pigeonhole bootstrap: independently resample date and learner-seed levels, apply product weights, recompute additive numerators/denominators and ratios in every draw, then take central 2.5/97.5 percentiles with NumPy linear interpolation. One-way cluster bootstrap and delta method are supplementary. Seedwise paired effects are reported. EE margin is a strictly greater than +0.5% lower endpoint. QoS uses additive numerators/denominators inside draws.
 
@@ -134,19 +148,17 @@ D3 `B=0,E>0` is defined EE zero. A zero E denominator makes EE undefined and is 
 
 STARTED precedes outcome work in an append-only hash chain. Canonical write-once receipts carry raw steps and additive ledgers; merge reaggregates from rows. Conformance proves NULL≡BASE per step, every arm's real-step dry run when authorized, receipt hashes, authority completeness, and one terminal adjudication.
 
-T1 is the exhaustive three-user/two-action/three-step decomposition/intervention KAT. T2 is the information-twin interaction reversal, leakage/relabel/repair/timer/additive-placebo production-path KAT. T3 feeds raw receipts through `merge_receipts` and runs Monte Carlo calibration through the identical production `infer_cluster_totals` core for 3/5/10% date SD, 1% seed SD, five and 12 seeds, least-favourable null, undefined cells, and QoS rejection. All are synthetic and must finish together in less than five minutes.
+T1 is the exhaustive three-user/two-action/three-step decomposition/intervention KAT. T2 is the information-twin interaction reversal, leakage/relabel/repair/process-cancellation/additive-placebo production-path KAT. T3 constructs raw `EvaluationRunner` receipts, authenticates and independently reaggregates their raw rows in `merge_receipts`, and runs the production two-way merger for 5%/1% and 3%/1% date/seed SD at 5, 12, 16, and 24 learner seeds. It reports interval coverage and three-contrast conjunction power with binomial Monte Carlo uncertainty from at least 200 replications per cell, plus incomplete-cell and QoS rejection KATs. All are synthetic; the calibrated T3 run may take up to 20 minutes.
 
 ## 11. Remaining CONTROLLER_DECIDE items
 
 Every remaining item is unresolved before real source generation:
 
-1. `CONTROLLER_DECIDE FORMAL-LEARNER-LITERALS`: copy the V0.23 heterogeneous Catfish trainer's frozen architecture, optimizer, batch, epoch-budget, stopping, and serialization values into the seal without retuning; change only sealed input dimensions and give the set head the same optimizer settings.
-2. `CONTROLLER_DECIDE COALITION-FEATURE-SCALES`: freeze numeric scales for the now-fixed selected/incumbent Q1 rows, missing flag, and affected/global resource inputs.
-3. `CONTROLLER_DECIDE LARGER-EVACUATION-CAP`: freeze which ≤4 subsets/decompositions label each larger evacuation and their row weights.
-4. `CONTROLLER_DECIDE NEUTRAL-SOURCE-SEALS`: bind real generators, labels, support, strata, overlap, row weights, optimization dose, and digests for C1/C2/C3.
-5. `CONTROLLER_DECIDE CATALOGUE-CB2`: seal decision 4/CB-2 profile construction, bounds, authentication, and any learned pruning.
-6. `CONTROLLER_DECIDE FORMAL-ALLOCATION-MANIFEST`: the assembler must seal exact dates, worlds, starts, 12 derived seed values, 30-anchor coverage, stride, roles, legacy overlap, bootstrap draws/seed, external BASELINE implementation SHA-256, and manifest digest.
-7. `CONTROLLER_DECIDE OPERATIONAL-CAPABILITY-VALUES`: seal real telemetry provenance/ages, roster/cross-gain coverage, calibration/model assumptions, catalogue bounds, solver/memory limits, missing-data handling, and measured cold-cache latency distribution on `sat` with four processes.
-8. `CONTROLLER_DECIDE CAUSAL-OPERATIONAL-VARIANT`: if an operational claim is made, seal causal ephemeris/forecast inputs and action-effective-time convention; the retrospective nearest-TLE benchmark alone cannot support it.
+1. `CONTROLLER_DECIDE COALITION-FEATURE-SCALES`: freeze numeric scales for the now-fixed selected/incumbent Q1 rows, missing flag, and affected/global resource inputs.
+2. `CONTROLLER_DECIDE NEUTRAL-SOURCE-SEALS`: bind real generators, labels, support, strata, overlap, row weights, optimization dose, and digests for C1/C2/C3.
+3. `CONTROLLER_DECIDE CATALOGUE-CB2`: seal decision 4/CB-2 profile construction, bounds, authentication, and any learned pruning.
+4. `CONTROLLER_DECIDE FORMAL-ALLOCATION-MANIFEST`: the assembler must seal exact dates, worlds, starts, 12 derived seed values, 30-anchor coverage, stride, roles, legacy overlap, bootstrap draws/seed, external BASELINE implementation SHA-256, and manifest digest.
+5. `CONTROLLER_DECIDE OPERATIONAL-CAPABILITY-VALUES`: seal real telemetry provenance/ages, roster/cross-gain coverage, calibration/model assumptions, catalogue bounds, solver/memory limits, missing-data handling, and measured cold-cache latency distribution on `sat` with four processes.
+6. `CONTROLLER_DECIDE CAUSAL-OPERATIONAL-VARIANT`: if an operational claim is made, seal causal ephemeris/forecast inputs and action-effective-time convention; the retrospective nearest-TLE benchmark alone cannot support it.
 
 Until these are sealed and the controller issues PHYSICS-GO, admission is HOLD and no real source generation or successor training is permitted.

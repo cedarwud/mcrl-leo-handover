@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+import math
+import multiprocessing
 import time
 from typing import Callable, Literal, Mapping, Protocol, Sequence
 
 from .canonical import StageCContractError, canonical_sha256
 from .coalitions import CoalitionContext
-from .learner import Route, ThreeRouteModel, V1ThreeRouteModel
+from .experiments import CheckpointKnockoutExperiment
+from .interfaces import CoordinatorInformation, ArmInformationInterface, authenticate_matched_catalogues
+from .learner import ARM_ORDER, Route, ThreeRouteModel, V1ThreeRouteModel
 from .state import PhysicalAction
 
 
@@ -67,6 +71,9 @@ class SelectorDecision:
     fallback_reason: str | None
     local_optimum_certified: bool | None
     evaluated_profiles: int
+    elapsed_s: float = 0.0
+    worker_pid: int | None = None
+    worker_terminated: bool = False
 
 
 class CoordinatorHook(Protocol):
@@ -155,7 +162,7 @@ def deployment_capability_manifest(
     solver_limits: Mapping[str, object] | None = None,
     memory_limit_bytes: int = 1_073_741_824,
     missing_data_handling: str = "reject_and_execute_prevalidated_base",
-    measured_end_to_end_latency_s: Sequence[float] = (),
+    measured_end_to_end_latency_s: Sequence[float],
 ) -> dict[str, object]:
     for name, digest in (
         ("code_digest", code_digest),
@@ -169,8 +176,8 @@ def deployment_capability_manifest(
     if worker_count < 1 or memory_limit_bytes < 1:
         raise StageCContractError("capability worker and memory limits must be positive")
     latency = tuple(float(value) for value in measured_end_to_end_latency_s)
-    if any(value < 0.0 for value in latency):
-        raise StageCContractError("capability latency observations must be nonnegative")
+    if not latency or any(not math.isfinite(value) or value < 0.0 for value in latency):
+        raise StageCContractError("capability requires nonempty nonnegative latency observations")
     payload: dict[str, object] = {
         "schema": "mcrl-v025-stagec-deployment-capability-v1",
         "code_digest": code_digest,
@@ -195,7 +202,7 @@ def deployment_capability_manifest(
             "enforce_no_served_count_decrease_vs_base",
             "atomically_commit_or_base_fallback",
         ],
-        "timer_enforcement": "runner_future_timeout_cancel",
+        "timer_enforcement": "runner_process_deadline_kill_join",
         "base_first": "computed_validated_and_repaired_before_coordinator_timer",
         "deadline_fallback": "execute_prevalidated_a0",
         "telemetry_sources_and_ages": dict(
@@ -502,6 +509,121 @@ class ProfileSelector:
         self.mode = mode
 
     @staticmethod
+    def repair_reference(
+        *,
+        model: V1ThreeRouteModel,
+        tables: Sequence[UserActionTable],
+        catalogue: Sequence[Profile],
+        jointly_legal: Callable[[Profile], bool],
+    ) -> Profile:
+        """A3 production Q1+Q2 proposal with deterministic joint repair."""
+
+        proposal = tuple(
+            masked_argmax(
+                tuple(
+                    model.score("C1", q1) + model.score("C2", q2)
+                    for q1, q2 in zip(table.q1_states, table.q2_states, strict=True)
+                ),
+                table.action_mask,
+            )
+            for table in tables
+        )
+        if jointly_legal(proposal):
+            return proposal
+        legal = tuple(profile for profile in catalogue if jointly_legal(profile))
+        if not legal:
+            raise StageCContractError("joint conflict repair found no legal catalogue profile")
+        best = legal[0]
+        best_score = float("-inf")
+        for profile in legal:
+            score = sum(
+                model.score("C1", table.q1_states[index])
+                + model.score("C2", table.q2_states[index])
+                for table, index in zip(tables, profile, strict=True)
+            )
+            if score > best_score:
+                best, best_score = profile, score
+        return best
+
+    @staticmethod
+    def _profile_payload(profile: Profile, tables: Sequence[UserActionTable]) -> list[dict[str, object]]:
+        if len(profile) != len(tables):
+            raise StageCContractError("profile is incomplete")
+        return [
+            {"user_id": table.user_id, "action": table.actions[index].payload()}
+            for table, index in zip(tables, profile, strict=True)
+        ]
+
+    @classmethod
+    def _authenticate_inputs(
+        cls,
+        *,
+        base_profile: Profile,
+        tables: Sequence[UserActionTable],
+        catalogue: Sequence[Profile],
+        coordinator_information: CoordinatorInformation,
+        arm_information_interfaces: Mapping[str, ArmInformationInterface],
+        matched_information_sha256: str,
+        coalition_context: Mapping[Profile, CoalitionContext] | None,
+    ) -> None:
+        required_arms = (*ARM_ORDER, "S0", "S_UNI")
+        actual = authenticate_matched_catalogues(
+            arm_information_interfaces, required_arms=required_arms
+        )
+        if actual != matched_information_sha256:
+            raise StageCContractError("selector A4 equality authenticator drifted")
+        if coordinator_information.catalogue_sha256 != next(
+            iter(arm_information_interfaces.values())
+        ).catalogue_sha256:
+            raise StageCContractError("selector catalogue differs from A4 authority")
+        if coordinator_information.source_provenance_sha256 != next(
+            iter(arm_information_interfaces.values())
+        ).source_provenance_sha256:
+            raise StageCContractError("selector source provenance differs from A4 authority")
+        supplied = {canonical_sha256(cls._profile_payload(profile, tables)) for profile in catalogue}
+        authorised = {
+            canonical_sha256(profile.payload()) for profile in coordinator_information.catalogue
+        }
+        if supplied != authorised:
+            raise StageCContractError("selector catalogue differs from I_coordinator")
+        reference = tuple(
+            action for action in coordinator_information.references.proposal_a0
+        )
+        if [action.payload() for action in reference] != [
+            item["action"] for item in cls._profile_payload(base_profile, tables)
+        ]:
+            raise StageCContractError("selector BASE differs from authenticated a0")
+        if coalition_context is None:
+            return
+        expected_profiles = set(catalogue) | {base_profile}
+        if set(coalition_context) != expected_profiles:
+            raise StageCContractError("coalition contexts do not cover the catalogue exactly")
+        expected_reference = tuple(
+            (table.user_id, table.actions[index])
+            for table, index in zip(tables, base_profile, strict=True)
+        )
+        for profile, context in coalition_context.items():
+            if context.anchor_id != coordinator_information.anchor_id:
+                raise StageCContractError("coalition context anchor is unauthenticated")
+            if context.reference_profile != expected_reference:
+                raise StageCContractError("coalition context reference profile is unauthenticated")
+            changed = {
+                table.user_id: (table.actions[base], table.actions[selected])
+                for table, base, selected in zip(tables, base_profile, profile, strict=True)
+                if selected != base
+            }
+            members = {member.user_id: member for member in context.members}
+            if set(members) != set(changed):
+                raise StageCContractError("coalition changed-user set differs from catalogue profile")
+            for user, (reference_action, selected_action) in changed.items():
+                member = members[user]
+                if (
+                    member.reference_action != reference_action
+                    or member.selected_action != selected_action
+                ):
+                    raise StageCContractError("coalition physical actions differ from catalogue profile")
+
+    @staticmethod
     def _additive_score(
         model: V1ThreeRouteModel,
         tables: Sequence[UserActionTable],
@@ -535,7 +657,30 @@ class ProfileSelector:
         exact_psi: Callable[[Profile], float] | None = None,
         exact_nominal_score: Callable[[Profile], float] | None = None,
         knockout_route: Route | None = None,
+        coordinator_information: CoordinatorInformation,
+        arm_information_interfaces: Mapping[str, ArmInformationInterface],
+        matched_information_sha256: str,
+        model_checkpoint_sha256: str | None = None,
+        knockout_experiment: CheckpointKnockoutExperiment | None = None,
     ) -> SelectorDecision:
+        self._authenticate_inputs(
+            base_profile=base_profile,
+            tables=tables,
+            catalogue=catalogue,
+            coordinator_information=coordinator_information,
+            arm_information_interfaces=arm_information_interfaces,
+            matched_information_sha256=matched_information_sha256,
+            coalition_context=coalition_context if self.mode != "S_UNI" else None,
+        )
+        if self.mode == "S3" and model_checkpoint_sha256 is None:
+            raise StageCContractError("S3 requires a deployed checkpoint identity")
+        if knockout_route is not None:
+            if (
+                knockout_experiment is None
+                or model_checkpoint_sha256 != knockout_experiment.checkpoint_sha256
+                or knockout_route not in knockout_experiment.zeroed_deployed_routes
+            ):
+                raise StageCContractError("knockout is not bound to the deployed checkpoint")
         if not jointly_legal(base_profile) or not service_guard(base_profile):
             raise StageCContractError("selector requires a prevalidated BASE")
         if self.mode == "S_UNI":
@@ -589,6 +734,75 @@ class ProfileSelector:
         if evaluated == 0:
             return SelectorDecision(self.mode, base_profile, 0.0, True, "empty_legal_catalogue", None, 0)
         return SelectorDecision(self.mode, best, best_score, False, None, None, evaluated)
+
+    def select_timed(self, *, deadline_s: float = DEPLOYMENT_DEADLINE_S, **kwargs: object) -> SelectorDecision:
+        """F2: validate BASE in the parent, then kill the coordinator on timeout."""
+
+        base_profile = kwargs.get("base_profile")
+        jointly_legal = kwargs.get("jointly_legal")
+        service_guard = kwargs.get("service_guard")
+        if (
+            not isinstance(base_profile, tuple)
+            or not callable(jointly_legal)
+            or not callable(service_guard)
+            or not jointly_legal(base_profile)
+            or not service_guard(base_profile)
+        ):
+            raise StageCContractError("timed selector requires prevalidated BASE")
+        if deadline_s <= 0.0:
+            raise StageCContractError("selector deadline must be positive")
+        context = multiprocessing.get_context("fork")
+        parent, child = context.Pipe(duplex=False)
+
+        def work() -> None:
+            try:
+                child.send(("ok", self.select(**kwargs)))
+            except BaseException as error:
+                child.send(("error", type(error).__name__))
+            finally:
+                child.close()
+
+        started = time.monotonic()
+        process = context.Process(target=work, name="stagec-profile-selector")
+        process.start()
+        child.close()
+        process.join(deadline_s)
+        if process.is_alive():
+            pid = process.pid
+            process.kill()
+            process.join()
+            parent.close()
+            return SelectorDecision(
+                self.mode,
+                base_profile,
+                0.0,
+                True,
+                "runner_deadline_process_killed",
+                None,
+                0,
+                time.monotonic() - started,
+                pid,
+                not process.is_alive(),
+            )
+        elapsed = time.monotonic() - started
+        if not parent.poll():
+            parent.close()
+            return SelectorDecision(
+                self.mode, base_profile, 0.0, True, "coordinator_worker_failed", None, 0,
+                elapsed, process.pid, False,
+            )
+        status, payload = parent.recv()
+        parent.close()
+        if status != "ok" or not isinstance(payload, SelectorDecision):
+            return SelectorDecision(
+                self.mode, base_profile, 0.0, True,
+                f"coordinator_worker_error:{payload}", None, 0, elapsed, process.pid, False,
+            )
+        return SelectorDecision(
+            payload.mode, payload.profile, payload.score, payload.used_fallback,
+            payload.fallback_reason, payload.local_optimum_certified,
+            payload.evaluated_profiles, elapsed, process.pid, False,
+        )
 
 
 __all__ = [

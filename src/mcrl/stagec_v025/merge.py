@@ -13,6 +13,7 @@ import numpy as np
 
 from .canonical import (
     StageCContractError,
+    canonical_sha256,
     file_sha256,
     float_hex,
     parse_float_hex,
@@ -29,7 +30,7 @@ from .learner import ARM_ORDER
 from .state import Q1_SCHEMA_SHA256, Q2_SCHEMA_SHA256
 
 
-REPORT_SCHEMA = "mcrl-v025-stagec-terminal-report-v1"
+REPORT_SCHEMA = "mcrl-v025-stagec-terminal-report-v2"
 DROP_ARMS = ("DROP_C1", "DROP_C2", "DROP_C3")
 EE_MARGIN_RELATIVE = 0.005
 AVAILABILITY_MARGIN = -0.005
@@ -118,6 +119,15 @@ def _assert_step_is_canonical(row: Mapping[str, object]) -> None:
         for name, value in sorted(components.items())
     )
     joules = parse_float_hex(row.get("joules_hex"), field="step.joules")
+    latency = parse_float_hex(row.get("coordinator_latency_s_hex"), field="step.coordinator_latency_s")
+    if latency < 0.0 or any(
+        not isinstance(row.get(field), bool)
+        for field in (
+            "selected_profile_differs_from_additive",
+            "rejected_harmful_joint_move",
+        )
+    ):
+        raise StageCContractError("step coordination evidence is incomplete")
     if component_sum.hex() != joules.hex():
         raise StageCContractError("step energy component sum disagrees with joules")
     if not isinstance(events, list):
@@ -443,7 +453,25 @@ def claim_decision(contrasts: Mapping[str, Mapping[str, object]]) -> dict[str, o
             and handover[1] < HANDOVER_RELATIVE_MARGIN
             and phi[1] < PHI_COST_RELATIVE_MARGIN
         )
-    passed = all(per_contrast.values()) and set(per_contrast) == set(DROP_ARMS)
+    c3 = contrasts.get("DROP_C3", {})
+    c3_point = c3.get("point_estimates", {}).get("ee_relative") if isinstance(c3, Mapping) else None
+    c3_interval = (
+        c3.get("bootstrap", {}).get("central_95_percentile_intervals", {}).get("ee_relative")
+        if isinstance(c3, Mapping) else None
+    )
+    if c3_point == 0.0:
+        c3_disposition = "TERMINATED_ZERO_MARGINAL_NO_REDESIGN"
+    elif c3_interval is not None and c3_interval[1] <= EE_MARGIN_RELATIVE:
+        c3_disposition = "NO_PRACTICALLY_RELEVANT_BENEFIT_NO_REDESIGN"
+    elif c3_interval is None or c3_interval[0] <= EE_MARGIN_RELATIVE:
+        c3_disposition = "INCONCLUSIVE_NO_REDESIGN"
+    else:
+        c3_disposition = "POSITIVE_C3_CLAIM_ELIGIBLE"
+    passed = (
+        all(per_contrast.values())
+        and set(per_contrast) == set(DROP_ARMS)
+        and c3_disposition == "POSITIVE_C3_CLAIM_ELIGIBLE"
+    )
     return {
         "decision": "CLAIM_PASS" if passed else "CLAIM_FAIL",
         "per_contrast": per_contrast,
@@ -453,6 +481,11 @@ def claim_decision(contrasts: Mapping[str, Mapping[str, object]]) -> dict[str, o
             "bound exceeds +0.5%, and FULL is QoS non-inferior."
         ),
         "multiplicity": "single prespecified conjunction; no per-contrast inflation",
+        "c3_terminal_rule": {
+            "disposition": c3_disposition,
+            "zero_marginal_ends_positive_claim": True,
+            "outcome_contingent_redesign_permitted": False,
+        },
     }
 
 
@@ -501,11 +534,88 @@ def infer_cluster_totals(
     return contrasts, claim
 
 
-def merge_receipts(
-    receipt_paths: Sequence[str | Path],
+def _merge_calibration_receipts(
+    receipts: Sequence[Mapping[str, object]],
     *,
-    manifest: AllocationManifest,
-    registry: AttemptRegistry,
+    bootstrap_draws: int,
+    bootstrap_seed: int,
+) -> dict[str, object]:
+    """T3's raw-receipt entry into the same validation/reaggregation/inference seam."""
+
+    if not receipts:
+        raise StageCContractError("calibration receipt set is empty")
+    clusters: dict[tuple[str, int], dict[str, AdditiveTotals]] = {}
+    seen: set[str] = set()
+    for receipt in receipts:
+        expected_digest = receipt.get("receipt_sha256")
+        body = dict(receipt)
+        body.pop("receipt_sha256", None)
+        if (
+            receipt.get("schema") != "mcrl-v025-stagec-calibration-unit-receipt-v1"
+            or receipt.get("emitter") != "EvaluationRunner.build_calibration_receipt"
+            or expected_digest != canonical_sha256(body)
+        ):
+            raise StageCContractError("calibration receipt authentication failed")
+        world_id = str(receipt.get("world_id"))
+        if world_id in seen:
+            raise StageCContractError("calibration receipt world is duplicated")
+        seen.add(world_id)
+        date = str(receipt.get("tle_date"))
+        learner_seed = int(receipt.get("learner_seed"))
+        production_unit = receipt.get("production_unit")
+        steps = receipt.get("steps")
+        summary = receipt.get("summary")
+        if (
+            not isinstance(production_unit, Mapping)
+            or production_unit.get("world_id") != world_id
+            or production_unit.get("tle_date") != date
+            or production_unit.get("learner_seed") != learner_seed
+        ):
+            raise StageCContractError("calibration production-unit authority drifted")
+        if not isinstance(steps, list) or not isinstance(summary, Mapping):
+            raise StageCContractError("calibration receipt raw rows are missing")
+        required = {"FULL", *DROP_ARMS}
+        if set(summary) != required:
+            raise StageCContractError("calibration receipt arm inventory drifted")
+        cluster = clusters.setdefault((date, learner_seed), {})
+        for arm in required:
+            rows = [row for row in steps if isinstance(row, Mapping) and row.get("arm") == arm]
+            if not rows:
+                raise StageCContractError("calibration receipt arm has no raw rows")
+            for row in rows:
+                _assert_step_is_canonical(row)
+                if (
+                    row.get("tle_date") != date
+                    or row.get("learner_seed") != learner_seed
+                    or row.get("world_id") != world_id
+                ):
+                    raise StageCContractError("calibration raw-row identity drifted")
+            rebuilt = reaggregate_steps(rows)
+            if summary[arm] != rebuilt:
+                raise StageCContractError("calibration summary disagrees with raw rows")
+            cluster.setdefault(arm, AdditiveTotals()).add(_totals(rebuilt))
+    contrasts, claim = infer_cluster_totals(
+        clusters,
+        bootstrap_draws=bootstrap_draws,
+        bootstrap_seed=bootstrap_seed,
+        include_supplementary=False,
+    )
+    return {
+        "schema": "mcrl-v025-stagec-calibration-merge-v1",
+        "raw_receipt_count": len(receipts),
+        "raw_step_count": sum(len(receipt["steps"]) for receipt in receipts),
+        "receipt_validation": "canonical_sha256_and_raw_row_reaggregation",
+        "cluster_count": len(clusters),
+        "contrasts": contrasts,
+        "claim": claim,
+    }
+
+
+def merge_receipts(
+    receipt_paths: Sequence[str | Path | Mapping[str, object]],
+    *,
+    manifest: AllocationManifest | None = None,
+    registry: AttemptRegistry | None = None,
     bootstrap_draws: int | None = None,
     bootstrap_seed: int | None = None,
     physics_admission: Mapping[str, object] | None = None,
@@ -513,6 +623,16 @@ def merge_receipts(
     interface_assumptions: Sequence[str] = (),
     controller_decide: Sequence[str] = (),
 ) -> dict[str, object]:
+    if receipt_paths and isinstance(receipt_paths[0], Mapping):
+        if manifest is not None or registry is not None or bootstrap_draws is None or bootstrap_seed is None:
+            raise StageCContractError("raw calibration merge authority is invalid")
+        return _merge_calibration_receipts(
+            receipt_paths,  # type: ignore[arg-type]
+            bootstrap_draws=bootstrap_draws,
+            bootstrap_seed=bootstrap_seed,
+        )
+    if manifest is None or registry is None:
+        raise StageCContractError("file receipt merge requires manifest and registry")
     draws = manifest.bootstrap_draws if bootstrap_draws is None else bootstrap_draws
     seed = manifest.bootstrap_seed if bootstrap_seed is None else bootstrap_seed
     if draws != manifest.bootstrap_draws or seed != manifest.bootstrap_seed:
@@ -530,6 +650,10 @@ def merge_receipts(
     if len(receipt_paths) != len(expected):
         raise StageCContractError("receipt set is incomplete or duplicated")
     clusters: dict[tuple[str, int], dict[str, AdditiveTotals]] = {}
+    latency_samples: dict[str, list[float]] = {arm: [] for arm in POLICY_ORDER}
+    decision_nonadditivity_numerator = 0
+    decision_nonadditivity_denominator = 0
+    rejected_harmful_joint_moves = 0
     seen: set[str] = set()
     for receipt_path in receipt_paths:
         receipt = read_unit_receipt(receipt_path)
@@ -543,6 +667,14 @@ def merge_receipts(
         seen.add(unit_id)
         if receipt.get("allocation_manifest_digest") != manifest.digest:
             raise StageCContractError("receipt allocation authority drifted")
+        if receipt.get("experiment_binding") != {
+            "experiment_id": unit.experiment_id,
+            "schema": unit.experiment_schema,
+            "definition_sha256": unit.experiment_definition_sha256,
+            "execution_kind": unit.experiment_execution_kind,
+            "checkpoint_sha256": unit.experiment_checkpoint_sha256,
+        }:
+            raise StageCContractError("receipt experiment binding drifted")
         if (
             receipt.get("arm_order") != list(ARM_ORDER)
             or receipt.get("supportive_comparators") != ["S0", "S_UNI"]
@@ -572,6 +704,8 @@ def merge_receipts(
             "deployment_capability_digest": unit.deployment_capability_digest,
             "setting_digest": unit.setting_digest,
             "calibration_digest": unit.calibration_digest,
+            "matched_information_sha256": unit.matched_information_sha256,
+            "tle_provenance": unit.tle_provenance,
         }:
             raise StageCContractError("receipt conformance authority drifted")
         statuses = status_by_key.get(unit.attempt_key, [])
@@ -601,6 +735,12 @@ def merge_receipts(
             "deployment_capability_digest",
             "setting_digest",
             "calibration_digest",
+            "matched_information_sha256",
+            "tle_provenance",
+            "experiment_schema",
+            "experiment_definition_sha256",
+            "experiment_execution_kind",
+            "experiment_checkpoint_sha256",
         )
         indices_by_arm: dict[str, list[int]] = {arm: [] for arm in POLICY_ORDER}
         try:
@@ -638,6 +778,17 @@ def merge_receipts(
             ):
                 raise StageCContractError("step identity or authority drifted")
             indices_by_arm[str(arm)].append(step_index)
+            latency_samples[str(arm)].append(
+                parse_float_hex(row.get("coordinator_latency_s_hex"), field="coordinator_latency_s")
+            )
+            if arm == "FULL":
+                decision_nonadditivity_denominator += 1
+                decision_nonadditivity_numerator += int(
+                    row.get("selected_profile_differs_from_additive") is True
+                )
+                rejected_harmful_joint_moves += int(
+                    row.get("rejected_harmful_joint_move") is True
+                )
         lengths = {len(indices) for indices in indices_by_arm.values()}
         if len(lengths) != 1 or not lengths or next(iter(lengths)) < 1:
             raise StageCContractError("step policy coverage drifted")
@@ -688,6 +839,53 @@ def merge_receipts(
     contrasts, claim = infer_cluster_totals(
         clusters, bootstrap_draws=draws, bootstrap_seed=seed
     )
+    supportive_inference: dict[str, object] = {}
+    for index, comparator in enumerate(("S_UNI", "S0")):
+        point = _metrics(
+            _sum_selected(clusters, all_keys, "FULL"),
+            _sum_selected(clusters, all_keys, comparator),
+        )
+        bootstrap = _two_way_bootstrap(
+            clusters,
+            drop_arm=comparator,
+            draws=draws,
+            seed=seed + 500 + index,
+        )
+        intervals = bootstrap.get("central_95_percentile_intervals", {})
+        undefined = bootstrap.get("undefined_draws", {})
+        ee_interval = intervals.get("ee_relative")
+        availability_interval = intervals.get("availability_difference")
+        handover_interval = intervals.get("handover_relative")
+        phi_interval = intervals.get("phi_cost_relative")
+        supportive_inference[comparator] = {
+            "point_estimates": point,
+            "bootstrap": bootstrap,
+            "full_strictly_greater_ee": bool(
+                bootstrap.get("status") == "OK"
+                and ee_interval is not None
+                and not undefined.get("ee_relative")
+                and ee_interval[0] > 0.0
+            ),
+            "qos_noninferior": bool(
+                bootstrap.get("status") == "OK"
+                and not any(undefined.values())
+                and availability_interval is not None
+                and availability_interval[0] > AVAILABILITY_MARGIN
+                and handover_interval is not None
+                and handover_interval[1] < HANDOVER_RELATIVE_MARGIN
+                and phi_interval is not None
+                and phi_interval[1] < PHI_COST_RELATIVE_MARGIN
+            ),
+        }
+    compute_comparison = {
+        arm: {
+            "sample_count": len(values),
+            "mean_s": float(np.mean(values)),
+            "p50_s": float(np.median(values)),
+            "max_s": max(values),
+        }
+        for arm, values in latency_samples.items()
+    }
     pooled_totals = {
         arm: _totals_payload(_sum_selected(clusters, all_keys, arm))
         for arm in POLICY_ORDER
@@ -756,6 +954,10 @@ def merge_receipts(
         "terminal_adjudication_count": 1,
         "authorities": {
             "allocation_manifest_digest": manifest.digest,
+            "training_physics_digest": manifest.training_physics_digest,
+            "baseline_implementation_sha256": manifest.baseline_implementation_sha256,
+            "successor_development_dates": list(manifest.successor_development_dates),
+            "experiment_bindings": [asdict(item) for item in manifest.experiment_bindings],
             "allocation_acceptance_evidence_mode": manifest.acceptance_evidence_mode,
             "legacy_panel_overlap": list(manifest.legacy_panel_overlap),
             "unit_authorities": {
@@ -787,6 +989,17 @@ def merge_receipts(
                 "pooled_joules": _sum_selected(clusters, all_keys, arm).joules,
             }
             for arm in ("S0", "S_UNI")
+        },
+        "coordination_attribution": {
+            "paired_full_vs_s_uni": supportive_inference["S_UNI"],
+            "learned_value_s3_vs_matched_s0": supportive_inference["S0"],
+            "compute_comparison": compute_comparison,
+            "decision_nonadditivity": {
+                "selected_profile_differs_from_additive_numerator": decision_nonadditivity_numerator,
+                "anchors": decision_nonadditivity_denominator,
+                "fraction": _ratio(decision_nonadditivity_numerator, decision_nonadditivity_denominator),
+                "rejected_harmful_joint_moves": rejected_harmful_joint_moves,
+            },
         },
         "artifact_digests": artifact_inventory,
         "pooled_additive_totals": pooled_totals,

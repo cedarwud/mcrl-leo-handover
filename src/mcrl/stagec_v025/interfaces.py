@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Mapping, Sequence
 
 from .canonical import StageCContractError, canonical_sha256
-from .state import PhysicalAction
+from .state import PhysicalAction, SourceRow
 
 
 def _digest(value: str, field: str) -> str:
@@ -30,6 +30,10 @@ class HeadsInformation:
     own_history_sha256: str
     previous_committed_excluding_focal_sha256: str
     derived_feature_schema_sha256: str
+    source_provenance_sha256: str
+    forecast_method_sha256: str
+    visible_primitives_sha256: str
+    tle_provenance: str
     model_access: str = "none"
     compute_limit: str = "one_forward_pass"
 
@@ -45,10 +49,58 @@ class HeadsInformation:
             "own_history_sha256",
             "previous_committed_excluding_focal_sha256",
             "derived_feature_schema_sha256",
+            "source_provenance_sha256",
+            "forecast_method_sha256",
+            "visible_primitives_sha256",
         ):
             _digest(getattr(self, field), field)
         if self.model_access != "none" or self.compute_limit != "one_forward_pass":
             raise StageCContractError("I_heads model/compute access exceeds A1")
+        if self.tle_provenance not in {
+            "nearest_epoch_retrospective_benchmark",
+            "causal_ephemeris_available_by_decision_time",
+        }:
+            raise StageCContractError("I_heads TLE provenance is undeclared")
+
+    @classmethod
+    def from_source_rows(
+        cls,
+        rows: Sequence[SourceRow],
+        *,
+        current_nominal_geometry_sha256: str,
+        own_history_sha256: str,
+        previous_committed_excluding_focal_sha256: str,
+    ) -> "HeadsInformation":
+        material = tuple(rows)
+        if not material or len({(row.anchor_id, row.user_id) for row in material}) != 1:
+            raise StageCContractError("I_heads rows must cover one authenticated user-anchor")
+        for field in ("source_provenance_sha256", "forecast_method_sha256", "tle_provenance"):
+            if len({getattr(row, field) for row in material}) != 1:
+                raise StageCContractError(f"I_heads row {field} drifted")
+        ordered = tuple(sorted(material, key=lambda row: row.action_index))
+        return cls(
+            anchor_id=ordered[0].anchor_id,
+            decision_time_ns=ordered[0].decision_time_ns,
+            user_id=ordered[0].user_id,
+            legal_actions=tuple(row.action for row in ordered),
+            q1_rows=tuple(row.q1_state for row in ordered),
+            q2_rows=tuple(row.q2_state for row in ordered),
+            incumbent_context_nominal_decoding_margin_db=float.fromhex(
+                ordered[0].incumbent_context_nominal_decoding_margin_db_hex
+            ),
+            current_nominal_geometry_sha256=current_nominal_geometry_sha256,
+            own_history_sha256=own_history_sha256,
+            previous_committed_excluding_focal_sha256=previous_committed_excluding_focal_sha256,
+            derived_feature_schema_sha256=canonical_sha256({
+                "q1": ordered[0].q1_schema_sha256, "q2": ordered[0].q2_schema_sha256
+            }),
+            source_provenance_sha256=ordered[0].source_provenance_sha256,
+            forecast_method_sha256=ordered[0].forecast_method_sha256,
+            visible_primitives_sha256=canonical_sha256(
+                [row.visible_primitives_sha256 for row in ordered]
+            ),
+            tle_provenance=ordered[0].tle_provenance,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +167,8 @@ class CoordinatorInformation:
     catalogue: tuple[CatalogueProfile, ...]
     catalogue_sha256: str
     nominal_model_sha256: str
+    source_provenance_sha256: str
+    forecast_method_sha256: str
     nominal_outputs: tuple[NominalProfileOutput, ...]
     realised_fading_access: str = "none"
     future_tle_access: str = "declared_forecast_horizon_only"
@@ -130,6 +184,8 @@ class CoordinatorInformation:
             "previous_committed_sha256",
             "catalogue_sha256",
             "nominal_model_sha256",
+            "source_provenance_sha256",
+            "forecast_method_sha256",
         ):
             _digest(getattr(self, field), field)
         expected = canonical_sha256([profile.payload() for profile in self.catalogue])
@@ -140,7 +196,11 @@ class CoordinatorInformation:
         }
         if {output.profile_sha256 for output in self.nominal_outputs} != expected_profiles:
             raise StageCContractError("nominal outputs do not cover the catalogue exactly")
-        if self.realised_fading_access != "none" or self.compute_budget_wall_s != 10.0:
+        if (
+            self.realised_fading_access != "none"
+            or self.future_tle_access != "declared_forecast_horizon_only"
+            or self.compute_budget_wall_s != 10.0
+        ):
             raise StageCContractError("I_coordinator violates the A2/F2 information budget")
 
 
@@ -161,6 +221,7 @@ class ArmInformationInterface:
     validation_sha256: str
     deadline_sha256: str
     fallback_sha256: str
+    source_provenance_sha256: str
     learned_pruning: bool
     removed_score_may_affect_ranking_pruning_or_guards: bool = False
 
@@ -176,6 +237,7 @@ class ArmInformationInterface:
             "validation_sha256",
             "deadline_sha256",
             "fallback_sha256",
+            "source_provenance_sha256",
         ):
             _digest(getattr(self, field), field)
         if self.removed_score_may_affect_ranking_pruning_or_guards:
@@ -206,6 +268,7 @@ def authenticate_matched_catalogues(
         "validation_sha256",
         "deadline_sha256",
         "fallback_sha256",
+        "source_provenance_sha256",
     )
     for field in common_fields:
         if len({getattr(row, field) for row in rows}) != 1:

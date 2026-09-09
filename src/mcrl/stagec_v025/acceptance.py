@@ -8,7 +8,8 @@ from typing import Mapping, Sequence
 import numpy as np
 
 from .learner import ARM_ORDER
-from .merge import AdditiveTotals, DROP_ARMS, infer_cluster_totals
+from .evaluation import EvaluationRunner
+from .merge import AdditiveTotals, DROP_ARMS, merge_receipts
 
 
 def _binomial_uncertainty(successes: int, trials: int) -> dict[str, float | int]:
@@ -82,109 +83,106 @@ def synthetic_crossed_clusters(
 
 def crossed_inference_calibration(
     *,
-    repetitions: int = 48,
-    bootstrap_draws: int = 149,
+    repetitions: int = 200,
+    bootstrap_draws: int = 99,
     rng_seed: int = 20260908,
 ) -> dict[str, object]:
-    """T3 Monte Carlo calibration using the production two-way merger core."""
+    """T3 Monte Carlo calibration from raw EvaluationRunner receipts."""
+
+    if repetitions < 200:
+        raise ValueError("T3 calibration requires at least 200 Monte Carlo replications")
 
     rng = np.random.default_rng(rng_seed)
-    scenario_coverage: dict[str, object] = {}
-    # Coverage sensitivity required by G/T3.  The 12-seed declared design is
-    # used here; these are calibrations, not measurements of real performance.
-    for date_sd in (0.03, 0.05, 0.10):
-        covered = 0
-        trials = repetitions * 3
-        for repetition in range(repetitions):
-            clusters = synthetic_crossed_clusters(
-                date_count=160,
-                seed_count=12,
-                date_sd=date_sd,
-                seed_sd=0.01,
-                true_relative_gain=(0.02, 0.02, 0.02),
-                rng=rng,
-            )
-            contrasts, _claim = infer_cluster_totals(
-                clusters,
-                bootstrap_draws=bootstrap_draws,
-                bootstrap_seed=rng_seed + 10000 * repetition + int(date_sd * 1000),
-                include_supplementary=False,
-            )
-            for arm in DROP_ARMS:
-                interval = contrasts[arm]["bootstrap"]["central_95_percentile_intervals"]["ee_relative"]
-                if interval is not None and interval[0] <= 0.02 <= interval[1]:
-                    covered += 1
-        scenario_coverage[f"date_sd_{date_sd:.2f}_seed_sd_0.01"] = _binomial_uncertainty(
-            covered, trials
-        )
-
-    power: dict[str, object] = {}
-    for seed_count in (5, 12):
-        conjunction_successes = 0
-        component_successes = 0
-        covered = 0
-        for repetition in range(repetitions):
-            clusters = synthetic_crossed_clusters(
-                date_count=160,
-                seed_count=seed_count,
-                date_sd=0.05,
-                seed_sd=0.01,
-                true_relative_gain=(0.02, 0.02, 0.02),
-                rng=rng,
-            )
-            contrasts, claim = infer_cluster_totals(
-                clusters,
-                bootstrap_draws=bootstrap_draws,
-                bootstrap_seed=rng_seed + seed_count * 100000 + repetition,
-                include_supplementary=False,
-            )
-            passed = tuple(bool(claim["per_contrast"][arm]) for arm in DROP_ARMS)
-            component_successes += sum(passed)
-            conjunction_successes += int(all(passed))
-            for arm in DROP_ARMS:
-                interval = contrasts[arm]["bootstrap"]["central_95_percentile_intervals"]["ee_relative"]
-                covered += int(
-                    interval is not None and interval[0] <= 0.02 <= interval[1]
+    scenarios: dict[str, object] = {}
+    total_raw_receipts = 0
+    total_raw_steps = 0
+    for date_sd in (0.05, 0.03):
+        scenario_name = f"date_sd_{date_sd:.2f}_seed_sd_0.01"
+        scenarios[scenario_name] = {}
+        for seed_count in (5, 12, 16, 24):
+            conjunction_successes = 0
+            covered = 0
+            for repetition in range(repetitions):
+                date_effect = rng.normal(0.0, date_sd, (3, 160))
+                seed_effect = rng.normal(0.0, 0.01, (3, seed_count))
+                receipts: list[dict[str, object]] = []
+                for date_index in range(160):
+                    for seed_index in range(seed_count):
+                        for world in (0, 1):
+                            energy = (0.75, 1.25)[world] * (
+                                1.0 + 0.05 * ((date_index + seed_index) % 3)
+                            )
+                            endpoints = {"FULL": (100.0 * energy, energy)}
+                            for contrast_index, arm in enumerate(DROP_ARMS):
+                                log_effect = (
+                                    math.log1p(0.02)
+                                    + date_effect[contrast_index, date_index]
+                                    + seed_effect[contrast_index, seed_index]
+                                )
+                                endpoints[arm] = (
+                                    100.0 * energy / math.exp(log_effect),
+                                    energy,
+                                )
+                            receipts.append(
+                                EvaluationRunner.build_calibration_receipt(
+                                    tle_date=f"D{date_index:03d}",
+                                    learner_seed=1000 + seed_index,
+                                    world_id=(
+                                        f"{scenario_name}/r{repetition}/d{date_index}/"
+                                        f"s{seed_index}/w{world}"
+                                    ),
+                                    arm_endpoints=endpoints,
+                                )
+                            )
+                merged = merge_receipts(
+                    receipts,
+                    bootstrap_draws=bootstrap_draws,
+                    bootstrap_seed=(
+                        rng_seed
+                        + int(date_sd * 1000) * 1_000_000
+                        + seed_count * 10_000
+                        + repetition
+                    ),
                 )
-        power[str(seed_count)] = {
-            "interval_coverage": _binomial_uncertainty(covered, repetitions * 3),
-            "component_power": _binomial_uncertainty(component_successes, repetitions * 3),
-            "conjunction_power": _binomial_uncertainty(conjunction_successes, repetitions),
-        }
-
-    # Least-favourable IUT null: the first component is exactly at +0.5%; the
-    # others use the +2% planning alternative.
-    false_conjunctions = 0
-    for repetition in range(repetitions):
-        clusters = synthetic_crossed_clusters(
-            date_count=160,
-            seed_count=12,
-            date_sd=0.05,
-            seed_sd=0.01,
-            true_relative_gain=(0.005, 0.02, 0.02),
-            rng=rng,
-        )
-        _contrasts, claim = infer_cluster_totals(
-            clusters,
-            bootstrap_draws=bootstrap_draws,
-            bootstrap_seed=rng_seed + 900000 + repetition,
-            include_supplementary=False,
-        )
-        false_conjunctions += int(claim["decision"] == "CLAIM_PASS")
+                total_raw_receipts += int(merged["raw_receipt_count"])
+                total_raw_steps += int(merged["raw_step_count"])
+                contrasts = merged["contrasts"]
+                claim = merged["claim"]
+                passed = tuple(
+                    bool(claim["per_contrast"][arm]) for arm in DROP_ARMS
+                )
+                conjunction_successes += int(all(passed))
+                for arm in DROP_ARMS:
+                    interval = contrasts[arm]["bootstrap"][
+                        "central_95_percentile_intervals"
+                    ]["ee_relative"]
+                    covered += int(
+                        interval is not None and interval[0] <= 0.02 <= interval[1]
+                    )
+            scenarios[scenario_name][str(seed_count)] = {
+                "interval_coverage": _binomial_uncertainty(covered, repetitions * 3),
+                "conjunction_power": _binomial_uncertainty(
+                    conjunction_successes, repetitions
+                ),
+            }
 
     return {
-        "schema": "mcrl-v025-stagec-t3-calibration-v1",
+        "schema": "mcrl-v025-stagec-t3-calibration-v2",
         "repetitions": repetitions,
         "bootstrap_draws": bootstrap_draws,
         "date_count": 160,
         "seed_sd": 0.01,
         "planning_alternative_relative": 0.02,
         "claim_margin_relative": 0.005,
-        "coverage": scenario_coverage,
-        "power_date_sd_0.05_seed_sd_0.01": power,
-        "least_favourable_conjunction_null": _binomial_uncertainty(
-            false_conjunctions, repetitions
-        ),
+        "scenarios": scenarios,
+        "seed_counts": [5, 12, 16, 24],
+        "raw_path": {
+            "emitter": "EvaluationRunner.build_calibration_receipt",
+            "validator_and_merger": "merge_receipts",
+            "reaggregation": "reaggregate_steps",
+            "raw_receipts_processed": total_raw_receipts,
+            "raw_steps_processed": total_raw_steps,
+        },
         "simulation_uncertainty": (
             "Binomial Monte Carlo uncertainty is reported as an approximate normal 95% half-width; "
             "bootstrap Monte Carlo error is additionally limited by the declared draw count."

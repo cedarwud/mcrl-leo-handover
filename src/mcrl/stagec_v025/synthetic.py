@@ -14,11 +14,19 @@ from mcrl.physics_v025.targets import NetworkOutcome
 
 from .canonical import StageCContractError, canonical_sha256, write_once_json
 from .deployment import (
-    DeploymentAdapter,
+    ProfileSelector,
     ResolvedProfile,
     UserActionTable,
     deployment_capability_manifest,
     select_s_uni,
+)
+from .interfaces import (
+    ArmInformationInterface,
+    CatalogueProfile,
+    CoordinatorInformation,
+    NominalProfileOutput,
+    ReferenceProfiles,
+    authenticate_matched_catalogues,
 )
 from .evaluation import (
     AllocationManifest,
@@ -44,6 +52,7 @@ from .learner import (
     build_pairwise_batches,
     default_synthetic_neutral_sources,
 )
+from .experiments import LearnedNeutralSourceExperiment, bind_experiment
 from .merge import merge_receipts, write_terminal_report
 from .shards import write_source_shard
 from .state import (
@@ -54,6 +63,7 @@ from .state import (
     Q2_FEATURES,
     SourceRow,
     extract_source_rows,
+    seal_action_evaluation,
 )
 
 
@@ -94,6 +104,13 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
         for offset in range(3)
     )
     anchors: list[SyntheticAnchor] = []
+    source_provenance = _digest("synthetic-tape-adapter-visible-primitives-v1")
+    forecast_method = _digest("synthetic-nominal-three-offset-forecast-v1")
+    seal = lambda item: seal_action_evaluation(
+        item,
+        source_provenance_sha256=source_provenance,
+        forecast_method_sha256=forecast_method,
+    )
     for anchor_index in range(2):
         for user_id in range(2):
             common = {
@@ -103,7 +120,7 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
                 "incumbent_nominal_decoding_margin_db": 2.0,
                 "forecasts": forecasts,
             }
-            base = ActionEvaluation(
+            base = seal(ActionEvaluation(
                 action=PhysicalAction(100 + user_id, 10 + user_id),
                 nominal_sinr_margin_at_rate_target_db=2.0,
                 nominal_required_power_over_cap=0.7,
@@ -125,8 +142,8 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
                 c1_phi_difference=0.0,
                 c2_label_bits=0.0,
                 **common,
-            )
-            candidate = ActionEvaluation(
+            ))
+            candidate = seal(ActionEvaluation(
                 action=PhysicalAction(200 + user_id, 20 + user_id),
                 nominal_sinr_margin_at_rate_target_db=8.0 + user_id,
                 nominal_required_power_over_cap=0.45,
@@ -151,8 +168,8 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
                     **common,
                     "candidate_current_nominal_decoding_margin_db": 8.0 + user_id,
                 },
-            )
-            null = replace(
+            ))
+            null = seal(replace(
                 base,
                 action=PhysicalAction(None, None),
                 nominal_sinr_margin_at_rate_target_db=0.0,
@@ -168,7 +185,7 @@ def make_synthetic_anchors() -> tuple[SyntheticAnchor, ...]:
                 required_power_cap_margin_w=0.0,
                 c1_label_bits=-20.0,
                 c2_label_bits=-20.0,
-            )
+            ))
             anchors.append(
                 SyntheticAnchor(
                     world_id="V025_SYNTHETIC/source/1",
@@ -203,8 +220,75 @@ class TinySyntheticEvaluator:
     """A deterministic two-user joint-feasibility fixture."""
 
     def __init__(self) -> None:
-        self.deployment = DeploymentAdapter()
         self.calls: list[tuple[str, int, int]] = []
+
+    @classmethod
+    def selection_authority(
+        cls, tables: Sequence[UserActionTable], base: tuple[int, ...]
+    ) -> tuple[CoordinatorInformation, dict[str, ArmInformationInterface], str, tuple[tuple[int, ...], ...]]:
+        catalogue = ((0, 0), (1, 0), (0, 1), (1, 1))
+        catalogue_profiles = tuple(
+            CatalogueProfile(tuple(
+                (table.user_id, table.actions[index])
+                for table, index in zip(tables, profile, strict=True)
+            ))
+            for profile in catalogue
+        )
+        catalogue_sha256 = canonical_sha256([profile.payload() for profile in catalogue_profiles])
+        source_provenance = _digest("synthetic-tape-adapter-visible-primitives-v1")
+        coordinator = CoordinatorInformation(
+            anchor_id="synthetic-evaluation-anchor",
+            decision_time_ns=0,
+            global_nominal_geometry_sha256=_digest("global-geometry"),
+            beam_specific_cross_gains_sha256=_digest("cross-gains"),
+            legal_sets_sha256=_digest("legal-sets"),
+            previous_committed_sha256=_digest("previous-committed"),
+            references=ReferenceProfiles(
+                tuple(table.actions[index] for table, index in zip(tables, base, strict=True)),
+                tuple(table.actions[0] for table in tables),
+            ),
+            catalogue=catalogue_profiles,
+            catalogue_sha256=catalogue_sha256,
+            nominal_model_sha256=_digest("nominal-model"),
+            source_provenance_sha256=source_provenance,
+            forecast_method_sha256=_digest("synthetic-nominal-three-offset-forecast-v1"),
+            nominal_outputs=tuple(
+                NominalProfileOutput(
+                    profile_sha256=canonical_sha256(profile.payload()),
+                    joint_load=(("beam", float(sum(index == 1 for index in raw))),),
+                    coupled_powers_w=(("beam", 1.0),),
+                    interference_w=(("beam", 0.0),),
+                    activation=(("beam", True),),
+                    service_by_user=((0, True), (1, True)),
+                    bits=1000.0,
+                    energy_j=9.0,
+                    continuation_normalized=0.0,
+                )
+                for raw, profile in zip(catalogue, catalogue_profiles, strict=True)
+            ),
+        )
+        interfaces = {
+            arm: ArmInformationInterface(
+                arm=arm,
+                anchor_id=coordinator.anchor_id,
+                decision_time_ns=coordinator.decision_time_ns,
+                primitive_access_sha256=_digest("primitive-access"),
+                forecast_method_sha256=coordinator.forecast_method_sha256,
+                physical_identity_schema_sha256=_digest("physical-identity"),
+                catalogue_sha256=catalogue_sha256,
+                joint_search_sha256=_digest("joint-search"),
+                guards_sha256=_digest("guards"),
+                tie_breaking_sha256=_digest("tie-breaking"),
+                validation_sha256=_digest("validation"),
+                deadline_sha256=_digest("deadline"),
+                fallback_sha256=_digest("fallback"),
+                source_provenance_sha256=source_provenance,
+                learned_pruning=False,
+            )
+            for arm in ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL", "BASELINE", "S0", "S_UNI")
+        }
+        digest = authenticate_matched_catalogues(interfaces, required_arms=tuple(interfaces))
+        return coordinator, interfaces, digest, catalogue
 
     @staticmethod
     def tables() -> tuple[UserActionTable, ...]:
@@ -261,14 +345,20 @@ class TinySyntheticEvaluator:
         if arm in {"BASELINE", "NULL"}:
             profile = base
         elif arm == "S_UNI":
-            profile = select_s_uni(
+            coordinator, interfaces, matched, catalogue = self.selection_authority(tables, base)
+            profile = ProfileSelector("S_UNI").select(
                 base_profile=base,
                 tables=tables,
+                catalogue=catalogue,
                 jointly_legal=lambda candidate: candidate != (1, 1),
+                service_guard=lambda _candidate: True,
                 exact_nominal_score=lambda candidate: float(
                     sum(action_index == 1 for action_index in candidate)
                 ),
-            )
+                coordinator_information=coordinator,
+                arm_information_interfaces=interfaces,
+                matched_information_sha256=matched,
+            ).profile
         else:
             if model is None:
                 raise StageCContractError(
@@ -278,20 +368,22 @@ class TinySyntheticEvaluator:
                 profile: self.coalition_context(profile, tables)
                 for profile in ((0, 0), (1, 0), (0, 1), (1, 1))
             }
-            decision = self.deployment.select_with_preparation(
+            coordinator, interfaces, matched, catalogue = self.selection_authority(tables, base)
+            selector = ProfileSelector("S0" if arm == "S0" else "S3")
+            decision = selector.select_timed(
+                deadline_s=10.0,
                 model=model,
-                prepare=lambda: (
-                    tables,
-                    ((0, 0), (1, 0), (0, 1), (1, 1)),
-                ),
+                tables=tables,
+                catalogue=catalogue,
                 base_profile=base,
                 jointly_legal=lambda candidate: candidate != (1, 1),
-                resolve_profile=lambda candidate: ResolvedProfile(candidate, 2),
-                coordinator=(
-                    (lambda *, profile, tables, model: 2.0 if profile == (1, 1) else 0.0)
-                    if arm == "S0"
-                    else lambda *, profile, tables, model: model.interaction(contexts[profile])
-                ),
+                service_guard=lambda _candidate: True,
+                coalition_context=contexts,
+                exact_psi=(lambda profile: 2.0 if profile == (1, 1) else 0.0),
+                coordinator_information=coordinator,
+                arm_information_interfaces=interfaces,
+                matched_information_sha256=matched,
+                model_checkpoint_sha256=model.checkpoint_sha256,
             )
             profile = decision.profile
         identities = tuple(
@@ -316,6 +408,9 @@ class TinySyntheticEvaluator:
             useful_user_seconds=60.16,
             opportunity_user_seconds=60.16,
             jointly_legal=True,
+            coordinator_latency_s=0.001,
+            selected_profile_differs_from_additive=changed == 2,
+            rejected_harmful_joint_move=arm == "FULL" and changed == 0,
         )
 
     @staticmethod
@@ -450,12 +545,29 @@ def run_synthetic_pipeline(
     }
     for orchestrator in orchestrators.values():
         orchestrator.train(epochs)
+        orchestrator.bind_checkpoint_identity()
+    _coordinator, _interfaces, matched_information, _catalogue = TinySyntheticEvaluator.selection_authority(
+        TinySyntheticEvaluator.tables(), (0, 0)
+    )
     capability = deployment_capability_manifest(
         code_digest=_digest("stagec-code"),
         physics_digest=_digest("synthetic-physics"),
-        catalogue_digest=_digest("synthetic-catalogue"),
+        catalogue_digest=_coordinator.catalogue_sha256,
+        measured_end_to_end_latency_s=(0.001, 0.0012, 0.0011),
     )
     write_once_json(output / "deployment-capability.json", capability)
+    neutral_digests = tuple(
+        (route, source.digest)
+        for route, source in sorted(default_synthetic_neutral_sources().items())
+    )
+    experiment = LearnedNeutralSourceExperiment(
+        "mcrl-v025-learned-neutral-source-experiment-v1",
+        tuple((*orchestrators[next(iter(orchestrators))].models, "BASELINE")),
+        neutral_digests,
+        True,
+        "informative source training improved pooled EE relative to the specified neutral source",
+    )
+    binding = bind_experiment("V025_SYNTHETIC_E2E", experiment)
     units: list[AllocationUnit] = []
     for date_index, date in enumerate(("2026-01-10", "2026-01-11")):
         for seed in orchestrators:
@@ -478,18 +590,27 @@ def run_synthetic_pipeline(
                         launch_digest=_digest("synthetic-launch"),
                         code_digest=_digest("stagec-code"),
                         physics_digest=_digest("synthetic-physics"),
-                        catalogue_digest=_digest("synthetic-catalogue"),
+                        catalogue_digest=_coordinator.catalogue_sha256,
                         deployment_capability_digest=str(capability["manifest_sha256"]),
                         setting_digest=_digest("setting"),
                         calibration_digest=_digest("calibration"),
                         learner_seed=seed,
                         world_seed=9000 + 10 * date_index + world_replica,
+                        experiment_schema=binding.schema,
+                        experiment_definition_sha256=binding.definition_sha256,
+                        experiment_execution_kind=binding.execution_kind,
+                        experiment_checkpoint_sha256=binding.checkpoint_sha256,
+                        matched_information_sha256=matched_information,
+                        tle_provenance="nearest_epoch_retrospective_benchmark",
                     )
                 )
     manifest = AllocationManifest.create(
         units,
         bootstrap_draws=bootstrap_draws,
         bootstrap_seed=20260908,
+        experiment_bindings=(binding,),
+        training_physics_digest=_digest("synthetic-physics"),
+        baseline_implementation_sha256=_digest("synthetic-baseline-implementation"),
     )
     write_once_json(output / "allocation-manifest.json", manifest.payload())
     evaluator = TinySyntheticEvaluator()
@@ -514,7 +635,7 @@ def run_synthetic_pipeline(
         evaluator=evaluator,
         initial_temporal_state=evaluator.initial_temporal_state,
         output_directory=output / "receipts",
-        steps=2,
+        steps=3,
     )
     receipt_paths: list[Path] = []
     for unit in units:
@@ -568,9 +689,7 @@ def run_synthetic_pipeline(
             "Synthetic fixtures confer no PHYSICS-GO authority.",
         ),
         controller_decide=(
-            "FORMAL-LEARNER-LITERALS",
             "COALITION-FEATURE-SCALES",
-            "LARGER-EVACUATION-CAP",
             "NEUTRAL-SOURCE-SEALS",
             "CATALOGUE-CB2",
             "FORMAL-ALLOCATION-MANIFEST",
@@ -584,6 +703,7 @@ def run_synthetic_pipeline(
         "learned_arms_per_seed": 5,
         "external_baseline_per_seed": 1,
         "source_epochs": epochs,
+        "steps_per_world": 3,
         "conformance": conformance,
         "evaluator_call_count": len(evaluator.calls),
     }

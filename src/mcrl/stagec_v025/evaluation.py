@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 import fcntl
 import json
+import math
 import os
 from pathlib import Path
 from typing import Mapping, Protocol, Sequence
@@ -20,6 +21,7 @@ from .canonical import (
     read_verified_json,
     write_once_json,
 )
+from .experiments import BoundExperiment, validate_experiment_execution
 from .learner import ARM_ORDER, LEARNER_SEEDS, ThreeRouteModel
 from .state import PhysicalAction
 
@@ -57,6 +59,12 @@ class AllocationUnit:
     calibration_digest: str
     learner_seed: int
     world_seed: int
+    experiment_schema: str
+    experiment_definition_sha256: str
+    experiment_execution_kind: str
+    experiment_checkpoint_sha256: str | None
+    matched_information_sha256: str
+    tle_provenance: str
 
     @property
     def attempt_key(self) -> str:
@@ -70,6 +78,10 @@ class AllocationManifest:
     acceptance_evidence_mode: str
     bootstrap_draws: int
     bootstrap_seed: int
+    experiment_bindings: tuple[BoundExperiment, ...]
+    training_physics_digest: str
+    baseline_implementation_sha256: str
+    successor_development_dates: tuple[str, ...]
     digest: str
 
     @classmethod
@@ -81,9 +93,15 @@ class AllocationManifest:
         acceptance_evidence_mode: str = "synthetic_only",
         bootstrap_draws: int = 1000,
         bootstrap_seed: int = 20260908,
+        experiment_bindings: Sequence[BoundExperiment],
+        training_physics_digest: str,
+        baseline_implementation_sha256: str,
+        successor_development_dates: Sequence[str] = (),
     ) -> "AllocationManifest":
         material = tuple(units)
         overlap = tuple(str(value) for value in legacy_panel_overlap)
+        bindings = tuple(experiment_bindings)
+        development_history = tuple(str(value) for value in successor_development_dates)
         if not material:
             raise StageCContractError("allocation manifest must not be empty")
         if (
@@ -102,12 +120,39 @@ class AllocationManifest:
             unit.role == "claim" for unit in material
         ):
             raise StageCContractError("claim allocation cannot use synthetic-only acceptance")
+        if not bindings or len({item.experiment_id for item in bindings}) != len(bindings):
+            raise StageCContractError("allocation requires unique bound experiment definitions")
+        if len(set(development_history)) != len(development_history):
+            raise StageCContractError("successor development history contains duplicate dates")
+        try:
+            for value in development_history:
+                datetime.fromisoformat(value)
+        except ValueError as error:
+            raise StageCContractError("successor development history contains an invalid date") from error
+        binding_by_id = {item.experiment_id: item for item in bindings}
+        for name, digest in (
+            ("training_physics_digest", training_physics_digest),
+            ("baseline_implementation_sha256", baseline_implementation_sha256),
+        ):
+            if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                raise StageCContractError(f"{name} must be a lowercase SHA-256")
         keys = [unit.attempt_key for unit in material]
         if len(set(keys)) != len(keys):
             raise StageCContractError("allocation manifest has duplicate units")
         if len({unit.unit_id for unit in material}) != len(material):
             raise StageCContractError("allocation unit_id values must be globally unique")
         for unit in material:
+            binding = binding_by_id.get(unit.experiment_id)
+            if binding is None:
+                raise StageCContractError("allocation experiment has no bound definition")
+            validate_experiment_execution(
+                binding,
+                experiment_id=unit.experiment_id,
+                schema=unit.experiment_schema,
+                definition_sha256=unit.experiment_definition_sha256,
+                execution_kind=unit.experiment_execution_kind,
+                checkpoint_sha256=unit.experiment_checkpoint_sha256,
+            )
             if unit.split != "TRAIN":
                 raise StageCContractError("V0.25 evaluation is TRAIN-only")
             if unit.role not in {
@@ -133,6 +178,17 @@ class AllocationManifest:
                     raise StageCContractError(
                         f"allocation {field} must be a lowercase SHA-256"
                     )
+            if unit.physics_digest != training_physics_digest:
+                raise StageCContractError("training/evaluation physics digests disagree")
+            if len(unit.matched_information_sha256) != 64 or any(
+                char not in "0123456789abcdef" for char in unit.matched_information_sha256
+            ):
+                raise StageCContractError("allocation lacks the A4 equality authenticator")
+            if unit.tle_provenance not in {
+                "nearest_epoch_retrospective_benchmark",
+                "causal_ephemeris_available_by_decision_time",
+            }:
+                raise StageCContractError("allocation TLE provenance is undeclared")
             try:
                 start = datetime.fromisoformat(
                     unit.resolved_start_utc.replace("Z", "+00:00")
@@ -149,6 +205,8 @@ class AllocationManifest:
         }
         if claim_dates & development_dates:
             raise StageCContractError("claim dates overlap successor development dates")
+        if claim_dates & set(development_history):
+            raise StageCContractError("claim dates overlap global successor development history")
         claim_units = tuple(unit for unit in material if unit.role == "claim")
         if claim_units:
             if {unit.cell_id for unit in claim_units} != {"a-r0"}:
@@ -173,6 +231,10 @@ class AllocationManifest:
             "acceptance_evidence_mode": acceptance_evidence_mode,
             "bootstrap_draws": bootstrap_draws,
             "bootstrap_seed": bootstrap_seed,
+            "experiment_bindings": [asdict(item) for item in bindings],
+            "training_physics_digest": training_physics_digest,
+            "baseline_implementation_sha256": baseline_implementation_sha256,
+            "successor_development_dates": list(development_history),
             "units": [asdict(unit) for unit in material],
         }
         return cls(
@@ -181,6 +243,10 @@ class AllocationManifest:
             acceptance_evidence_mode,
             bootstrap_draws,
             bootstrap_seed,
+            bindings,
+            training_physics_digest,
+            baseline_implementation_sha256,
+            development_history,
             canonical_sha256(payload),
         )
 
@@ -192,6 +258,10 @@ class AllocationManifest:
             "acceptance_evidence_mode": self.acceptance_evidence_mode,
             "bootstrap_draws": self.bootstrap_draws,
             "bootstrap_seed": self.bootstrap_seed,
+            "experiment_bindings": [asdict(item) for item in self.experiment_bindings],
+            "training_physics_digest": self.training_physics_digest,
+            "baseline_implementation_sha256": self.baseline_implementation_sha256,
+            "successor_development_dates": list(self.successor_development_dates),
             "units": [asdict(unit) for unit in self.units],
             "allocation_manifest_sha256": self.digest,
         }
@@ -266,6 +336,9 @@ class AttemptRegistry:
                 "status": status,
                 "attempt_key": unit.attempt_key,
                 "experiment_id": unit.experiment_id,
+                "experiment_schema": unit.experiment_schema,
+                "experiment_definition_sha256": unit.experiment_definition_sha256,
+                "experiment_execution_kind": unit.experiment_execution_kind,
                 "panel_id": unit.panel_id,
                 "cell_id": unit.cell_id,
                 "unit_id": unit.unit_id,
@@ -304,6 +377,9 @@ class StepOutcome:
     useful_user_seconds: float
     opportunity_user_seconds: float
     jointly_legal: bool
+    coordinator_latency_s: float
+    selected_profile_differs_from_additive: bool = False
+    rejected_harmful_joint_move: bool = False
     cell_rekey_users: frozenset[int] = frozenset()
     coordinator_deadline_miss: bool = False
 
@@ -398,6 +474,8 @@ def _step_payload(
         or outcome.opportunity_user_seconds <= 0
     ):
         raise StageCContractError("invalid additive endpoint totals")
+    if outcome.coordinator_latency_s < 0 or not math.isfinite(outcome.coordinator_latency_s):
+        raise StageCContractError("coordinator latency sample must be finite and nonnegative")
     if previous is not None and len(previous) != len(outcome.profile):
         raise StageCContractError("arm roster changed between steps")
     events: list[dict[str, object]] = []
@@ -480,6 +558,9 @@ def _step_payload(
         "phi_cost_denominator_half_user_steps": 2 * len(outcome.profile),
         "coordinator_deadline_miss_numerator": int(outcome.coordinator_deadline_miss),
         "coordinator_deadline_miss_denominator": 1,
+        "coordinator_latency_s_hex": float_hex(outcome.coordinator_latency_s),
+        "selected_profile_differs_from_additive": outcome.selected_profile_differs_from_additive,
+        "rejected_harmful_joint_move": outcome.rejected_harmful_joint_move,
         "events": events,
         "provider_digest": unit.provider_digest,
         "launch_digest": unit.launch_digest,
@@ -489,6 +570,12 @@ def _step_payload(
         "deployment_capability_digest": unit.deployment_capability_digest,
         "setting_digest": unit.setting_digest,
         "calibration_digest": unit.calibration_digest,
+        "matched_information_sha256": unit.matched_information_sha256,
+        "tle_provenance": unit.tle_provenance,
+        "experiment_schema": unit.experiment_schema,
+        "experiment_definition_sha256": unit.experiment_definition_sha256,
+        "experiment_execution_kind": unit.experiment_execution_kind,
+        "experiment_checkpoint_sha256": unit.experiment_checkpoint_sha256,
     }
 
 
@@ -546,6 +633,131 @@ class EvaluationRunner:
         self.initial_temporal_state = initial_temporal_state
         self.output_directory = Path(output_directory)
         self.steps = steps
+
+    @staticmethod
+    def build_calibration_receipt(
+        *,
+        tle_date: str,
+        learner_seed: int,
+        world_id: str,
+        arm_endpoints: Mapping[str, tuple[float, float]],
+        coordinator_latency_s: float = 0.001,
+    ) -> dict[str, object]:
+        """Emit T3 receipts through the production step-row serializer."""
+
+        required = {"FULL", "DROP_C1", "DROP_C2", "DROP_C3"}
+        if set(arm_endpoints) != required:
+            raise StageCContractError("calibration receipt requires the four primary arms")
+        digest = canonical_sha256({"synthetic_calibration": "authority"})
+        experiment_digest = canonical_sha256(
+            {"synthetic_calibration": "learned_neutral_source"}
+        )
+        unit = AllocationUnit(
+            experiment_id="T3_RAW_CALIBRATION",
+            panel_id="synthetic-calibration",
+            cell_id="a-r0",
+            unit_id=world_id,
+            world_id=world_id,
+            resolved_start_utc="2026-01-01T00:00:00Z",
+            tle_date=tle_date,
+            split="TRAIN",
+            role="calibration",
+            archive_digest=digest,
+            provider_digest=digest,
+            launch_digest=digest,
+            code_digest=digest,
+            physics_digest=digest,
+            catalogue_digest=digest,
+            deployment_capability_digest=digest,
+            setting_digest=digest,
+            calibration_digest=digest,
+            learner_seed=learner_seed,
+            world_seed=0,
+            experiment_schema="mcrl-v025-learned-neutral-source-experiment-v1",
+            experiment_definition_sha256=experiment_digest,
+            experiment_execution_kind="learned_neutral_source",
+            experiment_checkpoint_sha256=None,
+            matched_information_sha256=digest,
+            tle_provenance="nearest_epoch_retrospective_benchmark",
+        )
+        steps: list[dict[str, object]] = []
+        action = PhysicalAction(1, 1)
+        calibration_row_fields = (
+            "schema", "unit_id", "world_id", "world_seed", "learner_seed",
+            "tle_date", "arm", "step_index", "decision_time_utc",
+            "decision_time_offset_s_hex", "bits_hex", "joules_hex",
+            "energy_components_j_hex", "complete_service_numerator",
+            "complete_service_denominator", "decoding_user_seconds_hex",
+            "useful_user_seconds_hex", "opportunity_user_seconds_hex",
+            "handover_numerator", "handover_denominator",
+            "phi_cost_numerator_half_units", "phi_cost_denominator_half_user_steps",
+            "coordinator_deadline_miss_numerator",
+            "coordinator_deadline_miss_denominator", "coordinator_latency_s_hex",
+            "selected_profile_differs_from_additive",
+            "rejected_harmful_joint_move", "events",
+        )
+        full_bits, full_joules = arm_endpoints["FULL"]
+        full_outcome = StepOutcome(
+            bits=float(full_bits),
+            energy_components_j={"synthetic_total": float(full_joules)},
+            user_ids=(0,),
+            profile=(action,),
+            complete_service=(True,),
+            decoding_user_seconds=1.0,
+            useful_user_seconds=1.0,
+            opportunity_user_seconds=1.0,
+            jointly_legal=True,
+            coordinator_latency_s=coordinator_latency_s,
+            selected_profile_differs_from_additive=True,
+        )
+        production_template = _step_payload(
+            unit=unit,
+            arm="FULL",
+            step_index=0,
+            outcome=full_outcome,
+            previous=(action,),
+            ever_served={0},
+            last_served={0: action},
+        )
+        for arm in sorted(required):
+            bits, joules = arm_endpoints[arm]
+            if (
+                not math.isfinite(bits)
+                or not math.isfinite(joules)
+                or bits < 0.0
+                or joules < 0.0
+                or (bits > 0.0 and joules == 0.0)
+            ):
+                raise StageCContractError("invalid calibration endpoint")
+            production_row = {
+                **production_template,
+                "arm": arm,
+                "bits_hex": float_hex(float(bits)),
+                "joules_hex": float_hex(float(joules)),
+                "energy_components_j_hex": {
+                    "synthetic_total": float_hex(float(joules))
+                },
+                "selected_profile_differs_from_additive": arm == "FULL",
+            }
+            # Receipt-level authority is identical for every arm. Store it once
+            # below while retaining the raw event/endpoint/identity row here.
+            steps.append({field: production_row[field] for field in calibration_row_fields})
+        summary = {
+            arm: reaggregate_steps([row for row in steps if row["arm"] == arm])
+            for arm in sorted(required)
+        }
+        receipt: dict[str, object] = {
+            "schema": "mcrl-v025-stagec-calibration-unit-receipt-v1",
+            "tle_date": tle_date,
+            "learner_seed": learner_seed,
+            "world_id": world_id,
+            "production_unit": asdict(unit),
+            "steps": steps,
+            "summary": summary,
+            "emitter": "EvaluationRunner.build_calibration_receipt",
+        }
+        receipt["receipt_sha256"] = canonical_sha256(receipt)
+        return receipt
 
     def conformance_suite(
         self,
@@ -639,6 +851,13 @@ class EvaluationRunner:
                 "allocation_manifest_digest": self.manifest.digest,
                 "unit_id": unit.unit_id,
                 "attempt_key": unit.attempt_key,
+                "experiment_binding": {
+                    "experiment_id": unit.experiment_id,
+                    "schema": unit.experiment_schema,
+                    "definition_sha256": unit.experiment_definition_sha256,
+                    "execution_kind": unit.experiment_execution_kind,
+                    "checkpoint_sha256": unit.experiment_checkpoint_sha256,
+                },
                 "authority": {
                     "code_digest": unit.code_digest,
                     "provider_digest": unit.provider_digest,
@@ -648,6 +867,8 @@ class EvaluationRunner:
                     "deployment_capability_digest": unit.deployment_capability_digest,
                     "setting_digest": unit.setting_digest,
                     "calibration_digest": unit.calibration_digest,
+                    "matched_information_sha256": unit.matched_information_sha256,
+                    "tle_provenance": unit.tle_provenance,
                 },
                 "null_equals_base": True,
                 "real_step_arms": list(ARM_ORDER),
@@ -725,6 +946,8 @@ class EvaluationRunner:
             "deployment_capability_digest": unit.deployment_capability_digest,
             "setting_digest": unit.setting_digest,
             "calibration_digest": unit.calibration_digest,
+            "matched_information_sha256": unit.matched_information_sha256,
+            "tle_provenance": unit.tle_provenance,
         }
         if (
             conformance.get("schema")
@@ -735,6 +958,13 @@ class EvaluationRunner:
             != list(SUPPORTIVE_COMPARATORS)
             or conformance.get("reward_endpoint_identity")
             != "bits_and_energy_component_ledger"
+            or conformance.get("experiment_binding") != {
+                "experiment_id": unit.experiment_id,
+                "schema": unit.experiment_schema,
+                "definition_sha256": unit.experiment_definition_sha256,
+                "execution_kind": unit.experiment_execution_kind,
+                "checkpoint_sha256": unit.experiment_checkpoint_sha256,
+            }
             or not isinstance(receipt_sha256, str)
             or len(receipt_sha256) != 64
             or any(char not in "0123456789abcdef" for char in receipt_sha256)
@@ -833,6 +1063,7 @@ class EvaluationRunner:
                 "schema": UNIT_RECEIPT_SCHEMA,
                 "allocation_manifest_digest": self.manifest.digest,
                 "unit": asdict(unit),
+                "experiment_binding": dict(conformance["experiment_binding"]),
                 "arm_order": list(ARM_ORDER),
                 "supportive_comparators": list(SUPPORTIVE_COMPARATORS),
                 "conformance": dict(conformance),
