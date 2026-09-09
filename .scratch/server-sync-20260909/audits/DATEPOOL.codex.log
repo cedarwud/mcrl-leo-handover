@@ -1,0 +1,2719 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-datepool-ws
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: ultra
+reasoning summaries: none
+session id: 01a0865b-77c7-73f0-9d28-633ec54955a3
+--------
+user
+# Adjudicate: there is no rule keeping evaluation dates off training dates
+
+A parallel review is being done by a different model. Give your own independent judgement; do not try to anticipate theirs.
+
+Read `/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md` and the report that found the gap, `/home/sat/mcrl-v023-codex-audits/parallel-20260909/DATES-CODEX-2026-09-09.md`. Verify the four code claims yourself rather than accepting them; the files are named in the report.
+
+## Established
+The executable ephemeris split is a 16-day cycle from 2025-07-27: seven TRAIN, one embargo, seven TEST, one embargo. The provider is fail-closed against TEST starts and TEST reads, and the embargo means a TRAIN start's element window cannot reach a TEST date. That protection is about TEST only. Nothing separates evaluation dates from training dates.
+
+Archive: 373 daily files, 2025-07-27 to 2026-08-20, 166 of them TRAIN, with seventeen dates missing inside the span. The satellite count rises from 8,044 to 10,746, about 34 percent, across it.
+
+A sealed non-negotiable says "no TEST split". The controller now reads that as "the headline must not rely on the held-out set" rather than "no partition exists". Check that reading against the sealed documents.
+
+## Options
+A. Carve a declared evaluation-only pool from the 166 TRAIN dates, never used for source generation, with its own embargo against training dates.
+B. Use TEST as the evaluation pool.
+C. Keep the arrangement, declare the overlap, and quantify it by comparing overlapping against non-overlapping dates.
+
+The controller favours A and believes the cost is small because training dates are abundant.
+
+## What I want
+1. Which option, and why. **Attack the controller's reasoning rather than confirming it.**
+2. A fourth option, if one exists: a different splitting variable, or a design where overlap is provably harmless.
+3. How much does date overlap actually matter for this model class? The learner sees geometry derived from ephemeris. Is memorising one date's geometry a realistic failure mode or a theoretical worry? The constellation grew 34 percent across the span, so distant dates differ in size as well as geometry.
+4. If A is chosen: how to size and spread the pool, given that date variance has never been measured and seventeen dates are missing.
+5. Every place the controller's framing is wrong or overstated, quoting the sentence.
+
+Read-only. Change nothing. Write `DATEPOOL-ADJUDICATION-2026-09-09.md` in the workspace root and print it as your final message, leading with your choice in one line.
+codex
+I’ll check the code and sealed documents, challenge the case for A, and write the adjudication in the workspace root. I’ll treat the requested report as the sole permitted file change.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '"'!node_modules'"' /home/sat/mcrl-v025-datepool-ws /home/sat/mcrl-v025-codex-ws-engine /home/sat/mcrl-v023-codex-audits 2>/dev/null" in /home/sat/mcrl-v025-datepool-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-datepool-ws
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+
+exec
+/bin/bash -lc 'cat /home/sat/.codex/skills/research/SKILL.md' in /home/sat/mcrl-v025-datepool-ws
+ succeeded in 0ms:
+---
+name: research
+description: Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. Use when the user wants a topic researched, docs or API facts gathered, or reading legwork delegated to a background agent.
+---
+
+<!-- project-skills-adapter:start -->
+Follow this skill subject to user and higher-priority project instructions.
+Set one checkable completion criterion. Inspect bundled helpers only after an
+execution error.
+
+Without a configured, authorized tracker, use `.scratch/<feature>/spec.md`,
+`.scratch/<feature>/issues/`, or `.scratch/<effort>/map.md` as applicable.
+External messages, installs, commits, pushes, branch changes, destructive
+actions, and out-of-scope writes still require authority.
+
+Read the extended
+[runtime contract](../select-project-skill/references/runtime.md) only for a
+cross-skill transition, implementation/review orchestration, handoff
+consumption, or a host-specific prerequisite. Verify the criterion before
+claiming success; missing requirements are `blocked`, not simulated success.
+
+Only when the request explicitly authorizes a controlled Project Skills
+sampling run, read the [feedback instructions](../select-project-skill/references/feedback.md)
+and record its terminal event. Ordinary work does not record events.
+<!-- project-skills-adapter:end -->
+
+Spin up a **background agent** to do the research, so you keep working while it reads.
+
+Its job:
+
+1. Investigate the question against **primary sources** — official docs, source code, specs, first-party APIs — not a secondary write-up of them. Follow every claim back to the source that owns it.
+2. Write the findings to a single Markdown file, citing each claim's source.
+3. Save it where the repo already keeps such notes; match the existing convention, and if there is none, put it somewhere sensible and say where.
+
+exec
+/bin/bash -lc 'cat /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md /home/sat/mcrl-v023-codex-audits/parallel-20260909/DATES-CODEX-2026-09-09.md' in /home/sat/mcrl-v025-datepool-ws
+ exited 1 in 0ms:
+cat: /home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md: No such file or directory
+# Date-variance diagnostic — stopped at split audit
+
+**Paired log-contrast sample standard deviation: NOT MEASURED (`n = 0` dates).** The task's mandatory stop condition triggered before world generation: the repository has a clear TRAIN/TEST/embargo ephemeris split, but it has no date-level rule that prevents evaluation dates from also being used for training. No TLE file content was opened, no world tape was generated, and no arm outcome was evaluated.
+
+`DIAGNOSTIC_NOT_CLAIM` — 2026-09-09
+
+## Why execution stopped
+
+The active ephemeris rule is unambiguous but only two-way:
+
+- 7 calendar days TRAIN;
+- 1 embargo day;
+- 7 calendar days TEST;
+- 1 embargo day;
+- repeat every 16 days from archive date `2025-07-27`.
+
+The implementation defines `TRAIN`, `TEST`, and the non-sampling label `EMBARGO`, but no validation/evaluation date pool (`src/mcrl/env/ephemeris.py:163-179,182-310`). The normal provider is fail-closed against TEST starts and TEST-file reads (`src/mcrl/physics_v025/provider_legacy.py:145-158,161-211`). The one-day embargo means the provider's date-1/date/date+1 element window cannot reach a TEST date from a TRAIN start.
+
+That protection does not establish evaluation-versus-training disjointness:
+
+1. The current V0.25 Stage 8 contract places evaluation on about 600 **TRAIN** worlds over about 161 dates and says “no TEST split” (`.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md:19-21`).
+2. The allocation guard rejects a `CLAIM_PANEL` date shared with a successor development role, but it never compares evaluation dates with training-source dates (`.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5726-5743`).
+3. The governing freshness amendment excludes probe, calibration, rehearsal, KAT, and synthetic-real dates from the claim panel; training-source dates are not included in that exclusion (`.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7-9`).
+4. The unrelated E1 train/validation/test partition is by `source_seed`, not by date (`src/mcrl/runtime/ee_axis_e1_split.py:12-14,120-151`).
+
+Therefore the code does not prove that an evaluation date cannot collide with a training date. Choosing a non-TEST evaluation pool would require guessing an allocation rule, which the task expressly forbids.
+
+## Filename-only TLE inventory
+
+`TleArchive` obtains its catalogue by matching and sorting `starlink_YYYYMMDD.tle` directory-entry names; file contents are loaded only by a separate lazy `load()` path (`src/mcrl/env/tle.py:42,213-283`). A directory-name census found **373 available daily files** spanning **2025-07-27 through 2026-08-20**.
+
+This is an exact compact enumeration: every calendar date in that inclusive span is available except these 17 dates:
+
+`2025-08-02`, `2025-08-07`, `2025-08-22`, `2025-09-17`, `2025-10-18`, `2025-10-25`, `2025-11-09`, `2026-01-12`, `2026-02-25`, `2026-03-04`, `2026-03-14`, `2026-03-15`, `2026-06-17`, `2026-06-21`, `2026-06-30`, `2026-07-25`, `2026-08-04`.
+
+Applying the executable split to filenames only gives:
+
+| Part | Existing files | May be opened by this diagnostic? |
+|---|---:|---|
+| TRAIN | 166 | Only after an evaluation/training allocation rule is supplied |
+| EMBARGO | 47 | No start dates |
+| TEST | 160 | **No — reserved and untouched** |
+
+The TEST calendar blocks, listed so the prohibition is auditable, are:
+
+`2025-08-04..2025-08-10`; `2025-08-20..2025-08-26`; `2025-09-05..2025-09-11`; `2025-09-21..2025-09-27`; `2025-10-07..2025-10-13`; `2025-10-23..2025-10-29`; `2025-11-08..2025-11-14`; `2025-11-24..2025-11-30`; `2025-12-10..2025-12-16`; `2025-12-26..2026-01-01`; `2026-01-11..2026-01-17`; `2026-01-27..2026-02-02`; `2026-02-12..2026-02-18`; `2026-02-28..2026-03-06`; `2026-03-16..2026-03-22`; `2026-04-01..2026-04-07`; `2026-04-17..2026-04-23`; `2026-05-03..2026-05-09`; `2026-05-19..2026-05-25`; `2026-06-04..2026-06-10`; `2026-06-20..2026-06-26`; `2026-07-06..2026-07-12`; `2026-07-22..2026-07-28`; `2026-08-07..2026-08-13`.
+
+## Dates already used or reserved
+
+The domain-to-seed rule and TRAIN sampler make these starts exactly reproducible from filenames without opening TLE contents (`src/mcrl/physics_v025/tapes.py:37-65`; `src/mcrl/runtime/training_pipeline.py:868-872`; `src/mcrl/env/ephemeris.py:381-427`).
+
+### Formal sealed provider manifests
+
+| Role/domain | World seed | Start UTC | Date part |
+|---|---:|---|---|
+| `V025_PROBE_R2/world/1` | 3525272352645343090 | 2026-05-30T06:47:04.960000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/2` | 3445540383109071487 | 2025-07-28T22:44:07.680000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/3` | 7939426026589121673 | 2026-05-01T09:17:28.960000+00:00 | TRAIN |
+| `V025_PROBE_R2/world/4` | 7968277797828994069 | 2026-05-28T11:42:22.080000+00:00 | TRAIN |
+| `V025_CAL_R2/world/1` | 2110504498518604920 | 2026-08-05T16:27:07.520000+00:00 | TRAIN |
+| `V025_CAL_R2/world/2` | 3688583418787175730 | 2025-11-22T16:21:06.560000+00:00 | TRAIN |
+
+### Earlier V0.25 development namespace
+
+| Domain | World seed | Start UTC | Recorded use |
+|---|---:|---|---|
+| `V025_PROBE/world/1` | 5261619120743994529 | 2026-01-07T09:03:56.800000+00:00 | training corpus; development/rehearsal |
+| `V025_PROBE/world/2` | 2841976778378234394 | 2026-03-11T00:59:09.440000+00:00 | training corpus |
+| `V025_PROBE/world/3` | 3539351422561826982 | 2025-11-16T01:35:45.280000+00:00 | sole completed evaluation date |
+| `V025_PROBE/world/4` | 6141307851813268626 | 2026-03-28T13:02:34.880000+00:00 | quarantined development namespace |
+
+All are TRAIN dates. The reconstruction of world 3 agrees with the stated completed evaluation date, `2025-11-16`.
+
+### Full reported allocation ledger
+
+The reported active 24-identity allocation covers 22 distinct dates:
+
+`2025-07-28`, `2025-08-14`, `2025-10-02`, `2025-10-31`, `2025-11-02`, `2025-11-22`, `2025-12-05`, `2025-12-23`, `2025-12-24`, `2026-01-07`, `2026-01-20`, `2026-01-23`, `2026-01-25`, `2026-02-06`, `2026-02-08`, `2026-03-28`, `2026-04-30`, `2026-05-01`, `2026-05-28`, `2026-05-30`, `2026-06-15`, `2026-08-05`.
+
+It consists of PROBE 4, CALIBRATION 2, REHEARSAL 1, KAT 8, SYNTHETIC_REAL 4, SMOKE 1, and CLAIM_PANEL 4 identities (`.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:82-86`). The four reserved claim dates are `2026-02-06`, `2026-01-25`, `2026-03-28`, and `2025-12-05`; no claim-panel outcome was opened. Adding the earlier training/evaluation namespace yields a conservative **24 distinct TRAIN dates already used or reserved**.
+
+## Requested measurements not run
+
+The following are intentionally absent because they require generating/evaluating candidate dates after the unresolved split decision:
+
+| Requested output | Status |
+|---|---|
+| World tapes on at least 12 dates | Not generated |
+| World digest and start time per candidate date | Not generated |
+| Satellite count per used ephemeris file | Not measured; no TLE content opened |
+| BASELINE / certified iterated-unilateral / bounded perfect-knowledge evaluations | Not run |
+| Per-date `log(EE_oracle) - log(EE_unilateral)` | Not measured |
+| Across-date mean, SD, minimum, maximum, outliers | Undefined (`n = 0`) |
+| Wide-date versus within-month variance | Not measured |
+| One-tape wall time, core time, and peak disk | Not measured |
+| 20/50/100-world cost projections | Not computed from an unperformed benchmark |
+
+No confirmatory experiment was sized, no threshold/sign/seed/horizon/price/service guard/acceptance rule was changed, and no sealed manifest was touched.
+
+## Required owner decision to resume
+
+Specify a prospective, outcome-blind partition of non-TEST dates into at least:
+
+- dates eligible for training-source generation; and
+- dates eligible for this learner-free evaluation diagnostic,
+
+with an executable disjointness check and a ruling on whether the 24 already used/reserved dates are excluded. Once that rule is supplied, the measurement can resume without opening any TEST date.
+
+The fuller source-by-source audit is in `.scratch/date-variance/inventory.md`.
+
+Method note: the research workflow's primary-source requirement is why every substantive split and inventory conclusion above is tied directly to executable repository code or an immutable project record.
+
+exec
+/bin/bash -lc 'for f in /AGENTS.md /home/AGENTS.md /home/sat/AGENTS.md /home/sat/mcrl-v025-datepool-ws/AGENTS.md /home/sat/mcrl-v025-codex-ws-engine/AGENTS.md; do if test -f "$f"; then echo "$f"; cat "$f"; fi; done' in /home/sat/mcrl-v025-datepool-ws
+ succeeded in 0ms:
+exec
+/bin/bash -lc "ls -la /home/sat/mcrl-v025-datepool-ws && rg --files --hidden /home/sat/mcrl-v025-datepool-ws /home/sat/mcrl-v025-codex-ws-engine -g '*EVAL-DATE*' -g '*STAGES-6-8*' -g '*PRIORITY-DECLARATION*' -g 'run_v025_matrix_probe.py' -g 'AGENTS.md' -g '"'!**/.git/**'"'" in /home/sat/mcrl-v025-datepool-ws
+ succeeded in 0ms:
+total 48
+drwxrwxr-x   5 sat sat  4096 Sep  9 13:29 .
+drwxr-x--- 403 sat sat 36864 Sep  9 13:28 ..
+dr-xr-xr-x   2 sat sat    40 Sep  9 13:29 .agents
+dr-xr-xr-x   2 sat sat    40 Sep  9 13:29 .codex
+drwxrwxr-x   7 sat sat  4096 Sep  9 13:28 .git
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md.sha256
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md.sha256
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.2-AMENDMENT-2026-09-08.sha256
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.6-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.sha256
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.2-AMENDMENT-2026-09-08.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.6-AMENDMENT-2026-09-09.md.sha256
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.4-ERRATUM-2026-09-08.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.sha256
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.3-ERRATUM-2026-09-08.md.sha256
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.3-ERRATUM-2026-09-08.md
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.4-ERRATUM-2026-09-08.md.sha256
+/home/sat/mcrl-v025-codex-ws-engine/.scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+
+codex
+The audit report is available, but the controller memo is missing from the supplied path. I’m checking for another copy while verifying the sources. I’m using the research skill to trace claims to code and sealed records; completion means a report addressing all five questions and identifying any evidence I could not obtain.
+exec
+/bin/bash -lc "nl -ba src/mcrl/env/ephemeris.py | sed -n '135,445p'" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+   135	        for record in archive.load(file_date).records:
+   136	            incumbent = best.get(record.norad_id)
+   137	            if incumbent is None or record.age_seconds(when_utc) < incumbent.age_seconds(
+   138	                when_utc
+   139	            ):
+   140	                best[record.norad_id] = record
+   141	
+   142	    max_age_s = max_age_h * 3600.0
+   143	    fresh = [
+   144	        record
+   145	        for _, record in sorted(best.items())
+   146	        if record.age_seconds(when_utc) <= max_age_s
+   147	    ]
+   148	    if not fresh:
+   149	        raise EphemerisError(
+   150	            f"no element set within {max_age_h} h of {when_utc.isoformat()}"
+   151	        )
+   152	    return ElementSelection(
+   153	        when_utc=when_utc,
+   154	        records=tuple(fresh),
+   155	        source_dates=tuple(source_dates),
+   156	        max_age_h=max_age_h,
+   157	        considered_norads=len(best),
+   158	        rejected_stale=len(best) - len(fresh),
+   159	    )
+   160	
+   161	
+   162	# ---------------------------------------------------------------------------
+   163	# Train/test date split (SDD F3, revised 2026-08-22 by author ruling)
+   164	# ---------------------------------------------------------------------------
+   165	
+   166	TRAIN = "train"
+   167	TEST = "test"
+   168	EMBARGO = "embargo"
+   169	SPLIT_PARTS = (TRAIN, TEST)
+   170	
+   171	
+   172	class Split(Protocol):
+   173	    """What the sampler and the freeze manifest need from any split."""
+   174	
+   175	    def available_dates(
+   176	        self, archive: TleArchive, part: str
+   177	    ) -> tuple[dt.date, ...]: ...
+   178	
+   179	    def as_dict(self) -> dict[str, object]: ...
+   180	
+   181	
+   182	@dataclass(frozen=True)
+   183	class BlockAlternatingSplit:
+   184	    """Alternating date blocks with an embargo gap.  **The frozen scheme.**
+   185	
+   186	    F3 originally said "split by date range, do not interleave".  W-02
+   187	    measured what a single contiguous cut costs: the constellation grows
+   188	    ~25% across the corpus and the visible-satellite altitude drifts down
+   189	    from ~540 km to ~485 km, so a chronological split hands test a
+   190	    systematically larger and lower constellation than train.  **Two
+   191	    distribution shifts, both in the same direction.**
+   192	
+   193	    Author ruling (2026-08-22): there is a third option rather than a
+   194	    choice between leakage and shift.  Alternate fixed-length blocks
+   195	    between train and test, and leave an embargo gap between every pair of
+   196	    adjacent blocks::
+   197	
+   198	        |<- 7 d train ->|1 d|<- 7 d test ->|1 d| 7 d train | ... 
+   199	
+   200	    The growth and altitude trends then average out on both sides, while
+   201	    the embargo keeps the two halves far enough apart in time that they
+   202	    cannot share pass geometry.  One embargo day puts the nearest train and
+   203	    test dates two days apart — vastly more than the 10 s episode and more
+   204	    than the ground-track repeat of any Starlink shell, whereas the leak F3
+   205	    was guarding against was episodes *minutes* apart.
+   206	
+   207	    ``block_days`` and ``embargo_days`` are **S**-level and must be frozen
+   208	    in the W-13 PREREG.
+   209	    """
+   210	
+   211	    first_date: dt.date
+   212	    last_date: dt.date
+   213	    block_days: int = 7
+   214	    embargo_days: int = 1
+   215	    first_block_part: str = TRAIN
+   216	
+   217	    def __post_init__(self) -> None:
+   218	        if self.first_date > self.last_date:
+   219	            raise ValueError("date range is inverted")
+   220	        if self.block_days < 1:
+   221	            raise ValueError("block_days must be >= 1")
+   222	        if self.embargo_days < 1:
+   223	            raise MCRLContractError(
+   224	                "embargo_days must be >= 1; a zero embargo puts adjacent "
+   225	                "train and test days next to each other"
+   226	            )
+   227	        if self.first_block_part not in SPLIT_PARTS:
+   228	            raise ValueError(f"unknown part {self.first_block_part!r}")
+   229	
+   230	    @classmethod
+   231	    def for_archive(
+   232	        cls,
+   233	        archive: TleArchive,
+   234	        *,
+   235	        block_days: int = 7,
+   236	        embargo_days: int = 1,
+   237	        first_block_part: str = TRAIN,
+   238	    ) -> BlockAlternatingSplit:
+   239	        first, last = archive.date_range
+   240	        return cls(
+   241	            first_date=first,
+   242	            last_date=last,
+   243	            block_days=block_days,
+   244	            embargo_days=embargo_days,
+   245	            first_block_part=first_block_part,
+   246	        )
+   247	
+   248	    @property
+   249	    def cycle_days(self) -> int:
+   250	        return 2 * (self.block_days + self.embargo_days)
+   251	
+   252	    def _other_part(self) -> str:
+   253	        return TEST if self.first_block_part == TRAIN else TRAIN
+   254	
+   255	    def part_for(self, date: dt.date) -> str:
+   256	        """``"train"``, ``"test"``, or ``"embargo"`` for one calendar date."""
+   257	        if not self.first_date <= date <= self.last_date:
+   258	            raise MCRLContractError(f"{date} is outside the split range")
+   259	        position = (date - self.first_date).days % self.cycle_days
+   260	        if position < self.block_days:
+   261	            return self.first_block_part
+   262	        if position < self.block_days + self.embargo_days:
+   263	            return EMBARGO
+   264	        if position < 2 * self.block_days + self.embargo_days:
+   265	            return self._other_part()
+   266	        return EMBARGO
+   267	
+   268	    def available_dates(
+   269	        self, archive: TleArchive, part: str
+   270	    ) -> tuple[dt.date, ...]:
+   271	        if part not in SPLIT_PARTS:
+   272	            raise ValueError(f"unknown split part {part!r}")
+   273	        return tuple(
+   274	            date
+   275	            for date in archive.dates
+   276	            if self.first_date <= date <= self.last_date
+   277	            and self.part_for(date) == part
+   278	        )
+   279	
+   280	    def embargoed_dates(self, archive: TleArchive) -> tuple[dt.date, ...]:
+   281	        return tuple(
+   282	            date for date in archive.dates if self.part_for(date) == EMBARGO
+   283	        )
+   284	
+   285	    def minimum_gap_days(self, archive: TleArchive) -> int:
+   286	        """Smallest calendar distance between any train date and any test date."""
+   287	        train = self.available_dates(archive, TRAIN)
+   288	        test = self.available_dates(archive, TEST)
+   289	        if not train or not test:
+   290	            raise MCRLContractError("one side of the split is empty")
+   291	        merged = sorted(
+   292	            [(date, TRAIN) for date in train] + [(date, TEST) for date in test]
+   293	        )
+   294	        gap = min(
+   295	            (later[0] - earlier[0]).days
+   296	            for earlier, later in zip(merged, merged[1:])
+   297	            if earlier[1] != later[1]
+   298	        )
+   299	        return int(gap)
+   300	
+   301	    def as_dict(self) -> dict[str, object]:
+   302	        return {
+   303	            "scheme": "block-alternating-with-embargo",
+   304	            "first_date": self.first_date.isoformat(),
+   305	            "last_date": self.last_date.isoformat(),
+   306	            "block_days": self.block_days,
+   307	            "embargo_days": self.embargo_days,
+   308	            "first_block_part": self.first_block_part,
+   309	            "cycle_days": self.cycle_days,
+   310	        }
+   311	
+   312	
+   313	@dataclass(frozen=True)
+   314	class ContiguousDateSplit:
+   315	    """One chronological cut: train early, test late.  **Superseded.**
+   316	
+   317	    Retained only so the distribution shift that motivated
+   318	    :class:`BlockAlternatingSplit` stays reproducible
+   319	    (``tests/test_w02_ephemeris.py``).  Do not use it for a live run.
+   320	    """
+   321	
+   322	    train_start: dt.date
+   323	    train_end: dt.date
+   324	    test_start: dt.date
+   325	    test_end: dt.date
+   326	
+   327	    def __post_init__(self) -> None:
+   328	        if self.train_start > self.train_end:
+   329	            raise ValueError("train range is inverted")
+   330	        if self.test_start > self.test_end:
+   331	            raise ValueError("test range is inverted")
+   332	        if not (self.train_end < self.test_start or self.test_end < self.train_start):
+   333	            raise MCRLContractError(
+   334	                "train and test date ranges overlap; SDD F3 forbids interleaving"
+   335	            )
+   336	
+   337	    @classmethod
+   338	    def chronological(
+   339	        cls,
+   340	        archive: TleArchive,
+   341	        *,
+   342	        test_fraction: float = 0.2,
+   343	    ) -> ContiguousDateSplit:
+   344	        dates = archive.dates
+   345	        if len(dates) < 2:
+   346	            raise MCRLContractError("need at least two dates to split")
+   347	        if not 0.0 < test_fraction < 1.0:
+   348	            raise ValueError("test_fraction must be in (0,1)")
+   349	        cut = len(dates) - max(1, int(round(len(dates) * test_fraction)))
+   350	        cut = min(max(cut, 1), len(dates) - 1)
+   351	        return cls(
+   352	            train_start=dates[0],
+   353	            train_end=dates[cut - 1],
+   354	            test_start=dates[cut],
+   355	            test_end=dates[-1],
+   356	        )
+   357	
+   358	    def dates_for(self, part: str) -> tuple[dt.date, dt.date]:
+   359	        if part == TRAIN:
+   360	            return self.train_start, self.train_end
+   361	        if part == TEST:
+   362	            return self.test_start, self.test_end
+   363	        raise ValueError(f"unknown split part {part!r}")
+   364	
+   365	    def available_dates(
+   366	        self, archive: TleArchive, part: str
+   367	    ) -> tuple[dt.date, ...]:
+   368	        first, last = self.dates_for(part)
+   369	        return tuple(date for date in archive.dates if first <= date <= last)
+   370	
+   371	    def as_dict(self) -> dict[str, object]:
+   372	        return {
+   373	            "scheme": "contiguous-chronological-SUPERSEDED",
+   374	            "train_start": self.train_start.isoformat(),
+   375	            "train_end": self.train_end.isoformat(),
+   376	            "test_start": self.test_start.isoformat(),
+   377	            "test_end": self.test_end.isoformat(),
+   378	        }
+   379	
+   380	
+   381	@dataclass(frozen=True)
+   382	class EpisodeStartSampler:
+   383	    """Draws episode start times inside one part of a split.
+   384	
+   385	    **S**-level sampling distribution (F3 requires it to be frozen):
+   386	    date uniform over the part's **available** file dates, time-of-day
+   387	    uniform over the 86,400 s of that date, snapped down to a whole
+   388	    ``time_step_s``.
+   389	
+   390	    "Available", not "calendar range": the corpus is 373 files across a
+   391	    390-day span, so 17 dates have no file.  Drawing over the calendar
+   392	    range would put ~4% of episodes on a date whose elements have to come
+   393	    from a neighbouring file — a silent, undeclared change of the age
+   394	    distribution.  Drawing over the file list keeps the sampling
+   395	    distribution equal to the thing that was actually frozen.
+   396	    """
+   397	
+   398	    part: str
+   399	    available_dates: tuple[dt.date, ...]
+   400	    time_step_s: float = DECISION_STEP_S
+   401	
+   402	    def __post_init__(self) -> None:
+   403	        if self.part not in SPLIT_PARTS:
+   404	            raise ValueError(f"unknown split part {self.part!r}")
+   405	        if not self.available_dates:
+   406	            raise MCRLContractError(f"no available dates for part {self.part!r}")
+   407	        if list(self.available_dates) != sorted(set(self.available_dates)):
+   408	            raise MCRLContractError("available_dates must be sorted and unique")
+   409	
+   410	    @classmethod
+   411	    def for_archive(
+   412	        cls,
+   413	        archive: TleArchive,
+   414	        split: Split,
+   415	        part: str,
+   416	        *,
+   417	        time_step_s: float = DECISION_STEP_S,
+   418	    ) -> EpisodeStartSampler:
+   419	        return cls(part, split.available_dates(archive, part), time_step_s)
+   420	
+   421	    def draw(self, rng: np.random.Generator) -> dt.datetime:
+   422	        day = self.available_dates[int(rng.integers(0, len(self.available_dates)))]
+   423	        second_of_day = float(rng.integers(0, 86_400))
+   424	        snapped = np.floor(second_of_day / self.time_step_s) * self.time_step_s
+   425	        return dt.datetime.combine(
+   426	            day, dt.time(0, 0), tzinfo=dt.timezone.utc
+   427	        ) + dt.timedelta(seconds=float(snapped))
+   428	
+   429	    def as_dict(self) -> dict[str, object]:
+   430	        first, last = self.available_dates[0], self.available_dates[-1]
+   431	        return {
+   432	            "part": self.part,
+   433	            "date_first": first.isoformat(),
+   434	            "date_last": last.isoformat(),
+   435	            "date_count": len(self.available_dates),
+   436	            "calendar_span_days": (last - first).days + 1,
+   437	            "date_distribution": "uniform over available file dates",
+   438	            "time_of_day_distribution": (
+   439	                f"uniform over [0, 86400) s, floor-snapped to {self.time_step_s} s"
+   440	            ),
+   441	        }
+   442	
+   443	
+   444	# ---------------------------------------------------------------------------
+   445	# Propagation
+
+exec
+/bin/bash -lc "nl -ba src/mcrl/physics_v025/provider_legacy.py | sed -n '95,290p'; nl -ba src/mcrl/runtime/ee_axis_e1_split.py | sed -n '1,185p'" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+    95	
+    96	
+    97	@dataclass(frozen=True)
+    98	class _StepState:
+    99	    user_ecef_km: np.ndarray
+   100	    user_xy_km: np.ndarray
+   101	    norad_ids: np.ndarray
+   102	    cell_ids: np.ndarray
+   103	    occupied: np.ndarray
+   104	    ttt_elapsed: np.ndarray
+   105	    reachable: np.ndarray
+   106	    legacy_mask: np.ndarray
+   107	
+   108	
+   109	@dataclass(frozen=True)
+   110	class _WorldState:
+   111	    start_utc: dt.datetime
+   112	    training_seed: int
+   113	    grid: object
+   114	    steps: tuple[_StepState, ...]
+   115	    tracked_norads: np.ndarray
+   116	    positions_ecef_km: np.ndarray
+   117	    inventory: tuple[tuple[int, int], ...]
+   118	    layout: tuple[UserLayout, ...]
+   119	    tle_files: tuple[tuple[str, str], ...]
+   120	
+   121	
+   122	def _readonly(value: np.ndarray) -> np.ndarray:
+   123	    result = np.array(value, copy=True)
+   124	    result.setflags(write=False)
+   125	    return result
+   126	
+   127	
+   128	def _parse_start(value: dt.datetime | dt.date | str) -> dt.datetime:
+   129	    if isinstance(value, str):
+   130	        try:
+   131	            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+   132	        except ValueError as error:
+   133	            raise ValueError("start_utc must be ISO-8601") from error
+   134	    elif isinstance(value, dt.datetime):
+   135	        parsed = value
+   136	    elif isinstance(value, dt.date):
+   137	        parsed = dt.datetime.combine(value, dt.time(), tzinfo=dt.timezone.utc)
+   138	    else:
+   139	        raise TypeError("start_utc must be a date, datetime, ISO string, or None")
+   140	    if parsed.tzinfo is None:
+   141	        raise ValueError("start_utc must be timezone-aware")
+   142	    return parsed.astimezone(dt.timezone.utc)
+   143	
+   144	
+   145	class _TrainOnlyArchive(TleArchive):
+   146	    """Archive view that fails closed before opening a TEST daily file."""
+   147	
+   148	    def __init__(self, root: str | Path) -> None:
+   149	        super().__init__(root)
+   150	        split = BlockAlternatingSplit.for_archive(self)
+   151	        self._test_dates = frozenset(split.available_dates(self, TEST))
+   152	
+   153	    def load(self, file_date: dt.date):
+   154	        if file_date in self._test_dates:
+   155	            raise MCRLContractError(
+   156	                f"refusing to read TEST TLE date {file_date} through TRAIN provider"
+   157	            )
+   158	        return super().load(file_date)
+   159	
+   160	
+   161	class LegacyWorldProvider:
+   162	    """Real TRAIN-only primitive provider using the legacy world generator.
+   163	
+   164	    ``start_utc`` is a test/audit seam.  Normal worlds leave it unset and the
+   165	    legacy TRAIN sampler derives the epoch from ``world_seed``.  A supplied
+   166	    TEST or embargo date is rejected before a TLE file is loaded.
+   167	    """
+   168	
+   169	    def __init__(
+   170	        self,
+   171	        *,
+   172	        tle_root: str | Path = DEFAULT_TLE_ROOT,
+   173	        start_utc: dt.datetime | dt.date | str | None = None,
+   174	        steps: int = CANONICAL_STEPS,
+   175	        user_count: int = 100,
+   176	    ) -> None:
+   177	        if type(steps) is not int or steps < 1:
+   178	            raise ValueError("steps must be a positive exact integer")
+   179	        if type(user_count) is not int or user_count < 1:
+   180	            raise ValueError("user_count must be a positive exact integer")
+   181	        self.tle_root = Path(tle_root).expanduser()
+   182	        self.requested_steps = steps
+   183	        self.user_count = user_count
+   184	        # Controller T6: a shortened rehearsal truncates a canonical world;
+   185	        # it must never change the 30-step shortlist/inventory universe.
+   186	        self.steps = PREPARED_STEPS
+   187	        self._forced_start = None if start_utc is None else _parse_start(start_utc)
+   188	        self._archive = _TrainOnlyArchive(self.tle_root)
+   189	        self._split = BlockAlternatingSplit.for_archive(self._archive)
+   190	        if self._forced_start is not None:
+   191	            part = self._split.part_for(self._forced_start.date())
+   192	            if part != TRAIN or not self._archive.has(self._forced_start.date()):
+   193	                raise MCRLContractError(
+   194	                    f"legacy provider is TRAIN-only; {self._forced_start.date()} is {part}"
+   195	                )
+   196	        self._world_seed: int | None = None
+   197	        self._world: _WorldState | None = None
+   198	        self._time_origin_s: float | None = None
+   199	        self._manifest_input_digest: str | None = None
+   200	
+   201	    def _start_for(self, world_seed: int) -> dt.datetime:
+   202	        if self._forced_start is not None:
+   203	            return self._forced_start
+   204	        env_rng = _evaluation_rngs(world_seed)[0]
+   205	        sampler = EpisodeStartSampler.for_archive(
+   206	            self._archive, self._split, TRAIN, time_step_s=DECISION_INTERVAL_S
+   207	        )
+   208	        result = sampler.draw(env_rng)
+   209	        if self._split.part_for(result.date()) != TRAIN:
+   210	            raise MCRLContractError("TRAIN sampler returned a non-TRAIN date")
+   211	        return result
+   212	
+   213	    def _ensure(self, world_seed: int) -> _WorldState:
+   214	        seed = int(world_seed)
+   215	        if seed != world_seed or seed < 0:
+   216	            raise MCRLContractError("world_seed must be a nonnegative exact integer")
+   217	        if self._world is not None:
+   218	            if self._world_seed != seed:
+   219	                raise MCRLContractError("one provider instance binds exactly one world seed")
+   220	            return self._world
+   221	
+   222	        start = self._start_for(seed)
+   223	        # Child zero owns the exact TRAIN epoch draw in _start_for; child one
+   224	        # owns mobility.  There is deliberately no fresh-stream replay check:
+   225	        # such a check is true by construction and cannot detect seed drift.
+   226	        _env_rng, mobility_rng, _action_rng, _control_rng = _evaluation_rngs(seed)
+   227	
+   228	        mobility = MobilityConfig(num_users=self.user_count)
+   229	        config = ScenarioConfig(
+   230	            mobility=mobility,
+   231	            steps_per_episode=self.steps,
+   232	        )
+   233	        driver = ScenarioDriver(self._archive, config)
+   234	        decisions = []
+   235	        candidate = driver.reset(start, mobility_rng)
+   236	        selection = select_elements(
+   237	            self._archive,
+   238	            start,
+   239	            max_age_h=config.ephemeris.max_tle_age_h,
+   240	            search_days=config.ephemeris.epoch_search_days,
+   241	        )
+   242	        tle_files = tuple(
+   243	            (
+   244	                self._archive.load(file_date).path.name,
+   245	                self._archive.load(file_date).sha256,
+   246	            )
+   247	            for file_date in selection.source_dates
+   248	        )
+   249	        for index in range(self.steps):
+   250	            if index:
+   251	                candidate = driver.step(mobility_rng)
+   252	            flat_norads = np.repeat(
+   253	                candidate.window_norad_ids, NUM_BEAM_SLOTS, axis=1
+   254	            )
+   255	            # SlotTable intentionally erases identities when any mask term is
+   256	            # false.  The provider must preserve them, so use the frozen dwell
+   257	            # neighbourhood and carry each predicate separately.
+   258	            flat_cells = np.tile(
+   259	                candidate.dwell.neighborhood_cell_ids,
+   260	                (1, NUM_SATELLITE_SLOTS),
+   261	            )
+   262	            decisions.append(
+   263	                _StepState(
+   264	                    _readonly(driver.user_ecef_km()),
+   265	                    _readonly(driver.user_xy_km),
+   266	                    _readonly(flat_norads),
+   267	                    _readonly(flat_cells),
+   268	                    _readonly(
+   269	                        np.repeat(
+   270	                            candidate.slot_occupied, NUM_BEAM_SLOTS, axis=1
+   271	                        )
+   272	                    ),
+   273	                    _readonly(
+   274	                        np.repeat(
+   275	                            np.stack(
+   276	                                [assignment.ttt_counter for assignment in candidate.assignments]
+   277	                            ),
+   278	                            NUM_BEAM_SLOTS,
+   279	                            axis=1,
+   280	                        )
+   281	                    ),
+   282	                    _readonly(
+   283	                        candidate.cell_reachable.reshape(
+   284	                            config.mobility.num_users, -1
+   285	                        )
+   286	                    ),
+   287	                    _readonly(candidate.masks),
+   288	                )
+   289	            )
+   290	
+     1	"""Fresh-seed and cluster-split contracts for claim-bearing E1 data."""
+     2	
+     3	from __future__ import annotations
+     4	
+     5	from dataclasses import asdict, dataclass
+     6	from typing import Mapping, Sequence
+     7	
+     8	from ..algorithms.ee_axis_pairwise import ROUTE_NAMES
+     9	from ..errors import MCRLContractError
+    10	
+    11	
+    12	E1_SPLIT_SCHEMA = "multi-catfish-mcrl-v03-e1-seed-cluster-split-v1"
+    13	E1_SPLIT_NAMES = ("train", "validation", "test")
+    14	
+    15	
+    16	class E1SplitContractError(MCRLContractError):
+    17	    """Fresh-seed E1 data violate their sealed split or cluster geometry."""
+    18	
+    19	
+    20	@dataclass(frozen=True)
+    21	class E1PairIndexRow:
+    22	    """Outcome-free routing fields needed to verify an E1 source row."""
+    23	
+    24	    route: str
+    25	    source_seed: int
+    26	    anchor_sha256: str
+    27	    inference_anchor_sha256: str
+    28	    focal_user: int
+    29	    reference_action: int
+    30	    candidate_action: int
+    31	    action_mask: tuple[bool, ...]
+    32	
+    33	    @property
+    34	    def cluster_key(self) -> tuple[str, int, str, int]:
+    35	        """Intervention cluster: one focal intervention plus all siblings."""
+    36	
+    37	        return (self.route, self.source_seed, self.anchor_sha256, self.focal_user)
+    38	
+    39	    @property
+    40	    def inference_cluster_key(self) -> tuple[str, int, str]:
+    41	        """Inference block: all focal interventions sharing one world state."""
+    42	
+    43	        return (self.route, self.source_seed, self.inference_anchor_sha256)
+    44	
+    45	    def verify(self) -> None:
+    46	        if self.route not in ROUTE_NAMES:
+    47	            raise E1SplitContractError(f"route must be one of {ROUTE_NAMES}")
+    48	        if type(self.source_seed) is not int or self.source_seed < 0:
+    49	            raise E1SplitContractError("source_seed must be a nonnegative integer")
+    50	        if (
+    51	            not isinstance(self.anchor_sha256, str)
+    52	            or len(self.anchor_sha256) != 64
+    53	            or any(character not in "0123456789abcdef" for character in self.anchor_sha256)
+    54	        ):
+    55	            raise E1SplitContractError("anchor_sha256 must be lowercase SHA-256")
+    56	        if (
+    57	            not isinstance(self.inference_anchor_sha256, str)
+    58	            or len(self.inference_anchor_sha256) != 64
+    59	            or any(
+    60	                character not in "0123456789abcdef"
+    61	                for character in self.inference_anchor_sha256
+    62	            )
+    63	        ):
+    64	            raise E1SplitContractError(
+    65	                "inference_anchor_sha256 must be lowercase SHA-256"
+    66	            )
+    67	        if self.route in {"C1", "C3"} and self.inference_anchor_sha256 != self.anchor_sha256:
+    68	            raise E1SplitContractError(
+    69	                "C1/C3 inference anchor must equal the physical opening anchor"
+    70	            )
+    71	        if type(self.focal_user) is not int or self.focal_user < 0:
+    72	            raise E1SplitContractError("focal_user must be a nonnegative integer")
+    73	        if not self.action_mask or any(type(value) is not bool for value in self.action_mask):
+    74	            raise E1SplitContractError("action_mask must be a nonempty boolean tuple")
+    75	        for name, action in (
+    76	            ("reference_action", self.reference_action),
+    77	            ("candidate_action", self.candidate_action),
+    78	        ):
+    79	            if type(action) is not int or not 0 <= action < len(self.action_mask):
+    80	                raise E1SplitContractError(f"{name} lies outside action_mask")
+    81	            if not self.action_mask[action]:
+    82	                raise E1SplitContractError(f"{name} is illegal under action_mask")
+    83	        if self.reference_action == self.candidate_action:
+    84	            raise E1SplitContractError("candidate action must differ from reference action")
+    85	
+    86	
+    87	@dataclass(frozen=True)
+    88	class E1RouteCoverage:
+    89	    route: str
+    90	    train_clusters: int
+    91	    validation_clusters: int
+    92	    test_clusters: int
+    93	    train_inference_anchors: int
+    94	    validation_inference_anchors: int
+    95	    test_inference_anchors: int
+    96	    train_rows: int
+    97	    validation_rows: int
+    98	    test_rows: int
+    99	
+   100	    def as_dict(self) -> dict[str, str | int]:
+   101	        return asdict(self)
+   102	
+   103	
+   104	@dataclass(frozen=True)
+   105	class E1SplitReceipt:
+   106	    seed_split: dict[int, str]
+   107	    coverage: tuple[E1RouteCoverage, E1RouteCoverage, E1RouteCoverage]
+   108	    rows: int
+   109	    schema: str = E1_SPLIT_SCHEMA
+   110	
+   111	    def as_dict(self) -> dict[str, object]:
+   112	        return {
+   113	            "schema": self.schema,
+   114	            "seed_split": {str(seed): split for seed, split in sorted(self.seed_split.items())},
+   115	            "coverage": [item.as_dict() for item in self.coverage],
+   116	            "rows": self.rows,
+   117	        }
+   118	
+   119	
+   120	def verify_e1_seed_split(
+   121	    seed_split: Mapping[int, str],
+   122	    *,
+   123	    burned_seeds: Sequence[int],
+   124	) -> dict[int, str]:
+   125	    """Verify the frozen six-seed 3/1/2 partition before source outcomes."""
+   126	
+   127	    if not isinstance(seed_split, Mapping):
+   128	        raise E1SplitContractError("seed_split must be a mapping")
+   129	    normalized: dict[int, str] = {}
+   130	    for seed, split in seed_split.items():
+   131	        if type(seed) is not int or seed < 0:
+   132	            raise E1SplitContractError("E1 source seeds must be nonnegative integers")
+   133	        if split not in E1_SPLIT_NAMES:
+   134	            raise E1SplitContractError(f"split must be one of {E1_SPLIT_NAMES}")
+   135	        normalized[seed] = split
+   136	    expected_counts = {"train": 3, "validation": 1, "test": 2}
+   137	    observed_counts = {
+   138	        split: sum(value == split for value in normalized.values())
+   139	        for split in E1_SPLIT_NAMES
+   140	    }
+   141	    if observed_counts != expected_counts:
+   142	        raise E1SplitContractError(
+   143	            f"E1 requires a six-seed 3/1/2 split, got {observed_counts}"
+   144	        )
+   145	    burned = set(burned_seeds)
+   146	    if any(type(seed) is not int or seed < 0 for seed in burned):
+   147	        raise E1SplitContractError("burned seeds must be nonnegative integers")
+   148	    overlap = sorted(set(normalized) & burned)
+   149	    if overlap:
+   150	        raise E1SplitContractError(f"E1 source seeds overlap burned seeds: {overlap}")
+   151	    return normalized
+   152	
+   153	
+   154	def verify_full_sibling_groups(rows: Sequence[E1PairIndexRow], *, route: str) -> None:
+   155	    """Require complete legal-alternative enumeration for C1 or C3 clusters."""
+   156	
+   157	    if route not in ("C1", "C3"):
+   158	        raise E1SplitContractError("full sibling verification applies only to C1/C3")
+   159	    selected = [row for row in rows if row.route == route]
+   160	    if not selected:
+   161	        raise E1SplitContractError(f"{route} has no rows")
+   162	    groups: dict[tuple[str, int, str, int], list[E1PairIndexRow]] = {}
+   163	    for row in selected:
+   164	        row.verify()
+   165	        groups.setdefault(row.cluster_key, []).append(row)
+   166	    for cluster, siblings in groups.items():
+   167	        reference = siblings[0].reference_action
+   168	        mask = siblings[0].action_mask
+   169	        if any(
+   170	            sibling.reference_action != reference or sibling.action_mask != mask
+   171	            for sibling in siblings
+   172	        ):
+   173	            raise E1SplitContractError(
+   174	                f"{route} cluster {cluster} mixes reference actions or masks"
+   175	            )
+   176	        expected = {action for action, legal in enumerate(mask) if legal and action != reference}
+   177	        observed = [sibling.candidate_action for sibling in siblings]
+   178	        if len(observed) != len(set(observed)):
+   179	            raise E1SplitContractError(f"{route} cluster {cluster} repeats a candidate")
+   180	        if set(observed) != expected:
+   181	            raise E1SplitContractError(
+   182	                f"{route} cluster {cluster} is not a full legal-alternative sibling group"
+   183	            )
+   184	
+   185	
+
+exec
+/bin/bash -lc "nl -ba .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | sed -n '5620,5815p'; nl -ba .scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md; nl -ba .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md | head -110" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+  5620	    """KAT helper: census all four synthetic probe worlds before outcomes."""
+  5621	
+  5622	    counts: dict[int, int] = {}
+  5623	    for world_index, domain in enumerate(PROBE_WORLD_DOMAINS, start=1):
+  5624	        tape = build_world_tape(
+  5625	            domain=domain,
+  5626	            provider=TinySyntheticProvider(),
+  5627	            steps=1,
+  5628	            start_time_s=0.0,
+  5629	        )
+  5630	        base = _base_configuration(tape, 0, "nearest-eligible")
+  5631	        _rows, census = _catalogue_with_census(tape, 0, base)
+  5632	        counts[world_index] = census["candidate_shortlist_miss_count"]
+  5633	    return counts
+  5634	
+  5635	
+  5636	def closed_loop_quantile_sweep(
+  5637	    *,
+  5638	    tape: ExogenousWorldTape,
+  5639	    calibration: CalibrationValues,
+  5640	    executed_steps: int = 2,
+  5641	    selection_workers: int = DECLARED_WORKERS,
+  5642	    selection_boundary_indices: tuple[int, ...] = SELECTION_BOUNDARY_INDICES,
+  5643	    selection_stage2_m: int = SELECTION_STAGE2_M,
+  5644	) -> dict[str, object]:
+  5645	    """Run the sealed paired alpha sweep with one trajectory per arm.
+  5646	
+  5647	    Calls are deduplicated only when both the carried configuration and prior
+  5648	    served-user state are identical.  The selected row for each arm is then
+  5649	    carried to that arm's next anchor, so an arm can diverge from every other
+  5650	    arm and from the same arm under another alpha.  Every selected endpoint is
+  5651	    still the ordinary realised 48-boundary endpoint with deadline fallback.
+  5652	    """
+  5653	
+  5654	    if tape.domain != SMOKE_WORLD_DOMAINS[0]:
+  5655	        raise ProbeError("quantile sweep must use the quarantined SMOKE world")
+  5656	    if type(executed_steps) is not int or not 1 <= executed_steps <= 30:
+  5657	        raise ProbeError("quantile sweep steps must lie in 1..30")
+  5658	    if len(tape.steps) < executed_steps + 3:
+  5659	        raise ProbeError("quantile sweep tape omits forecast offsets")
+  5660	    setting = _setting("a-r0")
+  5661	    run_setting = run_setting_for("a-r0")
+  5662	    if calibration.setting_digest != run_setting.digest:
+  5663	        raise ProbeError("quantile sweep calibration does not bind a-r0")
+  5664	
+  5665	    variants: tuple[tuple[str, float | None], ...] = (
+  5666	        ("nominal", None),
+  5667	        ("alpha_0.05", 0.05),
+  5668	        ("alpha_0.10_PRIMARY", 0.10),
+  5669	        ("alpha_0.25", 0.25),
+  5670	    )
+  5671	    variant_rows: dict[str, object] = {}
+  5672	    for label, alpha in variants:
+  5673	        incumbents = {
+  5674	            arm: _base_configuration(tape, 0, "nearest-eligible")
+  5675	            for arm in ARMS
+  5676	        }
+  5677	        previously_served: dict[str, tuple[int, ...]] = {arm: () for arm in ARMS}
+  5678	        totals = {
+  5679	            arm: {
+  5680	                "bits": 0.0,
+  5681	                "joules": 0.0,
+  5682	                "availability_served": 0.0,
+  5683	                "availability_opportunities": 0.0,
+  5684	                "handover_events": 0,
+  5685	                "handover_opportunities": 0,
+  5686	                "deadline_misses": 0,
+  5687	                "configurations": [],
+  5688	            }
+  5689	            for arm in ARMS
+  5690	        }
+  5691	        calls = 0
+  5692	        for step_index in range(executed_steps):
+  5693	            groups: dict[
+  5694	                tuple[tuple[tuple[int, tuple[int, int] | None], ...], tuple[int, ...]],
+  5695	                list[str],
+  5696	            ] = {}
+  5697	            for arm in ARMS:
+  5698	                key = (incumbents[arm].assignments, previously_served[arm])
+  5699	                groups.setdefault(key, []).append(arm)
+  5700	            next_incumbents: dict[str, Configuration] = {}
+  5701	            next_previously_served: dict[str, tuple[int, ...]] = {}
+  5702	            for (_assignments, _served), grouped_arms in groups.items():
+  5703	                representative = grouped_arms[0]
+  5704	                result = execute_step(
+  5705	                    tape=tape,
+  5706	                    setting=setting,
+  5707	                    step_index=step_index,
+  5708	                    carrier="nearest-eligible",
+  5709	                    calibration=calibration,
+  5710	                    counter=EvaluationCounter(),
+  5711	                    incumbent=incumbents[representative],
+  5712	                    previously_served_users=previously_served[representative],
+  5713	                    c2_horizon_offsets=run_setting.c2_horizon_offsets,
+  5714	                    run_setting=run_setting,
+  5715	                    selection_workers=selection_workers,
+  5716	                    selection_boundary_indices=selection_boundary_indices,
+  5717	                    selection_stage2_m=selection_stage2_m,
+  5718	                    selection_fading_quantile_alpha=alpha,
+  5719	                )
+  5720	                calls += 1
+  5721	                rows = {str(row["arm"]): row for row in result["arms"]}
+  5722	                for arm in grouped_arms:
+  5723	                    row = rows[arm]
+  5724	                    aggregate = totals[arm]
+  5725	                    aggregate["bits"] += float(row["bits"])
+  5726	                    aggregate["joules"] += float(row["joules"])
+  5727	                    aggregate["availability_served"] += float(
+  5728	                        row["qos_additive"]["availability_served"]
+  5729	                    )
+  5730	                    aggregate["availability_opportunities"] += float(
+  5731	                        row["qos_additive"]["availability_opportunities"]
+  5732	                    )
+  5733	                    aggregate["handover_events"] += int(
+  5734	                        row["qos_additive"]["handover_events"]
+  5735	                    )
+  5736	                    aggregate["handover_opportunities"] += int(
+  5737	                        row["qos_additive"]["handover_opportunities"]
+  5738	                    )
+  5739	                    aggregate["deadline_misses"] += int(row["deadline_missed"])
+  5740	                    aggregate["configurations"].append(row["configuration_id"])
+  5741	                    carried = tuple(
+  5742	                        (
+  5743	                            int(item["user_id"]),
+  5744	                            None
+  5745	                            if item["current"] is None
+  5746	                            else (int(item["current"][0]), int(item["current"][1])),
+  5747	                        )
+  5748	                        for item in row["prior_current_identities"]
+  5749	                    )
+  5750	                    next_incumbents[arm] = Configuration(
+  5751	                        str(row["configuration_id"]), carried, 0, "sweep-carried"
+  5752	                    )
+  5753	                    next_previously_served[arm] = tuple(
+  5754	                        sorted(
+  5755	                            int(user)
+  5756	                            for user, served in row["served_PHY"].items()
+  5757	                            if served
+  5758	                        )
+  5759	                    )
+  5760	            incumbents = next_incumbents
+  5761	            previously_served = next_previously_served
+  5762	        arm_rows = {}
+  5763	        for arm, aggregate in totals.items():
+  5764	            bits = float(aggregate["bits"])
+  5765	            joules = float(aggregate["joules"])
+  5766	            served = float(aggregate["availability_served"])
+  5767	            opportunities = float(aggregate["availability_opportunities"])
+  5768	            arm_rows[arm] = {
+  5769	                **aggregate,
+  5770	                "pooled_ee_bits_per_j": None if joules == 0.0 else bits / joules,
+  5771	                "availability": served / opportunities,
+  5772	                "trajectory_sha256": digest_payload(aggregate["configurations"]),
+  5773	            }
+  5774	        variant_rows[label] = {
+  5775	            "alpha": alpha,
+  5776	            "primary": alpha == 0.10,
+  5777	            "arms": arm_rows,
+  5778	            "deduplicated_execute_step_calls": calls,
+  5779	        }
+  5780	    primary = variant_rows["alpha_0.10_PRIMARY"]
+  5781	    comparisons = {}
+  5782	    for label, _alpha in variants:
+  5783	        rows = variant_rows[label]
+  5784	        comparisons[label] = {
+  5785	            arm: {
+  5786	                "same_trajectory_as_primary": (
+  5787	                    rows["arms"][arm]["trajectory_sha256"]
+  5788	                    == primary["arms"][arm]["trajectory_sha256"]
+  5789	                ),
+  5790	                "pooled_ee_delta_vs_primary": (
+  5791	                    None
+  5792	                    if rows["arms"][arm]["pooled_ee_bits_per_j"] is None
+  5793	                    or primary["arms"][arm]["pooled_ee_bits_per_j"] is None
+  5794	                    else rows["arms"][arm]["pooled_ee_bits_per_j"]
+  5795	                    - primary["arms"][arm]["pooled_ee_bits_per_j"]
+  5796	                ),
+  5797	            }
+  5798	            for arm in ARMS
+  5799	        }
+  5800	    payload = {
+  5801	        "schema": f"{SCHEMA}-closed-loop-quantile-sweep-v1",
+  5802	        "status": "SMOKE_NOT_MATRIX",
+  5803	        "world_domain": tape.domain,
+  5804	        "world_sha256": tape.digest,
+  5805	        "paired_common_exogenous_world": True,
+  5806	        "executed_steps": executed_steps,
+  5807	        "endpoint_boundaries_per_anchor": 48,
+  5808	        "each_arm_keeps_own_trajectory": True,
+  5809	        "deadline_and_fallback_accounted": True,
+  5810	        "selection_workers": selection_workers,
+  5811	        "selection_boundary_indices": list(selection_boundary_indices),
+  5812	        "selection_stage2_m": selection_stage2_m,
+  5813	        "primary_alpha_remains_0.10": True,
+  5814	        "variants": variant_rows,
+  5815	        "comparisons_to_primary": comparisons,
+     1	# V025 priority declaration — v1.5 amendment (controller, sealed before any formal successor outcome; 2026-09-08 ≈ 18:25 UTC)
+     2	
+     3	v1.0–v1.4 are preserved unchanged. This amendment applies the fresh-context first-principles review (`FIRST-PRINCIPLES-REVIEW-CODEX-GPT6-ASTRA-2026-09-08.md`: `MINIMAL_DESIGN_MATCHES_PLAN=PARTIAL | SMALLEST_MATRIX=1 setting | HIGHEST_RESIDUAL_RISK=learner/information 0.90`) and pipeline audit A. No priority, constant, arm or margin changes; the order of execution and the uncertainty estimator do.
+     4	
+     5	1. **Execution order and scope of the admission decision.** The training-admission decision (PHYSICS-GO) is made on the primary setting `a-r0` alone, as sealed in v1.1. The other 30 settings are **exploratory sensitivities**: they execute after `a-r0` completes, in the sealed priority order, within the remaining budget, and none of them can change the admission decision or the claim. The owner's requirement that the off-axis angle influence power and EE is demonstrated by the physics itself (a sealed KAT and figure of required power and EE versus off-axis angle under `a-r0`), not by matrix cells.
+     6	2. **Executable set-score decomposition (from the review's pass 1(d)).** For a configuration with changed-user set A relative to the anchor reference a⁰ and F = B − η_ref·E: unilateral increments dᵢ = F(aᵢ, a⁰₋ᵢ) − F(a⁰); interaction residual Ψ_A = F(a_A, a⁰₋A) − F(a⁰) − Σᵢ∈A dᵢ. C1(config) = Σᵢ∈A dᵢ (+ Φ), C3(config) = Ψ_A (credited to users by the Shapley allocation of the interaction game; pairs = Ψ/2 each), C2(config) = the declared continuation value excluding the immediate term. Identity: C1 + C3 = F(a_A) − F(a⁰) exactly (KAT). Factor arms: FULL = C1 + C2 + C3; DROP_C1 = C2 + C3; DROP_C2 = C1 + C3; DROP_C3 = C1 + C2 (additive), all in the same selector class and catalogue (stage-4 item 18).
+     7	3. **Primary uncertainty estimator.** Because dates and learner seeds are crossed (audit A), the primary interval for every contrast is a **two-way pigeonhole bootstrap** over TLE dates × learner seeds with arms paired within each resample and ΣB/ΣE recomputed per draw; the one-way cluster bootstrap of v1.2 §3 and the delta-method interval become supplementary. For the learner-free physics matrix the primary is the one-way bootstrap over TLE dates.
+     8	4. **Claim-panel dates.** The successor's confirmation panel uses TRAIN dates that were never used by any successor development activity (probe, calibration, rehearsal, KAT, synthetic-real); the allocation manifest asserts this role-wise disjointness; overlap with legacy (old-physics) development dates is recorded, not forbidden, and the claim wording says so.
+     9	5. **TLE selection convention.** The legacy nearest-epoch rule (per NORAD, files date−1/date/date+1, |age| ≤ 24 h at episode start, future epochs allowed) is retained as an accuracy-first benchmark convention shared by all arms (`VERIFY_SOURCE`); it is documented as non-causal.
+    10	6. **Information contract for C3 (residual risk 0.90).** Before any successor training, the stages 6–8 contract v1 must state exactly what the learned heads observe and what the coordinator computes (candidate identities, load, shared capacity and interference, activation state, other users' proposed actions or a joint search), with the deployment-capability manifest; retrained ablations are the scientific claim, checkpoint knockouts are reported separately.
+    11	
+    12	Seal: sha256 in the companion `.sha256` file.
+     1	# V025 stages 6–8 contract v0 — source generation, learner, evaluation (controller draft for sealing; 2026-09-08 ≈ 18:10 UTC; no successor training exists)
+     2	
+     3	Pipeline audit B/C/D verified that the successor has no implemented path from tapes to a trained, deployed, evaluated policy: stages 6–8 exist as prose. This contract fixes the declarations so that implementation can start now in parallel with the physics matrix; nothing in it is conditioned on a matrix or training outcome, and the matrix admission decision (PHYSICS-GO) remains the only trigger for real training.
+     4	
+     5	## Stage 6 — source rows
+     6	1. **Producer:** tapes (provider decisions 9–11) → per (anchor, user, legal action) rows built by one production builder; every row carries world/user/action/time/calibration lineage; TRAIN-only asserted at construction.
+     7	2. **Q1 schema (successor, replaces the legacy 228-D):** per action: nominal current fields (SINR margin at rate target, required power / cap, mode SE, occupancy excluding focal, beam-active and satellite-active bits before focal insertion, off-axis angle, D2 remaining time, visibility remaining time, refresh phase), plus the migrated historical tail (previous served association one-hot, previous served load per candidate, previous beam/satellite activity, previous beam max RF / cap), plus `missing_incumbent`; **no** recurrence power, entry-gain ratio or segment age. Exact field list, scales and schema SHA are sealed in v1 of this contract.
+     8	3. **Q2 schema:** the frozen 21-field C2 schema completed with `missing_incumbent` and the declared background semantics: background = previous committed served set excluding the focal user, timestamp = decision instant, occupancy excludes focal, activation measured before focal insertion.
+     9	4. **Labels:** C1 whole-network surplus + Φ (bits / κ); C2 three-offset forecast core with −κ per absorbing lost offset (bits / κ); C3 interaction share only (Ψ/2 pairs; Shapley for sets) over the sealed bounded catalogue; κ per stage-4 item 24; all prices explicit.
+    10	5. **Dependency allowlist:** every label is a function of the visible primitives, masks, keyed fading and declared state only (stage-4 item 25); a golden tape-to-row fixture asserts every field.
+    11	
+    12	## Stage 7 — learner and deployment
+    13	6. **Learner contract:** pairwise zero-bootstrap regression on typed deterministic aggregate batches (the legacy heterogeneous Catfish design), one versioned schema; no Bellman replay in the successor. Epoch = one deterministic pass over the sealed batches (row counts, order and digests sealed); checkpoints every 100 source epochs with `completed_source_epochs`, route-update count and batch digests; resume authenticated.
+    14	7. **Arms:** FULL, DROP_C1, DROP_C2, DROP_C3 by **neutral-source substitution** for the named route (all heads retained and deployed, as in the legacy orchestrator), ALL_NEUTRAL_CONTROL (all routes neutral), external BASELINE; the estimand is "informative vs neutral source training for that route".
+    15	8. **Seeds and CRN:** five learner seeds (v1.0 evaluation design governs over the round-3 "three initializations"), each lineage sharing one serialised initialisation and identical source batches across arms; `learner_seed` and `world_seed` are separate fields everywhere.
+    16	9. **Deployed selector:** per-user masked argmax of the normalised Q1 + Q2 sum (bits / κ) for the two-head policy; the C3 layer is the set-level coordinator (learned S3 or exact S0) over the bounded catalogue with the sealed service guard, a 30.08 s deadline, BASE-proposal fallback, and the deployment-capability manifest (stage-4 item 26); the information-matched `S_UNI` comparator is always evaluated beside it.
+    17	10. **Joint feasibility:** the committed action is one jointly legal profile; independent per-user argmax outputs are validated as a profile before commit (KAT: two users whose individually legal picks are jointly infeasible).
+    18	
+    19	## Stage 8 — evaluation and claim
+    20	11. **Panel:** the sealed design (6 arms × 5 learner seeds × ≈ 600 TRAIN worlds over ≈ 161 dates; ≈ 30 steps per world) with a prospective allocation manifest (decision CD-6); cluster = TLE date × learner seed; no TEST split.
+    21	12. **Endpoint and statistics:** pooled ΣB/ΣE with the cluster bootstrap recomputing the ratio per draw; δ = +0.5 pp lower-bound rule per FULL − DROP contrast; QoS margins per stage-2 decision 6; supplementary delta-method and two-way intervals; conditional intersection–union claim wording (v1.2 §4); multiplicity: the claim is the conjunction, no per-contrast inflation.
+    22	13. **Harness discipline:** attempt registry (CD-2), canonical per-step receipts (CD-5), conformance suite (CD-7), same physics/endpoint code digest as training, one terminal adjudication.
+    23	14. **Order of operations:** implementation and synthetic end-to-end tests now; source generation only after the calibration freeze and the matrix admission (PHYSICS-GO); training in the pipeline session; early rungs integrity-only; checkpoints every 100 source epochs; the owner is notified before any long continuation.
+
+exec
+/bin/bash -lc "rg --files --hidden /home/sat -g '*EVAL-DATE-POOL*' -g '"'!**/.git/**'"' -g '"'!**/node_modules/**'"' -g '"'!**/.cache/**'"' 2>/dev/null" in /home/sat/mcrl-v025-datepool-ws
+ exited 1 in 82ms:
+exec
+/bin/bash -lc "rg -n 'CLAIM_PANEL|collision|training.source|start_date' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | tail -65; nl -ba src/mcrl/runtime/ee_axis_e1_split.py | sed -n '1,157p'; nl -ba src/mcrl/physics_v025/provider_legacy.py | sed -n '201,245p'" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+6287:    collisions = {
+6290:        if "CLAIM_PANEL" in roles and roles != {"CLAIM_PANEL"}
+6292:    if collisions:
+6293:        raise ProbeError(f"successor role-wise date collision: {collisions}")
+6316:    required_roles = SUCCESSOR_DEVELOPMENT_ROLES | {"CLAIM_PANEL"}
+6319:            "allocation manifest must enumerate CLAIM_PANEL and every successor-development role"
+     1	"""Fresh-seed and cluster-split contracts for claim-bearing E1 data."""
+     2	
+     3	from __future__ import annotations
+     4	
+     5	from dataclasses import asdict, dataclass
+     6	from typing import Mapping, Sequence
+     7	
+     8	from ..algorithms.ee_axis_pairwise import ROUTE_NAMES
+     9	from ..errors import MCRLContractError
+    10	
+    11	
+    12	E1_SPLIT_SCHEMA = "multi-catfish-mcrl-v03-e1-seed-cluster-split-v1"
+    13	E1_SPLIT_NAMES = ("train", "validation", "test")
+    14	
+    15	
+    16	class E1SplitContractError(MCRLContractError):
+    17	    """Fresh-seed E1 data violate their sealed split or cluster geometry."""
+    18	
+    19	
+    20	@dataclass(frozen=True)
+    21	class E1PairIndexRow:
+    22	    """Outcome-free routing fields needed to verify an E1 source row."""
+    23	
+    24	    route: str
+    25	    source_seed: int
+    26	    anchor_sha256: str
+    27	    inference_anchor_sha256: str
+    28	    focal_user: int
+    29	    reference_action: int
+    30	    candidate_action: int
+    31	    action_mask: tuple[bool, ...]
+    32	
+    33	    @property
+    34	    def cluster_key(self) -> tuple[str, int, str, int]:
+    35	        """Intervention cluster: one focal intervention plus all siblings."""
+    36	
+    37	        return (self.route, self.source_seed, self.anchor_sha256, self.focal_user)
+    38	
+    39	    @property
+    40	    def inference_cluster_key(self) -> tuple[str, int, str]:
+    41	        """Inference block: all focal interventions sharing one world state."""
+    42	
+    43	        return (self.route, self.source_seed, self.inference_anchor_sha256)
+    44	
+    45	    def verify(self) -> None:
+    46	        if self.route not in ROUTE_NAMES:
+    47	            raise E1SplitContractError(f"route must be one of {ROUTE_NAMES}")
+    48	        if type(self.source_seed) is not int or self.source_seed < 0:
+    49	            raise E1SplitContractError("source_seed must be a nonnegative integer")
+    50	        if (
+    51	            not isinstance(self.anchor_sha256, str)
+    52	            or len(self.anchor_sha256) != 64
+    53	            or any(character not in "0123456789abcdef" for character in self.anchor_sha256)
+    54	        ):
+    55	            raise E1SplitContractError("anchor_sha256 must be lowercase SHA-256")
+    56	        if (
+    57	            not isinstance(self.inference_anchor_sha256, str)
+    58	            or len(self.inference_anchor_sha256) != 64
+    59	            or any(
+    60	                character not in "0123456789abcdef"
+    61	                for character in self.inference_anchor_sha256
+    62	            )
+    63	        ):
+    64	            raise E1SplitContractError(
+    65	                "inference_anchor_sha256 must be lowercase SHA-256"
+    66	            )
+    67	        if self.route in {"C1", "C3"} and self.inference_anchor_sha256 != self.anchor_sha256:
+    68	            raise E1SplitContractError(
+    69	                "C1/C3 inference anchor must equal the physical opening anchor"
+    70	            )
+    71	        if type(self.focal_user) is not int or self.focal_user < 0:
+    72	            raise E1SplitContractError("focal_user must be a nonnegative integer")
+    73	        if not self.action_mask or any(type(value) is not bool for value in self.action_mask):
+    74	            raise E1SplitContractError("action_mask must be a nonempty boolean tuple")
+    75	        for name, action in (
+    76	            ("reference_action", self.reference_action),
+    77	            ("candidate_action", self.candidate_action),
+    78	        ):
+    79	            if type(action) is not int or not 0 <= action < len(self.action_mask):
+    80	                raise E1SplitContractError(f"{name} lies outside action_mask")
+    81	            if not self.action_mask[action]:
+    82	                raise E1SplitContractError(f"{name} is illegal under action_mask")
+    83	        if self.reference_action == self.candidate_action:
+    84	            raise E1SplitContractError("candidate action must differ from reference action")
+    85	
+    86	
+    87	@dataclass(frozen=True)
+    88	class E1RouteCoverage:
+    89	    route: str
+    90	    train_clusters: int
+    91	    validation_clusters: int
+    92	    test_clusters: int
+    93	    train_inference_anchors: int
+    94	    validation_inference_anchors: int
+    95	    test_inference_anchors: int
+    96	    train_rows: int
+    97	    validation_rows: int
+    98	    test_rows: int
+    99	
+   100	    def as_dict(self) -> dict[str, str | int]:
+   101	        return asdict(self)
+   102	
+   103	
+   104	@dataclass(frozen=True)
+   105	class E1SplitReceipt:
+   106	    seed_split: dict[int, str]
+   107	    coverage: tuple[E1RouteCoverage, E1RouteCoverage, E1RouteCoverage]
+   108	    rows: int
+   109	    schema: str = E1_SPLIT_SCHEMA
+   110	
+   111	    def as_dict(self) -> dict[str, object]:
+   112	        return {
+   113	            "schema": self.schema,
+   114	            "seed_split": {str(seed): split for seed, split in sorted(self.seed_split.items())},
+   115	            "coverage": [item.as_dict() for item in self.coverage],
+   116	            "rows": self.rows,
+   117	        }
+   118	
+   119	
+   120	def verify_e1_seed_split(
+   121	    seed_split: Mapping[int, str],
+   122	    *,
+   123	    burned_seeds: Sequence[int],
+   124	) -> dict[int, str]:
+   125	    """Verify the frozen six-seed 3/1/2 partition before source outcomes."""
+   126	
+   127	    if not isinstance(seed_split, Mapping):
+   128	        raise E1SplitContractError("seed_split must be a mapping")
+   129	    normalized: dict[int, str] = {}
+   130	    for seed, split in seed_split.items():
+   131	        if type(seed) is not int or seed < 0:
+   132	            raise E1SplitContractError("E1 source seeds must be nonnegative integers")
+   133	        if split not in E1_SPLIT_NAMES:
+   134	            raise E1SplitContractError(f"split must be one of {E1_SPLIT_NAMES}")
+   135	        normalized[seed] = split
+   136	    expected_counts = {"train": 3, "validation": 1, "test": 2}
+   137	    observed_counts = {
+   138	        split: sum(value == split for value in normalized.values())
+   139	        for split in E1_SPLIT_NAMES
+   140	    }
+   141	    if observed_counts != expected_counts:
+   142	        raise E1SplitContractError(
+   143	            f"E1 requires a six-seed 3/1/2 split, got {observed_counts}"
+   144	        )
+   145	    burned = set(burned_seeds)
+   146	    if any(type(seed) is not int or seed < 0 for seed in burned):
+   147	        raise E1SplitContractError("burned seeds must be nonnegative integers")
+   148	    overlap = sorted(set(normalized) & burned)
+   149	    if overlap:
+   150	        raise E1SplitContractError(f"E1 source seeds overlap burned seeds: {overlap}")
+   151	    return normalized
+   152	
+   153	
+   154	def verify_full_sibling_groups(rows: Sequence[E1PairIndexRow], *, route: str) -> None:
+   155	    """Require complete legal-alternative enumeration for C1 or C3 clusters."""
+   156	
+   157	    if route not in ("C1", "C3"):
+   201	    def _start_for(self, world_seed: int) -> dt.datetime:
+   202	        if self._forced_start is not None:
+   203	            return self._forced_start
+   204	        env_rng = _evaluation_rngs(world_seed)[0]
+   205	        sampler = EpisodeStartSampler.for_archive(
+   206	            self._archive, self._split, TRAIN, time_step_s=DECISION_INTERVAL_S
+   207	        )
+   208	        result = sampler.draw(env_rng)
+   209	        if self._split.part_for(result.date()) != TRAIN:
+   210	            raise MCRLContractError("TRAIN sampler returned a non-TRAIN date")
+   211	        return result
+   212	
+   213	    def _ensure(self, world_seed: int) -> _WorldState:
+   214	        seed = int(world_seed)
+   215	        if seed != world_seed or seed < 0:
+   216	            raise MCRLContractError("world_seed must be a nonnegative exact integer")
+   217	        if self._world is not None:
+   218	            if self._world_seed != seed:
+   219	                raise MCRLContractError("one provider instance binds exactly one world seed")
+   220	            return self._world
+   221	
+   222	        start = self._start_for(seed)
+   223	        # Child zero owns the exact TRAIN epoch draw in _start_for; child one
+   224	        # owns mobility.  There is deliberately no fresh-stream replay check:
+   225	        # such a check is true by construction and cannot detect seed drift.
+   226	        _env_rng, mobility_rng, _action_rng, _control_rng = _evaluation_rngs(seed)
+   227	
+   228	        mobility = MobilityConfig(num_users=self.user_count)
+   229	        config = ScenarioConfig(
+   230	            mobility=mobility,
+   231	            steps_per_episode=self.steps,
+   232	        )
+   233	        driver = ScenarioDriver(self._archive, config)
+   234	        decisions = []
+   235	        candidate = driver.reset(start, mobility_rng)
+   236	        selection = select_elements(
+   237	            self._archive,
+   238	            start,
+   239	            max_age_h=config.ephemeris.max_tle_age_h,
+   240	            search_days=config.ephemeris.epoch_search_days,
+   241	        )
+   242	        tle_files = tuple(
+   243	            (
+   244	                self._archive.load(file_date).path.name,
+   245	                self._archive.load(file_date).sha256,
+
+exec
+/bin/bash -lc "rg --files --hidden /home/sat/mcrl-v025-datepool-ws/.agents /home/sat/mcrl-v025-datepool-ws/.codex /home/sat/mcrl-v025-codex-ws-engine/.scratch -g 'AGENTS.md' -g 'CLAUDE.md' -g '"'!**/.git/**'"'; nl -ba src/mcrl/env/ephemeris.py | sed -n '70,159p'; nl -ba src/mcrl/env/tle.py | sed -n '213,283p'" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+    70	    when_utc: dt.datetime
+    71	    records: tuple[TleRecord, ...]
+    72	    source_dates: tuple[dt.date, ...]
+    73	    max_age_h: float
+    74	    considered_norads: int
+    75	    rejected_stale: int
+    76	
+    77	    @property
+    78	    def ages_h(self) -> np.ndarray:
+    79	        return np.array(
+    80	            [record.age_seconds(self.when_utc) / 3600.0 for record in self.records],
+    81	            dtype=np.float64,
+    82	        )
+    83	
+    84	    def age_summary(self) -> dict[str, float]:
+    85	        ages = self.ages_h
+    86	        if ages.size == 0:
+    87	            return {"count": 0.0}
+    88	        return {
+    89	            "count": float(ages.size),
+    90	            "min_h": float(ages.min()),
+    91	            "p50_h": float(np.percentile(ages, 50)),
+    92	            "p95_h": float(np.percentile(ages, 95)),
+    93	            "max_h": float(ages.max()),
+    94	        }
+    95	
+    96	
+    97	def select_elements(
+    98	    archive: TleArchive,
+    99	    when_utc: dt.datetime,
+   100	    *,
+   101	    max_age_h: float = MAX_TLE_AGE_H,
+   102	    search_days: int = 1,
+   103	) -> ElementSelection:
+   104	    """SDD F3: per NORAD id take the nearest epoch, then drop age > max.
+   105	
+   106	    ``search_days`` widens the file window around ``when_utc``'s date.  It
+   107	    is needed, not cosmetic: a single daily file spans ~21 days of epochs
+   108	    and its 24 h coverage falls from 97% to 64% across the day it is named
+   109	    after, so "nearest epoch" has to look at neighbouring files too.
+   110	
+   111	    Age is **absolute** ``|epoch − when|``, which permits a few hours of
+   112	    backward extrapolation.  SGP4 is symmetric in Δt and the alternative
+   113	    (past-only) would systematically double the mean age.  Declared as an
+   114	    **S**-level choice.
+   115	    """
+   116	    if when_utc.tzinfo is None:
+   117	        raise ValueError("when_utc must be timezone-aware")
+   118	    if search_days < 0:
+   119	        raise ValueError("search_days must be >= 0")
+   120	    when_utc = when_utc.astimezone(dt.timezone.utc)
+   121	
+   122	    center = when_utc.date()
+   123	    source_dates = [
+   124	        center + dt.timedelta(days=offset)
+   125	        for offset in range(-search_days, search_days + 1)
+   126	        if archive.has(center + dt.timedelta(days=offset))
+   127	    ]
+   128	    if not source_dates:
+   129	        raise EphemerisError(
+   130	            f"no TLE file within ±{search_days} d of {center}"
+   131	        )
+   132	
+   133	    best: dict[int, TleRecord] = {}
+   134	    for file_date in source_dates:
+   135	        for record in archive.load(file_date).records:
+   136	            incumbent = best.get(record.norad_id)
+   137	            if incumbent is None or record.age_seconds(when_utc) < incumbent.age_seconds(
+   138	                when_utc
+   139	            ):
+   140	                best[record.norad_id] = record
+   141	
+   142	    max_age_s = max_age_h * 3600.0
+   143	    fresh = [
+   144	        record
+   145	        for _, record in sorted(best.items())
+   146	        if record.age_seconds(when_utc) <= max_age_s
+   147	    ]
+   148	    if not fresh:
+   149	        raise EphemerisError(
+   150	            f"no element set within {max_age_h} h of {when_utc.isoformat()}"
+   151	        )
+   152	    return ElementSelection(
+   153	        when_utc=when_utc,
+   154	        records=tuple(fresh),
+   155	        source_dates=tuple(source_dates),
+   156	        max_age_h=max_age_h,
+   157	        considered_norads=len(best),
+   158	        rejected_stale=len(best) - len(fresh),
+   159	    )
+   213	        cls,
+   214	        path: str | Path,
+   215	        *,
+   216	        max_malformed_fraction: float = MAX_MALFORMED_RECORD_FRACTION,
+   217	    ) -> TleDailyFile:
+   218	        path = Path(path)
+   219	        if not path.is_file():
+   220	            raise MCRLContractError(f"TLE file not found: {path}")
+   221	        match = _FILENAME_RE.match(path.name)
+   222	        if match is None:
+   223	            raise MCRLContractError(
+   224	                f"TLE filename does not match starlink_YYYYMMDD.tle: {path.name}"
+   225	            )
+   226	        raw = path.read_bytes()
+   227	        digest = hashlib.sha256(raw).hexdigest()
+   228	        records, quarantined = parse_tle_text(
+   229	            raw.decode("utf-8"), source=path.name
+   230	        )
+   231	        total = len(records) + len(quarantined)
+   232	        if total and len(quarantined) / total > max_malformed_fraction:
+   233	            raise TleQuarantineError(
+   234	                f"{path.name}: {len(quarantined)} of {total} records malformed "
+   235	                f"({len(quarantined) / total:.2e} > {max_malformed_fraction:.2e}); "
+   236	                f"first reason: {quarantined[0].reason}"
+   237	            )
+   238	        seen: set[int] = set()
+   239	        for record in records:
+   240	            if record.norad_id in seen:
+   241	                raise TleFormatError(
+   242	                    f"{path.name}: duplicate NORAD id {record.norad_id}"
+   243	                )
+   244	            seen.add(record.norad_id)
+   245	        return cls(
+   246	            path=path,
+   247	            file_date=dt.datetime.strptime(match.group(1), "%Y%m%d").date(),
+   248	            sha256=digest,
+   249	            records=tuple(records),
+   250	            quarantined=tuple(quarantined),
+   251	        )
+   252	
+   253	
+   254	class TleArchive:
+   255	    """The directory of daily files, indexed by date.
+   256	
+   257	    Loading is lazy and cached: a probe that walks 30 simulation dates
+   258	    touches 30 files, not 373.
+   259	    """
+   260	
+   261	    def __init__(self, root: str | Path) -> None:
+   262	        self.root = Path(root).expanduser()
+   263	        if not self.root.is_dir():
+   264	            raise MCRLContractError(f"TLE root is not a directory: {self.root}")
+   265	        self._paths: dict[dt.date, Path] = {}
+   266	        for path in sorted(self.root.iterdir()):
+   267	            match = _FILENAME_RE.match(path.name)
+   268	            if match is None:
+   269	                continue
+   270	            file_date = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
+   271	            self._paths[file_date] = path
+   272	        if not self._paths:
+   273	            raise MCRLContractError(f"no starlink_*.tle files under {self.root}")
+   274	        self._cache: dict[dt.date, TleDailyFile] = {}
+   275	
+   276	    @property
+   277	    def dates(self) -> tuple[dt.date, ...]:
+   278	        return tuple(sorted(self._paths))
+   279	
+   280	    @property
+   281	    def date_range(self) -> tuple[dt.date, dt.date]:
+   282	        dates = self.dates
+   283	        return dates[0], dates[-1]
+
+exec
+/bin/bash -lc "rg -n --hidden 'headline must|held-out set|dates are abundant|evaluation-only pool|date.pool|evaluation dates' .scratch/multi-catfish-v025-physics-successor -g '*.md' -g '"'!**/FIRST-PRINCIPLES*'"' -g '"'!**/*AUDIT*'"' -g '"'!**/*REVIEW*'"' | tail -110; git status --short" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+ M .scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md
+M  .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+A  tests/physics_v025/test_deadline_fix.py
+ M tests/physics_v025/test_stage4h_amendments.py
+?? .scratch/multi-catfish-v025-physics-successor/ACM-CAUSALITY-AUDIT-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-CH5-SWEEP-FIGURE-SPECIFICATION-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-STAGEC-COST-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-STAGEC-SPEC-ERRATUM-1-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-DESIGN-FREEZE-AND-CLOSURE-RULE-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-DESIGN-FREEZE-AND-CLOSURE-RULE-2026-09-09.md.sha256
+?? .scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4I-REPORT-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.6-AMENDMENT-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.6-AMENDMENT-2026-09-09.md.sha256
+?? .scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md.sha256
+?? .scratch/multi-catfish-v025-physics-successor/V025-PILOT-TRACK-DECLARATION-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-SYNTHETIC-MAP-R2-COMPLETION-DECISION-2026-09-09.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-SYNTHETIC-MECHANISM-MAP-DECLARATION-2026-09-08.md
+?? .scratch/multi-catfish-v025-physics-successor/V025-TONIGHT-RUN-DECISION-2026-09-09.md
+?? .tmp-prompts-v025/
+?? .tmp/
+?? tests/physics_v025/test_stage4i_reporting_sweeps.py
+
+codex
+The controller memo is absent from the supplied path, and I found no copy by filename under /home/sat. Where else is it available, or can you paste its text? I can continue the code and sealed-document audit, but need the memo to quote and adjudicate every sentence.
+codex
+The four audit claims hold in substance, but two qualifications matter. Later contracts supersede the quoted 600-world design, and “any successor development activity” may already prohibit training overlap in prose even though the code does not enforce it. Also, a one-day embargo can leave training and evaluation reading the same intervening ephemeris file.
+web search: 
+web search: Roberts 2017 cross-validation strategies temporal spatial hierarchical structured data Ecography ...
+exec
+/bin/bash -lc "rg -n --hidden 'EVAL.DATE.POOL|eval.date.pool|evaluation.only pool|training dates are abundant' /home/sat/mcrl-v025-codex-ws-engine/.tmp-prompts-v025 /home/sat/mcrl-v025-codex-ws-engine/.tmp /home/sat/mcrl-v025-codex-ws-engine/.scratch -g '*.md' -g '*.txt' -g '"'!**/*ADJUDICATION*'"' -g '"'!**/*REVIEW*'"' -g '"'!**/*AUDIT*'"' -g '"'!**/*CODEX*'"'" in /home/sat/mcrl-v025-datepool-ws
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "nl -ba .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | sed -n '6220,6355p'; nl -ba .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md; nl -ba .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md; nl -ba .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+  6220	                    "tape_cache_file": cache_name,
+  6221	                    "tape_cache_sha256": hashlib.sha256(encoded_tape).hexdigest(),
+  6222	                }
+  6223	            )
+  6224	    calibration_tapes = [
+  6225	        build_world_tape(
+  6226	            domain=domain,
+  6227	            provider=WORLD_PROVIDER_FACTORY(),
+  6228	            steps=1,
+  6229	            start_time_s=0.0,
+  6230	        )
+  6231	        for domain in CALIBRATION_WORLD_DOMAINS
+  6232	    ]
+  6233	    assert_calibration_world_separation(
+  6234	        calibration_tapes=calibration_tapes, probe_tapes=probe_tapes
+  6235	    )
+  6236	    payload = {
+  6237	        "schema": f"{SCHEMA}-world-manifest",
+  6238	        "status": "FROZEN_WORLD_MANIFEST",
+  6239	        "executed_steps": executed_steps,
+  6240	        "forecast_offsets": 3,
+  6241	        "worlds": worlds,
+  6242	        "test_split_opened": False,
+  6243	        "probe_outcomes_opened": False,
+  6244	    }
+  6245	    payload["receipt_sha256"] = digest_payload(payload)
+  6246	    return payload
+  6247	
+  6248	
+  6249	def world_allocation_identity(
+  6250	    tape: ExogenousWorldTape,
+  6251	    *,
+  6252	    role: str,
+  6253	    learner_seed: int,
+  6254	) -> dict[str, object]:
+  6255	    """Return the full audit-A allocation identity for one world."""
+  6256	
+  6257	    manifest = tape.manifest()
+  6258	    return {
+  6259	        "role": role,
+  6260	        "world_domain": tape.domain,
+  6261	        "split": tape.split,
+  6262	        "start_utc": manifest["start_utc"],
+  6263	        "tle_date": tape.tle_date,
+  6264	        "tle_files": manifest["tle_files"],
+  6265	        "split_rule_sha256": manifest["split_rule_sha256"],
+  6266	        "provider_source_sha256": manifest["provider_source_sha256"],
+  6267	        "layout_sha256": manifest["layout_sha256"],
+  6268	        "mobility_stream_identity": manifest["stream_identities"]["mobility"],  # type: ignore[index]
+  6269	        "fading_stream_identity": manifest["stream_identities"]["fading"],  # type: ignore[index]
+  6270	        "world_seed": tape.seed,
+  6271	        "learner_seed": learner_seed,
+  6272	        "world_manifest_sha256": tape.digest,
+  6273	    }
+  6274	
+  6275	
+  6276	def assert_role_wise_date_disjointness(
+  6277	    identities: Sequence[Mapping[str, object]],
+  6278	) -> None:
+  6279	    """Fail closed when a claim date was used by any development role."""
+  6280	
+  6281	    roles_by_date: dict[str, set[str]] = {}
+  6282	    for row in identities:
+  6283	        role, date = str(row.get("role", "")), str(row.get("tle_date", ""))
+  6284	        if not role or not date:
+  6285	            raise ProbeError("allocation identity lacks role or TLE date")
+  6286	        roles_by_date.setdefault(date, set()).add(role)
+  6287	    collisions = {
+  6288	        date: sorted(roles)
+  6289	        for date, roles in roles_by_date.items()
+  6290	        if "CLAIM_PANEL" in roles and roles != {"CLAIM_PANEL"}
+  6291	    }
+  6292	    if collisions:
+  6293	        raise ProbeError(f"successor role-wise date collision: {collisions}")
+  6294	
+  6295	
+  6296	def build_allocation_manifest(
+  6297	    identities: Sequence[Mapping[str, object]],
+  6298	    *,
+  6299	    legacy_development_overlap_dates: Sequence[str] = (),
+  6300	) -> dict[str, object]:
+  6301	    """Seal role allocations and the non-causal TLE benchmark convention."""
+  6302	
+  6303	    rows = [dict(row) for row in identities]
+  6304	    assert_role_wise_date_disjointness(rows)
+  6305	    required = {
+  6306	        "role", "world_domain", "split", "start_utc", "tle_date", "tle_files",
+  6307	        "split_rule_sha256", "provider_source_sha256", "layout_sha256",
+  6308	        "mobility_stream_identity", "fading_stream_identity", "world_seed",
+  6309	        "learner_seed", "world_manifest_sha256",
+  6310	    }
+  6311	    if any(set(row) != required for row in rows):
+  6312	        raise ProbeError("allocation manifest world identity is incomplete or noncanonical")
+  6313	    if any(row["split"] != "TRAIN" for row in rows):
+  6314	        raise ProbeError("allocation manifest may contain TRAIN worlds only")
+  6315	    roles = {str(row["role"]) for row in rows}
+  6316	    required_roles = SUCCESSOR_DEVELOPMENT_ROLES | {"CLAIM_PANEL"}
+  6317	    if not required_roles <= roles:
+  6318	        raise ProbeError(
+  6319	            "allocation manifest must enumerate CLAIM_PANEL and every successor-development role"
+  6320	        )
+  6321	    payload = {
+  6322	        "schema": f"{SCHEMA}-allocation-manifest",
+  6323	        "status": "FROZEN_ALLOCATION",
+  6324	        "worlds": rows,
+  6325	        "role_wise_date_disjoint": True,
+  6326	        "claim_panel_date_fresh_from_successor_development": True,
+  6327	        "legacy_development_overlap_dates": sorted(set(legacy_development_overlap_dates)),
+  6328	        "tle_selection_convention": {
+  6329	            "rule": "per NORAD choose nearest epoch from date-1/date/date+1 at episode start",
+  6330	            "maximum_absolute_age_hours": 24,
+  6331	            "future_epochs_allowed": True,
+  6332	            "causality": "NON_CAUSAL_ACCURACY_FIRST_BENCHMARK",
+  6333	            "verify_source": True,
+  6334	        },
+  6335	    }
+  6336	    payload["receipt_sha256"] = digest_payload(payload)
+  6337	    return payload
+  6338	
+  6339	
+  6340	def load_calibration(
+  6341	    path: Path,
+  6342	    setting: PhysicsSetting,
+  6343	    run_setting: SealedRunSetting | None = None,
+  6344	) -> CalibrationValues:
+  6345	    target = Path(path)
+  6346	    sidecar = _sidecar(target)
+  6347	    if not target.is_file() or not sidecar.is_file():
+  6348	        raise ProbeError("frozen calibration manifest and sidecar are required")
+  6349	    encoded = target.read_bytes()
+  6350	    digest = hashlib.sha256(encoded).hexdigest()
+  6351	    if sidecar.read_text(encoding="ascii").split() != [digest, target.name]:
+  6352	        raise ProbeError("calibration sidecar disagrees")
+  6353	    if stat.S_IMODE(target.stat().st_mode) != 0o444:
+  6354	        raise ProbeError("calibration manifest is not immutable mode 0444")
+  6355	    payload = json.loads(encoded)
+     1	# V025 stages 6–8 contract v1 — source generation, learner, evaluation (controller; sealed 2026-09-08 ≈ 18:45 UTC; supersedes v0; no successor training exists)
+     2	
+     3	Sources folded in: astra contract review (`ADJUDICATION-STAGES-6-8-CONTRACT-CODEX-GPT6-ASTRA-2026-09-08.md`), round-7 outside opinions (Q&A + Deep Research), pipeline audits B/C/D, first-principles review. All three reviewers returned `CONTRACT=REVISE`, `C3_IDENTIFIABLE=NO` as written, `POWERED=NO`; v1 resolves each named item. Nothing here is conditioned on any outcome.
+     4	
+     5	## A. Information interfaces (declared, equalised across arms)
+     6	A1. **I_heads** (per user i, per legal action): the completed Q1 and Q2 schemas of §B; observation access = current nominal geometry of user i's candidates, i's history, the previous committed served set excluding i (b⁻₋ᵢ) at decision time; derived features as frozen; model access = none (no joint physics); compute = one forward pass.
+     7	A2. **I_coordinator** (per anchor): global nominal geometry with beam-specific cross gains, all users' legal sets, b⁻, the reference proposal a⁰, the bounded catalogue 𝒞 (decision 4/CB-2), the nominal model 𝓜 (no realised fading, no future TLE beyond the declared forecast horizon), and the outputs of 𝓜 for each profile in 𝒞 (joint load, coupled powers, interference, activation, service, bits, energy, continuation). Compute = the declared budget (§F).
+     8	A3. **Two distinct references:** a⁰ (the reference proposal for the score decomposition; = the per-user argmax of Q1 + Q2, validated as a profile) and the previous committed association (the reference for handover/Φ/event accounting). Never conflated.
+     9	A4. **Equalised between FULL and every DROP/comparator arm:** primitive access and timestamps, forecast method, physical identities, catalogue construction (authenticated identical catalogues at matched anchors), joint search, guards, tie-breaking, validation, deadline, fallback. Any learned pruning is part of the declared intervention. An exact evaluator may never reinsert a removed score through ranking, pruning or a score-dependent guard.
+    10	
+    11	## B. Stage 6 — rows and labels
+    12	B1. One production builder from tapes; every row carries world/user/action/time/schema/setting/calibration lineage; TRAIN asserted at construction; dependency-allowlist KAT (labels are functions of visible primitives, masks, keyed fading, declared state only).
+    13	B2. **Q1 schema** (per action; scales frozen in the spec v1 draft): nominal rate-target SINR margin, required power / cap, mode SE, occupancy excluding focal, beam- and satellite-active bits before focal insertion, off-axis angle, remaining D2 time, remaining visibility time, refresh phase; history: previous served association one-hot, previous served load per candidate, previous beam/satellite activity, previous beam max RF / cap; `missing_incumbent`. No recurrence power, entry-gain ratio or segment age.
+    14	B3. **Q2 schema:** the frozen 21 fields + `missing_incumbent`; background = b⁻₋ᵢ projected to the decision instant; occupancy excludes focal; activation before focal insertion.
+    15	B4. **F and Φ:** F(a) = B(a) − η_ref·E(a) − Φ(a), with Φ the signed handover/QoS preference in κ units charged exactly once inside F. Unilateral increments dᵢ = F(aᵢ, a⁰₋ᵢ) − F(a⁰); interaction residual Ψ_A = F(a_A, a⁰₋A) − F(a⁰) − Σᵢ∈A dᵢ. **C1(config) = Σᵢ∈A dᵢ; C3(config) = Ψ_A; identity C1 + C3 = F(a_A) − F(a⁰) exactly** (KAT); a second KAT states the physical identity without Φ. C2 = declared continuation value excluding the immediate term (three offsets, −κ per absorbing lost offset). κ per stage-4 item 24; all in bits / κ.
+    16	B5. **C3 training rows** carry the complete coalition context: anchor, a⁰, the changed-user set A, their selected actions a_A, the global resource context (occupancy, activation, shared capacity, interference summary per affected beam), and the label Ψ_A / κ. Coalition size for label computation is capped at |A| ≤ 4 (2^|A| subset evaluations bounded); larger evacuation sets are labelled by the capped decomposition and flagged. Per-user Shapley credit is reporting only (pairs: Ψ/2 each), never a training target.
+    17	
+    18	## C. Stage 7 — learner, arms, deployment
+    19	C1. **Heads:** Q1, Q2 by pairwise zero-bootstrap regression on typed deterministic aggregate batches (legacy heterogeneous design); the deployed two-head action is the per-user masked argmax of the normalised Q1 + Q2, validated as a jointly legal profile (deterministic repair rule for conflicts, KAT with a jointly infeasible pair). This estimates a supervised surrogate of the declared targets, not a Bellman value; the claim is worded accordingly.
+    20	C2. **C3 learner form:** a **set-conditioned scalar interaction head** Ψ̂_θ(Z_t, a⁰, A, a_A): permutation-invariant over A, anchored Ψ̂(∅) = Ψ̂({u}) = 0, trained on the residual Ψ_A / κ over the coalition support of the bounded catalogue; deployed S3 optimises the **complete** score C1 + C2 + Ψ̂ over 𝒞 with the sealed service guard, budget and fallback. S0 = the same selector with the exact Ψ_A in place of Ψ̂. S_UNI = iterated exact unilateral improvement to a local optimum (every legal unilateral alternative evaluated with the same nominal joint physics at each iterate, deterministic improving move, atomic commit of the final profile only, termination certificate reported).
+    21	C3. **Arms and estimands (four named experiments, never conflated):** (i) *learned neutral-source experiment* (primary for the C1/C2/C3 claims): FULL, DROP_C1, DROP_C2, DROP_C3 by neutral-source substitution of the named route with all routes retained, updated and deployed; ALL_NEUTRAL_CONTROL; external BASELINE; claim wording: "informative source training for route x improved pooled EE relative to the specified neutral source training, with the other routes informative and all heads retained"; (ii) *oracle factor-score removal* (physics regime map, stage-4 item 18); (iii) *checkpoint knockout* (secondary: zero the deployed contribution, machinery fixed; measures reliance and exposes hidden score restoration); (iv) *architecture removal* — named, not run.
+    22	C4. **Coordination attribution (beyond the source claim):** FULL (S3) > DROP_C3 **and** FULL > the S_UNI-equipped comparator on held-out realised pooled EE, QoS margins met, plus decision-relevant nonadditivity (the selected profile differs from the additive/unilateral optimum at a reported fraction of anchors, including rejected harmful joint moves) — the requirement "g_I ≠ 0" is withdrawn. **Learned value (S3 vs matched S0)** is one predeclared axis: realised closed-loop pooled EE under equal computation budget including timeouts; matching S0 at lower compute is an acceleration claim, reported separately.
+    23	C5. **Neutral sources** sealed before generation: generator, labels, support, strata, overlap, row weights, optimisation dose; "identical batches across arms" means identical within a route/source identity; every DROP checkpoint retains all heads, the neutral-trained head differs from initialisation and participates in deployment (KATs).
+    24	C6. **Zero results are allowed and informative:** a zero C3 source marginal ends the positive C3 claim under this scope; an interval excluding the practical margin supports "no practically relevant benefit"; a lower-bound failure alone is inconclusive; neither permits changing features, catalogues, sources or regimes until C3 becomes positive.
+    25	C7. **Epochs, checkpoints, seeds:** deterministic aggregate epochs with sealed row counts/order/digests; checkpoints every 100 source epochs with `completed_source_epochs` and batch digests; **12 learner seeds** (§E), each lineage sharing one serialised initialisation and identical source batches per route identity across arms; `learner_seed` and `world_seed` separate everywhere.
+    26	
+    27	## D. Stage 8 — panel, statistics, harness
+    28	D1. **Panel:** 6 arms × 12 learner seeds × 2 worlds per TRAIN date over the ≈ 160 claim dates (≈ 320 worlds per arm-seed; ≈ 30 steps per world), allocation manifest sealed with role-wise date disjointness (claim dates unused by any successor development activity; legacy overlap recorded); no TEST.
+    29	D2. **Estimator:** pooled ΣB/ΣE; primary interval = two-way pigeonhole bootstrap over dates × learner seeds with arms paired within resamples and the ratio recomputed per draw (central 95 % percentile); one-way cluster bootstrap and delta-method supplementary; seedwise paired effects reported; δ = +0.5 % relative with the 2.5th-percentile lower bound (v1.4); QoS margins with additive numerators/denominators inside draws (stage-2 decision 6, item 37).
+    30	D3. **Zero outcomes:** B = 0 with E > 0 is EE = 0 (defined); a draw is undefined only when a denominator (E or the comparator's EE) is 0 — recorded and counted, never substituted (amends decision CD-3).
+    31	D4. **Multiplicity and claim:** the conditional intersection–union conjunction for `a-r0` is the single primary claim; components are reported with their own intervals but no component-wise discovery is claimed; all other cells exploratory; TRAIN-only wording enforced by the report schema.
+    32	D5. **Harness:** attempt registry (STARTED before outcomes), canonical per-step receipts, merge re-aggregation from rows, conformance suite (NULL ≡ BASE per step, real-step dry-run of every arm, write-once sha256 receipts, authority manifest), same physics/endpoint digest as training, one terminal adjudication.
+    33	
+    34	## E. Power (declared prospectively; sensitivities, not measurements)
+    35	Planning alternative Δ* = +2 % relative (both reviewers: a true +1 % is not detectable with ≈ 160 dates under any seed count if the date SD is ≈ 5 %). Variance sensitivities: date SD 3 / 5 / 10 %, seed SD 1 / 2 %. With date SD 5 %, seed SD 1 %, 160 dates, 12 seeds and negligible residual variance, the per-contrast one-sided power at the 2.5 % level is ≈ 0.86 (SE ≈ 0.49 %); the three-contrast conjunction ≈ 0.64 if independent. With 5 seeds it is ≈ 0.70 / 0.34. 12 seeds is the declared design; the date component caps further gains. The crossed-cluster inference test (§G T3) calibrates the actual procedure at 5 and 12 seeds before any real evaluation.
+    36	
+    37	## F. Operational contract (deployability; the benchmark and the operational claim are separate)
+    38	F1. **Benchmark convention:** decision at t from information at t, applied from t (legacy convention, kept for the scientific comparison); TLE nearest-epoch rule labelled retrospective (v1.5 §5). **Operational claim** (if made): a causal-input variant (ephemeris available by decision time, causal forecasts) and an explicit action-effective-time convention.
+    39	F2. **Timing budget:** the coordinator's compute budget is 10 s wall on the declared worker count (the rest of the 30.08 s interval reserved for sensing/transport/validation/commit); BASE (a⁰) is computed, validated and repaired **before** the coordinator starts; the runner enforces the timer (cancel), not the solver; a miss executes the validated a⁰; misses are a co-reported QoS field and their B/E enter the endpoint.
+    40	F3. **Capability manifest fields:** telemetry sources and ages, roster and cross-gain coverage, model assumptions and calibration source, worker hardware/count, catalogue bounds, solver limits, memory, missing-data handling, measured end-to-end latency distribution.
+    41	
+    42	## G. Synthetic acceptance tests — mandatory gate before any real source generation
+    43	T1 **Exhaustive decomposition and intervention:** hand-computed 3-user, 2-action, 3-step fixture with additive / synergistic (F = 0, −1, −1, 2) / antagonistic (0, −1, −1, −4) cases, a dummy user (credit 0), nonzero Φ charged once, a future outage; production target builder and selectors; exact reconstruction of both identities; oracle DROP behaviour as hand-predicted; neutral-source DROP retains and trains the route; knockout removes the deployed contribution.
+    44	T2 **Information twins / interaction reversal / additive placebo through the production path:** paired contexts with identical per-user rows but opposite joint interactions; S3 must separate them using declared coalition context and fail when it is removed; poisoned post-decision outcomes, realised future fading and hidden legacy reset state leave current features and actions unchanged; physical-identity relabelling invariance; jointly infeasible individual proposals repaired; an injected timeout exercises the real fallback; the additive placebo yields Ψ̂ ≈ 0 and S3 = S_UNI decisions.
+    45	T3 **Crossed-cluster inference through the real merger:** synthetic raw receipts with controlled date/seed/world effects for the 3/5/10 % SD scenarios, repeated worlds per cell, unequal energies (pooled ≠ mean EE), identical arms, zero-bit and undefined-denominator cells, injected alternatives, least-favourable conjunction null (one component at the +0.5 % boundary); verify pairing, interval calibration, conjunction power and QoS rejection at 5 and 12 seeds.
+    46	
+    47	## H. Order of operations
+    48	Build 1 (running) → build 2 applies this v1 and implements T1–T3 → fresh-context audit of the build → controller seal of spec v1 → real source generation only after the calibration freeze **and** PHYSICS-GO (a-r0 admission); training in the pipeline session with checkpoints every 100 source epochs; the owner is notified before any long continuation.
+    49	
+    50	Seal: sha256 in the companion `.sha256` file. v0 is retained as history.
+     1	# V025 stages 6–8 contract — v1.1 amendment (controller; sealed 2026-09-09 ≈ 00:35 UTC; before any successor training)
+     2	
+     3	v1 (sha ba867d0d…) is preserved unchanged. This amendment applies the real-merger T3 calibration of stage C build 3 (`V025-STAGEC-BUILD3-REPORT-2026-09-08.md`: 200 Monte-Carlo replications per cell, 160 dates, two unequal-energy worlds per date × learner-seed cell, planning alternative +2 %, claim margin +0.5 %, 49 two-way bootstrap draws per replication, 7.3 M authenticated receipts):
+     4	
+     5	| date SD | seed SD | learner seeds | interval coverage | three-contrast conjunction power |
+     6	|---:|---:|---:|---:|---:|
+     7	| 5 % | 1 % | 5 | 0.863 ± 0.028 | 0.380 ± 0.067 |
+     8	| 5 % | 1 % | 12 | 0.878 ± 0.026 | 0.495 ± 0.069 |
+     9	| 5 % | 1 % | 16 | 0.893 ± 0.025 | 0.675 ± 0.065 |
+    10	| 5 % | 1 % | 24 | 0.908 ± 0.023 | 0.675 ± 0.065 |
+    11	| 3 % | 1 % | 12 | 0.893 ± 0.025 | 0.920 ± 0.038 |
+    12	| 3 % | 1 % | 16 | 0.920 ± 0.022 | 0.980 ± 0.019 |
+    13	
+    14	1. **§C7 / §D1 — learner seeds: 16** (from 12). Beyond 16 the conjunction power does not improve at a 5 % date SD (the date component caps precision); 16 seeds give 0.68 (5 % date SD) to 0.98 (3 % date SD) measured conjunction power at Δ* = +2 %. Seeds are derived from `V025_LEARNER/seed/{1..16}`. Panel: 6 arms × 16 seeds × 2 worlds per date over ≈ 160 claim dates (≈ 320 worlds per arm-seed); training cost 96 arm-seed lineages.
+    15	2. **§E — power statement replaced by the measured table above.** The analytic estimate of v1 §E is withdrawn; the claim wording carries the measured power at the assumed variance components and states that the actual date/seed SDs are estimated from the run and reported beside it.
+    16	3. **§D2 — coverage disclosure.** The two-way pigeonhole percentile interval under-covers at these seed counts (0.89–0.92 measured against 0.95 nominal). The sealed decision rule is unchanged (declared before any outcome), and the report states the measured coverage next to every interval; no post-hoc widening is applied.
+    17	4. Everything else in v1 stands. Remaining `CONTROLLER_DECIDE` from build 3 (coalition feature scales, neutral-source seals, catalogue CB-2 construction, formal allocation manifest, operational capability values, causal operational variant) are seal-time items resolved with the launch package and the stage-C spec v1 seal.
+    18	
+    19	Seal: sha256 in the companion `.sha256` file.
+     1	# V025 stages 6–8 contract — v1.2 amendment (controller; sealed 2026-09-09 ≈ 02:15 UTC, before any successor training)
+     2	
+     3	v1 (sha ba867d0d…) and v1.1 (sha 1e56e8d7…) are preserved. This amendment applies the round-9D review (C3 algorithm family) and the round-9A review (claim wording and calibration). Seeds, panel, arms, margins and the learner contract are unchanged.
+     4	
+     5	1. **§B5 corrected — interaction labels are uncapped.** Ψ_A for a selected coalition costs |A| + 2 evaluations, so it is computed for every coalition regardless of size (v1.7 erratum item 3). Only the exact per-user Shapley attribution remains capped at |A| ≤ 4 and is reporting-only. C3 training rows therefore carry Ψ_A for the actual selected set, with `credit_split = NOT_COMPUTED_LARGE_SET` above the cap.
+     6	2. **§C2 — feature sufficiency for the set-conditioned head.** The encoder's input must contain, for the changed-user set and its affected beams: proposed and incumbent associations by physical identity, background occupancy and activation before and after insertion, the shared-resource relations among the affected beams, and the **pairwise cross-gain terms among the affected beams** (not only a scalar interference summary — a summary can hide exactly the difference that flips a coupled fixed point). Acceptance test T2 is extended: the information-twin pair must be separable with the full context and provably ambiguous when the cross-gain block is removed.
+     7	3. **§C4 / report schema — honest axes for a learned S3.** Over one catalogue that is exactly evaluated, S3 cannot exceed S0's maximum of the same score; therefore the only admissible learned claims are (i) better realised closed-loop pooled EE under model mismatch, (ii) equal decision quality at materially lower measured end-to-end computation, or (iii) a measured residual task (search allocation, evaluation-count reduction). The claim axis is named before training. A learned escape proposer over a wider neighbourhood is **not** part of this study; it may be proposed later with its own declaration and only if profiling shows evaluation is the bottleneck.
+     8	4. **§D2 / §E — calibration must report the decision bound's own error rate.** Acceptance test T3 additionally reports the **one-sided** coverage of the bound actually used for the decision (not only the two-sided interval coverage), at 5 / 12 / 16 / 24 seeds and for the 3 %, 5 % and 10 % date-SD scenarios, each with its Monte-Carlo uncertainty. Every reported interval carries the disclosure fields listed in v1.7 erratum item 6.
+     9	5. **Report schema — anti-pattern statistics (round 9D).** The terminal report must contain, per contrast: net collision-avoidance value with both components unclipped; the additive-reversal frequency and whether the coordinator prevents them; escape recall and harmful-acceptance rate stratified by coalition size; top-choice agreement between the learned and exact selectors; the full decision-latency distribution including feature construction, catalogue generation, physics-call count, timeout frequency and fallback-inclusive outcomes; and the four experiments of §C3 reported separately and never interchanged.
+    10	6. **Certified comparator.** A budget-limited S_UNI is an operational comparator and is labelled as such; only a S_UNI with a completed-neighbourhood termination certificate supports the "beyond exhaustive unilateral improvement" claim (v1.6 §4). An offline certified reference may be used to diagnose available joint headroom provided its different computational status is stated.
+    11	
+    12	Seal: sha256 in the companion `.sha256` file.
+
+exec
+/bin/bash -lc "rg -n 'SUCCESSOR_DEVELOPMENT_ROLES' .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py; nl -ba .scratch/multi-catfish-v023-server-pipeline/RUNBOOK-2026-09-08.md | head -65; nl -ba .scratch/multi-catfish-v025-physics-successor/V025-PILOT-TRACK-DECLARATION-2026-09-09.md; nl -ba .scratch/multi-catfish-v025-physics-successor/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md | head -120" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+248:SUCCESSOR_DEVELOPMENT_ROLES = frozenset(
+6316:    required_roles = SUCCESSOR_DEVELOPMENT_ROLES | {"CLAIM_PANEL"}
+     1	# SERVER PIPELINE RUNBOOK — V0.23 successor: stage A → four-arm acceptance → stage-C ladder → Ch5 figures (+ E1 when sealed)
+     2	Issued 2026-09-08 by the local controller. You are the **server-resident pipeline session** (Claude Code in tmux
+     3	`mcrl-pipeline`, cwd `/home/sat/mcrl-leo-handover-wip`). From now on you are the ONLY writer on the server worktree and on
+     4	every `/home/sat/mcrl-v023-*` output root. The local controller will not push into the worktree while you run; it only
+     5	fetches from it. Nobody is watching in real time: when a step finishes, start the next one yourself; never wait to be told.
+     6	
+     7	## 0. Non-negotiables (owner rules — verbatim in effect)
+     8	- No TEST split, ever. Never tune formulas, signs, thresholds, seeds, horizons, λ, κ or acceptance rules against observed
+     9	  results. No rerun selected by outcome. Sealed artifacts and frozen manifests are never rewritten. No new scientific gates.
+    10	- `INVALID_RUN` = repair a DEMONSTRATED infrastructure defect only, replay the smallest affected unit, log evidence + changed
+    11	  bindings, keep the original receipts. A valid unfavourable outcome is never rerun.
+    12	- Heavy compute only with `/home/sat/mcrl-leo-handover/.venv/bin/python`; never modify `/home/sat/mcrl-leo-handover` or its
+    13	  `.venv`. Episode training checkpoints every 100 episodes (built into the runners; do not change cadence).
+    14	- **Before any 9000-episode continuation: STOP that branch, write `NEEDS-OWNER-9000.md` (see §6), do not start it.**
+    15	- `ALL_NEUTRAL_CONTROL` is never relabelled `BASELINE`. No `sys.modules` aliasing. Do not touch the paper, symbols or
+    16	  figures under `docs/`; rendered figures go to the artifacts directory named in §4 only.
+    17	- Loss values and oracle direction are never EE evidence. In every report separate: verified fact / inference / readiness /
+    18	  efficacy. Receipts over polling. Report outcomes faithfully (a failing token is reported as failing, with the line).
+    19	- Freeze discipline: inside a stage's bind→run window do NOT commit, do NOT create untracked files in the worktree, do NOT
+    20	  edit any file. Commit only at the prescribed points (§5). Never run `git pull/fetch/rebase/reset/checkout/stash` in the
+    21	  worktree. Never write under `/home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8*` or any sealed/complete root.
+    22	- If the permission classifier denies a command, do the equivalent allowed thing; never try to bypass a denial.
+    23	
+    24	## 1. Environment (every command)
+    25	```
+    26	cd /home/sat/mcrl-leo-handover-wip
+    27	export V023_SUCCESSOR_LOCAL_PYTHON=/home/sat/mcrl-leo-handover/.venv/bin/python
+    28	export PYTHONPATH=/home/sat/mcrl-leo-handover-wip/src PYTHONDONTWRITEBYTECODE=1
+    29	export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+    30	PY=/home/sat/mcrl-leo-handover/.venv/bin/python
+    31	```
+    32	Pipeline directory (yours, outside the worktree): `/home/sat/mcrl-v023-pipeline-20260908/` — `PIPELINE-LOG.md` (append one
+    33	row per step: UTC time, step id, command, wall time, token/digests, next step), `STATUS.md` (overwrite: current step, what is
+    34	running, tmux names, last receipt), `STOP-<step>.md`, `NEEDS-OWNER-<topic>.md`, `OWNER-INSTRUCTIONS.md` (read-only for you:
+    35	if it appears, follow it).
+    36	Long steps run in their own tmux session `mcrl-v023-<step>` with a log file under the pipeline directory. Wait for receipts,
+    37	not output: `timeout 590 bash -c 'until test -f <receipt>; do sleep 60; done'` repeated, checking `pgrep -f <script>` each
+    38	round; a dead process without a receipt → read the log tail → classify (refusal vs infrastructure) → §6.
+    39	Server: 20 cores, 91 GB. Leave ≥ 2 cores free. Do not start a second heavy stage while one is using > 12 cores.
+    40	
+    41	## 2. Where things are
+    42	- Worktree HEAD at issue time: `5adf898`. Stage-A attempt #2 STOPPED at 02:08 UTC (forbidden-token guard vs r8 provenance; launcher
+    43	  self-ssh); fix pass 10 is being built on a server workspace; attempt #3 will be run by an operator or by you if `OWNER-INSTRUCTIONS.md`
+    44	  says so — in that case follow `prompts/operator-r8-postseal-and-stagea-freeze-launch.md` with `V023_SUCCESSOR_SERVER_HOST=local`. Stage-C code is FINAL and
+    45	  hash-authenticated (`build_v023_c1c2_successor_stagec_manifest.py --check`); the scheduling addendum §2 is sealed.
+    46	- Sealed targets (read-only): `/home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8` (MANIFEST 8e1bd59e…, receipt e9f84526…).
+    47	- Stage-A formal output root (written by the stage-A operator): `/home/sat/mcrl-v023-c1c2-successor-source-training-20260907-100e-r1`.
+    48	- Stage-A operator notes: `/home/sat/mcrl-v023-stageA-attempt2-notes/` (step logs). The operator's prompt (in case you must
+    49	  take over): `.scratch/multi-catfish-v023-controller-handoff-20260907/prompts/operator-r8-postseal-and-stagea-freeze-launch.md`.
+    50	- Authoritative procedure documents (read before the corresponding step; code wins over prose, log any discrepancy):
+    51	  `.scratch/multi-catfish-v023-c1c2-successor-stagec-launch/README.md`, `…/ACCEPTANCE-SERVER-EQUIVALENCE.md`,
+    52	  `.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-STAGEC-SCHEDULING-ADDENDUM-2026-09-07.md` (§2 only; §1 withdrawn),
+    53	  `.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md` (stage-C ladder, HELD/FALSIFIED,
+    54	  9000 authority), `.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/README.md`,
+    55	  `.scratch/multi-catfish-v023-ch5-figure-pipeline/README.md`, `.scratch/multi-catfish-v023-c1c2-successor/ENGINEERING-LANE-CHARTER-2026-09-07.md`.
+    56	- Command skeleton extracted by the local controller: §4 below (updated 05:25 UTC for fix pass 6: R2 addendum active, M2 builder emits the full formal admission, chunked continuation 6000/9000 under authority, declined-continuation seal). Confirm each flag against `--help`/README before running.
+    57	
+    58	## 3. Stage sequence (each PASS → start the next immediately)
+    59	**S0 — Stage A hand-over (do not duplicate the operator).** A local operator agent is executing stage A (freeze → post-bind
+    60	offline gate → launcher → 100 epochs → verifier → `--replay-arms` → stage B → ONE final commit of freeze artifacts + receipts).
+    61	Watch, do not act: `ps -eo pid,etimes,args | grep -E "successor|stage_b|verify_v023"`, the notes dir, the output root's
+    62	receipts, `git status --porcelain`/`git log -1` in the worktree. S0 is complete when ALL hold: stage-B receipt shows
+    63	`PASS_PLUMBING_INTEGRITY`, verifier receipt `PASS_SOURCE_TRAINING_INTEGRITY`, `REPLAY_ARMS_PASS` recorded, worktree porcelain
+    64	empty and HEAD ≠ `5adf898`. Take over ONLY if: a `STOP`/`TASK_EXIT=STOPPED` note exists, or no operator process and no new
+    65	note/receipt for 45 min. Taking over = continue the operator prompt from the receipt-defined state; never redo a step whose
+     1	# V025 — pilot track declaration (controller, 2026-09-09 ≈ 02:50 UTC; sealed before the pilot runs)
+     2	
+     3	The owner has asked for the fastest path to a working C3 and for training to start now, with debugging continuing in parallel. Two tracks run side by side. This declaration exists so that speed on one track cannot contaminate the other.
+     4	
+     5	## Track F — pilot (starts immediately)
+     6	**Purpose:** prove the whole stages 6–8 path runs end to end on real successor physics, and obtain a first *learned* C3 signal in hours rather than days.
+     7	**Scope:** quarantined development worlds only (`V025_PROBE/world/{1,2}` for training rows, `world/{3,4}` for evaluation), the engine as it stands at the stage-4d/4f snapshot with the fixed provider, 30 anchors per world per carrier, the sealed catalogue and arms, **4 learner seeds** and the sealed learner configuration, 6 arms.
+     8	**Label on every artefact:** `PILOT_NOT_CLAIM`.
+     9	**Binding limits:** pilot numbers may never enter the paper, may never select a configuration, a regime, a margin, a seed count or any sealed rule, and may never be cited as evidence for or against C1, C2 or C3. Their only admissible uses are (i) finding integration and engineering defects, (ii) measuring cost, (iii) deciding *engineering* priorities. The pilot cannot trigger PHYSICS-GO and cannot substitute for the a-r0 matrix.
+    10	**What it may change:** engineering only — code that computes no scientific quantity differently (speed, memory, wiring, logging, schema plumbing). Any scientific change it suggests goes through the freeze rule like any other late finding.
+    11	
+    12	## Track S — sealed confirmatory path (unchanged)
+    13	Stage 4g → its audit → seal package → a-r0 matrix → admission trichotomy → PHYSICS-GO → confirmatory source generation and training on the claim panel with 16 seeds. Nothing in Track F alters this sequence, its worlds, its seeds or its rules.
+    14	
+    15	## Why this is safe
+    16	The pilot worlds are already quarantined from the claim panel (world 1 was opened before sealing; the formal panel uses the `V025_PROBE_R2` / `V025_CAL_R2` namespaces and reserved claim dates). The pilot uses the same code as Track S, so every integration defect it finds is a real defect of the confirmatory path, found earlier and more cheaply.
+    17	
+    18	Seal: sha256 in the companion `.sha256` file.
+     1	# V025 physics successor — priority declaration (controller, sealed before any successor outcome; 2026-09-08, server clock ≈ 13:50 UTC)
+     2	
+     3	## Owner's requirements (verbatim intent, 2026-09-08 ≈ 13:48 UTC)
+     4	1. The off-axis / elevation angle must genuinely influence transmit power and energy efficiency.
+     5	2. C1, C2 and C3 must each genuinely raise pooled EE; C3 is the current blocker.
+     6	3. Both successor architectures are to be developed and tested in parallel; they are not in conflict.
+     7	
+     8	## Declaration
+     9	- **Primary system model: architecture (a) `V025-ANGLE-TPC-TDM-ACM`** — memoryless angle-aware power control (per 30.08 s step, per simultaneous slot configuration: p_u = min(1.65 W, γ*·(N + Î_u)/ĥ_u), ĥ_u = G^T(θ_u)·L_u·G^R, γ* = the 8PSK 2/3 threshold of EN 302 307-1 Table 13 with the 1.7 dB margin and roll-off 0.20 correction, i.e. 7.528 dB nominal; equal-airtime TDM; coupled nominal powers solved from a history-independent initialisation with frozen tolerance and residual certification; no segment memory). Chosen because it is the only candidate that satisfies requirement 1 by construction. This choice is made **before** any successor outcome and is independent of C3's result.
+    10	- **Declared reference model: architecture (b) `V025-FIXED-EIRP-ACM`** — fixed 1.65 W RF per active beam with ACM (astra round-3 §2). Reported in every table beside (a).
+    11	- **Architectural sensitivity: (a′)** — same target with equal FDM sub-bands (per-user RF ceiling 1.65/n_b, beam RF = Σ p_u, sub-band-consistent noise/PSD/overlap).
+    12	- **Priority order of the 18-cell physics-settings matrix (fixed now):** `a0 > b0 > a′0 > aS > bS > a′S > aH > bH > a′H > aSH > bSH > a′SH > aT > bT > a′T`; U cells (uncapped Shannon) are diagnostic only and ineligible as primary. Treatments per astra round 3 §4 (0 = 47-subinterval integration, standby 0, interruption off, ACM cap + margin; T = snapshot; S = standby f = 1/12; H = conditional 62/142 ms useful-time interruption; SH = both; U = uncapped).
+    13	- **Everything else** follows astra round 3 §2 (items 1, 3, 5–31 unchanged: ACM table, margin, served ⇔ SINR ≥ −1.4418 dB after joint resolution, energy accounting with P_idle = 0 primary, clock/integration, geometry/10° visibility, actions, observable information, calibration λ = η_ref and κ on a nominal-greedy reference, reward core R = B − η_ref·E, Φ as QoS, C1 full-network difference surplus, C2 feature migration and forecast schema, C3 as set-level consolidation coordinator, learning contract, history seal) and §3 (known-answer suite, extended for (a) with coupled-power convergence/saturation and slot-consistent interference fixtures).
+    14	- **Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.
+    15	
+    16	## Rules that make "whichever helps C3" honest
+    17	- The primary is (a) by requirement 1, not by C3's outcome. C3's marginal is measured under every cell and reported as a regime map ("where does coordination change EE"). A positive C3 under (b) with a non-positive C3 under (a) is a reported finding, not grounds to swap the primary after the fact.
+    18	- Training admission (astra §4): retained factors need positive oracle marginals beyond certified numerical error and acceptable QoS; C3 additionally needs genuine joint headroom (a multi-user witness beating the unilateral alternative) and a deployable S0 gain ≥ the pre-existing 1 % practical threshold. If C3's set-level oracle marginal is ≤ 0 in every completed, physically defensible cell, C3 training/screens/confirmation close and a bounded negative is reported; C1/C2 proceed under their own gates.
+    19	- No target, standby, margin, service or priority change after outcomes are opened. Any defect found later is repaired and re-run, never demoted by outcome.
+    20	
+    21	## Ordering
+    22	1. Codex implements one versioned radiation/rate/energy engine with the three architectures behind a declared switch, the known-answer suite, and the matrix runner reusing Track B's shared-tape lever-matrix runner. Nothing runs before the KAT suite passes.
+    23	2. Rehearsal to measure q; overnight matrix (≤ 160 core-hours); every cell reported.
+    24	3. Stage A regenerated sources + training (FULL2, DROP_C1, DROP_C2, ALL_NEUTRAL; three initialisations) only for factors admitted by the probes; stage C ladder; C3-S screens and confirmatory on fresh worlds.
+    25	4. Stage A real launch stays HOLD until step 2 admits the factors; `PHYSICS-GO.txt` names `V025-ANGLE-TPC-TDM-ACM`.
+    26	
+    27	Seal: this file's sha256 is recorded in `V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.sha256`; the astra round-3 consolidation it binds is `ADJUDICATION-PHYSICS-EE-ROUND3-CONSOLIDATION-CODEX-GPT6-ASTRA-ULTRA-2026-09-08.md` (sha256 recorded in the same sidecar).
+
+exec
+/bin/bash -lc "nl -ba src/mcrl/physics_v025/state_v025.py | sed -n '1,185p'; nl -ba src/mcrl/algorithms/ee_axis_action_shared.py | sed -n '65,120p'; nl -ba src/mcrl/env/action_contract.py | sed -n '30,75p'; nl -ba src/mcrl/physics_v025/provider_legacy.py | sed -n '290,350p'" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+     1	"""Frozen C2 observation schema for the memoryless V0.25 engine."""
+     2	
+     3	from __future__ import annotations
+     4	
+     5	from dataclasses import dataclass
+     6	from fractions import Fraction
+     7	import hashlib
+     8	import json
+     9	import math
+    10	from typing import Sequence
+    11	
+    12	from mcrl.errors import MCRLContractError
+    13	
+    14	from .calibration import assert_calibration_prices
+    15	from .constants_v025 import BEAM_RF_CAP_W, FORECAST_OFFSETS, IDENTITY_REFRESH_DECISIONS
+    16	
+    17	
+    18	SCHEMA_VERSION = "mcrl-v025-c2-state-v1"
+    19	ACTION_FEATURES = (
+    20	    ("incumbent_nominal_decoding_margin", "dB", 20.0),
+    21	    ("forecast_se_trend", "bit/s/Hz/s", 0.1),
+    22	    ("remaining_d2_time", "s", 120.0),
+    23	    ("remaining_visibility_time", "s", 120.0),
+    24	    ("refresh_phase", "decision", float(IDENTITY_REFRESH_DECISIONS - 1)),
+    25	    ("background_occupancy", "user", 10.0),
+    26	    ("beam_activation", "boolean", 1.0),
+    27	    ("satellite_activation", "boolean", 1.0),
+    28	    ("required_power_cap_margin", "W", BEAM_RF_CAP_W),
+    29	)
+    30	OFFSET_FEATURES = (
+    31	    ("valid", "boolean", 1.0),
+    32	    ("survival", "boolean", 1.0),
+    33	    ("minimum_decoding_margin", "dB", 20.0),
+    34	    ("mean_acm_spectral_efficiency", "bit/s/Hz", 4.0),
+    35	)
+    36	STATE_SHAPE = (len(ACTION_FEATURES) + FORECAST_OFFSETS * len(OFFSET_FEATURES),)
+    37	
+    38	
+    39	def _schema_payload() -> dict[str, object]:
+    40	    return {
+    41	        "schema": SCHEMA_VERSION,
+    42	        "shape": list(STATE_SHAPE),
+    43	        "normalization": "divide-by-frozen-positive-scale; booleans unchanged; signed values retained",
+    44	        "action_features": [
+    45	            {"name": name, "unit": unit, "scale": float(scale).hex()}
+    46	            for name, unit, scale in ACTION_FEATURES
+    47	        ],
+    48	        "offsets": FORECAST_OFFSETS,
+    49	        "offset_features": [
+    50	            {"name": name, "unit": unit, "scale": float(scale).hex()}
+    51	            for name, unit, scale in OFFSET_FEATURES
+    52	        ],
+    53	        "rate_architecture_rule": (
+    54	            "required_power_cap_margin=cap-required_nominal_power; "
+    55	            "zero placeholder only for non-rate architectures"
+    56	        ),
+    57	        "removed_legacy_features": [
+    58	            "previous_recurrence_power",
+    59	            "gain_to_entry_ratio",
+    60	            "segment_age",
+    61	        ],
+    62	        "price_binding": "explicit lambda=eta_ref and positive kappa on every encoding",
+    63	    }
+    64	
+    65	
+    66	SCHEMA_SHA256 = hashlib.sha256(
+    67	    json.dumps(_schema_payload(), sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+    68	).hexdigest()
+    69	
+    70	
+    71	@dataclass(frozen=True)
+    72	class ForecastOffsetState:
+    73	    valid: bool
+    74	    survival: bool
+    75	    minimum_decoding_margin_db: float
+    76	    mean_acm_se_bit_s_hz: float
+    77	
+    78	    def values(self) -> tuple[float, ...]:
+    79	        values = (
+    80	            float(self.valid),
+    81	            float(self.survival),
+    82	            self.minimum_decoding_margin_db,
+    83	            self.mean_acm_se_bit_s_hz,
+    84	        )
+    85	        if not all(math.isfinite(value) for value in values):
+    86	            raise MCRLContractError("offset state must be finite")
+    87	        return values
+    88	
+    89	
+    90	@dataclass(frozen=True)
+    91	class C2ActionState:
+    92	    incumbent_nominal_decoding_margin_db: float
+    93	    forecast_se_trend_bit_s_hz_per_s: float
+    94	    remaining_d2_time_s: float
+    95	    remaining_visibility_time_s: float
+    96	    refresh_phase: int
+    97	    background_occupancy_users: int
+    98	    beam_active: bool
+    99	    satellite_active: bool
+   100	    required_power_cap_margin_w: float | None
+   101	    offsets: tuple[ForecastOffsetState, ...]
+   102	
+   103	    def __post_init__(self) -> None:
+   104	        if len(self.offsets) != FORECAST_OFFSETS:
+   105	            raise MCRLContractError("C2 state needs exactly three forecast offsets")
+   106	        if not 0 <= self.refresh_phase < IDENTITY_REFRESH_DECISIONS:
+   107	            raise MCRLContractError("refresh phase is outside 0..3")
+   108	        if type(self.background_occupancy_users) is not int or self.background_occupancy_users < 0:
+   109	            raise MCRLContractError("background occupancy must be a nonnegative integer")
+   110	        physical = (
+   111	            self.incumbent_nominal_decoding_margin_db,
+   112	            self.forecast_se_trend_bit_s_hz_per_s,
+   113	            self.remaining_d2_time_s,
+   114	            self.remaining_visibility_time_s,
+   115	        )
+   116	        if not all(math.isfinite(value) for value in physical):
+   117	            raise MCRLContractError("C2 physical state values must be finite")
+   118	        if self.remaining_d2_time_s < 0.0 or self.remaining_visibility_time_s < 0.0:
+   119	            raise MCRLContractError("remaining times must be nonnegative")
+   120	
+   121	
+   122	@dataclass(frozen=True)
+   123	class EncodedC2State:
+   124	    values: tuple[float, ...]
+   125	    schema_sha256: str
+   126	    lambda_bits_per_j: Fraction
+   127	    eta_ref: Fraction
+   128	    kappa_bits_per_user_step: Fraction
+   129	
+   130	
+   131	def encode_c2_state(
+   132	    state: C2ActionState,
+   133	    *,
+   134	    architecture: str,
+   135	    lambda_bits_per_j: int | float | str | Fraction,
+   136	    eta_ref: int | float | str | Fraction,
+   137	    kappa_bits_per_user_step: int | float | str | Fraction,
+   138	) -> EncodedC2State:
+   139	    """Normalize one action row and bind its per-setting calibration."""
+   140	
+   141	    eta, kappa = assert_calibration_prices(
+   142	        lambda_bits_per_j=lambda_bits_per_j,
+   143	        eta_ref=eta_ref,
+   144	        kappa_bits_per_user_step=kappa_bits_per_user_step,
+   145	    )
+   146	    is_rate = architecture in {"a-r", "a′-r"}
+   147	    if is_rate and state.required_power_cap_margin_w is None:
+   148	        raise MCRLContractError("rate-target C2 state requires power/cap margin")
+   149	    if not is_rate and state.required_power_cap_margin_w is not None:
+   150	        raise MCRLContractError("non-rate state must use the declared zero placeholder")
+   151	    margin = 0.0 if state.required_power_cap_margin_w is None else state.required_power_cap_margin_w
+   152	    raw = (
+   153	        state.incumbent_nominal_decoding_margin_db,
+   154	        state.forecast_se_trend_bit_s_hz_per_s,
+   155	        state.remaining_d2_time_s,
+   156	        state.remaining_visibility_time_s,
+   157	        float(state.refresh_phase),
+   158	        float(state.background_occupancy_users),
+   159	        float(state.beam_active),
+   160	        float(state.satellite_active),
+   161	        margin,
+   162	    )
+   163	    normalized = [value / ACTION_FEATURES[index][2] for index, value in enumerate(raw)]
+   164	    for offset in state.offsets:
+   165	        normalized.extend(
+   166	            value / OFFSET_FEATURES[index][2]
+   167	            for index, value in enumerate(offset.values())
+   168	        )
+   169	    if len(normalized) != STATE_SHAPE[0] or not all(math.isfinite(value) for value in normalized):
+   170	        raise MCRLContractError("encoded C2 state violates frozen shape/finiteness")
+   171	    return EncodedC2State(tuple(normalized), SCHEMA_SHA256, eta, eta, kappa)
+   172	
+   173	
+   174	def schema_manifest() -> dict[str, object]:
+   175	    return {**_schema_payload(), "schema_sha256": SCHEMA_SHA256}
+   176	
+   177	
+   178	__all__ = [
+   179	    "ACTION_FEATURES",
+   180	    "C2ActionState",
+   181	    "EncodedC2State",
+   182	    "ForecastOffsetState",
+   183	    "OFFSET_FEATURES",
+   184	    "SCHEMA_SHA256",
+   185	    "SCHEMA_VERSION",
+    65	        if not np.isfinite(self.beta) or self.beta < 0.0:
+    66	            raise ValueError("beta must be finite and nonnegative")
+    67	        if len(self.loss_weights) != 3 or any(
+    68	            not np.isfinite(weight) or weight <= 0.0
+    69	            for weight in self.loss_weights
+    70	        ):
+    71	            raise ValueError("loss_weights must be three finite positive values")
+    72	
+    73	
+    74	class ActionSharedQNetwork(nn.Module):
+    75	    """Apply one scalar MLP to every action's aligned local features."""
+    76	
+    77	    def __init__(self, config: EEAxisActionSharedConfig) -> None:
+    78	        super().__init__()
+    79	        activation = nn.Tanh if config.activation == "tanh" else nn.ReLU
+    80	        widths = (
+    81	            ACTION_ALIGNED_FEATURES + GLOBAL_FEATURES,
+    82	            *config.hidden_layers,
+    83	            1,
+    84	        )
+    85	        layers: list[nn.Module] = []
+    86	        for left, right in zip(widths[:-2], widths[1:-1], strict=True):
+    87	            layers.extend((nn.Linear(left, right), activation()))
+    88	        layers.append(nn.Linear(widths[-2], widths[-1]))
+    89	        self.scorer = nn.Sequential(*layers)
+    90	        self.action_dim = config.action_dim
+    91	
+    92	    def forward(self, states: torch.Tensor) -> torch.Tensor:
+    93	        if states.ndim != 2:
+    94	            raise ValueError("action-shared Q input must be a state matrix")
+    95	        batch = states.shape[0]
+    96	        aligned_width = ACTION_ALIGNED_FEATURES * self.action_dim
+    97	        expected = aligned_width + GLOBAL_FEATURES
+    98	        if states.shape[1] != expected:
+    99	            raise ValueError(
+   100	                f"action-shared Q input width must be {expected}, got {states.shape[1]}"
+   101	            )
+   102	        local = states[:, :aligned_width].reshape(
+   103	            batch, ACTION_ALIGNED_FEATURES, self.action_dim
+   104	        ).transpose(1, 2)
+   105	        global_features = states[:, aligned_width:].unsqueeze(1).expand(
+   106	            -1, self.action_dim, -1
+   107	        )
+   108	        features = torch.cat((local, global_features), dim=2)
+   109	        return self.scorer(features).squeeze(2)
+   110	
+   111	
+   112	class EEAxisActionSharedTrainer:
+   113	    """Exactly three independent, action-equivariant online Q functions."""
+   114	
+   115	    def __init__(
+   116	        self,
+   117	        config: EEAxisActionSharedConfig,
+   118	        *,
+   119	        train_seed: int,
+   120	        device: str = "cpu",
+    30	from typing import Iterable, Sequence, SupportsInt
+    31	
+    32	import numpy as np
+    33	
+    34	from ..errors import MCRLContractError
+    35	
+    36	# ---------------------------------------------------------------------------
+    37	# Index layout (§4A.1)
+    38	# ---------------------------------------------------------------------------
+    39	
+    40	NUM_SATELLITE_SLOTS: int = 4
+    41	"""``L_w`` — SDD B12, matching MODQN §IV's four satellites."""
+    42	
+    43	NUM_BEAM_SLOTS: int = 7
+    44	"""``J_w`` — the anchor cell plus its six canonical neighbours (§4A.2).
+    45	
+    46	⚠ **This 7 is not MODQN Table I's ``V = 7``.  The match is a coincidence.**
+    47	
+    48	Table I's ``V = 7`` is ``|𝒱|`` at *their* granularity: how many beam
+    49	positions one satellite has in total.  In Sun-2024 a "beam" has no geometry
+    50	at all — a full-text grep finds zero hits for off-axis, boresight, pointing,
+    51	3 dB, half-power, footprint, steer, or earth-fixed — so a beam there is a
+    52	non-spatial load channel and the number could have been 7, 3 or 70 without
+    53	changing anything.
+    54	
+    55	This paper adds the geometry they lacked, and once a beam has a pointing and
+    56	a 3 dB footprint it has to cover ground: at the measured 485 km, 95%
+    57	coverage needs 39 cells.  So Table I's ``V = 7`` is **superseded by this
+    58	paper's ``V`` (39, F5 pending)** — that is where it went; it was not left
+    59	homeless.
+    60	
+    61	``J_w = 7`` is a different quantity entirely: how many cells one *user*
+    62	can reach (their own plus the six neighbours), from the hex-neighbourhood
+    63	argument in §3.3.  **The two must never be substituted for each other**, and
+    64	there is deliberately no per-satellite beam-count constant anywhere in this
+    65	project (ruling 2026-08-22 §7.2-7.3).
+    66	"""
+    67	
+    68	NUM_ACTIONS: int = NUM_SATELLITE_SLOTS * NUM_BEAM_SLOTS
+    69	"""``C = 28`` — the flat output width.  Frozen; the network is not touched."""
+    70	
+    71	NO_OP_ACTION: int = -1
+    72	"""Emitted when a user's decision mask is empty (SDD §4A.5a(1)).
+    73	
+    74	Not a beam index and not maskable: it is the absence of a decision.
+    75	
+   290	
+   291	        satellites = driver._satellites
+   292	        if satellites is None:  # pragma: no cover - guarded by reset
+   293	            raise RuntimeError("legacy scenario did not install a satellite set")
+   294	        tracked = satellites.norad_ids
+   295	        tape_samples = (self.steps - 1) * D2_SUBINTERVALS + D2_SUBINTERVALS + 1
+   296	        jd, fr = step_times(
+   297	            start,
+   298	            tape_samples + _FUTURE_INTERVALS,
+   299	            time_step_s=D2_MEASUREMENT_STEP_S,
+   300	        )
+   301	        positions = satellites.propagate_ecef(jd, fr, require_all_healthy=True)
+   302	        self._validate_propagation(positions)
+   303	
+   304	        # Hardware identities are only the pairs realised by at least one
+   305	        # legal legacy action at a prepared decision instant.  The three
+   306	        # forecast steps are part of the immutable 33-step tape, so their
+   307	        # legal chains must be opened with the tape rather than appearing as
+   308	        # new hardware after the 30-step reference rollout.  This remains the
+   309	        # union of actual masks, never NORAD x cell Cartesian multiplication.
+   310	        inventory = tuple(
+   311	            sorted(
+   312	                {
+   313	                    (int(norad), int(cell))
+   314	                    for state in decisions[:PREPARED_STEPS]
+   315	                    for norad, cell, legal in zip(
+   316	                        state.norad_ids.ravel().tolist(),
+   317	                        state.cell_ids.ravel().tolist(),
+   318	                        state.legacy_mask.ravel().tolist(),
+   319	                        strict=True,
+   320	                    )
+   321	                    if bool(legal) and int(norad) >= 0 and int(cell) >= 0
+   322	                }
+   323	            )
+   324	        )
+   325	        if not inventory:
+   326	            raise MCRLContractError("canonical TRAIN world has an empty inventory")
+   327	
+   328	        xy0 = decisions[0].user_xy_km
+   329	        lat, lon = local_km_to_geodetic(
+   330	            xy0[:, 0], xy0[:, 1],
+   331	            center_lat_deg=AREA_CENTER_LAT_DEG,
+   332	            center_lon_deg=AREA_CENTER_LON_DEG,
+   333	        )
+   334	        layout = tuple(
+   335	            UserLayout(index, float(lat[index]), float(lon[index]))
+   336	            for index in range(config.mobility.num_users)
+   337	        )
+   338	        self._world_seed = seed
+   339	        self._world = _WorldState(
+   340	            start,
+   341	            seed,
+   342	            driver.grid,
+   343	            tuple(decisions),
+   344	            _readonly(tracked),
+   345	            _readonly(positions),
+   346	            inventory,
+   347	            layout,
+   348	            tle_files,
+   349	        )
+   350	        # ``satellites`` and ``driver`` now fall out of scope; no Satrec is
+
+codex
+The strongest objection to “A is cheap” is arithmetic: the later design calls for about 160 evaluation dates out of only 166 TRAIN dates. Strict separation would leave at most six training dates before exclusions or an added embargo. The model evidence also points away from literal date memorisation as the main concern; repeated local configurations and changes in the geometry and load distribution are more plausible risks.
+web search: 
+exec
+/bin/bash -lc "nl -ba .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | sed -n '235,261p'; rg -n 'build_allocation_manifest|assert_role_wise_date_disjointness|training.*date|source.*date' src/mcrl/physics_v025 .scratch/multi-catfish-v025-physics-successor/probe tests/physics_v025 -g '*.py' | tail -75; nl -ba .scratch/multi-catfish-v025-physics-successor/V025-DESIGN-FREEZE-AND-CLOSURE-RULE-2026-09-09.md | head -100; git rev-parse HEAD" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+   235	}
+   236	SWEEP_PANEL_POINTS: dict[str, tuple[tuple[object, str], ...]] = {
+   237	    "A": ((25, "R7"), (50, "a-r0"), (100, "R1")),
+   238	    "B": ((0.1, "R4"), (0.338, "a-r0"), (1.0, "R3")),
+   239	    "E": (("a-r0", "a-r0"), ("a′-r0", "a′-r0"), ("a-γ0", "a-γ0"), ("b0", "b0")),
+   240	    "F": tuple((angle, "a-r0") for angle in (0.0, 0.5, 1.0, 1.5, 2.0)),
+   241	}
+   242	SWEEP_PANEL_METADATA = {
+   243	    "A": {"x_axis": "rate_target_mbit_s", "worlds_per_x": 4, "anchors_per_world": 90},
+   244	    "B": {"x_axis": "circuit_power_per_active_chain_w", "worlds_per_x": 4, "anchors_per_world": 90},
+   245	    "E": {"x_axis": "architecture", "worlds_per_x": 4, "anchors_per_world": 90},
+   246	    "F": {"x_axis": "off_axis_angle_deg", "worlds_per_x": 1, "anchors_per_world": 1},
+   247	}
+   248	SUCCESSOR_DEVELOPMENT_ROLES = frozenset(
+   249	    {
+   250	        "PROBE",
+   251	        "CALIBRATION",
+   252	        "REHEARSAL",
+   253	        "KAT",
+   254	        "SYNTHETIC_REAL",
+   255	        "SMOKE",
+   256	    }
+   257	)
+   258	SELECTION_DEPENDENCY_ALLOWLIST = (
+   259	    "immutable_world_tape",
+   260	    "opening_incumbent_assignments",
+   261	    "nominal_boundary_fields",
+tests/physics_v025/test_stage4b_contract.py:240:    allocation = runner.build_allocation_manifest(identities)
+tests/physics_v025/test_stage4b_contract.py:245:        runner.build_allocation_manifest((identity, collision))
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:6276:def assert_role_wise_date_disjointness(
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:6296:def build_allocation_manifest(
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:6304:    assert_role_wise_date_disjointness(rows)
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:7456:        payload = build_allocation_manifest(
+src/mcrl/physics_v025/provider_legacy.py:247:            for file_date in selection.source_dates
+     1	# V025 — design freeze and closure rule (controller, 2026-09-09 ≈ 02:45 UTC; sealed before any formal successor outcome)
+     2	
+     3	The review loop has no stopping condition as it stands: each round of outside opinion or fresh-context audit produces amendments, which produce another round. This rule closes it.
+     4	
+     5	## 1. Freeze point
+     6	The successor design is **frozen when engine stage 4g passes its audit**. From that moment the sealed set is: declarations v1.0–v1.9 and their errata, the contingency ladder and its amendment, the stages 6–8 contract v1 with amendments v1.1–v1.2, and every controller decision record in force. No further scientific change is made before the a-r0 matrix.
+     7	
+     8	## 2. Admissibility test for a late finding (all four must hold)
+     9	A finding arriving after the freeze is acted on **only if**:
+    10	1. it can change the **sign** of a load-bearing certificate or the **branch** of the admission trichotomy — stated in one sentence, with which certificate;
+    11	2. it names a **test that fails now and passes after the change**, executable in under an hour;
+    12	3. it is confirmed by a source independent of the one that raised it (a second reviewer, or a measurement);
+    13	4. the change does not require re-running work already completed under the freeze, or, if it does, the re-run fits in one overnight window.
+    14	A finding that fails any of the four is recorded in `LIMITATIONS-AND-FUTURE-WORK-REGISTER.md` with its reasoning and is reported in the paper's limitations section. This is not a way to hide problems: the register is published with the work.
+    15	
+    16	## 3. What continues after the freeze
+    17	Outside opinions and audits continue, because their findings still shape the **limitations, the claim wording and the next study** — but they no longer gate the matrix. Engineering fixes that change no scientific quantity (speed, memory, logging, reporting fields) remain allowed at any time and are listed in the stage reports.
+    18	
+    19	## 4. Standard of evidence for calling something a defect
+    20	Every item recorded as a defect carries: the failing test or the changed number, the independent confirmation, and what it would have done to a certificate. An item with none of these is labelled **precautionary**, not a defect, and is not used to justify delay. The register `V025-DEFECT-REGISTER-2026-09-09.md` applies this standard retrospectively to everything acted on so far, so that the owner can audit which changes were demonstrated and which were precautionary.
+    21	
+    22	## 5. Deadline discipline
+    23	If stage 4g's audit does not return READY within two further engine passes, the controller stops adding scope, runs the matrix on the last audited configuration, and reports every unresolved item in the register as a declared limitation.
+75c5c78cac3833e5a3100bf948211023d0de228c
+
+web search: https://www.wsl.ch/lud/biodiversity_events/papers/Roberts_et_al-2017-Ecography.pdf
+web search: 
+exec
+/bin/bash -lc "rg --files src .scratch/multi-catfish-v025-physics-successor -g '*.py' | rg '(v025|stagec|successor|coalition)' | head -95; rg -n 'Q1|head|encoder|Linear|hidden' .scratch/multi-catfish-v025-physics-successor/stagec -g '*.py' 2>/dev/null | head -75; ls -l .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT* .scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md" in /home/sat/mcrl-v025-codex-ws-engine
+ exited 2 in 0ms:
+.scratch/multi-catfish-v025-physics-successor/probe/build_off_axis_figure.py
+.scratch/multi-catfish-v025-physics-successor/probe/build_stage4h_link_ledger.py
+.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+src/mcrl/physics_v025/calibration.py
+src/mcrl/physics_v025/integration.py
+src/mcrl/physics_v025/targets.py
+src/mcrl/physics_v025/channel.py
+src/mcrl/physics_v025/tapes.py
+src/mcrl/physics_v025/adapter.py
+src/mcrl/physics_v025/batch.py
+src/mcrl/physics_v025/acm.py
+src/mcrl/physics_v025/state_v025.py
+src/mcrl/physics_v025/provider_legacy.py
+src/mcrl/physics_v025/endpoint.py
+src/mcrl/physics_v025/__init__.py
+src/mcrl/physics_v025/resolution.py
+src/mcrl/physics_v025/constants_v025.py
+src/mcrl/physics_v025/parity/__init__.py
+src/mcrl/physics_v025/architectures.py
+src/mcrl/physics_v025/matrix.py
+src/mcrl/physics_v025/energy.py
+src/mcrl/runtime/ee_axis_coalition_residual_c3.py
+ls: cannot access '.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md': No such file or directory
+-rw-r--r-- 1 sat sat  5090 Sep  8 17:38 .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md
+-rw-rw-r-- 1 sat sat 13496 Sep  9 02:58 .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+-rw-rw-r-- 1 sat sat  2387 Sep  9 02:58 .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+-rw-rw-r-- 1 sat sat  3623 Sep  9 02:58 .scratch/multi-catfish-v025-physics-successor/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+
+web search: https://static.wsl.ch/lud/biodiversity_events/papers/Roberts_et_al-2017-Ecography.pdf
+exec
+/bin/bash -lc "nl -ba src/mcrl/runtime/ee_axis_coalition_residual_c3.py | sed -n '1,170p'; nl -ba .scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | sed -n '7430,7480p'" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+     1	"""Pure V0.22 named-coalition C3 residual mechanics.
+     2	
+     3	This module consumes one already matched current-slot reference profile,
+     4	unilateral coalition branches, and joint coalition branch.  It performs no
+     5	physics evaluation, action selection, learning, rollout, or deployment
+     6	work.  The returned target is a named-coalition identity only.  It is **NOT**
+     7	exact for partial adoption, arbitrary hybrid profiles, learned Q sums, or
+     8	deployment closure.  For this provisional probe the interaction surplus is
+     9	allocated with a fixed equal interaction share; that allocation is not
+    10	tunable.
+    11	
+    12	For coalition member ``i`` with user ``u`` the formula is
+    13	
+    14	``own_i = Bu[i,u] - B0[u] - lambda * (Eu[i] - E0)``
+    15	
+    16	``nonfocal_i = sum_v!=u(Bu[i,v] - B0[v])``
+    17	
+    18	``d_i = own_i + nonfocal_i``
+    19	
+    20	The joint surplus is decomposed into unilateral terms and the residual
+    21	interaction term.  Each member receives one equal share of that interaction
+    22	surplus, added to its non-focal bits as ``z3_i``.  The sparse Q3 surface puts
+    23	only ``z3_i / kappa`` at each proposed member action; references, illegal
+    24	cells, non-members, and all other actions are exact zeros.
+    25	"""
+    26	
+    27	from __future__ import annotations
+    28	
+    29	from dataclasses import dataclass
+    30	import math
+    31	from typing import Any
+    32	
+    33	import numpy as np
+    34	
+    35	from ..env.action_contract import NO_OP_ACTION, NUM_ACTIONS
+    36	from ..errors import MCRLContractError
+    37	
+    38	
+    39	COALITION_RESIDUAL_C3_SCHEMA = "multi-catfish-mcrl-v022-c3-coalition-residual-v1"
+    40	"""Canonical schema for the provisional V0.22 coalition residual result."""
+    41	
+    42	COALITION_RESIDUAL_C3_SCHEMA_VERSION = 1
+    43	"""Schema revision for :data:`COALITION_RESIDUAL_C3_SCHEMA`."""
+    44	
+    45	COALITION_RESIDUAL_C3_DEFAULT_ACTION_COUNT = NUM_ACTIONS
+    46	"""Native action width used when no explicit ``A`` is supplied."""
+    47	
+    48	# Descriptive aliases make the schema easy to discover from either the
+    49	# versioned route name or the formula name.
+    50	V022_C3_COALITION_RESIDUAL_SCHEMA = COALITION_RESIDUAL_C3_SCHEMA
+    51	V022_C3_COALITION_RESIDUAL_SCHEMA_VERSION = COALITION_RESIDUAL_C3_SCHEMA_VERSION
+    52	
+    53	
+    54	class CoalitionResidualC3Error(MCRLContractError):
+    55	    """A V0.22 named-coalition C3 input or identity violated the contract."""
+    56	
+    57	
+    58	CoalitionResidualC3ContractError = CoalitionResidualC3Error
+    59	
+    60	
+    61	def _readonly(value: object, *, dtype: np.dtype | type) -> np.ndarray:
+    62	    """Copy an array into C order and make the copy read-only."""
+    63	
+    64	    try:
+    65	        result = np.array(value, dtype=dtype, copy=True, order="C")
+    66	    except (TypeError, ValueError, OverflowError) as error:
+    67	        raise CoalitionResidualC3Error("array cannot be materialised") from error
+    68	    result.setflags(write=False)
+    69	    return result
+    70	
+    71	
+    72	def _float_scalar(value: object, *, field: str, positive: bool = False) -> float:
+    73	    """Parse one finite scalar, optionally requiring strict positivity."""
+    74	
+    75	    if isinstance(value, (bool, np.bool_)):
+    76	        requirement = "finite and positive" if positive else "finite"
+    77	        raise CoalitionResidualC3Error(f"{field} must be {requirement}")
+    78	    try:
+    79	        raw = np.asarray(value)
+    80	    except (TypeError, ValueError, OverflowError) as error:
+    81	        requirement = "finite and positive" if positive else "finite"
+    82	        raise CoalitionResidualC3Error(f"{field} must be {requirement}") from error
+    83	    if raw.shape != () or raw.dtype == np.dtype("bool"):
+    84	        requirement = "finite and positive" if positive else "finite"
+    85	        raise CoalitionResidualC3Error(f"{field} must be a scalar {requirement} value")
+    86	    try:
+    87	        result = float(raw)
+    88	    except (TypeError, ValueError, OverflowError) as error:
+    89	        requirement = "finite and positive" if positive else "finite"
+    90	        raise CoalitionResidualC3Error(f"{field} must be {requirement}") from error
+    91	    requirement = "finite and positive" if positive else "finite"
+    92	    if not math.isfinite(result) or (positive and result <= 0.0):
+    93	        raise CoalitionResidualC3Error(f"{field} must be {requirement}")
+    94	    return result
+    95	
+    96	
+    97	def _float_array(
+    98	    value: object,
+    99	    *,
+   100	    field: str,
+   101	    shape: tuple[int, ...] | None = None,
+   102	    nonnegative: bool = False,
+   103	) -> np.ndarray:
+   104	    """Parse a finite float array with optional non-negative domain guard."""
+   105	
+   106	    try:
+   107	        raw = np.asarray(value)
+   108	    except (TypeError, ValueError, OverflowError) as error:
+   109	        raise CoalitionResidualC3Error(f"{field} must be a numeric array") from error
+   110	    if raw.dtype == np.dtype("bool"):
+   111	        raise CoalitionResidualC3Error(f"{field} must be numeric, not Boolean")
+   112	    try:
+   113	        result = np.asarray(value, dtype=np.float64)
+   114	    except (TypeError, ValueError, OverflowError) as error:
+   115	        raise CoalitionResidualC3Error(f"{field} must be a finite numeric array") from error
+   116	    if shape is not None and result.shape != shape:
+   117	        raise CoalitionResidualC3Error(f"{field} must have shape {shape}, got {result.shape}")
+   118	    if not np.all(np.isfinite(result)):
+   119	        raise CoalitionResidualC3Error(f"{field} must be finite")
+   120	    if nonnegative and np.any(result < 0.0):
+   121	        raise CoalitionResidualC3Error(f"{field} must be non-negative")
+   122	    return np.array(result, dtype=np.float64, copy=True, order="C")
+   123	
+   124	
+   125	def _int_vector(value: object, *, field: str, size: int | None = None) -> np.ndarray:
+   126	    """Parse an exact integer vector, rejecting Boolean and float actions."""
+   127	
+   128	    try:
+   129	        result = np.asarray(value)
+   130	    except (TypeError, ValueError, OverflowError) as error:
+   131	        raise CoalitionResidualC3Error(f"{field} must be an integer vector") from error
+   132	    if (
+   133	        result.ndim != 1
+   134	        or result.dtype == np.dtype("bool")
+   135	        or not np.issubdtype(result.dtype, np.integer)
+   136	    ):
+   137	        shape = f" shape ({size},)" if size is not None else ""
+   138	        raise CoalitionResidualC3Error(f"{field} must be an integer vector{shape}")
+   139	    if size is not None and result.shape != (size,):
+   140	        raise CoalitionResidualC3Error(f"{field} must have shape ({size},), got {result.shape}")
+   141	    return np.array(result, dtype=np.int64, copy=True, order="C")
+   142	
+   143	
+   144	def _action_count(value: object, *, field: str = "action_count") -> int:
+   145	    """Parse a positive native action width."""
+   146	
+   147	    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
+   148	        raise CoalitionResidualC3Error(f"{field} must be a positive integer")
+   149	    result = int(value)
+   150	    if result < 1:
+   151	        raise CoalitionResidualC3Error(f"{field} must be a positive integer")
+   152	    return result
+   153	
+   154	
+   155	def _legal_mask(value: object, *, users: int, actions: int) -> np.ndarray:
+   156	    """Parse the exact Boolean ``(U, A)`` legal-action mask."""
+   157	
+   158	    try:
+   159	        result = np.asarray(value)
+   160	    except (TypeError, ValueError, OverflowError) as error:
+   161	        raise CoalitionResidualC3Error("legal_mask must be Boolean") from error
+   162	    if result.dtype != np.bool_ or result.shape != (users, actions):
+   163	        raise CoalitionResidualC3Error(
+   164	            f"legal_mask must be Boolean shape ({users}, {actions})"
+   165	        )
+   166	    return np.array(result, dtype=np.bool_, copy=True, order="C")
+   167	
+   168	
+   169	def _safe_sum(values: object, *, field: str) -> float:
+   170	    """Use stable summation and reject overflow in derived quantities."""
+  7430	        domain_inventory = write_domain_manifest_inventory(
+  7431	            args.output, payload, kind="probe"
+  7432	        )
+  7433	        path = args.output / "world-manifest.json"
+  7434	        digest = write_immutable(path, payload)
+  7435	        print(json.dumps({"status": "FROZEN_WORLD_MANIFEST", "path": str(path), "file_sha256": digest, "domain_manifests": domain_inventory}, indent=2, sort_keys=True))
+  7436	        return 0
+  7437	    if args.allocation:
+  7438	        if args.allocation_input is None:
+  7439	            raise SystemExit("--allocation requires --allocation-input")
+  7440	        try:
+  7441	            source = json.loads(args.allocation_input.read_text(encoding="utf-8"))
+  7442	        except (OSError, json.JSONDecodeError) as error:
+  7443	            raise SystemExit(f"invalid --allocation-input: {error}") from error
+  7444	        if not isinstance(source, (list, dict)):
+  7445	            raise SystemExit("--allocation-input must be a list or JSON object")
+  7446	        identities = source if isinstance(source, list) else source.get("worlds")
+  7447	        if not isinstance(identities, list):
+  7448	            raise SystemExit("--allocation-input must be a list or contain a worlds list")
+  7449	        overlap = [] if isinstance(source, list) else source.get(
+  7450	            "legacy_development_overlap_dates", []
+  7451	        )
+  7452	        if not isinstance(overlap, list) or not all(
+  7453	            isinstance(value, str) for value in overlap
+  7454	        ):
+  7455	            raise SystemExit("legacy_development_overlap_dates must be a list of strings")
+  7456	        payload = build_allocation_manifest(
+  7457	            identities,
+  7458	            legacy_development_overlap_dates=overlap,
+  7459	        )
+  7460	        path = args.output / "allocation-manifest.json"
+  7461	        digest = write_immutable(path, payload)
+  7462	        print(json.dumps({"status": "FROZEN_ALLOCATION", "path": str(path), "file_sha256": digest}, indent=2, sort_keys=True))
+  7463	        return 0
+  7464	    if args.unit:
+  7465	        if (
+  7466	            not args.provider
+  7467	            or args.calibration is None
+  7468	            or (args.world_manifest is None and not args.smoke_not_matrix)
+  7469	        ):
+  7470	            raise SystemExit(
+  7471	                "formal --unit requires --provider module:factory, --calibration manifest, "
+  7472	                "and --world-manifest (the quarantined smoke supplies its own binding)"
+  7473	            )
+  7474	        try:
+  7475	            cell, world_text = args.unit.rsplit(":", 1)
+  7476	            run_setting = run_setting_for(cell)
+  7477	            setting = _setting(run_setting.base_cell)
+  7478	            world = int(world_text)
+  7479	        except (ValueError, ProbeError) as error:
+  7480	            raise SystemExit(f"invalid --unit CELL:WORLD: {error}") from error
+
+exec
+/bin/bash -lc "python -B - <<'PY'
+import math
+sd=.05
+for D in (24,36,48,160):
+    se=math.sqrt(sd*sd/D+.01*.01/16)
+    print(D, 'date_only_95_halfwidth_pp=',round(100*1.96*sd/math.sqrt(D),3), 'crossed_se_pp=',round(100*se,3))
+gap=math.log(1.02)-math.log(1.005)
+for sd in (.03,.05,.10):
+    req=(sd*(1.96+0.841621)/gap)**2
+    denominator=(gap/(1.96+0.841621))**2-.01**2/16
+    print('sd=',sd,'D_date_only_80power=',math.ceil(req),'D_with16seeds_SD1=',math.ceil(sd*sd/denominator))
+PY" in /home/sat/mcrl-v025-datepool-ws
+ succeeded in 0ms:
+24 date_only_95_halfwidth_pp= 2.0 crossed_se_pp= 1.051
+36 date_only_95_halfwidth_pp= 1.633 crossed_se_pp= 0.87
+48 date_only_95_halfwidth_pp= 1.415 crossed_se_pp= 0.764
+160 date_only_95_halfwidth_pp= 0.775 crossed_se_pp= 0.468
+sd= 0.03 D_date_only_80power= 33 D_with16seeds_SD1= 42
+sd= 0.05 D_date_only_80power= 90 D_with16seeds_SD1= 116
+sd= 0.1 D_date_only_80power= 358 D_with16seeds_SD1= 461
+
+codex
+The pool calculations confirm a substantial tradeoff. One illustrative 24-date allocation spread across the archive would leave 80 TRAIN dates after preventing shared ephemeris-file windows. Reserving whole blocks costs fewer dates, but yields only four evaluation blocks and misses some periods. I’m also documenting a fourth design where fresh-world evaluation is valid on familiar dates, provided the claim is explicitly limited to that fixed archive.
+exec
+/bin/bash -lc "nl -ba src/mcrl/physics_v025/tapes.py | sed -n '30,78p'; nl -ba src/mcrl/constants.py | sed -n '96,112p'; nl -ba src/mcrl/env/ephemeris.py | sed -n '650,675p'" in /home/sat/mcrl-v025-codex-ws-engine
+ succeeded in 0ms:
+    30	    MINIMUM_ELEVATION_DEG,
+    31	    RX_GAIN_MAX_DBI,
+    32	    SINR_MIN,
+    33	)
+    34	from .energy import HardwareInventory
+    35	
+    36	
+    37	PROBE_WORLD_DOMAINS = tuple(f"V025_PROBE_R2/world/{index}" for index in range(1, 5))
+    38	CALIBRATION_WORLD_DOMAINS = tuple(f"V025_CAL_R2/world/{index}" for index in range(1, 3))
+    39	DEVELOPMENT_WORLD_DOMAINS = tuple(f"V025_PROBE/world/{index}" for index in range(1, 5))
+    40	KAT_WORLD_DOMAINS = tuple(f"V025_KAT/world/{index}" for index in range(1, 5))
+    41	PROVIDER_KAT_WORLD_DOMAINS = tuple(
+    42	    f"V025_PROVIDER_KAT/world/{index}" for index in range(1, 5)
+    43	)
+    44	SYNTHETIC_WORLD_DOMAINS = tuple(
+    45	    f"V025_SYNTHETIC_REAL/world/{index}" for index in range(1, 5)
+    46	)
+    47	SMOKE_WORLD_DOMAINS = ("V025_SMOKE/world/1",)
+    48	# ``world/1`` resolves to the same provider TLE date as CAL_R2/world/1 and
+    49	# therefore cannot satisfy the prospectively required claim-date reservation.
+    50	# Keep the remaining three fresh identities and replace only the colliding member.
+    51	CLAIM_PANEL_WORLD_DOMAINS = tuple(
+    52	    f"V025_CLAIM_PANEL/world/{index}" for index in (2, 3, 4, 5)
+    53	)
+    54	REFERENCE_CARRIERS = ("nearest-eligible", "stay-if-possible", "random-masked")
+    55	CANDIDATE_REFRESH_N = 4
+    56	
+    57	
+    58	def seed_from_domain(domain: str) -> int:
+    59	    """Apply the repository's prospective SHA-256 domain seed rule."""
+    60	
+    61	    if not isinstance(domain, str) or not domain or not domain.isascii():
+    62	        raise MCRLContractError("seed domain must be nonempty ASCII")
+    63	    return int.from_bytes(hashlib.sha256(domain.encode("ascii")).digest()[:8], "big") & (
+    64	        (1 << 63) - 1
+    65	    )
+    66	
+    67	
+    68	def canonical_bytes(value: object) -> bytes:
+    69	    try:
+    70	        return json.dumps(
+    71	            value,
+    72	            sort_keys=True,
+    73	            separators=(",", ":"),
+    74	            ensure_ascii=True,
+    75	            allow_nan=False,
+    76	        ).encode("ascii")
+    77	    except (TypeError, ValueError, UnicodeError) as error:
+    78	        raise MCRLContractError("tape payload is not canonical finite ASCII JSON") from error
+nl: src/mcrl/constants.py: No such file or directory
+   650	    return healthy[near]
+   651	
+   652	
+   653	# ---------------------------------------------------------------------------
+   654	# Freeze manifest (SDD §3.1 "必須凍結", §7.1)
+   655	# ---------------------------------------------------------------------------
+   656	
+   657	
+   658	@dataclass(frozen=True)
+   659	class EphemerisConfig:
+   660	    """Everything the ephemeris layer must have frozen before probe P1."""
+   661	
+   662	    tle_root: str = TLE_ROOT_DEFAULT
+   663	    time_step_s: float = DECISION_STEP_S
+   664	    max_tle_age_h: float = MAX_TLE_AGE_H
+   665	    epoch_search_days: int = 1
+   666	    gravity_model: str = SGP4_GRAVITY_MODEL
+   667	    min_elevation_deg: float = 10.0
+   668	    """**S** — screening floor only.  Service eligibility is D2's call (W-04)."""
+   669	
+   670	    def archive(self) -> TleArchive:
+   671	        return TleArchive(self.tle_root)
+   672	
+   673	    def as_dict(self) -> dict[str, object]:
+   674	        return {
+   675	            "tle_root": str(Path(self.tle_root).expanduser()),
+
