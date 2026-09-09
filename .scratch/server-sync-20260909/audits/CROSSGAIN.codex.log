@@ -1,0 +1,237 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-pilot-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a085de-30dd-7ec0-87af-9aa074891704
+--------
+user
+# Restore the pairwise cross-gain block to the C3 encoder, and make T2 actually test it
+
+This is a contract-conformance repair. It touches the learner's feature path only. Do not change physics, thresholds, signs, seeds, horizons, prices, the service guard or any acceptance rule.
+
+## The defect
+`V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md` §C2 requires the encoder's input to contain "the **pairwise cross-gain terms among the affected beams** (not only a scalar interference summary — a summary can hide exactly the difference that flips a coupled fixed point)."
+
+In `/home/sat/mcrl-v025-pilot-ws`:
+* `scripts/run_v025_pilot_c3.py::_coalition_context` computes `relations = _cross_gain_terms(...)`, then reduces them with `math.fsum` into `AffectedBeamContext.interference_summary` and into a sum and a max in `global_resource_features`.
+* `src/mcrl/stagec_v025/coalitions.py::AffectedBeamContext` has **no pairwise field**.
+
+So the pairwise structure is computed and discarded. The head cannot distinguish one aggressor carrying most of the interference from many weak ones summing to the same total, and those cases have opposite consequences for whether a two-member coalition helps.
+
+## Task 1: carry the pairwise block
+Add an ordered, canonical pairwise cross-gain block to the coalition context and thread it into the set-conditioned interaction head's encoder.
+
+* Keep `interference_summary` as it is. This is an addition, not a replacement, so existing receipts stay comparable.
+* The block must be **deterministic and permutation-canonical**: sort by (source beam key, target beam key) so the same physical situation always yields the same bytes. The existing member-order invariance test must still pass, and add the same invariance for the pair block.
+* Give it a fixed, declared truncation rule if the head needs a bounded input, for example the top-K pairs by magnitude with K declared in the context and the residual sum carried alongside so nothing is silently dropped. State K in the report.
+* Update the context's schema version and its payload hashing so a stale shard cannot be silently mixed with a new one. The pilot has already hit `StageCContractError("... context schema drifted")` several times; make the drift explicit and legible rather than a bare raise.
+
+## Task 2: make T2 test what it was written to test
+`tests/stagec_v025/test_contract_v1_acceptance.py::test_T2_information_twins_reversal_and_additive_placebo` currently contains **zero** occurrences of `cross_gain` or `interference`. It builds contexts labelled `synergy` and `antagonistic` and asserts the head predicts synergy on the one labelled synergy. That asserts the head can fit a supplied label; it cannot fail for the reason the test exists.
+
+Implement the extension the amendment actually specifies:
+
+> the information-twin pair must be separable with the full context and **provably ambiguous when the cross-gain block is removed**.
+
+Concretely, construct two coalitions that are **identical in every scalar feature**, including `interference_summary`, occupancies, activation, member count and shared capacity, but differ in the pairwise distribution: one has a single dominant aggressor, the other has many weak ones summing to the same total. One is genuinely profitable and the other is not.
+
+* With the pair block present, assert the head can separate them.
+* With the pair block removed or zeroed, assert the two contexts are **byte-identical**, so no model whatsoever can separate them. That is the provable ambiguity, and it is stronger than asserting a particular model fails.
+
+## Task 3: report what the old features could see
+As a diagnostic, not a claim: over the existing pilot shards, measure how much of the variance in the exact interaction value is explainable from the old scalar features alone, versus with the pair block added. A simple linear or gradient-boosted fit is fine. If the old features are near-uninformative, say so with the number.
+
+## Workspace and constraints
+`/home/sat/mcrl-v025-pilot-ws`. Python `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`. Never write into `/home/sat/mcrl-leo-handover` or its venv, `/home/sat/mcrl-hub`, `/home/sat/mcrl-v025-codex-ws-engine`, `/home/sat/mcrl-v025-prevalence-ws`, or `src/mcrl/env/`. Run the stage-C test suite and report the pass line. At most 3 concurrent processes, `nice -n 10`.
+
+Write `CROSSGAIN-REPAIR-2026-09-09.md` in the workspace root and print it as your final message: what you added, the canonical ordering and truncation rule, the T2 rewrite with its byte-identity assertion, the variance-explained numbers, the test line, and anything you could not do.
+codex
+I’m using the TDD skill to make the contract test fail for the missing pairwise information before changing the encoder, and the keep-scope-small skill to hold the repair strictly to the learner feature path and requested report. I’ll first inspect the repository instructions, contract, current context/head, tests, and shard format.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g 'SKILL.md' -g 'V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md' -g 'scripts/run_v025_pilot_c3.py' -g 'src/mcrl/stagec_v025/coalitions.py' -g 'tests/stagec_v025/test_contract_v1_acceptance.py' -g '*shard*' | sed -n '1,200p'" in /home/sat/mcrl-v025-pilot-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-pilot-ws
+V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+src/mcrl/stagec_v025/coalitions.py
+src/mcrl/stagec_v025/shards.py
+tests/stagec_v025/test_contract_v1_acceptance.py
+tests/test_w151_v014_source_shard.py
+tests/test_w167_ee_axis_v016_c3_origin_source_shard.py
+tests/test_w171_ee_axis_v017_c3_softkl_source_shard.py
+scripts/run_v025_pilot_c3.py
+tests/test_w164_ee_axis_v015_c3_reference_source_shard.py
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-FULL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-FULL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-FULL_HR-2026092102/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-FULL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-FULL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-FULL_HR-2026092102/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-FULL_HR-2026092101/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-FULL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-FULL_HR-2026092103/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-FULL_HR-2026092103/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104802-FULL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-run/shards/2026104801-FULL_HR-2026092101/shard.json
+artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards-launch-r2.log
+artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards-launch.log
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-attempt1-serialization-fail/shards/2026104802-DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-attempt1-serialization-fail/shards/2026104801-DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-attempt1-serialization-fail/shards/2026104802-DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-EXACT_ZR-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-BASE-2026092101/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-attempt1-serialization-fail/shards/2026104802-DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-NOMINAL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-EXACT_ZR-2026092103/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-attempt1-serialization-fail/shards/2026104801-DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-NOMINAL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-BASE-2026092103/shard.json
+artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/server-attempt1-serialization-fail/shards/2026104801-DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-EXACT_ZR-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-NOMINAL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-BASE-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-EXACT_ZR-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-EXACT_ZR-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-BASE-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-BASE-2026092103/shard.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092101/shard-seal.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-NOMINAL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-NOMINAL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-BASE-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-EXACT_ZR-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-EXACT_ZR-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-BASE-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-NOMINAL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-EXACT_ZR-2026092102/shard.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092103/shard-seal.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-NOMINAL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-NOMINAL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r3/init-2026092102/shard-seal.json
+artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-EXACT_ZR-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-NOMINAL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-BASE-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-BASE-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-NOMINAL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-BASE-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-NOMINAL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-EXACT_ZR-2026092103/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121502-BASE-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121503-NOMINAL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-EXACT_ZR-2026092103/shard.json
+artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121504-BASE-2026092102/shard.json
+artifacts/multi-catfish-v020-repriced-c3-gate-20260904-r1/server-run/shards/2026121501-EXACT_ZR-2026092101/shard.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r2/init-2026092102/shard-seal.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/FULL_M1D-2026092102/shard.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r2/init-2026092102/shard-result.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r2/init-2026092101/shard-seal.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r2/init-2026092101/shard-result.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/FULL_AP-2026092103/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/FULL_M1D-2026092101/shard.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r2/init-2026092103/shard-seal.json
+artifacts/multi-catfish-v04-c2-phase-b-shards-20260901-r2/init-2026092103/shard-result.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DIAG_O_FULL-2026092103/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DIAG_O_FULL-2026092101/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/FULL_M1D-2026092103/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/FULL_AP-2026092101/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DIAG_O_DROP-2026092102/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DIAG_O_DROP-2026092101/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DIAG_O_FULL-2026092102/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/DIAG_O_DROP-2026092103/shard.json
+artifacts/multi-catfish-v011-joint-c3-ordered-oracle-20260903-r1/server-run/shards/FULL_AP-2026092102/shard.json
+artifacts/multi-catfish-v010-mone-c3-oracle-20260903-r1/server-shards/FULL-2026092101/shard.json
+artifacts/multi-catfish-v010-mone-c3-oracle-20260903-r1/server-shards/DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104904-FULL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v010-mone-c3-oracle-20260903-r1/server-shards/DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v010-mone-c3-oracle-20260903-r1/server-shards/FULL-2026092103/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104902-DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v010-mone-c3-oracle-20260903-r1/server-shards/DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104902-FULL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104904-FULL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v010-mone-c3-oracle-20260903-r1/server-shards/FULL-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104904-DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-NOMINAL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104901-FULL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-BASE-2026092103/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104903-DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104902-FULL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-BASE-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104901-FULL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104901-FULL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-NOMINAL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-EXACT_ZR-2026092101/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104901-DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-BASE-2026092101/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104902-FULL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-EXACT_ZR-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104901-DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-BASE-2026092101/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104903-FULL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104904-DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-EXACT_ZR-2026092102/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-NOMINAL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104902-DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104903-FULL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-BASE-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-EXACT_ZR-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104903-DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104903-DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-NOMINAL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-NOMINAL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104903-FULL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104904-FULL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-BASE-2026092102/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-NOMINAL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104902-DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-EXACT_ZR-2026092102/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104901-DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-BASE-2026092101/shard.json
+artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/shards/2026104904-DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-EXACT_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-NOMINAL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-EXACT_ZR-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-BASE-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-EXACT_ZR-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-NOMINAL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-BASE-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-NOMINAL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-EXACT_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-NOMINAL_ZR-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-BASE-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-EXACT_ZR-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120402-NOMINAL_ZR-2026092102/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-EXACT_ZR-2026092103/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120403-BASE-2026092102/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C1-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-NOMINAL_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120404-EXACT_ZR-2026092101/shard.json
+artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/shards/2026120401-BASE-2026092102/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/FULL-2026092101/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C1-2026092102/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/FULL-2026092102/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C3-2026092101/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/FULL-2026092103/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C1-2026092103/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C2-2026092101/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C2-2026092103/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C3-2026092102/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C3-2026092103/shard.json
+artifacts/multi-catfish-v09-integrated-oracle-20260902-r1/shards/DROP_C2-2026092102/shard.json
+
