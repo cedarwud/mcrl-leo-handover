@@ -249977,3 +249977,1768 @@ index f7dbccdd07feff7ef5a18416cfd028e6005f907a..5eaabfea7d955560ab74398fc6f0ecba
  
  
 
+codex
+At 30.08 seconds, **81.74%** of the converged first-improvement unilateral gain is available under `SEALED` and **87.85%** under `MARGIN_Q` (against the archived best-improvement endpoints: **89.39%** and **89.60%**).
+
+# Anytime unilateral search — V0.25 twenty-anchor panel
+
+`DIAGNOSTIC_NOT_CLAIM`. No learner, training run, or policy run was performed. No sealed constant, threshold, sign, seed, horizon, price, service guard, acceptance rule, sealed artifact, or frozen manifest was changed.
+
+## Decision
+
+Most of the prize is available before the deadline under both provisioning rules. By 20 seconds the first-improvement search has already obtained 69.51% (`SEALED`) and 77.03% (`MARGIN_Q`) of its eventual pooled gain; by 30.08 seconds those fractions are 81.74% and 87.85%. Therefore the proposed argument—*the converged exact search misses the interval, so a learned method may claim the within-interval win*—fails on this panel. A learned method would need to beat the actual anytime incumbent at the same wall-clock budget, not the legal base configuration or a convergence certificate time.
+
+First-improvement changed the local-search path and the fixed point on all 20 anchors under both rules. Its converged pooled EE is 8.13% above the archived best-improvement endpoint under `SEALED` and 1.62% above it under `MARGIN_Q`. Accordingly, every prize fraction below is shown against both endpoints where relevant.
+
+## Method and timing contract
+
+The legal nearest-eligible base assignment is the incumbent from time zero. Users and their legal options retain sealed deterministic order. Alternatives are evaluated in ordered microbatches of 16 using one persistent `StepEvaluator`; when a batch returns, the first strict `F = B - eta_ref E` improvement satisfying the unchanged baseline served-count guard is committed immediately and later alternatives for that user are not evaluated. Thus a checkpoint receives only a move whose evaluation completed by that timestamp, never a candidate credited with hindsight. The microbatch is the sealed dense evaluator's native vectorized path; scalar calls were piloted and rejected as an implementation defect after taking 176.84 seconds on the first anchor.
+
+The stopwatch starts before base construction and `_legal_options`; it includes all configuration/candidate construction, physical selection evaluation, and cache misses. The immutable exogenous world tape is the input to a decision and was loaded once per world from the standing content-addressed cache; its load times remain in each receipt. The 48-boundary committed evaluation is run only after timing to measure the true action endpoint and cannot affect the search path. The final complete no-move sweep is executed only as a separate certification probe; its evaluations are excluded from the anytime and joint caches.
+
+Runs used one process via `nice -n 15` on an Intel Core Ultra 7 265KF (20 logical CPUs, one thread per core). `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, and `NUMEXPR_NUM_THREADS` were all pinned to 1. The interpreter was `/home/sat/mcrl-leo-handover/.venv/bin/python`; `PYTHONPATH=src`. The runtime reported no active native threadpool. The sealed manifest is `d5e94654510225aaf6ca7f8422ecd12ba64e8f3b8690c55a55d791063db8b916`; the anytime implementation SHA-256 is `003bdee1df908fddf652f2f8069c31a6297a7f7178bbb83338d09b3f4add9928`.
+
+## D1 — Anytime quality curve
+
+### `SEALED` pooled curve
+
+| time (s) | bits (Tbit) | joules | EE (Mbit/J) | gain over base | prize vs first-impr. | prize vs archived |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0/base | 0.545927 | 146564.590 | 3.724824 | 0.00% | 0.00% | 0.00% |
+| 1 | 0.623225 | 138572.697 | 4.497461 | 20.74% | 2.86% | 3.12% |
+| 2 | 0.735798 | 129573.684 | 5.678607 | 52.45% | 7.22% | 7.90% |
+| 5 | 1.016198 | 104049.881 | 9.766449 | 162.20% | 22.33% | 24.41% |
+| 10 | 1.270120 | 82816.015 | 15.336646 | 311.74% | 42.91% | 46.92% |
+| 20 | 1.513113 | 67144.918 | 22.535029 | 505.00% | 69.51% | 76.01% |
+| 30.08 | 1.597525 | 61808.601 | 25.846321 | 593.89% | 81.74% | 89.39% |
+| 45 | 1.664878 | 57908.796 | 28.750007 | 671.85% | 92.47% | 101.13% |
+| 60 | 1.682954 | 56972.790 | 29.539604 | 693.05% | 95.39% | 104.32% |
+| convergence | 1.717485 | 55786.246 | 30.786890 | 726.53% | 100.00% | 109.36% |
+
+Paired anchor-local true-EE gain over each anchor's base:
+
+| time (s) | min | q25 | median | q75 | max | mean |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | -2.78% | 7.99% | 17.65% | 32.07% | 62.04% | 22.35% |
+| 2 | 9.29% | 28.82% | 46.78% | 77.93% | 151.14% | 58.25% |
+| 5 | 37.98% | 90.41% | 174.30% | 261.00% | 492.96% | 193.19% |
+| 10 | 93.18% | 245.92% | 339.43% | 458.83% | 827.39% | 364.88% |
+| 20 | 200.27% | 358.86% | 550.64% | 738.25% | 1318.25% | 591.45% |
+| 30.08 | 221.45% | 441.80% | 641.56% | 852.62% | 1522.76% | 687.94% |
+| 45 | 350.46% | 576.16% | 727.15% | 888.60% | 1659.56% | 757.41% |
+| 60 | 361.10% | 598.70% | 728.85% | 888.60% | 1700.04% | 773.83% |
+| convergence | 361.10% | 665.35% | 751.11% | 888.60% | 1700.04% | 800.37% |
+
+Per-anchor committed EE (Mbit/J); each cell is the true 48-boundary endpoint of the configuration actually held at that time:
+
+| anchor | base | 1 | 2 | 5 | 10 | 20 | 30.08 | 45 | 60 | convergence |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| w1/s0 | 4.0807 | 4.4032 | 5.3097 | 10.4662 | 17.2834 | 25.3750 | 29.8516 | 31.2617 | 31.3864 | 31.3864 |
+| w1/s1 | 3.7601 | 5.6457 | 8.3148 | 15.6321 | 20.5772 | 30.2479 | 33.1211 | 34.5375 | 34.5375 | 34.5375 |
+| w1/s2 | 4.7845 | 7.0531 | 8.3757 | 13.9144 | 17.3863 | 22.0732 | 24.9976 | 27.3004 | 26.8915 | 26.8915 |
+| w1/s3 | 3.1282 | 3.8842 | 4.0439 | 4.8344 | 6.0431 | 9.3931 | 10.0556 | 14.2476 | 17.5848 | 29.5190 |
+| w1/s4 | 4.1494 | 5.3463 | 7.9664 | 18.0694 | 25.9850 | 34.3109 | 35.5831 | 36.6009 | 36.5681 | 36.5681 |
+| w2/s0 | 3.0750 | 4.6043 | 7.1603 | 14.3476 | 22.8612 | 31.1223 | 32.7647 | 32.9193 | 32.9193 | 32.9193 |
+| w2/s1 | 4.9141 | 5.1101 | 6.9319 | 13.3144 | 22.1307 | 31.3389 | 36.0392 | 39.5751 | 39.7075 | 39.7075 |
+| w2/s2 | 5.1869 | 5.6029 | 7.6327 | 13.4648 | 20.9134 | 32.6863 | 35.1652 | 39.4252 | 39.0496 | 39.1087 |
+| w2/s3 | 2.6617 | 2.7497 | 3.3930 | 7.3905 | 12.7900 | 17.6614 | 20.0603 | 22.6393 | 22.8464 | 23.1237 |
+| w2/s4 | 6.2287 | 6.7982 | 6.8072 | 12.2827 | 18.2830 | 26.8599 | 28.2223 | 28.6755 | 28.7204 | 28.7204 |
+| w3/s0 | 3.4550 | 3.3589 | 5.0586 | 11.9138 | 18.1279 | 23.0455 | 25.9029 | 28.7300 | 28.6162 | 28.6162 |
+| w3/s1 | 4.0746 | 5.1834 | 6.3114 | 13.0731 | 22.6017 | 32.0529 | 37.6349 | 39.6355 | 39.6355 | 39.6355 |
+| w3/s2 | 5.7079 | 5.8853 | 7.4029 | 9.1489 | 13.9584 | 20.2046 | 24.0419 | 25.7118 | 29.1283 | 31.9285 |
+| w3/s3 | 3.1279 | 3.4688 | 3.9864 | 5.3185 | 11.7722 | 15.2569 | 21.9057 | 25.7344 | 25.9438 | 25.6011 |
+| w3/s4 | 1.9480 | 2.4795 | 4.8922 | 11.5511 | 18.0658 | 27.6279 | 31.6117 | 34.2766 | 35.0651 | 35.0651 |
+| w4/s0 | 2.7480 | 4.4528 | 5.1258 | 11.2528 | 17.5380 | 27.7405 | 31.4429 | 32.2439 | 32.3275 | 32.3275 |
+| w4/s1 | 3.8669 | 4.8022 | 6.2915 | 12.7741 | 22.0877 | 37.8139 | 40.1968 | 40.0661 | 40.0661 | 40.0661 |
+| w4/s2 | 4.7620 | 5.2101 | 5.2368 | 6.9218 | 13.6734 | 19.7495 | 23.3150 | 28.0047 | 29.5580 | 29.4513 |
+| w4/s3 | 2.2591 | 2.5107 | 2.8015 | 3.1171 | 4.9738 | 10.1976 | 12.3854 | 15.9385 | 16.3717 | 18.8288 |
+| w4/s4 | 2.6193 | 3.7129 | 4.3713 | 5.9378 | 11.2240 | 22.8489 | 29.3903 | 33.2244 | 34.9364 | 34.7570 |
+
+### `MARGIN_Q` pooled curve
+
+| time (s) | bits (Tbit) | joules | EE (Mbit/J) | gain over base | prize vs first-impr. | prize vs archived |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0/base | 1.390585 | 175288.781 | 7.933111 | 0.00% | 0.00% | 0.00% |
+| 1 | 1.586746 | 169447.002 | 9.364261 | 18.04% | 4.00% | 4.08% |
+| 2 | 1.814383 | 160675.937 | 11.292187 | 42.34% | 9.39% | 9.58% |
+| 5 | 2.394246 | 134369.314 | 17.818401 | 124.61% | 27.63% | 28.18% |
+| 10 | 2.784698 | 110697.983 | 25.155813 | 217.10% | 48.15% | 49.10% |
+| 20 | 3.089955 | 87072.071 | 35.487327 | 347.33% | 77.03% | 78.56% |
+| 30.08 | 3.171678 | 80580.319 | 39.360457 | 396.15% | 87.85% | 89.60% |
+| 45 | 3.163405 | 74345.905 | 42.549816 | 436.36% | 96.77% | 98.69% |
+| 60 | 3.167130 | 72690.849 | 43.569857 | 449.22% | 99.62% | 101.60% |
+| convergence | 3.169342 | 72515.853 | 43.705511 | 450.93% | 100.00% | 101.99% |
+
+Paired anchor-local true-EE gain over each anchor's base:
+
+| time (s) | min | q25 | median | q75 | max | mean |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | -1.01% | 14.03% | 19.80% | 26.80% | 41.99% | 19.23% |
+| 2 | 14.05% | 27.05% | 42.62% | 60.79% | 87.27% | 45.03% |
+| 5 | 47.02% | 90.82% | 128.51% | 160.96% | 318.53% | 137.31% |
+| 10 | 113.92% | 168.76% | 224.24% | 299.60% | 501.79% | 248.42% |
+| 20 | 225.56% | 292.18% | 351.19% | 488.29% | 804.14% | 385.98% |
+| 30.08 | 272.47% | 310.77% | 421.27% | 512.97% | 869.05% | 434.60% |
+| 45 | 285.52% | 356.79% | 453.53% | 548.49% | 869.05% | 470.31% |
+| 60 | 285.52% | 356.79% | 453.53% | 549.13% | 869.05% | 486.24% |
+| convergence | 285.52% | 356.79% | 453.53% | 549.13% | 869.05% | 488.45% |
+
+Per-anchor committed EE (Mbit/J); each cell is the true 48-boundary endpoint of the configuration actually held at that time:
+
+| anchor | base | 1 | 2 | 5 | 10 | 20 | 30.08 | 45 | 60 | convergence |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| w1/s0 | 8.5870 | 9.1521 | 10.1993 | 16.6340 | 25.6318 | 40.7755 | 45.5350 | 46.1779 | 46.1779 | 46.1779 |
+| w1/s1 | 10.1209 | 12.2154 | 16.3034 | 23.8311 | 35.8420 | 43.6030 | 45.9983 | 46.5202 | 46.5202 | 46.5202 |
+| w1/s2 | 9.5663 | 10.9594 | 12.3646 | 18.0945 | 22.1191 | 37.6163 | 39.5726 | 42.8655 | 42.8655 | 42.8655 |
+| w1/s3 | 5.8372 | 6.6841 | 8.5176 | 11.9817 | 15.9346 | 26.9788 | 30.8505 | 33.9725 | 35.0780 | 36.3484 |
+| w1/s4 | 8.1135 | 9.4416 | 13.0379 | 28.9952 | 44.1641 | 52.1627 | 52.6635 | 52.3340 | 52.3340 | 52.3340 |
+| w2/s0 | 7.3137 | 10.3850 | 13.4709 | 23.8164 | 38.4520 | 43.7069 | 44.6942 | 44.6942 | 44.6942 | 44.6942 |
+| w2/s1 | 10.8132 | 12.6722 | 16.5264 | 26.6978 | 36.6977 | 47.2675 | 48.8899 | 50.6225 | 50.5918 | 50.5918 |
+| w2/s2 | 10.0233 | 12.7684 | 17.4662 | 22.5423 | 34.3179 | 40.8992 | 40.3006 | 40.1958 | 40.1958 | 40.1958 |
+| w2/s3 | 4.0961 | 4.8704 | 5.2027 | 6.8505 | 11.2833 | 15.9360 | 24.5036 | 33.1820 | 38.3022 | 38.2990 |
+| w2/s4 | 10.3572 | 10.2530 | 11.8124 | 18.5500 | 23.2963 | 36.7428 | 38.5884 | 39.9293 | 39.9293 | 39.9293 |
+| w3/s0 | 9.3117 | 11.4013 | 12.9726 | 21.1366 | 32.5626 | 44.5470 | 45.9900 | 45.6619 | 45.6619 | 45.6619 |
+| w3/s1 | 10.4565 | 11.6998 | 13.8776 | 20.0110 | 26.7765 | 34.0427 | 41.8447 | 46.8687 | 46.8687 | 46.8687 |
+| w3/s2 | 11.3302 | 11.6423 | 12.9816 | 16.6580 | 24.3554 | 39.3250 | 42.2017 | 45.1765 | 45.1394 | 45.1394 |
+| w3/s3 | 7.1630 | 8.0663 | 9.1010 | 11.0927 | 15.3231 | 25.5949 | 27.7399 | 33.2785 | 34.0911 | 33.8893 |
+| w3/s4 | 5.5589 | 7.0378 | 10.4101 | 23.2658 | 33.4530 | 50.2604 | 53.8691 | 53.8691 | 53.8691 | 53.8691 |
+| w4/s0 | 7.2290 | 8.7333 | 10.8833 | 18.6718 | 27.4719 | 42.7417 | 46.1818 | 47.6304 | 47.8168 | 47.8168 |
+| w4/s1 | 7.1126 | 8.9260 | 10.8632 | 20.6013 | 32.6007 | 45.2117 | 49.7994 | 49.2291 | 49.2291 | 49.2291 |
+| w4/s2 | 7.1608 | 9.2859 | 9.8891 | 16.4716 | 22.1335 | 31.7964 | 36.8078 | 40.7655 | 40.7655 | 40.7655 |
+| w4/s3 | 4.0608 | 5.1815 | 5.0908 | 9.5767 | 12.3059 | 18.6127 | 23.7700 | 30.0605 | 36.6143 | 37.6465 |
+| w4/s4 | 7.4394 | 9.4875 | 12.2623 | 20.0102 | 35.1401 | 43.6920 | 46.0177 | 46.5838 | 46.5838 | 46.5838 |
+
+## D2 — Fraction of the prize at 30.08 seconds
+
+The pooled fraction is `(EE_30.08 - EE_base) / (EE_converged - EE_base)`, with EE pooled as summed bits over summed joules. Anchor fractions use the paired anchor-local form.
+
+| rule | pooled vs first-impr. | pooled vs archived | anchor spread vs first-impr. (min/q25/median/q75/max/mean) | worst anchor |
+|---|---:|---:|---|---|
+| `SEALED` | 81.74% | 89.39% | 26.25% / 83.49% / 89.51% / 95.79% / 100.36% / 85.41% | w1/s3: 26.25% |
+| `MARGIN_Q` | 87.85% | 89.60% | 58.68% / 87.72% / 95.85% / 100.00% / 101.35% / 90.95% | w4/s3: 58.68% |
+
+Per-anchor fractions (first-improvement endpoint / archived best-improvement endpoint):
+
+| anchor | SEALED | MARGIN_Q |
+|---|---:|---:|
+| w1/s0 | 94.38% / 94.48% | 98.29% / 103.63% |
+| w1/s1 | 95.40% / 93.12% | 98.57% / 107.44% |
+| w1/s2 | 91.43% / 102.03% | 90.11% / 97.61% |
+| w1/s3 | 26.25% / 41.73% | 81.98% / 85.82% |
+| w1/s4 | 96.96% / 98.13% | 100.75% / 115.88% |
+| w2/s0 | 99.48% / 104.21% | 100.00% / 91.79% |
+| w2/s1 | 89.46% / 90.63% | 95.72% / 100.75% |
+| w2/s2 | 88.37% / 118.48% | 100.35% / 85.73% |
+| w2/s3 | 85.03% / 125.96% | 59.67% / 61.98% |
+| w2/s4 | 97.79% / 107.29% | 95.47% / 89.30% |
+| w3/s0 | 89.22% / 90.59% | 100.90% / 106.90% |
+| w3/s1 | 94.37% / 115.24% | 86.20% / 89.38% |
+| w3/s2 | 69.92% / 90.57% | 91.31% / 93.93% |
+| w3/s3 | 83.56% / 95.88% | 76.99% / 68.77% |
+| w3/s4 | 89.57% / 90.68% | 100.00% / 111.00% |
+| w4/s0 | 97.01% / 88.40% | 95.97% / 98.79% |
+| w4/s1 | 100.36% / 125.98% | 101.35% / 101.84% |
+| w4/s2 | 75.15% / 68.06% | 88.22% / 98.75% |
+| w4/s3 | 61.11% / 45.03% | 58.68% / 57.14% |
+| w4/s4 | 83.30% / 87.40% | 98.55% / 99.60% |
+
+## D3 — Finding time versus certification
+
+The requested first-improvement comparator and an optimized replay of the archived best-improvement path are both shown. The latter matched 20/20 archived assignments under each rule. Times are wall-clock seconds; distributions are min/q25/median/q75/max/mean.
+
+| rule/path | finding | terminal certificate | total incl. certificate |
+|---|---|---|---|
+| `SEALED` first-improvement | 35.67 / 47.78 / 55.94 / 87.18 / 207.62 / 73.66 | 1.55 / 4.98 / 7.43 / 10.51 / 23.07 / 8.85 | 40.15 / 54.83 / 61.49 / 94.40 / 230.69 / 82.51 |
+| `SEALED` archived best-improvement control | 26.74 / 38.61 / 52.37 / 61.14 / 895.46 / 97.94 | 0.10 / 2.43 / 5.59 / 11.43 / 27.65 / 7.54 | 29.19 / 44.02 / 54.92 / 68.61 / 923.11 / 105.48 |
+| `MARGIN_Q` first-improvement | 32.18 / 35.49 / 44.77 / 57.53 / 108.11 / 52.18 | 0.20 / 2.22 / 4.11 / 4.94 / 9.80 / 3.93 | 33.28 / 39.44 / 49.67 / 58.83 / 117.91 / 56.11 |
+| `MARGIN_Q` archived best-improvement control | 14.97 / 29.14 / 32.93 / 40.11 / 81.57 / 37.32 | 0.36 / 2.18 / 3.64 / 6.74 / 11.30 / 4.56 | 16.27 / 31.55 / 36.98 / 44.86 / 92.41 / 41.89 |
+
+The `SEALED` best-improvement control suffered one scheduler-contention outlier: w3/s3 used 10,801 finding evaluations, like ordinary 40–60-second anchors, but took 895.46 seconds while running at niceness 15. It is retained in the raw mean/max. Its median split—52.37 seconds finding and 5.59 seconds certifying, 54.92 seconds total—is the appropriate robust comparison to the project's approximate 65-second statement. Under `MARGIN_Q`, the best-improvement mean split is 37.32 + 4.56 = 41.89 seconds (median total 36.98 seconds).
+
+Per-anchor first-improvement split:
+
+| `SEALED` anchor | finding | last improvement | certificate | total incl. cert |
+|---|---:|---:|---:|---:|
+| w1/s0 | 56.98 | 54.47 | 8.19 | 65.17 |
+| w1/s1 | 43.97 | 37.97 | 2.23 | 46.20 |
+| w1/s2 | 47.95 | 47.57 | 9.35 | 57.30 |
+| w1/s3 | 207.62 | 206.75 | 23.07 | 230.69 |
+| w1/s4 | 54.91 | 45.99 | 1.55 | 56.46 |
+| w2/s0 | 46.82 | 43.76 | 6.82 | 53.64 |
+| w2/s1 | 50.63 | 49.75 | 5.46 | 56.09 |
+| w2/s2 | 71.88 | 67.24 | 8.03 | 79.92 |
+| w2/s3 | 102.24 | 98.35 | 18.50 | 120.74 |
+| w2/s4 | 49.83 | 46.43 | 5.41 | 55.23 |
+| w3/s0 | 47.29 | 46.67 | 5.75 | 53.05 |
+| w3/s1 | 44.38 | 43.39 | 5.08 | 49.47 |
+| w3/s2 | 103.91 | 100.58 | 15.86 | 119.77 |
+| w3/s3 | 82.16 | 71.29 | 3.77 | 85.94 |
+| w3/s4 | 60.23 | 58.12 | 9.12 | 69.35 |
+| w4/s0 | 53.14 | 49.33 | 4.68 | 57.82 |
+| w4/s1 | 35.67 | 34.43 | 4.48 | 40.15 |
+| w4/s2 | 124.34 | 119.76 | 13.50 | 137.84 |
+| w4/s3 | 124.68 | 123.40 | 16.64 | 141.32 |
+| w4/s4 | 64.65 | 63.81 | 9.51 | 74.16 |
+
+| `MARGIN_Q` anchor | finding | last improvement | certificate | total incl. cert |
+|---|---:|---:|---:|---:|
+| w1/s0 | 46.02 | 43.06 | 4.08 | 50.10 |
+| w1/s1 | 34.16 | 33.08 | 4.18 | 38.34 |
+| w1/s2 | 48.69 | 43.93 | 2.30 | 50.99 |
+| w1/s3 | 85.46 | 81.58 | 7.82 | 93.28 |
+| w1/s4 | 38.78 | 36.62 | 3.22 | 42.00 |
+| w2/s0 | 32.18 | 27.71 | 1.09 | 33.28 |
+| w2/s1 | 56.67 | 50.19 | 0.20 | 56.87 |
+| w2/s2 | 43.52 | 41.82 | 5.73 | 49.25 |
+| w2/s3 | 73.61 | 68.24 | 4.08 | 77.69 |
+| w2/s4 | 43.23 | 39.21 | 0.24 | 43.47 |
+| w3/s0 | 35.73 | 35.13 | 3.65 | 39.38 |
+| w3/s1 | 40.19 | 38.48 | 4.13 | 44.32 |
+| w3/s2 | 52.22 | 47.03 | 1.96 | 54.17 |
+| w3/s3 | 108.11 | 104.44 | 9.80 | 117.91 |
+| w3/s4 | 33.51 | 29.54 | 0.54 | 34.05 |
+| w4/s0 | 60.08 | 59.26 | 4.64 | 64.72 |
+| w4/s1 | 32.96 | 31.74 | 6.38 | 39.34 |
+| w4/s2 | 46.06 | 44.88 | 5.81 | 51.87 |
+| w4/s3 | 97.55 | 88.80 | 4.15 | 101.70 |
+| w4/s4 | 34.79 | 34.42 | 4.67 | 39.46 |
+
+## D4 — Bounded joint search inside the same 30.08-second budget
+
+A seed at 10, 20, or 30.08 seconds consumes that much of the same budget. Only unilateral cache entries completed by the seed time are reusable. The current joint catalogue requires a physically best alternative for every user, so completing that alternate sweep and building the catalogue is charged to joint time. Joint candidates are evaluated in batches of 32; only completed batches can change the incumbent. At 30.08 seconds no joint time remains.
+
+| rule | seed time | seed gain | returned joint gain | prize vs archived | catalogues exhausted | anchors changed | end-to-end mean/median/range (s) |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `SEALED` | 10 | 311.74% | 359.55% | 54.12% | 18/20 | 18/20 | 24.70 / 24.55 / 19.14–30.08 |
+| `SEALED` | 20 | 505.00% | 516.93% | 77.81% | 1/20 | 9/20 | 30.05 / 30.08 / 29.52–30.08 |
+| `SEALED` | 30.08 | 593.89% | 593.89% | 89.39% | 0/20 | 0/20 | 30.08 / 30.08 / 30.08–30.08 |
+| `MARGIN_Q` | 10 | 217.10% | 241.61% | 54.65% | 19/20 | 19/20 | 21.80 / 20.86 / 17.53–30.08 |
+| `MARGIN_Q` | 20 | 347.33% | 353.43% | 79.93% | 10/20 | 15/20 | 29.19 / 29.94 / 27.22–30.08 |
+| `MARGIN_Q` | 30.08 | 396.15% | 396.15% | 89.60% | 0/20 | 0/20 | 30.08 / 30.08 / 30.08–30.08 |
+
+The joint search improves the pooled endpoint over its seed, but it does not rescue the free-seed premise. Under `SEALED`, the 10-second seed plus joint search reaches 54.12% of the archived unilateral prize and the 20-second seed reaches 77.81%; under `MARGIN_Q`, 54.65% and 79.93%. Giving the joint search a converged unilateral seed for free is therefore not a within-interval comparison. A seed at the deadline has zero joint budget and returns the unilateral deadline action unchanged.
+
+Per-anchor returned joint EE (Mbit/J), end-to-end availability time, and stopping phase:
+
+| `SEALED` anchor | seed 10 | seed 20 | seed 30.08 |
+|---|---|---|---|
+| w1/s0 | 19.8329 @ 26.18s (catalogue-exhausted) | 25.3750 @ 30.08s (alternate-sweep-budget) | 29.8516 @ 30.08s (no-budget-after-seed) |
+| w1/s1 | 24.5918 @ 26.01s (catalogue-exhausted) | 30.2479 @ 30.08s (alternate-sweep-budget) | 33.1211 @ 30.08s (no-budget-after-seed) |
+| w1/s2 | 19.0841 @ 29.45s (catalogue-exhausted) | 22.0732 @ 30.08s (alternate-sweep-budget) | 24.9976 @ 30.08s (no-budget-after-seed) |
+| w1/s3 | 6.0431 @ 30.08s (alternate-sweep-budget) | 9.3931 @ 30.08s (alternate-sweep-budget) | 10.0556 @ 30.08s (no-budget-after-seed) |
+| w1/s4 | 27.5561 @ 20.64s (catalogue-exhausted) | 35.3584 @ 30.08s (joint-evaluation-budget) | 35.5831 @ 30.08s (no-budget-after-seed) |
+| w2/s0 | 25.1225 @ 23.79s (catalogue-exhausted) | 33.1967 @ 30.08s (joint-evaluation-budget) | 32.7647 @ 30.08s (no-budget-after-seed) |
+| w2/s1 | 25.8186 @ 25.38s (catalogue-exhausted) | 33.6674 @ 30.08s (joint-evaluation-budget) | 36.0392 @ 30.08s (no-budget-after-seed) |
+| w2/s2 | 23.6507 @ 23.43s (catalogue-exhausted) | 32.6863 @ 30.08s (alternate-sweep-budget) | 35.1652 @ 30.08s (no-budget-after-seed) |
+| w2/s3 | 15.4803 @ 25.22s (catalogue-exhausted) | 17.6614 @ 30.08s (alternate-sweep-budget) | 20.0603 @ 30.08s (no-budget-after-seed) |
+| w2/s4 | 19.7331 @ 23.59s (catalogue-exhausted) | 28.8662 @ 30.08s (joint-evaluation-budget) | 28.2223 @ 30.08s (no-budget-after-seed) |
+| w3/s0 | 20.3158 @ 21.19s (catalogue-exhausted) | 23.0455 @ 30.08s (joint-evaluation-budget) | 25.9029 @ 30.08s (no-budget-after-seed) |
+| w3/s1 | 25.0120 @ 21.00s (catalogue-exhausted) | 33.5974 @ 30.08s (joint-evaluation-budget) | 37.6349 @ 30.08s (no-budget-after-seed) |
+| w3/s2 | 15.7793 @ 27.85s (catalogue-exhausted) | 20.9761 @ 30.08s (joint-evaluation-budget) | 24.0419 @ 30.08s (no-budget-after-seed) |
+| w3/s3 | 11.7722 @ 30.08s (alternate-sweep-budget) | 15.2569 @ 30.08s (alternate-sweep-budget) | 21.9057 @ 30.08s (no-budget-after-seed) |
+| w3/s4 | 20.6039 @ 19.14s (catalogue-exhausted) | 29.1388 @ 30.08s (joint-evaluation-budget) | 31.6117 @ 30.08s (no-budget-after-seed) |
+| w4/s0 | 20.0660 @ 23.58s (catalogue-exhausted) | 29.2673 @ 30.08s (joint-evaluation-budget) | 31.4429 @ 30.08s (no-budget-after-seed) |
+| w4/s1 | 24.1245 @ 21.03s (catalogue-exhausted) | 38.3912 @ 29.52s (catalogue-exhausted) | 40.1968 @ 30.08s (no-budget-after-seed) |
+| w4/s2 | 15.6092 @ 24.64s (catalogue-exhausted) | 19.7495 @ 30.08s (alternate-sweep-budget) | 23.3150 @ 30.08s (no-budget-after-seed) |
+| w4/s3 | 5.8725 @ 24.46s (catalogue-exhausted) | 10.1976 @ 30.08s (alternate-sweep-budget) | 12.3854 @ 30.08s (no-budget-after-seed) |
+| w4/s4 | 13.3041 @ 27.33s (catalogue-exhausted) | 22.8489 @ 30.08s (alternate-sweep-budget) | 29.3903 @ 30.08s (no-budget-after-seed) |
+
+| `MARGIN_Q` anchor | seed 10 | seed 20 | seed 30.08 |
+|---|---|---|---|
+| w1/s0 | 29.2594 @ 19.37s (catalogue-exhausted) | 43.0295 @ 29.44s (catalogue-exhausted) | 45.5350 @ 30.08s (no-budget-after-seed) |
+| w1/s1 | 37.1454 @ 17.53s (catalogue-exhausted) | 44.5492 @ 27.46s (catalogue-exhausted) | 45.9983 @ 30.08s (no-budget-after-seed) |
+| w1/s2 | 24.6161 @ 20.80s (catalogue-exhausted) | 39.9687 @ 30.08s (joint-evaluation-budget) | 39.5726 @ 30.08s (no-budget-after-seed) |
+| w1/s3 | 18.0120 @ 23.46s (catalogue-exhausted) | 26.9788 @ 30.08s (alternate-sweep-budget) | 30.8505 @ 30.08s (no-budget-after-seed) |
+| w1/s4 | 45.4720 @ 18.21s (catalogue-exhausted) | 51.9525 @ 27.68s (catalogue-exhausted) | 52.6635 @ 30.08s (no-budget-after-seed) |
+| w2/s0 | 39.8879 @ 18.99s (catalogue-exhausted) | 44.4280 @ 29.04s (catalogue-exhausted) | 44.6942 @ 30.08s (no-budget-after-seed) |
+| w2/s1 | 38.1004 @ 20.44s (catalogue-exhausted) | 48.3179 @ 30.08s (joint-evaluation-budget) | 48.8899 @ 30.08s (no-budget-after-seed) |
+| w2/s2 | 35.7076 @ 19.58s (catalogue-exhausted) | 40.7873 @ 30.08s (joint-evaluation-budget) | 40.3006 @ 30.08s (no-budget-after-seed) |
+| w2/s3 | 12.8171 @ 28.99s (catalogue-exhausted) | 15.9360 @ 30.08s (alternate-sweep-budget) | 24.5036 @ 30.08s (no-budget-after-seed) |
+| w2/s4 | 26.3275 @ 23.31s (catalogue-exhausted) | 37.0990 @ 28.72s (catalogue-exhausted) | 38.5884 @ 30.08s (no-budget-after-seed) |
+| w3/s0 | 33.9063 @ 19.61s (catalogue-exhausted) | 45.4857 @ 27.34s (catalogue-exhausted) | 45.9900 @ 30.08s (no-budget-after-seed) |
+| w3/s1 | 29.3712 @ 20.83s (catalogue-exhausted) | 34.0427 @ 30.08s (catalogue-construction-budget) | 41.8447 @ 30.08s (no-budget-after-seed) |
+| w3/s2 | 26.4540 @ 21.50s (catalogue-exhausted) | 40.2066 @ 29.80s (catalogue-exhausted) | 42.2017 @ 30.08s (no-budget-after-seed) |
+| w3/s3 | 16.9860 @ 22.47s (catalogue-exhausted) | 25.5949 @ 30.08s (alternate-sweep-budget) | 27.7399 @ 30.08s (no-budget-after-seed) |
+| w3/s4 | 35.9845 @ 23.02s (catalogue-exhausted) | 51.5034 @ 27.38s (catalogue-exhausted) | 53.8691 @ 30.08s (no-budget-after-seed) |
+| w4/s0 | 29.8968 @ 21.99s (catalogue-exhausted) | 43.8879 @ 28.93s (catalogue-exhausted) | 46.1818 @ 30.08s (no-budget-after-seed) |
+| w4/s1 | 36.2385 @ 25.72s (catalogue-exhausted) | 44.9878 @ 30.08s (joint-evaluation-budget) | 49.7994 @ 30.08s (no-budget-after-seed) |
+| w4/s2 | 23.9409 @ 20.90s (catalogue-exhausted) | 32.6157 @ 30.08s (joint-evaluation-budget) | 36.8078 @ 30.08s (no-budget-after-seed) |
+| w4/s3 | 12.3059 @ 30.08s (alternate-sweep-budget) | 18.6127 @ 30.08s (alternate-sweep-budget) | 23.7700 @ 30.08s (no-budget-after-seed) |
+| w4/s4 | 37.0381 @ 19.25s (catalogue-exhausted) | 44.1172 @ 27.22s (catalogue-exhausted) | 46.0177 @ 30.08s (no-budget-after-seed) |
+
+## Fixed-point change caused by first-improvement
+
+| rule | matching anchors | archived converged gain | first-impr. converged gain | first-impr. EE relative to archived |
+|---|---:|---:|---:|---:|
+| `SEALED` | 0/20 | 664.36% | 726.53% | 8.13% |
+| `MARGIN_Q` | 0/20 | 442.14% | 450.93% | 1.62% |
+
+Best-improvement completes each user's whole neighbourhood and takes its best move. First-improvement commits the first strict improvement in sealed option order and skips the rest of that user's neighbourhood. Both are strict monotone coordinate searches, but their move sequences enter different local basins. Here first-improvement is not merely a scheduling optimization: it changes every fixed point and happens to improve the pooled committed endpoint under both rules. The archived endpoints remain the exact 20/20 matched control.
+
+## Reproduction
+
+From `/home/sat/mcrl-v025-harness-ws`:
+
+```console
+$ env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 bin/harness anytime --variant SEALED --out receipts/anytime-sealed-full20.json
+$ env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 bin/harness anytime --variant MARGIN_Q --out receipts/anytime-margin-q-full20.json
+$ env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.anytime_best_timing --variant SEALED --out receipts/anytime-best-timing-sealed.json
+$ env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.anytime_best_timing --variant MARGIN_Q --out receipts/anytime-best-timing-margin-q.json
+$ PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.anytime_report --out ANYTIME-UNILATERAL-2026-09-10.md
+```
+
+Receipts: `receipts/anytime-sealed-full20.json`, `receipts/anytime-margin-q-full20.json`, `receipts/anytime-best-timing-sealed.json`, and `receipts/anytime-best-timing-margin-q.json`. They contain every full assignment, true bits/joules/EE/served count, move timestamp, joint phase, and per-anchor end-to-end time. Receipt SHA-256 values are:
+
+- `SEALED` anytime: `0863215a4602cd102f3f98e0cb24523e1d4bad57a653a88ffca1e4b285cc453c`
+- `SEALED` best-improvement timing control: `16edd42144a645e9bc934a750ac7c3e9532c3ad1f00de29b33603def1a552c27`
+- `MARGIN_Q` anytime: `d3b1f1612bf5ecaa3ad6563597af3243ab576435423535a55c4acccc3c07c546`
+- `MARGIN_Q` best-improvement timing control: `083c17c8cfa119fe204612cad9836f8a90caaa53621443e1b0a95c389736c110`
+
+## What was not reached
+
+No learned method was run, so this does not establish that exact search wins the interval; it establishes the comparator the learned method must beat. No repeated timing trials or confidence intervals were run. The `SEALED` best-improvement control contains the disclosed OS-scheduling outlier, so its raw mean is not a clean algorithmic runtime estimate. The joint search was not redesigned: it retains the archived physically-best-alternative prerequisite and bounded mechanism catalogue, with only deadline-aware batching. World-tape construction was not charged per decision because the standing harness defines the immutable tape as the decision input; all decision-local feature and candidate construction was charged. No sealed file or frozen manifest was modified.
+diff --git a/harness/anytime.py b/harness/anytime.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..9d0b8e8c181b470e06dc11d3d2cc39fc11e44e2e
+--- /dev/null
++++ b/harness/anytime.py
+@@ -0,0 +1,922 @@
++"""Anytime instrumentation for the sealed unilateral and bounded joint search.
++
++The physics and all decision rules come from the verified archived runner.  This
++module changes only search scheduling: unilateral alternatives are inspected in
++deterministic order and the first strict improvement is committed immediately.
++The terminal no-move pass is timed separately and its cache entries are never
++made available to the deadline-limited experiments.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import statistics
++import subprocess
++import time
++from typing import Mapping, Sequence
++
++from harness import panel as panel_module
++from harness import sealed as sealed_module
++from harness.cache import HarnessCache
++from harness.runner import install_variant
++
++
++SCHEMA = "mcrl-v025-anytime-unilateral-v1"
++CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
++CHECKPOINTS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.08, 45.0, 60.0)
++JOINT_SEED_SECONDS = (10.0, 20.0, 30.08)
++DEADLINE_SECONDS = 30.08
++# The sealed evaluator's native operation is a dense catalogue.  Ordered
++# microbatches retain first-improvement semantics (the first improving row in
++# the batch wins) without paying one NumPy catalogue setup per alternative.
++UNILATERAL_BATCH_SIZE = 16
++JOINT_BATCH_SIZE = 32
++REPO = Path(__file__).resolve().parents[1]
++REFERENCE_RECEIPTS = {
++    "SEALED": REPO / "receipts/sealed-full20-warm.json",
++    "MARGIN_Q": REPO / "receipts/margin-q-full20.json",
++}
++
++
++def _git(*args: str) -> str:
++    try:
++        return subprocess.check_output(
++            ["git", *args], cwd=REPO, text=True, encoding="utf-8"
++        ).strip()
++    except (OSError, subprocess.CalledProcessError):
++        return "UNAVAILABLE"
++
++
++def _quantile(values: Sequence[float], q: float) -> float | None:
++    if not values:
++        return None
++    ordered = sorted(float(value) for value in values)
++    position = (len(ordered) - 1) * q
++    lower = math.floor(position)
++    upper = math.ceil(position)
++    if lower == upper:
++        return ordered[lower]
++    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
++
++
++def distribution(values: Sequence[float]) -> dict[str, float | int | None]:
++    rows = [float(value) for value in values]
++    return {
++        "count": len(rows),
++        "min": min(rows) if rows else None,
++        "q25": _quantile(rows, 0.25),
++        "median": statistics.median(rows) if rows else None,
++        "q75": _quantile(rows, 0.75),
++        "max": max(rows) if rows else None,
++        "mean": statistics.fmean(rows) if rows else None,
++    }
++
++
++def _config_payload(config) -> dict[str, object]:
++    return {
++        "configuration_id": config.configuration_id,
++        "assignments": list(config.assignments),
++    }
++
++
++def _metric_payload(reference, profile) -> dict[str, object]:
++    return {
++        **_config_payload(profile.config),
++        "bits": float(profile.bits),
++        "joules": float(profile.joules),
++        "ee_bit_per_j": reference.ratio(profile.bits, profile.joules),
++        "served_count": reference.served(profile),
++    }
++
++
++@dataclass
++class TimedEvaluator:
++    """One persistent StepEvaluator plus completion timestamps for cache entries."""
++
++    reference: object
++    evaluator: object
++    started: float
++    completed_at: dict[str, float]
++
++    @classmethod
++    def create(cls, reference, tape, step_index: int, base, started: float):
++        evaluator = reference.probe.StepEvaluator(
++            tape,
++            reference.probe._setting("a-r0"),
++            step_index,
++            transition_from=base,
++            field="realised",
++            run_setting=reference.probe.run_setting_for("a-r0"),
++            boundary_indices=(0,),
++            fading_quantile_alpha=0.10,
++        )
++        return cls(reference, evaluator, started, {})
++
++    def elapsed(self) -> float:
++        return time.perf_counter() - self.started
++
++    def evaluate_many(self, configs: Sequence[object]) -> None:
++        missing = [
++            row
++            for row in configs
++            if row.configuration_id not in self.evaluator._evaluated
++            and row.configuration_id not in self.evaluator._invalid
++        ]
++        if not missing:
++            return
++        self.evaluator.evaluate_many(tuple(missing))
++        finished = self.elapsed()
++        for row in missing:
++            self.completed_at.setdefault(row.configuration_id, finished)
++
++    def profile(self, config):
++        self.evaluate_many((config,))
++        return self.evaluator._evaluated.get(config.configuration_id)
++
++    def preload(self, profiles: Mapping[str, object], invalid: Sequence[str] = ()) -> None:
++        self.evaluator._evaluated.update(profiles)
++        self.evaluator._invalid.update(invalid)
++
++
++@dataclass
++class UnilateralRun:
++    base: object
++    selected: object
++    moves: list[tuple[float, object]]
++    receipt: dict[str, object]
++    finding_profiles: dict[str, object]
++    finding_invalid: set[str]
++    finding_completed_at: dict[str, float]
++
++
++def _candidate(reference, base, current, user: int, identity, kind: str):
++    mapping = dict(current.mapping)
++    mapping[user] = identity
++    return reference._configuration(base, mapping, kind)
++
++
++def first_improvement_unilateral(reference, tape, step_index: int) -> UnilateralRun:
++    """Run first-improvement; isolate the final no-move pass as certification."""
++
++    started = time.perf_counter()
++    base = reference.probe._base_configuration(tape, step_index, "nearest-eligible")
++    current = base
++    moves: list[tuple[float, object]] = [(0.0, base)]
++    options, census = reference.probe._legal_options(tape, step_index)
++    timed = TimedEvaluator.create(reference, tape, step_index, base, started)
++    base_profile = timed.profile(base)
++    if base_profile is None:
++        raise RuntimeError("legal base configuration was invalid")
++    guard = reference.served(base_profile)
++    passes_with_moves = 0
++    accepted_moves = 0
++    candidate_comparisons = 0
++    physically_submitted = 0
++    pass_rows: list[dict[str, object]] = []
++
++    while True:
++        pass_started = timed.elapsed()
++        # This snapshot is the cache an implementation omitting the terminal
++        # certificate actually owns.  It is deliberately taken before the pass.
++        profiles_before_pass = dict(timed.evaluator._evaluated)
++        invalid_before_pass = set(timed.evaluator._invalid)
++        completed_before_pass = dict(timed.completed_at)
++        physical_before_pass = timed.evaluator.physical_evaluations
++        moves_this_pass = 0
++        for user in sorted(options):
++            current_profile = timed.profile(current)
++            if current_profile is None:
++                raise RuntimeError("accepted incumbent disappeared from cache")
++            current_value = reference.objective(current_profile)
++            identities = [
++                identity for identity in options[user] if identity != current.mapping[user]
++            ]
++            for offset in range(0, len(identities), UNILATERAL_BATCH_SIZE):
++                batch = tuple(
++                    _candidate(
++                        reference,
++                        base,
++                        current,
++                        user,
++                        identity,
++                        "anytime-unilateral-first-improvement",
++                    )
++                    for identity in identities[offset : offset + UNILATERAL_BATCH_SIZE]
++                )
++                timed.evaluate_many(batch)
++                physically_submitted += len(batch)
++                accepted = None
++                for candidate in batch:
++                    candidate_comparisons += 1
++                    profile = timed.evaluator._evaluated.get(candidate.configuration_id)
++                    if profile is None or reference.served(profile) < guard:
++                        continue
++                    if reference.objective(profile) > current_value:
++                        accepted = candidate
++                        break
++                if accepted is not None:
++                    current = accepted
++                    accepted_moves += 1
++                    moves_this_pass += 1
++                    moves.append((timed.elapsed(), current))
++                    break
++        pass_finished = timed.elapsed()
++        if moves_this_pass == 0:
++            finding_seconds = pass_started
++            certification_seconds = pass_finished - pass_started
++            finding_profiles = profiles_before_pass
++            finding_invalid = invalid_before_pass
++            finding_completed_at = completed_before_pass
++            terminal_evaluations = timed.evaluator.physical_evaluations - physical_before_pass
++            break
++        passes_with_moves += 1
++        pass_rows.append(
++            {
++                "pass": passes_with_moves,
++                "started_seconds": pass_started,
++                "finished_seconds": pass_finished,
++                "accepted_moves": moves_this_pass,
++            }
++        )
++
++    receipt = {
++        "algorithm": "deterministic cyclic first-improvement",
++        "candidate_order": "users sorted; each user's sealed legal options in sealed order",
++        "microbatch_size": UNILATERAL_BATCH_SIZE,
++        "baseline_served_guard": guard,
++        "legal_option_census": census,
++        "accepted_moves": accepted_moves,
++        "passes_with_moves": passes_with_moves,
++        "candidate_comparisons_through_certificate": candidate_comparisons,
++        "physically_submitted_candidates_through_certificate": physically_submitted,
++        "finding_physical_evaluations": physical_before_pass,
++        "terminal_certificate_physical_evaluations": terminal_evaluations,
++        "last_improvement_seconds": moves[-1][0],
++        "finding_seconds": finding_seconds,
++        "terminal_certificate_seconds": certification_seconds,
++        "measured_total_including_certificate_seconds": pass_finished,
++        "terminal_certificate_excluded_from_anytime": True,
++        "passes": pass_rows,
++        "move_times_seconds": [row[0] for row in moves[1:]],
++        "selected": _config_payload(current),
++    }
++    return UnilateralRun(
++        base,
++        current,
++        moves,
++        receipt,
++        finding_profiles,
++        finding_invalid,
++        finding_completed_at,
++    )
++
++
++def config_at(run: UnilateralRun, seconds: float):
++    selected = run.base
++    for accepted_at, config in run.moves:
++        if accepted_at > seconds:
++            break
++        selected = config
++    return selected
++
++
++def _best_alternatives_with_budget(
++    reference,
++    tape,
++    step_index: int,
++    base,
++    seed,
++    timed: TimedEvaluator,
++    allowance: float,
++):
++    options, _ = reference.probe._legal_options(tape, step_index)
++    best_alternatives: dict[int, tuple[int, int]] = {}
++    comparisons = 0
++    for user in sorted(options):
++        candidates = tuple(
++            _candidate(reference, base, seed, user, identity, "joint-seed-alternate")
++            for identity in options[user]
++            if identity != seed.mapping[user]
++        )
++        # Per-user batching matches the archived construction of a physically
++        # best alternate, while allowing a budget check between users.
++        if timed.elapsed() >= allowance:
++            return None, comparisons, "alternate-sweep-budget"
++        timed.evaluate_many(candidates)
++        if timed.elapsed() > allowance:
++            return None, comparisons, "alternate-sweep-budget"
++        rows = []
++        for candidate in candidates:
++            comparisons += 1
++            profile = timed.evaluator._evaluated.get(candidate.configuration_id)
++            if profile is not None:
++                rows.append(
++                    (
++                        reference.objective(profile),
++                        candidate.configuration_id,
++                        candidate.mapping[user],
++                    )
++                )
++        if rows:
++            best_alternatives[user] = min(rows, key=lambda row: (-row[0], row[1]))[2]
++    return best_alternatives, comparisons, None
++
++
++def deadline_joint_search(
++    reference,
++    tape,
++    step_index: int,
++    run: UnilateralRun,
++    seed_seconds: float,
++) -> tuple[object, dict[str, object]]:
++    """Use only the time remaining to 30.08 s after obtaining a timed seed."""
++
++    seed = config_at(run, seed_seconds)
++    allowance = max(0.0, DEADLINE_SECONDS - seed_seconds)
++    if allowance == 0.0:
++        return seed, {
++            "seed_seconds": seed_seconds,
++            "joint_allowance_seconds": 0.0,
++            "joint_wall_seconds": 0.0,
++            "total_end_to_end_seconds": seed_seconds,
++            "stopped_phase": "no-budget-after-seed",
++            "catalogue_complete": False,
++            "catalogue_unique": 0,
++            "joint_candidates_completed": 0,
++            "joint_improvements_accepted": 0,
++            "selected": _config_payload(seed),
++        }
++
++    started = time.perf_counter()
++    timed = TimedEvaluator.create(reference, tape, step_index, run.base, started)
++    available_profiles = {
++        key: profile
++        for key, profile in run.finding_profiles.items()
++        if run.finding_completed_at.get(key, math.inf) <= seed_seconds
++    }
++    available_invalid = {
++        key
++        for key in run.finding_invalid
++        if run.finding_completed_at.get(key, math.inf) <= seed_seconds
++    }
++    timed.preload(available_profiles, tuple(available_invalid))
++    seed_profile = timed.evaluator._evaluated.get(seed.configuration_id)
++    if seed_profile is None:
++        seed_profile = timed.profile(seed)
++    base_profile = timed.evaluator._evaluated.get(run.base.configuration_id)
++    if base_profile is None:
++        base_profile = timed.profile(run.base)
++    if seed_profile is None or base_profile is None:
++        raise RuntimeError("joint search seed or base is invalid")
++    guard = reference.served(base_profile)
++    best = seed
++    best_profile = seed_profile
++
++    alternatives, alternate_comparisons, stopped = _best_alternatives_with_budget(
++        reference, tape, step_index, run.base, seed, timed, allowance
++    )
++    candidates: tuple[object, ...] = ()
++    aliases = {}
++    family_counts = {}
++    completed = 0
++    improvements = 0
++    catalogue_complete = False
++    crossed_budget_by = 0.0
++
++    if alternatives is not None:
++        candidates, aliases, family_counts = reference.build_joint_candidates(
++            tape=tape,
++            step_index=step_index,
++            base=run.base,
++            unilateral=seed,
++            best_alternatives=alternatives,
++        )
++        catalogue_complete = True
++        if timed.elapsed() > allowance:
++            stopped = "catalogue-construction-budget"
++        else:
++            stopped = "catalogue-exhausted"
++            for offset in range(0, len(candidates), JOINT_BATCH_SIZE):
++                if timed.elapsed() >= allowance:
++                    stopped = "joint-evaluation-budget"
++                    break
++                batch = candidates[offset : offset + JOINT_BATCH_SIZE]
++                timed.evaluate_many(batch)
++                elapsed = timed.elapsed()
++                if elapsed > allowance:
++                    crossed_budget_by = elapsed - allowance
++                    stopped = "joint-evaluation-budget"
++                    break
++                completed += len(batch)
++                for candidate in batch:
++                    profile = timed.evaluator._evaluated.get(candidate.configuration_id)
++                    if profile is None or reference.served(profile) < guard:
++                        continue
++                    value = reference.objective(profile)
++                    best_value = reference.objective(best_profile)
++                    if value > best_value or (
++                        value == best_value
++                        and best is not seed
++                        and candidate.configuration_id < best.configuration_id
++                    ):
++                        best = candidate
++                        best_profile = profile
++                        improvements += 1
++
++    elapsed = timed.elapsed()
++    available_at = (
++        seed_seconds + elapsed
++        if stopped == "catalogue-exhausted"
++        else DEADLINE_SECONDS
++    )
++    return best, {
++        "seed_seconds": seed_seconds,
++        "joint_allowance_seconds": allowance,
++        "unilateral_cache_profiles_available": len(available_profiles),
++        "unilateral_cache_invalid_available": len(available_invalid),
++        "alternate_comparisons": alternate_comparisons,
++        "joint_wall_seconds": elapsed,
++        "budget_crossing_overshoot_seconds": crossed_budget_by,
++        "total_end_to_end_seconds": available_at,
++        "stopped_phase": stopped,
++        "catalogue_complete": catalogue_complete,
++        "catalogue_unique": len(candidates),
++        "catalogue_aliases": sum(len(rows) for rows in aliases.values()),
++        "family_unique_counts": family_counts,
++        "joint_microbatch_size": JOINT_BATCH_SIZE,
++        "joint_candidates_completed": completed,
++        "joint_improvements_accepted": improvements,
++        "selected": _config_payload(best),
++    }
++
++
++def _committed_profiles(reference, tape, step_index: int, base, configs):
++    evaluator = reference.probe.StepEvaluator(
++        tape,
++        reference.probe._setting("a-r0"),
++        step_index,
++        transition_from=base,
++        field="realised",
++        run_setting=reference.probe.run_setting_for("a-r0"),
++        boundary_indices=tuple(range(48)),
++        fading_quantile_alpha=0.10,
++    )
++    unique = {row.configuration_id: row for row in configs}
++    evaluator.evaluate_many(tuple(unique.values()))
++    return {
++        key: evaluator._evaluated[value.configuration_id]
++        for key, value in unique.items()
++        if value.configuration_id in evaluator._evaluated
++    }
++
++
++def measure_anchor(reference, tape, world_index: int, step_index: int, archived) -> dict:
++    run = first_improvement_unilateral(reference, tape, step_index)
++    checkpoint_configs = {
++        f"{seconds:g}": config_at(run, seconds) for seconds in CHECKPOINTS
++    }
++    checkpoint_configs["convergence"] = run.selected
++    joint_configs = {}
++    joint_rows = {}
++    for seconds in JOINT_SEED_SECONDS:
++        key = f"{seconds:g}"
++        joint_configs[key], joint_rows[key] = deadline_joint_search(
++            reference, tape, step_index, run, seconds
++        )
++
++    all_configs = [run.base, *checkpoint_configs.values(), *joint_configs.values()]
++    committed = _committed_profiles(
++        reference, tape, step_index, run.base, all_configs
++    )
++
++    def metric(config):
++        try:
++            return _metric_payload(reference, committed[config.configuration_id])
++        except KeyError:
++            raise RuntimeError(
++                f"committed configuration invalid: {config.configuration_id}"
++            ) from None
++
++    base_metric = metric(run.base)
++    checkpoints = {key: metric(config) for key, config in checkpoint_configs.items()}
++    for key, config in joint_configs.items():
++        joint_rows[key]["committed"] = metric(config)
++
++    archived_unilateral = archived["committed"]["UNILATERAL"]
++    return {
++        "anchor_id": f"V025_PROBE_R2/world/{world_index}:step/{step_index}",
++        "world_index": world_index,
++        "step_index": step_index,
++        "world_domain": tape.domain,
++        "world_sha256": tape.digest,
++        "baseline": base_metric,
++        "unilateral": run.receipt,
++        "checkpoints": checkpoints,
++        "joint_within_30_08": joint_rows,
++        "first_improvement_fixed_point_matches_archived_best_improvement": (
++            checkpoints["convergence"]["assignments"]
++            == archived_unilateral["assignments"]
++        ),
++        "archived_best_improvement": archived_unilateral,
++    }
++
++
++def _pool_metrics(rows: Sequence[Mapping[str, object]], accessor) -> dict[str, object]:
++    metrics = [accessor(row) for row in rows]
++    bits = math.fsum(float(row["bits"]) for row in metrics)
++    joules = math.fsum(float(row["joules"]) for row in metrics)
++    return {
++        "bits": bits,
++        "joules": joules,
++        "ee_bit_per_j": bits / joules,
++        "served_count_sum": sum(int(row["served_count"]) for row in metrics),
++    }
++
++
++def _gain(numerator: float, denominator: float) -> float:
++    return numerator / denominator - 1.0
++
++
++def summarize(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
++    baseline = _pool_metrics(rows, lambda row: row["baseline"])
++    archived_convergence = _pool_metrics(
++        rows, lambda row: row["archived_best_improvement"]
++    )
++    curve = {}
++    for key in (*[f"{value:g}" for value in CHECKPOINTS], "convergence"):
++        pooled = _pool_metrics(rows, lambda row, key=key: row["checkpoints"][key])
++        per_anchor_gain = [
++            _gain(
++                float(row["checkpoints"][key]["ee_bit_per_j"]),
++                float(row["baseline"]["ee_bit_per_j"]),
++            )
++            for row in rows
++        ]
++        curve[key] = {
++            "pooled": pooled,
++            "pooled_gain_over_baseline": _gain(
++                float(pooled["ee_bit_per_j"]), float(baseline["ee_bit_per_j"])
++            ),
++            "paired_anchor_gain_over_baseline_distribution": distribution(per_anchor_gain),
++            "per_anchor_gain_over_baseline": [
++                {"anchor_id": row["anchor_id"], "gain": value}
++                for row, value in zip(rows, per_anchor_gain)
++            ],
++        }
++
++    deadline_gain = float(curve["30.08"]["pooled_gain_over_baseline"])
++    converged_gain = float(curve["convergence"]["pooled_gain_over_baseline"])
++    archived_converged_gain = _gain(
++        float(archived_convergence["ee_bit_per_j"]),
++        float(baseline["ee_bit_per_j"]),
++    )
++    anchor_fractions = []
++    archived_anchor_fractions = []
++    for row in rows:
++        base_ee = float(row["baseline"]["ee_bit_per_j"])
++        deadline_ee = float(row["checkpoints"]["30.08"]["ee_bit_per_j"])
++        converged_ee = float(row["checkpoints"]["convergence"]["ee_bit_per_j"])
++        denominator = converged_ee - base_ee
++        fraction = None if denominator == 0.0 else (deadline_ee - base_ee) / denominator
++        anchor_fractions.append({"anchor_id": row["anchor_id"], "fraction": fraction})
++        archived_ee = float(row["archived_best_improvement"]["ee_bit_per_j"])
++        archived_denominator = archived_ee - base_ee
++        archived_fraction = (
++            None
++            if archived_denominator == 0.0
++            else (deadline_ee - base_ee) / archived_denominator
++        )
++        archived_anchor_fractions.append(
++            {"anchor_id": row["anchor_id"], "fraction": archived_fraction}
++        )
++    defined_fractions = [
++        float(row["fraction"]) for row in anchor_fractions if row["fraction"] is not None
++    ]
++    defined_archived_fractions = [
++        float(row["fraction"])
++        for row in archived_anchor_fractions
++        if row["fraction"] is not None
++    ]
++
++    certification = {
++        "finding_seconds": distribution(
++            [float(row["unilateral"]["finding_seconds"]) for row in rows]
++        ),
++        "last_improvement_seconds": distribution(
++            [float(row["unilateral"]["last_improvement_seconds"]) for row in rows]
++        ),
++        "terminal_certificate_seconds": distribution(
++            [float(row["unilateral"]["terminal_certificate_seconds"]) for row in rows]
++        ),
++        "total_including_certificate_seconds": distribution(
++            [
++                float(row["unilateral"]["measured_total_including_certificate_seconds"])
++                for row in rows
++            ]
++        ),
++        "per_anchor": [
++            {
++                "anchor_id": row["anchor_id"],
++                "finding_seconds": row["unilateral"]["finding_seconds"],
++                "last_improvement_seconds": row["unilateral"]["last_improvement_seconds"],
++                "terminal_certificate_seconds": row["unilateral"][
++                    "terminal_certificate_seconds"
++                ],
++                "total_including_certificate_seconds": row["unilateral"][
++                    "measured_total_including_certificate_seconds"
++                ],
++            }
++            for row in rows
++        ],
++    }
++
++    joint = {}
++    for seed_key in (f"{value:g}" for value in JOINT_SEED_SECONDS):
++        pooled = _pool_metrics(
++            rows, lambda row, seed_key=seed_key: row["joint_within_30_08"][seed_key]["committed"]
++        )
++        joint[seed_key] = {
++            "pooled": pooled,
++            "pooled_gain_over_baseline": _gain(
++                float(pooled["ee_bit_per_j"]), float(baseline["ee_bit_per_j"])
++            ),
++            "fraction_of_archived_best_improvement_prize": (
++                None
++                if archived_converged_gain == 0.0
++                else _gain(
++                    float(pooled["ee_bit_per_j"]),
++                    float(baseline["ee_bit_per_j"]),
++                )
++                / archived_converged_gain
++            ),
++            "total_end_to_end_seconds_distribution": distribution(
++                [
++                    float(row["joint_within_30_08"][seed_key]["total_end_to_end_seconds"])
++                    for row in rows
++                ]
++            ),
++            "catalogue_completed_anchor_count": sum(
++                row["joint_within_30_08"][seed_key]["stopped_phase"]
++                == "catalogue-exhausted"
++                for row in rows
++            ),
++            "anchors_with_joint_improvement": sum(
++                row["joint_within_30_08"][seed_key]["committed"]["assignments"]
++                != row["checkpoints"][seed_key]["assignments"]
++                for row in rows
++            ),
++            "per_anchor": [
++                {
++                    "anchor_id": row["anchor_id"],
++                    **row["joint_within_30_08"][seed_key],
++                }
++                for row in rows
++            ],
++        }
++
++    return {
++        "anchor_count": len(rows),
++        "baseline_pooled": baseline,
++        "archived_best_improvement_pooled": archived_convergence,
++        "archived_best_improvement_gain_over_baseline": archived_converged_gain,
++        "anytime_curve": curve,
++        "deadline_prize_fraction": (
++            None if converged_gain == 0.0 else deadline_gain / converged_gain
++        ),
++        "deadline_prize_fraction_distribution": distribution(defined_fractions),
++        "deadline_prize_fraction_per_anchor": anchor_fractions,
++        "worst_anchor_at_deadline": (
++            None
++            if not defined_fractions
++            else min(
++                (row for row in anchor_fractions if row["fraction"] is not None),
++                key=lambda row: row["fraction"],
++            )
++        ),
++        "deadline_prize_fraction_vs_archived_best_improvement": (
++            None
++            if archived_converged_gain == 0.0
++            else deadline_gain / archived_converged_gain
++        ),
++        "deadline_prize_fraction_vs_archived_distribution": distribution(
++            defined_archived_fractions
++        ),
++        "deadline_prize_fraction_vs_archived_per_anchor": archived_anchor_fractions,
++        "worst_anchor_vs_archived_at_deadline": (
++            None
++            if not defined_archived_fractions
++            else min(
++                (
++                    row
++                    for row in archived_anchor_fractions
++                    if row["fraction"] is not None
++                ),
++                key=lambda row: row["fraction"],
++            )
++        ),
++        "certification": certification,
++        "joint_within_30_08": joint,
++        "first_improvement_convergence_relative_to_archived_best_improvement": _gain(
++            float(curve["convergence"]["pooled"]["ee_bit_per_j"]),
++            float(archived_convergence["ee_bit_per_j"]),
++        ),
++        "first_improvement_fixed_point_matches_archived_count": sum(
++            bool(row["first_improvement_fixed_point_matches_archived_best_improvement"])
++            for row in rows
++        ),
++    }
++
++
++def _hardware() -> dict[str, object]:
++    model = "UNKNOWN"
++    try:
++        for line in Path("/proc/cpuinfo").read_text(encoding="ascii").splitlines():
++            if line.startswith("model name"):
++                model = line.partition(":")[2].strip()
++                break
++    except OSError:
++        pass
++    threadpools = []
++    try:
++        from threadpoolctl import threadpool_info
++
++        threadpools = threadpool_info()
++    except ImportError:
++        pass
++    return {
++        "platform": platform.platform(),
++        "cpu_model": model,
++        "logical_cpu_count": os.cpu_count(),
++        "processes_used": 1,
++        "thread_environment": {
++            key: os.environ.get(key)
++            for key in (
++                "OMP_NUM_THREADS",
++                "OPENBLAS_NUM_THREADS",
++                "MKL_NUM_THREADS",
++                "NUMEXPR_NUM_THREADS",
++            )
++        },
++        "runtime_threadpools": threadpools,
++    }
++
++
++def _write(payload: dict, output: Path) -> None:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    encoded = json.dumps(
++        unsigned, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
++    ).encode("ascii")
++    payload["receipt_sha256"] = hashlib.sha256(encoded).hexdigest()
++    output.parent.mkdir(parents=True, exist_ok=True)
++    output.write_text(
++        json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++
++
++def run_panel(
++    *,
++    variant_name: str,
++    output: Path,
++    resume: bool = False,
++    progress: bool = True,
++) -> dict:
++    tree = sealed_module.verify()
++    reference = sealed_module.reference_runner()
++    board = panel_module.FULL20
++    variant, _installed, _sealed = install_variant(variant_name)
++    reference_path = REFERENCE_RECEIPTS[variant_name]
++    archived_receipt = json.loads(reference_path.read_text(encoding="ascii"))
++    archived = {row["anchor_id"]: row for row in archived_receipt["anchors"]}
++
++    payload = {
++        "schema": SCHEMA,
++        "claim_ceiling": CLAIM_CEILING,
++        "complete": False,
++        "variant": variant_name,
++        "variant_source": variant.source,
++        "variant_source_sha256": variant.source_sha256,
++        "panel": board.name,
++        "checkpoints_seconds": list(CHECKPOINTS),
++        "deadline_seconds": DEADLINE_SECONDS,
++        "joint_seed_seconds": list(JOINT_SEED_SECONDS),
++        "sealed_manifest_sha256": tree.manifest_sha256,
++        "probe_source_sha256": tree.probe_sha256,
++        "reference_receipt": str(reference_path.relative_to(REPO)),
++        "reference_receipt_sha256": archived_receipt["receipt_sha256"],
++        "source_commit": _git("rev-parse", "HEAD"),
++        "source_tree": _git("rev-parse", "HEAD^{tree}"),
++        "python": platform.python_version(),
++        "python_executable": os.sys.executable,
++        "hardware": _hardware(),
++        "timing_scope": (
++            "Per-anchor stopwatch starts before base and legal-option construction. "
++            "It includes candidate construction, every selection evaluation and cache "
++            "miss. The immutable exogenous world tape is input and its construction is "
++            "reported separately. Untimed 48-boundary evaluation only scores returned actions."
++        ),
++        "unilateral_algorithm": (
++            "Cyclic first-improvement, accepting the first strictly F-improving, "
++            "service-guard-feasible move in sealed option order. Persistent configuration "
++            "evaluation cache. Terminal no-move sweep measured separately and excluded."
++        ),
++        "joint_budget_rule": (
++            "The seed consumes its nominal 10, 20 or 30.08 seconds of the same 30.08-second "
++            "budget. Only unilateral cache entries completed by the seed time are reusable. "
++            "Construction of physically best per-user alternatives and the existing bounded "
++            "joint catalogue consumes the remainder. The returned action is the best feasible "
++            "candidate whose evaluation batch completed by the deadline."
++        ),
++        "anchors": [],
++        "worlds": [],
++    }
++    if resume and output.exists():
++        old = json.loads(output.read_text(encoding="ascii"))
++        for key in (
++            "schema",
++            "variant",
++            "sealed_manifest_sha256",
++            "variant_source_sha256",
++            "checkpoints_seconds",
++        ):
++            if old.get(key) != payload.get(key):
++                raise RuntimeError(f"cannot resume: receipt mismatch in {key}")
++        payload["anchors"] = old["anchors"]
++
++    completed = {row["anchor_id"] for row in payload["anchors"]}
++    cache = HarnessCache(enabled=True)
++    tapes = {}
++    for world_index in board.worlds:
++        domain = reference.probe.PROBE_WORLD_DOMAINS[world_index - 1]
++        key = cache.world_key(
++            sealed_manifest=tree.manifest_sha256,
++            domain=domain,
++            steps=board.tape_steps,
++            start_time_s=0.0,
++            provider="mcrl.physics_v025.provider_legacy.factory",
++        )
++        from mcrl.physics_v025.provider_legacy import factory as real_factory
++
++        tape, meta, elapsed, hit = cache.world(
++            key,
++            lambda domain=domain: reference.probe.build_world_tape(
++                domain=domain,
++                provider=real_factory(),
++                steps=board.tape_steps,
++                start_time_s=0.0,
++            ),
++        )
++        tapes[world_index] = tape
++        payload["worlds"].append(
++            {
++                "world_index": world_index,
++                "world_sha256": tape.digest,
++                "cache_key": key,
++                "cache_hit": hit,
++                "load_or_construction_seconds": elapsed,
++                **meta,
++            }
++        )
++
++    for world_index, step_index in board.anchors:
++        anchor_id = f"V025_PROBE_R2/world/{world_index}:step/{step_index}"
++        if anchor_id in completed:
++            continue
++        if progress:
++            print(json.dumps({"starting_anchor": anchor_id, "variant": variant_name}), flush=True)
++        row = measure_anchor(
++            reference, tapes[world_index], world_index, step_index, archived[anchor_id]
++        )
++        payload["anchors"].append(row)
++        payload["anchors"].sort(key=lambda item: (item["world_index"], item["step_index"]))
++        payload["summary"] = summarize(payload["anchors"])
++        _write(payload, output)
++        if progress:
++            print(
++                json.dumps(
++                    {
++                        "finished_anchor": anchor_id,
++                        "finding_seconds": row["unilateral"]["finding_seconds"],
++                        "certificate_seconds": row["unilateral"]["terminal_certificate_seconds"],
++                        "deadline_gain_over_baseline": (
++                            row["checkpoints"]["30.08"]["ee_bit_per_j"]
++                            / row["baseline"]["ee_bit_per_j"]
++                            - 1.0
++                        ),
++                    },
++                    sort_keys=True,
++                ),
++                flush=True,
++            )
++
++    payload["complete"] = len(payload["anchors"]) == len(board.anchors)
++    payload["summary"] = summarize(payload["anchors"])
++    _write(payload, output)
++    return payload
+diff --git a/harness/anytime_best_timing.py b/harness/anytime_best_timing.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b27ea8a5432286c8adb57e78fba75577ce773883
+--- /dev/null
++++ b/harness/anytime_best_timing.py
+@@ -0,0 +1,206 @@
++"""Time the archived cyclic best-improvement path and its terminal certificate.
++
++This is the control needed to decompose the project's quoted convergence cost
++after the requested first-improvement scheduling changes the local-search path.
++No committed endpoint is re-scored here; archived assignments are the oracle.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import math
++from pathlib import Path
++import time
++
++from harness import panel as panel_module
++from harness import sealed as sealed_module
++from harness.anytime import TimedEvaluator, _hardware, distribution
++from harness.cache import HarnessCache
++from harness.runner import install_variant
++
++
++REPO = Path(__file__).resolve().parents[1]
++REFERENCES = {
++    "SEALED": REPO / "receipts/sealed-full20-warm.json",
++    "MARGIN_Q": REPO / "receipts/margin-q-full20.json",
++}
++
++
++def measure(reference, tape, step_index: int, archived) -> dict[str, object]:
++    started = time.perf_counter()
++    base = reference.probe._base_configuration(tape, step_index, "nearest-eligible")
++    options, _census = reference.probe._legal_options(tape, step_index)
++    timed = TimedEvaluator.create(reference, tape, step_index, base, started)
++    base_profile = timed.profile(base)
++    if base_profile is None:
++        raise RuntimeError("base configuration invalid")
++    guard = reference.served(base_profile)
++    current = base
++    moves = 0
++    passes_with_moves = 0
++
++    while True:
++        pass_started = timed.elapsed()
++        physical_before = timed.evaluator.physical_evaluations
++        moves_this_pass = 0
++        for user in sorted(options):
++            current_profile = timed.profile(current)
++            current_value = reference.objective(current_profile)
++            candidates = []
++            for identity in options[user]:
++                if identity == current.mapping[user]:
++                    continue
++                mapping = dict(current.mapping)
++                mapping[user] = identity
++                candidates.append(
++                    reference._configuration(base, mapping, "timed-best-improvement")
++                )
++            timed.evaluate_many(tuple(candidates))
++            best = current
++            best_value = current_value
++            for candidate in candidates:
++                profile = timed.evaluator._evaluated.get(candidate.configuration_id)
++                if profile is None or reference.served(profile) < guard:
++                    continue
++                value = reference.objective(profile)
++                if value > best_value or (
++                    value == best_value
++                    and best is not current
++                    and candidate.configuration_id < best.configuration_id
++                ):
++                    best = candidate
++                    best_value = value
++            if best.assignments != current.assignments:
++                current = best
++                moves += 1
++                moves_this_pass += 1
++        pass_finished = timed.elapsed()
++        if moves_this_pass == 0:
++            return {
++                "finding_seconds": pass_started,
++                "terminal_certificate_seconds": pass_finished - pass_started,
++                "total_including_certificate_seconds": pass_finished,
++                "finding_physical_evaluations": physical_before,
++                "terminal_certificate_physical_evaluations": (
++                    timed.evaluator.physical_evaluations - physical_before
++                ),
++                "passes_with_moves": passes_with_moves,
++                "accepted_moves": moves,
++                "selected_configuration_id": current.configuration_id,
++                "matches_archived_assignment": (
++                    list(current.assignments)
++                    == [tuple((u, None if a is None else tuple(a))) for u, a in archived["assignments"]]
++                ),
++            }
++        passes_with_moves += 1
++
++
++def _write(payload: dict, output: Path) -> None:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    raw = json.dumps(unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("ascii")
++    payload["receipt_sha256"] = hashlib.sha256(raw).hexdigest()
++    output.parent.mkdir(parents=True, exist_ok=True)
++    output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="ascii")
++
++
++def run(variant_name: str, output: Path, resume: bool) -> dict:
++    tree = sealed_module.verify()
++    reference = sealed_module.reference_runner()
++    variant, _installed, _sealed = install_variant(variant_name)
++    archive_receipt = json.loads(REFERENCES[variant_name].read_text(encoding="ascii"))
++    archive = {row["anchor_id"]: row for row in archive_receipt["anchors"]}
++    payload = {
++        "schema": "mcrl-v025-archived-best-improvement-timing-v1",
++        "claim_ceiling": "DIAGNOSTIC_NOT_CLAIM",
++        "complete": False,
++        "variant": variant_name,
++        "variant_source_sha256": variant.source_sha256,
++        "sealed_manifest_sha256": tree.manifest_sha256,
++        "hardware": _hardware(),
++        "algorithm": (
++            "Archived cyclic per-user best-improvement acceptance and tie break; "
++            "persistent dense StepEvaluator cache; terminal no-move pass timed separately."
++        ),
++        "anchors": [],
++    }
++    if resume and output.exists():
++        old = json.loads(output.read_text(encoding="ascii"))
++        for key in ("schema", "variant", "variant_source_sha256", "sealed_manifest_sha256"):
++            if old.get(key) != payload[key]:
++                raise RuntimeError(f"cannot resume: mismatch in {key}")
++        payload["anchors"] = old["anchors"]
++
++    cache = HarnessCache(enabled=True)
++    tapes = {}
++    from mcrl.physics_v025.provider_legacy import factory as real_factory
++
++    for world_index in panel_module.FULL20.worlds:
++        domain = reference.probe.PROBE_WORLD_DOMAINS[world_index - 1]
++        key = cache.world_key(
++            sealed_manifest=tree.manifest_sha256,
++            domain=domain,
++            steps=panel_module.FULL20.tape_steps,
++            start_time_s=0.0,
++            provider="mcrl.physics_v025.provider_legacy.factory",
++        )
++        tapes[world_index], _meta, _elapsed, _hit = cache.world(
++            key,
++            lambda domain=domain: reference.probe.build_world_tape(
++                domain=domain,
++                provider=real_factory(),
++                steps=panel_module.FULL20.tape_steps,
++                start_time_s=0.0,
++            ),
++        )
++
++    done = {row["anchor_id"] for row in payload["anchors"]}
++    for world_index, step_index in panel_module.FULL20.anchors:
++        anchor_id = f"V025_PROBE_R2/world/{world_index}:step/{step_index}"
++        if anchor_id in done:
++            continue
++        print(json.dumps({"starting_anchor": anchor_id, "variant": variant_name}), flush=True)
++        row = measure(
++            reference,
++            tapes[world_index],
++            step_index,
++            archive[anchor_id]["committed"]["UNILATERAL"],
++        )
++        row["anchor_id"] = anchor_id
++        payload["anchors"].append(row)
++        payload["anchors"].sort(key=lambda item: item["anchor_id"])
++        _write(payload, output)
++        print(json.dumps({"finished_anchor": anchor_id, **row}, sort_keys=True), flush=True)
++
++    rows = payload["anchors"]
++    payload["complete"] = len(rows) == len(panel_module.FULL20.anchors)
++    payload["summary"] = {
++        key: distribution([float(row[key]) for row in rows])
++        for key in (
++            "finding_seconds",
++            "terminal_certificate_seconds",
++            "total_including_certificate_seconds",
++        )
++    }
++    payload["summary"]["matches_archived_assignment_count"] = sum(
++        bool(row["matches_archived_assignment"]) for row in rows
++    )
++    _write(payload, output)
++    return payload
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--variant", choices=tuple(REFERENCES), required=True)
++    parser.add_argument("--out", type=Path, required=True)
++    parser.add_argument("--resume", action="store_true")
++    args = parser.parse_args()
++    payload = run(args.variant, args.out, args.resume)
++    print(json.dumps({"complete": payload["complete"], "summary": payload["summary"]}, indent=2))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/harness/anytime_report.py b/harness/anytime_report.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0209055a0916ef9c224f077969d02214f249db0b
+--- /dev/null
++++ b/harness/anytime_report.py
+@@ -0,0 +1,238 @@
++"""Render the anytime unilateral receipts as the requested Markdown report."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[1]
++ANYTIME = {
++    "SEALED": ROOT / "receipts/anytime-sealed-full20.json",
++    "MARGIN_Q": ROOT / "receipts/anytime-margin-q-full20.json",
++}
++BEST = {
++    "SEALED": ROOT / "receipts/anytime-best-timing-sealed.json",
++    "MARGIN_Q": ROOT / "receipts/anytime-best-timing-margin-q.json",
++}
++TIMES = ("1", "2", "5", "10", "20", "30.08", "45", "60", "convergence")
++
++
++def pct(value) -> str:
++    return "n/a" if value is None else f"{100 * float(value):.2f}%"
++
++
++def num(value, digits=2) -> str:
++    return "n/a" if value is None else f"{float(value):.{digits}f}"
++
++
++def aid(value: str) -> str:
++    return value.replace("V025_PROBE_R2/world/", "w").replace(":step/", "/s")
++
++
++def dist_cells(d: dict) -> str:
++    return " / ".join(num(d[key]) for key in ("min", "q25", "median", "q75", "max", "mean"))
++
++
++def render() -> str:
++    data = {key: json.loads(path.read_text(encoding="ascii")) for key, path in ANYTIME.items()}
++    best = {key: json.loads(path.read_text(encoding="ascii")) for key, path in BEST.items()}
++    for name in data:
++        assert data[name]["complete"] and len(data[name]["anchors"]) == 20
++        assert best[name]["complete"] and len(best[name]["anchors"]) == 20
++        assert best[name]["summary"]["matches_archived_assignment_count"] == 20
++
++    lines = []
++    add = lines.append
++    ss = data["SEALED"]["summary"]
++    ms = data["MARGIN_Q"]["summary"]
++    add(
++        f"At 30.08 seconds, **{pct(ss['deadline_prize_fraction'])}** of the converged "
++        f"first-improvement unilateral gain is available under `SEALED` and "
++        f"**{pct(ms['deadline_prize_fraction'])}** under `MARGIN_Q` "
++        f"(against the archived best-improvement endpoints: "
++        f"**{pct(ss['deadline_prize_fraction_vs_archived_best_improvement'])}** and "
++        f"**{pct(ms['deadline_prize_fraction_vs_archived_best_improvement'])}**)."
++    )
++    add("")
++    add("# Anytime unilateral search — V0.25 twenty-anchor panel")
++    add("")
++    add("`DIAGNOSTIC_NOT_CLAIM`. No learner, training run, or policy run was performed. No sealed constant, threshold, sign, seed, horizon, price, service guard, acceptance rule, sealed artifact, or frozen manifest was changed.")
++    add("")
++    add("## Decision")
++    add("")
++    add("Most of the prize is available before the deadline under both provisioning rules. By 20 seconds the first-improvement search has already obtained 69.51% (`SEALED`) and 77.03% (`MARGIN_Q`) of its eventual pooled gain; by 30.08 seconds those fractions are 81.74% and 87.85%. Therefore the proposed argument—*the converged exact search misses the interval, so a learned method may claim the within-interval win*—fails on this panel. A learned method would need to beat the actual anytime incumbent at the same wall-clock budget, not the legal base configuration or a convergence certificate time.")
++    add("")
++    add("First-improvement changed the local-search path and the fixed point on all 20 anchors under both rules. Its converged pooled EE is 8.13% above the archived best-improvement endpoint under `SEALED` and 1.62% above it under `MARGIN_Q`. Accordingly, every prize fraction below is shown against both endpoints where relevant.")
++    add("")
++    add("## Method and timing contract")
++    add("")
++    add("The legal nearest-eligible base assignment is the incumbent from time zero. Users and their legal options retain sealed deterministic order. Alternatives are evaluated in ordered microbatches of 16 using one persistent `StepEvaluator`; when a batch returns, the first strict `F = B - eta_ref E` improvement satisfying the unchanged baseline served-count guard is committed immediately and later alternatives for that user are not evaluated. Thus a checkpoint receives only a move whose evaluation completed by that timestamp, never a candidate credited with hindsight. The microbatch is the sealed dense evaluator's native vectorized path; scalar calls were piloted and rejected as an implementation defect after taking 176.84 seconds on the first anchor.")
++    add("")
++    add("The stopwatch starts before base construction and `_legal_options`; it includes all configuration/candidate construction, physical selection evaluation, and cache misses. The immutable exogenous world tape is the input to a decision and was loaded once per world from the standing content-addressed cache; its load times remain in each receipt. The 48-boundary committed evaluation is run only after timing to measure the true action endpoint and cannot affect the search path. The final complete no-move sweep is executed only as a separate certification probe; its evaluations are excluded from the anytime and joint caches.")
++    add("")
++    add("Runs used one process via `nice -n 15` on an Intel Core Ultra 7 265KF (20 logical CPUs, one thread per core). `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, and `NUMEXPR_NUM_THREADS` were all pinned to 1. The interpreter was `/home/sat/mcrl-leo-handover/.venv/bin/python`; `PYTHONPATH=src`. The runtime reported no active native threadpool. The sealed manifest is `d5e94654510225aaf6ca7f8422ecd12ba64e8f3b8690c55a55d791063db8b916`; the anytime implementation SHA-256 is `003bdee1df908fddf652f2f8069c31a6297a7f7178bbb83338d09b3f4add9928`.")
++
++    add("")
++    add("## D1 — Anytime quality curve")
++    for name, payload in data.items():
++        s = payload["summary"]
++        base = s["baseline_pooled"]
++        add("")
++        add(f"### `{name}` pooled curve")
++        add("")
++        add("| time (s) | bits (Tbit) | joules | EE (Mbit/J) | gain over base | prize vs first-impr. | prize vs archived |")
++        add("|---:|---:|---:|---:|---:|---:|---:|")
++        add(f"| 0/base | {base['bits']/1e12:.6f} | {base['joules']:.3f} | {base['ee_bit_per_j']/1e6:.6f} | 0.00% | 0.00% | 0.00% |")
++        conv = s["anytime_curve"]["convergence"]["pooled_gain_over_baseline"]
++        archived = s["archived_best_improvement_gain_over_baseline"]
++        for key in TIMES:
++            row = s["anytime_curve"][key]
++            p = row["pooled"]
++            label = "convergence" if key == "convergence" else key
++            add(f"| {label} | {p['bits']/1e12:.6f} | {p['joules']:.3f} | {p['ee_bit_per_j']/1e6:.6f} | {pct(row['pooled_gain_over_baseline'])} | {pct(row['pooled_gain_over_baseline']/conv)} | {pct(row['pooled_gain_over_baseline']/archived)} |")
++
++        add("")
++        add("Paired anchor-local true-EE gain over each anchor's base:")
++        add("")
++        add("| time (s) | min | q25 | median | q75 | max | mean |")
++        add("|---:|---:|---:|---:|---:|---:|---:|")
++        for key in TIMES:
++            d = s["anytime_curve"][key]["paired_anchor_gain_over_baseline_distribution"]
++            add("| " + ("convergence" if key == "convergence" else key) + " | " + " | ".join(pct(d[x]) for x in ("min", "q25", "median", "q75", "max", "mean")) + " |")
++
++        add("")
++        add("Per-anchor committed EE (Mbit/J); each cell is the true 48-boundary endpoint of the configuration actually held at that time:")
++        add("")
++        add("| anchor | base | 1 | 2 | 5 | 10 | 20 | 30.08 | 45 | 60 | convergence |")
++        add("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
++        for row in payload["anchors"]:
++            vals = [row["baseline"]["ee_bit_per_j"] / 1e6] + [row["checkpoints"][k]["ee_bit_per_j"] / 1e6 for k in TIMES]
++            add("| " + aid(row["anchor_id"]) + " | " + " | ".join(f"{v:.4f}" for v in vals) + " |")
++
++    add("")
++    add("## D2 — Fraction of the prize at 30.08 seconds")
++    add("")
++    add("The pooled fraction is `(EE_30.08 - EE_base) / (EE_converged - EE_base)`, with EE pooled as summed bits over summed joules. Anchor fractions use the paired anchor-local form.")
++    add("")
++    add("| rule | pooled vs first-impr. | pooled vs archived | anchor spread vs first-impr. (min/q25/median/q75/max/mean) | worst anchor |")
++    add("|---|---:|---:|---|---|")
++    for name, payload in data.items():
++        s = payload["summary"]; d = s["deadline_prize_fraction_distribution"]; w = s["worst_anchor_at_deadline"]
++        add(f"| `{name}` | {pct(s['deadline_prize_fraction'])} | {pct(s['deadline_prize_fraction_vs_archived_best_improvement'])} | {' / '.join(pct(d[k]) for k in ('min','q25','median','q75','max','mean'))} | {aid(w['anchor_id'])}: {pct(w['fraction'])} |")
++    add("")
++    add("Per-anchor fractions (first-improvement endpoint / archived best-improvement endpoint):")
++    add("")
++    add("| anchor | SEALED | MARGIN_Q |")
++    add("|---|---:|---:|")
++    maps = {}
++    for name, payload in data.items():
++        first = {aid(r["anchor_id"]): r["fraction"] for r in payload["summary"]["deadline_prize_fraction_per_anchor"]}
++        old = {aid(r["anchor_id"]): r["fraction"] for r in payload["summary"]["deadline_prize_fraction_vs_archived_per_anchor"]}
++        maps[name] = {k: (first[k], old[k]) for k in first}
++    for anchor in maps["SEALED"]:
++        add(f"| {anchor} | {pct(maps['SEALED'][anchor][0])} / {pct(maps['SEALED'][anchor][1])} | {pct(maps['MARGIN_Q'][anchor][0])} / {pct(maps['MARGIN_Q'][anchor][1])} |")
++
++    add("")
++    add("## D3 — Finding time versus certification")
++    add("")
++    add("The requested first-improvement comparator and an optimized replay of the archived best-improvement path are both shown. The latter matched 20/20 archived assignments under each rule. Times are wall-clock seconds; distributions are min/q25/median/q75/max/mean.")
++    add("")
++    add("| rule/path | finding | terminal certificate | total incl. certificate |")
++    add("|---|---|---|---|")
++    for name in data:
++        c = data[name]["summary"]["certification"]
++        add(f"| `{name}` first-improvement | {dist_cells(c['finding_seconds'])} | {dist_cells(c['terminal_certificate_seconds'])} | {dist_cells(c['total_including_certificate_seconds'])} |")
++        b = best[name]["summary"]
++        add(f"| `{name}` archived best-improvement control | {dist_cells(b['finding_seconds'])} | {dist_cells(b['terminal_certificate_seconds'])} | {dist_cells(b['total_including_certificate_seconds'])} |")
++    add("")
++    add("The `SEALED` best-improvement control suffered one scheduler-contention outlier: w3/s3 used 10,801 finding evaluations, like ordinary 40–60-second anchors, but took 895.46 seconds while running at niceness 15. It is retained in the raw mean/max. Its median split—52.37 seconds finding and 5.59 seconds certifying, 54.92 seconds total—is the appropriate robust comparison to the project's approximate 65-second statement. Under `MARGIN_Q`, the best-improvement mean split is 37.32 + 4.56 = 41.89 seconds (median total 36.98 seconds).")
++    add("")
++    add("Per-anchor first-improvement split:")
++    for name, payload in data.items():
++        add("")
++        add(f"| `{name}` anchor | finding | last improvement | certificate | total incl. cert |")
++        add("|---|---:|---:|---:|---:|")
++        for r in payload["summary"]["certification"]["per_anchor"]:
++            add(f"| {aid(r['anchor_id'])} | {r['finding_seconds']:.2f} | {r['last_improvement_seconds']:.2f} | {r['terminal_certificate_seconds']:.2f} | {r['total_including_certificate_seconds']:.2f} |")
++
++    add("")
++    add("## D4 — Bounded joint search inside the same 30.08-second budget")
++    add("")
++    add("A seed at 10, 20, or 30.08 seconds consumes that much of the same budget. Only unilateral cache entries completed by the seed time are reusable. The current joint catalogue requires a physically best alternative for every user, so completing that alternate sweep and building the catalogue is charged to joint time. Joint candidates are evaluated in batches of 32; only completed batches can change the incumbent. At 30.08 seconds no joint time remains.")
++    add("")
++    add("| rule | seed time | seed gain | returned joint gain | prize vs archived | catalogues exhausted | anchors changed | end-to-end mean/median/range (s) |")
++    add("|---|---:|---:|---:|---:|---:|---:|---|")
++    for name, payload in data.items():
++        s = payload["summary"]
++        for key, j in s["joint_within_30_08"].items():
++            t = j["total_end_to_end_seconds_distribution"]
++            add(f"| `{name}` | {key} | {pct(s['anytime_curve'][key]['pooled_gain_over_baseline'])} | {pct(j['pooled_gain_over_baseline'])} | {pct(j['fraction_of_archived_best_improvement_prize'])} | {j['catalogue_completed_anchor_count']}/20 | {j['anchors_with_joint_improvement']}/20 | {t['mean']:.2f} / {t['median']:.2f} / {t['min']:.2f}–{t['max']:.2f} |")
++    add("")
++    add("The joint search improves the pooled endpoint over its seed, but it does not rescue the free-seed premise. Under `SEALED`, the 10-second seed plus joint search reaches 54.12% of the archived unilateral prize and the 20-second seed reaches 77.81%; under `MARGIN_Q`, 54.65% and 79.93%. Giving the joint search a converged unilateral seed for free is therefore not a within-interval comparison. A seed at the deadline has zero joint budget and returns the unilateral deadline action unchanged.")
++    add("")
++    add("Per-anchor returned joint EE (Mbit/J), end-to-end availability time, and stopping phase:")
++    for name, payload in data.items():
++        add("")
++        add(f"| `{name}` anchor | seed 10 | seed 20 | seed 30.08 |")
++        add("|---|---|---|---|")
++        for row in payload["anchors"]:
++            cells = []
++            for key in ("10", "20", "30.08"):
++                j = row["joint_within_30_08"][key]
++                cells.append(
++                    f"{j['committed']['ee_bit_per_j']/1e6:.4f} @ "
++                    f"{j['total_end_to_end_seconds']:.2f}s ({j['stopped_phase']})"
++                )
++            add(f"| {aid(row['anchor_id'])} | " + " | ".join(cells) + " |")
++
++    add("")
++    add("## Fixed-point change caused by first-improvement")
++    add("")
++    add("| rule | matching anchors | archived converged gain | first-impr. converged gain | first-impr. EE relative to archived |")
++    add("|---|---:|---:|---:|---:|")
++    for name, payload in data.items():
++        s = payload["summary"]
++        add(f"| `{name}` | {s['first_improvement_fixed_point_matches_archived_count']}/20 | {pct(s['archived_best_improvement_gain_over_baseline'])} | {pct(s['anytime_curve']['convergence']['pooled_gain_over_baseline'])} | {pct(s['first_improvement_convergence_relative_to_archived_best_improvement'])} |")
++    add("")
++    add("Best-improvement completes each user's whole neighbourhood and takes its best move. First-improvement commits the first strict improvement in sealed option order and skips the rest of that user's neighbourhood. Both are strict monotone coordinate searches, but their move sequences enter different local basins. Here first-improvement is not merely a scheduling optimization: it changes every fixed point and happens to improve the pooled committed endpoint under both rules. The archived endpoints remain the exact 20/20 matched control.")
++
++    add("")
++    add("## Reproduction")
++    add("")
++    add("From `/home/sat/mcrl-v025-harness-ws`:")
++    add("")
++    add("```console")
++    add("$ env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 bin/harness anytime --variant SEALED --out receipts/anytime-sealed-full20.json")
++    add("$ env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 bin/harness anytime --variant MARGIN_Q --out receipts/anytime-margin-q-full20.json")
++    add("$ env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.anytime_best_timing --variant SEALED --out receipts/anytime-best-timing-sealed.json")
++    add("$ env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.anytime_best_timing --variant MARGIN_Q --out receipts/anytime-best-timing-margin-q.json")
++    add("$ PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python -m harness.anytime_report --out ANYTIME-UNILATERAL-2026-09-10.md")
++    add("```")
++    add("")
++    add("Receipts: `receipts/anytime-sealed-full20.json`, `receipts/anytime-margin-q-full20.json`, `receipts/anytime-best-timing-sealed.json`, and `receipts/anytime-best-timing-margin-q.json`. They contain every full assignment, true bits/joules/EE/served count, move timestamp, joint phase, and per-anchor end-to-end time. Receipt SHA-256 values are:")
++    add("")
++    for name in data:
++        add(f"- `{name}` anytime: `{data[name]['receipt_sha256']}`")
++        add(f"- `{name}` best-improvement timing control: `{best[name]['receipt_sha256']}`")
++    add("")
++    add("## What was not reached")
++    add("")
++    add("No learned method was run, so this does not establish that exact search wins the interval; it establishes the comparator the learned method must beat. No repeated timing trials or confidence intervals were run. The `SEALED` best-improvement control contains the disclosed OS-scheduling outlier, so its raw mean is not a clean algorithmic runtime estimate. The joint search was not redesigned: it retains the archived physically-best-alternative prerequisite and bounded mechanism catalogue, with only deadline-aware batching. World-tape construction was not charged per decision because the standing harness defines the immutable tape as the decision input; all decision-local feature and candidate construction was charged. No sealed file or frozen manifest was modified.")
++    return "\n".join(lines) + "\n"
++
++
++def main() -> int:
++    import argparse
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--out", type=Path, required=True)
++    args = parser.parse_args()
++    report = render()
++    args.out.write_text(report, encoding="utf-8")
++    print(report, end="")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/harness/cli.py b/harness/cli.py
+index f7dbccdd07feff7ef5a18416cfd028e6005f907a..5eaabfea7d955560ab74398fc6f0ecba315489b1
+--- a/harness/cli.py
++++ b/harness/cli.py
+@@ -9,6 +9,7 @@
+     bin/harness show      receipts/x.json
+     bin/harness diff      receipts/a.json receipts/b.json
+     bin/harness dist      receipts/x.json --over ORACLE_SET --base UNILATERAL
++    bin/harness anytime  --variant SEALED --out receipts/anytime-sealed.json
+ """
+ 
+ from __future__ import annotations
+@@ -472,6 +473,29 @@
+     return 0
+ 
+ 
++def cmd_anytime(args) -> int:
++    from harness import anytime
++
++    result = anytime.run_panel(
++        variant_name=args.variant,
++        output=args.out,
++        resume=args.resume,
++        progress=not args.quiet,
++    )
++    summary = result["summary"]
++    print(
++        f"variant={result['variant']} anchors={len(result['anchors'])} "
++        f"complete={result['complete']}"
++    )
++    print(
++        "deadline_prize_fraction="
++        f"{summary['deadline_prize_fraction']:.12f}"
++    )
++    print(f"receipt_sha256={result['receipt_sha256']}")
++    print(f"receipt written: {args.out}")
++    return 0
++
++
+ def build_parser() -> argparse.ArgumentParser:
+     parser = argparse.ArgumentParser(
+         prog="harness", description="V0.25 twenty-anchor evaluation harness."
+@@ -560,6 +584,15 @@
+     dist.add_argument("--json", action="store_true")
+     dist.set_defaults(func=cmd_dist)
+ 
++    anytime = sub.add_parser(
++        "anytime", help="measure first-improvement unilateral anytime quality"
++    )
++    anytime.add_argument("--variant", default=variants_module.DEFAULT_VARIANT)
++    anytime.add_argument("--out", type=Path, required=True)
++    anytime.add_argument("--resume", action="store_true")
++    anytime.add_argument("--quiet", action="store_true")
++    anytime.set_defaults(func=cmd_anytime)
++
+     return parser
+ 
+ 
+
+tokens used
+284,997
