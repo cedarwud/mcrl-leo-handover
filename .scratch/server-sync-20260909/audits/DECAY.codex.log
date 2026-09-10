@@ -1,0 +1,3314 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-decay-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08c02-fb67-7892-91ef-af177d2773bb
+--------
+user
+# DECAY — the third lever: does a decaying learning rate reach the already-declared criterion?
+
+Workspace `/home/sat/mcrl-v025-decay-ws`. Interpreter
+`/home/sat/mcrl-leo-handover/.venv/bin/python` only. **Never modify**
+`/home/sat/mcrl-leo-handover` or its `.venv`. **Optimisation-validity diagnostic. Computes no
+EE, selects nothing on EE.**
+
+**Resource limits, enforced.** **Hard cap: 2 python processes, `nice -n 18`, all BLAS threads
+= 1, peak RSS under 3 GB.** Two 16-seed trainings and several jobs are live and must not be
+slowed. Print peak RSS and a `update k/N` line.
+
+## Why this lever, and why it is not a fishing expedition
+
+Two prior jobs, both using a convergence rule fixed **before** either ran and both computing
+**no EE**:
+
+- `LR-CONVERGENCE-SWEEP-2026-09-10.md`: **21 of 21** route x **constant** learning-rate cells
+  fail at 500 full-batch updates.
+- `HORIZON-LEVER-2026-09-10.md`: at a **4,000**-update cap, full-batch is `NONE` and
+  minibatching is `NONE`, and minibatching has no advantage at equal wall time either.
+
+**Both explored only constant learning rates.** No decay schedule has ever been tested on this
+learner.
+
+The residual shape names the remedy. `HORIZON` Arm A at the cap:
+
+| | 3900 | 4000 | objective motion | R2 motion | ordering motion | top-1 motion |
+|---|---:|---:|---:|---:|---:|---:|
+| A, full batch | 0.268075 | 0.260136 | **2.961%** | 0.002146 | 0.002801 | 0 |
+
+**Arm A passes held-out R2, ordering and top-1 at the cap and fails only the training-objective
+motion tolerance**, with the last five motions `8.87%, 7.92%, 1.41%, 3.45%, 2.96%` — decaying
+on trend, oscillating step to step, after a 10.24% upward excursion at 3,400.
+
+**A decaying-but-oscillating objective with stabilised held-out metrics is the textbook
+signature of a step size that is too large in the late phase.** Diagnosing that from the shape
+of the residual is not selecting on an outcome: no EE exists anywhere in this chain.
+
+## What to run
+
+Same fixed design as `HORIZON`, changed in exactly one respect. **Reuse LRSWEEP's harness, its
+rule, and its spec verbatim.** C3 only, the twelve fixed LRSWEEP C3 anchors, identical LOAO
+folds, model seed `V025_LEARNER/seed/1` (`6407676579069309528`), sealed `(64,64)` ReLU, all
+sealed Adam literals, full batch, 4,000-update cap, cadence 100.
+
+**Parity first.** Reproduce `HORIZON` Arm A's values at updates 0–500 for constant `1e-3`
+before running anything else. If they do not reproduce, stop and report that.
+
+Schedules to test, all starting from the route's current literal `1e-3`:
+
+1. **cosine** to zero over the 4,000-update budget;
+2. **step decay**, factor `0.1` at 1/2 and 3/4 of budget;
+3. **inverse-time**, `lr_t = lr_0 / (1 + t/tau)` with a stated `tau`;
+4. **plateau decay**: factor `0.5` whenever the objective's 100-update motion has not improved
+   for `n` consecutive cadences — state `n`.
+
+Also run **one higher starting rate under the best-performing schedule shape**, since a decay
+schedule changes what a "too large" initial rate means. State which and why.
+
+Apply the **unchanged** rule at every cadence: objective relative motion `<= 0.01`, held-out
+level R2 within `0.01`, ordering and top-1 each within `0.005`, over the preceding 100 updates.
+
+## Report
+
+- **First admissible update for each schedule, or `NONE`.**
+- The last five objective motions at the cap for each, so the shape is on record.
+- Wall seconds per 100 updates, and the extrapolated cost of a 16-seed 5-arm production run
+  under any schedule that reaches admissibility.
+- Whether any schedule reaches admissibility **before** 4,000, which would make production
+  cheaper than the current 500-step configuration rather than more expensive.
+
+## Two constraints that matter more than the result
+
+- **Do not change the rule.** If a schedule passes three of four components, report `NONE` and
+  say which component failed and by how much. Relaxing a pre-declared criterion because a run
+  nearly met it is exactly the move this project forbids.
+- **Do not select a learning rate or schedule on predictive quality.** This job establishes
+  *whether admissibility is reachable at all*, and at what cost. If several schedules are
+  admissible, report all of them and their first-admissible updates; **do not name a winner.**
+
+## Rules
+
+- Separate **verified by running code**, **derived on paper**, **inferred**.
+- **Compute no EE quantity.** Loss and held-out metrics are convergence diagnostics only and
+  are never evidence about EE.
+- Development anchors only. **Do not read the 48 evaluation-only claim dates.**
+- If every schedule returns `NONE`, say so plainly. That would mean three independent levers
+  have failed the declared criterion and the problem is the **objective or the architecture**,
+  not the schedule — and that is the most consequential outcome available here.
+
+Write to `/home/sat/mcrl-v025-decay-ws/DECAY-SCHEDULE-2026-09-10.md`, first line one bolded
+sentence giving the first admissible update for each schedule (or `NONE`), whether parity with
+`HORIZON` Arm A reproduced, and the production cost of any admissible schedule.
+codex
+I’ll first locate the prior LRSWEEP/HORIZON reports and harness, verify the exact anchors and rule, then run the required 0–500 parity check under the stated process/thread limits. I’ll stop immediately if parity differs.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g 'LR-CONVERGENCE-SWEEP-2026-09-10.md' -g 'HORIZON-LEVER-2026-09-10.md' -g '*.py' -g '*.sh' | sed -n '1,240p'" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-decay-ws
+
+exec
+/bin/bash -lc "find . -maxdepth 3 -type f -print | sort | sed -n '1,260p'" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+./.git/HEAD
+./.git/config
+./.git/description
+./.git/hooks/applypatch-msg.sample
+./.git/hooks/commit-msg.sample
+./.git/hooks/fsmonitor-watchman.sample
+./.git/hooks/post-update.sample
+./.git/hooks/pre-applypatch.sample
+./.git/hooks/pre-commit.sample
+./.git/hooks/pre-merge-commit.sample
+./.git/hooks/pre-push.sample
+./.git/hooks/pre-rebase.sample
+./.git/hooks/pre-receive.sample
+./.git/hooks/prepare-commit-msg.sample
+./.git/hooks/push-to-checkout.sample
+./.git/hooks/sendemail-validate.sample
+./.git/hooks/update.sample
+./.git/info/exclude
+
+codex
+The assigned worktree contains only Git metadata, so there is no local harness to reuse. I’m treating the handover tree as read-only and locating the referenced reports and runner there; all new code and outputs will remain in the requested workspace.
+exec
+/bin/bash -lc "find /home/sat/mcrl-leo-handover -type f \\( -name 'AGENTS.md' -o -name 'LR-CONVERGENCE-SWEEP-2026-09-10.md' -o -name 'HORIZON-LEVER-2026-09-10.md' -o -iname '*horizon*.py' -o -iname '*lrsweep*.py' -o -iname '*convergence*.py' \\) -print | sort" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+exec
+/bin/bash -lc "find /home/sat -maxdepth 4 -type f \\( -name 'LR-CONVERGENCE-SWEEP-2026-09-10.md' -o -name 'HORIZON-LEVER-2026-09-10.md' -o -name 'AGENTS.md' \\) -print 2>/dev/null | sort" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 1295ms:
+/home/sat/.replay-server-v025-synth/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/.replay-server-v025-synth/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/.replay-server-v025-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/.replay-server-v025-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/abl9k-eq327-eq11/artifacts/AGENTS.md
+/home/sat/abl9k-eq327-eq11/configs/AGENTS.md
+/home/sat/devkit-vault/modqn-paper-reproduction/AGENTS.md
+/home/sat/fields-flow-lora/AGENTS.md
+/home/sat/fields-flow-tabletop/AGENTS.md
+/home/sat/fields-flow-tabletop/apps/life/AGENTS.md
+/home/sat/fields-flow/AGENTS.md
+/home/sat/mcrl-figures-deps/papers/modqn-paper-reproduction/AGENTS.md
+/home/sat/mcrl-hub-copy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-hub-copy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-hub-copy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-hub-copy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-hub/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-hub/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-hub/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-hub/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-leo-handover-e1/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-leo-handover-e1/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-leo-handover-e1/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-leo-handover-e1/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-leo-handover-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-leo-handover-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-leo-handover-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-leo-handover-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-leo-handover-wip/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-leo-handover-wip/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-leo-handover-wip/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-leo-handover-wip/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-c3s-run/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-c3s-run/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-c3s-run/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-c3s-run/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v023-review-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v023-review-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v023-review-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v023-review-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v024-codex-iter2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v024-codex-iter2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v024-codex-iter2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v024-codex-iter2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v024-regime-b/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v024-regime-b/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v024-regime-b/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v024-regime-b/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-beam-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-beam-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-beam-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-beam-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-c1c2-ws/LR-CONVERGENCE-SWEEP-2026-09-10.md
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-certprofile-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-certprofile-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-certprofile-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-certprofile-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-coalgen-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-coalgen-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-coalgen-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-coalgen-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-curve-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-curve-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-curve-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-curve-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-dates-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-dates-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-dates-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-dates-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-floor-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-floor-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-floor-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-floor-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-harness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-harness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-harness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-harness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-headroom-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-headroom-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-headroom-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-headroom-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-horizon-ws/HORIZON-LEVER-2026-09-10.md
+/home/sat/mcrl-v025-ladder-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-ladder-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-ladder-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-ladder-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-mutants-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-mutants-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-mutants-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-mutants-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-oracle-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-oracle-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-oracle-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-oracle-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-pilot-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-pilot-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-pilot-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-pilot-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-prevalence-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-prevalence-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-prevalence-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-prevalence-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-probe-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-probe-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-probe-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-probe-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-provider-gh/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-provider-gh/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-provider-gh/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-provider-gh/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-rank-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-rank-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-rank-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-rank-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-replay-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-replay-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-replay-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-replay-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-rule-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-rule-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-rule-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-rule-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-witness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-witness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-witness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-witness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/modqn-abl9k/artifacts/AGENTS.md
+/home/sat/modqn-abl9k/configs/AGENTS.md
+/home/sat/modqn-acrm-only-fast/artifacts/AGENTS.md
+/home/sat/modqn-acrm-only-fast/configs/AGENTS.md
+/home/sat/modqn-batch2/artifacts/AGENTS.md
+/home/sat/modqn-batch2/configs/AGENTS.md
+/home/sat/modqn-directmain9k/artifacts/AGENTS.md
+/home/sat/modqn-directmain9k/configs/AGENTS.md
+/home/sat/modqn-ep2k/artifacts/AGENTS.md
+/home/sat/modqn-ep2k/configs/AGENTS.md
+/home/sat/modqn-exploration-vault/modqn-paper-exploration/AGENTS.md
+/home/sat/modqn-paired-action-temporal-alignment-checkout-20260723/artifacts/AGENTS.md
+/home/sat/modqn-paired-action-temporal-alignment-checkout-20260723/configs/AGENTS.md
+/home/sat/modqn-paper-exploration/artifacts/AGENTS.md
+/home/sat/modqn-paper-exploration/configs/AGENTS.md
+/home/sat/modqn-paper-reproduction/artifacts/AGENTS.md
+/home/sat/modqn-paper-reproduction/configs/AGENTS.md
+/home/sat/modqn-queue-exp-fast/artifacts/AGENTS.md
+/home/sat/modqn-queue-exp-fast/configs/AGENTS.md
+/home/sat/modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T121205Z-a69998d01f65/artifacts/AGENTS.md
+/home/sat/modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T121205Z-a69998d01f65/configs/AGENTS.md
+/home/sat/modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145523Z-85a6f50e-1d9bf514/artifacts/AGENTS.md
+/home/sat/modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145523Z-85a6f50e-1d9bf514/configs/AGENTS.md
+/home/sat/modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145814Z-85a6f50e-1408ea2d/artifacts/AGENTS.md
+/home/sat/modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145814Z-85a6f50e-1408ea2d/configs/AGENTS.md
+/home/sat/modqn-score/artifacts/AGENTS.md
+/home/sat/modqn-score/configs/AGENTS.md
+/home/sat/modqn-step8-main/AGENTS.md
+/home/sat/modqn-step8-main/artifacts/AGENTS.md
+/home/sat/modqn-step8-main/configs/AGENTS.md
+/home/sat/modqn-teacher30-retest/artifacts/AGENTS.md
+/home/sat/modqn-teacher30-retest/configs/AGENTS.md
+/home/sat/modqn-teacher500/artifacts/AGENTS.md
+/home/sat/modqn-teacher500/configs/AGENTS.md
+/home/sat/modqn-teacher96/artifacts/AGENTS.md
+/home/sat/modqn-teacher96/configs/AGENTS.md
+/home/sat/modqn-weights-consolidated/misc/local-artifacts/AGENTS.md
+/home/sat/ntn-sim-core/AGENTS.md
+/home/sat/papers/AGENTS.md
+/home/sat/papers/modqn-exp-grid-overlay-20260821/configs/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction-exp-strategy-20260818/artifacts/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction-exp-strategy-20260818/configs/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction-r5-20260817-g/artifacts/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction-r5-20260817-g/configs/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction-r6-20260817-h/artifacts/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction-r6-20260817-h/configs/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction-sync-20260818/artifacts/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction-sync-20260818/configs/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction/artifacts/AGENTS.md
+/home/sat/papers/modqn-paper-reproduction/configs/AGENTS.md
+/home/sat/papers/ntn-showcase-stack/AGENTS.md
+/home/sat/reeval-wt/AGENTS.md
+/home/sat/reeval-wt/artifacts/AGENTS.md
+/home/sat/reeval-wt/configs/AGENTS.md
+/home/sat/route-c-wt/AGENTS.md
+/home/sat/route-c-wt/artifacts/AGENTS.md
+/home/sat/route-c-wt/configs/AGENTS.md
+/home/sat/work/fields-flow-p1-20260809/fields-flow-tabletop/AGENTS.md
+
+exec
+/bin/bash -lc "find /home/sat/mcrl-v025-c1c2-ws -maxdepth 2 -type f -print | sort | sed -n '1,240p'; find /home/sat/mcrl-v025-horizon-ws -maxdepth 2 -type f -print | sort | sed -n '1,240p'" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-c1c2-ws/.git/COMMIT_EDITMSG
+/home/sat/mcrl-v025-c1c2-ws/.git/HEAD
+/home/sat/mcrl-v025-c1c2-ws/.git/config
+/home/sat/mcrl-v025-c1c2-ws/.git/description
+/home/sat/mcrl-v025-c1c2-ws/.git/index
+/home/sat/mcrl-v025-c1c2-ws/.gitignore
+/home/sat/mcrl-v025-c1c2-ws/.pytest_cache/.gitignore
+/home/sat/mcrl-v025-c1c2-ws/.pytest_cache/CACHEDIR.TAG
+/home/sat/mcrl-v025-c1c2-ws/.pytest_cache/README.md
+/home/sat/mcrl-v025-c1c2-ws/.scratch/PREREG-REJECTED-2026-08-25-R2-SYSTEM-PYTHON.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/hobs-theta3db-audit.md
+/home/sat/mcrl-v025-c1c2-ws/.scratch/run-corrected-p6-main-20260825.sh
+/home/sat/mcrl-v025-c1c2-ws/.tmp-prompts/codex-sol-v025-pilot-c3.md
+/home/sat/mcrl-v025-c1c2-ws/.tmp/minpilot-run1.log
+/home/sat/mcrl-v025-c1c2-ws/.tmp/minpilot-run2.log
+/home/sat/mcrl-v025-c1c2-ws/.venv/.gitignore
+/home/sat/mcrl-v025-c1c2-ws/.venv/.lock
+/home/sat/mcrl-v025-c1c2-ws/.venv/CACHEDIR.TAG
+/home/sat/mcrl-v025-c1c2-ws/.venv/pyvenv.cfg
+/home/sat/mcrl-v025-c1c2-ws/C1-DECLARED-TARGET-LEARNABILITY-2026-09-10.md
+/home/sat/mcrl-v025-c1c2-ws/C1-DECLARED-TARGET-LEARNABILITY-V2-2026-09-10.md
+/home/sat/mcrl-v025-c1c2-ws/C1C2-AUDIT-2026-09-09.md
+/home/sat/mcrl-v025-c1c2-ws/CROSSGAIN-REPAIR-2026-09-09.md
+/home/sat/mcrl-v025-c1c2-ws/EPOCH-TREND-2026-09-09.md
+/home/sat/mcrl-v025-c1c2-ws/GIT-EXCLUDED-LARGE-FILES-2026-09-07.tsv
+/home/sat/mcrl-v025-c1c2-ws/LR-CONVERGENCE-SWEEP-2026-09-10.md
+/home/sat/mcrl-v025-c1c2-ws/MUTANT-WITNESS-2026-09-09.md
+/home/sat/mcrl-v025-c1c2-ws/README.md
+/home/sat/mcrl-v025-c1c2-ws/V025-PILOT-MIN-REPORT-2026-09-09.md
+/home/sat/mcrl-v025-c1c2-ws/V025-PILOT-MIN-REPORT-2026-09-09.md.sha256
+/home/sat/mcrl-v025-c1c2-ws/V025-PILOT-TRACK-DECLARATION-2026-09-09.md
+/home/sat/mcrl-v025-c1c2-ws/V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md
+/home/sat/mcrl-v025-c1c2-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+/home/sat/mcrl-v025-c1c2-ws/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-c1c2-ws/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-c1c2-ws/archive/MANIFEST.md
+/home/sat/mcrl-v025-c1c2-ws/artifacts/CATFISH-MEASUREMENT-REPLAY-2026-08-26.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/CORRECTED-POSTRUN-ANALYSIS-2026-08-26.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/CORRECTED-PROBE-PROTOCOL-2026-08-25.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/PREREG-FROZEN-2026-08-23.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/PREREG-FROZEN-2026-08-24.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/PREREG-FROZEN-2026-08-25-R2.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/PREREG-FROZEN-2026-08-25.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/corrected-probes-20260825-rerun01.log
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2.zip.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3.zip.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1.tar.gz
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1.tar.gz.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1.zip.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c3-astra-pro-review-20260905-r1.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c3-astra-pro-review-20260905-r1.zip.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c3-chatgpt-review-package-20260908-r1.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c3-chatgpt-review-package-20260908-r1.zip.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c3s-chatgpt-review-package-20260908-r3.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c3s-chatgpt-review-package-20260908-r3.zip.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c3s-variants-chatgpt-review-package-20260908-r4.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-c3s-variants-chatgpt-review-package-20260908-r4.zip.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-track-b-chatgpt-review-package-20260908-r1.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-track-b-chatgpt-review-package-20260908-r1.zip.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v023-successor-gate-chatgpt-review-20260906-r1.zip
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-c2-matched-informed-real-smoke-seed1-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-c2-matched-informed-real-smoke-seed2-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-c2-matched-informed-temporal-seed1-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-c2-matched-informed-temporal-seed2-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-c2-neutral-real-smoke-seed1-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-c2-neutral-real-smoke-seed2-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-c2-neutral-temporal-seed1-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-c2-neutral-temporal-seed2-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-opening-real-smoke-20260831.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831.tar.gz
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831.tar.gz.sha256
+/home/sat/mcrl-v025-c1c2-ws/artifacts/probe-p2-2026-08-23.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/probe-p3-2026-08-23.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/probe-p4-2026-08-23.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/probe-p5-2026-08-23.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/probe-p7-main-arm-2026-08-23.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/probe-p7-no-warm-start-2026-08-23.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/probe-p7-sensitivity-2026-08-23.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/training-2026-08-25-rerun01.log
+/home/sat/mcrl-v025-c1c2-ws/artifacts/w02-ephemeris-survey.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/w02-split-shift-check.json
+/home/sat/mcrl-v025-c1c2-ws/artifacts/w04-d2-survey.json
+/home/sat/mcrl-v025-c1c2-ws/astra-adjudication-audit-bundle.zip
+/home/sat/mcrl-v025-c1c2-ws/chapter4-0826.pptx
+/home/sat/mcrl-v025-c1c2-ws/chapter5-0826.pptx
+/home/sat/mcrl-v025-c1c2-ws/deep-research-report.md
+/home/sat/mcrl-v025-c1c2-ws/docs/AUDIT-external-luna-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-BRIEF-BEFORE-FREEZE-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-BRIEF-TRAINING-SERVER-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-BRIEF-W18-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-FINDINGS-W17-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-QUESTIONS-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-B4-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-DT-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-GPT-CLOSURE-2026-08-24.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-H-AND-PREREG-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-MODQN-RUNTIME-CORRECTION-2026-08-25.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W17-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W19-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W20-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W21-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W22-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W23-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W24-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W25-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W26-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W27-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-RULINGS-W28-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CONTROLLER-SIGNOFF-PREREG-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CORRECTED-TRAINING-LAUNCH-2026-08-25.md
+/home/sat/mcrl-v025-c1c2-ws/docs/CURRENT-MULTI-CATFISH-AUTHORITY.md
+/home/sat/mcrl-v025-c1c2-ws/docs/D2-NOTES.md
+/home/sat/mcrl-v025-c1c2-ws/docs/DEVIATION-REGISTER.md
+/home/sat/mcrl-v025-c1c2-ws/docs/EPHEMERIS-NOTES.md
+/home/sat/mcrl-v025-c1c2-ws/docs/FABLE-51-C2-CLEANROOM-TAKEOVER-PROMPT-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/FABLE-51-C2-CLEANROOM-V08-DESIGN-DECISION-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/G9-TEST-MAP.md
+/home/sat/mcrl-v025-c1c2-ws/docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/IMPLEMENTATION-PROMPT.md
+/home/sat/mcrl-v025-c1c2-ws/docs/LINK-BUDGET-NOTES.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MIGRATION-TABLE.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-C2-CROSS-SESSION-MERGE-CHECKPOINT-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-C2-FABLE-51-CLEANROOM-REVIEW-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-C2-OPS3-FORMULA-PROBE-CONTRACT-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-C2-OPS3-FRESH-REVIEW-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-C2-OPS3-MECHANICS-CHECKPOINT-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-C2-PARALLEL-DESIGN-ADJUDICATION-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-C2-PROJECTED-SHAPING-CANDIDATE-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-C3-V03-FORMULA-FIRST-CENSUS-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-EE-AXIS-OPUS-MAX-CODESIGN-V0.3-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-EE-AXIS-REDESIGN-CONTRACT-V0.3-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-C1-C3-PAPER-AUTHORING-DELTA-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-CONDITIONAL-EXECUTION-AUTHORIZATION-2026-09-06.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V010-MONE-C3-ORACLE-PREREG-2026-09-03.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V011-JOINT-C3-ORDERED-ORACLE-PREREG-2026-09-03.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V012-ZERO-ENERGY-C3-ORACLE-PREREG-2026-09-03.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V013-ZR-C3-FRESH-CONFIRMATION-PREREG-2026-09-03.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-C3-METHOD-FREEZE-2026-09-05.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-EXECUTION-PARAMETER-ADDENDUM-2026-09-05.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-LAUNCH-DECISION-2026-09-05.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R2-2026-09-05.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R3-2026-09-05.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R4-2026-09-06.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R5-DEFECT-CORRECTION-2026-09-06.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-GATE-RELAUNCH-DECISION-R6-FIT-BINDING-2026-09-06.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-OBSERVABILITY-GATE-CONTRACT-2026-09-05.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-R7-LAUNCH-DECISION-2026-09-06.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V023-LC-SRS-SUCCESSOR-GATE-CONTRACT-R7-BALANCED-2026-09-06.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-ALGORITHM-SPEC-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-C2-COVERAGE-OPUS-MAX-ADJUDICATION-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-C2-GATE-CROSS-MODEL-REVIEW-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-C2-GATE-RESULT-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-C2-POSTGATE-DESIGN-DECISION-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-C2-REACTIVE-RELEASE-IMPLEMENTATION-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-E1-ACTION-SHARED-AMENDMENT-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-E1-INSTRUMENT-VALIDITY-CONTRACT-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-E1-MASKED-MEANMAX-FALLBACK-CONTRACT-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-FIGURE-DECK-HANDOFF-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-OPUS-MAX-SOURCE-CONTROL-REVIEW-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-PAPER-AUTHORING-CONTRACT-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V03-PRESENTATION-LAYER-2026-08-31.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C2-DESIGN-EVAL-AMENDMENT-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C2-FAILURE-FORENSICS-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C2-PARALLEL-CANDIDATE-PREREG-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-CENSUS-PREREG-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C2-SUPPORT-COMPLETE-OPUS-MAX-REVIEW-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C3-CONFIRMATORY-PREREG-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C3-CONFIRMATORY-RESULT-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C3-SCREEN-RESULT-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-PREREG-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-FIVE-ARM-ABLATION-RESULT-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V04-ROUTE-INTERACTION-DIAGNOSTIC-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-DISPOSITION-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-EXPANSION-PREREG-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V06-C2-K1-BOUNDED-LEARNER-PREREG-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V06-C2-K1-PAPER-FIGURE-DELTA-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V06-C2-K1-T1-FINAL-AUDIT-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V06-C2-K1-T1-PREREG-2026-09-01.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V07-C2-BALANCED-DEVELOPMENT-GATE-RESULT-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V07-C2-D2-FORMULA-SOURCE-PREREG-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V07-C2-FOCAL-NEXT-DESIGN-DECISION-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V07-C2-PARALLEL-CANDIDATE-CONTRACT-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-DISPOSITION-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/MULTI-CATFISH-MCRL-V09-INTEGRATED-ORACLE-PREREG-2026-09-02.md
+/home/sat/mcrl-v025-c1c2-ws/docs/PATCH-LEDGER.md
+/home/sat/mcrl-v025-c1c2-ws/docs/POST-RUN-CORRECTED-PROBES-2026-08-25.md
+/home/sat/mcrl-v025-c1c2-ws/docs/POST-RUN-VALIDATION-2026-08-24.md
+/home/sat/mcrl-v025-c1c2-ws/docs/POST-RUN-VALIDATION-CORRECTED-R2-2026-08-26.md
+/home/sat/mcrl-v025-c1c2-ws/docs/PREREG-DRAFT.md
+/home/sat/mcrl-v025-c1c2-ws/docs/PREREG-SIGNOFF-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/PROVENANCE.md
+/home/sat/mcrl-v025-c1c2-ws/docs/R2-PHYS-PROVENANCE-MATRIX-2026-08-26.md
+/home/sat/mcrl-v025-c1c2-ws/docs/R3-AND-EXECUTION-MASK-NOTES.md
+/home/sat/mcrl-v025-c1c2-ws/docs/ROLE-TARGETED-UPDATER-NONOUTCOME-GATE-2026-08-28.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W18-REPLY-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W19-DONE-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W19-REPLY-C-COST-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W19-REPLY-DT-2026-08-22.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W20-REPLY-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W21-REPLY-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W22-REPLY-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W24-REPLY-STATUS-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W27-REPLY-PROBES-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/docs/W29-REPLY-PREREG-FROZEN-2026-08-23.md
+/home/sat/mcrl-v025-c1c2-ws/gpt-dr.md
+/home/sat/mcrl-v025-c1c2-ws/gpt.md
+/home/sat/mcrl-v025-c1c2-ws/gpt.pdf
+/home/sat/mcrl-v025-c1c2-ws/pyproject.toml
+/home/sat/mcrl-v025-c1c2-ws/replay-world-2026121706.log
+/home/sat/mcrl-v025-c1c2-ws/scripts/README.md
+/home/sat/mcrl-v025-c1c2-ws/scripts/analyze_corrected_postrun.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/ceiling_and_segments.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/dt_sweep2.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/feasibility_is_fading_free.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/freeze_prereg.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/outage_frozen.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/qe_premise.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/qe_rekey.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/run_corrected_probes.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/run_head_pivotality_probe.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/run_probe_p3.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/run_probes.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/run_server_training.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/run_v025_pilot_c3.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/segment_budget.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/sensitivity_arm.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/signed_drop_dt30.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/two_timescale_check.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/w02_ephemeris_survey.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/w02_split_shift_check.py
+/home/sat/mcrl-v025-c1c2-ws/scripts/w04_d2_survey.py
+/home/sat/mcrl-v025-c1c2-ws/tests/_fake_env.py
+/home/sat/mcrl-v025-c1c2-ws/tests/conftest.py
+/home/sat/mcrl-v025-c1c2-ws/tests/test_c11_gate_order_equivalence.py
+/home/sat/mcrl-v025-horizon-ws/.git/HEAD
+/home/sat/mcrl-v025-horizon-ws/.git/config
+/home/sat/mcrl-v025-horizon-ws/.git/description
+/home/sat/mcrl-v025-horizon-ws/HORIZON-LEVER-2026-09-10.md
+
+exec
+/bin/bash -lc "find /home/sat/mcrl-v025-c1c2-ws -type f \\( -iname '*lr*' -o -iname '*converg*' -o -iname '*horizon*' \\) -print | sort; find /home/sat/mcrl-v025-horizon-ws -type f -print | sort | sed -n '1,300p'" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-c1c2-ws/.scratch/c2-v03a-fast500/run_fast500_lr_chain.sh
+/home/sat/mcrl-v025-c1c2-ws/.scratch/c2-v03a-trend/c2_v03a_lr_selector.py
+/home/sat/mcrl-v025-c1c2-ws/.scratch/c2-v03a-trend/r7_500_lr_router.py
+/home/sat/mcrl-v025-c1c2-ws/.scratch/c2-v03a-trend/test_c2_v03a_lr_selector.py
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-1e-1.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-1e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-1e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-1e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-3e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-3e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-3e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-1e-1.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-1e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-1e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-1e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-3e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-3e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-3e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-1e-1.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-1e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-1e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-1e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-3e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-3e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-3e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/multi-catfish-v020-c3-source-audit/AGY-C3-CONVERGENCE-REVIEW-PROMPT.md
+/home/sat/mcrl-v025-c1c2-ws/LR-CONVERGENCE-SWEEP-2026-09-10.md
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/c2-v03a-matched-f111-u10-k9-10ep-seed11-lr0p01-20260830-r1.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-intermediate-authority-20260828/1500-lr0p001.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-intermediate-authority-20260828/1500-lr0p01.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-intermediate-authority-20260828/3000-lr0p001.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-intermediate-authority-20260828/3000-lr0p01.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-pilot100-authority-20260829/lr0p001.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-server-smoke-20260829-lr0p001-launcher-time.txt
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-server-smoke-20260829-lr0p001-launcher.log
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-server-smoke-20260829-r2-lr0p001-launcher-time.txt
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-server-smoke-20260829-r2-lr0p001-launcher.log
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-intermediate-authority-20260830/1500-lr0p001.json
+/home/sat/mcrl-v025-c1c2-ws/archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-intermediate-authority-20260830/1500-lr0p01.json
+/home/sat/mcrl-v025-horizon-ws/.git/HEAD
+/home/sat/mcrl-v025-horizon-ws/.git/config
+/home/sat/mcrl-v025-horizon-ws/.git/description
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/applypatch-msg.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/commit-msg.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/fsmonitor-watchman.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/post-update.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/pre-applypatch.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/pre-commit.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/pre-merge-commit.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/pre-push.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/pre-rebase.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/pre-receive.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/prepare-commit-msg.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/push-to-checkout.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/sendemail-validate.sample
+/home/sat/mcrl-v025-horizon-ws/.git/hooks/update.sample
+/home/sat/mcrl-v025-horizon-ws/.git/info/exclude
+/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/results.json
+/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/run_horizon.py
+/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/spec.md
+/home/sat/mcrl-v025-horizon-ws/HORIZON-LEVER-2026-09-10.md
+
+exec
+/bin/bash -lc "find /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep -maxdepth 2 -type f -print | sort; sed -n '1,260p' /home/sat/mcrl-v025-c1c2-ws/LR-CONVERGENCE-SWEEP-2026-09-10.md; sed -n '1,300p' /home/sat/mcrl-v025-horizon-ws/HORIZON-LEVER-2026-09-10.md" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-1e-1.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-1e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-1e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-1e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-3e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-3e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c1-lr-3e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-1e-1.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-1e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-1e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-1e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-3e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-3e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c2-lr-3e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-1e-1.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-1e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-1e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-1e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-3e-2.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-3e-3.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/c3-lr-3e-4.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/smoke.json
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/spec.md
+**C1: no grid learning rate is admissible by epoch 500 and current `1e-2` is not; C2: no grid learning rate is admissible and current `1e-3` is not; C3: no grid learning rate is admissible and current `1e-3` is not—the declared 500-epoch horizon is inadequate for all three sealed architectures under the predeclared convergence rule.**
+
+`DIAGNOSTIC_NOT_CLAIM`
+
+## Answer
+
+[RUN] All 21 declared route–learning-rate cells were run and all remained
+finite through 500 epochs. None passed the convergence rule fixed before the
+sweep: stability from epoch 400 to 500 of the training objective, held-out
+level R², held-out within-group ordering, and held-out top-1. There is therefore
+no learning-rate selection to make. In particular, none of the three current
+literals is admissible.
+
+[INFERRED] Under the fixed selection rule, the finding is that 500 epochs is
+the wrong horizon for each of these architectures on these panels. This does
+not imply that every rate would fail at a longer horizon, and the run does not
+pick the rate with the best predictive result at epoch 500.
+
+**Loss values below are convergence diagnostics only and are never evidence
+about EE. No EE quantity was computed, so no EE result could influence this
+finding.** No production training, policy run, or acceptance test was run.
+
+## Rule fixed before running
+
+[DERIVED] For objective `L`, objective stability means
+`abs(L500-L400) / max(abs(L400), 1e-12) <= 0.01`. Predictive stability means
+absolute 400-to-500 changes no larger than `0.01` for level R² and `0.005` for
+each of ordering and top-1. A cell is admissible exactly when it stays finite
+through 500 and all four checks pass. This formula, the grid, and the data
+boundaries were written before the full process started in
+`.scratch/lr-convergence-sweep/spec.md`.
+
+“Last material improvement” is the destination epoch of the last adjacent
+sampled interval, including 0→100, in which loss decreased by more than 1%
+relative or the named held-out metric increased by more than its absolute
+tolerance. `—` means no sampled interval did so. “Stable L/R/O/T” reports the
+four 400→500 tests in order: loss, R², ordering, top-1. A material decline also
+fails stability even though it is not an improvement.
+
+## Schemas and panels
+
+[RUN] C1 used the repaired `mcrl-v025-stagec-q1-action-v2`, digest
+`66ed4a3f9222ac7f20f4334ffab92f6164d2dad203cbac7f7d4e1728ae4ad654`,
+on the same coherent 37-anchor prefix as C1REALV2: 36,360 rows and 3,700
+`(anchor,user)` groups.
+
+[RUN] C2 used `mcrl-v025-stagec-q2-action-v1`, digest
+`a891dd9831d76bccd981cef054ff204fa1d49c3cf6e5f3265015f16f1057019c`,
+on the same 20 anchors as C2REAL: 19,647 rows and 2,000 groups. A repaired Q2
+schema is not reachable: Q1 v2 changes only `q1_state`, while C2 consumes the
+22-slot `q2_state`; the public Q1-v2 projection has already verified that this
+field is copied exactly. Thus C2 is explicitly the requested v1 fallback, not
+a silently relabelled v2 result.
+
+[RUN] C3 used the available repaired-v2 joint route state on the twelve
+completed two-world exact anchors (steps 0–5) frozen before this sweep: 11,947
+catalogue rows, of which 2,541 size≥2 rows train the head. The size counts are
+`{0: 12, 1: 9,394, 2: 2,331, 3: 93, 4: 47, 5: 40, 6: 1, 7: 2, 8: 3,
+100: 24}`. Hence 78.63% of evaluation rows are singletons and 21.27% are
+trainable nontrivial coalitions. Direct inspection of all twelve frozen NPZ
+inputs found exact zero Psi on all 9,394 singleton rows. The one completed
+per-process generator receipt available at validation time (world 1, step 0)
+reported maximum decomposition residual `8.882e-15`; the remaining live
+generator ranges had not yet emitted their process-level receipts, so no
+all-anchor decomposition claim is made here.
+
+[DERIVED] C3 singleton targets must be zero because
+`Psi_{i} = Delta F({i}) - d_i`, while `d_i` is that same unilateral increment.
+The full-support C3 R² values are therefore strongly aided by structurally easy
+zeros; they should not be read as evidence of a well-fitted interaction head.
+
+All LOAO fits used the first sealed pilot seed
+`V025_LEARNER/seed/1` (`6407676579069309528`), the literal sealed architectures
+and optimizer fields, and one deterministic full-batch Adam update per epoch.
+Only the learning-rate field passed to `AdamMLPHead.create` changed. C1/C2 used
+the same deterministic 4,096-pair cap as C1REAL/C2REAL. C3 aggregated all
+training-anchor gradients into one full-batch update per epoch and hard-set
+empty/singleton predictions to zero.
+
+[RUN] The common-initialization parameter L2 norms were `4.4561` (C1),
+`19.9039` (C2), and `16.0125` (C3). The epoch-500 tables give fold means and
+ranges against those baselines, making near-initial, growing, and large-scale
+fits distinguishable.
+
+## C1 — repaired Q1 v2, sealed `(8)` ReLU head
+
+Each epoch cell is `training loss / held-out R² / ordering / top-1`.
+
+| lr | epoch 100 | epoch 200 | epoch 300 | epoch 400 | epoch 500 |
+|---:|---:|---:|---:|---:|---:|
+| 1e-4 | 6.0124 / −0.1648 / 0.5423 / 0.0989 | 5.9434 / −0.1538 / 0.5421 / 0.0673 | 5.8795 / −0.1457 / 0.5441 / 0.0508 | 5.8234 / −0.1403 / 0.5480 / 0.0495 | 5.7715 / −0.1370 / 0.5458 / 0.0419 |
+| 3e-4 | 5.8794 / −0.1452 / 0.5441 / 0.0522 | 5.7171 / −0.1379 / 0.5482 / 0.0446 | 5.5161 / −0.1636 / 0.5919 / 0.0697 | 5.4037 / −0.1630 / 0.5976 / 0.0708 | 5.3161 / −0.1545 / 0.5853 / 0.0605 |
+| 1e-3 | 5.4835 / −0.1695 / 0.5958 / 0.0686 | 5.2154 / −0.1424 / 0.5659 / 0.0481 | 5.0650 / −0.1129 / 0.5555 / 0.0557 | 4.9519 / −0.0908 / 0.5544 / 0.0789 | 4.8698 / −0.0753 / 0.5617 / 0.0938 |
+| 3e-3 | 5.0904 / −0.1252 / 0.5516 / 0.0457 | 4.8155 / −0.0640 / 0.5628 / 0.0911 | 4.6122 / −0.0024 / 0.5808 / 0.1097 | 4.4301 / 0.0364 / 0.5963 / 0.1384 | 4.2377 / 0.0548 / 0.6072 / 0.1324 |
+| **1e-2 current** | 4.5801 / 0.0478 / 0.6070 / 0.1022 | 3.9440 / 0.0907 / 0.6491 / 0.1630 | 3.3798 / 0.1093 / 0.7084 / 0.2419 | 3.1655 / 0.0986 / 0.7267 / 0.3114 | 3.0999 / 0.0917 / 0.7299 / 0.3254 |
+| 3e-2 | 3.7772 / 0.0946 / 0.6704 / 0.1876 | 3.1885 / 0.1022 / 0.7315 / 0.2935 | 3.0781 / 0.0837 / 0.7380 / 0.3208 | 3.0114 / 0.0694 / 0.7403 / 0.3268 | 2.9746 / 0.0722 / 0.7421 / 0.3246 |
+| 1e-1 | 3.4583 / 0.1041 / 0.7161 / 0.2843 | 3.1398 / 0.0983 / 0.7373 / 0.3059 | 3.0596 / 0.0678 / 0.7389 / 0.2973 | 3.0495 / 0.0555 / 0.7361 / 0.2941 | 3.0019 / 0.0558 / 0.7358 / 0.2919 |
+
+The LOAO constant floor is R² `−0.0058`, ordering `0.5000`, top-1 `0.1716`.
+
+| lr | nonfinite epoch | stable L/R/O/T | last material improvement L/R/O/T | parameter L2 at 500, mean [min, max] | admissible |
+|---:|---:|:---:|:---:|---:|:---:|
+| 1e-4 | — | yes/yes/yes/no | 300/200/—/— | 4.4576 [4.4283, 4.4728] | no |
+| 3e-4 | — | no/yes/no/no | 500/100/400/300 | 4.5799 [4.5451, 4.6157] | no |
+| 1e-3 | — | no/no/no/no | 500/500/500/500 | 5.2805 [5.1832, 5.3586] | no |
+| 3e-3 | — | no/no/no/no | 500/500/500/400 | 8.1707 [7.7255, 8.7963] | no |
+| **1e-2 current** | — | no/yes/yes/no | 500/300/400/500 | 16.0695 [15.0698, 17.1275] | **no** |
+| 3e-2 | — | no/yes/yes/yes | 500/100/300/400 | 21.0886 [17.0585, 23.4924] | no |
+| 1e-1 | — | no/yes/yes/yes | 500/100/200/200 | 28.1890 [23.8523, 34.6379] | no |
+
+[RUN] At `3e-2` and `1e-1`, all three held-out metrics stabilized, but the
+training loss still changed by 1.22% and 1.56%, respectively. They therefore
+cannot be selected under the joint rule. The current `1e-2` loss changed by
+2.07%, while top-1 also moved by 0.0141.
+
+## C2 — Q2 v1 fallback, sealed `(100,50,50)` tanh head
+
+Each epoch cell is `training loss / held-out R² / ordering / top-1`.
+
+| lr | epoch 100 | epoch 200 | epoch 300 | epoch 400 | epoch 500 |
+|---:|---:|---:|---:|---:|---:|
+| 1e-4 | 6.4363 / −0.3464 / 0.6669 / 0.3445 | 5.8161 / −0.4187 / 0.6901 / 0.3285 | 5.3829 / −0.4559 / 0.6822 / 0.3245 | 5.1699 / −0.4756 / 0.6722 / 0.3230 | 5.0511 / −0.4783 / 0.6708 / 0.3230 |
+| 3e-4 | 5.4740 / −0.4664 / 0.6878 / 0.3260 | 4.9991 / −0.4808 / 0.6706 / 0.3210 | 4.7885 / −0.5211 / 0.6596 / 0.3035 | 4.6388 / −0.5654 / 0.6551 / 0.3035 | 4.5197 / −0.5992 / 0.6482 / 0.2865 |
+| **1e-3 current** | 4.8438 / −0.5149 / 0.6626 / 0.3095 | 4.4555 / −0.6033 / 0.6425 / 0.2765 | 4.1148 / −0.7244 / 0.6050 / 0.2325 | 3.8168 / −0.9543 / 0.6052 / 0.2520 | 3.5775 / −1.5946 / 0.5986 / 0.2680 |
+| 3e-3 | 4.4282 / −0.6192 / 0.6352 / 0.2705 | 3.8499 / −1.0217 / 0.6131 / 0.2580 | 3.5153 / −2.4105 / 0.5889 / 0.2645 | 3.2413 / −5.6137 / 0.5656 / 0.2430 | 3.3556 / −9.3676 / 0.5673 / 0.2435 |
+| 1e-2 | 4.0536 / −1.0098 / 0.6013 / 0.2470 | 3.6981 / −1.6724 / 0.5964 / 0.2435 | 3.5557 / −2.4316 / 0.6048 / 0.2610 | 3.2606 / −4.1804 / 0.5822 / 0.2565 | 3.0768 / −5.9462 / 0.5758 / 0.2460 |
+| 3e-2 | 4.3654 / −0.6413 / 0.6146 / 0.2540 | 4.0545 / −0.6725 / 0.6088 / 0.2675 | 3.9138 / −0.6776 / 0.5919 / 0.2675 | 3.7604 / −0.6446 / 0.6025 / 0.2590 | 3.6675 / −0.8578 / 0.5946 / 0.2680 |
+| 1e-1 | 6.9814 / −0.5386 / 0.5715 / 0.3215 | 6.9907 / −0.4968 / 0.5860 / 0.3320 | 6.9801 / −0.5229 / 0.5748 / 0.3295 | 6.9837 / −0.5111 / 0.5611 / 0.2940 | 7.0375 / −0.5043 / 0.5714 / 0.3090 |
+
+The LOAO constant floor is R² `−0.0182`, ordering `0.5000`, top-1 `0.2450`.
+
+| lr | nonfinite epoch | stable L/R/O/T | last material improvement L/R/O/T | parameter L2 at 500, mean [min, max] | admissible |
+|---:|---:|:---:|:---:|---:|:---:|
+| 1e-4 | — | no/yes/yes/yes | 500/—/200/100 | 20.1142 [20.0881, 20.1392] | no |
+| 3e-4 | — | no/no/no/no | 500/—/100/100 | 20.9484 [20.8421, 21.1510] | no |
+| **1e-3 current** | — | no/no/no/no | 500/—/100/500 | 24.4650 [24.0095, 24.8120] | **no** |
+| 3e-3 | — | no/no/yes/yes | 400/—/100/300 | 28.5537 [27.4223, 29.2034] | no |
+| 1e-2 | — | no/no/no/no | 500/—/300/300 | 36.3600 [34.5891, 38.4680] | no |
+| 3e-2 | — | no/no/no/no | 500/400/400/500 | 49.5050 [44.2282, 54.1369] | no |
+| 1e-1 | — | yes/yes/no/no | 100/400/500/500 | 64.2650 [60.9167, 71.5657] | no |
+
+[RUN] C2 makes the distinction between objective and held-out behavior plain.
+For `1e-4` the held-out metrics stabilized but loss still fell 2.30%. At
+`1e-1` loss stabilized, but ordering moved 0.0103 and top-1 moved 0.0150. The
+current `1e-3` loss fell 6.27% while held-out R² worsened from `−0.9543` to
+`−1.5946`; its parameters were still growing in scale.
+
+## C3 — repaired joint v2, sealed `(64,64)` ReLU set head
+
+Each epoch cell is `training loss / held-out R² / ordering / top-1`. Metrics
+are over the full bounded-catalogue support, including hard-zero
+empty/singleton predictions.
+
+| lr | epoch 100 | epoch 200 | epoch 300 | epoch 400 | epoch 500 |
+|---:|---:|---:|---:|---:|---:|
+| 1e-4 | 4.1578 / 0.7002 / 0.5232 / 0.3333 | 2.7559 / 0.6940 / 0.5264 / 0.4167 | 2.3419 / 0.6912 / 0.5216 / 0.4167 | 2.1070 / 0.6888 / 0.5216 / 0.4167 | 1.9399 / 0.6918 / 0.5172 / 0.4167 |
+| 3e-4 | 2.6540 / 0.7022 / 0.5324 / 0.3333 | 2.0528 / 0.7028 / 0.5166 / 0.3333 | 1.7959 / 0.7033 / 0.5188 / 0.4167 | 1.6415 / 0.6999 / 0.5297 / 0.4167 | 1.5283 / 0.6999 / 0.5277 / 0.4167 |
+| **1e-3 current** | 2.1448 / 0.6985 / 0.5530 / 0.3333 | 1.7700 / 0.6776 / 0.5650 / 0.2500 | 1.5452 / 0.6462 / 0.5601 / 0.1667 | 1.3710 / 0.6184 / 0.5632 / 0.1667 | 1.2482 / 0.5980 / 0.5322 / 0.2500 |
+| 3e-3 | 2.1260 / 0.6694 / 0.5079 / 0.3333 | 1.7308 / 0.6392 / 0.5170 / 0.1667 | 1.4959 / 0.6073 / 0.5285 / 0.2500 | 1.3318 / 0.5779 / 0.5356 / 0.2500 | 1.2075 / 0.5660 / 0.5476 / 0.2500 |
+| 1e-2 | 4.6832 / 0.7463 / 0.5163 / 0.4167 | 2.9272 / 0.7299 / 0.5129 / 0.4167 | 2.1349 / 0.6979 / 0.5186 / 0.2500 | 1.7651 / 0.6591 / 0.5263 / 0.2500 | 1.5987 / 0.6362 / 0.5292 / 0.2500 |
+| 3e-2 | 5.7997 / 0.7293 / 0.5231 / 0.5833 | 4.4611 / 0.7260 / 0.5426 / 0.5000 | 3.8471 / 0.7065 / 0.5520 / 0.4167 | 4.8113 / 0.6457 / 0.5359 / 0.4167 | 3.5468 / 0.5318 / 0.5609 / 0.4167 |
+| 1e-1 | 14.1383 / 0.5176 / 0.4800 / 0.5000 | 9.2375 / 0.5794 / 0.5063 / 0.4167 | 112.8674 / −1.5620 / 0.5167 / 0.3333 | 6.3259 / 0.6328 / 0.4952 / 0.4167 | 5.8247 / 0.6502 / 0.5107 / 0.4167 |
+
+The ordinary LOAO constant floor is R² `−0.0005`, ordering `0.5000`, top-1
+`0.0000`. Because the head is structurally anchored at zero for size<2, an
+anchored-constant supplement gives R² `0.0021`, ordering `0.6204`, and top-1
+`0.1667`. Both are references only and do not enter convergence selection.
+
+| lr | nonfinite epoch | stable L/R/O/T | last material improvement L/R/O/T | parameter L2 at 500, mean [min, max] | admissible |
+|---:|---:|:---:|:---:|---:|:---:|
+| 1e-4 | — | no/yes/yes/yes | 500/100/—/200 | 16.0990 [16.0823, 16.1087] | no |
+| 3e-4 | — | no/yes/yes/yes | 500/100/400/300 | 16.2619 [16.2102, 16.3287] | no |
+| **1e-3 current** | — | no/no/no/no | 500/100/200/500 | 16.7769 [16.6407, 16.9185] | **no** |
+| 3e-3 | — | no/no/no/yes | 500/100/500/300 | 17.7046 [17.1192, 18.0505] | no |
+| 1e-2 | — | no/no/yes/yes | 500/100/400/100 | 18.9376 [18.3115, 19.7152] | no |
+| 3e-2 | — | no/no/no/yes | 500/100/500/100 | 30.5874 [28.9012, 35.6704] | no |
+| 1e-1 | — | no/no/no/yes | 500/500/500/400 | 78.5207 [78.0527, 79.2058] | no |
+
+[RUN] Every C3 loss still moved by at least 6.89% from 400 to 500, and the
+current `1e-3` moved by 8.96%. At `1e-1`, the epoch-300 loss spike and large
+parameter norm distinguish instability from non-finite divergence: it is
+finite, but plainly not converged.
+
+## What is verified, derived, and inferred
+
+[RUN] The machine result contains seven points per route, all five requested
+checkpoints per point, all 21 epoch-500 parameter-norm summaries, the constant
+floors, and the earliest-divergence field. All input hashes matched before and
+after. `learner.py` remained byte-identical at SHA-256
+`09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01`.
+
+[RUN] The sweep used only
+`/home/sat/mcrl-leo-handover/.venv/bin/python`, one Python process,
+`nice=15`, and all BLAS thread variables equal to one. Its printed peak line
+was `PEAK_RSS_KB=113016` (about 110.4 MiB), far below 5 GiB. It did not write
+to the C2 or C3 source workspaces or any live-job directory.
+
+[DERIVED] A decreasing training objective with degrading held-out R² is not a
+contradiction: they are evaluated on different anchor partitions. It is also
+not an EE statement. Parameter L2 is reported over weights and biases only;
+the mean and range are over LOAO fold models, not over learner seeds.
+
+[INFERRED] The parameter-scale gradients and continuing loss motion distinguish
+these cases from collapsed constant heads. But because no rate satisfies the
+fixed convergence condition, predictive-quality differences among rates must
+not be used to choose a winner from this run. A longer prospectively declared
+horizon (or a separate optimization-validity design) is required before any
+learning rate can be certified for these architectures.
+
+## Reproducibility
+
+Machine-readable results are in
+`.scratch/lr-convergence-sweep/results.json`; the fixed rule is in
+`.scratch/lr-convergence-sweep/spec.md`; and the isolated runner is
+`.scratch/lr-convergence-sweep/run_sweep.py`. Their SHA-256 values before final
+report validation were respectively `9424c6d8…84861`, `0484ffbf…f9b19`, and
+`dde9a8e9…0fc6`.
+**Arm A first admissible step: NONE (312.23 s wall; 7.81 s/100 updates); Arm B first admissible update: NONE (58.30 s wall; 1.46 s/100 updates); the evidence supports neither lever for production.**
+
+`DIAGNOSTIC_NOT_CLAIM` — development material only.
+
+## Decision
+
+[VERIFIED BY RUNNING CODE] Neither more full-batch steps nor the declared
+minibatching procedure satisfied the unchanged LRSWEEP convergence rule at
+any 100-update cadence through 4,000 updates. `NONE` is the result for both
+arms, not a missing observation.
+
+[INFERRED] The present learner therefore cannot be certified as converged at
+any practical horizon tested here. Do not commit a 16-seed, 5-arm production
+schedule to either lever on this evidence. The correct reading of tonight's
+two runs is **“the optimisation was under-run.”**
+
+[INFERRED] Arm A has the more promising residual shape for a further
+diagnostic: at 4,000 updates it misses only the objective-motion tolerance and
+that residual is slowly decaying, though with intermittent oscillation. Arm B
+is materially oscillatory and still misses both objective and ordering at the
+cap. That does not make Arm A admissible or authorize a production horizon.
+
+Loss and all held-out metrics below are convergence diagnostics only. **They
+are never evidence about EE. No EE quantity was computed, and nothing was
+selected on EE.**
+
+## Fixed design
+
+[VERIFIED BY RUNNING CODE] The run used C3 only, the twelve fixed LRSWEEP C3
+anchors and identical LOAO folds, model seed `V025_LEARNER/seed/1`
+(`6407676579069309528`), the sealed `(64,64)` ReLU architecture, all sealed
+Adam literals, and the route's current literal learning rate `1e-3`. Arm A
+called LRSWEEP's full-batch C3 gradient aggregation directly. Its values at
+updates 0, 100, 200, 300, 400, and 500 exactly reproduced the prior C3
+`1e-3` cell.
+
+[VERIFIED BY RUNNING CODE] The rule was applied at every destination cadence
+`k = 100, 200, ..., 4000` to the immediately preceding interval `k-100 -> k`:
+
+- objective relative absolute motion no greater than `0.01`;
+- held-out level R2 absolute motion no greater than `0.01`;
+- held-out within-group ordering absolute motion no greater than `0.005`;
+- held-out top-1 absolute motion no greater than `0.005`.
+
+All four checks had to pass together, with finite objective and parameters.
+Arm B's checkpoint objective was evaluated on the complete training fold, not
+on its last minibatch.
+
+[VERIFIED BY RUNNING CODE] Arm B used batch size 256. For each LOAO fold, the
+eleven training anchors were concatenated in LRSWEEP's fixed filename order.
+A NumPy PCG64 generator used the independent SHA-256 domain seed
+`V025_HORIZON/C3/minibatch-shuffle/seed/1`
+(`5845257737798802301`). Each pass was freshly shuffled; consecutive batches
+were sampled **without replacement within a pass**; the remainder batch was
+used; rows recurred only after the next-pass reshuffle. Every fold restarted
+the same declared shuffle stream. **This is a training-procedure change, not a
+hyperparameter.**
+
+## Cap residuals — conditional Arm C diagnosis
+
+[VERIFIED BY RUNNING CODE] Because both arms returned `NONE`, the required cap
+diagnosis applies:
+
+| Arm | 3900 loss | 4000 loss | objective motion | R2 motion | ordering motion | top-1 motion | cap checks passed |
+|:---|---:|---:|---:|---:|---:|---:|:---|
+| A, full batch | 0.268075 | 0.260136 | 2.961% | 0.002146 | 0.002801 | 0 | R2, ordering, top-1; objective failed |
+| B, minibatch | 1.226373 | 1.105135 | 9.886% | 0.008055 | 0.029753 | 0 | R2, top-1; objective and ordering failed |
+
+[VERIFIED BY RUNNING CODE] Arm A's loss over updates 3,500–4,000 was
+`0.335617, 0.305839, 0.281603, 0.277644, 0.268075, 0.260136`. This follows a
+10.24% upward excursion at 3,400→3,500, then five consecutive decreases. The
+last five absolute relative motions were 8.87%, 7.92%, 1.41%, 3.45%, and
+2.96%: they are getting smaller on the broad trend but are not monotone and
+remain above 1% at the cap.
+
+[INFERRED] Arm A is therefore **slowly decaying with intermittent
+oscillation**, not flat. Its held-out R2 and ordering also oscillate, but at the
+cap their adjacent-cadence motions pass.
+
+[VERIFIED BY RUNNING CODE] Arm B's loss over updates 3,500–4,000 was
+`2.222269, 1.297866, 1.173352, 1.503476, 1.226373, 1.105135`; its recent
+relative motions include 41.60%, 9.59%, 28.14%, 18.43%, and 9.89%, with a
+direction reversal at 3,700→3,800. Ordering moved 0.029753 at the cap, almost
+six times its tolerance.
+
+[INFERRED] Arm B is **oscillating**, not flat or slowly settling. More cheap
+minibatch updates at this unchanged learning rate are not supported as the
+production remedy.
+
+## Equal-wall-time comparison
+
+[VERIFIED BY RUNNING CODE] The cadence-timed 12-fold work needed 51.03 s for
+Arm B to reach 4,000 updates. In the same measured budget, Arm A completed 600
+updates (44.49 s; 700 did not fit). At those equal-wall endpoints:
+
+| Endpoint | loss | held-out R2 | ordering | top-1 | preceding-100 rule |
+|:---|---:|---:|---:|---:|:---|
+| A at 600 | 1.147249 | 0.574094 | 0.526820 | 0.166667 | failed all four checks |
+| B at 4000 | 1.105135 | 0.645829 | 0.511546 | 0.250000 | failed objective and ordering |
+
+[INFERRED] Minibatching buys about 6.0–6.2 times as many updates per measured
+second, but that computational advantage does **not** become an admissibility
+advantage: both equal-wall endpoints fail. There is no Arm B convergence
+advantage to carry into the schedule, so the equal-wall comparison still
+decides **no production schedule under either tested lever**.
+
+## Wall cost and production extrapolation
+
+[VERIFIED BY RUNNING CODE] Wall timing for one seed's full 12-fold diagnostic:
+
+| Arm | total arm wall | end-to-end s/100 updates | cadence-timed s/100, mean [min, max] |
+|:---|---:|---:|---:|
+| A | 312.23 s | 7.806 | 7.582 [7.175, 8.028] |
+| B | 58.30 s | 1.457 | 1.276 [1.229, 1.432] |
+
+The end-to-end rate is total arm wall divided by 40 cadences and includes the
+final aggregation of all LOAO held-out metrics. The cadence-timed rate sums
+the twelve fold intervals and includes updates plus checkpoint evaluation.
+
+[DERIVED ON PAPER] Because neither arm reached admissibility, a cost *to
+convergence* cannot be estimated. The only honest production projection is
+the spend to the tested 4,000-update cap. For the complete `16 seeds × 5 arms =
+80` set of C3 heads:
+
+| Lever at 4,000-update cap | extrapolated CPU-hours | assumptions |
+|:---|---:|:---|
+| A, full batch | 0.56–0.63 | Lower bound uses mean update-only time per LOAO fold (`0.6261 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and multiplies by `12/11` for training on all 12 anchors instead of 11. |
+| B, minibatch 256 | 0.09–0.12 | Lower bound uses mean update-only time per fold (`0.1007 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and the same conservative `12/11` allowance. |
+
+These are C3 learner CPU-hour ranges on this host, assuming serial
+single-thread execution, identical data dimensions, no shared-head speedup,
+and negligible orchestration/serialization. They do not estimate C1, C2,
+policy, simulation, or other pipeline costs. Most importantly, they are
+**spend-to-cap ranges for runs known not to be converged**, not estimates for a
+valid production result. Any converged-run cost is unknown from this evidence.
+
+## Held-out convergence diagnostics at every cadence
+
+[VERIFIED BY RUNNING CODE] Each cell is evaluated over all 11,947 held-out
+catalogue rows across the twelve LOAO folds, including declared hard zeros for
+empty/singleton coalitions. `ord` is within-group pairwise ordering. These
+metrics diagnose stabilization only; they say nothing about EE.
+
+| upd | A loss | A R2 | A ord | A top1 | B loss | B R2 | B ord | B top1 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 131.3764 | -2.5559 | 0.6067 | 0.0000 | 131.3764 | -2.5559 | 0.6067 | 0.0000 |
+| 100 | 2.1448 | 0.6985 | 0.5530 | 0.3333 | 5.0189 | 0.5691 | 0.5046 | 0.2500 |
+| 200 | 1.7700 | 0.6776 | 0.5650 | 0.2500 | 2.9834 | 0.6942 | 0.5380 | 0.3333 |
+| 300 | 1.5452 | 0.6462 | 0.5601 | 0.1667 | 3.4193 | 0.6714 | 0.5862 | 0.4167 |
+| 400 | 1.3710 | 0.6184 | 0.5632 | 0.1667 | 3.1658 | 0.6837 | 0.5257 | 0.2500 |
+| 500 | 1.2482 | 0.5980 | 0.5322 | 0.2500 | 2.4458 | 0.6662 | 0.5187 | 0.2500 |
+| 600 | 1.1472 | 0.5741 | 0.5268 | 0.1667 | 2.7165 | 0.6312 | 0.5403 | 0.2500 |
+| 700 | 1.0629 | 0.5524 | 0.5167 | 0.3333 | 2.0228 | 0.6240 | 0.5758 | 0.2500 |
+| 800 | 0.9875 | 0.5313 | 0.5093 | 0.3333 | 2.7137 | 0.6455 | 0.5145 | 0.3333 |
+| 900 | 0.9187 | 0.5013 | 0.5371 | 0.3333 | 2.6517 | 0.6515 | 0.4856 | 0.2500 |
+| 1000 | 0.8523 | 0.4613 | 0.5334 | 0.2500 | 2.0937 | 0.6788 | 0.5255 | 0.4167 |
+| 1100 | 0.7904 | 0.4220 | 0.5451 | 0.2500 | 1.7717 | 0.6765 | 0.5432 | 0.3333 |
+| 1200 | 0.7365 | 0.3983 | 0.5419 | 0.2500 | 1.7871 | 0.6537 | 0.5268 | 0.3333 |
+| 1300 | 0.6944 | 0.3408 | 0.5386 | 0.2500 | 1.7467 | 0.6782 | 0.5319 | 0.2500 |
+| 1400 | 0.6810 | 0.3083 | 0.5434 | 0.2500 | 5.0188 | 0.5490 | 0.5645 | 0.4167 |
+| 1500 | 0.6203 | 0.2904 | 0.5474 | 0.2500 | 3.2026 | 0.6866 | 0.5675 | 0.4167 |
+| 1600 | 0.6078 | 0.2491 | 0.5473 | 0.2500 | 2.3837 | 0.6633 | 0.5725 | 0.3333 |
+| 1700 | 0.5489 | 0.2452 | 0.5465 | 0.2500 | 2.0740 | 0.7139 | 0.5462 | 0.3333 |
+| 1800 | 0.5367 | 0.2229 | 0.5547 | 0.2500 | 1.7782 | 0.7053 | 0.5534 | 0.3333 |
+| 1900 | 0.5154 | 0.2697 | 0.5493 | 0.2500 | 1.7912 | 0.6767 | 0.5442 | 0.3333 |
+| 2000 | 0.4943 | 0.1923 | 0.5395 | 0.2500 | 1.9669 | 0.7041 | 0.5839 | 0.2500 |
+| 2100 | 0.4706 | 0.2496 | 0.5414 | 0.2500 | 1.6734 | 0.6682 | 0.5304 | 0.3333 |
+| 2200 | 0.4459 | 0.2040 | 0.5412 | 0.2500 | 1.6764 | 0.6827 | 0.5420 | 0.3333 |
+| 2300 | 0.4384 | 0.1955 | 0.5451 | 0.2500 | 1.4593 | 0.6957 | 0.5549 | 0.3333 |
+| 2400 | 0.4135 | 0.1940 | 0.5434 | 0.2500 | 1.4625 | 0.6888 | 0.5843 | 0.3333 |
+| 2500 | 0.4015 | 0.1955 | 0.5438 | 0.2500 | 1.5504 | 0.6725 | 0.5681 | 0.2500 |
+| 2600 | 0.4039 | 0.1613 | 0.5445 | 0.2500 | 1.5287 | 0.6995 | 0.4967 | 0.4167 |
+| 2700 | 0.3851 | 0.2059 | 0.5389 | 0.2500 | 1.3096 | 0.6744 | 0.5879 | 0.3333 |
+| 2800 | 0.3550 | 0.1609 | 0.5477 | 0.2500 | 2.1033 | 0.6547 | 0.5911 | 0.3333 |
+| 2900 | 0.3916 | 0.1922 | 0.5367 | 0.2500 | 2.6588 | 0.6400 | 0.5705 | 0.3333 |
+| 3000 | 0.3543 | 0.1558 | 0.5444 | 0.2500 | 1.6247 | 0.6957 | 0.5447 | 0.3333 |
+| 3100 | 0.3392 | 0.1290 | 0.5385 | 0.2500 | 1.9633 | 0.6842 | 0.5483 | 0.3333 |
+| 3200 | 0.3316 | 0.1292 | 0.5397 | 0.2500 | 1.2707 | 0.6653 | 0.5565 | 0.3333 |
+| 3300 | 0.3137 | 0.1424 | 0.5432 | 0.2500 | 1.2381 | 0.6853 | 0.5673 | 0.3333 |
+| 3400 | 0.3044 | 0.1343 | 0.5370 | 0.2500 | 1.3228 | 0.6634 | 0.5159 | 0.2500 |
+| 3500 | 0.3356 | 0.0892 | 0.5392 | 0.2500 | 2.2223 | 0.6106 | 0.5426 | 0.2500 |
+| 3600 | 0.3058 | 0.1283 | 0.5432 | 0.2500 | 1.2979 | 0.6419 | 0.5292 | 0.2500 |
+| 3700 | 0.2816 | 0.1200 | 0.5380 | 0.2500 | 1.1734 | 0.6562 | 0.5295 | 0.2500 |
+| 3800 | 0.2776 | 0.1359 | 0.5401 | 0.2500 | 1.5035 | 0.6329 | 0.5430 | 0.2500 |
+| 3900 | 0.2681 | 0.1321 | 0.5311 | 0.2500 | 1.2264 | 0.6378 | 0.5413 | 0.2500 |
+| 4000 | 0.2601 | 0.1343 | 0.5339 | 0.2500 | 1.1051 | 0.6458 | 0.5115 | 0.2500 |
+
+## Execution and integrity record
+
+[VERIFIED BY RUNNING CODE] One Python process ran both arms sequentially using
+only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, and all named
+BLAS thread variables set to one. It printed progress through
+`step 96000/96000` and `PEAK_RSS_KB=86964` (84.9 MiB). The address-space hard
+limit was 3,221,225,471 bytes, just under 3 GiB. Total elapsed wall was 370.53
+s. One-minute load was 16.04 initially, never exceeded 17.31 during an arm,
+and was 15.97 at completion; no pause was required.
+
+[VERIFIED BY RUNNING CODE] Only the twelve LRSWEEP-fixed C3 NPZ files were
+loaded. No evaluation-only claim date was discovered or read. Hashes of every
+C3 input and the sealed harness, spec, results, and learner matched before and
+after; `changed_inputs` is empty. The source artifacts were not modified.
+
+Machine-readable results are in `.scratch/horizon-lever/results.json`; the
+pre-run protocol is `.scratch/horizon-lever/spec.md`; the isolated runner is
+`.scratch/horizon-lever/run_horizon.py`. Their SHA-256 digests are respectively
+`b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62`,
+`22938ee0302d6846a79e0525e0786dea277b9c677cd4795123358e6a77b1747d`, and
+`e0a7804f3664356415b0d6e0e9041447a3a7a84ccfee3fe5324c38aaff907e2a`.
+
+exec
+/bin/bash -lc "sed -n '1,260p' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/spec.md; sed -n '1,360p' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py; sed -n '1,320p' /home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/spec.md; sed -n '1,420p' /home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/run_horizon.py" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+# LRSWEEP frozen analysis rule — 2026-09-10
+
+`DIAGNOSTIC_NOT_CLAIM`. This file was written before any sweep fit ran.
+
+- Routes and learning rates: C1, C2, C3 crossed with
+  `{1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1}`.
+- Architecture, activation, Adam betas/epsilon, weight decay, route loss and
+  gauge weights are the literals in `src/mcrl/stagec_v025/learner.py`. Only
+  `learning_rate` is passed as an overridden literal to `AdamMLPHead.create`.
+- One first sealed pilot learner seed is used, as in the primary C1REAL and
+  C2REAL leave-one-anchor-out (LOAO) measurements.
+- Checkpoints: initial state (diagnostic only) and epochs 100, 200, 300, 400,
+  500. Reported checkpoints are 100–500.
+- Objective stabilization tolerance: absolute 400→500 change no greater than
+  1% of `max(abs(objective_at_400), 1e-12)`.
+- Held-out stabilization tolerances: absolute 400→500 changes no greater than
+  0.01 for level R², 0.005 for within-group ordering, and 0.005 for top-1.
+- A cell is admissible on convergence grounds exactly when it is finite through
+  epoch 500 and all four stabilization checks pass. Quality does not select or
+  break ties among admissible rates.
+- “Last material improvement” is the destination epoch of the last adjacent
+  checkpoint interval, including 0→100, whose objective decrease exceeds its
+  relative tolerance or whose predictive-metric increase exceeds that metric's
+  absolute tolerance. `none` means no such sampled interval.
+- Divergence means a non-finite objective or parameter. The earliest update
+  epoch is recorded.
+- Parameter L2 norm includes trainable weights and biases, excludes Adam
+  moments, and is summarized across LOAO fold models.
+- C1 input: the same 37-anchor coherent prefix of the repaired Q1 v2 exact-row
+  panel used by C1REALV2.
+- C2 input: the same 20-anchor exact-row panel used by C2REAL. Q1 v2 has no Q2
+  schema and its public projection copies `q2_state` byte-for-byte, so this is
+  explicitly Q2 schema v1.
+- C3 input: the twelve completed two-world anchors (steps 0–5) present before
+  this file was written in the live C3REAL exact-row directory, restricted by
+  filename rather than a later-changing glob; C3 uses its available v2 route
+  state. The live directory is read only.
+- Predictive metrics use the C1REAL definitions. For C3, one anchor is one
+  candidate group and the declared hard zeros for empty/singleton coalitions
+  are retained in evaluation while only size>=2 rows train the head.
+- Loss is a convergence diagnostic only and is never evidence about EE. No EE
+  quantity, production training, policy run, or acceptance test is computed.
+#!/usr/bin/env python3
+"""Convergence-only learning-rate sweep over the three sealed Stage-C heads."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import resource
+import sys
+import time
+from types import SimpleNamespace
+from typing import Iterable
+
+
+RSS_LIMIT_BYTES = 5 * 1024**3
+resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
+
+import numpy as np
+
+from mcrl.physics_v025.tapes import seed_from_domain
+from mcrl.stagec_v025.learner import AdamMLPHead, LEGACY_TRAINER_LITERALS
+
+
+ROOT = Path(__file__).resolve().parents[2]
+OUT = ROOT / ".scratch/lr-convergence-sweep"
+EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
+THREAD_ENV = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
+)
+LRS = (1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1)
+CHECKPOINTS = (0, 100, 200, 300, 400, 500)
+PAIR_LIMIT = 4096
+SEED = seed_from_domain("V025_LEARNER/seed/1")
+SCHEMA_V2 = "mcrl-v025-stagec-q1-action-v2"
+SCHEMA_V2_SHA256 = "66ed4a3f9222ac7f20f4334ffab92f6164d2dad203cbac7f7d4e1728ae4ad654"
+STABILITY_TOLERANCES = {
+    "objective_relative": 0.01,
+    "r2_absolute": 0.01,
+    "pairwise_ordering_absolute": 0.005,
+    "top1_accuracy_absolute": 0.005,
+}
+
+C1_INPUTS = (
+    ROOT / ".scratch/c1-declared-v2/world-1.jsonl",
+    ROOT / ".scratch/c1-declared-v2/world-2.jsonl",
+)
+C2_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
+C2_INPUTS = (
+    C2_ROOT / ".scratch/c2-declared/world-1.jsonl",
+    C2_ROOT / ".scratch/c2-declared/world-2.jsonl",
+)
+C3_ROWS = Path("/home/sat/mcrl-v025-coalgen-ws/.scratch/c3-declared/rows")
+C3_NAMES = tuple(
+    f"world-{world}-step-{step:02d}.npz"
+    for world in (1, 2) for step in range(6)
+)
+C3_INPUTS = tuple(C3_ROWS / name for name in C3_NAMES)
+
+
+@dataclass(frozen=True)
+class PairData:
+    route: str
+    x: np.ndarray
+    y: np.ndarray
+    reference: np.ndarray
+    anchor: np.ndarray
+    group: np.ndarray
+    input_files: tuple[Path, ...]
+    schema: str
+    schema_sha256: str
+
+
+@dataclass(frozen=True)
+class C3Anchor:
+    path: Path
+    truth: np.ndarray
+    size: np.ndarray
+    train_indices: np.ndarray
+    x: np.ndarray
+
+
+@dataclass(frozen=True)
+class C3Data:
+    anchors: tuple[C3Anchor, ...]
+    schema: str
+    schema_sha256: str
+
+
+def verify_runtime() -> None:
+    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
+        raise RuntimeError(f"wrong interpreter: {sys.executable}")
+    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
+    if wrong:
+        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
+    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
+        raise RuntimeError("process niceness is below 15")
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def atomic_json(path: Path, payload: object) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def load_c1() -> PairData:
+    rows = []
+    for path in C1_INPUTS:
+        with path.open(encoding="utf-8") as stream:
+            for line in stream:
+                record = json.loads(line)
+                if record["kind"] == "metadata":
+                    if record["q1_schema"] != SCHEMA_V2 or record["q1_schema_sha256"] != SCHEMA_V2_SHA256:
+                        raise RuntimeError("C1 repaired schema mismatch")
+                    continue
+                maximum = 17 if record["world_id"].endswith("/1") else 18
+                if int(record["anchor_index"]) > maximum:
+                    continue
+                for row in record["rows"]:
+                    rows.append((
+                        row["q1"], row["declared"], row["reference"],
+                        record["anchor_id"], row["user_id"],
+                    ))
+    return make_pair_data("C1", rows, C1_INPUTS, SCHEMA_V2, SCHEMA_V2_SHA256)
+
+
+def load_c2() -> PairData:
+    rows = []
+    for path in C2_INPUTS:
+        with path.open(encoding="utf-8") as stream:
+            for line in stream:
+                record = json.loads(line)
+                if record["kind"] == "metadata":
+                    continue
+                for row in record["rows"]:
+                    rows.append((
+                        row["q2"], row["declared"], row["reference"],
+                        record["anchor_id"], row["user_id"],
+                    ))
+    return make_pair_data(
+        "C2", rows, C2_INPUTS,
+        "mcrl-v025-stagec-q2-action-v1",
+        "a891dd9831d76bccd981cef054ff204fa1d49c3cf6e5f3265015f16f1057019c",
+    )
+
+
+def make_pair_data(
+    route: str,
+    rows: list[tuple[object, object, object, object, object]],
+    paths: tuple[Path, ...],
+    schema: str,
+    schema_sha256: str,
+) -> PairData:
+    anchors = sorted({str(row[3]) for row in rows})
+    groups = sorted({f"{row[3]}|user/{row[4]}" for row in rows})
+    anchor_code = {value: index for index, value in enumerate(anchors)}
+    group_code = {value: index for index, value in enumerate(groups)}
+    return PairData(
+        route=route,
+        x=np.asarray([row[0] for row in rows], dtype=np.float64),
+        y=np.asarray([row[1] for row in rows], dtype=np.float64),
+        reference=np.asarray([row[2] for row in rows], dtype=bool),
+        anchor=np.asarray([anchor_code[str(row[3])] for row in rows], dtype=np.int16),
+        group=np.asarray([group_code[f"{row[3]}|user/{row[4]}"] for row in rows], dtype=np.int32),
+        input_files=paths,
+        schema=schema,
+        schema_sha256=schema_sha256,
+    )
+
+
+def load_c3() -> C3Data:
+    missing = [str(path) for path in C3_INPUTS if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"frozen C3 inputs missing: {missing}")
+    anchors = []
+    for path in C3_INPUTS:
+        with np.load(path, allow_pickle=False) as payload:
+            truth = np.asarray(payload["target"], dtype=np.float64)
+            size = np.asarray(payload["size"], dtype=np.int16)
+            indices = np.asarray(payload["coalition_indices"], dtype=np.int32)
+            x = np.asarray(payload["x_v2"], dtype=np.float64)
+        if x.shape[0] != indices.size or not np.array_equal(indices, np.flatnonzero(size >= 2)):
+            raise RuntimeError(f"C3 train support mismatch: {path}")
+        if not np.isfinite(truth).all() or not np.isfinite(x).all():
+            raise RuntimeError(f"non-finite C3 input: {path}")
+        anchors.append(C3Anchor(path, truth, size, indices, x))
+    dimensions = {anchor.x.shape[1] for anchor in anchors}
+    if len(dimensions) != 1:
+        raise RuntimeError("C3 input dimensions disagree")
+    return C3Data(tuple(anchors), SCHEMA_V2, SCHEMA_V2_SHA256)
+
+
+def pair_batch(data: PairData, train: np.ndarray) -> SimpleNamespace:
+    ref_by_group = {int(data.group[i]): int(i) for i in np.flatnonzero(train & data.reference)}
+    candidates = np.flatnonzero(train & ~data.reference)
+    references = np.asarray([ref_by_group[int(data.group[i])] for i in candidates], dtype=np.int64)
+    if candidates.size > PAIR_LIMIT:
+        chosen = np.linspace(0, candidates.size - 1, PAIR_LIMIT, dtype=np.int64)
+        candidates = candidates[chosen]
+        references = references[chosen]
+    return SimpleNamespace(
+        reference_states=data.x[references],
+        candidate_states=data.x[candidates],
+        target_deltas=data.y[candidates] - data.y[references],
+    )
+
+
+def parameters_finite(head: AdamMLPHead) -> bool:
+    return all(np.isfinite(value).all() for value in (*head.weights, *head.biases))
+
+
+def parameter_norm(head: AdamMLPHead) -> float:
+    total = sum(float(np.square(value).sum()) for value in (*head.weights, *head.biases))
+    return math.sqrt(total)
+
+
+def pair_objective(head: AdamMLPHead, batch: SimpleNamespace) -> float:
+    reference = head._forward(batch.reference_states)[0]
+    candidate = head._forward(batch.candidate_states)[0]
+    residual = candidate - reference - batch.target_deltas
+    return float(head.loss_weight * np.mean(residual * residual + head.gauge_beta * reference * reference))
+
+
+def metric(prediction: np.ndarray, truth: np.ndarray, group: np.ndarray) -> dict[str, float | int]:
+    rss = float(np.square(truth - prediction).sum())
+    tss = float(np.square(truth - truth.mean()).sum())
+    credit = 0.0
+    pairs = 0
+    top1_hits = 0
+    group_count = 0
+    for group_id in np.unique(group):
+        indices = np.flatnonzero(group == group_id)
+        if indices.size < 2:
+            continue
+        target = truth[indices]
+        score = prediction[indices]
+        left, right = np.triu_indices(indices.size, 1)
+        target_delta = target[left] - target[right]
+        score_delta = score[left] - score[right]
+        keep = np.abs(target_delta) > 1e-12
+        target_delta = target_delta[keep]
+        score_delta = score_delta[keep]
+        pairs += int(target_delta.size)
+        credit += float(np.sum(np.sign(target_delta) == np.sign(score_delta)))
+        credit += 0.5 * float(np.sum(np.abs(score_delta) <= 1e-15))
+        selected = int(np.argmax(score))
+        top1_hits += int(target[selected] >= target.max() - 1e-12)
+        group_count += 1
+    return {
+        "r2": float(1.0 - rss / tss) if tss else math.nan,
+        "pairwise_ordering": float(credit / pairs) if pairs else math.nan,
+        "top1_accuracy": float(top1_hits / group_count) if group_count else math.nan,
+        "rows": int(truth.size),
+        "pairs": pairs,
+        "groups": group_count,
+    }
+
+
+def run_pair(data: PairData, lr: float, maximum_epoch: int = 500, maximum_folds: int | None = None) -> dict[str, object]:
+    folds = list(np.unique(data.anchor))
+    if maximum_folds is not None:
+        folds = folds[:maximum_folds]
+    checkpoints = tuple(value for value in CHECKPOINTS if value <= maximum_epoch)
+    predictions = {epoch: np.full(data.y.shape, np.nan) for epoch in checkpoints}
+    objectives = {epoch: [] for epoch in checkpoints}
+    norms = {epoch: [] for epoch in checkpoints}
+    divergence_rows = []
+    literal = dict(LEGACY_TRAINER_LITERALS[data.route])
+    literal["learning_rate"] = lr
+    started = time.perf_counter()
+    for fold_number, value in enumerate(folds, start=1):
+        test = data.anchor == value
+        train = ~test
+        batch = pair_batch(data, train)
+        head = AdamMLPHead.create(data.x.shape[1], literal, np.random.default_rng(SEED))
+        for epoch in range(maximum_epoch + 1):
+            if epoch in checkpoints:
+                loss = pair_objective(head, batch)
+                if not math.isfinite(loss) or not parameters_finite(head):
+                    divergence_rows.append({"fold": int(value), "epoch": epoch, "phase": "checkpoint"})
+                    break
+                objectives[epoch].append((loss, int(batch.target_deltas.size)))
+                norms[epoch].append(parameter_norm(head))
+                predictions[epoch][test] = head._forward(data.x[test])[0]
+            if epoch == maximum_epoch:
+                break
+            with np.errstate(all="ignore"):
+                loss_before_update = head.update(batch)
+            if not math.isfinite(loss_before_update) or not parameters_finite(head):
+                divergence_rows.append({"fold": int(value), "epoch": epoch + 1, "phase": "update"})
+                break
+        print(json.dumps({
+            "event": "fold", "route": data.route, "lr": lr,
+            "fold": fold_number, "folds": len(folds),
+            "diverged": bool(divergence_rows and divergence_rows[-1]["fold"] == int(value)),
+        }), flush=True)
+    usable = np.isin(data.anchor, np.asarray(folds))
+    trajectory = {}
+    for epoch in checkpoints:
+        finite_predictions = bool(np.isfinite(predictions[epoch][usable]).all())
+        if len(objectives[epoch]) == len(folds) and finite_predictions:
+            weighted_loss = sum(value * count for value, count in objectives[epoch]) / sum(count for _, count in objectives[epoch])
+            trajectory[str(epoch)] = {
+                "training_objective": float(weighted_loss),
+                "held_out": metric(predictions[epoch][usable], data.y[usable], data.group[usable]),
+                "parameter_l2": summarize(norms[epoch]),
+            }
+        else:
+            trajectory[str(epoch)] = None
+    return finalize_cell(
+        data.route, lr, trajectory, divergence_rows,
+        wall_s=time.perf_counter() - started,
+        schema=data.schema, schema_sha256=data.schema_sha256,
+        folds=len(folds), rows=int(usable.sum()), groups=int(np.unique(data.group[usable]).size),
+        pair_limit=PAIR_LIMIT,
+    )
+
+
+def c3_loss(head: AdamMLPHead, anchors: Iterable[C3Anchor]) -> tuple[float, int]:
+    squared = 0.0
+    count = 0
+    for anchor in anchors:
+        target = anchor.truth[anchor.train_indices]
+        prediction = head._forward(anchor.x)[0]
+        squared += float(np.square(prediction - target).sum())
+        count += int(target.size)
+    return float(head.loss_weight * squared / count), count
+
+
+def c3_update(head: AdamMLPHead, anchors: Iterable[C3Anchor]) -> float:
+    grad_w = [np.zeros_like(value) for value in head.weights]
+    grad_b = [np.zeros_like(value) for value in head.biases]
+    squared = 0.0
+    count = 0
+    for anchor in anchors:
+        target = anchor.truth[anchor.train_indices]
+        prediction, activations, preactivations = head._forward(anchor.x)
+        residual = prediction - target
+        chunk_w, chunk_b = head._backward(activations, preactivations, residual)
+        for total, chunk in zip(grad_w, chunk_w, strict=True):
+            total += chunk
+        for total, chunk in zip(grad_b, chunk_b, strict=True):
+            total += chunk
+        squared += float(np.square(residual).sum())
+        count += int(target.size)
+    scale = 2.0 * head.loss_weight / count
+    head._adam([value * scale for value in grad_w], [value * scale for value in grad_b])
+# HORIZON lever diagnostic protocol — 2026-09-10
+
+`DIAGNOSTIC_NOT_CLAIM`. This file is fixed before either horizon arm is fit.
+
+## Question and fixed inputs
+
+- Diagnose whether C3 convergence under-run is addressed by more full-batch
+  updates (Arm A) or by minibatch updates (Arm B). This is one route and one
+  seed, not a learning-rate grid and not a learning-rate selection.
+- Use the twelve fixed C3 LOAO anchors named by the LRSWEEP harness, including
+  only size>=2 rows for training and retaining the declared hard-zero
+  empty/singleton predictions for held-out diagnostics.
+- Use model seed `V025_LEARNER/seed/1` (`6407676579069309528`), C3 learning
+  rate `1e-3`, and every other architecture and Adam literal unchanged.
+- Import and reuse the LRSWEEP harness at
+  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`
+  (SHA-256 `dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6`),
+  its frozen rule (SHA-256
+  `0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19`),
+  and its results (SHA-256
+  `9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861`)
+  directly and without modifying those artifacts.
+
+## Common cadence and rule
+
+- Cap both arms at 4,000 optimizer updates and evaluate at update 0 and every
+  100 updates through 4,000.
+- At each destination cadence `k`, apply LRSWEEP's identical four checks to
+  `k-100 -> k`: objective relative absolute motion <= 0.01; held-out level R2
+  absolute motion <= 0.01; held-out within-group ordering absolute motion <=
+  0.005; held-out top-1 absolute motion <= 0.005. The first finite destination
+  cadence satisfying all four is that arm's first admissible update.
+- The checkpoint training objective is always evaluated on the complete LOAO
+  training fold, including for Arm B. A last-minibatch loss is not used.
+
+## Arms
+
+- Arm A: the LRSWEEP C3 full-batch gradient aggregation verbatim, one Adam
+  update over all eleven training anchors per optimizer step.
+- Arm B: batch size 256. For each LOAO fold, concatenate the eleven training
+  anchors in the fixed LRSWEEP filename order. Initialise an independent PCG64
+  generator from the SHA-256 domain seed
+  `V025_HORIZON/C3/minibatch-shuffle/seed/1`. At the start of every pass,
+  generate a permutation of all training rows; consume consecutive batches of
+  256 without replacement within that pass; include the final remainder batch;
+  then reshuffle for the next pass. Rows recur across passes. Each fold starts
+  a fresh generator at the same declared shuffle seed. This deterministic
+  ordering is separate from the unchanged model-initialisation seed.
+- Minibatching is a training-procedure change, not a hyperparameter.
+
+## Scope and resources
+
+- Metrics are convergence diagnostics only and are never evidence about EE.
+  Compute no EE quantity and perform no selection on EE.
+- Read only the twelve C3 files fixed in LRSWEEP. Do not discover or read any
+  evaluation-only claim dates.
+- Run both arms sequentially in one Python process using only
+  `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, all named BLAS
+  thread variables equal to one, and an address-space limit below 3 GiB.
+- Print progress as `step k/N` and print peak RSS. If one-minute load average
+  exceeds 30 at a cadence boundary, stop before more training and record a
+  load pause rather than pushing through.
+
+#!/usr/bin/env python3
+"""C3 horizon-vs-minibatch convergence diagnostic; computes no EE quantity."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import math
+import os
+from pathlib import Path
+import resource
+import sys
+import time
+from typing import Callable
+
+
+ROOT = Path("/home/sat/mcrl-v025-horizon-ws")
+OUT = ROOT / ".scratch/horizon-lever"
+SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
+SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
+SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
+SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
+SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
+EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
+THREAD_ENV = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
+)
+RSS_LIMIT_BYTES = 3 * 1024**3 - 1
+MAX_UPDATES = 4000
+CADENCE = 100
+BATCH_SIZE = 256
+SHUFFLE_DOMAIN = "V025_HORIZON/C3/minibatch-shuffle/seed/1"
+EXPECTED_HASHES = {
+    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
+    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
+    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
+    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
+}
+
+
+class LoadPause(RuntimeError):
+    pass
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def atomic_json(path: Path, payload: object) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def verify_runtime() -> None:
+    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
+        raise RuntimeError(f"wrong interpreter: {sys.executable}")
+    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
+    if wrong:
+        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
+    if os.getpriority(os.PRIO_PROCESS, 0) != 19:
+        raise RuntimeError(f"process niceness is not 19: {os.getpriority(os.PRIO_PROCESS, 0)}")
+    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
+    if actual != EXPECTED_HASHES:
+        raise RuntimeError(f"sealed source hash mismatch: {actual}")
+
+
+def load_average() -> float:
+    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
+
+
+def guard_load() -> float:
+    value = load_average()
+    if value > 30.0:
+        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
+    return value
+
+
+def import_sweep():
+    sys.path.insert(0, str(SOURCE_ROOT / "src"))
+    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load sealed LRSWEEP harness")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
+    return module
+
+
+def record_checkpoint(sweep, head, train, test):
+    loss, count = sweep.c3_loss(head, train)
+    if not math.isfinite(loss) or not sweep.parameters_finite(head):
+        raise RuntimeError("non-finite objective or parameter at checkpoint")
+    prediction = sweep.np.zeros_like(test.truth)
+    prediction[test.train_indices] = head._forward(test.x)[0]
+    return loss, count, sweep.parameter_norm(head), prediction
+
+
+def make_minibatch_updater(sweep, head, train) -> Callable[[], float]:
+    states = sweep.np.concatenate([anchor.x for anchor in train], axis=0)
+    targets = sweep.np.concatenate([
+        anchor.truth[anchor.train_indices] for anchor in train
+    ])
+    rng = sweep.np.random.default_rng(sweep.seed_from_domain(SHUFFLE_DOMAIN))
+    order = sweep.np.empty(0, dtype=sweep.np.int64)
+    cursor = 0
+
+    def update() -> float:
+        nonlocal order, cursor
+        if cursor >= order.size:
+            order = rng.permutation(states.shape[0])
+            cursor = 0
+        stop = min(cursor + BATCH_SIZE, order.size)
+        selected = order[cursor:stop]
+        cursor = stop
+        return head.update_scalar(states[selected], targets[selected])
+
+    return update
+
+
+def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
+    changes = {
+        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
+        / max(abs(left["training_objective"]), 1e-12),
+        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
+        "pairwise_ordering_absolute": abs(
+            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
+        ),
+        "top1_accuracy_absolute": abs(
+            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
+        ),
+    }
+    passed = {
+        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
+        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
+        "pairwise_ordering": changes["pairwise_ordering_absolute"]
+        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
+        "top1_accuracy": changes["top1_accuracy_absolute"]
+        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
+    }
+    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
+
+
+def run_arm(sweep, data, arm: str, progress: list[int], total_work: int) -> dict[str, object]:
+    checkpoints = tuple(range(0, MAX_UPDATES + 1, CADENCE))
+    predictions = {step: [None] * len(data.anchors) for step in checkpoints}
+    objectives = {step: [] for step in checkpoints}
+    norms = {step: [] for step in checkpoints}
+    interval_total = {step: [] for step in checkpoints[1:]}
+    interval_update = {step: [] for step in checkpoints[1:]}
+    interval_checkpoint = {step: [] for step in checkpoints[1:]}
+    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
+    arm_started = time.perf_counter()
+    load_observed = [guard_load()]
+
+    for fold_index, test in enumerate(data.anchors):
+        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
+        fold_started = time.perf_counter()
+        head = sweep.AdamMLPHead.create(
+            test.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
+        )
+        initial_started = time.perf_counter()
+        loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
+        initial_checkpoint_s = time.perf_counter() - initial_started
+        objectives[0].append((loss, count))
+        norms[0].append(norm)
+        predictions[0][fold_index] = prediction
+        if arm == "A":
+            updater = lambda: sweep.c3_update(head, train)
+        else:
+            updater = make_minibatch_updater(sweep, head, train)
+
+        previous_end = fold_started
+        update_accumulator = 0.0
+        for step in range(1, MAX_UPDATES + 1):
+            update_started = time.perf_counter()
+            with sweep.np.errstate(all="ignore"):
+                loss_before_update = updater()
+            update_accumulator += time.perf_counter() - update_started
+            if not math.isfinite(loss_before_update) or not sweep.parameters_finite(head):
+                raise RuntimeError(f"arm {arm} fold {fold_index + 1} diverged at update {step}")
+            if step % CADENCE:
+                continue
+            checkpoint_started = time.perf_counter()
+            loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
+            checkpoint_s = time.perf_counter() - checkpoint_started
+            objectives[step].append((loss, count))
+            norms[step].append(norm)
+            predictions[step][fold_index] = prediction
+            now = time.perf_counter()
+            interval_total[step].append(now - previous_end)
+            interval_update[step].append(update_accumulator)
+            interval_checkpoint[step].append(checkpoint_s + (initial_checkpoint_s if step == CADENCE else 0.0))
+            previous_end = now
+            update_accumulator = 0.0
+            progress[0] += CADENCE
+            current_load = load_average()
+            load_observed.append(current_load)
+            print(
+                f"step {progress[0]}/{total_work} arm={arm} "
+                f"fold={fold_index + 1}/{len(data.anchors)} update={step}/{MAX_UPDATES} "
+                f"load1={current_load:.2f}",
+                flush=True,
+            )
+            if current_load > 30.0:
+                raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
+
+    trajectory = {}
+    for step in checkpoints:
+        weighted_loss = sum(value * count for value, count in objectives[step]) / sum(
+            count for _, count in objectives[step]
+        )
+        held_out = sweep.c3_metric(
+            [value for value in predictions[step] if value is not None], data.anchors
+        )
+        trajectory[str(step)] = {
+            "training_objective": float(weighted_loss),
+            "held_out": held_out,
+            "parameter_l2": sweep.summarize(norms[step]),
+        }
+
+    checks = {}
+    first_admissible = None
+    for step in checkpoints[1:]:
+        check = stability(sweep, trajectory[str(step - CADENCE)], trajectory[str(step)])
+        checks[str(step)] = check
+        if first_admissible is None and check["admissible"]:
+            first_admissible = step
+
+    total_by_interval = [sum(interval_total[step]) for step in checkpoints[1:]]
+    update_by_interval = [sum(interval_update[step]) for step in checkpoints[1:]]
+    checkpoint_by_interval = [sum(interval_checkpoint[step]) for step in checkpoints[1:]]
+    cumulative = []
+    running = 0.0
+    for value in total_by_interval:
+        running += value
+        cumulative.append(running)
+    return {
+        "arm": arm,
+        "procedure": "full_batch" if arm == "A" else "minibatch",
+        "trajectory": trajectory,
+        "cadence_checks": checks,
+        "first_admissible_update": first_admissible,
+        "wall_s": time.perf_counter() - arm_started,
+        "timing": {
+            "total_s_per_100_updates_across_12_loao_folds": total_by_interval,
+            "update_only_s_per_100_updates_across_12_loao_folds": update_by_interval,
+            "checkpoint_s_per_100_updates_across_12_loao_folds": checkpoint_by_interval,
+            "cumulative_total_s_across_12_loao_folds": cumulative,
+            "mean_total_s_per_100_updates_across_12_loao_folds": sum(total_by_interval) / len(total_by_interval),
+            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(update_by_interval) / len(update_by_interval),
+            "per_fold_interval_total_s": {str(step): interval_total[step] for step in checkpoints[1:]},
+        },
+        "maximum_observed_load1": max(load_observed),
+    }
+
+
+def equal_wall_comparison(arms: dict[str, dict[str, object]]) -> dict[str, object]:
+    a = arms["A"]
+    b = arms["B"]
+    a_times = a["timing"]["cumulative_total_s_across_12_loao_folds"]
+    b_times = b["timing"]["cumulative_total_s_across_12_loao_folds"]
+
+    def reached(times: list[float], budget: float) -> int:
+        return CADENCE * sum(value <= budget for value in times)
+
+    comparisons = []
+    for label, budget in (
+        ("arm_a_cap_time", a_times[-1]),
+        ("arm_b_cap_time", b_times[-1]),
+        ("common_cap_time", min(a_times[-1], b_times[-1])),
+    ):
+        comparisons.append({
+            "budget_label": label,
+            "wall_s": budget,
+            "arm_a_update": reached(a_times, budget),
+            "arm_b_update": reached(b_times, budget),
+        })
+    if b["first_admissible_update"] is not None:
+        budget = b_times[b["first_admissible_update"] // CADENCE - 1]
+        comparisons.append({
+            "budget_label": "arm_b_first_admissible_time",
+            "wall_s": budget,
+            "arm_a_update": reached(a_times, budget),
+            "arm_b_update": b["first_admissible_update"],
+        })
+    return {"comparisons": comparisons}
+
+
+def main() -> None:
+    verify_runtime()
+    initial_load = guard_load()
+    sweep = import_sweep()
+    verify_runtime()
+    before = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
+    data = sweep.load_c3()
+    c3_paths = tuple(anchor.path for anchor in data.anchors)
+    c3_before = {str(path): file_sha256(path) for path in c3_paths}
+    shuffle_seed = sweep.seed_from_domain(SHUFFLE_DOMAIN)
+    total_work = 2 * len(data.anchors) * MAX_UPDATES
+    progress = [0]
+    started = time.perf_counter()
+    arms = {}
+    status = "complete"
+    pause_reason = None
+    try:
+        arms["A"] = run_arm(sweep, data, "A", progress, total_work)
+        arms["B"] = run_arm(sweep, data, "B", progress, total_work)
+    except LoadPause as error:
+        status = "paused_load"
+        pause_reason = str(error)
+    after = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
+    c3_after = {str(path): file_sha256(path) for path in c3_paths}
+    changed = [path for path in (*before, *c3_before) if (before | c3_before)[path] != (after | c3_after)[path]]
+    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if peak_kb * 1024 >= 3 * 1024**3:
+        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
+    original = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
+    original_c3 = next(
+        cell for cell in original["cells"]
+        if cell["route"] == "C3" and cell["learning_rate"] == 1e-3
+    )
+    reproduction = None
+    if "A" in arms:
+        fields = ("training_objective", "held_out")
+        reproduction = {
+            str(step): all(
+                arms["A"]["trajectory"][str(step)][field]
+                == original_c3["trajectory"][str(step)][field]
+                for field in fields
+            )
+            for step in range(0, 501, 100)
+        }
+    result = {
+        "schema": "mcrl-v025-horizon-lever-diagnostic-v1",
+        "status": status,
+        "pause_reason": pause_reason,
+        "scope": {
+            "diagnostic_not_claim": True,
+            "ee_quantities_computed": False,
+            "selection_on_ee": False,
+            "metrics_use": "convergence diagnostics only; never evidence about EE",
+        },
+        "route": "C3",
+        "learning_rate": 1e-3,
+        "model_seed_domain": "V025_LEARNER/seed/1",
+        "model_seed": sweep.SEED,
+        "maximum_updates": MAX_UPDATES,
+        "cadence_updates": CADENCE,
+        "stability_tolerances": sweep.STABILITY_TOLERANCES,
+        "minibatch": {
+            "batch_size": BATCH_SIZE,
+            "shuffle_rng": "numpy Generator(PCG64)",
+            "shuffle_seed_domain": SHUFFLE_DOMAIN,
+            "shuffle_seed": shuffle_seed,
+            "replacement": False,
+            "replacement_scope": "without replacement within each pass; rows recur after reshuffle next pass",
+            "remainder_batch_used": True,
+            "fresh_same_seed_per_loao_fold": True,
+            "classification": "training-procedure change, not a hyperparameter",
+        },
+        "inventory": {
+            "anchors": len(data.anchors),
+            "rows": sum(anchor.truth.size for anchor in data.anchors),
+            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
+            "input_files": [str(path) for path in c3_paths],
+        },
+        "arms": arms,
+        "equal_wall": equal_wall_comparison(arms) if len(arms) == 2 else None,
+        "arm_a_reproduces_lr_sweep_0_to_500": reproduction,
+        "resource_policy": {
+            "python_processes": 1,
+            "nice": os.getpriority(os.PRIO_PROCESS, 0),
+            "blas_threads": 1,
+            "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
+            "peak_rss_kb": peak_kb,
+            "initial_load1": initial_load,
+            "final_load1": load_average(),
+            "elapsed_wall_s": time.perf_counter() - started,
+        },
+        "source_sha256_before": before,
+        "source_sha256_after": after,
+        "c3_input_sha256_before": c3_before,
+        "c3_input_sha256_after": c3_after,
+        "changed_inputs": changed,
+    }
+    atomic_json(OUT / "results.json", result)
+    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
+    print(json.dumps({
+        "written": str(OUT / "results.json"),
+        "status": status,
+        "changed_inputs": changed,
+    }), flush=True)
+
+
+if __name__ == "__main__":
+    main()
+
+exec
+/bin/bash -lc "sed -n '260,620p' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+        top1_hits += int(target[selected] >= target.max() - 1e-12)
+        group_count += 1
+    return {
+        "r2": float(1.0 - rss / tss) if tss else math.nan,
+        "pairwise_ordering": float(credit / pairs) if pairs else math.nan,
+        "top1_accuracy": float(top1_hits / group_count) if group_count else math.nan,
+        "rows": int(truth.size),
+        "pairs": pairs,
+        "groups": group_count,
+    }
+
+
+def run_pair(data: PairData, lr: float, maximum_epoch: int = 500, maximum_folds: int | None = None) -> dict[str, object]:
+    folds = list(np.unique(data.anchor))
+    if maximum_folds is not None:
+        folds = folds[:maximum_folds]
+    checkpoints = tuple(value for value in CHECKPOINTS if value <= maximum_epoch)
+    predictions = {epoch: np.full(data.y.shape, np.nan) for epoch in checkpoints}
+    objectives = {epoch: [] for epoch in checkpoints}
+    norms = {epoch: [] for epoch in checkpoints}
+    divergence_rows = []
+    literal = dict(LEGACY_TRAINER_LITERALS[data.route])
+    literal["learning_rate"] = lr
+    started = time.perf_counter()
+    for fold_number, value in enumerate(folds, start=1):
+        test = data.anchor == value
+        train = ~test
+        batch = pair_batch(data, train)
+        head = AdamMLPHead.create(data.x.shape[1], literal, np.random.default_rng(SEED))
+        for epoch in range(maximum_epoch + 1):
+            if epoch in checkpoints:
+                loss = pair_objective(head, batch)
+                if not math.isfinite(loss) or not parameters_finite(head):
+                    divergence_rows.append({"fold": int(value), "epoch": epoch, "phase": "checkpoint"})
+                    break
+                objectives[epoch].append((loss, int(batch.target_deltas.size)))
+                norms[epoch].append(parameter_norm(head))
+                predictions[epoch][test] = head._forward(data.x[test])[0]
+            if epoch == maximum_epoch:
+                break
+            with np.errstate(all="ignore"):
+                loss_before_update = head.update(batch)
+            if not math.isfinite(loss_before_update) or not parameters_finite(head):
+                divergence_rows.append({"fold": int(value), "epoch": epoch + 1, "phase": "update"})
+                break
+        print(json.dumps({
+            "event": "fold", "route": data.route, "lr": lr,
+            "fold": fold_number, "folds": len(folds),
+            "diverged": bool(divergence_rows and divergence_rows[-1]["fold"] == int(value)),
+        }), flush=True)
+    usable = np.isin(data.anchor, np.asarray(folds))
+    trajectory = {}
+    for epoch in checkpoints:
+        finite_predictions = bool(np.isfinite(predictions[epoch][usable]).all())
+        if len(objectives[epoch]) == len(folds) and finite_predictions:
+            weighted_loss = sum(value * count for value, count in objectives[epoch]) / sum(count for _, count in objectives[epoch])
+            trajectory[str(epoch)] = {
+                "training_objective": float(weighted_loss),
+                "held_out": metric(predictions[epoch][usable], data.y[usable], data.group[usable]),
+                "parameter_l2": summarize(norms[epoch]),
+            }
+        else:
+            trajectory[str(epoch)] = None
+    return finalize_cell(
+        data.route, lr, trajectory, divergence_rows,
+        wall_s=time.perf_counter() - started,
+        schema=data.schema, schema_sha256=data.schema_sha256,
+        folds=len(folds), rows=int(usable.sum()), groups=int(np.unique(data.group[usable]).size),
+        pair_limit=PAIR_LIMIT,
+    )
+
+
+def c3_loss(head: AdamMLPHead, anchors: Iterable[C3Anchor]) -> tuple[float, int]:
+    squared = 0.0
+    count = 0
+    for anchor in anchors:
+        target = anchor.truth[anchor.train_indices]
+        prediction = head._forward(anchor.x)[0]
+        squared += float(np.square(prediction - target).sum())
+        count += int(target.size)
+    return float(head.loss_weight * squared / count), count
+
+
+def c3_update(head: AdamMLPHead, anchors: Iterable[C3Anchor]) -> float:
+    grad_w = [np.zeros_like(value) for value in head.weights]
+    grad_b = [np.zeros_like(value) for value in head.biases]
+    squared = 0.0
+    count = 0
+    for anchor in anchors:
+        target = anchor.truth[anchor.train_indices]
+        prediction, activations, preactivations = head._forward(anchor.x)
+        residual = prediction - target
+        chunk_w, chunk_b = head._backward(activations, preactivations, residual)
+        for total, chunk in zip(grad_w, chunk_w, strict=True):
+            total += chunk
+        for total, chunk in zip(grad_b, chunk_b, strict=True):
+            total += chunk
+        squared += float(np.square(residual).sum())
+        count += int(target.size)
+    scale = 2.0 * head.loss_weight / count
+    head._adam([value * scale for value in grad_w], [value * scale for value in grad_b])
+    return float(head.loss_weight * squared / count)
+
+
+def c3_metric(predictions: list[np.ndarray], anchors: tuple[C3Anchor, ...]) -> dict[str, float | int]:
+    truth = np.concatenate([anchor.truth for anchor in anchors])
+    prediction = np.concatenate(predictions)
+    group = np.concatenate([
+        np.full(anchor.truth.shape, index, dtype=np.int16)
+        for index, anchor in enumerate(anchors)
+    ])
+    return metric(prediction, truth, group)
+
+
+def run_c3(data: C3Data, lr: float, maximum_epoch: int = 500, maximum_folds: int | None = None) -> dict[str, object]:
+    fold_indices = list(range(len(data.anchors)))
+    if maximum_folds is not None:
+        fold_indices = fold_indices[:maximum_folds]
+    checkpoints = tuple(value for value in CHECKPOINTS if value <= maximum_epoch)
+    predictions: dict[int, list[np.ndarray | None]] = {
+        epoch: [None] * len(fold_indices) for epoch in checkpoints
+    }
+    objectives = {epoch: [] for epoch in checkpoints}
+    norms = {epoch: [] for epoch in checkpoints}
+    divergence_rows = []
+    literal = dict(LEGACY_TRAINER_LITERALS["C3"])
+    literal["learning_rate"] = lr
+    started = time.perf_counter()
+    for local_fold, test_index in enumerate(fold_indices):
+        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != test_index)
+        test = data.anchors[test_index]
+        head = AdamMLPHead.create(test.x.shape[1], literal, np.random.default_rng(SEED))
+        for epoch in range(maximum_epoch + 1):
+            if epoch in checkpoints:
+                loss, count = c3_loss(head, train)
+                if not math.isfinite(loss) or not parameters_finite(head):
+                    divergence_rows.append({"fold": test.path.stem, "epoch": epoch, "phase": "checkpoint"})
+                    break
+                objectives[epoch].append((loss, count))
+                norms[epoch].append(parameter_norm(head))
+                prediction = np.zeros_like(test.truth)
+                prediction[test.train_indices] = head._forward(test.x)[0]
+                predictions[epoch][local_fold] = prediction
+            if epoch == maximum_epoch:
+                break
+            with np.errstate(all="ignore"):
+                loss_before_update = c3_update(head, train)
+            if not math.isfinite(loss_before_update) or not parameters_finite(head):
+                divergence_rows.append({"fold": test.path.stem, "epoch": epoch + 1, "phase": "update"})
+                break
+        print(json.dumps({
+            "event": "fold", "route": "C3", "lr": lr,
+            "fold": local_fold + 1, "folds": len(fold_indices),
+            "diverged": bool(divergence_rows and divergence_rows[-1]["fold"] == test.path.stem),
+        }), flush=True)
+    selected_anchors = tuple(data.anchors[index] for index in fold_indices)
+    trajectory = {}
+    for epoch in checkpoints:
+        complete = len(objectives[epoch]) == len(fold_indices) and all(
+            value is not None for value in predictions[epoch]
+        )
+        if complete:
+            weighted_loss = sum(value * count for value, count in objectives[epoch]) / sum(count for _, count in objectives[epoch])
+            trajectory[str(epoch)] = {
+                "training_objective": float(weighted_loss),
+                "held_out": c3_metric([value for value in predictions[epoch] if value is not None], selected_anchors),
+                "parameter_l2": summarize(norms[epoch]),
+            }
+        else:
+            trajectory[str(epoch)] = None
+    return finalize_cell(
+        "C3", lr, trajectory, divergence_rows,
+        wall_s=time.perf_counter() - started,
+        schema=data.schema, schema_sha256=data.schema_sha256,
+        folds=len(fold_indices), rows=sum(anchor.truth.size for anchor in selected_anchors),
+        groups=len(selected_anchors), pair_limit=None,
+    )
+
+
+def summarize(values: list[float]) -> dict[str, float]:
+    return {
+        "mean": float(np.mean(values)), "minimum": float(np.min(values)),
+        "maximum": float(np.max(values)), "rms": float(np.sqrt(np.mean(np.square(values)))),
+    }
+
+
+def finalize_cell(
+    route: str, lr: float, trajectory: dict[str, object], divergence_rows: list[dict[str, object]],
+    **metadata: object,
+) -> dict[str, object]:
+    divergence_epoch = min((int(row["epoch"]) for row in divergence_rows), default=None)
+    stable = None
+    changes = None
+    if divergence_epoch is None and trajectory.get("400") is not None and trajectory.get("500") is not None:
+        left = trajectory["400"]
+        right = trajectory["500"]
+        objective_relative = abs(float(right["training_objective"]) - float(left["training_objective"])) / max(
+            abs(float(left["training_objective"])), 1e-12
+        )
+        changes = {
+            "objective_relative_abs": objective_relative,
+            "r2_absolute": abs(float(right["held_out"]["r2"]) - float(left["held_out"]["r2"])),
+            "pairwise_ordering_absolute": abs(float(right["held_out"]["pairwise_ordering"]) - float(left["held_out"]["pairwise_ordering"])),
+            "top1_accuracy_absolute": abs(float(right["held_out"]["top1_accuracy"]) - float(left["held_out"]["top1_accuracy"])),
+        }
+        stable = {
+            "objective": changes["objective_relative_abs"] <= STABILITY_TOLERANCES["objective_relative"],
+            "r2": changes["r2_absolute"] <= STABILITY_TOLERANCES["r2_absolute"],
+            "pairwise_ordering": changes["pairwise_ordering_absolute"] <= STABILITY_TOLERANCES["pairwise_ordering_absolute"],
+            "top1_accuracy": changes["top1_accuracy_absolute"] <= STABILITY_TOLERANCES["top1_accuracy_absolute"],
+        }
+    last_improved = {key: None for key in ("objective", "r2", "pairwise_ordering", "top1_accuracy")}
+    for previous, current in zip(CHECKPOINTS[:-1], CHECKPOINTS[1:], strict=True):
+        left = trajectory.get(str(previous))
+        right = trajectory.get(str(current))
+        if left is None or right is None:
+            continue
+        relative_drop = (float(left["training_objective"]) - float(right["training_objective"])) / max(
+            abs(float(left["training_objective"])), 1e-12
+        )
+        if relative_drop > STABILITY_TOLERANCES["objective_relative"]:
+            last_improved["objective"] = current
+        for key, tolerance_key in (
+            ("r2", "r2_absolute"),
+            ("pairwise_ordering", "pairwise_ordering_absolute"),
+            ("top1_accuracy", "top1_accuracy_absolute"),
+        ):
+            improvement = float(right["held_out"][key]) - float(left["held_out"][key])
+            if improvement > STABILITY_TOLERANCES[tolerance_key]:
+                last_improved[key] = current
+    admissible = bool(divergence_epoch is None and stable is not None and all(stable.values()))
+    return {
+        "route": route, "learning_rate": lr,
+        "divergence": {
+            "diverged": divergence_epoch is not None,
+            "earliest_epoch": divergence_epoch,
+            "fold_events": divergence_rows,
+            "criterion": "non-finite objective or trainable parameter",
+        },
+        "trajectory": trajectory,
+        "stability_400_to_500": stable,
+        "changes_400_to_500": changes,
+        "last_material_improvement_epoch": last_improved,
+        "admissible_on_convergence": admissible,
+        **metadata,
+    }
+
+
+def constant_floor_pair(data: PairData) -> dict[str, object]:
+    prediction = np.empty_like(data.y)
+    for value in np.unique(data.anchor):
+        test = data.anchor == value
+        prediction[test] = float(data.y[~test].mean())
+    return metric(prediction, data.y, data.group)
+
+
+def constant_floor_c3(data: C3Data, anchored: bool) -> dict[str, object]:
+    predictions = []
+    for test_index, test in enumerate(data.anchors):
+        train = [anchor for index, anchor in enumerate(data.anchors) if index != test_index]
+        if anchored:
+            values = np.concatenate([anchor.truth[anchor.train_indices] for anchor in train])
+            prediction = np.zeros_like(test.truth)
+            prediction[test.train_indices] = float(values.mean())
+        else:
+            values = np.concatenate([anchor.truth for anchor in train])
+            prediction = np.full_like(test.truth, float(values.mean()))
+        predictions.append(prediction)
+    return c3_metric(predictions, data.anchors)
+
+
+def inventory(c1: PairData, c2: PairData, c3: C3Data) -> dict[str, object]:
+    sizes = np.concatenate([anchor.size for anchor in c3.anchors])
+    unique, counts = np.unique(sizes, return_counts=True)
+    return {
+        "C1": {"anchors": int(np.unique(c1.anchor).size), "rows": int(c1.y.size), "groups": int(np.unique(c1.group).size)},
+        "C2": {"anchors": int(np.unique(c2.anchor).size), "rows": int(c2.y.size), "groups": int(np.unique(c2.group).size)},
+        "C3": {
+            "anchors": len(c3.anchors), "rows": int(sum(anchor.truth.size for anchor in c3.anchors)),
+            "trainable_rows": int(sum(anchor.train_indices.size for anchor in c3.anchors)),
+            "coalition_size_counts": {str(int(size)): int(count) for size, count in zip(unique, counts, strict=True)},
+        },
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--routes", nargs="+", choices=("C1", "C2", "C3"), default=("C1", "C2", "C3"))
+    parser.add_argument("--lrs", nargs="+", type=float, default=LRS)
+    parser.add_argument("--smoke", action="store_true")
+    args = parser.parse_args()
+    verify_runtime()
+    OUT.mkdir(parents=True, exist_ok=True)
+    learner_path = ROOT / "src/mcrl/stagec_v025/learner.py"
+    c1, c2, c3 = load_c1(), load_c2(), load_c3()
+    inputs = (*c1.input_files, *c2.input_files, *(anchor.path for anchor in c3.anchors), learner_path)
+    before = {str(path): file_sha256(path) for path in inputs}
+    maximum_epoch = 2 if args.smoke else 500
+    maximum_folds = 1 if args.smoke else None
+    cells = []
+    for route in args.routes:
+        for lr in args.lrs:
+            tag = f"{route.lower()}-lr-{lr:.0e}".replace("e-0", "e-")
+            cache = OUT / f"{tag}.json"
+            if cache.exists() and not args.smoke:
+                cell = json.loads(cache.read_text(encoding="utf-8"))
+                print(json.dumps({"event": "cache", "route": route, "lr": lr}), flush=True)
+            else:
+                if route == "C1":
+                    cell = run_pair(c1, lr, maximum_epoch, maximum_folds)
+                elif route == "C2":
+                    cell = run_pair(c2, lr, maximum_epoch, maximum_folds)
+                else:
+                    cell = run_c3(c3, lr, maximum_epoch, maximum_folds)
+                if not args.smoke:
+                    atomic_json(cache, cell)
+            cells.append(cell)
+            print(json.dumps({
+                "event": "cell", "route": route, "lr": lr,
+                "admissible": cell["admissible_on_convergence"],
+                "wall_s": cell["wall_s"],
+            }), flush=True)
+    after = {str(path): file_sha256(path) for path in inputs}
+    changed = [path for path in before if before[path] != after[path]]
+    if changed:
+        raise RuntimeError(f"read-only inputs changed during sweep: {changed}")
+    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if peak_kb * 1024 >= RSS_LIMIT_BYTES:
+        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
+    result = {
+        "schema": "mcrl-v025-lr-convergence-sweep-v1",
+        "status": "DIAGNOSTIC_NOT_CLAIM",
+        "routes": list(args.routes), "learning_rates": list(args.lrs),
+        "seed": SEED, "checkpoints": list(CHECKPOINTS),
+        "stability_tolerances": STABILITY_TOLERANCES,
+        "inventory": inventory(c1, c2, c3),
+        "constant_floors": {
+            "C1": constant_floor_pair(c1), "C2": constant_floor_pair(c2),
+            "C3": constant_floor_c3(c3, anchored=False),
+            "C3_anchored_supplement": constant_floor_c3(c3, anchored=True),
+        },
+        "cells": cells,
+        "resource_policy": {
+            "python_processes": 1, "nice": os.nice(0), "blas_threads": 1,
+            "rlimit_as_bytes": RSS_LIMIT_BYTES, "peak_rss_kb": peak_kb,
+        },
+        "input_sha256_before": before, "input_sha256_after": after,
+        "changed_inputs": changed,
+        "scope": {
+            "loss_use": "convergence diagnostic only; never EE evidence",
+            "ee_quantities_computed": False, "production_training": False,
+            "policy_run": False, "acceptance_test": False,
+        },
+    }
+    output = OUT / ("smoke.json" if args.smoke else "results.json")
+    atomic_json(output, result)
+    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
+    print(json.dumps({"written": str(output), "changed_inputs": changed}), flush=True)
+
+
+if __name__ == "__main__":
+
+exec
+/bin/bash -lc "sed -n '1,340p' /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py; git -C /home/sat/mcrl-v025-decay-ws status --short --branch; cat /home/sat/mcrl-v025-decay-ws/.git/HEAD; cat /home/sat/mcrl-v025-decay-ws/.git/config" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+"""Deterministic pairwise zero-bootstrap learner and six-arm orchestration."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Literal, Mapping, Sequence
+
+import numpy as np
+from mcrl.physics_v025.tapes import seed_from_domain
+
+from .canonical import (
+    StageCContractError,
+    canonical_sha256,
+    file_sha256,
+    float_hex,
+    parse_float_hex,
+    read_verified_json,
+    write_once_json,
+)
+from .shards import SourceShard
+from .state import Q1_SCHEMA_SHA256, Q2_SCHEMA_SHA256, SourceRow
+from .coalitions import CoalitionContext, CoalitionShard
+
+
+Route = Literal["C1", "C2", "C3"]
+ROUTES: tuple[Route, ...] = ("C1", "C2", "C3")
+LEARNED_ARMS = ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL")
+ARM_ORDER = (*LEARNED_ARMS, "BASELINE")
+SOURCE_MAP: Mapping[str, Mapping[Route, str]] = {
+    "FULL": {"C1": "informed", "C2": "informed", "C3": "informed"},
+    "DROP_C1": {"C1": "neutral", "C2": "informed", "C3": "informed"},
+    "DROP_C2": {"C1": "informed", "C2": "neutral", "C3": "informed"},
+    "DROP_C3": {"C1": "informed", "C2": "informed", "C3": "neutral"},
+    "ALL_NEUTRAL_CONTROL": {"C1": "neutral", "C2": "neutral", "C3": "neutral"},
+}
+CHECKPOINT_SCHEMA = "mcrl-v025-stagec-lineage-checkpoint-v1"
+CHECKPOINT_EVERY_SOURCE_EPOCHS = 100
+LEGACY_EPOCH_BUDGET = 2000
+LEARNER_SEED_DOMAINS = tuple(f"V025_LEARNER/seed/{index}" for index in range(1, 13))
+LEARNER_SEEDS = tuple(seed_from_domain(domain) for domain in LEARNER_SEED_DOMAINS)
+
+# Literal copy of the heterogeneous V0.23 seam and the production classes it
+# delegates to.  Only input_dim is supplied by the sealed Stage-C schemas.
+LEGACY_TRAINER_LITERALS: Mapping[str, object] = {
+    "C1": {
+        "hidden_layers": (8,), "activation": "relu", "learning_rate": 1.0e-2,
+        "adam_betas": (0.9, 0.999), "adam_epsilon": 1.0e-8,
+        "weight_decay": 0.0, "gauge_beta": 0.2, "loss_weight": 1.0,
+    },
+    "C2": {
+        "hidden_layers": (100, 50, 50), "activation": "tanh", "learning_rate": 1.0e-3,
+        "adam_betas": (0.9, 0.999), "adam_epsilon": 1.0e-8,
+        "weight_decay": 0.0, "gauge_beta": 0.1, "loss_weight": 1.0,
+    },
+    "C3": {
+        "hidden_layers": (64, 64), "activation": "relu", "learning_rate": 1.0e-3,
+        "adam_betas": (0.9, 0.999), "adam_epsilon": 1.0e-8,
+        "weight_decay": 0.0, "loss_weight": 1.0,
+    },
+    "batch": "one_typed_deterministic_full_batch_update_per_route_per_source_epoch",
+    "route_order": ROUTES,
+    "epoch_budget": LEGACY_EPOCH_BUDGET,
+    "stopping": "exact_epoch_budget_no_early_selection",
+    "serialization": "all_heads_and_adam_state_with_authenticated_source_cursor",
+}
+LEGACY_TRAINER_LITERALS_SHA256 = canonical_sha256(LEGACY_TRAINER_LITERALS)
+
+
+@dataclass(frozen=True, slots=True)
+class PairwiseBatch:
+    """A typed fixed aggregate batch. There is intentionally no next state."""
+
+    route: Route
+    reference_states: np.ndarray
+    candidate_states: np.ndarray
+    target_deltas: np.ndarray
+    row_identities: tuple[str, ...]
+    source_authority_sha256: str
+    source_identity: str
+    physics_digest: str
+    digest: str
+
+    @classmethod
+    def create(
+        cls,
+        route: Route,
+        reference_states: Sequence[Sequence[float]],
+        candidate_states: Sequence[Sequence[float]],
+        target_deltas: Sequence[float],
+        row_identities: Sequence[str],
+        source_authority_sha256: str,
+        *,
+        source_identity: str = "informed",
+        physics_digest: str,
+    ) -> "PairwiseBatch":
+        reference = np.asarray(reference_states, dtype=np.float64)
+        candidate = np.asarray(candidate_states, dtype=np.float64)
+        targets = np.asarray(target_deltas, dtype=np.float64)
+        identities = tuple(row_identities)
+        if route not in ROUTES:
+            raise StageCContractError("unknown pairwise route")
+        if reference.ndim != 2 or candidate.shape != reference.shape:
+            raise StageCContractError("pairwise state tensors must be equal rank-2 arrays")
+        if targets.shape != (reference.shape[0],) or len(identities) != reference.shape[0]:
+            raise StageCContractError("pairwise target/identity count drifted")
+        if (
+            reference.shape[0] < 1
+            or not np.isfinite(reference).all()
+            or not np.isfinite(candidate).all()
+            or not np.isfinite(targets).all()
+        ):
+            raise StageCContractError("pairwise batch must be nonempty and finite")
+        if len(source_authority_sha256) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in source_authority_sha256
+        ):
+            raise StageCContractError("source authority must be a lowercase SHA-256")
+        if len(physics_digest) != 64 or any(character not in "0123456789abcdef" for character in physics_digest):
+            raise StageCContractError("pairwise batch physics digest is invalid")
+        payload = {
+            "schema": "mcrl-v025-stagec-pairwise-batch-v1",
+            "route": route,
+            "shape": list(reference.shape),
+            "reference": [[float_hex(v) for v in row] for row in reference],
+            "candidate": [[float_hex(v) for v in row] for row in candidate],
+            "targets": [float_hex(v) for v in targets],
+            "row_identities": list(identities),
+            "source_authority_sha256": source_authority_sha256,
+            "source_identity": source_identity,
+            "physics_digest": physics_digest,
+            "zero_bootstrap": True,
+        }
+        return cls(
+            route,
+            reference,
+            candidate,
+            targets,
+            identities,
+            source_authority_sha256,
+            source_identity,
+            physics_digest,
+            canonical_sha256(payload),
+        )
+
+    def neutral(
+        self, definition: "NeutralSourceDefinition | None" = None
+    ) -> "PairwiseBatch":
+        if definition is not None and definition.route != self.route:
+            raise StageCContractError("neutral source route disagrees with batch")
+        return PairwiseBatch.create(
+            self.route,
+            self.reference_states,
+            self.candidate_states,
+            np.zeros_like(self.target_deltas),
+            self.row_identities,
+            self.source_authority_sha256,
+            source_identity=(
+                "neutral:legacy"
+                if definition is None
+                else f"neutral:{definition.digest}"
+            ),
+            physics_digest=self.physics_digest,
+        )
+
+
+def _route_state(row: SourceRow, route: Route) -> tuple[float, ...]:
+    if route == "C1":
+        return row.q1_state
+    if route == "C2":
+        return row.q2_state
+    return (*row.q1_state, *row.q2_state)
+
+
+def _route_label(row: SourceRow, route: Route) -> float:
+    if route == "C3":
+        # Compatibility-only build-1 synthetic batch.  Contract-v1 training
+        # uses CoalitionBatch and never consumes a per-action C3 label.
+        return 0.0
+    field = {
+        "C1": row.c1_label_normalized_hex,
+        "C2": row.c2_label_normalized_hex,
+    }[route]
+    return parse_float_hex(field, field=f"{route}.normalized_label")
+
+
+def build_pairwise_batches(shards: Sequence[SourceShard]) -> dict[Route, PairwiseBatch]:
+    rows = tuple(row for shard in shards for row in shard.rows)
+    physics = {row.physics_digest for row in rows}
+    if len(physics) != 1:
+        raise StageCContractError("pairwise source shards mix physics digests")
+    physics_digest = next(iter(physics))
+    source_authority_sha256 = canonical_sha256(
+        {
+            "schema": "mcrl-v025-stagec-source-authority-v1",
+            "shards": [shard.file_sha256 for shard in shards],
+            "authorities": sorted(
+                {
+                    (
+                        row.code_digest,
+                        row.physics_digest,
+                        row.launch_digest,
+                        row.catalogue_digest,
+                        row.provider_digest,
+                        row.archive_digest,
+                        row.setting_digest,
+                        row.calibration_digest,
+                        row.allocation_manifest_digest,
+                        row.q1_schema_sha256,
+                        row.q2_schema_sha256,
+                    )
+                    for row in rows
+                }
+            ),
+        }
+    )
+    groups: dict[tuple[str, str, int], list[SourceRow]] = {}
+    for row in rows:
+        groups.setdefault((row.world_id, row.anchor_id, row.user_id), []).append(row)
+    by_route: dict[Route, PairwiseBatch] = {}
+    for route in ROUTES:
+        references: list[tuple[float, ...]] = []
+        candidates: list[tuple[float, ...]] = []
+        targets: list[float] = []
+        identities: list[str] = []
+        for key in sorted(groups):
+            ordered = sorted(groups[key], key=lambda row: row.action_index)
+            shared_mask = ordered[0].action_mask
+            if any(row.action_mask != shared_mask for row in ordered):
+                raise StageCContractError("user-anchor rows disagree on the legal mask")
+            expected_indices = [
+                index for index, enabled in enumerate(shared_mask) if enabled
+            ]
+            if [row.action_index for row in ordered] != expected_indices:
+                raise StageCContractError("user-anchor rows do not cover each legal action once")
+            if sum(row.null_action for row in ordered) != 1:
+                raise StageCContractError("user-anchor requires exactly one legal null action")
+            reference_rows = [row for row in ordered if row.reference_action]
+            if len(reference_rows) != 1:
+                raise StageCContractError("every user-anchor requires exactly one BASE row")
+            reference = reference_rows[0]
+            for candidate in ordered:
+                if candidate.reference_action or not candidate.action_mask[candidate.action_index]:
+                    continue
+                references.append(_route_state(reference, route))
+                candidates.append(_route_state(candidate, route))
+                targets.append(_route_label(candidate, route) - _route_label(reference, route))
+                identities.append(
+                    f"{candidate.world_id}|{candidate.anchor_id}|{candidate.user_id}|{candidate.action_index}"
+                )
+        by_route[route] = PairwiseBatch.create(
+            route,
+            references,
+            candidates,
+            targets,
+            identities,
+            source_authority_sha256,
+            physics_digest=physics_digest,
+        )
+    return by_route
+
+
+@dataclass(slots=True)
+class LinearHead:
+    weights: np.ndarray
+    bias: float
+
+    def clone(self) -> "LinearHead":
+        return LinearHead(self.weights.copy(), float(self.bias))
+
+    def score(self, state: Sequence[float]) -> float:
+        values = np.asarray(state, dtype=np.float64)
+        if values.shape != self.weights.shape:
+            raise StageCContractError("learner state shape drifted")
+        return float(values @ self.weights + self.bias)
+
+    def update(self, batch: PairwiseBatch, *, learning_rate: float, gauge_weight: float) -> float:
+        # Pairwise fixed-target regression with a reference-zero gauge. No
+        # reward, next state, target network, discount, or bootstrap exists.
+        reference_q = batch.reference_states @ self.weights + self.bias
+        candidate_q = batch.candidate_states @ self.weights + self.bias
+        residual = candidate_q - reference_q - batch.target_deltas
+        count = float(batch.target_deltas.size)
+        gradient_w = (2.0 / count) * ((batch.candidate_states - batch.reference_states).T @ residual)
+        gradient_w += (2.0 * gauge_weight / count) * (batch.reference_states.T @ reference_q)
+        gradient_b = float((2.0 * gauge_weight / count) * reference_q.sum())
+        self.weights -= learning_rate * gradient_w
+        self.bias -= learning_rate * gradient_b
+        loss = float(np.mean(residual * residual) + gauge_weight * np.mean(reference_q * reference_q))
+        if not np.isfinite(self.weights).all() or not np.isfinite(self.bias) or not np.isfinite(loss):
+            raise StageCContractError("non-finite learner update")
+        return loss
+
+
+@dataclass(slots=True)
+class ThreeRouteModel:
+    heads: dict[Route, LinearHead]
+
+    def clone(self) -> "ThreeRouteModel":
+        return ThreeRouteModel({route: head.clone() for route, head in self.heads.items()})
+
+    def score(self, route: Route, state: Sequence[float]) -> float:
+        return self.heads[route].score(state)
+
+    def payload(self) -> dict[str, object]:
+        return {
+            route: {
+                "weights_hex": [float_hex(value) for value in self.heads[route].weights],
+                "bias_hex": float_hex(self.heads[route].bias),
+            }
+            for route in ROUTES
+        }
+
+
+def _initial_model(seed: int, dimensions: Mapping[Route, int]) -> ThreeRouteModel:
+    rng = np.random.default_rng(seed)
+    return ThreeRouteModel(
+        {
+            route: LinearHead(rng.normal(0.0, 0.01, dimensions[route]), 0.0)
+            for route in ROUTES
+        }
+    )
+
+
+class LineageOrchestrator:
+    """Five matched learned arms plus an external BASELINE policy."""
+
+    def __init__(
+        self,
+        *,
+        learner_seed: int,
+        batches: Mapping[Route, PairwiseBatch],
+        learning_rate: float = 0.02,
+        gauge_weight: float = 0.01,
+    ) -> None:
+        if set(batches) != set(ROUTES):
+            raise StageCContractError("orchestrator needs exactly C1/C2/C3 batches")
+        self.learner_seed = int(learner_seed)
+        self.batches = dict(batches)
+        self.learning_rate = float(learning_rate)
+## No commits yet on main
+ref: refs/heads/main
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+
+exec
+/bin/bash -lc "rg -n \"class AdamMLPHead|learning_rate|def _adam\" /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py | tail -30; sed -n '380,580p' /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+47:        "hidden_layers": (8,), "activation": "relu", "learning_rate": 1.0e-2,
+52:        "hidden_layers": (100, 50, 50), "activation": "tanh", "learning_rate": 1.0e-3,
+57:        "hidden_layers": (64, 64), "activation": "relu", "learning_rate": 1.0e-3,
+277:    def update(self, batch: PairwiseBatch, *, learning_rate: float, gauge_weight: float) -> float:
+287:        self.weights -= learning_rate * gradient_w
+288:        self.bias -= learning_rate * gradient_b
+333:        learning_rate: float = 0.02,
+340:        self.learning_rate = float(learning_rate)
+375:                    learning_rate=self.learning_rate,
+417:                "learning_rate_hex": float_hex(self.learning_rate),
+452:            "learning_rate_hex": float_hex(self.learning_rate),
+659:class AdamMLPHead:
+669:    learning_rate: float
+694:            learning_rate=float(literal["learning_rate"]),
+711:            self.activation, self.learning_rate, self.beta1, self.beta2,
+754:    def _adam(self, grad_w: list[np.ndarray], grad_b: list[np.ndarray]) -> None:
+766:            parameter -= self.learning_rate * corrected_m / (np.sqrt(corrected_v) + self.epsilon)
+774:            parameter -= self.learning_rate * (first / (1.0 - self.beta1**self.adam_step)) / (
+818:                "kind": "Adam", "learning_rate": self.learning_rate,
+883:    def update(self, batch: CoalitionBatch, *, learning_rate: float) -> float:
+890:        self.output_weights -= learning_rate * scale * (hidden.T @ residual)
+891:        self.output_bias -= learning_rate * float(scale * residual.sum())
+893:        self.input_weights -= learning_rate * scale * (hidden_gradient.T @ batch.invariant_states)
+894:        self.input_bias -= learning_rate * scale * hidden_gradient.sum(axis=0)
+        self.loss_history.append({"epoch": self.completed_source_epochs, "losses": epoch_losses})
+        return epoch_losses
+
+    def train(self, epochs: int, *, checkpoint_directory: str | Path | None = None) -> None:
+        if isinstance(epochs, bool) or epochs < 0:
+            raise StageCContractError("epochs must be a nonnegative integer")
+        for _ in range(epochs):
+            self.train_epoch()
+            if (
+                checkpoint_directory is not None
+                and self.completed_source_epochs % CHECKPOINT_EVERY_SOURCE_EPOCHS == 0
+            ):
+                path = Path(checkpoint_directory) / (
+                    f"learner-{self.learner_seed}-epoch-{self.completed_source_epochs:06d}.json"
+                )
+                self.write_checkpoint(path)
+
+    def checkpoint_payload(self) -> dict[str, object]:
+        return {
+            "schema": CHECKPOINT_SCHEMA,
+            "learner_seed": self.learner_seed,
+            "completed_source_epochs": self.completed_source_epochs,
+            "route_update_count": self.route_update_count,
+            "updates_per_source_epoch": len(ROUTES),
+            "checkpoint_every_source_epochs": CHECKPOINT_EVERY_SOURCE_EPOCHS,
+            "q1_schema_sha256": Q1_SCHEMA_SHA256,
+            "q2_schema_sha256": Q2_SCHEMA_SHA256,
+            "batch_digests": self.batch_digests,
+            "source_authority_sha256": self.source_authority_sha256,
+            "initialization_sha256": self.initialization_sha256,
+            "initialization": self.initialization_payload,
+            "arm_order": list(ARM_ORDER),
+            "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
+            "arm_order": list(ARM_ORDER),
+            "arms": {arm: self.models[arm].payload() for arm in LEARNED_ARMS},
+            "optimizer": {
+                "kind": "deterministic_full_batch_gradient_descent",
+                "learning_rate_hex": float_hex(self.learning_rate),
+                "gauge_weight_hex": float_hex(self.gauge_weight),
+                "state": "stateless",
+            },
+            "zero_bootstrap": True,
+        }
+
+    def write_checkpoint(self, path: str | Path) -> str:
+        return write_once_json(path, self.checkpoint_payload())
+
+    def load_checkpoint(self, path: str | Path) -> None:
+        payload = read_verified_json(path)
+        if not isinstance(payload, dict) or payload.get("schema") != CHECKPOINT_SCHEMA:
+            raise StageCContractError("unsupported checkpoint schema")
+        fixed = {
+            "learner_seed": self.learner_seed,
+            "batch_digests": self.batch_digests,
+            "source_authority_sha256": self.source_authority_sha256,
+            "initialization_sha256": self.initialization_sha256,
+            "initialization": self.initialization_payload,
+            "arm_order": list(ARM_ORDER),
+            "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
+            "arm_order": list(ARM_ORDER),
+            "q1_schema_sha256": Q1_SCHEMA_SHA256,
+            "q2_schema_sha256": Q2_SCHEMA_SHA256,
+            "checkpoint_every_source_epochs": CHECKPOINT_EVERY_SOURCE_EPOCHS,
+            "updates_per_source_epoch": len(ROUTES),
+            "zero_bootstrap": True,
+        }
+        for field, expected in fixed.items():
+            if payload.get(field) != expected:
+                raise StageCContractError(f"checkpoint {field} mismatch")
+        optimizer = payload.get("optimizer")
+        expected_optimizer = {
+            "kind": "deterministic_full_batch_gradient_descent",
+            "learning_rate_hex": float_hex(self.learning_rate),
+            "gauge_weight_hex": float_hex(self.gauge_weight),
+            "state": "stateless",
+        }
+        if optimizer != expected_optimizer:
+            raise StageCContractError("checkpoint optimizer state mismatch")
+        completed = int(payload.get("completed_source_epochs", -1))
+        updates = int(payload.get("route_update_count", -1))
+        if completed < 0 or updates != completed * len(ROUTES):
+            raise StageCContractError("checkpoint source-epoch cursor is invalid")
+        arms = payload.get("arms")
+        if not isinstance(arms, dict) or set(arms) != set(LEARNED_ARMS):
+            raise StageCContractError("checkpoint arm inventory drifted")
+        for arm in LEARNED_ARMS:
+            arm_payload = arms[arm]
+            if not isinstance(arm_payload, dict) or set(arm_payload) != set(ROUTES):
+                raise StageCContractError("checkpoint head inventory drifted")
+            for route in ROUTES:
+                head_payload = arm_payload[route]
+                if not isinstance(head_payload, dict):
+                    raise StageCContractError("checkpoint head payload drifted")
+                weights = np.asarray(
+                    [parse_float_hex(value, field="weight") for value in head_payload["weights_hex"]],
+                    dtype=np.float64,
+                )
+                if weights.shape != self.models[arm].heads[route].weights.shape:
+                    raise StageCContractError("checkpoint head shape drifted")
+                self.models[arm].heads[route].weights[:] = weights
+                self.models[arm].heads[route].bias = parse_float_hex(
+                    head_payload["bias_hex"], field="bias"
+                )
+        self.completed_source_epochs = completed
+        self.route_update_count = updates
+
+
+@dataclass(frozen=True, slots=True)
+class NeutralSourceDefinition:
+    """C5 seal for one named neutral route/source identity."""
+
+    route: Route
+    generator: str
+    labels: str
+    support: str
+    strata: tuple[str, ...]
+    overlap: str
+    row_weights: str
+    optimization_dose: str
+
+    def __post_init__(self) -> None:
+        if self.route not in ROUTES or any(
+            not value
+            for value in (
+                self.generator,
+                self.labels,
+                self.support,
+                self.overlap,
+                self.row_weights,
+                self.optimization_dose,
+            )
+        ) or not self.strata:
+            raise StageCContractError("neutral-source sealing fields must be complete")
+
+    @property
+    def digest(self) -> str:
+        return canonical_sha256(
+            {
+                "schema": "mcrl-v025-stagec-neutral-source-v1",
+                **asdict(self),
+                "strata": list(self.strata),
+            }
+        )
+
+
+def default_synthetic_neutral_sources() -> dict[Route, NeutralSourceDefinition]:
+    """Fully specified synthetic-only C5 sources; not authority for real rows."""
+
+    return {
+        route: NeutralSourceDefinition(
+            route=route,
+            generator="matched_rows_replace_scalar_target_with_zero_v1",
+            labels="exact_zero_normalized_bits_per_kappa",
+            support="identical_context_and_action_or_coalition_support_within_route_identity",
+            strata=("setting_id", "coalition_size" if route == "C3" else "action_count"),
+            overlap="one_to_one_row_identity_overlap_with_informative_source",
+            row_weights="identical_unit_weights_in_stable_row_order",
+            optimization_dose="one_full_batch_update_per_source_epoch",
+        )
+        for route in ROUTES
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class CoalitionBatch:
+    """Typed C3 scalar batch over complete set-conditioned contexts."""
+
+    contexts: tuple[CoalitionContext, ...]
+    invariant_states: np.ndarray
+    target_psi: np.ndarray
+    row_identities: tuple[str, ...]
+    source_authority_sha256: str
+    source_identity: str
+    physics_digest: str
+    member_width: int
+    digest: str
+
+    @classmethod
+    def create(
+        cls,
+        shards: Sequence[CoalitionShard],
+        *,
+        source_identity: str = "informed",
+        target_override: Sequence[float] | None = None,
+    ) -> "CoalitionBatch":
+        rows = tuple(row for shard in shards for row in shard.rows)
+        if not rows:
+            raise StageCContractError("C3 coalition batch cannot be empty")
+        physics = {row.physics_digest for row in rows}
+        if len(physics) != 1:
+            raise StageCContractError("C3 coalition shards mix physics digests")
+        physics_digest = next(iter(physics))
+        widths = {len(member.invariant_features) for row in rows for member in row.context.members}
+        if len(widths) != 1:
+            raise StageCContractError("C3 coalition member width drifted")
+        member_width = next(iter(widths))
+        contexts = tuple(row.context for row in rows)
+        states = np.stack(
+            [context.invariant_vector(member_width=member_width) for context in contexts]
+        )
+        targets = np.asarray(
+
+exec
+/bin/bash -lc "sed -n '640,840p' /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+            contexts=self.contexts,
+            invariant_states=self.invariant_states.copy(),
+            target_psi=np.zeros_like(self.target_psi),
+            row_identities=self.row_identities,
+            source_authority_sha256=self.source_authority_sha256,
+            source_identity=f"neutral:{definition.digest}",
+            physics_digest=self.physics_digest,
+            member_width=self.member_width,
+            digest=canonical_sha256(
+                {
+                    "informed_batch": self.digest,
+                    "neutral_source_sha256": definition.digest,
+                    "targets": [float_hex(0.0) for _ in self.target_psi],
+                }
+            ),
+        )
+
+
+@dataclass(slots=True)
+class AdamMLPHead:
+    """Legacy-shaped MLP trained by a literal Adam pairwise objective."""
+
+    weights: list[np.ndarray]
+    biases: list[np.ndarray]
+    first_moment_w: list[np.ndarray]
+    second_moment_w: list[np.ndarray]
+    first_moment_b: list[np.ndarray]
+    second_moment_b: list[np.ndarray]
+    activation: str
+    learning_rate: float
+    beta1: float
+    beta2: float
+    epsilon: float
+    weight_decay: float
+    gauge_beta: float
+    loss_weight: float
+    adam_step: int = 0
+
+    @classmethod
+    def create(cls, input_dim: int, literal: Mapping[str, object], rng: np.random.Generator) -> "AdamMLPHead":
+        widths = (input_dim, *tuple(int(value) for value in literal["hidden_layers"]), 1)
+        weights = [
+            rng.normal(0.0, np.sqrt(2.0 / max(1, left)), (left, right))
+            for left, right in zip(widths[:-1], widths[1:], strict=True)
+        ]
+        biases = [np.zeros(right, dtype=np.float64) for right in widths[1:]]
+        return cls(
+            weights=weights,
+            biases=biases,
+            first_moment_w=[np.zeros_like(value) for value in weights],
+            second_moment_w=[np.zeros_like(value) for value in weights],
+            first_moment_b=[np.zeros_like(value) for value in biases],
+            second_moment_b=[np.zeros_like(value) for value in biases],
+            activation=str(literal["activation"]),
+            learning_rate=float(literal["learning_rate"]),
+            beta1=float(tuple(literal["adam_betas"])[0]),
+            beta2=float(tuple(literal["adam_betas"])[1]),
+            epsilon=float(literal["adam_epsilon"]),
+            weight_decay=float(literal["weight_decay"]),
+            gauge_beta=float(literal.get("gauge_beta", 0.0)),
+            loss_weight=float(literal["loss_weight"]),
+        )
+
+    def clone(self) -> "AdamMLPHead":
+        return AdamMLPHead(
+            *(
+                [[value.copy() for value in group] for group in (
+                    self.weights, self.biases, self.first_moment_w, self.second_moment_w,
+                    self.first_moment_b, self.second_moment_b,
+                )]
+            ),
+            self.activation, self.learning_rate, self.beta1, self.beta2,
+            self.epsilon, self.weight_decay, self.gauge_beta, self.loss_weight,
+            self.adam_step,
+        )
+
+    def _forward(self, values: np.ndarray) -> tuple[np.ndarray, list[np.ndarray], list[np.ndarray]]:
+        current = np.asarray(values, dtype=np.float64)
+        activations = [current]
+        preactivations: list[np.ndarray] = []
+        for index, (weights, bias) in enumerate(zip(self.weights, self.biases, strict=True)):
+            pre = current @ weights + bias
+            preactivations.append(pre)
+            if index == len(self.weights) - 1:
+                current = pre
+            elif self.activation == "relu":
+                current = np.maximum(pre, 0.0)
+            else:
+                current = np.tanh(pre)
+            activations.append(current)
+        return current[:, 0], activations, preactivations
+
+    def score(self, state: Sequence[float]) -> float:
+        value, _, _ = self._forward(np.asarray(state, dtype=np.float64)[None, :])
+        return float(value[0])
+
+    def _backward(
+        self, activations: list[np.ndarray], preactivations: list[np.ndarray], output_gradient: np.ndarray
+    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        gradient = output_gradient[:, None]
+        weight_gradients = [np.empty_like(value) for value in self.weights]
+        bias_gradients = [np.empty_like(value) for value in self.biases]
+        for index in reversed(range(len(self.weights))):
+            weight_gradients[index] = activations[index].T @ gradient
+            bias_gradients[index] = gradient.sum(axis=0)
+            if index:
+                gradient = gradient @ self.weights[index].T
+                if self.activation == "relu":
+                    gradient *= preactivations[index - 1] > 0.0
+                else:
+                    hidden = activations[index]
+                    gradient *= 1.0 - hidden * hidden
+        return weight_gradients, bias_gradients
+
+    def _adam(self, grad_w: list[np.ndarray], grad_b: list[np.ndarray]) -> None:
+        self.adam_step += 1
+        for parameter, gradient, first, second in zip(
+            self.weights, grad_w, self.first_moment_w, self.second_moment_w, strict=True
+        ):
+            gradient = gradient + self.weight_decay * parameter
+            first *= self.beta1
+            first += (1.0 - self.beta1) * gradient
+            second *= self.beta2
+            second += (1.0 - self.beta2) * gradient * gradient
+            corrected_m = first / (1.0 - self.beta1**self.adam_step)
+            corrected_v = second / (1.0 - self.beta2**self.adam_step)
+            parameter -= self.learning_rate * corrected_m / (np.sqrt(corrected_v) + self.epsilon)
+        for parameter, gradient, first, second in zip(
+            self.biases, grad_b, self.first_moment_b, self.second_moment_b, strict=True
+        ):
+            first *= self.beta1
+            first += (1.0 - self.beta1) * gradient
+            second *= self.beta2
+            second += (1.0 - self.beta2) * gradient * gradient
+            parameter -= self.learning_rate * (first / (1.0 - self.beta1**self.adam_step)) / (
+                np.sqrt(second / (1.0 - self.beta2**self.adam_step)) + self.epsilon
+            )
+
+    def update(self, batch: PairwiseBatch) -> float:
+        reference, ref_a, ref_z = self._forward(batch.reference_states)
+        candidate, cand_a, cand_z = self._forward(batch.candidate_states)
+        residual = candidate - reference - batch.target_deltas
+        count = float(len(residual))
+        scale = 2.0 * self.loss_weight / count
+        cand_w, cand_b = self._backward(cand_a, cand_z, scale * residual)
+        ref_gradient = scale * (-residual + self.gauge_beta * reference)
+        ref_w, ref_b = self._backward(ref_a, ref_z, ref_gradient)
+        self._adam(
+            [left + right for left, right in zip(cand_w, ref_w, strict=True)],
+            [left + right for left, right in zip(cand_b, ref_b, strict=True)],
+        )
+        return float(self.loss_weight * np.mean(residual * residual + self.gauge_beta * reference * reference))
+
+    def update_scalar(self, states: np.ndarray, targets: np.ndarray) -> float:
+        prediction, activations, preactivations = self._forward(states)
+        residual = prediction - targets
+        scale = 2.0 * self.loss_weight / float(len(residual))
+        gradients = self._backward(activations, preactivations, scale * residual)
+        self._adam(*gradients)
+        return float(self.loss_weight * np.mean(residual * residual))
+
+    def payload(self) -> dict[str, object]:
+        encode = lambda arrays: [
+            [[float_hex(value) for value in row] for row in array]
+            if array.ndim == 2 else [float_hex(value) for value in array]
+            for array in arrays
+        ]
+        return {
+            "kind": "legacy_heterogeneous_adam_mlp",
+            "activation": self.activation,
+            "weights_hex": encode(self.weights),
+            "biases_hex": encode(self.biases),
+            "adam_first_moment_weights_hex": encode(self.first_moment_w),
+            "adam_second_moment_weights_hex": encode(self.second_moment_w),
+            "adam_first_moment_biases_hex": encode(self.first_moment_b),
+            "adam_second_moment_biases_hex": encode(self.second_moment_b),
+            "adam_step": self.adam_step,
+            "optimizer": {
+                "kind": "Adam", "learning_rate": self.learning_rate,
+                "betas": [self.beta1, self.beta2], "epsilon": self.epsilon,
+                "weight_decay": self.weight_decay,
+            },
+            "gauge_beta": self.gauge_beta,
+            "loss_weight": self.loss_weight,
+        }
+
+
+@dataclass(slots=True)
+class AdamSetInteractionHead:
+    network: AdamMLPHead
+    member_width: int
+
+    def clone(self) -> "AdamSetInteractionHead":
+        return AdamSetInteractionHead(self.network.clone(), self.member_width)
+
+    def score(self, context: CoalitionContext) -> float:
+        if len(context.members) <= 1:
+            return 0.0
+        return self.network.score(context.invariant_vector(member_width=self.member_width))
+
+    def update(self, batch: CoalitionBatch) -> float:
+
+codex
+I’ve fixed the schedule details before fitting: inverse-time uses `tau=1000`; plateau uses `n=3`, with a decay after three consecutive cadences that fail to set a new best objective-motion value, then resets its patience. The required higher start is fixed at `3e-3` (the next higher LRSWEEP grid rate); its schedule shape will be chosen only by the predeclared convergence-rule ranking, never by metric levels or EE.

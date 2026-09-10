@@ -29146,3 +29146,2835 @@ index 0000000000000000000000000000000000000000..5514c3edfb7444e34a389659db0f542a
 +  load pause rather than pushing through.
 +
 
+apply patch
+patch: completed
+/home/sat/mcrl-v025-horizon-ws/HORIZON-LEVER-2026-09-10.md
+diff --git a/.scratch/horizon-lever/run_horizon.py b/.scratch/horizon-lever/run_horizon.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d8a28f5d1c2969c2d9bf422eb2c9821d0da2570
+--- /dev/null
++++ b/.scratch/horizon-lever/run_horizon.py
+@@ -0,0 +1,404 @@
++#!/usr/bin/env python3
++"""C3 horizon-vs-minibatch convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Callable
++
++
++ROOT = Path("/home/sat/mcrl-v025-horizon-ws")
++OUT = ROOT / ".scratch/horizon-lever"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BATCH_SIZE = 256
++SHUFFLE_DOMAIN = "V025_HORIZON/C3/minibatch-shuffle/seed/1"
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 19:
++        raise RuntimeError(f"process niceness is not 19: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def record_checkpoint(sweep, head, train, test):
++    loss, count = sweep.c3_loss(head, train)
++    if not math.isfinite(loss) or not sweep.parameters_finite(head):
++        raise RuntimeError("non-finite objective or parameter at checkpoint")
++    prediction = sweep.np.zeros_like(test.truth)
++    prediction[test.train_indices] = head._forward(test.x)[0]
++    return loss, count, sweep.parameter_norm(head), prediction
++
++
++def make_minibatch_updater(sweep, head, train) -> Callable[[], float]:
++    states = sweep.np.concatenate([anchor.x for anchor in train], axis=0)
++    targets = sweep.np.concatenate([
++        anchor.truth[anchor.train_indices] for anchor in train
++    ])
++    rng = sweep.np.random.default_rng(sweep.seed_from_domain(SHUFFLE_DOMAIN))
++    order = sweep.np.empty(0, dtype=sweep.np.int64)
++    cursor = 0
++
++    def update() -> float:
++        nonlocal order, cursor
++        if cursor >= order.size:
++            order = rng.permutation(states.shape[0])
++            cursor = 0
++        stop = min(cursor + BATCH_SIZE, order.size)
++        selected = order[cursor:stop]
++        cursor = stop
++        return head.update_scalar(states[selected], targets[selected])
++
++    return update
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def run_arm(sweep, data, arm: str, progress: list[int], total_work: int) -> dict[str, object]:
++    checkpoints = tuple(range(0, MAX_UPDATES + 1, CADENCE))
++    predictions = {step: [None] * len(data.anchors) for step in checkpoints}
++    objectives = {step: [] for step in checkpoints}
++    norms = {step: [] for step in checkpoints}
++    interval_total = {step: [] for step in checkpoints[1:]}
++    interval_update = {step: [] for step in checkpoints[1:]}
++    interval_checkpoint = {step: [] for step in checkpoints[1:]}
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    arm_started = time.perf_counter()
++    load_observed = [guard_load()]
++
++    for fold_index, test in enumerate(data.anchors):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        fold_started = time.perf_counter()
++        head = sweep.AdamMLPHead.create(
++            test.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        initial_started = time.perf_counter()
++        loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++        initial_checkpoint_s = time.perf_counter() - initial_started
++        objectives[0].append((loss, count))
++        norms[0].append(norm)
++        predictions[0][fold_index] = prediction
++        if arm == "A":
++            updater = lambda: sweep.c3_update(head, train)
++        else:
++            updater = make_minibatch_updater(sweep, head, train)
++
++        previous_end = fold_started
++        update_accumulator = 0.0
++        for step in range(1, MAX_UPDATES + 1):
++            update_started = time.perf_counter()
++            with sweep.np.errstate(all="ignore"):
++                loss_before_update = updater()
++            update_accumulator += time.perf_counter() - update_started
++            if not math.isfinite(loss_before_update) or not sweep.parameters_finite(head):
++                raise RuntimeError(f"arm {arm} fold {fold_index + 1} diverged at update {step}")
++            if step % CADENCE:
++                continue
++            checkpoint_started = time.perf_counter()
++            loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++            checkpoint_s = time.perf_counter() - checkpoint_started
++            objectives[step].append((loss, count))
++            norms[step].append(norm)
++            predictions[step][fold_index] = prediction
++            now = time.perf_counter()
++            interval_total[step].append(now - previous_end)
++            interval_update[step].append(update_accumulator)
++            interval_checkpoint[step].append(checkpoint_s + (initial_checkpoint_s if step == CADENCE else 0.0))
++            previous_end = now
++            update_accumulator = 0.0
++            progress[0] += CADENCE
++            current_load = load_average()
++            load_observed.append(current_load)
++            print(
++                f"step {progress[0]}/{total_work} arm={arm} "
++                f"fold={fold_index + 1}/{len(data.anchors)} update={step}/{MAX_UPDATES} "
++                f"load1={current_load:.2f}",
++                flush=True,
++            )
++            if current_load > 30.0:
++                raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    trajectory = {}
++    for step in checkpoints:
++        weighted_loss = sum(value * count for value, count in objectives[step]) / sum(
++            count for _, count in objectives[step]
++        )
++        held_out = sweep.c3_metric(
++            [value for value in predictions[step] if value is not None], data.anchors
++        )
++        trajectory[str(step)] = {
++            "training_objective": float(weighted_loss),
++            "held_out": held_out,
++            "parameter_l2": sweep.summarize(norms[step]),
++        }
++
++    checks = {}
++    first_admissible = None
++    for step in checkpoints[1:]:
++        check = stability(sweep, trajectory[str(step - CADENCE)], trajectory[str(step)])
++        checks[str(step)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = step
++
++    total_by_interval = [sum(interval_total[step]) for step in checkpoints[1:]]
++    update_by_interval = [sum(interval_update[step]) for step in checkpoints[1:]]
++    checkpoint_by_interval = [sum(interval_checkpoint[step]) for step in checkpoints[1:]]
++    cumulative = []
++    running = 0.0
++    for value in total_by_interval:
++        running += value
++        cumulative.append(running)
++    return {
++        "arm": arm,
++        "procedure": "full_batch" if arm == "A" else "minibatch",
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "wall_s": time.perf_counter() - arm_started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": total_by_interval,
++            "update_only_s_per_100_updates_across_12_loao_folds": update_by_interval,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": checkpoint_by_interval,
++            "cumulative_total_s_across_12_loao_folds": cumulative,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(total_by_interval) / len(total_by_interval),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(update_by_interval) / len(update_by_interval),
++            "per_fold_interval_total_s": {str(step): interval_total[step] for step in checkpoints[1:]},
++        },
++        "maximum_observed_load1": max(load_observed),
++    }
++
++
++def equal_wall_comparison(arms: dict[str, dict[str, object]]) -> dict[str, object]:
++    a = arms["A"]
++    b = arms["B"]
++    a_times = a["timing"]["cumulative_total_s_across_12_loao_folds"]
++    b_times = b["timing"]["cumulative_total_s_across_12_loao_folds"]
++
++    def reached(times: list[float], budget: float) -> int:
++        return CADENCE * sum(value <= budget for value in times)
++
++    comparisons = []
++    for label, budget in (
++        ("arm_a_cap_time", a_times[-1]),
++        ("arm_b_cap_time", b_times[-1]),
++        ("common_cap_time", min(a_times[-1], b_times[-1])),
++    ):
++        comparisons.append({
++            "budget_label": label,
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": reached(b_times, budget),
++        })
++    if b["first_admissible_update"] is not None:
++        budget = b_times[b["first_admissible_update"] // CADENCE - 1]
++        comparisons.append({
++            "budget_label": "arm_b_first_admissible_time",
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": b["first_admissible_update"],
++        })
++    return {"comparisons": comparisons}
++
++
++def main() -> None:
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    before = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    data = sweep.load_c3()
++    c3_paths = tuple(anchor.path for anchor in data.anchors)
++    c3_before = {str(path): file_sha256(path) for path in c3_paths}
++    shuffle_seed = sweep.seed_from_domain(SHUFFLE_DOMAIN)
++    total_work = 2 * len(data.anchors) * MAX_UPDATES
++    progress = [0]
++    started = time.perf_counter()
++    arms = {}
++    status = "complete"
++    pause_reason = None
++    try:
++        arms["A"] = run_arm(sweep, data, "A", progress, total_work)
++        arms["B"] = run_arm(sweep, data, "B", progress, total_work)
++    except LoadPause as error:
++        status = "paused_load"
++        pause_reason = str(error)
++    after = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    c3_after = {str(path): file_sha256(path) for path in c3_paths}
++    changed = [path for path in (*before, *c3_before) if (before | c3_before)[path] != (after | c3_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    original = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    original_c3 = next(
++        cell for cell in original["cells"]
++        if cell["route"] == "C3" and cell["learning_rate"] == 1e-3
++    )
++    reproduction = None
++    if "A" in arms:
++        fields = ("training_objective", "held_out")
++        reproduction = {
++            str(step): all(
++                arms["A"]["trajectory"][str(step)][field]
++                == original_c3["trajectory"][str(step)][field]
++                for field in fields
++            )
++            for step in range(0, 501, 100)
++        }
++    result = {
++        "schema": "mcrl-v025-horizon-lever-diagnostic-v1",
++        "status": status,
++        "pause_reason": pause_reason,
++        "scope": {
++            "diagnostic_not_claim": True,
++            "ee_quantities_computed": False,
++            "selection_on_ee": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "route": "C3",
++        "learning_rate": 1e-3,
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "maximum_updates": MAX_UPDATES,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "minibatch": {
++            "batch_size": BATCH_SIZE,
++            "shuffle_rng": "numpy Generator(PCG64)",
++            "shuffle_seed_domain": SHUFFLE_DOMAIN,
++            "shuffle_seed": shuffle_seed,
++            "replacement": False,
++            "replacement_scope": "without replacement within each pass; rows recur after reshuffle next pass",
++            "remainder_batch_used": True,
++            "fresh_same_seed_per_loao_fold": True,
++            "classification": "training-procedure change, not a hyperparameter",
++        },
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(path) for path in c3_paths],
++        },
++        "arms": arms,
++        "equal_wall": equal_wall_comparison(arms) if len(arms) == 2 else None,
++        "arm_a_reproduces_lr_sweep_0_to_500": reproduction,
++        "resource_policy": {
++            "python_processes": 1,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1,
++            "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb,
++            "initial_load1": initial_load,
++            "final_load1": load_average(),
++            "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before,
++        "source_sha256_after": after,
++        "c3_input_sha256_before": c3_before,
++        "c3_input_sha256_after": c3_after,
++        "changed_inputs": changed,
++    }
++    atomic_json(OUT / "results.json", result)
++    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
++    print(json.dumps({
++        "written": str(OUT / "results.json"),
++        "status": status,
++        "changed_inputs": changed,
++    }), flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/horizon-lever/spec.md b/.scratch/horizon-lever/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5514c3edfb7444e34a389659db0f542a5f7e7f4c
+--- /dev/null
++++ b/.scratch/horizon-lever/spec.md
+@@ -0,0 +1,63 @@
++# HORIZON lever diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This file is fixed before either horizon arm is fit.
++
++## Question and fixed inputs
++
++- Diagnose whether C3 convergence under-run is addressed by more full-batch
++  updates (Arm A) or by minibatch updates (Arm B). This is one route and one
++  seed, not a learning-rate grid and not a learning-rate selection.
++- Use the twelve fixed C3 LOAO anchors named by the LRSWEEP harness, including
++  only size>=2 rows for training and retaining the declared hard-zero
++  empty/singleton predictions for held-out diagnostics.
++- Use model seed `V025_LEARNER/seed/1` (`6407676579069309528`), C3 learning
++  rate `1e-3`, and every other architecture and Adam literal unchanged.
++- Import and reuse the LRSWEEP harness at
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`
++  (SHA-256 `dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6`),
++  its frozen rule (SHA-256
++  `0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19`),
++  and its results (SHA-256
++  `9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861`)
++  directly and without modifying those artifacts.
++
++## Common cadence and rule
++
++- Cap both arms at 4,000 optimizer updates and evaluate at update 0 and every
++  100 updates through 4,000.
++- At each destination cadence `k`, apply LRSWEEP's identical four checks to
++  `k-100 -> k`: objective relative absolute motion <= 0.01; held-out level R2
++  absolute motion <= 0.01; held-out within-group ordering absolute motion <=
++  0.005; held-out top-1 absolute motion <= 0.005. The first finite destination
++  cadence satisfying all four is that arm's first admissible update.
++- The checkpoint training objective is always evaluated on the complete LOAO
++  training fold, including for Arm B. A last-minibatch loss is not used.
++
++## Arms
++
++- Arm A: the LRSWEEP C3 full-batch gradient aggregation verbatim, one Adam
++  update over all eleven training anchors per optimizer step.
++- Arm B: batch size 256. For each LOAO fold, concatenate the eleven training
++  anchors in the fixed LRSWEEP filename order. Initialise an independent PCG64
++  generator from the SHA-256 domain seed
++  `V025_HORIZON/C3/minibatch-shuffle/seed/1`. At the start of every pass,
++  generate a permutation of all training rows; consume consecutive batches of
++  256 without replacement within that pass; include the final remainder batch;
++  then reshuffle for the next pass. Rows recur across passes. Each fold starts
++  a fresh generator at the same declared shuffle seed. This deterministic
++  ordering is separate from the unchanged model-initialisation seed.
++- Minibatching is a training-procedure change, not a hyperparameter.
++
++## Scope and resources
++
++- Metrics are convergence diagnostics only and are never evidence about EE.
++  Compute no EE quantity and perform no selection on EE.
++- Read only the twelve C3 files fixed in LRSWEEP. Do not discover or read any
++  evaluation-only claim dates.
++- Run both arms sequentially in one Python process using only
++  `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, all named BLAS
++  thread variables equal to one, and an address-space limit below 3 GiB.
++- Print progress as `step k/N` and print peak RSS. If one-minute load average
++  exceeds 30 at a cadence boundary, stop before more training and record a
++  load pause rather than pushing through.
++
+diff --git a/HORIZON-LEVER-2026-09-10.md b/HORIZON-LEVER-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e3e1694b957664bcf66e8049f898883cba5bcbb
+--- /dev/null
++++ b/HORIZON-LEVER-2026-09-10.md
+@@ -0,0 +1,208 @@
++**Arm A first admissible step: NONE (312.23 s wall; 7.81 s/100 updates); Arm B first admissible update: NONE (58.30 s wall; 1.46 s/100 updates); the evidence supports neither lever for production.**
++
++`DIAGNOSTIC_NOT_CLAIM` — development material only.
++
++## Decision
++
++[VERIFIED BY RUNNING CODE] Neither more full-batch steps nor the declared
++minibatching procedure satisfied the unchanged LRSWEEP convergence rule at
++any 100-update cadence through 4,000 updates. `NONE` is the result for both
++arms, not a missing observation.
++
++[INFERRED] The present learner therefore cannot be certified as converged at
++any practical horizon tested here. Do not commit a 16-seed, 5-arm production
++schedule to either lever on this evidence. The correct reading of tonight's
++two runs is **“the optimisation was under-run.”**
++
++[INFERRED] Arm A has the more promising residual shape for a further
++diagnostic: at 4,000 updates it misses only the objective-motion tolerance and
++that residual is slowly decaying, though with intermittent oscillation. Arm B
++is materially oscillatory and still misses both objective and ordering at the
++cap. That does not make Arm A admissible or authorize a production horizon.
++
++Loss and all held-out metrics below are convergence diagnostics only. **They
++are never evidence about EE. No EE quantity was computed, and nothing was
++selected on EE.**
++
++## Fixed design
++
++[VERIFIED BY RUNNING CODE] The run used C3 only, the twelve fixed LRSWEEP C3
++anchors and identical LOAO folds, model seed `V025_LEARNER/seed/1`
++(`6407676579069309528`), the sealed `(64,64)` ReLU architecture, all sealed
++Adam literals, and the route's current literal learning rate `1e-3`. Arm A
++called LRSWEEP's full-batch C3 gradient aggregation directly. Its values at
++updates 0, 100, 200, 300, 400, and 500 exactly reproduced the prior C3
++`1e-3` cell.
++
++[VERIFIED BY RUNNING CODE] The rule was applied at every destination cadence
++`k = 100, 200, ..., 4000` to the immediately preceding interval `k-100 -> k`:
++
++- objective relative absolute motion no greater than `0.01`;
++- held-out level R2 absolute motion no greater than `0.01`;
++- held-out within-group ordering absolute motion no greater than `0.005`;
++- held-out top-1 absolute motion no greater than `0.005`.
++
++All four checks had to pass together, with finite objective and parameters.
++Arm B's checkpoint objective was evaluated on the complete training fold, not
++on its last minibatch.
++
++[VERIFIED BY RUNNING CODE] Arm B used batch size 256. For each LOAO fold, the
++eleven training anchors were concatenated in LRSWEEP's fixed filename order.
++A NumPy PCG64 generator used the independent SHA-256 domain seed
++`V025_HORIZON/C3/minibatch-shuffle/seed/1`
++(`5845257737798802301`). Each pass was freshly shuffled; consecutive batches
++were sampled **without replacement within a pass**; the remainder batch was
++used; rows recurred only after the next-pass reshuffle. Every fold restarted
++the same declared shuffle stream. **This is a training-procedure change, not a
++hyperparameter.**
++
++## Cap residuals — conditional Arm C diagnosis
++
++[VERIFIED BY RUNNING CODE] Because both arms returned `NONE`, the required cap
++diagnosis applies:
++
++| Arm | 3900 loss | 4000 loss | objective motion | R2 motion | ordering motion | top-1 motion | cap checks passed |
++|:---|---:|---:|---:|---:|---:|---:|:---|
++| A, full batch | 0.268075 | 0.260136 | 2.961% | 0.002146 | 0.002801 | 0 | R2, ordering, top-1; objective failed |
++| B, minibatch | 1.226373 | 1.105135 | 9.886% | 0.008055 | 0.029753 | 0 | R2, top-1; objective and ordering failed |
++
++[VERIFIED BY RUNNING CODE] Arm A's loss over updates 3,500–4,000 was
++`0.335617, 0.305839, 0.281603, 0.277644, 0.268075, 0.260136`. This follows a
++10.24% upward excursion at 3,400→3,500, then five consecutive decreases. The
++last five absolute relative motions were 8.87%, 7.92%, 1.41%, 3.45%, and
++2.96%: they are getting smaller on the broad trend but are not monotone and
++remain above 1% at the cap.
++
++[INFERRED] Arm A is therefore **slowly decaying with intermittent
++oscillation**, not flat. Its held-out R2 and ordering also oscillate, but at the
++cap their adjacent-cadence motions pass.
++
++[VERIFIED BY RUNNING CODE] Arm B's loss over updates 3,500–4,000 was
++`2.222269, 1.297866, 1.173352, 1.503476, 1.226373, 1.105135`; its recent
++relative motions include 41.60%, 9.59%, 28.14%, 18.43%, and 9.89%, with a
++direction reversal at 3,700→3,800. Ordering moved 0.029753 at the cap, almost
++six times its tolerance.
++
++[INFERRED] Arm B is **oscillating**, not flat or slowly settling. More cheap
++minibatch updates at this unchanged learning rate are not supported as the
++production remedy.
++
++## Equal-wall-time comparison
++
++[VERIFIED BY RUNNING CODE] The cadence-timed 12-fold work needed 51.03 s for
++Arm B to reach 4,000 updates. In the same measured budget, Arm A completed 600
++updates (44.49 s; 700 did not fit). At those equal-wall endpoints:
++
++| Endpoint | loss | held-out R2 | ordering | top-1 | preceding-100 rule |
++|:---|---:|---:|---:|---:|:---|
++| A at 600 | 1.147249 | 0.574094 | 0.526820 | 0.166667 | failed all four checks |
++| B at 4000 | 1.105135 | 0.645829 | 0.511546 | 0.250000 | failed objective and ordering |
++
++[INFERRED] Minibatching buys about 6.0–6.2 times as many updates per measured
++second, but that computational advantage does **not** become an admissibility
++advantage: both equal-wall endpoints fail. There is no Arm B convergence
++advantage to carry into the schedule, so the equal-wall comparison still
++decides **no production schedule under either tested lever**.
++
++## Wall cost and production extrapolation
++
++[VERIFIED BY RUNNING CODE] Wall timing for one seed's full 12-fold diagnostic:
++
++| Arm | total arm wall | end-to-end s/100 updates | cadence-timed s/100, mean [min, max] |
++|:---|---:|---:|---:|
++| A | 312.23 s | 7.806 | 7.582 [7.175, 8.028] |
++| B | 58.30 s | 1.457 | 1.276 [1.229, 1.432] |
++
++The end-to-end rate is total arm wall divided by 40 cadences and includes the
++final aggregation of all LOAO held-out metrics. The cadence-timed rate sums
++the twelve fold intervals and includes updates plus checkpoint evaluation.
++
++[DERIVED ON PAPER] Because neither arm reached admissibility, a cost *to
++convergence* cannot be estimated. The only honest production projection is
++the spend to the tested 4,000-update cap. For the complete `16 seeds × 5 arms =
++80` set of C3 heads:
++
++| Lever at 4,000-update cap | extrapolated CPU-hours | assumptions |
++|:---|---:|:---|
++| A, full batch | 0.56–0.63 | Lower bound uses mean update-only time per LOAO fold (`0.6261 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and multiplies by `12/11` for training on all 12 anchors instead of 11. |
++| B, minibatch 256 | 0.09–0.12 | Lower bound uses mean update-only time per fold (`0.1007 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and the same conservative `12/11` allowance. |
++
++These are C3 learner CPU-hour ranges on this host, assuming serial
++single-thread execution, identical data dimensions, no shared-head speedup,
++and negligible orchestration/serialization. They do not estimate C1, C2,
++policy, simulation, or other pipeline costs. Most importantly, they are
++**spend-to-cap ranges for runs known not to be converged**, not estimates for a
++valid production result. Any converged-run cost is unknown from this evidence.
++
++## Held-out convergence diagnostics at every cadence
++
++[VERIFIED BY RUNNING CODE] Each cell is evaluated over all 11,947 held-out
++catalogue rows across the twelve LOAO folds, including declared hard zeros for
++empty/singleton coalitions. `ord` is within-group pairwise ordering. These
++metrics diagnose stabilization only; they say nothing about EE.
++
++| upd | A loss | A R2 | A ord | A top1 | B loss | B R2 | B ord | B top1 |
++|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| 0 | 131.3764 | -2.5559 | 0.6067 | 0.0000 | 131.3764 | -2.5559 | 0.6067 | 0.0000 |
++| 100 | 2.1448 | 0.6985 | 0.5530 | 0.3333 | 5.0189 | 0.5691 | 0.5046 | 0.2500 |
++| 200 | 1.7700 | 0.6776 | 0.5650 | 0.2500 | 2.9834 | 0.6942 | 0.5380 | 0.3333 |
++| 300 | 1.5452 | 0.6462 | 0.5601 | 0.1667 | 3.4193 | 0.6714 | 0.5862 | 0.4167 |
++| 400 | 1.3710 | 0.6184 | 0.5632 | 0.1667 | 3.1658 | 0.6837 | 0.5257 | 0.2500 |
++| 500 | 1.2482 | 0.5980 | 0.5322 | 0.2500 | 2.4458 | 0.6662 | 0.5187 | 0.2500 |
++| 600 | 1.1472 | 0.5741 | 0.5268 | 0.1667 | 2.7165 | 0.6312 | 0.5403 | 0.2500 |
++| 700 | 1.0629 | 0.5524 | 0.5167 | 0.3333 | 2.0228 | 0.6240 | 0.5758 | 0.2500 |
++| 800 | 0.9875 | 0.5313 | 0.5093 | 0.3333 | 2.7137 | 0.6455 | 0.5145 | 0.3333 |
++| 900 | 0.9187 | 0.5013 | 0.5371 | 0.3333 | 2.6517 | 0.6515 | 0.4856 | 0.2500 |
++| 1000 | 0.8523 | 0.4613 | 0.5334 | 0.2500 | 2.0937 | 0.6788 | 0.5255 | 0.4167 |
++| 1100 | 0.7904 | 0.4220 | 0.5451 | 0.2500 | 1.7717 | 0.6765 | 0.5432 | 0.3333 |
++| 1200 | 0.7365 | 0.3983 | 0.5419 | 0.2500 | 1.7871 | 0.6537 | 0.5268 | 0.3333 |
++| 1300 | 0.6944 | 0.3408 | 0.5386 | 0.2500 | 1.7467 | 0.6782 | 0.5319 | 0.2500 |
++| 1400 | 0.6810 | 0.3083 | 0.5434 | 0.2500 | 5.0188 | 0.5490 | 0.5645 | 0.4167 |
++| 1500 | 0.6203 | 0.2904 | 0.5474 | 0.2500 | 3.2026 | 0.6866 | 0.5675 | 0.4167 |
++| 1600 | 0.6078 | 0.2491 | 0.5473 | 0.2500 | 2.3837 | 0.6633 | 0.5725 | 0.3333 |
++| 1700 | 0.5489 | 0.2452 | 0.5465 | 0.2500 | 2.0740 | 0.7139 | 0.5462 | 0.3333 |
++| 1800 | 0.5367 | 0.2229 | 0.5547 | 0.2500 | 1.7782 | 0.7053 | 0.5534 | 0.3333 |
++| 1900 | 0.5154 | 0.2697 | 0.5493 | 0.2500 | 1.7912 | 0.6767 | 0.5442 | 0.3333 |
++| 2000 | 0.4943 | 0.1923 | 0.5395 | 0.2500 | 1.9669 | 0.7041 | 0.5839 | 0.2500 |
++| 2100 | 0.4706 | 0.2496 | 0.5414 | 0.2500 | 1.6734 | 0.6682 | 0.5304 | 0.3333 |
++| 2200 | 0.4459 | 0.2040 | 0.5412 | 0.2500 | 1.6764 | 0.6827 | 0.5420 | 0.3333 |
++| 2300 | 0.4384 | 0.1955 | 0.5451 | 0.2500 | 1.4593 | 0.6957 | 0.5549 | 0.3333 |
++| 2400 | 0.4135 | 0.1940 | 0.5434 | 0.2500 | 1.4625 | 0.6888 | 0.5843 | 0.3333 |
++| 2500 | 0.4015 | 0.1955 | 0.5438 | 0.2500 | 1.5504 | 0.6725 | 0.5681 | 0.2500 |
++| 2600 | 0.4039 | 0.1613 | 0.5445 | 0.2500 | 1.5287 | 0.6995 | 0.4967 | 0.4167 |
++| 2700 | 0.3851 | 0.2059 | 0.5389 | 0.2500 | 1.3096 | 0.6744 | 0.5879 | 0.3333 |
++| 2800 | 0.3550 | 0.1609 | 0.5477 | 0.2500 | 2.1033 | 0.6547 | 0.5911 | 0.3333 |
++| 2900 | 0.3916 | 0.1922 | 0.5367 | 0.2500 | 2.6588 | 0.6400 | 0.5705 | 0.3333 |
++| 3000 | 0.3543 | 0.1558 | 0.5444 | 0.2500 | 1.6247 | 0.6957 | 0.5447 | 0.3333 |
++| 3100 | 0.3392 | 0.1290 | 0.5385 | 0.2500 | 1.9633 | 0.6842 | 0.5483 | 0.3333 |
++| 3200 | 0.3316 | 0.1292 | 0.5397 | 0.2500 | 1.2707 | 0.6653 | 0.5565 | 0.3333 |
++| 3300 | 0.3137 | 0.1424 | 0.5432 | 0.2500 | 1.2381 | 0.6853 | 0.5673 | 0.3333 |
++| 3400 | 0.3044 | 0.1343 | 0.5370 | 0.2500 | 1.3228 | 0.6634 | 0.5159 | 0.2500 |
++| 3500 | 0.3356 | 0.0892 | 0.5392 | 0.2500 | 2.2223 | 0.6106 | 0.5426 | 0.2500 |
++| 3600 | 0.3058 | 0.1283 | 0.5432 | 0.2500 | 1.2979 | 0.6419 | 0.5292 | 0.2500 |
++| 3700 | 0.2816 | 0.1200 | 0.5380 | 0.2500 | 1.1734 | 0.6562 | 0.5295 | 0.2500 |
++| 3800 | 0.2776 | 0.1359 | 0.5401 | 0.2500 | 1.5035 | 0.6329 | 0.5430 | 0.2500 |
++| 3900 | 0.2681 | 0.1321 | 0.5311 | 0.2500 | 1.2264 | 0.6378 | 0.5413 | 0.2500 |
++| 4000 | 0.2601 | 0.1343 | 0.5339 | 0.2500 | 1.1051 | 0.6458 | 0.5115 | 0.2500 |
++
++## Execution and integrity record
++
++[VERIFIED BY RUNNING CODE] One Python process ran both arms sequentially using
++only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, and all named
++BLAS thread variables set to one. It printed progress through
++`step 96000/96000` and `PEAK_RSS_KB=86964` (84.9 MiB). The address-space hard
++limit was 3,221,225,471 bytes, just under 3 GiB. Total elapsed wall was 370.53
++s. One-minute load was 16.04 initially, never exceeded 17.31 during an arm,
++and was 15.97 at completion; no pause was required.
++
++[VERIFIED BY RUNNING CODE] Only the twelve LRSWEEP-fixed C3 NPZ files were
++loaded. No evaluation-only claim date was discovered or read. Hashes of every
++C3 input and the sealed harness, spec, results, and learner matched before and
++after; `changed_inputs` is empty. The source artifacts were not modified.
++
++Machine-readable results are in `.scratch/horizon-lever/results.json`; the
++pre-run protocol is `.scratch/horizon-lever/spec.md`; the isolated runner is
++`.scratch/horizon-lever/run_horizon.py`. Their SHA-256 digests are respectively
++`b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62`,
++`22938ee0302d6846a79e0525e0786dea277b9c677cd4795123358e6a77b1747d`, and
++`e0a7804f3664356415b0d6e0e9041447a3a7a84ccfee3fe5324c38aaff907e2a`.
+
+diff --git a/.scratch/horizon-lever/run_horizon.py b/.scratch/horizon-lever/run_horizon.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d8a28f5d1c2969c2d9bf422eb2c9821d0da2570
+--- /dev/null
++++ b/.scratch/horizon-lever/run_horizon.py
+@@ -0,0 +1,404 @@
++#!/usr/bin/env python3
++"""C3 horizon-vs-minibatch convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Callable
++
++
++ROOT = Path("/home/sat/mcrl-v025-horizon-ws")
++OUT = ROOT / ".scratch/horizon-lever"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BATCH_SIZE = 256
++SHUFFLE_DOMAIN = "V025_HORIZON/C3/minibatch-shuffle/seed/1"
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 19:
++        raise RuntimeError(f"process niceness is not 19: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def record_checkpoint(sweep, head, train, test):
++    loss, count = sweep.c3_loss(head, train)
++    if not math.isfinite(loss) or not sweep.parameters_finite(head):
++        raise RuntimeError("non-finite objective or parameter at checkpoint")
++    prediction = sweep.np.zeros_like(test.truth)
++    prediction[test.train_indices] = head._forward(test.x)[0]
++    return loss, count, sweep.parameter_norm(head), prediction
++
++
++def make_minibatch_updater(sweep, head, train) -> Callable[[], float]:
++    states = sweep.np.concatenate([anchor.x for anchor in train], axis=0)
++    targets = sweep.np.concatenate([
++        anchor.truth[anchor.train_indices] for anchor in train
++    ])
++    rng = sweep.np.random.default_rng(sweep.seed_from_domain(SHUFFLE_DOMAIN))
++    order = sweep.np.empty(0, dtype=sweep.np.int64)
++    cursor = 0
++
++    def update() -> float:
++        nonlocal order, cursor
++        if cursor >= order.size:
++            order = rng.permutation(states.shape[0])
++            cursor = 0
++        stop = min(cursor + BATCH_SIZE, order.size)
++        selected = order[cursor:stop]
++        cursor = stop
++        return head.update_scalar(states[selected], targets[selected])
++
++    return update
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def run_arm(sweep, data, arm: str, progress: list[int], total_work: int) -> dict[str, object]:
++    checkpoints = tuple(range(0, MAX_UPDATES + 1, CADENCE))
++    predictions = {step: [None] * len(data.anchors) for step in checkpoints}
++    objectives = {step: [] for step in checkpoints}
++    norms = {step: [] for step in checkpoints}
++    interval_total = {step: [] for step in checkpoints[1:]}
++    interval_update = {step: [] for step in checkpoints[1:]}
++    interval_checkpoint = {step: [] for step in checkpoints[1:]}
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    arm_started = time.perf_counter()
++    load_observed = [guard_load()]
++
++    for fold_index, test in enumerate(data.anchors):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        fold_started = time.perf_counter()
++        head = sweep.AdamMLPHead.create(
++            test.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        initial_started = time.perf_counter()
++        loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++        initial_checkpoint_s = time.perf_counter() - initial_started
++        objectives[0].append((loss, count))
++        norms[0].append(norm)
++        predictions[0][fold_index] = prediction
++        if arm == "A":
++            updater = lambda: sweep.c3_update(head, train)
++        else:
++            updater = make_minibatch_updater(sweep, head, train)
++
++        previous_end = fold_started
++        update_accumulator = 0.0
++        for step in range(1, MAX_UPDATES + 1):
++            update_started = time.perf_counter()
++            with sweep.np.errstate(all="ignore"):
++                loss_before_update = updater()
++            update_accumulator += time.perf_counter() - update_started
++            if not math.isfinite(loss_before_update) or not sweep.parameters_finite(head):
++                raise RuntimeError(f"arm {arm} fold {fold_index + 1} diverged at update {step}")
++            if step % CADENCE:
++                continue
++            checkpoint_started = time.perf_counter()
++            loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++            checkpoint_s = time.perf_counter() - checkpoint_started
++            objectives[step].append((loss, count))
++            norms[step].append(norm)
++            predictions[step][fold_index] = prediction
++            now = time.perf_counter()
++            interval_total[step].append(now - previous_end)
++            interval_update[step].append(update_accumulator)
++            interval_checkpoint[step].append(checkpoint_s + (initial_checkpoint_s if step == CADENCE else 0.0))
++            previous_end = now
++            update_accumulator = 0.0
++            progress[0] += CADENCE
++            current_load = load_average()
++            load_observed.append(current_load)
++            print(
++                f"step {progress[0]}/{total_work} arm={arm} "
++                f"fold={fold_index + 1}/{len(data.anchors)} update={step}/{MAX_UPDATES} "
++                f"load1={current_load:.2f}",
++                flush=True,
++            )
++            if current_load > 30.0:
++                raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    trajectory = {}
++    for step in checkpoints:
++        weighted_loss = sum(value * count for value, count in objectives[step]) / sum(
++            count for _, count in objectives[step]
++        )
++        held_out = sweep.c3_metric(
++            [value for value in predictions[step] if value is not None], data.anchors
++        )
++        trajectory[str(step)] = {
++            "training_objective": float(weighted_loss),
++            "held_out": held_out,
++            "parameter_l2": sweep.summarize(norms[step]),
++        }
++
++    checks = {}
++    first_admissible = None
++    for step in checkpoints[1:]:
++        check = stability(sweep, trajectory[str(step - CADENCE)], trajectory[str(step)])
++        checks[str(step)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = step
++
++    total_by_interval = [sum(interval_total[step]) for step in checkpoints[1:]]
++    update_by_interval = [sum(interval_update[step]) for step in checkpoints[1:]]
++    checkpoint_by_interval = [sum(interval_checkpoint[step]) for step in checkpoints[1:]]
++    cumulative = []
++    running = 0.0
++    for value in total_by_interval:
++        running += value
++        cumulative.append(running)
++    return {
++        "arm": arm,
++        "procedure": "full_batch" if arm == "A" else "minibatch",
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "wall_s": time.perf_counter() - arm_started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": total_by_interval,
++            "update_only_s_per_100_updates_across_12_loao_folds": update_by_interval,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": checkpoint_by_interval,
++            "cumulative_total_s_across_12_loao_folds": cumulative,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(total_by_interval) / len(total_by_interval),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(update_by_interval) / len(update_by_interval),
++            "per_fold_interval_total_s": {str(step): interval_total[step] for step in checkpoints[1:]},
++        },
++        "maximum_observed_load1": max(load_observed),
++    }
++
++
++def equal_wall_comparison(arms: dict[str, dict[str, object]]) -> dict[str, object]:
++    a = arms["A"]
++    b = arms["B"]
++    a_times = a["timing"]["cumulative_total_s_across_12_loao_folds"]
++    b_times = b["timing"]["cumulative_total_s_across_12_loao_folds"]
++
++    def reached(times: list[float], budget: float) -> int:
++        return CADENCE * sum(value <= budget for value in times)
++
++    comparisons = []
++    for label, budget in (
++        ("arm_a_cap_time", a_times[-1]),
++        ("arm_b_cap_time", b_times[-1]),
++        ("common_cap_time", min(a_times[-1], b_times[-1])),
++    ):
++        comparisons.append({
++            "budget_label": label,
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": reached(b_times, budget),
++        })
++    if b["first_admissible_update"] is not None:
++        budget = b_times[b["first_admissible_update"] // CADENCE - 1]
++        comparisons.append({
++            "budget_label": "arm_b_first_admissible_time",
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": b["first_admissible_update"],
++        })
++    return {"comparisons": comparisons}
++
++
++def main() -> None:
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    before = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    data = sweep.load_c3()
++    c3_paths = tuple(anchor.path for anchor in data.anchors)
++    c3_before = {str(path): file_sha256(path) for path in c3_paths}
++    shuffle_seed = sweep.seed_from_domain(SHUFFLE_DOMAIN)
++    total_work = 2 * len(data.anchors) * MAX_UPDATES
++    progress = [0]
++    started = time.perf_counter()
++    arms = {}
++    status = "complete"
++    pause_reason = None
++    try:
++        arms["A"] = run_arm(sweep, data, "A", progress, total_work)
++        arms["B"] = run_arm(sweep, data, "B", progress, total_work)
++    except LoadPause as error:
++        status = "paused_load"
++        pause_reason = str(error)
++    after = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    c3_after = {str(path): file_sha256(path) for path in c3_paths}
++    changed = [path for path in (*before, *c3_before) if (before | c3_before)[path] != (after | c3_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    original = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    original_c3 = next(
++        cell for cell in original["cells"]
++        if cell["route"] == "C3" and cell["learning_rate"] == 1e-3
++    )
++    reproduction = None
++    if "A" in arms:
++        fields = ("training_objective", "held_out")
++        reproduction = {
++            str(step): all(
++                arms["A"]["trajectory"][str(step)][field]
++                == original_c3["trajectory"][str(step)][field]
++                for field in fields
++            )
++            for step in range(0, 501, 100)
++        }
++    result = {
++        "schema": "mcrl-v025-horizon-lever-diagnostic-v1",
++        "status": status,
++        "pause_reason": pause_reason,
++        "scope": {
++            "diagnostic_not_claim": True,
++            "ee_quantities_computed": False,
++            "selection_on_ee": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "route": "C3",
++        "learning_rate": 1e-3,
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "maximum_updates": MAX_UPDATES,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "minibatch": {
++            "batch_size": BATCH_SIZE,
++            "shuffle_rng": "numpy Generator(PCG64)",
++            "shuffle_seed_domain": SHUFFLE_DOMAIN,
++            "shuffle_seed": shuffle_seed,
++            "replacement": False,
++            "replacement_scope": "without replacement within each pass; rows recur after reshuffle next pass",
++            "remainder_batch_used": True,
++            "fresh_same_seed_per_loao_fold": True,
++            "classification": "training-procedure change, not a hyperparameter",
++        },
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(path) for path in c3_paths],
++        },
++        "arms": arms,
++        "equal_wall": equal_wall_comparison(arms) if len(arms) == 2 else None,
++        "arm_a_reproduces_lr_sweep_0_to_500": reproduction,
++        "resource_policy": {
++            "python_processes": 1,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1,
++            "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb,
++            "initial_load1": initial_load,
++            "final_load1": load_average(),
++            "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before,
++        "source_sha256_after": after,
++        "c3_input_sha256_before": c3_before,
++        "c3_input_sha256_after": c3_after,
++        "changed_inputs": changed,
++    }
++    atomic_json(OUT / "results.json", result)
++    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
++    print(json.dumps({
++        "written": str(OUT / "results.json"),
++        "status": status,
++        "changed_inputs": changed,
++    }), flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/horizon-lever/spec.md b/.scratch/horizon-lever/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5514c3edfb7444e34a389659db0f542a5f7e7f4c
+--- /dev/null
++++ b/.scratch/horizon-lever/spec.md
+@@ -0,0 +1,63 @@
++# HORIZON lever diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This file is fixed before either horizon arm is fit.
++
++## Question and fixed inputs
++
++- Diagnose whether C3 convergence under-run is addressed by more full-batch
++  updates (Arm A) or by minibatch updates (Arm B). This is one route and one
++  seed, not a learning-rate grid and not a learning-rate selection.
++- Use the twelve fixed C3 LOAO anchors named by the LRSWEEP harness, including
++  only size>=2 rows for training and retaining the declared hard-zero
++  empty/singleton predictions for held-out diagnostics.
++- Use model seed `V025_LEARNER/seed/1` (`6407676579069309528`), C3 learning
++  rate `1e-3`, and every other architecture and Adam literal unchanged.
++- Import and reuse the LRSWEEP harness at
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`
++  (SHA-256 `dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6`),
++  its frozen rule (SHA-256
++  `0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19`),
++  and its results (SHA-256
++  `9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861`)
++  directly and without modifying those artifacts.
++
++## Common cadence and rule
++
++- Cap both arms at 4,000 optimizer updates and evaluate at update 0 and every
++  100 updates through 4,000.
++- At each destination cadence `k`, apply LRSWEEP's identical four checks to
++  `k-100 -> k`: objective relative absolute motion <= 0.01; held-out level R2
++  absolute motion <= 0.01; held-out within-group ordering absolute motion <=
++  0.005; held-out top-1 absolute motion <= 0.005. The first finite destination
++  cadence satisfying all four is that arm's first admissible update.
++- The checkpoint training objective is always evaluated on the complete LOAO
++  training fold, including for Arm B. A last-minibatch loss is not used.
++
++## Arms
++
++- Arm A: the LRSWEEP C3 full-batch gradient aggregation verbatim, one Adam
++  update over all eleven training anchors per optimizer step.
++- Arm B: batch size 256. For each LOAO fold, concatenate the eleven training
++  anchors in the fixed LRSWEEP filename order. Initialise an independent PCG64
++  generator from the SHA-256 domain seed
++  `V025_HORIZON/C3/minibatch-shuffle/seed/1`. At the start of every pass,
++  generate a permutation of all training rows; consume consecutive batches of
++  256 without replacement within that pass; include the final remainder batch;
++  then reshuffle for the next pass. Rows recur across passes. Each fold starts
++  a fresh generator at the same declared shuffle seed. This deterministic
++  ordering is separate from the unchanged model-initialisation seed.
++- Minibatching is a training-procedure change, not a hyperparameter.
++
++## Scope and resources
++
++- Metrics are convergence diagnostics only and are never evidence about EE.
++  Compute no EE quantity and perform no selection on EE.
++- Read only the twelve C3 files fixed in LRSWEEP. Do not discover or read any
++  evaluation-only claim dates.
++- Run both arms sequentially in one Python process using only
++  `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, all named BLAS
++  thread variables equal to one, and an address-space limit below 3 GiB.
++- Print progress as `step k/N` and print peak RSS. If one-minute load average
++  exceeds 30 at a cadence boundary, stop before more training and record a
++  load pause rather than pushing through.
++
+diff --git a/HORIZON-LEVER-2026-09-10.md b/HORIZON-LEVER-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e3e1694b957664bcf66e8049f898883cba5bcbb
+--- /dev/null
++++ b/HORIZON-LEVER-2026-09-10.md
+@@ -0,0 +1,208 @@
++**Arm A first admissible step: NONE (312.23 s wall; 7.81 s/100 updates); Arm B first admissible update: NONE (58.30 s wall; 1.46 s/100 updates); the evidence supports neither lever for production.**
++
++`DIAGNOSTIC_NOT_CLAIM` — development material only.
++
++## Decision
++
++[VERIFIED BY RUNNING CODE] Neither more full-batch steps nor the declared
++minibatching procedure satisfied the unchanged LRSWEEP convergence rule at
++any 100-update cadence through 4,000 updates. `NONE` is the result for both
++arms, not a missing observation.
++
++[INFERRED] The present learner therefore cannot be certified as converged at
++any practical horizon tested here. Do not commit a 16-seed, 5-arm production
++schedule to either lever on this evidence. The correct reading of tonight's
++two runs is **“the optimisation was under-run.”**
++
++[INFERRED] Arm A has the more promising residual shape for a further
++diagnostic: at 4,000 updates it misses only the objective-motion tolerance and
++that residual is slowly decaying, though with intermittent oscillation. Arm B
++is materially oscillatory and still misses both objective and ordering at the
++cap. That does not make Arm A admissible or authorize a production horizon.
++
++Loss and all held-out metrics below are convergence diagnostics only. **They
++are never evidence about EE. No EE quantity was computed, and nothing was
++selected on EE.**
++
++## Fixed design
++
++[VERIFIED BY RUNNING CODE] The run used C3 only, the twelve fixed LRSWEEP C3
++anchors and identical LOAO folds, model seed `V025_LEARNER/seed/1`
++(`6407676579069309528`), the sealed `(64,64)` ReLU architecture, all sealed
++Adam literals, and the route's current literal learning rate `1e-3`. Arm A
++called LRSWEEP's full-batch C3 gradient aggregation directly. Its values at
++updates 0, 100, 200, 300, 400, and 500 exactly reproduced the prior C3
++`1e-3` cell.
++
++[VERIFIED BY RUNNING CODE] The rule was applied at every destination cadence
++`k = 100, 200, ..., 4000` to the immediately preceding interval `k-100 -> k`:
++
++- objective relative absolute motion no greater than `0.01`;
++- held-out level R2 absolute motion no greater than `0.01`;
++- held-out within-group ordering absolute motion no greater than `0.005`;
++- held-out top-1 absolute motion no greater than `0.005`.
++
++All four checks had to pass together, with finite objective and parameters.
++Arm B's checkpoint objective was evaluated on the complete training fold, not
++on its last minibatch.
++
++[VERIFIED BY RUNNING CODE] Arm B used batch size 256. For each LOAO fold, the
++eleven training anchors were concatenated in LRSWEEP's fixed filename order.
++A NumPy PCG64 generator used the independent SHA-256 domain seed
++`V025_HORIZON/C3/minibatch-shuffle/seed/1`
++(`5845257737798802301`). Each pass was freshly shuffled; consecutive batches
++were sampled **without replacement within a pass**; the remainder batch was
++used; rows recurred only after the next-pass reshuffle. Every fold restarted
++the same declared shuffle stream. **This is a training-procedure change, not a
++hyperparameter.**
++
++## Cap residuals — conditional Arm C diagnosis
++
++[VERIFIED BY RUNNING CODE] Because both arms returned `NONE`, the required cap
++diagnosis applies:
++
++| Arm | 3900 loss | 4000 loss | objective motion | R2 motion | ordering motion | top-1 motion | cap checks passed |
++|:---|---:|---:|---:|---:|---:|---:|:---|
++| A, full batch | 0.268075 | 0.260136 | 2.961% | 0.002146 | 0.002801 | 0 | R2, ordering, top-1; objective failed |
++| B, minibatch | 1.226373 | 1.105135 | 9.886% | 0.008055 | 0.029753 | 0 | R2, top-1; objective and ordering failed |
++
++[VERIFIED BY RUNNING CODE] Arm A's loss over updates 3,500–4,000 was
++`0.335617, 0.305839, 0.281603, 0.277644, 0.268075, 0.260136`. This follows a
++10.24% upward excursion at 3,400→3,500, then five consecutive decreases. The
++last five absolute relative motions were 8.87%, 7.92%, 1.41%, 3.45%, and
++2.96%: they are getting smaller on the broad trend but are not monotone and
++remain above 1% at the cap.
++
++[INFERRED] Arm A is therefore **slowly decaying with intermittent
++oscillation**, not flat. Its held-out R2 and ordering also oscillate, but at the
++cap their adjacent-cadence motions pass.
++
++[VERIFIED BY RUNNING CODE] Arm B's loss over updates 3,500–4,000 was
++`2.222269, 1.297866, 1.173352, 1.503476, 1.226373, 1.105135`; its recent
++relative motions include 41.60%, 9.59%, 28.14%, 18.43%, and 9.89%, with a
++direction reversal at 3,700→3,800. Ordering moved 0.029753 at the cap, almost
++six times its tolerance.
++
++[INFERRED] Arm B is **oscillating**, not flat or slowly settling. More cheap
++minibatch updates at this unchanged learning rate are not supported as the
++production remedy.
++
++## Equal-wall-time comparison
++
++[VERIFIED BY RUNNING CODE] The cadence-timed 12-fold work needed 51.03 s for
++Arm B to reach 4,000 updates. In the same measured budget, Arm A completed 600
++updates (44.49 s; 700 did not fit). At those equal-wall endpoints:
++
++| Endpoint | loss | held-out R2 | ordering | top-1 | preceding-100 rule |
++|:---|---:|---:|---:|---:|:---|
++| A at 600 | 1.147249 | 0.574094 | 0.526820 | 0.166667 | failed all four checks |
++| B at 4000 | 1.105135 | 0.645829 | 0.511546 | 0.250000 | failed objective and ordering |
++
++[INFERRED] Minibatching buys about 6.0–6.2 times as many updates per measured
++second, but that computational advantage does **not** become an admissibility
++advantage: both equal-wall endpoints fail. There is no Arm B convergence
++advantage to carry into the schedule, so the equal-wall comparison still
++decides **no production schedule under either tested lever**.
++
++## Wall cost and production extrapolation
++
++[VERIFIED BY RUNNING CODE] Wall timing for one seed's full 12-fold diagnostic:
++
++| Arm | total arm wall | end-to-end s/100 updates | cadence-timed s/100, mean [min, max] |
++|:---|---:|---:|---:|
++| A | 312.23 s | 7.806 | 7.582 [7.175, 8.028] |
++| B | 58.30 s | 1.457 | 1.276 [1.229, 1.432] |
++
++The end-to-end rate is total arm wall divided by 40 cadences and includes the
++final aggregation of all LOAO held-out metrics. The cadence-timed rate sums
++the twelve fold intervals and includes updates plus checkpoint evaluation.
++
++[DERIVED ON PAPER] Because neither arm reached admissibility, a cost *to
++convergence* cannot be estimated. The only honest production projection is
++the spend to the tested 4,000-update cap. For the complete `16 seeds × 5 arms =
++80` set of C3 heads:
++
++| Lever at 4,000-update cap | extrapolated CPU-hours | assumptions |
++|:---|---:|:---|
++| A, full batch | 0.56–0.63 | Lower bound uses mean update-only time per LOAO fold (`0.6261 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and multiplies by `12/11` for training on all 12 anchors instead of 11. |
++| B, minibatch 256 | 0.09–0.12 | Lower bound uses mean update-only time per fold (`0.1007 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and the same conservative `12/11` allowance. |
++
++These are C3 learner CPU-hour ranges on this host, assuming serial
++single-thread execution, identical data dimensions, no shared-head speedup,
++and negligible orchestration/serialization. They do not estimate C1, C2,
++policy, simulation, or other pipeline costs. Most importantly, they are
++**spend-to-cap ranges for runs known not to be converged**, not estimates for a
++valid production result. Any converged-run cost is unknown from this evidence.
++
++## Held-out convergence diagnostics at every cadence
++
++[VERIFIED BY RUNNING CODE] Each cell is evaluated over all 11,947 held-out
++catalogue rows across the twelve LOAO folds, including declared hard zeros for
++empty/singleton coalitions. `ord` is within-group pairwise ordering. These
++metrics diagnose stabilization only; they say nothing about EE.
++
++| upd | A loss | A R2 | A ord | A top1 | B loss | B R2 | B ord | B top1 |
++|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| 0 | 131.3764 | -2.5559 | 0.6067 | 0.0000 | 131.3764 | -2.5559 | 0.6067 | 0.0000 |
++| 100 | 2.1448 | 0.6985 | 0.5530 | 0.3333 | 5.0189 | 0.5691 | 0.5046 | 0.2500 |
++| 200 | 1.7700 | 0.6776 | 0.5650 | 0.2500 | 2.9834 | 0.6942 | 0.5380 | 0.3333 |
++| 300 | 1.5452 | 0.6462 | 0.5601 | 0.1667 | 3.4193 | 0.6714 | 0.5862 | 0.4167 |
++| 400 | 1.3710 | 0.6184 | 0.5632 | 0.1667 | 3.1658 | 0.6837 | 0.5257 | 0.2500 |
++| 500 | 1.2482 | 0.5980 | 0.5322 | 0.2500 | 2.4458 | 0.6662 | 0.5187 | 0.2500 |
++| 600 | 1.1472 | 0.5741 | 0.5268 | 0.1667 | 2.7165 | 0.6312 | 0.5403 | 0.2500 |
++| 700 | 1.0629 | 0.5524 | 0.5167 | 0.3333 | 2.0228 | 0.6240 | 0.5758 | 0.2500 |
++| 800 | 0.9875 | 0.5313 | 0.5093 | 0.3333 | 2.7137 | 0.6455 | 0.5145 | 0.3333 |
++| 900 | 0.9187 | 0.5013 | 0.5371 | 0.3333 | 2.6517 | 0.6515 | 0.4856 | 0.2500 |
++| 1000 | 0.8523 | 0.4613 | 0.5334 | 0.2500 | 2.0937 | 0.6788 | 0.5255 | 0.4167 |
++| 1100 | 0.7904 | 0.4220 | 0.5451 | 0.2500 | 1.7717 | 0.6765 | 0.5432 | 0.3333 |
++| 1200 | 0.7365 | 0.3983 | 0.5419 | 0.2500 | 1.7871 | 0.6537 | 0.5268 | 0.3333 |
++| 1300 | 0.6944 | 0.3408 | 0.5386 | 0.2500 | 1.7467 | 0.6782 | 0.5319 | 0.2500 |
++| 1400 | 0.6810 | 0.3083 | 0.5434 | 0.2500 | 5.0188 | 0.5490 | 0.5645 | 0.4167 |
++| 1500 | 0.6203 | 0.2904 | 0.5474 | 0.2500 | 3.2026 | 0.6866 | 0.5675 | 0.4167 |
++| 1600 | 0.6078 | 0.2491 | 0.5473 | 0.2500 | 2.3837 | 0.6633 | 0.5725 | 0.3333 |
++| 1700 | 0.5489 | 0.2452 | 0.5465 | 0.2500 | 2.0740 | 0.7139 | 0.5462 | 0.3333 |
++| 1800 | 0.5367 | 0.2229 | 0.5547 | 0.2500 | 1.7782 | 0.7053 | 0.5534 | 0.3333 |
++| 1900 | 0.5154 | 0.2697 | 0.5493 | 0.2500 | 1.7912 | 0.6767 | 0.5442 | 0.3333 |
++| 2000 | 0.4943 | 0.1923 | 0.5395 | 0.2500 | 1.9669 | 0.7041 | 0.5839 | 0.2500 |
++| 2100 | 0.4706 | 0.2496 | 0.5414 | 0.2500 | 1.6734 | 0.6682 | 0.5304 | 0.3333 |
++| 2200 | 0.4459 | 0.2040 | 0.5412 | 0.2500 | 1.6764 | 0.6827 | 0.5420 | 0.3333 |
++| 2300 | 0.4384 | 0.1955 | 0.5451 | 0.2500 | 1.4593 | 0.6957 | 0.5549 | 0.3333 |
++| 2400 | 0.4135 | 0.1940 | 0.5434 | 0.2500 | 1.4625 | 0.6888 | 0.5843 | 0.3333 |
++| 2500 | 0.4015 | 0.1955 | 0.5438 | 0.2500 | 1.5504 | 0.6725 | 0.5681 | 0.2500 |
++| 2600 | 0.4039 | 0.1613 | 0.5445 | 0.2500 | 1.5287 | 0.6995 | 0.4967 | 0.4167 |
++| 2700 | 0.3851 | 0.2059 | 0.5389 | 0.2500 | 1.3096 | 0.6744 | 0.5879 | 0.3333 |
++| 2800 | 0.3550 | 0.1609 | 0.5477 | 0.2500 | 2.1033 | 0.6547 | 0.5911 | 0.3333 |
++| 2900 | 0.3916 | 0.1922 | 0.5367 | 0.2500 | 2.6588 | 0.6400 | 0.5705 | 0.3333 |
++| 3000 | 0.3543 | 0.1558 | 0.5444 | 0.2500 | 1.6247 | 0.6957 | 0.5447 | 0.3333 |
++| 3100 | 0.3392 | 0.1290 | 0.5385 | 0.2500 | 1.9633 | 0.6842 | 0.5483 | 0.3333 |
++| 3200 | 0.3316 | 0.1292 | 0.5397 | 0.2500 | 1.2707 | 0.6653 | 0.5565 | 0.3333 |
++| 3300 | 0.3137 | 0.1424 | 0.5432 | 0.2500 | 1.2381 | 0.6853 | 0.5673 | 0.3333 |
++| 3400 | 0.3044 | 0.1343 | 0.5370 | 0.2500 | 1.3228 | 0.6634 | 0.5159 | 0.2500 |
++| 3500 | 0.3356 | 0.0892 | 0.5392 | 0.2500 | 2.2223 | 0.6106 | 0.5426 | 0.2500 |
++| 3600 | 0.3058 | 0.1283 | 0.5432 | 0.2500 | 1.2979 | 0.6419 | 0.5292 | 0.2500 |
++| 3700 | 0.2816 | 0.1200 | 0.5380 | 0.2500 | 1.1734 | 0.6562 | 0.5295 | 0.2500 |
++| 3800 | 0.2776 | 0.1359 | 0.5401 | 0.2500 | 1.5035 | 0.6329 | 0.5430 | 0.2500 |
++| 3900 | 0.2681 | 0.1321 | 0.5311 | 0.2500 | 1.2264 | 0.6378 | 0.5413 | 0.2500 |
++| 4000 | 0.2601 | 0.1343 | 0.5339 | 0.2500 | 1.1051 | 0.6458 | 0.5115 | 0.2500 |
++
++## Execution and integrity record
++
++[VERIFIED BY RUNNING CODE] One Python process ran both arms sequentially using
++only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, and all named
++BLAS thread variables set to one. It printed progress through
++`step 96000/96000` and `PEAK_RSS_KB=86964` (84.9 MiB). The address-space hard
++limit was 3,221,225,471 bytes, just under 3 GiB. Total elapsed wall was 370.53
++s. One-minute load was 16.04 initially, never exceeded 17.31 during an arm,
++and was 15.97 at completion; no pause was required.
++
++[VERIFIED BY RUNNING CODE] Only the twelve LRSWEEP-fixed C3 NPZ files were
++loaded. No evaluation-only claim date was discovered or read. Hashes of every
++C3 input and the sealed harness, spec, results, and learner matched before and
++after; `changed_inputs` is empty. The source artifacts were not modified.
++
++Machine-readable results are in `.scratch/horizon-lever/results.json`; the
++pre-run protocol is `.scratch/horizon-lever/spec.md`; the isolated runner is
++`.scratch/horizon-lever/run_horizon.py`. Their SHA-256 digests are respectively
++`b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62`,
++`22938ee0302d6846a79e0525e0786dea277b9c677cd4795123358e6a77b1747d`, and
++`e0a7804f3664356415b0d6e0e9041447a3a7a84ccfee3fe5324c38aaff907e2a`.
+
+codex
+The key reduction is unambiguous: both first-admissible fields are null. At 4,000, Arm A passes three of four checks but its loss still moves 2.961%; Arm B’s loss moves 9.886% and ordering moves 0.029753. I’ve written the report with the required `NONE` conclusion and am doing a final mechanical cross-check against the JSON, including cadence-row count, resource limits, provenance, and the first-line format.
+exec
+/bin/bash -lc "set -eu
+head -1 HORIZON-LEVER-2026-09-10.md
+jq -e '
+  .status == \"complete\" and
+  .arms.A.first_admissible_update == null and
+  .arms.B.first_admissible_update == null and
+  (.arm_a_reproduces_lr_sweep_0_to_500 | all) and
+  .scope.ee_quantities_computed == false and
+  .scope.selection_on_ee == false and
+  .resource_policy.python_processes == 1 and
+  .resource_policy.nice == 19 and
+  .resource_policy.blas_threads == 1 and
+  .resource_policy.peak_rss_kb < (3*1024*1024) and
+  .resource_policy.rlimit_as_bytes < (3*1024*1024*1024) and
+  .changed_inputs == [] and
+  .arms.A.cadence_checks[\"4000\"].passed.objective == false and
+  .arms.B.cadence_checks[\"4000\"].passed.objective == false
+' .scratch/horizon-lever/results.json
+rows="'$(awk '"'/"'^'"\\| [0-9]+ \\|/ {count++} END {print count+0}' HORIZON-LEVER-2026-09-10.md)
+test \""'$rows" -eq 41
+printf '"'cadence_table_rows=%s\\n' \""'$rows"
+if rg -n '"'[[:blank:]]+"'$'"' HORIZON-LEVER-2026-09-10.md .scratch/horizon-lever/spec.md .scratch/horizon-lever/run_horizon.py; then exit 1; fi
+rg -n 'This is a training-procedure change, not a|No EE quantity was computed|first admissible|equal-wall|PEAK_RSS_KB' HORIZON-LEVER-2026-09-10.md
+sha256sum HORIZON-LEVER-2026-09-10.md
+git status --short" in /home/sat/mcrl-v025-horizon-ws
+ succeeded in 0ms:
+**Arm A first admissible step: NONE (312.23 s wall; 7.81 s/100 updates); Arm B first admissible update: NONE (58.30 s wall; 1.46 s/100 updates); the evidence supports neither lever for production.**
+true
+cadence_table_rows=41
+1:**Arm A first admissible step: NONE (312.23 s wall; 7.81 s/100 updates); Arm B first admissible update: NONE (58.30 s wall; 1.46 s/100 updates); the evidence supports neither lever for production.**
+24:are never evidence about EE. No EE quantity was computed, and nothing was
+56:the same declared shuffle stream. **This is a training-procedure change, not a
+94:updates (44.49 s; 700 did not fit). At those equal-wall endpoints:
+103:advantage: both equal-wall endpoints fail. There is no Arm B convergence
+104:advantage to carry into the schedule, so the equal-wall comparison still
+193:`step 96000/96000` and `PEAK_RSS_KB=86964` (84.9 MiB). The address-space hard
+ac84bbe090245d6b6a11d9c34f4df83943ce054b6d5421973e100122e871e5d4  HORIZON-LEVER-2026-09-10.md
+?? .scratch/
+?? HORIZON-LEVER-2026-09-10.md
+
+diff --git a/.scratch/horizon-lever/run_horizon.py b/.scratch/horizon-lever/run_horizon.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d8a28f5d1c2969c2d9bf422eb2c9821d0da2570
+--- /dev/null
++++ b/.scratch/horizon-lever/run_horizon.py
+@@ -0,0 +1,404 @@
++#!/usr/bin/env python3
++"""C3 horizon-vs-minibatch convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Callable
++
++
++ROOT = Path("/home/sat/mcrl-v025-horizon-ws")
++OUT = ROOT / ".scratch/horizon-lever"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BATCH_SIZE = 256
++SHUFFLE_DOMAIN = "V025_HORIZON/C3/minibatch-shuffle/seed/1"
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 19:
++        raise RuntimeError(f"process niceness is not 19: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def record_checkpoint(sweep, head, train, test):
++    loss, count = sweep.c3_loss(head, train)
++    if not math.isfinite(loss) or not sweep.parameters_finite(head):
++        raise RuntimeError("non-finite objective or parameter at checkpoint")
++    prediction = sweep.np.zeros_like(test.truth)
++    prediction[test.train_indices] = head._forward(test.x)[0]
++    return loss, count, sweep.parameter_norm(head), prediction
++
++
++def make_minibatch_updater(sweep, head, train) -> Callable[[], float]:
++    states = sweep.np.concatenate([anchor.x for anchor in train], axis=0)
++    targets = sweep.np.concatenate([
++        anchor.truth[anchor.train_indices] for anchor in train
++    ])
++    rng = sweep.np.random.default_rng(sweep.seed_from_domain(SHUFFLE_DOMAIN))
++    order = sweep.np.empty(0, dtype=sweep.np.int64)
++    cursor = 0
++
++    def update() -> float:
++        nonlocal order, cursor
++        if cursor >= order.size:
++            order = rng.permutation(states.shape[0])
++            cursor = 0
++        stop = min(cursor + BATCH_SIZE, order.size)
++        selected = order[cursor:stop]
++        cursor = stop
++        return head.update_scalar(states[selected], targets[selected])
++
++    return update
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def run_arm(sweep, data, arm: str, progress: list[int], total_work: int) -> dict[str, object]:
++    checkpoints = tuple(range(0, MAX_UPDATES + 1, CADENCE))
++    predictions = {step: [None] * len(data.anchors) for step in checkpoints}
++    objectives = {step: [] for step in checkpoints}
++    norms = {step: [] for step in checkpoints}
++    interval_total = {step: [] for step in checkpoints[1:]}
++    interval_update = {step: [] for step in checkpoints[1:]}
++    interval_checkpoint = {step: [] for step in checkpoints[1:]}
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    arm_started = time.perf_counter()
++    load_observed = [guard_load()]
++
++    for fold_index, test in enumerate(data.anchors):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        fold_started = time.perf_counter()
++        head = sweep.AdamMLPHead.create(
++            test.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        initial_started = time.perf_counter()
++        loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++        initial_checkpoint_s = time.perf_counter() - initial_started
++        objectives[0].append((loss, count))
++        norms[0].append(norm)
++        predictions[0][fold_index] = prediction
++        if arm == "A":
++            updater = lambda: sweep.c3_update(head, train)
++        else:
++            updater = make_minibatch_updater(sweep, head, train)
++
++        previous_end = fold_started
++        update_accumulator = 0.0
++        for step in range(1, MAX_UPDATES + 1):
++            update_started = time.perf_counter()
++            with sweep.np.errstate(all="ignore"):
++                loss_before_update = updater()
++            update_accumulator += time.perf_counter() - update_started
++            if not math.isfinite(loss_before_update) or not sweep.parameters_finite(head):
++                raise RuntimeError(f"arm {arm} fold {fold_index + 1} diverged at update {step}")
++            if step % CADENCE:
++                continue
++            checkpoint_started = time.perf_counter()
++            loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++            checkpoint_s = time.perf_counter() - checkpoint_started
++            objectives[step].append((loss, count))
++            norms[step].append(norm)
++            predictions[step][fold_index] = prediction
++            now = time.perf_counter()
++            interval_total[step].append(now - previous_end)
++            interval_update[step].append(update_accumulator)
++            interval_checkpoint[step].append(checkpoint_s + (initial_checkpoint_s if step == CADENCE else 0.0))
++            previous_end = now
++            update_accumulator = 0.0
++            progress[0] += CADENCE
++            current_load = load_average()
++            load_observed.append(current_load)
++            print(
++                f"step {progress[0]}/{total_work} arm={arm} "
++                f"fold={fold_index + 1}/{len(data.anchors)} update={step}/{MAX_UPDATES} "
++                f"load1={current_load:.2f}",
++                flush=True,
++            )
++            if current_load > 30.0:
++                raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    trajectory = {}
++    for step in checkpoints:
++        weighted_loss = sum(value * count for value, count in objectives[step]) / sum(
++            count for _, count in objectives[step]
++        )
++        held_out = sweep.c3_metric(
++            [value for value in predictions[step] if value is not None], data.anchors
++        )
++        trajectory[str(step)] = {
++            "training_objective": float(weighted_loss),
++            "held_out": held_out,
++            "parameter_l2": sweep.summarize(norms[step]),
++        }
++
++    checks = {}
++    first_admissible = None
++    for step in checkpoints[1:]:
++        check = stability(sweep, trajectory[str(step - CADENCE)], trajectory[str(step)])
++        checks[str(step)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = step
++
++    total_by_interval = [sum(interval_total[step]) for step in checkpoints[1:]]
++    update_by_interval = [sum(interval_update[step]) for step in checkpoints[1:]]
++    checkpoint_by_interval = [sum(interval_checkpoint[step]) for step in checkpoints[1:]]
++    cumulative = []
++    running = 0.0
++    for value in total_by_interval:
++        running += value
++        cumulative.append(running)
++    return {
++        "arm": arm,
++        "procedure": "full_batch" if arm == "A" else "minibatch",
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "wall_s": time.perf_counter() - arm_started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": total_by_interval,
++            "update_only_s_per_100_updates_across_12_loao_folds": update_by_interval,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": checkpoint_by_interval,
++            "cumulative_total_s_across_12_loao_folds": cumulative,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(total_by_interval) / len(total_by_interval),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(update_by_interval) / len(update_by_interval),
++            "per_fold_interval_total_s": {str(step): interval_total[step] for step in checkpoints[1:]},
++        },
++        "maximum_observed_load1": max(load_observed),
++    }
++
++
++def equal_wall_comparison(arms: dict[str, dict[str, object]]) -> dict[str, object]:
++    a = arms["A"]
++    b = arms["B"]
++    a_times = a["timing"]["cumulative_total_s_across_12_loao_folds"]
++    b_times = b["timing"]["cumulative_total_s_across_12_loao_folds"]
++
++    def reached(times: list[float], budget: float) -> int:
++        return CADENCE * sum(value <= budget for value in times)
++
++    comparisons = []
++    for label, budget in (
++        ("arm_a_cap_time", a_times[-1]),
++        ("arm_b_cap_time", b_times[-1]),
++        ("common_cap_time", min(a_times[-1], b_times[-1])),
++    ):
++        comparisons.append({
++            "budget_label": label,
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": reached(b_times, budget),
++        })
++    if b["first_admissible_update"] is not None:
++        budget = b_times[b["first_admissible_update"] // CADENCE - 1]
++        comparisons.append({
++            "budget_label": "arm_b_first_admissible_time",
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": b["first_admissible_update"],
++        })
++    return {"comparisons": comparisons}
++
++
++def main() -> None:
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    before = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    data = sweep.load_c3()
++    c3_paths = tuple(anchor.path for anchor in data.anchors)
++    c3_before = {str(path): file_sha256(path) for path in c3_paths}
++    shuffle_seed = sweep.seed_from_domain(SHUFFLE_DOMAIN)
++    total_work = 2 * len(data.anchors) * MAX_UPDATES
++    progress = [0]
++    started = time.perf_counter()
++    arms = {}
++    status = "complete"
++    pause_reason = None
++    try:
++        arms["A"] = run_arm(sweep, data, "A", progress, total_work)
++        arms["B"] = run_arm(sweep, data, "B", progress, total_work)
++    except LoadPause as error:
++        status = "paused_load"
++        pause_reason = str(error)
++    after = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    c3_after = {str(path): file_sha256(path) for path in c3_paths}
++    changed = [path for path in (*before, *c3_before) if (before | c3_before)[path] != (after | c3_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    original = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    original_c3 = next(
++        cell for cell in original["cells"]
++        if cell["route"] == "C3" and cell["learning_rate"] == 1e-3
++    )
++    reproduction = None
++    if "A" in arms:
++        fields = ("training_objective", "held_out")
++        reproduction = {
++            str(step): all(
++                arms["A"]["trajectory"][str(step)][field]
++                == original_c3["trajectory"][str(step)][field]
++                for field in fields
++            )
++            for step in range(0, 501, 100)
++        }
++    result = {
++        "schema": "mcrl-v025-horizon-lever-diagnostic-v1",
++        "status": status,
++        "pause_reason": pause_reason,
++        "scope": {
++            "diagnostic_not_claim": True,
++            "ee_quantities_computed": False,
++            "selection_on_ee": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "route": "C3",
++        "learning_rate": 1e-3,
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "maximum_updates": MAX_UPDATES,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "minibatch": {
++            "batch_size": BATCH_SIZE,
++            "shuffle_rng": "numpy Generator(PCG64)",
++            "shuffle_seed_domain": SHUFFLE_DOMAIN,
++            "shuffle_seed": shuffle_seed,
++            "replacement": False,
++            "replacement_scope": "without replacement within each pass; rows recur after reshuffle next pass",
++            "remainder_batch_used": True,
++            "fresh_same_seed_per_loao_fold": True,
++            "classification": "training-procedure change, not a hyperparameter",
++        },
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(path) for path in c3_paths],
++        },
++        "arms": arms,
++        "equal_wall": equal_wall_comparison(arms) if len(arms) == 2 else None,
++        "arm_a_reproduces_lr_sweep_0_to_500": reproduction,
++        "resource_policy": {
++            "python_processes": 1,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1,
++            "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb,
++            "initial_load1": initial_load,
++            "final_load1": load_average(),
++            "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before,
++        "source_sha256_after": after,
++        "c3_input_sha256_before": c3_before,
++        "c3_input_sha256_after": c3_after,
++        "changed_inputs": changed,
++    }
++    atomic_json(OUT / "results.json", result)
++    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
++    print(json.dumps({
++        "written": str(OUT / "results.json"),
++        "status": status,
++        "changed_inputs": changed,
++    }), flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/horizon-lever/spec.md b/.scratch/horizon-lever/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5514c3edfb7444e34a389659db0f542a5f7e7f4c
+--- /dev/null
++++ b/.scratch/horizon-lever/spec.md
+@@ -0,0 +1,63 @@
++# HORIZON lever diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This file is fixed before either horizon arm is fit.
++
++## Question and fixed inputs
++
++- Diagnose whether C3 convergence under-run is addressed by more full-batch
++  updates (Arm A) or by minibatch updates (Arm B). This is one route and one
++  seed, not a learning-rate grid and not a learning-rate selection.
++- Use the twelve fixed C3 LOAO anchors named by the LRSWEEP harness, including
++  only size>=2 rows for training and retaining the declared hard-zero
++  empty/singleton predictions for held-out diagnostics.
++- Use model seed `V025_LEARNER/seed/1` (`6407676579069309528`), C3 learning
++  rate `1e-3`, and every other architecture and Adam literal unchanged.
++- Import and reuse the LRSWEEP harness at
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`
++  (SHA-256 `dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6`),
++  its frozen rule (SHA-256
++  `0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19`),
++  and its results (SHA-256
++  `9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861`)
++  directly and without modifying those artifacts.
++
++## Common cadence and rule
++
++- Cap both arms at 4,000 optimizer updates and evaluate at update 0 and every
++  100 updates through 4,000.
++- At each destination cadence `k`, apply LRSWEEP's identical four checks to
++  `k-100 -> k`: objective relative absolute motion <= 0.01; held-out level R2
++  absolute motion <= 0.01; held-out within-group ordering absolute motion <=
++  0.005; held-out top-1 absolute motion <= 0.005. The first finite destination
++  cadence satisfying all four is that arm's first admissible update.
++- The checkpoint training objective is always evaluated on the complete LOAO
++  training fold, including for Arm B. A last-minibatch loss is not used.
++
++## Arms
++
++- Arm A: the LRSWEEP C3 full-batch gradient aggregation verbatim, one Adam
++  update over all eleven training anchors per optimizer step.
++- Arm B: batch size 256. For each LOAO fold, concatenate the eleven training
++  anchors in the fixed LRSWEEP filename order. Initialise an independent PCG64
++  generator from the SHA-256 domain seed
++  `V025_HORIZON/C3/minibatch-shuffle/seed/1`. At the start of every pass,
++  generate a permutation of all training rows; consume consecutive batches of
++  256 without replacement within that pass; include the final remainder batch;
++  then reshuffle for the next pass. Rows recur across passes. Each fold starts
++  a fresh generator at the same declared shuffle seed. This deterministic
++  ordering is separate from the unchanged model-initialisation seed.
++- Minibatching is a training-procedure change, not a hyperparameter.
++
++## Scope and resources
++
++- Metrics are convergence diagnostics only and are never evidence about EE.
++  Compute no EE quantity and perform no selection on EE.
++- Read only the twelve C3 files fixed in LRSWEEP. Do not discover or read any
++  evaluation-only claim dates.
++- Run both arms sequentially in one Python process using only
++  `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, all named BLAS
++  thread variables equal to one, and an address-space limit below 3 GiB.
++- Print progress as `step k/N` and print peak RSS. If one-minute load average
++  exceeds 30 at a cadence boundary, stop before more training and record a
++  load pause rather than pushing through.
++
+diff --git a/HORIZON-LEVER-2026-09-10.md b/HORIZON-LEVER-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e3e1694b957664bcf66e8049f898883cba5bcbb
+--- /dev/null
++++ b/HORIZON-LEVER-2026-09-10.md
+@@ -0,0 +1,208 @@
++**Arm A first admissible step: NONE (312.23 s wall; 7.81 s/100 updates); Arm B first admissible update: NONE (58.30 s wall; 1.46 s/100 updates); the evidence supports neither lever for production.**
++
++`DIAGNOSTIC_NOT_CLAIM` — development material only.
++
++## Decision
++
++[VERIFIED BY RUNNING CODE] Neither more full-batch steps nor the declared
++minibatching procedure satisfied the unchanged LRSWEEP convergence rule at
++any 100-update cadence through 4,000 updates. `NONE` is the result for both
++arms, not a missing observation.
++
++[INFERRED] The present learner therefore cannot be certified as converged at
++any practical horizon tested here. Do not commit a 16-seed, 5-arm production
++schedule to either lever on this evidence. The correct reading of tonight's
++two runs is **“the optimisation was under-run.”**
++
++[INFERRED] Arm A has the more promising residual shape for a further
++diagnostic: at 4,000 updates it misses only the objective-motion tolerance and
++that residual is slowly decaying, though with intermittent oscillation. Arm B
++is materially oscillatory and still misses both objective and ordering at the
++cap. That does not make Arm A admissible or authorize a production horizon.
++
++Loss and all held-out metrics below are convergence diagnostics only. **They
++are never evidence about EE. No EE quantity was computed, and nothing was
++selected on EE.**
++
++## Fixed design
++
++[VERIFIED BY RUNNING CODE] The run used C3 only, the twelve fixed LRSWEEP C3
++anchors and identical LOAO folds, model seed `V025_LEARNER/seed/1`
++(`6407676579069309528`), the sealed `(64,64)` ReLU architecture, all sealed
++Adam literals, and the route's current literal learning rate `1e-3`. Arm A
++called LRSWEEP's full-batch C3 gradient aggregation directly. Its values at
++updates 0, 100, 200, 300, 400, and 500 exactly reproduced the prior C3
++`1e-3` cell.
++
++[VERIFIED BY RUNNING CODE] The rule was applied at every destination cadence
++`k = 100, 200, ..., 4000` to the immediately preceding interval `k-100 -> k`:
++
++- objective relative absolute motion no greater than `0.01`;
++- held-out level R2 absolute motion no greater than `0.01`;
++- held-out within-group ordering absolute motion no greater than `0.005`;
++- held-out top-1 absolute motion no greater than `0.005`.
++
++All four checks had to pass together, with finite objective and parameters.
++Arm B's checkpoint objective was evaluated on the complete training fold, not
++on its last minibatch.
++
++[VERIFIED BY RUNNING CODE] Arm B used batch size 256. For each LOAO fold, the
++eleven training anchors were concatenated in LRSWEEP's fixed filename order.
++A NumPy PCG64 generator used the independent SHA-256 domain seed
++`V025_HORIZON/C3/minibatch-shuffle/seed/1`
++(`5845257737798802301`). Each pass was freshly shuffled; consecutive batches
++were sampled **without replacement within a pass**; the remainder batch was
++used; rows recurred only after the next-pass reshuffle. Every fold restarted
++the same declared shuffle stream. **This is a training-procedure change, not a
++hyperparameter.**
++
++## Cap residuals — conditional Arm C diagnosis
++
++[VERIFIED BY RUNNING CODE] Because both arms returned `NONE`, the required cap
++diagnosis applies:
++
++| Arm | 3900 loss | 4000 loss | objective motion | R2 motion | ordering motion | top-1 motion | cap checks passed |
++|:---|---:|---:|---:|---:|---:|---:|:---|
++| A, full batch | 0.268075 | 0.260136 | 2.961% | 0.002146 | 0.002801 | 0 | R2, ordering, top-1; objective failed |
++| B, minibatch | 1.226373 | 1.105135 | 9.886% | 0.008055 | 0.029753 | 0 | R2, top-1; objective and ordering failed |
++
++[VERIFIED BY RUNNING CODE] Arm A's loss over updates 3,500–4,000 was
++`0.335617, 0.305839, 0.281603, 0.277644, 0.268075, 0.260136`. This follows a
++10.24% upward excursion at 3,400→3,500, then five consecutive decreases. The
++last five absolute relative motions were 8.87%, 7.92%, 1.41%, 3.45%, and
++2.96%: they are getting smaller on the broad trend but are not monotone and
++remain above 1% at the cap.
++
++[INFERRED] Arm A is therefore **slowly decaying with intermittent
++oscillation**, not flat. Its held-out R2 and ordering also oscillate, but at the
++cap their adjacent-cadence motions pass.
++
++[VERIFIED BY RUNNING CODE] Arm B's loss over updates 3,500–4,000 was
++`2.222269, 1.297866, 1.173352, 1.503476, 1.226373, 1.105135`; its recent
++relative motions include 41.60%, 9.59%, 28.14%, 18.43%, and 9.89%, with a
++direction reversal at 3,700→3,800. Ordering moved 0.029753 at the cap, almost
++six times its tolerance.
++
++[INFERRED] Arm B is **oscillating**, not flat or slowly settling. More cheap
++minibatch updates at this unchanged learning rate are not supported as the
++production remedy.
++
++## Equal-wall-time comparison
++
++[VERIFIED BY RUNNING CODE] The cadence-timed 12-fold work needed 51.03 s for
++Arm B to reach 4,000 updates. In the same measured budget, Arm A completed 600
++updates (44.49 s; 700 did not fit). At those equal-wall endpoints:
++
++| Endpoint | loss | held-out R2 | ordering | top-1 | preceding-100 rule |
++|:---|---:|---:|---:|---:|:---|
++| A at 600 | 1.147249 | 0.574094 | 0.526820 | 0.166667 | failed all four checks |
++| B at 4000 | 1.105135 | 0.645829 | 0.511546 | 0.250000 | failed objective and ordering |
++
++[INFERRED] Minibatching buys about 6.0–6.2 times as many updates per measured
++second, but that computational advantage does **not** become an admissibility
++advantage: both equal-wall endpoints fail. There is no Arm B convergence
++advantage to carry into the schedule, so the equal-wall comparison still
++decides **no production schedule under either tested lever**.
++
++## Wall cost and production extrapolation
++
++[VERIFIED BY RUNNING CODE] Wall timing for one seed's full 12-fold diagnostic:
++
++| Arm | total arm wall | end-to-end s/100 updates | cadence-timed s/100, mean [min, max] |
++|:---|---:|---:|---:|
++| A | 312.23 s | 7.806 | 7.582 [7.175, 8.028] |
++| B | 58.30 s | 1.457 | 1.276 [1.229, 1.432] |
++
++The end-to-end rate is total arm wall divided by 40 cadences and includes the
++final aggregation of all LOAO held-out metrics. The cadence-timed rate sums
++the twelve fold intervals and includes updates plus checkpoint evaluation.
++
++[DERIVED ON PAPER] Because neither arm reached admissibility, a cost *to
++convergence* cannot be estimated. The only honest production projection is
++the spend to the tested 4,000-update cap. For the complete `16 seeds × 5 arms =
++80` set of C3 heads:
++
++| Lever at 4,000-update cap | extrapolated CPU-hours | assumptions |
++|:---|---:|:---|
++| A, full batch | 0.56–0.63 | Lower bound uses mean update-only time per LOAO fold (`0.6261 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and multiplies by `12/11` for training on all 12 anchors instead of 11. |
++| B, minibatch 256 | 0.09–0.12 | Lower bound uses mean update-only time per fold (`0.1007 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and the same conservative `12/11` allowance. |
++
++These are C3 learner CPU-hour ranges on this host, assuming serial
++single-thread execution, identical data dimensions, no shared-head speedup,
++and negligible orchestration/serialization. They do not estimate C1, C2,
++policy, simulation, or other pipeline costs. Most importantly, they are
++**spend-to-cap ranges for runs known not to be converged**, not estimates for a
++valid production result. Any converged-run cost is unknown from this evidence.
++
++## Held-out convergence diagnostics at every cadence
++
++[VERIFIED BY RUNNING CODE] Each cell is evaluated over all 11,947 held-out
++catalogue rows across the twelve LOAO folds, including declared hard zeros for
++empty/singleton coalitions. `ord` is within-group pairwise ordering. These
++metrics diagnose stabilization only; they say nothing about EE.
++
++| upd | A loss | A R2 | A ord | A top1 | B loss | B R2 | B ord | B top1 |
++|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| 0 | 131.3764 | -2.5559 | 0.6067 | 0.0000 | 131.3764 | -2.5559 | 0.6067 | 0.0000 |
++| 100 | 2.1448 | 0.6985 | 0.5530 | 0.3333 | 5.0189 | 0.5691 | 0.5046 | 0.2500 |
++| 200 | 1.7700 | 0.6776 | 0.5650 | 0.2500 | 2.9834 | 0.6942 | 0.5380 | 0.3333 |
++| 300 | 1.5452 | 0.6462 | 0.5601 | 0.1667 | 3.4193 | 0.6714 | 0.5862 | 0.4167 |
++| 400 | 1.3710 | 0.6184 | 0.5632 | 0.1667 | 3.1658 | 0.6837 | 0.5257 | 0.2500 |
++| 500 | 1.2482 | 0.5980 | 0.5322 | 0.2500 | 2.4458 | 0.6662 | 0.5187 | 0.2500 |
++| 600 | 1.1472 | 0.5741 | 0.5268 | 0.1667 | 2.7165 | 0.6312 | 0.5403 | 0.2500 |
++| 700 | 1.0629 | 0.5524 | 0.5167 | 0.3333 | 2.0228 | 0.6240 | 0.5758 | 0.2500 |
++| 800 | 0.9875 | 0.5313 | 0.5093 | 0.3333 | 2.7137 | 0.6455 | 0.5145 | 0.3333 |
++| 900 | 0.9187 | 0.5013 | 0.5371 | 0.3333 | 2.6517 | 0.6515 | 0.4856 | 0.2500 |
++| 1000 | 0.8523 | 0.4613 | 0.5334 | 0.2500 | 2.0937 | 0.6788 | 0.5255 | 0.4167 |
++| 1100 | 0.7904 | 0.4220 | 0.5451 | 0.2500 | 1.7717 | 0.6765 | 0.5432 | 0.3333 |
++| 1200 | 0.7365 | 0.3983 | 0.5419 | 0.2500 | 1.7871 | 0.6537 | 0.5268 | 0.3333 |
++| 1300 | 0.6944 | 0.3408 | 0.5386 | 0.2500 | 1.7467 | 0.6782 | 0.5319 | 0.2500 |
++| 1400 | 0.6810 | 0.3083 | 0.5434 | 0.2500 | 5.0188 | 0.5490 | 0.5645 | 0.4167 |
++| 1500 | 0.6203 | 0.2904 | 0.5474 | 0.2500 | 3.2026 | 0.6866 | 0.5675 | 0.4167 |
++| 1600 | 0.6078 | 0.2491 | 0.5473 | 0.2500 | 2.3837 | 0.6633 | 0.5725 | 0.3333 |
++| 1700 | 0.5489 | 0.2452 | 0.5465 | 0.2500 | 2.0740 | 0.7139 | 0.5462 | 0.3333 |
++| 1800 | 0.5367 | 0.2229 | 0.5547 | 0.2500 | 1.7782 | 0.7053 | 0.5534 | 0.3333 |
++| 1900 | 0.5154 | 0.2697 | 0.5493 | 0.2500 | 1.7912 | 0.6767 | 0.5442 | 0.3333 |
++| 2000 | 0.4943 | 0.1923 | 0.5395 | 0.2500 | 1.9669 | 0.7041 | 0.5839 | 0.2500 |
++| 2100 | 0.4706 | 0.2496 | 0.5414 | 0.2500 | 1.6734 | 0.6682 | 0.5304 | 0.3333 |
++| 2200 | 0.4459 | 0.2040 | 0.5412 | 0.2500 | 1.6764 | 0.6827 | 0.5420 | 0.3333 |
++| 2300 | 0.4384 | 0.1955 | 0.5451 | 0.2500 | 1.4593 | 0.6957 | 0.5549 | 0.3333 |
++| 2400 | 0.4135 | 0.1940 | 0.5434 | 0.2500 | 1.4625 | 0.6888 | 0.5843 | 0.3333 |
++| 2500 | 0.4015 | 0.1955 | 0.5438 | 0.2500 | 1.5504 | 0.6725 | 0.5681 | 0.2500 |
++| 2600 | 0.4039 | 0.1613 | 0.5445 | 0.2500 | 1.5287 | 0.6995 | 0.4967 | 0.4167 |
++| 2700 | 0.3851 | 0.2059 | 0.5389 | 0.2500 | 1.3096 | 0.6744 | 0.5879 | 0.3333 |
++| 2800 | 0.3550 | 0.1609 | 0.5477 | 0.2500 | 2.1033 | 0.6547 | 0.5911 | 0.3333 |
++| 2900 | 0.3916 | 0.1922 | 0.5367 | 0.2500 | 2.6588 | 0.6400 | 0.5705 | 0.3333 |
++| 3000 | 0.3543 | 0.1558 | 0.5444 | 0.2500 | 1.6247 | 0.6957 | 0.5447 | 0.3333 |
++| 3100 | 0.3392 | 0.1290 | 0.5385 | 0.2500 | 1.9633 | 0.6842 | 0.5483 | 0.3333 |
++| 3200 | 0.3316 | 0.1292 | 0.5397 | 0.2500 | 1.2707 | 0.6653 | 0.5565 | 0.3333 |
++| 3300 | 0.3137 | 0.1424 | 0.5432 | 0.2500 | 1.2381 | 0.6853 | 0.5673 | 0.3333 |
++| 3400 | 0.3044 | 0.1343 | 0.5370 | 0.2500 | 1.3228 | 0.6634 | 0.5159 | 0.2500 |
++| 3500 | 0.3356 | 0.0892 | 0.5392 | 0.2500 | 2.2223 | 0.6106 | 0.5426 | 0.2500 |
++| 3600 | 0.3058 | 0.1283 | 0.5432 | 0.2500 | 1.2979 | 0.6419 | 0.5292 | 0.2500 |
++| 3700 | 0.2816 | 0.1200 | 0.5380 | 0.2500 | 1.1734 | 0.6562 | 0.5295 | 0.2500 |
++| 3800 | 0.2776 | 0.1359 | 0.5401 | 0.2500 | 1.5035 | 0.6329 | 0.5430 | 0.2500 |
++| 3900 | 0.2681 | 0.1321 | 0.5311 | 0.2500 | 1.2264 | 0.6378 | 0.5413 | 0.2500 |
++| 4000 | 0.2601 | 0.1343 | 0.5339 | 0.2500 | 1.1051 | 0.6458 | 0.5115 | 0.2500 |
++
++## Execution and integrity record
++
++[VERIFIED BY RUNNING CODE] One Python process ran both arms sequentially using
++only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, and all named
++BLAS thread variables set to one. It printed progress through
++`step 96000/96000` and `PEAK_RSS_KB=86964` (84.9 MiB). The address-space hard
++limit was 3,221,225,471 bytes, just under 3 GiB. Total elapsed wall was 370.53
++s. One-minute load was 16.04 initially, never exceeded 17.31 during an arm,
++and was 15.97 at completion; no pause was required.
++
++[VERIFIED BY RUNNING CODE] Only the twelve LRSWEEP-fixed C3 NPZ files were
++loaded. No evaluation-only claim date was discovered or read. Hashes of every
++C3 input and the sealed harness, spec, results, and learner matched before and
++after; `changed_inputs` is empty. The source artifacts were not modified.
++
++Machine-readable results are in `.scratch/horizon-lever/results.json`; the
++pre-run protocol is `.scratch/horizon-lever/spec.md`; the isolated runner is
++`.scratch/horizon-lever/run_horizon.py`. Their SHA-256 digests are respectively
++`b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62`,
++`22938ee0302d6846a79e0525e0786dea277b9c677cd4795123358e6a77b1747d`, and
++`e0a7804f3664356415b0d6e0e9041447a3a7a84ccfee3fe5324c38aaff907e2a`.
+
+codex
+Completed the diagnostic and wrote [HORIZON-LEVER-2026-09-10.md](/home/sat/mcrl-v025-horizon-ws/HORIZON-LEVER-2026-09-10.md).
+
+Result: Arm A `NONE`; Arm B `NONE`. Neither lever supports production. Arm A is slowly decaying but still fails objective stability; Arm B remains oscillatory. No EE quantity was computed.
+
+The single process peaked at 84.9 MiB RSS, ran at nice 19 with BLAS threads pinned to one, and load never exceeded 17.31. The diagnostic workflow also verified exact Arm A reproduction through step 500.
+
+Raw results: [results.json](/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/results.json).
+diff --git a/.scratch/horizon-lever/run_horizon.py b/.scratch/horizon-lever/run_horizon.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d8a28f5d1c2969c2d9bf422eb2c9821d0da2570
+--- /dev/null
++++ b/.scratch/horizon-lever/run_horizon.py
+@@ -0,0 +1,404 @@
++#!/usr/bin/env python3
++"""C3 horizon-vs-minibatch convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Callable
++
++
++ROOT = Path("/home/sat/mcrl-v025-horizon-ws")
++OUT = ROOT / ".scratch/horizon-lever"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BATCH_SIZE = 256
++SHUFFLE_DOMAIN = "V025_HORIZON/C3/minibatch-shuffle/seed/1"
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 19:
++        raise RuntimeError(f"process niceness is not 19: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def record_checkpoint(sweep, head, train, test):
++    loss, count = sweep.c3_loss(head, train)
++    if not math.isfinite(loss) or not sweep.parameters_finite(head):
++        raise RuntimeError("non-finite objective or parameter at checkpoint")
++    prediction = sweep.np.zeros_like(test.truth)
++    prediction[test.train_indices] = head._forward(test.x)[0]
++    return loss, count, sweep.parameter_norm(head), prediction
++
++
++def make_minibatch_updater(sweep, head, train) -> Callable[[], float]:
++    states = sweep.np.concatenate([anchor.x for anchor in train], axis=0)
++    targets = sweep.np.concatenate([
++        anchor.truth[anchor.train_indices] for anchor in train
++    ])
++    rng = sweep.np.random.default_rng(sweep.seed_from_domain(SHUFFLE_DOMAIN))
++    order = sweep.np.empty(0, dtype=sweep.np.int64)
++    cursor = 0
++
++    def update() -> float:
++        nonlocal order, cursor
++        if cursor >= order.size:
++            order = rng.permutation(states.shape[0])
++            cursor = 0
++        stop = min(cursor + BATCH_SIZE, order.size)
++        selected = order[cursor:stop]
++        cursor = stop
++        return head.update_scalar(states[selected], targets[selected])
++
++    return update
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def run_arm(sweep, data, arm: str, progress: list[int], total_work: int) -> dict[str, object]:
++    checkpoints = tuple(range(0, MAX_UPDATES + 1, CADENCE))
++    predictions = {step: [None] * len(data.anchors) for step in checkpoints}
++    objectives = {step: [] for step in checkpoints}
++    norms = {step: [] for step in checkpoints}
++    interval_total = {step: [] for step in checkpoints[1:]}
++    interval_update = {step: [] for step in checkpoints[1:]}
++    interval_checkpoint = {step: [] for step in checkpoints[1:]}
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    arm_started = time.perf_counter()
++    load_observed = [guard_load()]
++
++    for fold_index, test in enumerate(data.anchors):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        fold_started = time.perf_counter()
++        head = sweep.AdamMLPHead.create(
++            test.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        initial_started = time.perf_counter()
++        loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++        initial_checkpoint_s = time.perf_counter() - initial_started
++        objectives[0].append((loss, count))
++        norms[0].append(norm)
++        predictions[0][fold_index] = prediction
++        if arm == "A":
++            updater = lambda: sweep.c3_update(head, train)
++        else:
++            updater = make_minibatch_updater(sweep, head, train)
++
++        previous_end = fold_started
++        update_accumulator = 0.0
++        for step in range(1, MAX_UPDATES + 1):
++            update_started = time.perf_counter()
++            with sweep.np.errstate(all="ignore"):
++                loss_before_update = updater()
++            update_accumulator += time.perf_counter() - update_started
++            if not math.isfinite(loss_before_update) or not sweep.parameters_finite(head):
++                raise RuntimeError(f"arm {arm} fold {fold_index + 1} diverged at update {step}")
++            if step % CADENCE:
++                continue
++            checkpoint_started = time.perf_counter()
++            loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++            checkpoint_s = time.perf_counter() - checkpoint_started
++            objectives[step].append((loss, count))
++            norms[step].append(norm)
++            predictions[step][fold_index] = prediction
++            now = time.perf_counter()
++            interval_total[step].append(now - previous_end)
++            interval_update[step].append(update_accumulator)
++            interval_checkpoint[step].append(checkpoint_s + (initial_checkpoint_s if step == CADENCE else 0.0))
++            previous_end = now
++            update_accumulator = 0.0
++            progress[0] += CADENCE
++            current_load = load_average()
++            load_observed.append(current_load)
++            print(
++                f"step {progress[0]}/{total_work} arm={arm} "
++                f"fold={fold_index + 1}/{len(data.anchors)} update={step}/{MAX_UPDATES} "
++                f"load1={current_load:.2f}",
++                flush=True,
++            )
++            if current_load > 30.0:
++                raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    trajectory = {}
++    for step in checkpoints:
++        weighted_loss = sum(value * count for value, count in objectives[step]) / sum(
++            count for _, count in objectives[step]
++        )
++        held_out = sweep.c3_metric(
++            [value for value in predictions[step] if value is not None], data.anchors
++        )
++        trajectory[str(step)] = {
++            "training_objective": float(weighted_loss),
++            "held_out": held_out,
++            "parameter_l2": sweep.summarize(norms[step]),
++        }
++
++    checks = {}
++    first_admissible = None
++    for step in checkpoints[1:]:
++        check = stability(sweep, trajectory[str(step - CADENCE)], trajectory[str(step)])
++        checks[str(step)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = step
++
++    total_by_interval = [sum(interval_total[step]) for step in checkpoints[1:]]
++    update_by_interval = [sum(interval_update[step]) for step in checkpoints[1:]]
++    checkpoint_by_interval = [sum(interval_checkpoint[step]) for step in checkpoints[1:]]
++    cumulative = []
++    running = 0.0
++    for value in total_by_interval:
++        running += value
++        cumulative.append(running)
++    return {
++        "arm": arm,
++        "procedure": "full_batch" if arm == "A" else "minibatch",
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "wall_s": time.perf_counter() - arm_started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": total_by_interval,
++            "update_only_s_per_100_updates_across_12_loao_folds": update_by_interval,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": checkpoint_by_interval,
++            "cumulative_total_s_across_12_loao_folds": cumulative,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(total_by_interval) / len(total_by_interval),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(update_by_interval) / len(update_by_interval),
++            "per_fold_interval_total_s": {str(step): interval_total[step] for step in checkpoints[1:]},
++        },
++        "maximum_observed_load1": max(load_observed),
++    }
++
++
++def equal_wall_comparison(arms: dict[str, dict[str, object]]) -> dict[str, object]:
++    a = arms["A"]
++    b = arms["B"]
++    a_times = a["timing"]["cumulative_total_s_across_12_loao_folds"]
++    b_times = b["timing"]["cumulative_total_s_across_12_loao_folds"]
++
++    def reached(times: list[float], budget: float) -> int:
++        return CADENCE * sum(value <= budget for value in times)
++
++    comparisons = []
++    for label, budget in (
++        ("arm_a_cap_time", a_times[-1]),
++        ("arm_b_cap_time", b_times[-1]),
++        ("common_cap_time", min(a_times[-1], b_times[-1])),
++    ):
++        comparisons.append({
++            "budget_label": label,
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": reached(b_times, budget),
++        })
++    if b["first_admissible_update"] is not None:
++        budget = b_times[b["first_admissible_update"] // CADENCE - 1]
++        comparisons.append({
++            "budget_label": "arm_b_first_admissible_time",
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": b["first_admissible_update"],
++        })
++    return {"comparisons": comparisons}
++
++
++def main() -> None:
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    before = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    data = sweep.load_c3()
++    c3_paths = tuple(anchor.path for anchor in data.anchors)
++    c3_before = {str(path): file_sha256(path) for path in c3_paths}
++    shuffle_seed = sweep.seed_from_domain(SHUFFLE_DOMAIN)
++    total_work = 2 * len(data.anchors) * MAX_UPDATES
++    progress = [0]
++    started = time.perf_counter()
++    arms = {}
++    status = "complete"
++    pause_reason = None
++    try:
++        arms["A"] = run_arm(sweep, data, "A", progress, total_work)
++        arms["B"] = run_arm(sweep, data, "B", progress, total_work)
++    except LoadPause as error:
++        status = "paused_load"
++        pause_reason = str(error)
++    after = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    c3_after = {str(path): file_sha256(path) for path in c3_paths}
++    changed = [path for path in (*before, *c3_before) if (before | c3_before)[path] != (after | c3_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    original = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    original_c3 = next(
++        cell for cell in original["cells"]
++        if cell["route"] == "C3" and cell["learning_rate"] == 1e-3
++    )
++    reproduction = None
++    if "A" in arms:
++        fields = ("training_objective", "held_out")
++        reproduction = {
++            str(step): all(
++                arms["A"]["trajectory"][str(step)][field]
++                == original_c3["trajectory"][str(step)][field]
++                for field in fields
++            )
++            for step in range(0, 501, 100)
++        }
++    result = {
++        "schema": "mcrl-v025-horizon-lever-diagnostic-v1",
++        "status": status,
++        "pause_reason": pause_reason,
++        "scope": {
++            "diagnostic_not_claim": True,
++            "ee_quantities_computed": False,
++            "selection_on_ee": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "route": "C3",
++        "learning_rate": 1e-3,
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "maximum_updates": MAX_UPDATES,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "minibatch": {
++            "batch_size": BATCH_SIZE,
++            "shuffle_rng": "numpy Generator(PCG64)",
++            "shuffle_seed_domain": SHUFFLE_DOMAIN,
++            "shuffle_seed": shuffle_seed,
++            "replacement": False,
++            "replacement_scope": "without replacement within each pass; rows recur after reshuffle next pass",
++            "remainder_batch_used": True,
++            "fresh_same_seed_per_loao_fold": True,
++            "classification": "training-procedure change, not a hyperparameter",
++        },
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(path) for path in c3_paths],
++        },
++        "arms": arms,
++        "equal_wall": equal_wall_comparison(arms) if len(arms) == 2 else None,
++        "arm_a_reproduces_lr_sweep_0_to_500": reproduction,
++        "resource_policy": {
++            "python_processes": 1,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1,
++            "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb,
++            "initial_load1": initial_load,
++            "final_load1": load_average(),
++            "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before,
++        "source_sha256_after": after,
++        "c3_input_sha256_before": c3_before,
++        "c3_input_sha256_after": c3_after,
++        "changed_inputs": changed,
++    }
++    atomic_json(OUT / "results.json", result)
++    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
++    print(json.dumps({
++        "written": str(OUT / "results.json"),
++        "status": status,
++        "changed_inputs": changed,
++    }), flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/horizon-lever/spec.md b/.scratch/horizon-lever/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5514c3edfb7444e34a389659db0f542a5f7e7f4c
+--- /dev/null
++++ b/.scratch/horizon-lever/spec.md
+@@ -0,0 +1,63 @@
++# HORIZON lever diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This file is fixed before either horizon arm is fit.
++
++## Question and fixed inputs
++
++- Diagnose whether C3 convergence under-run is addressed by more full-batch
++  updates (Arm A) or by minibatch updates (Arm B). This is one route and one
++  seed, not a learning-rate grid and not a learning-rate selection.
++- Use the twelve fixed C3 LOAO anchors named by the LRSWEEP harness, including
++  only size>=2 rows for training and retaining the declared hard-zero
++  empty/singleton predictions for held-out diagnostics.
++- Use model seed `V025_LEARNER/seed/1` (`6407676579069309528`), C3 learning
++  rate `1e-3`, and every other architecture and Adam literal unchanged.
++- Import and reuse the LRSWEEP harness at
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`
++  (SHA-256 `dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6`),
++  its frozen rule (SHA-256
++  `0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19`),
++  and its results (SHA-256
++  `9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861`)
++  directly and without modifying those artifacts.
++
++## Common cadence and rule
++
++- Cap both arms at 4,000 optimizer updates and evaluate at update 0 and every
++  100 updates through 4,000.
++- At each destination cadence `k`, apply LRSWEEP's identical four checks to
++  `k-100 -> k`: objective relative absolute motion <= 0.01; held-out level R2
++  absolute motion <= 0.01; held-out within-group ordering absolute motion <=
++  0.005; held-out top-1 absolute motion <= 0.005. The first finite destination
++  cadence satisfying all four is that arm's first admissible update.
++- The checkpoint training objective is always evaluated on the complete LOAO
++  training fold, including for Arm B. A last-minibatch loss is not used.
++
++## Arms
++
++- Arm A: the LRSWEEP C3 full-batch gradient aggregation verbatim, one Adam
++  update over all eleven training anchors per optimizer step.
++- Arm B: batch size 256. For each LOAO fold, concatenate the eleven training
++  anchors in the fixed LRSWEEP filename order. Initialise an independent PCG64
++  generator from the SHA-256 domain seed
++  `V025_HORIZON/C3/minibatch-shuffle/seed/1`. At the start of every pass,
++  generate a permutation of all training rows; consume consecutive batches of
++  256 without replacement within that pass; include the final remainder batch;
++  then reshuffle for the next pass. Rows recur across passes. Each fold starts
++  a fresh generator at the same declared shuffle seed. This deterministic
++  ordering is separate from the unchanged model-initialisation seed.
++- Minibatching is a training-procedure change, not a hyperparameter.
++
++## Scope and resources
++
++- Metrics are convergence diagnostics only and are never evidence about EE.
++  Compute no EE quantity and perform no selection on EE.
++- Read only the twelve C3 files fixed in LRSWEEP. Do not discover or read any
++  evaluation-only claim dates.
++- Run both arms sequentially in one Python process using only
++  `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, all named BLAS
++  thread variables equal to one, and an address-space limit below 3 GiB.
++- Print progress as `step k/N` and print peak RSS. If one-minute load average
++  exceeds 30 at a cadence boundary, stop before more training and record a
++  load pause rather than pushing through.
++
+diff --git a/HORIZON-LEVER-2026-09-10.md b/HORIZON-LEVER-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e3e1694b957664bcf66e8049f898883cba5bcbb
+--- /dev/null
++++ b/HORIZON-LEVER-2026-09-10.md
+@@ -0,0 +1,208 @@
++**Arm A first admissible step: NONE (312.23 s wall; 7.81 s/100 updates); Arm B first admissible update: NONE (58.30 s wall; 1.46 s/100 updates); the evidence supports neither lever for production.**
++
++`DIAGNOSTIC_NOT_CLAIM` — development material only.
++
++## Decision
++
++[VERIFIED BY RUNNING CODE] Neither more full-batch steps nor the declared
++minibatching procedure satisfied the unchanged LRSWEEP convergence rule at
++any 100-update cadence through 4,000 updates. `NONE` is the result for both
++arms, not a missing observation.
++
++[INFERRED] The present learner therefore cannot be certified as converged at
++any practical horizon tested here. Do not commit a 16-seed, 5-arm production
++schedule to either lever on this evidence. The correct reading of tonight's
++two runs is **“the optimisation was under-run.”**
++
++[INFERRED] Arm A has the more promising residual shape for a further
++diagnostic: at 4,000 updates it misses only the objective-motion tolerance and
++that residual is slowly decaying, though with intermittent oscillation. Arm B
++is materially oscillatory and still misses both objective and ordering at the
++cap. That does not make Arm A admissible or authorize a production horizon.
++
++Loss and all held-out metrics below are convergence diagnostics only. **They
++are never evidence about EE. No EE quantity was computed, and nothing was
++selected on EE.**
++
++## Fixed design
++
++[VERIFIED BY RUNNING CODE] The run used C3 only, the twelve fixed LRSWEEP C3
++anchors and identical LOAO folds, model seed `V025_LEARNER/seed/1`
++(`6407676579069309528`), the sealed `(64,64)` ReLU architecture, all sealed
++Adam literals, and the route's current literal learning rate `1e-3`. Arm A
++called LRSWEEP's full-batch C3 gradient aggregation directly. Its values at
++updates 0, 100, 200, 300, 400, and 500 exactly reproduced the prior C3
++`1e-3` cell.
++
++[VERIFIED BY RUNNING CODE] The rule was applied at every destination cadence
++`k = 100, 200, ..., 4000` to the immediately preceding interval `k-100 -> k`:
++
++- objective relative absolute motion no greater than `0.01`;
++- held-out level R2 absolute motion no greater than `0.01`;
++- held-out within-group ordering absolute motion no greater than `0.005`;
++- held-out top-1 absolute motion no greater than `0.005`.
++
++All four checks had to pass together, with finite objective and parameters.
++Arm B's checkpoint objective was evaluated on the complete training fold, not
++on its last minibatch.
++
++[VERIFIED BY RUNNING CODE] Arm B used batch size 256. For each LOAO fold, the
++eleven training anchors were concatenated in LRSWEEP's fixed filename order.
++A NumPy PCG64 generator used the independent SHA-256 domain seed
++`V025_HORIZON/C3/minibatch-shuffle/seed/1`
++(`5845257737798802301`). Each pass was freshly shuffled; consecutive batches
++were sampled **without replacement within a pass**; the remainder batch was
++used; rows recurred only after the next-pass reshuffle. Every fold restarted
++the same declared shuffle stream. **This is a training-procedure change, not a
++hyperparameter.**
++
++## Cap residuals — conditional Arm C diagnosis
++
++[VERIFIED BY RUNNING CODE] Because both arms returned `NONE`, the required cap
++diagnosis applies:
++
++| Arm | 3900 loss | 4000 loss | objective motion | R2 motion | ordering motion | top-1 motion | cap checks passed |
++|:---|---:|---:|---:|---:|---:|---:|:---|
++| A, full batch | 0.268075 | 0.260136 | 2.961% | 0.002146 | 0.002801 | 0 | R2, ordering, top-1; objective failed |
++| B, minibatch | 1.226373 | 1.105135 | 9.886% | 0.008055 | 0.029753 | 0 | R2, top-1; objective and ordering failed |
++
++[VERIFIED BY RUNNING CODE] Arm A's loss over updates 3,500–4,000 was
++`0.335617, 0.305839, 0.281603, 0.277644, 0.268075, 0.260136`. This follows a
++10.24% upward excursion at 3,400→3,500, then five consecutive decreases. The
++last five absolute relative motions were 8.87%, 7.92%, 1.41%, 3.45%, and
++2.96%: they are getting smaller on the broad trend but are not monotone and
++remain above 1% at the cap.
++
++[INFERRED] Arm A is therefore **slowly decaying with intermittent
++oscillation**, not flat. Its held-out R2 and ordering also oscillate, but at the
++cap their adjacent-cadence motions pass.
++
++[VERIFIED BY RUNNING CODE] Arm B's loss over updates 3,500–4,000 was
++`2.222269, 1.297866, 1.173352, 1.503476, 1.226373, 1.105135`; its recent
++relative motions include 41.60%, 9.59%, 28.14%, 18.43%, and 9.89%, with a
++direction reversal at 3,700→3,800. Ordering moved 0.029753 at the cap, almost
++six times its tolerance.
++
++[INFERRED] Arm B is **oscillating**, not flat or slowly settling. More cheap
++minibatch updates at this unchanged learning rate are not supported as the
++production remedy.
++
++## Equal-wall-time comparison
++
++[VERIFIED BY RUNNING CODE] The cadence-timed 12-fold work needed 51.03 s for
++Arm B to reach 4,000 updates. In the same measured budget, Arm A completed 600
++updates (44.49 s; 700 did not fit). At those equal-wall endpoints:
++
++| Endpoint | loss | held-out R2 | ordering | top-1 | preceding-100 rule |
++|:---|---:|---:|---:|---:|:---|
++| A at 600 | 1.147249 | 0.574094 | 0.526820 | 0.166667 | failed all four checks |
++| B at 4000 | 1.105135 | 0.645829 | 0.511546 | 0.250000 | failed objective and ordering |
++
++[INFERRED] Minibatching buys about 6.0–6.2 times as many updates per measured
++second, but that computational advantage does **not** become an admissibility
++advantage: both equal-wall endpoints fail. There is no Arm B convergence
++advantage to carry into the schedule, so the equal-wall comparison still
++decides **no production schedule under either tested lever**.
++
++## Wall cost and production extrapolation
++
++[VERIFIED BY RUNNING CODE] Wall timing for one seed's full 12-fold diagnostic:
++
++| Arm | total arm wall | end-to-end s/100 updates | cadence-timed s/100, mean [min, max] |
++|:---|---:|---:|---:|
++| A | 312.23 s | 7.806 | 7.582 [7.175, 8.028] |
++| B | 58.30 s | 1.457 | 1.276 [1.229, 1.432] |
++
++The end-to-end rate is total arm wall divided by 40 cadences and includes the
++final aggregation of all LOAO held-out metrics. The cadence-timed rate sums
++the twelve fold intervals and includes updates plus checkpoint evaluation.
++
++[DERIVED ON PAPER] Because neither arm reached admissibility, a cost *to
++convergence* cannot be estimated. The only honest production projection is
++the spend to the tested 4,000-update cap. For the complete `16 seeds × 5 arms =
++80` set of C3 heads:
++
++| Lever at 4,000-update cap | extrapolated CPU-hours | assumptions |
++|:---|---:|:---|
++| A, full batch | 0.56–0.63 | Lower bound uses mean update-only time per LOAO fold (`0.6261 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and multiplies by `12/11` for training on all 12 anchors instead of 11. |
++| B, minibatch 256 | 0.09–0.12 | Lower bound uses mean update-only time per fold (`0.1007 s/100`) × 40 × 80. Upper bound uses end-to-end per-fold timing and the same conservative `12/11` allowance. |
++
++These are C3 learner CPU-hour ranges on this host, assuming serial
++single-thread execution, identical data dimensions, no shared-head speedup,
++and negligible orchestration/serialization. They do not estimate C1, C2,
++policy, simulation, or other pipeline costs. Most importantly, they are
++**spend-to-cap ranges for runs known not to be converged**, not estimates for a
++valid production result. Any converged-run cost is unknown from this evidence.
++
++## Held-out convergence diagnostics at every cadence
++
++[VERIFIED BY RUNNING CODE] Each cell is evaluated over all 11,947 held-out
++catalogue rows across the twelve LOAO folds, including declared hard zeros for
++empty/singleton coalitions. `ord` is within-group pairwise ordering. These
++metrics diagnose stabilization only; they say nothing about EE.
++
++| upd | A loss | A R2 | A ord | A top1 | B loss | B R2 | B ord | B top1 |
++|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| 0 | 131.3764 | -2.5559 | 0.6067 | 0.0000 | 131.3764 | -2.5559 | 0.6067 | 0.0000 |
++| 100 | 2.1448 | 0.6985 | 0.5530 | 0.3333 | 5.0189 | 0.5691 | 0.5046 | 0.2500 |
++| 200 | 1.7700 | 0.6776 | 0.5650 | 0.2500 | 2.9834 | 0.6942 | 0.5380 | 0.3333 |
++| 300 | 1.5452 | 0.6462 | 0.5601 | 0.1667 | 3.4193 | 0.6714 | 0.5862 | 0.4167 |
++| 400 | 1.3710 | 0.6184 | 0.5632 | 0.1667 | 3.1658 | 0.6837 | 0.5257 | 0.2500 |
++| 500 | 1.2482 | 0.5980 | 0.5322 | 0.2500 | 2.4458 | 0.6662 | 0.5187 | 0.2500 |
++| 600 | 1.1472 | 0.5741 | 0.5268 | 0.1667 | 2.7165 | 0.6312 | 0.5403 | 0.2500 |
++| 700 | 1.0629 | 0.5524 | 0.5167 | 0.3333 | 2.0228 | 0.6240 | 0.5758 | 0.2500 |
++| 800 | 0.9875 | 0.5313 | 0.5093 | 0.3333 | 2.7137 | 0.6455 | 0.5145 | 0.3333 |
++| 900 | 0.9187 | 0.5013 | 0.5371 | 0.3333 | 2.6517 | 0.6515 | 0.4856 | 0.2500 |
++| 1000 | 0.8523 | 0.4613 | 0.5334 | 0.2500 | 2.0937 | 0.6788 | 0.5255 | 0.4167 |
++| 1100 | 0.7904 | 0.4220 | 0.5451 | 0.2500 | 1.7717 | 0.6765 | 0.5432 | 0.3333 |
++| 1200 | 0.7365 | 0.3983 | 0.5419 | 0.2500 | 1.7871 | 0.6537 | 0.5268 | 0.3333 |
++| 1300 | 0.6944 | 0.3408 | 0.5386 | 0.2500 | 1.7467 | 0.6782 | 0.5319 | 0.2500 |
++| 1400 | 0.6810 | 0.3083 | 0.5434 | 0.2500 | 5.0188 | 0.5490 | 0.5645 | 0.4167 |
++| 1500 | 0.6203 | 0.2904 | 0.5474 | 0.2500 | 3.2026 | 0.6866 | 0.5675 | 0.4167 |
++| 1600 | 0.6078 | 0.2491 | 0.5473 | 0.2500 | 2.3837 | 0.6633 | 0.5725 | 0.3333 |
++| 1700 | 0.5489 | 0.2452 | 0.5465 | 0.2500 | 2.0740 | 0.7139 | 0.5462 | 0.3333 |
++| 1800 | 0.5367 | 0.2229 | 0.5547 | 0.2500 | 1.7782 | 0.7053 | 0.5534 | 0.3333 |
++| 1900 | 0.5154 | 0.2697 | 0.5493 | 0.2500 | 1.7912 | 0.6767 | 0.5442 | 0.3333 |
++| 2000 | 0.4943 | 0.1923 | 0.5395 | 0.2500 | 1.9669 | 0.7041 | 0.5839 | 0.2500 |
++| 2100 | 0.4706 | 0.2496 | 0.5414 | 0.2500 | 1.6734 | 0.6682 | 0.5304 | 0.3333 |
++| 2200 | 0.4459 | 0.2040 | 0.5412 | 0.2500 | 1.6764 | 0.6827 | 0.5420 | 0.3333 |
++| 2300 | 0.4384 | 0.1955 | 0.5451 | 0.2500 | 1.4593 | 0.6957 | 0.5549 | 0.3333 |
++| 2400 | 0.4135 | 0.1940 | 0.5434 | 0.2500 | 1.4625 | 0.6888 | 0.5843 | 0.3333 |
++| 2500 | 0.4015 | 0.1955 | 0.5438 | 0.2500 | 1.5504 | 0.6725 | 0.5681 | 0.2500 |
++| 2600 | 0.4039 | 0.1613 | 0.5445 | 0.2500 | 1.5287 | 0.6995 | 0.4967 | 0.4167 |
++| 2700 | 0.3851 | 0.2059 | 0.5389 | 0.2500 | 1.3096 | 0.6744 | 0.5879 | 0.3333 |
++| 2800 | 0.3550 | 0.1609 | 0.5477 | 0.2500 | 2.1033 | 0.6547 | 0.5911 | 0.3333 |
++| 2900 | 0.3916 | 0.1922 | 0.5367 | 0.2500 | 2.6588 | 0.6400 | 0.5705 | 0.3333 |
++| 3000 | 0.3543 | 0.1558 | 0.5444 | 0.2500 | 1.6247 | 0.6957 | 0.5447 | 0.3333 |
++| 3100 | 0.3392 | 0.1290 | 0.5385 | 0.2500 | 1.9633 | 0.6842 | 0.5483 | 0.3333 |
++| 3200 | 0.3316 | 0.1292 | 0.5397 | 0.2500 | 1.2707 | 0.6653 | 0.5565 | 0.3333 |
++| 3300 | 0.3137 | 0.1424 | 0.5432 | 0.2500 | 1.2381 | 0.6853 | 0.5673 | 0.3333 |
++| 3400 | 0.3044 | 0.1343 | 0.5370 | 0.2500 | 1.3228 | 0.6634 | 0.5159 | 0.2500 |
++| 3500 | 0.3356 | 0.0892 | 0.5392 | 0.2500 | 2.2223 | 0.6106 | 0.5426 | 0.2500 |
++| 3600 | 0.3058 | 0.1283 | 0.5432 | 0.2500 | 1.2979 | 0.6419 | 0.5292 | 0.2500 |
++| 3700 | 0.2816 | 0.1200 | 0.5380 | 0.2500 | 1.1734 | 0.6562 | 0.5295 | 0.2500 |
++| 3800 | 0.2776 | 0.1359 | 0.5401 | 0.2500 | 1.5035 | 0.6329 | 0.5430 | 0.2500 |
++| 3900 | 0.2681 | 0.1321 | 0.5311 | 0.2500 | 1.2264 | 0.6378 | 0.5413 | 0.2500 |
++| 4000 | 0.2601 | 0.1343 | 0.5339 | 0.2500 | 1.1051 | 0.6458 | 0.5115 | 0.2500 |
++
++## Execution and integrity record
++
++[VERIFIED BY RUNNING CODE] One Python process ran both arms sequentially using
++only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, and all named
++BLAS thread variables set to one. It printed progress through
++`step 96000/96000` and `PEAK_RSS_KB=86964` (84.9 MiB). The address-space hard
++limit was 3,221,225,471 bytes, just under 3 GiB. Total elapsed wall was 370.53
++s. One-minute load was 16.04 initially, never exceeded 17.31 during an arm,
++and was 15.97 at completion; no pause was required.
++
++[VERIFIED BY RUNNING CODE] Only the twelve LRSWEEP-fixed C3 NPZ files were
++loaded. No evaluation-only claim date was discovered or read. Hashes of every
++C3 input and the sealed harness, spec, results, and learner matched before and
++after; `changed_inputs` is empty. The source artifacts were not modified.
++
++Machine-readable results are in `.scratch/horizon-lever/results.json`; the
++pre-run protocol is `.scratch/horizon-lever/spec.md`; the isolated runner is
++`.scratch/horizon-lever/run_horizon.py`. Their SHA-256 digests are respectively
++`b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62`,
++`22938ee0302d6846a79e0525e0786dea277b9c677cd4795123358e6a77b1747d`, and
++`e0a7804f3664356415b0d6e0e9041447a3a7a84ccfee3fe5324c38aaff907e2a`.
+
+tokens used
+167,097
