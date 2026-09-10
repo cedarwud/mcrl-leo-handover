@@ -4017,3 +4017,2838 @@ index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b
 +if __name__ == "__main__":
 +    raise SystemExit(main())
 
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The 1.66° control is running serially. The wrapper has confirmed the exact 12 development anchors, niceness/thread pins, and a 4.9 GB address-space ceiling; it reported 0.489 GiB RSS before physics generation. No evaluation-only dates are being opened.
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+Physics regeneration is still in the tape-construction phase, which intentionally emits no per-anchor progress until the detached tape is complete. I’m leaving the job alone and serial; there is no memory/process pressure signal or failure output.
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The control has completed 7/12 anchors with peak RSS steady at 1.654 GiB. The source-map cross-check independently confirms the wrapper’s bindings: fresh 33-step tape per width, timer semantics, traversal orders, catalogue caps, and amortized tape time divided by 12.
+ exited 1 in 334310ms:
+panel ["V025_PROBE/world/1|step=0|carrier=nearest-eligible", "V025_PROBE/world/1|step=0|carrier=stay-if-possible", "V025_PROBE/world/1|step=0|carrier=random-masked", "V025_PROBE/world/1|step=1|carrier=nearest-eligible", "V025_PROBE/world/1|step=1|carrier=stay-if-possible", "V025_PROBE/world/1|step=1|carrier=random-masked", "V025_PROBE/world/1|step=2|carrier=nearest-eligible", "V025_PROBE/world/1|step=2|carrier=stay-if-possible", "V025_PROBE/world/1|step=2|carrier=random-masked", "V025_PROBE/world/1|step=3|carrier=nearest-eligible", "V025_PROBE/world/1|step=3|carrier=stay-if-possible", "V025_PROBE/world/1|step=3|carrier=random-masked"]
+peak RSS 0.489 GiB before tape
+peak RSS 1.654 GiB after tape
+anchor 1/12 completed peak RSS 1.654 GiB {"best_s": 3.746, "carrier": "nearest-eligible", "first_s": 3.588, "global": 0, "joint_n": 1103, "step": 0, "wall_s": 12.47}
+anchor 2/12 completed peak RSS 1.654 GiB {"best_s": 3.781, "carrier": "stay-if-possible", "first_s": 3.67, "global": 1, "joint_n": 1103, "step": 0, "wall_s": 12.576}
+anchor 3/12 completed peak RSS 1.654 GiB {"best_s": 4.311, "carrier": "random-masked", "first_s": 4.325, "global": 2, "joint_n": 331, "step": 0, "wall_s": 12.211}
+anchor 4/12 completed peak RSS 1.654 GiB {"best_s": 5.077, "carrier": "nearest-eligible", "first_s": 5.007, "global": 3, "joint_n": 1158, "step": 1, "wall_s": 16.66}
+anchor 5/12 completed peak RSS 1.654 GiB {"best_s": 4.731, "carrier": "stay-if-possible", "first_s": 4.778, "global": 4, "joint_n": 1104, "step": 1, "wall_s": 15.157}
+anchor 6/12 completed peak RSS 1.654 GiB {"best_s": 4.753, "carrier": "random-masked", "first_s": 4.743, "global": 5, "joint_n": 315, "step": 1, "wall_s": 14.015}
+anchor 7/12 completed peak RSS 1.654 GiB {"best_s": 4.648, "carrier": "nearest-eligible", "first_s": 4.531, "global": 6, "joint_n": 1159, "step": 2, "wall_s": 15.25}
+Traceback (most recent call last):
+  File "/home/sat/mcrl-v025-beam-ws/.scratch/beamsweep/run_width.py", line 127, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/sat/mcrl-v025-beam-ws/.scratch/beamsweep/run_width.py", line 110, in main
+    status = source.main()
+  File "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py", line 784, in main
+    first = first_improvement(
+        runner, calibration, tape, step_index, base, incumbent, run_setting
+    )
+  File "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py", line 286, in first_improvement
+    evaluator.evaluate_many(batch)
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py", line 817, in evaluate_many
+    result = evaluate_ar_tdm_catalogue(
+        arrays,
+    ...<4 lines>...
+        boundary_indices=self.boundary_indices,
+    )
+  File "/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/batch.py", line 492, in evaluate_ar_tdm_catalogue
+    result = resolve_configuration(
+        batch_arrays=arrays,
+    ...<5 lines>...
+        batch_boundary_indices=boundary_indices,
+    )
+  File "/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/resolution.py", line 84, in resolve_configuration
+    return _evaluate_ar_tdm_catalogue_core(
+        batch_arrays,
+        batch_selected_rows,
+        **kwargs,
+    )
+  File "/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/batch.py", line 250, in _evaluate_ar_tdm_catalogue_core
+    coupling = nominal_cross * active_pair
+               ~~~~~~~~~~~~~~^~~~~~~~~~~~~
+numpy._core._exceptions._ArrayMemoryError: Unable to allocate 1.22 MiB for an array with shape (16, 100, 100) and data type float64
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..27f12a1c9ee2d36fbc630cd0e5110a8b5828e80e
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_ADDRESS_SPACE_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    resource.setrlimit(
++        resource.RLIMIT_AS,
++        (MAX_ADDRESS_SPACE_BYTES, MAX_ADDRESS_SPACE_BYTES),
++    )
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RLIMIT_AS={MAX_ADDRESS_SPACE_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_AS",
++                "bytes": MAX_ADDRESS_SPACE_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The first attempt stopped cleanly at anchor 8/12 because a 4.9 GB virtual-address limit blocked a 1.22 MiB allocation even though measured RSS was only 1.654 GiB. That limit was constraining address mappings, not resident memory. I’m correcting the enforcement to an in-process RSS watchdog at 4.9 GB plus PANELCEIL’s own peak-RSS assertions, then resuming the saved 7 anchors; no scientific result failed and no other job was touched.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-beam-ws/.scratch/beamsweep/run_width.py
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+/bin/bash -lc 'env PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 BLIS_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/beamsweep/run_width.py --width 1.66' in /home/sat/mcrl-v025-beam-ws
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The corrected control run is rebuilding the same tape before resume, as expected; the seven completed anchor records remain intact. The RSS watchdog is active at 4.9 GB and the process began at 0.489 GiB.
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+Tape regeneration remains the long phase under the current shared-machine load; there is still no error or cap event. Once it finishes, anchors 1–7 will be recognized as resume-complete and execution will continue at anchor 8.
