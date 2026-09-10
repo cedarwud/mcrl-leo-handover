@@ -3475,3 +3475,623 @@ index 0000000000000000000000000000000000000000..eff88637274fbc7efa27974d777bb022
 +
 +No learner was trained. Loss values were not used. This report makes no EE claim.
 
+apply patch
+patch: completed
+/home/sat/mcrl-v025-datepool-ws/C3-COALITION-SHARDS-2026-09-10.md
+diff --git a/C3-COALITION-SHARDS-2026-09-10.md b/C3-COALITION-SHARDS-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d369d039fcdba203873375964014ec43e91fc2f
+--- /dev/null
++++ b/C3-COALITION-SHARDS-2026-09-10.md
+@@ -0,0 +1,134 @@
++**No C3 coalition shards were built from existing physics; the authenticated snapshot contains 15/180 anchors, the emitted coalition-size distribution is empty (`{}`), and the Stage C corpus reader dry-run verdict is `FAIL_CLOSED` because the required C3 inventory is absent.**
++
++# COALSHARD feasibility and stop report — 2026-09-10
++
++## Outcome
++
++Part 1 found that the stored physics contains the default evaluation and unilateral/single-user counterfactual evaluations, but no joint evaluation whose changed set has size two or greater. The declared target
++
++`Psi_A = Delta F(A) - sum_{i in A} d_i`
++
++therefore cannot be recovered from this physics layer. `Delta F(A)` must come from the real joint evaluation of the configuration changed on exactly `A`; it cannot be reconstructed from singleton outcomes. Part 2 was stopped as required. No coalition JSONL, sidecar, sealed physics file, source view, build state, or `EXACTGEN2`-owned path was created, changed, moved, or deleted.
++
++This report is the only file emitted by COALSHARD.
++
++## Verified by running code
++
++### Physics inventory and stored quantities
++
++The snapshot was read from `artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/.staging-separated-v1`. SHA-256 sidecar verification passed for all 15 physics shards and all 15 existing view shards.
++
++The physics schemas contain these fields:
++
++- `mcrl-v025-exact-source-physics-shard-v1`: `anchor_index_within_world`, `artifact_label`, `carrier`, `carrier_index`, `evaluation_path`, `global_anchor_index`, `record_kinds`, `row_count`, `step_index`, `world_id`, and `world_index`. Its `evaluation_path` says that current candidate/default and forecast candidate/default use `evaluate_many` at boundary `[0]`.
++- `mcrl-v025-exact-source-anchor-context-v1`: `calibration`, `cell_rekeyed_users`, `default_configuration_id`, `default_mapping`, `default_phi_current`, `incumbent_mapping`, and `refresh_phase`. `calibration` contains exact fraction-plus-float-hex values for `eta_ref`, `kappa_bits_per_user_step`, and `lambda_bits_per_j`.
++- `mcrl-v025-exact-source-configuration-physics-v1`: `configuration_id`, `current`, `delta_from_default`, `phi_current`, and `projections`. `current` contains `whole_network_bits_hex`, `whole_network_joules_hex`, per-user outcomes, energy components, validity/certificate data, RF-cap data, and current link summaries. Each projection contains `offset_index`, `profile` (the same network-outcome inventory), `survives`, `valid`, power values, and background-power status.
++- `mcrl-v025-exact-source-row-physics-v1`: `row_key`, `user_id`, `action_index`, `identity`, `reference_action`, `configuration_id`, `candidate_geometry_offsets_0_1_2_3`, and `default_geometry_offsets_0_1_2_3`. The geometry records contain visibility, D2, gain, distance, elevation, and off-axis quantities.
++
++Across the 15 completed shards, code counted exactly:
++
++- 15 configurations with `delta_from_default` length 0 (one default per anchor);
++- 13,225 configurations with `delta_from_default` length 1;
++- **0 configurations with `delta_from_default` length 2 or greater**;
++- 14,725 existing C1/C2 view rows, all carrying physics digest `38e1998aa8c1f4a751bca5456ec7e900feed16c52d38504bb76d28b556130b55`.
++
++Thus the physics has the default outcome and the singleton outcomes needed for each `d_i`, including the whole-network bits/joules and `phi_current`, but has no real joint outcome needed for `Delta F(A)` when `|A| >= 2`.
++
++### Reader contract read from source
++
++The exact source-view reader validates canonical JSON at runner lines 217–270. The corpus inventory selects only `views` paths at lines 274–288, dispatches the C1/C2 and C3 schemas at lines 291–314, requires both families at lines 316–322, and requires one common C1/C2/C3 physics digest at lines 323–326: [run_stagec_training.py](/home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py:217).
++
++The C3 implementation declares the shard/context/row versions at lines 29–33, the complete row field inventory at lines 290–323, rejects trainable rows smaller than two at lines 325–336, and checks `C1 + Psi = Delta` at lines 369–383: [coalitions.py schema declarations](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:29) and [coalitions.py row contract](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:290).
++
++Most importantly, the production row builder explicitly requires three independent physics inputs—`reference_outcome`, `unilateral_outcomes`, and `coalition_outcome`—at lines 391–425: [coalitions.py builder](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:391). The authenticated reader verifies the `.sha256` sidecar, schema versions, exact header, canonical JSONL, and exact row field set at lines 709–757: [coalitions.py reader](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:709).
++
++### Executed corpus-reader dry-run
++
++The required interpreter was used with `nice -n 15`, all six BLAS/thread variables set to 1, one Python process, and an address-space cap below 5 GB. The runner's actual `_candidate_view_files` and `load_corpus` functions were imported and executed against the corpus; this was not a paper inspection.
++
++```text
++anchor 15/180
++READER_VERDICT=FAIL_CLOSED
++READER_EXCEPTION=StageCContractError: corpus has no authenticated mcrl-v025-stagec-c3-coalition-shard-v2 view; five-arm training is forbidden
++BYTE_IDENTITY=True
++SHA256_BEFORE_AFTER /home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py 4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66 4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66
++SHA256_BEFORE_AFTER /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py 18351cdc1afe79342d87bcad4b6ef58e29ce35be3107ac05b3cd65265441e909 18351cdc1afe79342d87bcad4b6ef58e29ce35be3107ac05b3cd65265441e909
++PEAK_RSS_BYTES=148410368
++```
++
++`PILOT_PRIMITIVE_SOURCE_FALLBACK` was not changed in any file or imported module during this audit. Both inspected runner files were byte-identical before and after the reader execution.
++
++### Completed anchor prefix
++
++The corpus is a prefix of the declared 180-anchor order. The completed, authenticated prefix is `global-000` through `global-014`:
++
++| Global anchor | World | Anchor within world | Step | Carrier |
++|---:|---|---:|---:|---|
++| 000 | `V025_PROBE/world/1` | 0 | 0 | `nearest-eligible` |
++| 001 | `V025_PROBE/world/1` | 1 | 0 | `stay-if-possible` |
++| 002 | `V025_PROBE/world/1` | 2 | 0 | `random-masked` |
++| 003 | `V025_PROBE/world/1` | 3 | 1 | `nearest-eligible` |
++| 004 | `V025_PROBE/world/1` | 4 | 1 | `stay-if-possible` |
++| 005 | `V025_PROBE/world/1` | 5 | 1 | `random-masked` |
++| 006 | `V025_PROBE/world/1` | 6 | 2 | `nearest-eligible` |
++| 007 | `V025_PROBE/world/1` | 7 | 2 | `stay-if-possible` |
++| 008 | `V025_PROBE/world/1` | 8 | 2 | `random-masked` |
++| 009 | `V025_PROBE/world/1` | 9 | 3 | `nearest-eligible` |
++| 010 | `V025_PROBE/world/1` | 10 | 3 | `stay-if-possible` |
++| 011 | `V025_PROBE/world/1` | 11 | 3 | `random-masked` |
++| 012 | `V025_PROBE/world/1` | 12 | 4 | `nearest-eligible` |
++| 013 | `V025_PROBE/world/1` | 13 | 4 | `stay-if-possible` |
++| 014 | `V025_PROBE/world/1` | 14 | 4 | `random-masked` |
++
++### Measured cost and required rerun
++
++The 15 completed exact-physics result receipts report:
++
++- wall time per anchor: minimum 397.652 s, mean 438.728 s, maximum 490.400 s;
++- boundary evaluations per anchor: minimum 3,468, mean 3,534.667, maximum 3,588;
++- measured generation peak RSS: 1,930,498,048 bytes;
++- runner SHA before/after identical for all 15 receipts, with `fallback_source_value_restored=true` for all 15.
++
++These are measured costs of the current default-plus-singletons exact physics pass, not a measurement of the unperformed joint extension. The latter cannot honestly be assigned a measured incremental time from the available receipts.
++
++To make C3 possible, physics must be rerun per anchor with a declared coalition support. For every emitted changed set `A`, that rerun must:
++
++1. construct the genuine configuration whose mapping differs from that anchor's `default_mapping` on exactly all users in `A`;
++2. submit the default, every member's unilateral configuration, and the joint configuration through the same `StepEvaluator.evaluate_many` path, transition/incumbent, rekey set, nominal field, boundary set, calibration, and physics source;
++3. persist the joint configuration's `current`, `phi_current`, `projections`, and `delta_from_default`, alongside its singleton dependencies;
++4. derive `Delta F(A)`, every `d_i`, and `Psi_A` from those persisted real outcomes; and
++5. rebuild C1, C2, and C3 views over one resulting physics digest.
++
++The existing pilot code shows the correct kind of joint path: it evaluates a joint catalogue at lines 761–809 and passes the reference, unilateral, and selected joint outcomes at lines 932–977: [run_v025_pilot_c3.py joint evaluation](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:761) and [run_v025_pilot_c3.py outcome assembly](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:932). That source was read only; it was not edited or executed for physics here.
++
++Because the current physics files and their sidecars are authenticated/sealed, adding joint records in place would alter sealed artefacts. A new physics corpus (or an explicitly authorized full replacement) is required; a view-only operation is insufficient.
++
++## Derived on paper
++
++For a singleton `A = {i}` using one common evaluation path,
++
++`Psi_{ {i} } = Delta F({i}) - d_i = 0`
++
++exactly by definition. This is an algebraic identity, not a floating-point tolerance claim. The reader's trainable C3 schema requires `|A| >= 2`, so no singleton C3 rows were expected or emitted. Since no support was emitted, the requested emitted-support singleton-zero test has no observations and is reported as not applicable—not as a vacuous pass.
++
++Likewise, the decomposition identity for a valid future row is `C1(A) + Psi_A = Delta F(A)`. It cannot be evaluated for the absent multi-user outcomes. No residual is reported or fabricated.
++
++## Inferred
++
++- The omission is in physics coverage, not merely view projection: all stored `delta_from_default` cardinalities were measured, and none supplies a joint outcome.
++- Any attempt to sum, interpolate, or otherwise combine singleton outcomes to stand in for the missing joint outcome would erase precisely the interaction term C3 is meant to learn.
++- The current 15-anchor C1/C2 prefix is internally tied to one physics digest, but C3 cannot be made to share it without changing authenticated physics bytes. Therefore the runner must continue to fail closed on this corpus.
++
++## Part 2 verification status
++
++| Required check | Status |
++|---|---|
++| C3 shard emission | **NOT RUN — forbidden by Part 1** |
++| Coalition-size distribution | `{}` (no emitted support) |
++| Singleton `Psi == 0` over emitted support | **NOT APPLICABLE — no rows emitted** |
++| Decomposition residual | **NOT APPLICABLE — joint outcomes absent** |
++| Canonical JSON and `.sha256` sidecar per C3 shard | **NOT APPLICABLE — no shard created** |
++| Augmented-corpus reader admission | **NOT RUN — no valid augmentation exists** |
++| Existing-corpus reader dry-run | **FAIL_CLOSED, verified by execution** |
++
++No learner was trained. Loss values were not used. This report makes no EE claim.
+
+diff --git a/C3-COALITION-SHARDS-2026-09-10.md b/C3-COALITION-SHARDS-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d369d039fcdba203873375964014ec43e91fc2f
+--- /dev/null
++++ b/C3-COALITION-SHARDS-2026-09-10.md
+@@ -0,0 +1,134 @@
++**No C3 coalition shards were built from existing physics; the authenticated snapshot contains 15/180 anchors, the emitted coalition-size distribution is empty (`{}`), and the Stage C corpus reader dry-run verdict is `FAIL_CLOSED` because the required C3 inventory is absent.**
++
++# COALSHARD feasibility and stop report — 2026-09-10
++
++## Outcome
++
++Part 1 found that the stored physics contains the default evaluation and unilateral/single-user counterfactual evaluations, but no joint evaluation whose changed set has size two or greater. The declared target
++
++`Psi_A = Delta F(A) - sum_{i in A} d_i`
++
++therefore cannot be recovered from this physics layer. `Delta F(A)` must come from the real joint evaluation of the configuration changed on exactly `A`; it cannot be reconstructed from singleton outcomes. Part 2 was stopped as required. No coalition JSONL, sidecar, sealed physics file, source view, build state, or `EXACTGEN2`-owned path was created, changed, moved, or deleted.
++
++This report is the only file emitted by COALSHARD.
++
++## Verified by running code
++
++### Physics inventory and stored quantities
++
++The snapshot was read from `artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/.staging-separated-v1`. SHA-256 sidecar verification passed for all 15 physics shards and all 15 existing view shards.
++
++The physics schemas contain these fields:
++
++- `mcrl-v025-exact-source-physics-shard-v1`: `anchor_index_within_world`, `artifact_label`, `carrier`, `carrier_index`, `evaluation_path`, `global_anchor_index`, `record_kinds`, `row_count`, `step_index`, `world_id`, and `world_index`. Its `evaluation_path` says that current candidate/default and forecast candidate/default use `evaluate_many` at boundary `[0]`.
++- `mcrl-v025-exact-source-anchor-context-v1`: `calibration`, `cell_rekeyed_users`, `default_configuration_id`, `default_mapping`, `default_phi_current`, `incumbent_mapping`, and `refresh_phase`. `calibration` contains exact fraction-plus-float-hex values for `eta_ref`, `kappa_bits_per_user_step`, and `lambda_bits_per_j`.
++- `mcrl-v025-exact-source-configuration-physics-v1`: `configuration_id`, `current`, `delta_from_default`, `phi_current`, and `projections`. `current` contains `whole_network_bits_hex`, `whole_network_joules_hex`, per-user outcomes, energy components, validity/certificate data, RF-cap data, and current link summaries. Each projection contains `offset_index`, `profile` (the same network-outcome inventory), `survives`, `valid`, power values, and background-power status.
++- `mcrl-v025-exact-source-row-physics-v1`: `row_key`, `user_id`, `action_index`, `identity`, `reference_action`, `configuration_id`, `candidate_geometry_offsets_0_1_2_3`, and `default_geometry_offsets_0_1_2_3`. The geometry records contain visibility, D2, gain, distance, elevation, and off-axis quantities.
++
++Across the 15 completed shards, code counted exactly:
++
++- 15 configurations with `delta_from_default` length 0 (one default per anchor);
++- 13,225 configurations with `delta_from_default` length 1;
++- **0 configurations with `delta_from_default` length 2 or greater**;
++- 14,725 existing C1/C2 view rows, all carrying physics digest `38e1998aa8c1f4a751bca5456ec7e900feed16c52d38504bb76d28b556130b55`.
++
++Thus the physics has the default outcome and the singleton outcomes needed for each `d_i`, including the whole-network bits/joules and `phi_current`, but has no real joint outcome needed for `Delta F(A)` when `|A| >= 2`.
++
++### Reader contract read from source
++
++The exact source-view reader validates canonical JSON at runner lines 217–270. The corpus inventory selects only `views` paths at lines 274–288, dispatches the C1/C2 and C3 schemas at lines 291–314, requires both families at lines 316–322, and requires one common C1/C2/C3 physics digest at lines 323–326: [run_stagec_training.py](/home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py:217).
++
++The C3 implementation declares the shard/context/row versions at lines 29–33, the complete row field inventory at lines 290–323, rejects trainable rows smaller than two at lines 325–336, and checks `C1 + Psi = Delta` at lines 369–383: [coalitions.py schema declarations](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:29) and [coalitions.py row contract](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:290).
++
++Most importantly, the production row builder explicitly requires three independent physics inputs—`reference_outcome`, `unilateral_outcomes`, and `coalition_outcome`—at lines 391–425: [coalitions.py builder](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:391). The authenticated reader verifies the `.sha256` sidecar, schema versions, exact header, canonical JSONL, and exact row field set at lines 709–757: [coalitions.py reader](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:709).
++
++### Executed corpus-reader dry-run
++
++The required interpreter was used with `nice -n 15`, all six BLAS/thread variables set to 1, one Python process, and an address-space cap below 5 GB. The runner's actual `_candidate_view_files` and `load_corpus` functions were imported and executed against the corpus; this was not a paper inspection.
++
++```text
++anchor 15/180
++READER_VERDICT=FAIL_CLOSED
++READER_EXCEPTION=StageCContractError: corpus has no authenticated mcrl-v025-stagec-c3-coalition-shard-v2 view; five-arm training is forbidden
++BYTE_IDENTITY=True
++SHA256_BEFORE_AFTER /home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py 4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66 4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66
++SHA256_BEFORE_AFTER /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py 18351cdc1afe79342d87bcad4b6ef58e29ce35be3107ac05b3cd65265441e909 18351cdc1afe79342d87bcad4b6ef58e29ce35be3107ac05b3cd65265441e909
++PEAK_RSS_BYTES=148410368
++```
++
++`PILOT_PRIMITIVE_SOURCE_FALLBACK` was not changed in any file or imported module during this audit. Both inspected runner files were byte-identical before and after the reader execution.
++
++### Completed anchor prefix
++
++The corpus is a prefix of the declared 180-anchor order. The completed, authenticated prefix is `global-000` through `global-014`:
++
++| Global anchor | World | Anchor within world | Step | Carrier |
++|---:|---|---:|---:|---|
++| 000 | `V025_PROBE/world/1` | 0 | 0 | `nearest-eligible` |
++| 001 | `V025_PROBE/world/1` | 1 | 0 | `stay-if-possible` |
++| 002 | `V025_PROBE/world/1` | 2 | 0 | `random-masked` |
++| 003 | `V025_PROBE/world/1` | 3 | 1 | `nearest-eligible` |
++| 004 | `V025_PROBE/world/1` | 4 | 1 | `stay-if-possible` |
++| 005 | `V025_PROBE/world/1` | 5 | 1 | `random-masked` |
++| 006 | `V025_PROBE/world/1` | 6 | 2 | `nearest-eligible` |
++| 007 | `V025_PROBE/world/1` | 7 | 2 | `stay-if-possible` |
++| 008 | `V025_PROBE/world/1` | 8 | 2 | `random-masked` |
++| 009 | `V025_PROBE/world/1` | 9 | 3 | `nearest-eligible` |
++| 010 | `V025_PROBE/world/1` | 10 | 3 | `stay-if-possible` |
++| 011 | `V025_PROBE/world/1` | 11 | 3 | `random-masked` |
++| 012 | `V025_PROBE/world/1` | 12 | 4 | `nearest-eligible` |
++| 013 | `V025_PROBE/world/1` | 13 | 4 | `stay-if-possible` |
++| 014 | `V025_PROBE/world/1` | 14 | 4 | `random-masked` |
++
++### Measured cost and required rerun
++
++The 15 completed exact-physics result receipts report:
++
++- wall time per anchor: minimum 397.652 s, mean 438.728 s, maximum 490.400 s;
++- boundary evaluations per anchor: minimum 3,468, mean 3,534.667, maximum 3,588;
++- measured generation peak RSS: 1,930,498,048 bytes;
++- runner SHA before/after identical for all 15 receipts, with `fallback_source_value_restored=true` for all 15.
++
++These are measured costs of the current default-plus-singletons exact physics pass, not a measurement of the unperformed joint extension. The latter cannot honestly be assigned a measured incremental time from the available receipts.
++
++To make C3 possible, physics must be rerun per anchor with a declared coalition support. For every emitted changed set `A`, that rerun must:
++
++1. construct the genuine configuration whose mapping differs from that anchor's `default_mapping` on exactly all users in `A`;
++2. submit the default, every member's unilateral configuration, and the joint configuration through the same `StepEvaluator.evaluate_many` path, transition/incumbent, rekey set, nominal field, boundary set, calibration, and physics source;
++3. persist the joint configuration's `current`, `phi_current`, `projections`, and `delta_from_default`, alongside its singleton dependencies;
++4. derive `Delta F(A)`, every `d_i`, and `Psi_A` from those persisted real outcomes; and
++5. rebuild C1, C2, and C3 views over one resulting physics digest.
++
++The existing pilot code shows the correct kind of joint path: it evaluates a joint catalogue at lines 761–809 and passes the reference, unilateral, and selected joint outcomes at lines 932–977: [run_v025_pilot_c3.py joint evaluation](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:761) and [run_v025_pilot_c3.py outcome assembly](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:932). That source was read only; it was not edited or executed for physics here.
++
++Because the current physics files and their sidecars are authenticated/sealed, adding joint records in place would alter sealed artefacts. A new physics corpus (or an explicitly authorized full replacement) is required; a view-only operation is insufficient.
++
++## Derived on paper
++
++For a singleton `A = {i}` using one common evaluation path,
++
++`Psi_{ {i} } = Delta F({i}) - d_i = 0`
++
++exactly by definition. This is an algebraic identity, not a floating-point tolerance claim. The reader's trainable C3 schema requires `|A| >= 2`, so no singleton C3 rows were expected or emitted. Since no support was emitted, the requested emitted-support singleton-zero test has no observations and is reported as not applicable—not as a vacuous pass.
++
++Likewise, the decomposition identity for a valid future row is `C1(A) + Psi_A = Delta F(A)`. It cannot be evaluated for the absent multi-user outcomes. No residual is reported or fabricated.
++
++## Inferred
++
++- The omission is in physics coverage, not merely view projection: all stored `delta_from_default` cardinalities were measured, and none supplies a joint outcome.
++- Any attempt to sum, interpolate, or otherwise combine singleton outcomes to stand in for the missing joint outcome would erase precisely the interaction term C3 is meant to learn.
++- The current 15-anchor C1/C2 prefix is internally tied to one physics digest, but C3 cannot be made to share it without changing authenticated physics bytes. Therefore the runner must continue to fail closed on this corpus.
++
++## Part 2 verification status
++
++| Required check | Status |
++|---|---|
++| C3 shard emission | **NOT RUN — forbidden by Part 1** |
++| Coalition-size distribution | `{}` (no emitted support) |
++| Singleton `Psi == 0` over emitted support | **NOT APPLICABLE — no rows emitted** |
++| Decomposition residual | **NOT APPLICABLE — joint outcomes absent** |
++| Canonical JSON and `.sha256` sidecar per C3 shard | **NOT APPLICABLE — no shard created** |
++| Augmented-corpus reader admission | **NOT RUN — no valid augmentation exists** |
++| Existing-corpus reader dry-run | **FAIL_CLOSED, verified by execution** |
++
++No learner was trained. Loss values were not used. This report makes no EE claim.
+
+exec
+/bin/bash -lc "sed -n '1,14p' C3-COALITION-SHARDS-2026-09-10.md
+rg -n \""'^## |13,225|15/180|FAIL_CLOSED|PEAK_RSS|Part 2 verification|No learner" C3-COALITION-SHARDS-2026-09-10.md
+git status --short -- C3-COALITION-SHARDS-2026-09-10.md artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM
+sha256sum C3-COALITION-SHARDS-2026-09-10.md' in /home/sat/mcrl-v025-datepool-ws
+ succeeded in 0ms:
+**No C3 coalition shards were built from existing physics; the authenticated snapshot contains 15/180 anchors, the emitted coalition-size distribution is empty (`{}`), and the Stage C corpus reader dry-run verdict is `FAIL_CLOSED` because the required C3 inventory is absent.**
+
+# COALSHARD feasibility and stop report — 2026-09-10
+
+## Outcome
+
+Part 1 found that the stored physics contains the default evaluation and unilateral/single-user counterfactual evaluations, but no joint evaluation whose changed set has size two or greater. The declared target
+
+`Psi_A = Delta F(A) - sum_{i in A} d_i`
+
+therefore cannot be recovered from this physics layer. `Delta F(A)` must come from the real joint evaluation of the configuration changed on exactly `A`; it cannot be reconstructed from singleton outcomes. Part 2 was stopped as required. No coalition JSONL, sidecar, sealed physics file, source view, build state, or `EXACTGEN2`-owned path was created, changed, moved, or deleted.
+
+This report is the only file emitted by COALSHARD.
+
+1:**No C3 coalition shards were built from existing physics; the authenticated snapshot contains 15/180 anchors, the emitted coalition-size distribution is empty (`{}`), and the Stage C corpus reader dry-run verdict is `FAIL_CLOSED` because the required C3 inventory is absent.**
+5:## Outcome
+15:## Verified by running code
+31:- 13,225 configurations with `delta_from_default` length 1;
+50:anchor 15/180
+51:READER_VERDICT=FAIL_CLOSED
+56:PEAK_RSS_BYTES=148410368
+106:## Derived on paper
+116:## Inferred
+122:## Part 2 verification status
+132:| Existing-corpus reader dry-run | **FAIL_CLOSED, verified by execution** |
+134:No learner was trained. Loss values were not used. This report makes no EE claim.
+?? C3-COALITION-SHARDS-2026-09-10.md
+?? artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/
+7d437ba53a196e7113ffc426de7ac2571bf787c99958517ccbb222fe849f2008  C3-COALITION-SHARDS-2026-09-10.md
+
+diff --git a/C3-COALITION-SHARDS-2026-09-10.md b/C3-COALITION-SHARDS-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d369d039fcdba203873375964014ec43e91fc2f
+--- /dev/null
++++ b/C3-COALITION-SHARDS-2026-09-10.md
+@@ -0,0 +1,134 @@
++**No C3 coalition shards were built from existing physics; the authenticated snapshot contains 15/180 anchors, the emitted coalition-size distribution is empty (`{}`), and the Stage C corpus reader dry-run verdict is `FAIL_CLOSED` because the required C3 inventory is absent.**
++
++# COALSHARD feasibility and stop report — 2026-09-10
++
++## Outcome
++
++Part 1 found that the stored physics contains the default evaluation and unilateral/single-user counterfactual evaluations, but no joint evaluation whose changed set has size two or greater. The declared target
++
++`Psi_A = Delta F(A) - sum_{i in A} d_i`
++
++therefore cannot be recovered from this physics layer. `Delta F(A)` must come from the real joint evaluation of the configuration changed on exactly `A`; it cannot be reconstructed from singleton outcomes. Part 2 was stopped as required. No coalition JSONL, sidecar, sealed physics file, source view, build state, or `EXACTGEN2`-owned path was created, changed, moved, or deleted.
++
++This report is the only file emitted by COALSHARD.
++
++## Verified by running code
++
++### Physics inventory and stored quantities
++
++The snapshot was read from `artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/.staging-separated-v1`. SHA-256 sidecar verification passed for all 15 physics shards and all 15 existing view shards.
++
++The physics schemas contain these fields:
++
++- `mcrl-v025-exact-source-physics-shard-v1`: `anchor_index_within_world`, `artifact_label`, `carrier`, `carrier_index`, `evaluation_path`, `global_anchor_index`, `record_kinds`, `row_count`, `step_index`, `world_id`, and `world_index`. Its `evaluation_path` says that current candidate/default and forecast candidate/default use `evaluate_many` at boundary `[0]`.
++- `mcrl-v025-exact-source-anchor-context-v1`: `calibration`, `cell_rekeyed_users`, `default_configuration_id`, `default_mapping`, `default_phi_current`, `incumbent_mapping`, and `refresh_phase`. `calibration` contains exact fraction-plus-float-hex values for `eta_ref`, `kappa_bits_per_user_step`, and `lambda_bits_per_j`.
++- `mcrl-v025-exact-source-configuration-physics-v1`: `configuration_id`, `current`, `delta_from_default`, `phi_current`, and `projections`. `current` contains `whole_network_bits_hex`, `whole_network_joules_hex`, per-user outcomes, energy components, validity/certificate data, RF-cap data, and current link summaries. Each projection contains `offset_index`, `profile` (the same network-outcome inventory), `survives`, `valid`, power values, and background-power status.
++- `mcrl-v025-exact-source-row-physics-v1`: `row_key`, `user_id`, `action_index`, `identity`, `reference_action`, `configuration_id`, `candidate_geometry_offsets_0_1_2_3`, and `default_geometry_offsets_0_1_2_3`. The geometry records contain visibility, D2, gain, distance, elevation, and off-axis quantities.
++
++Across the 15 completed shards, code counted exactly:
++
++- 15 configurations with `delta_from_default` length 0 (one default per anchor);
++- 13,225 configurations with `delta_from_default` length 1;
++- **0 configurations with `delta_from_default` length 2 or greater**;
++- 14,725 existing C1/C2 view rows, all carrying physics digest `38e1998aa8c1f4a751bca5456ec7e900feed16c52d38504bb76d28b556130b55`.
++
++Thus the physics has the default outcome and the singleton outcomes needed for each `d_i`, including the whole-network bits/joules and `phi_current`, but has no real joint outcome needed for `Delta F(A)` when `|A| >= 2`.
++
++### Reader contract read from source
++
++The exact source-view reader validates canonical JSON at runner lines 217–270. The corpus inventory selects only `views` paths at lines 274–288, dispatches the C1/C2 and C3 schemas at lines 291–314, requires both families at lines 316–322, and requires one common C1/C2/C3 physics digest at lines 323–326: [run_stagec_training.py](/home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py:217).
++
++The C3 implementation declares the shard/context/row versions at lines 29–33, the complete row field inventory at lines 290–323, rejects trainable rows smaller than two at lines 325–336, and checks `C1 + Psi = Delta` at lines 369–383: [coalitions.py schema declarations](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:29) and [coalitions.py row contract](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:290).
++
++Most importantly, the production row builder explicitly requires three independent physics inputs—`reference_outcome`, `unilateral_outcomes`, and `coalition_outcome`—at lines 391–425: [coalitions.py builder](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:391). The authenticated reader verifies the `.sha256` sidecar, schema versions, exact header, canonical JSONL, and exact row field set at lines 709–757: [coalitions.py reader](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:709).
++
++### Executed corpus-reader dry-run
++
++The required interpreter was used with `nice -n 15`, all six BLAS/thread variables set to 1, one Python process, and an address-space cap below 5 GB. The runner's actual `_candidate_view_files` and `load_corpus` functions were imported and executed against the corpus; this was not a paper inspection.
++
++```text
++anchor 15/180
++READER_VERDICT=FAIL_CLOSED
++READER_EXCEPTION=StageCContractError: corpus has no authenticated mcrl-v025-stagec-c3-coalition-shard-v2 view; five-arm training is forbidden
++BYTE_IDENTITY=True
++SHA256_BEFORE_AFTER /home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py 4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66 4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66
++SHA256_BEFORE_AFTER /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py 18351cdc1afe79342d87bcad4b6ef58e29ce35be3107ac05b3cd65265441e909 18351cdc1afe79342d87bcad4b6ef58e29ce35be3107ac05b3cd65265441e909
++PEAK_RSS_BYTES=148410368
++```
++
++`PILOT_PRIMITIVE_SOURCE_FALLBACK` was not changed in any file or imported module during this audit. Both inspected runner files were byte-identical before and after the reader execution.
++
++### Completed anchor prefix
++
++The corpus is a prefix of the declared 180-anchor order. The completed, authenticated prefix is `global-000` through `global-014`:
++
++| Global anchor | World | Anchor within world | Step | Carrier |
++|---:|---|---:|---:|---|
++| 000 | `V025_PROBE/world/1` | 0 | 0 | `nearest-eligible` |
++| 001 | `V025_PROBE/world/1` | 1 | 0 | `stay-if-possible` |
++| 002 | `V025_PROBE/world/1` | 2 | 0 | `random-masked` |
++| 003 | `V025_PROBE/world/1` | 3 | 1 | `nearest-eligible` |
++| 004 | `V025_PROBE/world/1` | 4 | 1 | `stay-if-possible` |
++| 005 | `V025_PROBE/world/1` | 5 | 1 | `random-masked` |
++| 006 | `V025_PROBE/world/1` | 6 | 2 | `nearest-eligible` |
++| 007 | `V025_PROBE/world/1` | 7 | 2 | `stay-if-possible` |
++| 008 | `V025_PROBE/world/1` | 8 | 2 | `random-masked` |
++| 009 | `V025_PROBE/world/1` | 9 | 3 | `nearest-eligible` |
++| 010 | `V025_PROBE/world/1` | 10 | 3 | `stay-if-possible` |
++| 011 | `V025_PROBE/world/1` | 11 | 3 | `random-masked` |
++| 012 | `V025_PROBE/world/1` | 12 | 4 | `nearest-eligible` |
++| 013 | `V025_PROBE/world/1` | 13 | 4 | `stay-if-possible` |
++| 014 | `V025_PROBE/world/1` | 14 | 4 | `random-masked` |
++
++### Measured cost and required rerun
++
++The 15 completed exact-physics result receipts report:
++
++- wall time per anchor: minimum 397.652 s, mean 438.728 s, maximum 490.400 s;
++- boundary evaluations per anchor: minimum 3,468, mean 3,534.667, maximum 3,588;
++- measured generation peak RSS: 1,930,498,048 bytes;
++- runner SHA before/after identical for all 15 receipts, with `fallback_source_value_restored=true` for all 15.
++
++These are measured costs of the current default-plus-singletons exact physics pass, not a measurement of the unperformed joint extension. The latter cannot honestly be assigned a measured incremental time from the available receipts.
++
++To make C3 possible, physics must be rerun per anchor with a declared coalition support. For every emitted changed set `A`, that rerun must:
++
++1. construct the genuine configuration whose mapping differs from that anchor's `default_mapping` on exactly all users in `A`;
++2. submit the default, every member's unilateral configuration, and the joint configuration through the same `StepEvaluator.evaluate_many` path, transition/incumbent, rekey set, nominal field, boundary set, calibration, and physics source;
++3. persist the joint configuration's `current`, `phi_current`, `projections`, and `delta_from_default`, alongside its singleton dependencies;
++4. derive `Delta F(A)`, every `d_i`, and `Psi_A` from those persisted real outcomes; and
++5. rebuild C1, C2, and C3 views over one resulting physics digest.
++
++The existing pilot code shows the correct kind of joint path: it evaluates a joint catalogue at lines 761–809 and passes the reference, unilateral, and selected joint outcomes at lines 932–977: [run_v025_pilot_c3.py joint evaluation](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:761) and [run_v025_pilot_c3.py outcome assembly](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:932). That source was read only; it was not edited or executed for physics here.
++
++Because the current physics files and their sidecars are authenticated/sealed, adding joint records in place would alter sealed artefacts. A new physics corpus (or an explicitly authorized full replacement) is required; a view-only operation is insufficient.
++
++## Derived on paper
++
++For a singleton `A = {i}` using one common evaluation path,
++
++`Psi_{ {i} } = Delta F({i}) - d_i = 0`
++
++exactly by definition. This is an algebraic identity, not a floating-point tolerance claim. The reader's trainable C3 schema requires `|A| >= 2`, so no singleton C3 rows were expected or emitted. Since no support was emitted, the requested emitted-support singleton-zero test has no observations and is reported as not applicable—not as a vacuous pass.
++
++Likewise, the decomposition identity for a valid future row is `C1(A) + Psi_A = Delta F(A)`. It cannot be evaluated for the absent multi-user outcomes. No residual is reported or fabricated.
++
++## Inferred
++
++- The omission is in physics coverage, not merely view projection: all stored `delta_from_default` cardinalities were measured, and none supplies a joint outcome.
++- Any attempt to sum, interpolate, or otherwise combine singleton outcomes to stand in for the missing joint outcome would erase precisely the interaction term C3 is meant to learn.
++- The current 15-anchor C1/C2 prefix is internally tied to one physics digest, but C3 cannot be made to share it without changing authenticated physics bytes. Therefore the runner must continue to fail closed on this corpus.
++
++## Part 2 verification status
++
++| Required check | Status |
++|---|---|
++| C3 shard emission | **NOT RUN — forbidden by Part 1** |
++| Coalition-size distribution | `{}` (no emitted support) |
++| Singleton `Psi == 0` over emitted support | **NOT APPLICABLE — no rows emitted** |
++| Decomposition residual | **NOT APPLICABLE — joint outcomes absent** |
++| Canonical JSON and `.sha256` sidecar per C3 shard | **NOT APPLICABLE — no shard created** |
++| Augmented-corpus reader admission | **NOT RUN — no valid augmentation exists** |
++| Existing-corpus reader dry-run | **FAIL_CLOSED, verified by execution** |
++
++No learner was trained. Loss values were not used. This report makes no EE claim.
+
+codex
+C3 shards were not built: the existing physics contains only defaults and singleton evaluations—no real multi-user joint outcomes—so constructing `Psi_A` would require an invalid proxy.
+
+The requested report is at [C3-COALITION-SHARDS-2026-09-10.md](/home/sat/mcrl-v025-datepool-ws/C3-COALITION-SHARDS-2026-09-10.md).
+
+Key verified results:
+
+- Authenticated prefix: 15/180 anchors, `global-000` through `global-014`.
+- Configurations: 15 defaults, 13,225 singletons, 0 multi-user.
+- Reader dry-run: `FAIL_CLOSED` with the expected missing-C3 error.
+- Existing physics cost: mean 438.728 seconds and 3,534.667 boundary evaluations per anchor.
+- Verification peak RSS: 148,410,368 bytes; generation receipts peaked at 1,930,498,048 bytes.
+- Runner and pilot files remained byte-identical.
+- No sealed or `EXACTGEN2`-owned artefact was modified. Only the report was created.
+- No learner was trained and no EE claim is made.
+diff --git a/C3-COALITION-SHARDS-2026-09-10.md b/C3-COALITION-SHARDS-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d369d039fcdba203873375964014ec43e91fc2f
+--- /dev/null
++++ b/C3-COALITION-SHARDS-2026-09-10.md
+@@ -0,0 +1,134 @@
++**No C3 coalition shards were built from existing physics; the authenticated snapshot contains 15/180 anchors, the emitted coalition-size distribution is empty (`{}`), and the Stage C corpus reader dry-run verdict is `FAIL_CLOSED` because the required C3 inventory is absent.**
++
++# COALSHARD feasibility and stop report — 2026-09-10
++
++## Outcome
++
++Part 1 found that the stored physics contains the default evaluation and unilateral/single-user counterfactual evaluations, but no joint evaluation whose changed set has size two or greater. The declared target
++
++`Psi_A = Delta F(A) - sum_{i in A} d_i`
++
++therefore cannot be recovered from this physics layer. `Delta F(A)` must come from the real joint evaluation of the configuration changed on exactly `A`; it cannot be reconstructed from singleton outcomes. Part 2 was stopped as required. No coalition JSONL, sidecar, sealed physics file, source view, build state, or `EXACTGEN2`-owned path was created, changed, moved, or deleted.
++
++This report is the only file emitted by COALSHARD.
++
++## Verified by running code
++
++### Physics inventory and stored quantities
++
++The snapshot was read from `artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/.staging-separated-v1`. SHA-256 sidecar verification passed for all 15 physics shards and all 15 existing view shards.
++
++The physics schemas contain these fields:
++
++- `mcrl-v025-exact-source-physics-shard-v1`: `anchor_index_within_world`, `artifact_label`, `carrier`, `carrier_index`, `evaluation_path`, `global_anchor_index`, `record_kinds`, `row_count`, `step_index`, `world_id`, and `world_index`. Its `evaluation_path` says that current candidate/default and forecast candidate/default use `evaluate_many` at boundary `[0]`.
++- `mcrl-v025-exact-source-anchor-context-v1`: `calibration`, `cell_rekeyed_users`, `default_configuration_id`, `default_mapping`, `default_phi_current`, `incumbent_mapping`, and `refresh_phase`. `calibration` contains exact fraction-plus-float-hex values for `eta_ref`, `kappa_bits_per_user_step`, and `lambda_bits_per_j`.
++- `mcrl-v025-exact-source-configuration-physics-v1`: `configuration_id`, `current`, `delta_from_default`, `phi_current`, and `projections`. `current` contains `whole_network_bits_hex`, `whole_network_joules_hex`, per-user outcomes, energy components, validity/certificate data, RF-cap data, and current link summaries. Each projection contains `offset_index`, `profile` (the same network-outcome inventory), `survives`, `valid`, power values, and background-power status.
++- `mcrl-v025-exact-source-row-physics-v1`: `row_key`, `user_id`, `action_index`, `identity`, `reference_action`, `configuration_id`, `candidate_geometry_offsets_0_1_2_3`, and `default_geometry_offsets_0_1_2_3`. The geometry records contain visibility, D2, gain, distance, elevation, and off-axis quantities.
++
++Across the 15 completed shards, code counted exactly:
++
++- 15 configurations with `delta_from_default` length 0 (one default per anchor);
++- 13,225 configurations with `delta_from_default` length 1;
++- **0 configurations with `delta_from_default` length 2 or greater**;
++- 14,725 existing C1/C2 view rows, all carrying physics digest `38e1998aa8c1f4a751bca5456ec7e900feed16c52d38504bb76d28b556130b55`.
++
++Thus the physics has the default outcome and the singleton outcomes needed for each `d_i`, including the whole-network bits/joules and `phi_current`, but has no real joint outcome needed for `Delta F(A)` when `|A| >= 2`.
++
++### Reader contract read from source
++
++The exact source-view reader validates canonical JSON at runner lines 217–270. The corpus inventory selects only `views` paths at lines 274–288, dispatches the C1/C2 and C3 schemas at lines 291–314, requires both families at lines 316–322, and requires one common C1/C2/C3 physics digest at lines 323–326: [run_stagec_training.py](/home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py:217).
++
++The C3 implementation declares the shard/context/row versions at lines 29–33, the complete row field inventory at lines 290–323, rejects trainable rows smaller than two at lines 325–336, and checks `C1 + Psi = Delta` at lines 369–383: [coalitions.py schema declarations](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:29) and [coalitions.py row contract](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:290).
++
++Most importantly, the production row builder explicitly requires three independent physics inputs—`reference_outcome`, `unilateral_outcomes`, and `coalition_outcome`—at lines 391–425: [coalitions.py builder](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:391). The authenticated reader verifies the `.sha256` sidecar, schema versions, exact header, canonical JSONL, and exact row field set at lines 709–757: [coalitions.py reader](/home/sat/mcrl-v025-retrain-ws/src/mcrl/stagec_v025/coalitions.py:709).
++
++### Executed corpus-reader dry-run
++
++The required interpreter was used with `nice -n 15`, all six BLAS/thread variables set to 1, one Python process, and an address-space cap below 5 GB. The runner's actual `_candidate_view_files` and `load_corpus` functions were imported and executed against the corpus; this was not a paper inspection.
++
++```text
++anchor 15/180
++READER_VERDICT=FAIL_CLOSED
++READER_EXCEPTION=StageCContractError: corpus has no authenticated mcrl-v025-stagec-c3-coalition-shard-v2 view; five-arm training is forbidden
++BYTE_IDENTITY=True
++SHA256_BEFORE_AFTER /home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py 4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66 4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66
++SHA256_BEFORE_AFTER /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py 18351cdc1afe79342d87bcad4b6ef58e29ce35be3107ac05b3cd65265441e909 18351cdc1afe79342d87bcad4b6ef58e29ce35be3107ac05b3cd65265441e909
++PEAK_RSS_BYTES=148410368
++```
++
++`PILOT_PRIMITIVE_SOURCE_FALLBACK` was not changed in any file or imported module during this audit. Both inspected runner files were byte-identical before and after the reader execution.
++
++### Completed anchor prefix
++
++The corpus is a prefix of the declared 180-anchor order. The completed, authenticated prefix is `global-000` through `global-014`:
++
++| Global anchor | World | Anchor within world | Step | Carrier |
++|---:|---|---:|---:|---|
++| 000 | `V025_PROBE/world/1` | 0 | 0 | `nearest-eligible` |
++| 001 | `V025_PROBE/world/1` | 1 | 0 | `stay-if-possible` |
++| 002 | `V025_PROBE/world/1` | 2 | 0 | `random-masked` |
++| 003 | `V025_PROBE/world/1` | 3 | 1 | `nearest-eligible` |
++| 004 | `V025_PROBE/world/1` | 4 | 1 | `stay-if-possible` |
++| 005 | `V025_PROBE/world/1` | 5 | 1 | `random-masked` |
++| 006 | `V025_PROBE/world/1` | 6 | 2 | `nearest-eligible` |
++| 007 | `V025_PROBE/world/1` | 7 | 2 | `stay-if-possible` |
++| 008 | `V025_PROBE/world/1` | 8 | 2 | `random-masked` |
++| 009 | `V025_PROBE/world/1` | 9 | 3 | `nearest-eligible` |
++| 010 | `V025_PROBE/world/1` | 10 | 3 | `stay-if-possible` |
++| 011 | `V025_PROBE/world/1` | 11 | 3 | `random-masked` |
++| 012 | `V025_PROBE/world/1` | 12 | 4 | `nearest-eligible` |
++| 013 | `V025_PROBE/world/1` | 13 | 4 | `stay-if-possible` |
++| 014 | `V025_PROBE/world/1` | 14 | 4 | `random-masked` |
++
++### Measured cost and required rerun
++
++The 15 completed exact-physics result receipts report:
++
++- wall time per anchor: minimum 397.652 s, mean 438.728 s, maximum 490.400 s;
++- boundary evaluations per anchor: minimum 3,468, mean 3,534.667, maximum 3,588;
++- measured generation peak RSS: 1,930,498,048 bytes;
++- runner SHA before/after identical for all 15 receipts, with `fallback_source_value_restored=true` for all 15.
++
++These are measured costs of the current default-plus-singletons exact physics pass, not a measurement of the unperformed joint extension. The latter cannot honestly be assigned a measured incremental time from the available receipts.
++
++To make C3 possible, physics must be rerun per anchor with a declared coalition support. For every emitted changed set `A`, that rerun must:
++
++1. construct the genuine configuration whose mapping differs from that anchor's `default_mapping` on exactly all users in `A`;
++2. submit the default, every member's unilateral configuration, and the joint configuration through the same `StepEvaluator.evaluate_many` path, transition/incumbent, rekey set, nominal field, boundary set, calibration, and physics source;
++3. persist the joint configuration's `current`, `phi_current`, `projections`, and `delta_from_default`, alongside its singleton dependencies;
++4. derive `Delta F(A)`, every `d_i`, and `Psi_A` from those persisted real outcomes; and
++5. rebuild C1, C2, and C3 views over one resulting physics digest.
++
++The existing pilot code shows the correct kind of joint path: it evaluates a joint catalogue at lines 761–809 and passes the reference, unilateral, and selected joint outcomes at lines 932–977: [run_v025_pilot_c3.py joint evaluation](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:761) and [run_v025_pilot_c3.py outcome assembly](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:932). That source was read only; it was not edited or executed for physics here.
++
++Because the current physics files and their sidecars are authenticated/sealed, adding joint records in place would alter sealed artefacts. A new physics corpus (or an explicitly authorized full replacement) is required; a view-only operation is insufficient.
++
++## Derived on paper
++
++For a singleton `A = {i}` using one common evaluation path,
++
++`Psi_{ {i} } = Delta F({i}) - d_i = 0`
++
++exactly by definition. This is an algebraic identity, not a floating-point tolerance claim. The reader's trainable C3 schema requires `|A| >= 2`, so no singleton C3 rows were expected or emitted. Since no support was emitted, the requested emitted-support singleton-zero test has no observations and is reported as not applicable—not as a vacuous pass.
++
++Likewise, the decomposition identity for a valid future row is `C1(A) + Psi_A = Delta F(A)`. It cannot be evaluated for the absent multi-user outcomes. No residual is reported or fabricated.
++
++## Inferred
++
++- The omission is in physics coverage, not merely view projection: all stored `delta_from_default` cardinalities were measured, and none supplies a joint outcome.
++- Any attempt to sum, interpolate, or otherwise combine singleton outcomes to stand in for the missing joint outcome would erase precisely the interaction term C3 is meant to learn.
++- The current 15-anchor C1/C2 prefix is internally tied to one physics digest, but C3 cannot be made to share it without changing authenticated physics bytes. Therefore the runner must continue to fail closed on this corpus.
++
++## Part 2 verification status
++
++| Required check | Status |
++|---|---|
++| C3 shard emission | **NOT RUN — forbidden by Part 1** |
++| Coalition-size distribution | `{}` (no emitted support) |
++| Singleton `Psi == 0` over emitted support | **NOT APPLICABLE — no rows emitted** |
++| Decomposition residual | **NOT APPLICABLE — joint outcomes absent** |
++| Canonical JSON and `.sha256` sidecar per C3 shard | **NOT APPLICABLE — no shard created** |
++| Augmented-corpus reader admission | **NOT RUN — no valid augmentation exists** |
++| Existing-corpus reader dry-run | **FAIL_CLOSED, verified by execution** |
++
++No learner was trained. Loss values were not used. This report makes no EE claim.
+
+tokens used
+143,672
