@@ -1,0 +1,1720 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-strategic-astra-ws
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08a0a-3b7e-7f51-a254-f5fad99c617e
+--------
+user
+# DECOMP round 2 — corrected premise
+
+**You answered this question earlier today. The controller gave you a WRONG PREMISE about
+the deployed selector, and is telling you so before you answer again.**
+
+## The correction, verified by the controller reading the code
+
+The earlier prompt stated: "The deployed selector is deterministic cyclic first-improvement
+over single-user moves." **That is false for the learned arms.** It describes
+`harness/anytime.py` and the `S_UNI` comparator, which does not take the model at all.
+
+The learned arms select by **argmax over the whole legal catalogue, with the interaction term
+added to every row's score** (`scripts/run_v025_pilot_c3.py:1542-1563`):
+
+```python
+for config in legal_catalogue:
+    context = contexts.get(config.configuration_id)
+    for arm in PILOT_ARMS:
+        score = math.fsum(deltas_by_arm[arm][(user, config.mapping[user])]
+                          for user in anchor.mapping)
+        if context is not None:
+            score += model.interaction(context)          # C3 enters here
+        learned_scores_by_arm[arm].append((score, config.configuration_id, config))
+selections[(seed, arm)] = min(learned_scores_by_arm[arm],
+                              key=lambda row: (-row[0], row[1]))[2]
+```
+
+Ties break on lexicographic `configuration_id`. Corroborating: `deployment.py:62` declares
+`SelectorMode = Literal["S3","S0","S_UNI"]`; `ProfileSelector.select` (`:647`) runs the
+single-user loop only in the `S_UNI` branch and runs `for profile in (base_profile,
+*catalogue)` with `additive + interaction` for `S3`/`S0`; `synthetic.py:372` maps learned arms
+to `S3`; `merge.py:680` and `acceptance.py:78` list `S0` and `S_UNI` as *supportive
+comparators*, separate from `LEARNED_ARMS` (`learner.py:28`).
+
+**There is no incumbent, no move set, and no first move in the learned-arm path.**
+
+## What this does to your earlier answer
+
+If your earlier answer rested on a first-move obstruction — a residual that is hard zero on
+singletons cannot fire strict improvement, therefore the committed configuration is the seed
+regardless of C3 — **that argument is about `S_UNI`, not about the deployed learned arms.**
+Re-derive without it. If your earlier answer did not rest on it, say so and say what changes,
+if anything.
+
+## What has NOT changed
+
+- The receipts stand: `DROP_C3` changed **0** proposed assignments at 3/3 anchors, and in the
+  r8 panel smoke `FULL` and `DROP_C3` committed **byte-identical** assignments under both
+  provisioning rules. **These are now unexplained**, not explained. Candidate causes, none
+  established: the interaction term is small relative to the spread of additive scores across
+  catalogue rows; `contexts.get(...)` returns `None` for most rows so the term never enters;
+  or the panel bridge defect already proven for the provisioning-rule variant. A measurement
+  of exactly this is running and has not reported.
+- The conditioning arithmetic stands: `+480.113 - 440.079 = +40.034`, and 1% component errors
+  give roughly 23x amplification on the ranked total. This is a property of the decomposition,
+  not of the selector.
+- The corpus finding stands: all 176,223 shipped source rows carry bounded
+  `kappa*tanh(log ratio)` surrogates, not the declared targets.
+- Everything in the "Binding constraints" section below still binds.
+
+## New measured facts since you answered
+
+- Multi-start assignment headroom **survives the reporting numerator**: the nearest-start
+  reference is **9.8698%** (`SEALED`) and **3.5590%** (`MARGIN_Q`) below the best endpoint
+  found, demand-capped. Under `SEALED` no user-anchor attains the 1.504 Gbit target at all,
+  so the cap binds nothing there; under `MARGIN_Q` 552/800 attain.
+- At identical transmit power, crediting the highest mode cleared by realised SINR is worth
+  **+248.86%** demand-capped. That is an **oracle**; a causal version is being measured.
+- The two evaluation paths disagree mainly for a **semantic** reason: scalar `evaluate`
+  ignores `boundary_indices` and integrates all 48 boundaries, while `evaluate_many` honours
+  the subset. Global path authority is **UNDETERMINED**.
+- The sealed checkpoint format admits, round-trip verified: **five learned arms, 2,000
+  epochs, cadence 100**. 3,000 and 9,000 fail on `checkpoint source cursor drifted`; eight
+  arms fail. Resume is bit-exact.
+
+Now answer the question below again, in full, on the corrected premise.
+
+---
+
+# DECOMP — is there a better-conditioned three-route decomposition?
+
+You are asked a **design and theory** question. Do not run training. Do not modify anything.
+Reading code and doing light arithmetic in a scratch directory is fine; **cap yourself at 1
+python process** and `nice -n 15`. Interpreter, if you need one:
+`/home/sat/mcrl-leo-handover/.venv/bin/python`. Never modify `/home/sat/mcrl-leo-handover`.
+
+## The system, stated without a position
+
+Selection maximises `F = B - eta_ref * E` at boundary 0 of each anchor. Reporting uses
+**pooled committed EE over 48 boundaries**, with each user's per-anchor credit capped at
+`50 Mbit/s * 30.08 s`. The deployed selector is deterministic cyclic **first-improvement**
+over **single-user moves**, users in sealed order, each user's sealed legal options in sealed
+order, strict exact-binary64 improvement, under a served-count guard referenced to the
+nearest-eligible baseline. Two evaluation paths exist and are currently under investigation
+for disagreeing with each other.
+
+Three learned routes are claimed as three distinct information sources, each independently
+ablatable:
+
+- **C1** — per-user difference surplus `d_i` versus the declared default action:
+  `core = (cand.bits - def.bits) - eta*(cand.joules - def.joules)`, label `core/kappa + Phi`.
+- **C2** — per-user persistence forecast over three sealed offsets, absorbing, `-1` per lost
+  offset.
+- **C3** — the **residual**: `Psi = Delta F(A) - sum_{i in A} d_i`. Defined as what is left
+  after summing the per-user terms.
+
+## Measured facts you may rely on
+
+1. **Conditioning.** With an *exact* C1, median over 24 anchors: 82 of 100 users have a
+   strictly positive best unilateral surplus; their sum is **200.4**; the best single-user
+   move is **8.02** — ratio **20.5x**. At `|A| = 100`: exact singleton sum **+480.113**,
+   exact residual **-440.079**, exact final value **+40.034**. The quantity actually ranked
+   is the small difference of two large, nearly cancelling terms.
+2. **C3's reachability.** `Psi` is identically zero on singletons. The search seed is a
+   jointly-legal argmax, and only single-user moves with strict improvement are permitted.
+   So when the seed is already an additive optimum, no C3 head — however accurate — can cause
+   the **first** move, and arms differing only in C3 can commit identical configurations at
+   every such anchor. This was observed: one factor arm changed **0** proposed assignments.
+3. **Variance structure of the declared C1 target** (24 anchors, 23,478 rows): focal user's
+   own bits `0.187`, cross-user externality `0.375`, network energy `0.418`, `Phi` `0.021`.
+   The only pre-decision term carries **2.1%**. The externality's between-anchor variance
+   share is **0.0109** — it does not cancel in a ranking and cannot be dropped.
+4. **The corpus.** All 176,223 shipped source rows were built by a compute stand-in whose C1
+   and C2 labels are bounded `kappa * tanh(log(gain ratio))` surrogates with no energy term.
+   The declared path is unreachable as sealed but executable, and has been costed at
+   roughly 29 serial worker-hours for a full panel.
+5. **Where measured headroom currently sits.** At identical transmit power, crediting the
+   highest mode cleared by realised SINR is worth **+248.9%** demand-capped (an oracle; a
+   causal version is being measured). Multi-start assignment search puts the deployed
+   reference **9.87%** below the best endpoint found under a capacity numerator; whether that
+   survives the demand cap is being measured now and may not.
+
+## The requirement, verbatim in effect
+
+Each of the three routes must **individually and substantially** raise pooled EE — the owner
+has stated that a ~1% improvement is not a meaningful result. The ordering required is:
+baseline plus each of C1/C2/C3 individually positive, and FULL greater than any pair, greater
+than the all-neutral control. The full system **need not** beat classical search.
+
+## Binding constraints — a proposal that violates any of these is not admissible
+
+- No TEST split. No tuning of formulas, signs, thresholds, seeds, horizons, `lambda`, `kappa`
+  or acceptance rules against observed results. No rerun selected by outcome.
+- The objective `F`, the reporting numerator, the 10th-percentile fading scoring convention,
+  and the served guard are **sealed**. Do not propose changing them.
+- No new scientific gates.
+- `ALL_NEUTRAL_CONTROL` is never relabelled as a baseline.
+- Anything sealed may be changed only as an **explicitly declared policy change**, with a
+  rationale independent of what it does to any route's sign — not as a bug fix.
+
+## The question
+
+**Is there a decomposition into three routes that is (a) faithful to the claim structure —
+three distinct, separately ablatable information sources; (b) better conditioned than a
+near-cancelling residual; and (c) expressible within the sealed selector's move set, so that
+each route can actually change a committed decision?**
+
+If **yes**: name it precisely — what each route predicts, in what units, from what
+information available at decision time; show why its conditioning is better, with the
+arithmetic; show how each route can change the first move; and state exactly what would have
+to be measured to accept or reject it, **before** any such measurement is run.
+
+If **no**: state which of (a), (b), (c) is the binding obstruction, prove it is binding
+rather than merely difficult, and say what class of result the system can honestly support
+instead.
+
+## How to answer
+
+Two strategic reviews conducted earlier today reached **opposite** conclusions on whether
+this requirement is achievable at all. You are deliberately not told which said what. **Do
+not try to infer it.**
+
+Before you conclude, write the strongest case for the position **opposite** to the one you
+find yourself inclined toward, and answer it. If you cannot answer it, say so and let the
+question stand open rather than resolving it by preference.
+
+Separate **verified from the code or the numbers above**, **derived on paper**, and
+**inferred**. Do not treat any loss value as evidence about EE. Do not propose a rerun whose
+selection depends on an outcome you have already seen.
+
+Write your answer to `DECOMP-<YOURNAME>-2026-09-10.md` in this workspace, first line one
+bolded sentence giving your answer to the question, and print it in full to stdout.
+codex
+I’ll re-derive the answer for catalogue argmax selection, treating the controller’s correction as authoritative. I’ll inspect the relevant code, write the analysis in the requested Markdown file, and print it in full without running training or changing code.
+exec
+/bin/bash -lc "pwd; rg --files -g AGENTS.md -g '*deployment.py' -g '*run_v025_pilot_c3.py' -g '*learner.py' -g '*synthetic.py' -g '*acceptance.py' -g '*merge.py' -g '*DECOMP*'" in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-strategic-astra-ws
+DECOMP-ASTRA-2026-09-10.md
+
+exec
+/bin/bash -lc 'ls -la; cat DECOMP-ASTRA-2026-09-10.md' in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+total 88
+drwxrwxr-x   5 sat sat  4096 Sep 10 06:38 .
+drwxr-x--- 420 sat sat 36864 Sep 10 06:17 ..
+dr-xr-xr-x   2 sat sat    40 Sep 10 06:38 .agents
+dr-xr-xr-x   2 sat sat    40 Sep 10 06:38 .codex
+drwxrwxr-x   7 sat sat  4096 Sep  9 16:02 .git
+-rw-rw-r--   1 sat sat 23340 Sep 10 06:00 DECOMP-ASTRA-2026-09-10.md
+-rw-rw-r--   1 sat sat 15060 Sep  9 16:08 STRATEGIC-REVIEW-ASTRA-2026-09-10.md
+**The question remains open: the declared residual has a provable first-move obstruction, but the supplied evidence neither establishes an admissible replacement satisfying all three conditions nor proves that every three-source replacement is impossible.**
+
+My initial inclination is **no for the present design**. I cannot extend that answer to the entire design space permitted by explicitly declared policy changes. Below I give the strongest constructive case against that inclination, identify what it actually proves, and explain what remains unresolved. Substantial improvements from all three routes are an empirical requirement, not something a decomposition identity can guarantee.
+
+I ran no training, simulations, evaluation, or tests. I used one Python process, under `nice -n 15`, for arithmetic only. The sole file created is this answer. I did not read the earlier strategic reviews or modify `/home/sat/mcrl-leo-handover`.
+
+**Verified from the supplied numbers and limited code inspection.** The empirical counts, variance shares, corpus provenance, headroom figures, deployed search contract, and evaluation disagreement below are supplied facts; I did not independently reproduce them.
+
+The adjacent selector checkout's [C1 label implementation](/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py:169) computes the physical difference in bits minus priced joules, divides by kappa, and adds the Phi difference. Its [set decomposition](/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py:488) constructs singleton differences against the empty configuration, subtracts their sum from the complete change, and verifies reconstruction after normalization. These definitions support the algebra used here.
+
+That checkout also contains several selector paths: for example, [ProfileSelector](/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:717) scores a catalogue, whereas its S_UNI branch scans for the best unilateral improvement. I have not authenticated these as the deployed entry point described in the question. I therefore use the supplied cyclic first-improvement contract as authoritative and do not promote inspection of another path into verification of deployment. This inspection does not resolve the two-path disagreement.
+
+**Derived on paper: what is wrong with the existing conditioning.** Write the measured complete score as
+
+`V = S + R = 480.113 - 440.079 = 40.034`.
+
+All three quantities must be in the same supplied score units; a common kappa conversion does not affect the following ratios. For independently produced components with relative error bounded by epsilon, the worst-case relative error bound on their sum is
+
+`|error(V)| / |V| <= epsilon * (|S| + |R|) / |V|`
+
+`= epsilon * 920.192 / 40.034 = 22.9853 * epsilon`.
+
+Thus 1% component errors can produce a 9.20192 absolute score error, or 22.985% of the final value. With exact C1 and only a 1% residual error, the absolute error is 4.40079, or 10.993% of the final value. For independent, zero-mean errors with equal relative RMS size, the corresponding illustrative amplification is 16.2684. Independence and those error magnitudes are assumptions for the examples, not measured properties of the heads.
+
+This is predominantly a representation and prediction-error issue, not evidence that binary64 cannot subtract these numbers accurately. Multiplying binary64 unit roundoff by 22.985 gives an order of magnitude around 10^-15. Strict comparisons can still be sensitive near ties, but learned errors and target mismatch are separate, much larger possible problems. Nor is 40.034 necessarily the margin between two configurations: actual ranking margins can be smaller.
+
+Rescaling either target and undoing the scale in the combiner preserves this conditioning. Moving part of S into R also does not demonstrate better conditioning unless the new errors and combination are analyzed. Computing the exact final 40.034 directly removes this particular two-head reconstruction, but produces one total-value prediction, not three distinct sources.
+
+There is a numerical qualification in the supplied summary: `200.4 / 8.02 = 24.99`, not 20.5. A median of per-anchor ratios can differ from a ratio of separately reported medians. I retain 20.5 as the supplied ratio statistic without assuming which aggregation produced it. Either statistic supports the qualitative scale mismatch; neither proves an EE effect.
+
+**Derived on paper: the binding obstruction for the declared C3.** Let z be a search seed and N(z) its legal single-user neighbors surviving the served guard. Let H be the additive score and suppose the residual used at this seed satisfies
+
+`R(z) = R(y) = 0 for every y in N(z)`.
+
+If z is an additive optimum, then `H(y) <= H(z)` for every such neighbor. Consequently,
+
+`H(y) + R(y) <= H(z) + R(z)`.
+
+There is no strict first improvement. Sealed traversal order cannot help; no neighbor is acceptable. The residual's values on configurations two or more moves away are never consulted along an accepted trajectory. Any two C3 heads respecting the structural zeros produce the same stopped search at that seed, regardless of their accuracy elsewhere. This proves an obstruction in **(c)**, not merely a hard approximation problem.
+
+The reference qualification matters. A residual that vanishes on singletons relative to a declared default need not vanish on every neighbor of an arbitrary complete profile. The theorem requires the zero-neighborhood condition at the actual seed, which is the reachability situation stipulated in measured fact 2. It is not a general theorem that interactions cannot affect coordinate descent. Likewise, an unconstrained head could invent a nonzero singleton error and cause movement, but that would not establish successful use of the declared interaction information.
+
+This proves that the present C3 cannot contribute at those anchors. It does not prove that its pooled effect over every possible anchor is zero. The observed arm changing zero proposed assignments establishes a failure of decision influence in that observation, not a universal impossibility theorem for redesigned routes.
+
+**The strongest case for “yes,” against my initial inclination.** Replace the coalition accounting decomposition with a **nested-information innovation decomposition of a complete-profile potential**. Unlike a split into arbitrary thirds, this has a precise information interpretation and a population conditioning result.
+
+Here is the strongest paper construction, not an already admissible implementation. For each complete legal profile x, let Y(x) denote the same sealed boundary-0 F scoring functional, in bits: B is in bits and eta_ref is in bits per joule. Apply the sealed 10th-percentile fading convention inside the definition of Y. Nothing below replaces that percentile with mean fading, adds a future reward, or changes the reporting cap.
+
+Fix information blocks by physical provenance, before examining new outcomes:
+
+- **L, local link information:** decision-time own-link measurements, nominal geometry, legal action descriptors, and the previous committed action. No realized candidate throughput, solved candidate power, or future fading.
+- **T, temporal information:** information available now about persistence at exactly the three sealed offsets, such as the existing nominal forecast and past eligibility or link history. No realized observations from those future offsets.
+- **G, relational resource information:** the current assignment and resource roster, beam occupancy and activation state, and available nominal beam-specific cross-gains. Candidate assignments may be inputs because the controller constructs them before acting; candidate realized network outcomes may not.
+
+Let I0 be the common information retained in every arm, including the query profile and legal interface. Define nested information sets `I1 = (I0,L)`, `I2 = (I1,T)`, and `I3 = (I2,G)`. Under a fixed decision-time probability law, define
+
+`Qk(x) = E[Y(x) | Ik]`, for k = 0, 1, 2, 3,
+
+`R1(x) = Q1(x) - Q0(x)`,
+
+`R2(x) = Q2(x) - Q1(x)`,
+
+`R3(x) = Q3(x) - Q2(x)`.
+
+Every route predicts an information increment in **bits**. The full potential is `Q0 + R1 + R2 + R3 = Q3`. If the authorized information determines Y exactly, Q3 equals Y; otherwise it estimates that same target. Conditional expectation here defines a forecasting target for the already specified score, not permission to change the sealed operational scorer.
+
+These are three ordered sources of incremental information, not three independent physical rewards. R3 is an information innovation, not `Delta F - sum of default-based singleton gains`; its value is not forced to vanish when just one user moves. R2 asks whether temporal information predicts the sealed boundary-0 score. It does not quietly append the original future persistence penalty to F.
+
+This is an explicit replacement of the original C1/C2/C3 meanings, source interfaces, and combiner. Its rationale is to attribute predictive information about the actual decision target without duplicating coalition benefits. That rationale does not depend on an EE sign. It could only be pursued as a declared policy change, including any required scoring or initialization-interface change. It is not a bug fix, and I am not proposing a change to the sealed objective, move set, traversal order, strict comparison, percentile, or served guard.
+
+**What the construction proves about conditioning.** For a fixed profile query and square-integrable Y, conditional-expectation identities give
+
+`E[Rk | I(k-1)] = 0`, and `E[Rj * Rk] = 0` for j != k.
+
+Consequently, with `Vinfo = Q3 - Q0`,
+
+`E[Vinfo^2] = sum_k E[Rk^2]`.
+
+For a fixed candidate/current pair, the same identities hold for the route differences `Dr = Rr(candidate) - Rr(current)`, provided the query pair is included in common conditioning information. Thus the innovations have no population covariance cancellation. Their RMS combination satisfies
+
+`sum_k ||Dk||_2 / ||sum_k Dk||_2 <= sqrt(3) = 1.7321`.
+
+If each route's prediction error has RMS norm at most epsilon times its own increment's RMS norm, the triangle inequality bounds the summed error by `sqrt(3) * epsilon` times the RMS informative increment. This is a real theoretical alternative to forcing two large opposing coalition terms to reconstruct a small remainder.
+
+But **1.7321 is not a measured improvement over 22.9853 on the supplied anchor**. The former is a population RMS bound for true information innovations; the latter is a pointwise componentwise condition number. Innovations can still cancel at an individual query. Q0 can also nearly cancel the informative increment. Neither the bound nor orthogonality guarantees a first-improvement sign, a small error relative to its decision margin, or good behavior on adaptively visited profiles. Approximate fitted heads need not preserve the identities. Those limitations prevent presenting this arithmetic as proof that condition (b) holds operationally here.
+
+**How a new route could affect the first move.** For a common reached seed z and candidate y, the comparison under active routes J would involve
+
+`M_J(y,z) = Q0(y)-Q0(z) + sum_(r in J) [Rr(y)-Rr(z)]`.
+
+A route r changes the first accepted move if all earlier scanned candidates remain unaccepted and, for a guard-admissible candidate,
+
+`M_without_r(y,z) <= 0 < M_without_r(y,z) + Dr(y,z)`.
+
+For each r separately, `-2 + 3 = +1` bits is an exact binary64 witness: without its information, the move fails; with it, the move passes. Innovations can take +3 on one information realization and -3 on another, so such a witness does not contradict their conditional zero means. A two-configuration feasible example with no later improving move also gives different committed decisions. These are existence examples, not invented measurements of this system.
+
+The important difference is that no singleton identity forces Dr to zero. This argument can apply separately to local, temporal, or relational information. It does not prove that this system contains a suitable candidate for each, that earlier candidates stay unchanged, that the existing seed construction admits those witnesses, or that differing trajectories end at different commits. Those are specific facts a completed design would have to establish.
+
+**My answer to that opposing case.** I cannot refute its mathematical possibility. It defeats a universal claim that three distinct information sources must always suffer the existing residual's singleton obstruction. But it does not yet satisfy the user's requested constructive “yes,” for four reasons.
+
+First, the information partition is not authenticated. Temporal forecasts may already be deterministic functions of information in L or I0; G may already be recoverable from common inputs. In either case an innovation can vanish identically. Conversely, excluding information from a route may require changes to the sealed interface. Three encoders or target names do not establish three distinct information sources.
+
+Second, genuine information ablation is harder than setting an innovation output to zero. R3 as defined above conditions on T, and R2 conditions on L. Zeroing R2 can leave temporal information in R3. An authentic source ablation must remove that source from every path and use the corresponding information-restricted predictor. One fixed nested decomposition does not automatically provide leakage-free versions of all eight subsets. Simply training three separate heads is not a solution to this attribution issue.
+
+Third, complete-profile or current-context predictions are not the present action-local/default-residual interface. The supplied facts do not establish a compatible integration into the unchanged seed and comparison implementation. If acceptance actually queries exact F independently of all heads, and the seed and scan order are unchanged, a decomposition alone has no causal channel at all: identical comparisons imply identical trajectories by induction. If acceptance uses learned score estimates, changing those estimates has a channel, but its compatibility with the sealed scoring contract must be stated explicitly. The unresolved paths must not be conflated to manufacture one.
+
+Fourth, neither nonzero conditional information nor mathematical reachability implies substantial pooled EE. An information source can improve prediction while changing only irrelevant margins, or change the first move and later reconverge, or change the final profile without improving capped delivery per joule. I cannot supply the missing evidence from the provided summary statistics.
+
+Accordingly, the opposing case survives as a possible research direction. I cannot honestly answer it with an impossibility proof, and I cannot promote it into a verified admissible solution. This is why my overall answer remains open.
+
+**Other tempting decompositions do not close the gap.** Splitting a current unilateral margin into focal bits, other users' bits, and priced network energy gives the exact accounting identity
+
+`Delta F = Delta B_focal + Delta B_others - eta_ref * Delta E`.
+
+This correctly retains the externality and can have nonzero components on a single-user move. It is not enough for “yes”: the three components may still nearly cancel, their decision-time information can overlap, and there is no supplied covariance or error structure for their combination at current profiles. It also replaces the persistence route. Giving it the old route names would obscure a policy change.
+
+The variance shares 0.187, 0.375, 0.418, and 0.021 do not identify a decomposition with positive ablation effects. In particular, 2.1% for the explicit Phi term is **not** an upper bound on how much of the entire label decision-time inputs can predict. Physical outcomes can be strongly predictable from pre-decision geometry and resource state. Equally, a large target component does not establish useful unique predictive information. The externality's small between-anchor share rules out dismissing it as an anchor-only intercept; it does not quantify its learnable marginal contribution to EE.
+
+The 176,223 surrogate rows cannot establish learnability of the declared energy-aware targets. Their quantity does not repair their semantics. Obtaining faithful labels would answer a data question, not supply a theorem that three substantial gains exist. No loss value is EE evidence.
+
+**Derived on paper: why even exact boundary-0 improvements are insufficient.** For a complete reporting panel, let C be capped committed bits and E committed joules. Each user-anchor credit is capped at 1,504,000,000 bits. With positive denominators,
+
+`EE_new > EE_old iff Delta C - EE_old * Delta E > 0`.
+
+The deployed comparison instead uses a boundary-0 change priced at the sealed eta_ref. Its numerator, time aggregation, and reference price need not coincide with the quantities in that reporting inequality. No proposed decomposition can silently replace either side. Even perfect preservation and optimization of F therefore does not prove the required pooled-EE ordering.
+
+The +248.9% oracle mode-crediting result is not three independent margins, and converting it to a causal policy may entail an explicitly declared action-policy change. The 9.87% capacity-search gap is a gap to an endpoint found, not a certified global optimum or a proven demand-capped EE opportunity. Neither establishes a pool of improvement that can be divided among routes. The full system's permission to trail classical search removes one comparison requirement; it does not create information or headroom.
+
+**Evidence that would resolve a concrete proposal, specified before measurement.** These are measurements and interpretation rules, not additional scientific gates, a launch plan, or authorization to rerun anything. They apply only after one complete design has been declared independently of new outcome signs, including all information interfaces and ablation semantics. No TEST split, outcome-selected rerun, or tuning of formulas, orderings, seeds, horizons, coefficients, or acceptance rules is proposed.
+
+1. **Authenticate the operational comparison.** Record which of the two paths implements the sealed contract. On identical pre-decision states, identify any differences in legal options, seed, score operands, strict comparisons, guard decisions, commits, and pooled accounting. Resolve differences by specification evidence, not by choosing the path with desirable EE signs. Any actual policy change must be declared as such. Until this is resolved, path-dependent EE comparisons do not identify a route effect.
+
+2. **Establish distinct information and faithful targets.** For each route, enumerate actual decision-time fields, timestamps, deterministic dependencies on other fields, target units, and neutral replacement. Establish that source removal removes its information everywhere, including seed construction and other routes. Label comparison examples with the declared physics and scoring convention. Report conditional redundancy and whether each source changes predictions of the actual sealed margins. Do not infer this from surrogate-label loss.
+
+3. **Measure conditioning where decisions occur.** For every comparison on the fixed panel, retain the current and candidate profiles, route contributions, combined predicted score, exact target score, decision margin, and prediction errors. Report component-to-net ratios, error covariance, and comparison-sign errors, including ties and near-zero margins separately. For an innovation proposal, additionally report whether the population-style orthogonality survives estimation and the distribution of visited queries. A low RMS loss or an orthogonal training target alone does not establish better operational conditioning.
+
+4. **Measure reachability and commitment separately.** For each source contrast, identify the first differing seed or comparison, whether the candidate passed the original guard, the first accepted move, subsequent trajectory, final proposed assignment, and actual committed assignment after fallback. Record reconvergence and unchanged commits. If a route leaves every commit unchanged on the matched panel and has identical accounting, it has no pooled EE contribution there, irrespective of prediction quality.
+
+5. **Measure the stated factorial EE requirement.** Evaluate the declared reference baseline and all eight independently specified route subsets on the same authorized panel under the existing protocol. Preserve `ALL_NEUTRAL_CONTROL` under that name; it is not the reference baseline. Retain per-user capped credits and all committed energy over the 48 boundaries, then compute ratios of pooled sums. Report each singleton-versus-reference contrast, FULL versus each pair, and each pair versus ALL_NEUTRAL_CONTROL. Also report matched subset contrasts to expose overlap and antagonism. If “baseline plus route” requires a wrapper different from a factorial singleton, define and evaluate that wrapper explicitly rather than identifying the policies by name alone.
+
+The necessary ordering is: each of the three individual additions improves the declared baseline substantially; FULL exceeds every pair; every pair exceeds ALL_NEUTRAL_CONTROL. Any failed required inequality rejects that claim for the evaluated design and panel. Roughly 1% individual gains do not satisfy the stated materiality requirement. The prompt supplies no exact numerical boundary for “substantial,” so I will not invent one or add a new scientific gate: report the actual effect magnitudes and use any already authorized materiality and uncertainty convention. These facts are insufficient to prescribe a new numerical pass rule.
+
+All prescribed panels, seeds, training procedures, neutralizations, stopping rules, and existing uncertainty reporting must remain fixed or be explicitly declared policy changes with an outcome-independent rationale. Failure is a reportable result; it is not a trigger to alter a sign, pick another seed, extend a horizon, or select a new run. Diagnostic conditioning or trajectory measurements cannot substitute for the existing endpoint requirement.
+
+**What the system can honestly support now.** The defensible current result is a scoped negative finding: the declared residual is structurally unable to influence the first move at the stipulated additive-optimum seeds, its large-coalition reconstruction is poorly conditioned against independent prediction error, and the shipped surrogate corpus does not validate the declared labels. That result explains why three trained heads need not yield three causal decision contributions.
+
+A completed future evaluation could support an explicitly changed three-source forecasting policy, a useful total-score surrogate, or fewer than three effective routes. Which claim is supported must follow the authentic information ablations and committed pooled EE. The present evidence supports neither “three substantial gains are achievable” nor “no admissible three-route decomposition can ever achieve them.” The constructive counterargument prevents the latter conclusion; its unresolved information, integration, conditioning, and endpoint requirements prevent the former.
+
+exec
+/bin/bash -lc 'rg --files --hidden /home/sat/mcrl-leo-handover -g AGENTS.md -g deployment.py -g run_v025_pilot_c3.py -g learner.py -g synthetic.py -g acceptance.py -g merge.py; for p in /AGENTS.md /home/AGENTS.md /home/sat/AGENTS.md; do if [ -f "$p" ]; then cat "$p"; fi; done' in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+exec
+/bin/bash -lc 'ls -ld /home/sat/mcrl*; rg --files --hidden /home/sat/mcrl-v025-selector-ws -g AGENTS.md -g deployment.py -g run_v025_pilot_c3.py -g learner.py -g synthetic.py -g acceptance.py -g merge.py -g targets.py' in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+drwxrwxr-x  3 sat sat    4096 Aug 18 15:02 /home/sat/mcrl-5arm-ee-seeds-20260818-control
+drwxrwxr-x  3 sat sat    4096 Aug 18 15:17 /home/sat/mcrl-5arm-ee-seeds-20260818-control-r2
+drwxrwxr-x  3 sat sat    4096 Aug 19 03:12 /home/sat/mcrl-5arm-ee-seeds-20260818-control-r3
+-rw-rw-r--  1 sat sat       0 Sep  1 00:31 /home/sat/mcrl-c2-balanced-topology-probe-20260901.err
+-rw-rw-r--  1 sat sat    2162 Sep  1 00:31 /home/sat/mcrl-c2-balanced-topology-probe-20260901.json
+-rw-rw-r--  1 sat sat       0 Sep  1 00:33 /home/sat/mcrl-c2-balanced-topology-probe-r2-20260901.err
+-rw-rw-r--  1 sat sat    2661 Sep  1 00:33 /home/sat/mcrl-c2-balanced-topology-probe-r2-20260901.json
+-rw-rw-r--  1 sat sat       0 Sep  1 00:42 /home/sat/mcrl-c2-legal-topology-probe-20260901.err
+-rw-rw-r--  1 sat sat    7520 Sep  1 00:43 /home/sat/mcrl-c2-legal-topology-probe-20260901.json
+drwxr-xr-x 12 sat sat    4096 Aug 23 17:06 /home/sat/mcrl-c2-scale-20260827-v1
+-rw-rw-r--  1 sat sat    1849 Sep  1 00:24 /home/sat/mcrl-c2exp-prepare-20260901.log
+-rw-rw-r--  1 sat sat    3267 Sep  1 00:25 /home/sat/mcrl-c2exp-prepare-r2-20260901.log
+-rw-rw-r--  1 sat sat   10067 Sep  1 00:27 /home/sat/mcrl-c2exp-prepare-r3-20260901.log
+drwxr-xr-x 12 sat sat    4096 Aug 23 17:06 /home/sat/mcrl-c3-shadow-20260827-v1
+drwxr-xr-x 12 sat sat    4096 Aug 23 17:06 /home/sat/mcrl-catfish-oracle-gate-20260826
+-rw-rw-r--  1 sat sat  518282 Aug 10 07:27 /home/sat/mcrl-controller.log
+drwxrwxr-x  3 sat sat    4096 Aug 31 19:41 /home/sat/mcrl-e1-action-shared-validation-result-20260901
+drwxrwxr-x  3 sat sat    4096 Sep  1 01:05 /home/sat/mcrl-e1-action-shared-validation-v3-20260901-r1
+-rw-rw-r--  1 sat sat   48792 Sep  1 01:05 /home/sat/mcrl-e1-action-shared-validation-v3-20260901-r1.log
+drwxrwxr-x  2 sat sat    4096 Sep  1 01:04 /home/sat/mcrl-e1-action-shared-validation-v3-preoutcome-20260901-r1
+drwxrwxr-x  5 sat sat    4096 Sep  1 01:03 /home/sat/mcrl-e1-c2-action-balanced-expansion-20260901-r1
+-rw-rw-r--  1 sat sat   38261 Sep  1 01:03 /home/sat/mcrl-e1-c2-action-balanced-generate-20260901-r1.log
+-rw-rw-r--  1 sat sat   19896 Sep  1 01:00 /home/sat/mcrl-e1-c2-action-balanced-prepare-20260901-r1.log
+drwxrwxr-x  3 sat sat    4096 Sep  1 00:27 /home/sat/mcrl-e1-c2-train-action-graph-expansion-20260901-r3
+drwxrwxr-x  3 sat sat    4096 Sep  1 01:26 /home/sat/mcrl-e1-masked-meanmax-fallback-20260901-r1
+-rw-rw-r--  1 sat sat   60416 Sep  1 01:26 /home/sat/mcrl-e1-masked-meanmax-fallback-20260901-r1.log
+-rw-rw-r--  1 sat sat 1948908 Aug 10 06:57 /home/sat/mcrl-existing-f1.log
+-rw-rw-r--  1 sat sat 2556771 Aug 10 07:10 /home/sat/mcrl-existing-f2.log
+-rw-rw-r--  1 sat sat 3061043 Aug 10 07:20 /home/sat/mcrl-existing-f3.log
+-rw-rw-r--  1 sat sat  185896 Aug 10 08:51 /home/sat/mcrl-fig1-relation-luna.log
+-rw-rw-r--  1 sat sat    4402 Aug 10 08:34 /home/sat/mcrl-fig1-relation-v2-correction.log
+-rw-rw-r--  1 sat sat  320424 Aug 10 08:30 /home/sat/mcrl-fig1-relation-v2.log
+drwxrwxr-x 20 sat sat    4096 Aug 10 06:49 /home/sat/mcrl-figures
+drwxrwxr-x  3 sat sat    4096 Aug 10 05:42 /home/sat/mcrl-figures-deps
+drwxrwxr-x  6 sat sat    4096 Sep  9 03:42 /home/sat/mcrl-gh-mirror.git
+drwxrwxr-x 12 sat sat    4096 Sep  9 02:19 /home/sat/mcrl-hub
+drwxrwxr-x 11 sat sat    4096 Sep  9 02:19 /home/sat/mcrl-hub-copy
+drwxr-xr-x 11 sat sat    4096 Sep  2 13:38 /home/sat/mcrl-joint-c3-v011-20260903-r1
+drwxr-xr-x 10 sat sat    4096 Aug 23 17:06 /home/sat/mcrl-leo-handover
+drwxr-xr-x 12 sat sat    4096 Aug 23 17:06 /home/sat/mcrl-leo-handover-20260825-corrected
+drwxrwxr-x 11 sat sat    4096 Sep  8 10:45 /home/sat/mcrl-leo-handover-e1
+drwxr-xr-x 10 sat sat    4096 Aug 31 09:15 /home/sat/mcrl-leo-handover-e1-20260901
+drwxr-xr-x 10 sat sat    4096 Aug 31 09:15 /home/sat/mcrl-leo-handover-e1-action-shared-20260901
+drwxr-xr-x  9 sat sat    4096 Aug 31 19:39 /home/sat/mcrl-leo-handover-e1-action-shared-validation-20260901
+drwxr-xr-x  9 sat sat    4096 Sep  1 00:25 /home/sat/mcrl-leo-handover-e1-c2-expansion-20260901
+drwxr-xr-x 10 sat sat    4096 Aug 31 09:15 /home/sat/mcrl-leo-handover-e1-c2-expansion-20260901-r3
+drwxr-xr-x 13 sat sat    4096 Aug 27 12:47 /home/sat/mcrl-leo-handover-mc-v02-20260829
+drwxrwxr-x 10 sat sat    4096 Sep  8 10:27 /home/sat/mcrl-leo-handover-stagec
+drwxrwxr-x  9 sat sat    4096 Aug 31 02:19 /home/sat/mcrl-leo-handover-v03a-20260830
+drwxr-xr-x 10 sat sat    4096 Sep  1 12:54 /home/sat/mcrl-leo-handover-v04-c2-20260901
+drwxr-xr-x 10 sat sat    4096 Aug 31 09:15 /home/sat/mcrl-leo-handover-v04-c3-20260901
+drwxr-xr-x 10 sat sat    4096 Sep  1 12:54 /home/sat/mcrl-leo-handover-v06-c2-k1-20260901
+drwxr-xr-x 10 sat sat    4096 Sep  1 12:54 /home/sat/mcrl-leo-handover-v07-c2-20260902
+drwxrwxr-x 11 sat sat    4096 Sep  8 10:47 /home/sat/mcrl-leo-handover-wip
+drwxrwxr-x 10 sat sat    4096 Sep  2 14:31 /home/sat/mcrl-mone-v010-20260903-r1
+drwxrwxr-x  4 sat sat    4096 Sep  9 02:49 /home/sat/mcrl-paper-sources
+drwxrwxr-x 10 sat sat    4096 Sep  2 14:31 /home/sat/mcrl-pnfe-v09-20260902-r1
+drwxrwxr-x  3 sat sat    4096 Sep  9 10:58 /home/sat/mcrl-records
+-rw-rw-r--  1 sat sat 2215319 Aug 10 06:57 /home/sat/mcrl-ris-f1.log
+-rw-rw-r--  1 sat sat 1328477 Aug 10 06:58 /home/sat/mcrl-ris-f2.log
+-rw-rw-r--  1 sat sat 1278650 Aug 10 06:55 /home/sat/mcrl-ris-f3.log
+drwx------ 10 sat sat    4096 Aug 23 16:56 /home/sat/mcrl-ris-lora-pilot-20260824
+drwxrwxr-x  4 sat sat    4096 Aug 23 17:49 /home/sat/mcrl-runtime
+drwxrwxr-x 10 sat sat    4096 Sep  3 05:49 /home/sat/mcrl-v014-learnability-20260903-r1
+drwxrwxr-x  8 sat sat    4096 Sep  3 10:20 /home/sat/mcrl-v015-c3-reference-gate-20260903-r2
+drwxrwxr-x 10 sat sat    4096 Sep  3 10:53 /home/sat/mcrl-v015-c3-reference-gate-20260903-r3
+drwxrwxr-x 10 sat sat    4096 Sep  3 13:09 /home/sat/mcrl-v016-c3-origin-gate-20260903-r1
+drwxrwxr-x  8 sat sat    4096 Sep  3 14:22 /home/sat/mcrl-v017-c3-softkl-gate-20260903-r1
+drwxrwxr-x 10 sat sat    4096 Sep  3 14:54 /home/sat/mcrl-v017-c3-softkl-gate-20260903-r2
+drwxrwxr-x 10 sat sat    4096 Sep  4 06:42 /home/sat/mcrl-v018-learned-q3-smoke-20260904-r1
+drwxrwxr-x  8 sat sat    4096 Sep  3 19:38 /home/sat/mcrl-v018-r2-equivalence-20260904-r1
+drwxrwxr-x  9 sat sat    4096 Sep  3 19:42 /home/sat/mcrl-v018-r2-equivalence-20260904-r2
+drwxrwxr-x  9 sat sat    4096 Sep  3 19:56 /home/sat/mcrl-v018-r2-equivalence-20260904-r3
+drwxrwxr-x  8 sat sat    4096 Sep  3 20:55 /home/sat/mcrl-v018-r4-equivalence-20260904-r1
+drwxrwxr-x  9 sat sat    4096 Sep  3 21:07 /home/sat/mcrl-v018-r4-equivalence-20260904-r2
+drwxrwxr-x 11 sat sat    4096 Sep  4 07:20 /home/sat/mcrl-v018-relational-learner-20260904-r1
+drwxrwxr-x  9 sat sat    4096 Sep  3 19:09 /home/sat/mcrl-v018-relational-zr-20260904-r1
+drwxrwxr-x  7 sat sat    4096 Sep  3 21:57 /home/sat/mcrl-v018-relational-zr-20260904-r2
+drwxrwxr-x  9 sat sat    4096 Sep  3 22:02 /home/sat/mcrl-v018-relational-zr-20260904-r2c
+drwxrwxr-x  8 sat sat    4096 Sep  3 21:59 /home/sat/mcrl-v018-relational-zr-20260904-r3
+drwxrwxr-x  9 sat sat    4096 Sep  4 09:46 /home/sat/mcrl-v019-relational-q3-gate-20260904-r1
+drwxrwxr-x  6 sat sat    4096 Sep  4 08:50 /home/sat/mcrl-v019-relational-q3-normalized-20260904-r1
+drwxrwxr-x  8 sat sat    4096 Sep  4 23:31 /home/sat/mcrl-v020-repriced-c3-gate-20260904-r1
+drwxrwxr-x  8 sat sat    4096 Sep  5 01:23 /home/sat/mcrl-v021-expected-zr-fast-20260905-r1
+drwxrwxr-x  2 sat sat    4096 Sep  8 16:46 /home/sat/mcrl-v023-astra-attribution
+drwxr-xr-x  3 sat sat    4096 Sep  8 14:13 /home/sat/mcrl-v023-astra-c3core
+drwxrwxr-x  3 sat sat    4096 Sep  8 12:03 /home/sat/mcrl-v023-astra-c3s-confirm
+drwxrwxr-x  2 sat sat    4096 Sep  8 17:36 /home/sat/mcrl-v023-astra-first-principles
+drwxrwxr-x  2 sat sat    4096 Sep  8 14:15 /home/sat/mcrl-v023-astra-physics
+-rw-rw-r--  1 sat sat    1719 Sep  7 02:59 /home/sat/mcrl-v023-c1-bench-20260907-r5-informed.log
+-rw-rw-r--  1 sat sat    1718 Sep  7 02:59 /home/sat/mcrl-v023-c1-bench-20260907-r5-neutral.log
+-rw-rw-r--  1 sat sat     113 Sep  7 02:12 /home/sat/mcrl-v023-c1c2-benchmark-20260907-r1-informed.log
+-rw-rw-r--  1 sat sat     113 Sep  7 02:12 /home/sat/mcrl-v023-c1c2-benchmark-20260907-r1-neutral.log
+-rw-rw-r--  1 sat sat     212 Sep  7 02:20 /home/sat/mcrl-v023-c1c2-benchmark-20260907-r2-informed.log
+-rw-rw-r--  1 sat sat     211 Sep  7 02:23 /home/sat/mcrl-v023-c1c2-benchmark-20260907-r3-full-informed.log
+-rw-rw-r--  1 sat sat     211 Sep  7 02:23 /home/sat/mcrl-v023-c1c2-benchmark-20260907-r3-full-neutral.log
+drwxrwxr-x  9 sat sat    4096 Sep  6 10:45 /home/sat/mcrl-v023-c1c2-benchmark-20260907-r4fix
+-rw-rw-r--  1 sat sat     226 Sep  7 02:43 /home/sat/mcrl-v023-c1c2-fixed-bench-20260907-r4-informed.log
+-rw-rw-r--  1 sat sat     226 Sep  7 02:43 /home/sat/mcrl-v023-c1c2-fixed-bench-20260907-r4-neutral.log
+drwxrwxr-x  2 sat sat    4096 Sep  7 12:07 /home/sat/mcrl-v023-c1c2-postshard-dryrun-20260907-r1
+drwxrwxr-x  9 sat sat    4096 Sep  7 11:51 /home/sat/mcrl-v023-c1c2-postshard-dryrun-checkout-20260907
+drwxrwxr-x 10 sat sat    4096 Sep  6 03:42 /home/sat/mcrl-v023-c1c2-predecision-20260906-r1
+drwxrwxr-x 10 sat sat    4096 Sep  6 03:28 /home/sat/mcrl-v023-c1c2-predecision-20260906-r1-controller-failed
+drwxrwxr-x  2 sat sat    4096 Sep  6 03:48 /home/sat/mcrl-v023-c1c2-predecision-20260906-r1-diag-world-2026121707
+drwxrwxr-x  7 sat sat    4096 Sep  6 03:19 /home/sat/mcrl-v023-c1c2-predecision-20260906-r1-preflight-failed
+drwxrwxr-x 10 sat sat    4096 Sep  6 03:58 /home/sat/mcrl-v023-c1c2-predecision-20260906-r2
+drwxrwxr-x 10 sat sat    4096 Sep  6 04:15 /home/sat/mcrl-v023-c1c2-predecision-20260906-r3
+drwxrwxr-x 10 sat sat    4096 Sep  6 05:22 /home/sat/mcrl-v023-c1c2-predecision-20260906-r4
+drwxrwxr-x  6 sat sat    4096 Sep  8 11:45 /home/sat/mcrl-v023-c1c2-successor-source-training-20260907-100e-r1-checkout
+drwxrwxr-x  9 sat sat    4096 Sep  6 09:50 /home/sat/mcrl-v023-c1c2-target-generation-20260906-d40
+drwxrwxr-x  9 sat sat    4096 Sep  6 10:12 /home/sat/mcrl-v023-c1c2-target-generation-20260906-d40-r2
+drwxrwxr-x  9 sat sat    4096 Sep  6 10:22 /home/sat/mcrl-v023-c1c2-target-generation-20260906-d40-r3
+drwxrwxr-x  9 sat sat    4096 Sep  6 10:45 /home/sat/mcrl-v023-c1c2-target-generation-20260906-d40-r4
+drwxrwxr-x  7 sat sat    4096 Sep  6 07:08 /home/sat/mcrl-v023-c1c2-target-generation-20260906-r1
+drwxrwxr-x  7 sat sat    4096 Sep  6 07:40 /home/sat/mcrl-v023-c1c2-target-generation-20260906-r2
+drwxrwxr-x  8 sat sat    4096 Sep  6 07:49 /home/sat/mcrl-v023-c1c2-target-generation-20260906-r3
+drwxrwxr-x  9 sat sat    4096 Sep  6 07:55 /home/sat/mcrl-v023-c1c2-target-generation-20260906-r4
+drwxrwxr-x  9 sat sat    4096 Sep  6 08:03 /home/sat/mcrl-v023-c1c2-target-generation-20260906-r5
+drwxrwxr-x  9 sat sat    4096 Sep  7 04:16 /home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r1
+drwxrwxr-x 10 sat sat    4096 Sep  7 04:21 /home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r2
+drwxrwxr-x  9 sat sat    4096 Sep  7 05:12 /home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r3
+drwxrwxr-x 10 sat sat    4096 Sep  7 05:15 /home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r4
+drwxrwxr-x 10 sat sat    4096 Sep  7 06:05 /home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r5
+drwxrwxr-x 10 sat sat    4096 Sep  7 09:55 /home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r6
+drwxrwxr-x  9 sat sat    4096 Sep  7 12:34 /home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r7
+drwxrwxr-x 10 sat sat    4096 Sep  7 12:59 /home/sat/mcrl-v023-c1c2-target-generation-20260907-ops3-r8
+drwxrwxr-x  2 sat sat    4096 Sep  6 09:54 /home/sat/mcrl-v023-c1c2-targets-20260906-d40
+drwxrwxr-x  2 sat sat    4096 Sep  6 09:50 /home/sat/mcrl-v023-c1c2-targets-20260906-d40-mode-shards
+drwxrwxr-x  2 sat sat    4096 Sep  6 10:12 /home/sat/mcrl-v023-c1c2-targets-20260906-d40-r2-mode-shards
+drwxrwxr-x  2 sat sat    4096 Sep  6 10:25 /home/sat/mcrl-v023-c1c2-targets-20260906-d40-r3
+drwxrwxr-x  2 sat sat    4096 Sep  6 10:22 /home/sat/mcrl-v023-c1c2-targets-20260906-d40-r3-mode-shards
+drwxrwxr-x  2 sat sat    4096 Sep  7 02:29 /home/sat/mcrl-v023-c1c2-targets-20260906-d40-r4
+drwxrwxr-x  2 sat sat    4096 Sep  6 10:45 /home/sat/mcrl-v023-c1c2-targets-20260906-d40-r4-mode-shards
+drwxrwxr-x  2 sat sat    4096 Sep  6 07:12 /home/sat/mcrl-v023-c1c2-targets-20260906-r1
+drwxrwxr-x  2 sat sat    4096 Sep  6 07:08 /home/sat/mcrl-v023-c1c2-targets-20260906-r1-mode-shards
+drwxrwxr-x  2 sat sat    4096 Sep  6 08:07 /home/sat/mcrl-v023-c1c2-targets-20260906-r5
+drwxrwxr-x  2 sat sat    4096 Sep  6 08:03 /home/sat/mcrl-v023-c1c2-targets-20260906-r5-mode-shards
+drwxrwxr-x  2 sat sat    4096 Sep  7 09:06 /home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r5
+drwxrwxr-x  5 sat sat    4096 Sep  7 06:08 /home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r5-mode-shards
+drwxrwxr-x  2 sat sat    4096 Sep  7 11:32 /home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r6
+drwxrwxr-x  5 sat sat    4096 Sep  7 09:58 /home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r6-mode-shards
+drwxrwxr-x  2 sat sat    4096 Sep  7 21:09 /home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8
+drwxrwxr-x  5 sat sat    4096 Sep  7 13:02 /home/sat/mcrl-v023-c1c2-targets-20260907-ops3-r8-mode-shards
+-rw-rw-r--  1 sat sat    8276 Sep  7 03:19 /home/sat/mcrl-v023-c2-fullstep-informed-r5-20260907.log
+-rw-rw-r--  1 sat sat     216 Sep  7 03:14 /home/sat/mcrl-v023-c2-fullstep-neutral-r5-20260907.log
+-rw-rw-r--  1 sat sat    2781 Sep  7 03:08 /home/sat/mcrl-v023-c2-stage1-neutral-20260907-r5.log
+-rw-rw-r--  1 sat sat    2783 Sep  7 02:59 /home/sat/mcrl-v023-c2-stage1-one-20260907-r5.log
+-rw-rw-r--  1 sat sat    3012 Sep  7 03:08 /home/sat/mcrl-v023-c2-stage2-informed-20260907-r5.log
+-rw-rw-r--  1 sat sat    3008 Sep  7 03:08 /home/sat/mcrl-v023-c2-stage2-neutral-20260907-r5.log
+drwxrwxr-x  2 sat sat    4096 Sep  7 15:14 /home/sat/mcrl-v023-c3-contingency-f1-20260907-r1
+-rw-rw-r--  1 sat sat    2302 Sep  7 15:14 /home/sat/mcrl-v023-c3-contingency-f1-20260907-r1.log
+drwxrwxr-x  2 sat sat    4096 Sep  7 16:46 /home/sat/mcrl-v023-c3-contingency-f1-20260907-r2
+-rw-rw-r--  1 sat sat     267 Sep  7 16:46 /home/sat/mcrl-v023-c3-contingency-f1-20260907-r2.log
+drwxrwxr-x  3 sat sat    4096 Sep  8 05:57 /home/sat/mcrl-v023-c3-existence-e1-20260908-r1
+drwxrwxr-x  2 sat sat    4096 Sep  8 06:52 /home/sat/mcrl-v023-c3-probe-marginals-20260908-r1
+drwxrwxr-x  4 sat sat    4096 Sep  8 07:03 /home/sat/mcrl-v023-c3-probe-s0-20260908-r1
+drwxrwxr-x  2 sat sat    4096 Sep  8 17:01 /home/sat/mcrl-v023-c3s-diag-launch-20260908
+drwxrwxr-x  2 sat sat    4096 Sep  8 20:57 /home/sat/mcrl-v023-c3s-diag3-launch-20260908
+drwxrwxr-x  2 sat sat    4096 Sep  8 10:38 /home/sat/mcrl-v023-c3s-launch-20260908
+drwxrwxr-x 10 sat sat    4096 Sep  8 10:19 /home/sat/mcrl-v023-c3s-run
+drwxrwxr-x  2 sat sat    4096 Sep  8 11:47 /home/sat/mcrl-v023-c3s-variants-launch-20260908
+drwxrwxr-x  2 sat sat    4096 Sep  8 07:28 /home/sat/mcrl-v023-cc-launch-20260908
+drwxrwxr-x  2 sat sat    4096 Sep  8 14:15 /home/sat/mcrl-v023-codex-astra
+drwxrwxr-x  5 sat sat    4096 Sep  9 01:53 /home/sat/mcrl-v023-codex-audits
+drwxr-xr-x  2 sat sat    4096 Sep  8 12:44 /home/sat/mcrl-v023-codex-audits-prompts
+drwxrwxr-x  2 sat sat    4096 Sep  8 10:46 /home/sat/mcrl-v023-codex-c3s
+drwxrwxr-x  2 sat sat    4096 Sep  8 08:41 /home/sat/mcrl-v023-codex-ca
+drwxrwxr-x  2 sat sat    4096 Sep  8 07:23 /home/sat/mcrl-v023-codex-cc
+drwxrwxr-x  2 sat sat    4096 Sep  8 04:26 /home/sat/mcrl-v023-codex-e1
+drwxrwxr-x  2 sat sat    4096 Sep  8 08:17 /home/sat/mcrl-v023-codex-figdry
+drwxrwxr-x  5 sat sat    4096 Sep  8 02:52 /home/sat/mcrl-v023-codex-fix10
+drwxrwxr-x  2 sat sat    4096 Sep  8 03:58 /home/sat/mcrl-v023-codex-fix11
+drwxrwxr-x  2 sat sat    4096 Sep  8 04:36 /home/sat/mcrl-v023-codex-fix6
+drwxrwxr-x  2 sat sat    4096 Sep  8 07:00 /home/sat/mcrl-v023-codex-fix7
+drwxrwxr-x  2 sat sat    4096 Sep  8 09:33 /home/sat/mcrl-v023-codex-fix8
+drwxrwxr-x  2 sat sat    4096 Sep  8 10:57 /home/sat/mcrl-v023-codex-ladder
+drwxrwxr-x  2 sat sat    4096 Sep  8 02:27 /home/sat/mcrl-v023-codex-m2
+drwxrwxr-x  2 sat sat    4096 Sep  8 06:54 /home/sat/mcrl-v023-codex-marg
+drwxrwxr-x  2 sat sat    4096 Sep  8 10:30 /home/sat/mcrl-v023-codex-prelaunch
+drwxrwxr-x  2 sat sat    4096 Sep  8 03:24 /home/sat/mcrl-v023-codex-q12
+drwxrwxr-x  2 sat sat    4096 Sep  8 07:04 /home/sat/mcrl-v023-codex-s0
+drwxrwxr-x  2 sat sat    4096 Sep  8 11:00 /home/sat/mcrl-v023-codex-variants
+drwxrwxr-x  9 sat sat    4096 Sep  7 15:05 /home/sat/mcrl-v023-codex-ws-baseline-20260907
+drwxrwxr-x  8 sat sat    4096 Sep  7 14:48 /home/sat/mcrl-v023-codex-ws-blockers-20260907
+drwxrwxr-x 13 sat sat    4096 Sep  8 15:31 /home/sat/mcrl-v023-codex-ws-bughunt
+drwxrwxr-x 13 sat sat    4096 Sep  8 13:14 /home/sat/mcrl-v023-codex-ws-c3s-baselines
+drwxrwxr-x 13 sat sat    4096 Sep  8 13:08 /home/sat/mcrl-v023-codex-ws-c3s-confirm
+drwxrwxr-x 13 sat sat    4096 Sep  8 12:03 /home/sat/mcrl-v023-codex-ws-c3s-diag
+drwxrwxr-x 11 sat sat    4096 Sep  8 10:56 /home/sat/mcrl-v023-codex-ws-c3s-ladder
+drwxrwxr-x 13 sat sat    4096 Sep  8 13:08 /home/sat/mcrl-v023-codex-ws-c3s-latency
+drwxrwxr-x 11 sat sat    4096 Sep  8 11:00 /home/sat/mcrl-v023-codex-ws-c3s-variants
+drwxrwxr-x 11 sat sat    4096 Sep  8 08:41 /home/sat/mcrl-v023-codex-ws-cand-a
+drwxrwxr-x  9 sat sat    4096 Sep  7 15:32 /home/sat/mcrl-v023-codex-ws-f1diag-20260907
+drwxrwxr-x  9 sat sat    4096 Sep  7 15:06 /home/sat/mcrl-v023-codex-ws-rehearsal-20260907
+drwxrwxr-x 12 sat sat    4096 Sep  8 03:55 /home/sat/mcrl-v023-codex-ws-stagea-fix10
+drwxrwxr-x 13 sat sat    4096 Sep  8 12:34 /home/sat/mcrl-v023-codex-ws-stagea-fix12
+drwxrwxr-x  9 sat sat    4096 Sep  7 15:55 /home/sat/mcrl-v023-codex-ws-stagec-20260907
+drwxrwxr-x 11 sat sat    4096 Sep  8 09:31 /home/sat/mcrl-v023-codex-ws-stagec-fix6
+drwxrwxr-x 10 sat sat    4096 Sep  8 02:26 /home/sat/mcrl-v023-codex-ws-stagec-m2
+drwxrwxr-x 11 sat sat    4096 Sep  8 03:23 /home/sat/mcrl-v023-codex-ws-stagec-q12
+drwxrwxr-x  6 sat sat    4096 Sep  5 16:53 /home/sat/mcrl-v023-dropc3-evaluation-20260906-r1
+drwxrwxr-x  2 sat sat    4096 Sep  8 05:50 /home/sat/mcrl-v023-e1-launch-20260908
+drwxrwxr-x  4 sat sat    4096 Sep  8 08:16 /home/sat/mcrl-v023-figure-dryrun-20260908
+drwxrwxr-x  9 sat sat    4096 Sep  5 15:26 /home/sat/mcrl-v023-lcsrs-debug-20260905-r1
+drwxrwxr-x 10 sat sat    4096 Sep  5 16:42 /home/sat/mcrl-v023-lcsrs-debug-20260906-r4-1706
+drwxrwxr-x 10 sat sat    4096 Sep  5 13:18 /home/sat/mcrl-v023-lcsrs-gate-20260905-r1
+drwxrwxr-x  9 sat sat    4096 Sep  5 13:32 /home/sat/mcrl-v023-lcsrs-gate-20260905-r2
+drwxrwxr-x  9 sat sat    4096 Sep  5 14:49 /home/sat/mcrl-v023-lcsrs-gate-20260905-r3
+drwxrwxr-x  9 sat sat    4096 Sep  5 17:23 /home/sat/mcrl-v023-lcsrs-gate-20260906-r4
+drwxrwxr-x  9 sat sat    4096 Sep  6 03:13 /home/sat/mcrl-v023-lcsrs-gate-20260906-r5
+drwxrwxr-x  9 sat sat    4096 Sep  6 03:01 /home/sat/mcrl-v023-lcsrs-gate-20260906-r5-preflight-failed
+drwxrwxr-x  9 sat sat    4096 Sep  6 03:09 /home/sat/mcrl-v023-lcsrs-gate-20260906-r5-preflight-failed-2
+drwxrwxr-x 15 sat sat    4096 Sep  6 09:42 /home/sat/mcrl-v023-lcsrs-gate-20260906-r6
+drwxrwxr-x  6 sat sat    4096 Sep  6 13:23 /home/sat/mcrl-v023-lcsrs-gate-20260906-r7
+drwxrwxr-x 10 sat sat    4096 Sep  7 12:54 /home/sat/mcrl-v023-lcsrs-gate-20260906-r7-i1
+drwxrwxr-x  9 sat sat    4096 Sep  7 12:38 /home/sat/mcrl-v023-learner-rehearsal-checkout-20260907
+drwxrwxr-x  3 sat sat    4096 Sep  7 17:24 /home/sat/mcrl-v023-partial-merge-DRYRUN-NONFORMAL-20260907T172053Z
+-rw-rw-r--  1 sat sat    6970 Sep  7 17:24 /home/sat/mcrl-v023-partial-merge-DRYRUN-NONFORMAL-20260907T172053Z.log
+drwxrwxr-x  2 sat sat    4096 Sep  8 15:59 /home/sat/mcrl-v023-pipeline-20260908
+drwxrwxr-x  4 sat sat    4096 Sep  7 11:50 /home/sat/mcrl-v023-postseal-target-check-20260907
+drwxrwxr-x  3 sat sat    4096 Sep  8 10:27 /home/sat/mcrl-v023-prelaunch-dryruns-20260908
+drwxrwxr-x  2 sat sat    4096 Sep  8 12:07 /home/sat/mcrl-v023-prompts-20260908
+-rw-rw-r--  1 sat sat   12192 Sep  7 02:32 /home/sat/mcrl-v023-r7-domain-repair-20260907-r1.log
+-rw-rw-r--  1 sat sat   12204 Sep  7 04:15 /home/sat/mcrl-v023-r7-domain-repair-20260907-r2.log
+drwxr-xr-x  4 sat sat    4096 Sep  7 05:41 /home/sat/mcrl-v023-r7-domain-repair-20260907-r3-interrupted-by-reboot
+-rw-rw-r--  1 sat sat   12279 Sep  7 06:22 /home/sat/mcrl-v023-r7-domain-repair-20260907-r3.log
+-rw-rw-r--  1 sat sat     238 Sep  7 12:54 /home/sat/mcrl-v023-r7-domain-repair-20260907-r4.log
+drwxr-xr-x  2 sat sat    4096 Sep  7 08:10 /home/sat/mcrl-v023-r7-final-verifier-inventory-20260907
+drwxr-xr-x  2 sat sat    4096 Sep  7 10:34 /home/sat/mcrl-v023-r7-final-verifier-inventory-r4-20260907
+drwxr-xr-x  2 sat sat    4096 Sep  7 11:31 /home/sat/mcrl-v023-r7-final-verifier-inventory-r4b-20260907
+drwxr-xr-x  2 sat sat    4096 Sep  7 12:15 /home/sat/mcrl-v023-r7-final-verifier-inventory-r4d-20260907
+-rw-rw-r--  1 sat sat      55 Sep  7 08:10 /home/sat/mcrl-v023-r7-inventory-20260907.log
+drwxrwxr-x  8 sat sat    4096 Sep  7 11:33 /home/sat/mcrl-v023-r7-inventory-checkout-20260907
+-rw-rw-r--  1 sat sat      53 Sep  7 10:34 /home/sat/mcrl-v023-r7-inventory-r4-20260907.log
+-rw-rw-r--  1 sat sat      53 Sep  7 11:31 /home/sat/mcrl-v023-r7-inventory-r4b-20260907.log
+-rw-rw-r--  1 sat sat      91 Sep  7 11:36 /home/sat/mcrl-v023-r7-inventory-r4c-20260907.log
+-rw-rw-r--  1 sat sat      53 Sep  7 12:15 /home/sat/mcrl-v023-r7-inventory-r4d-20260907.log
+drwxrwxr-x  7 sat sat    4096 Sep  6 13:04 /home/sat/mcrl-v023-r7-launch-ready-20260906
+drwxrwxr-x  7 sat sat    4096 Sep  6 13:11 /home/sat/mcrl-v023-r7-launch-ready-20260906-r1
+drwxrwxr-x  7 sat sat    4096 Sep  6 13:22 /home/sat/mcrl-v023-r7-launch-ready-20260906-r2
+drwxrwxr-x  7 sat sat    4096 Sep  6 13:40 /home/sat/mcrl-v023-r7-launch-ready-20260906-r3
+drwxrwxr-x  8 sat sat    4096 Sep  6 14:22 /home/sat/mcrl-v023-r7-launch-ready-20260906-r4
+-rw-rw-r--  1 sat sat    5556 Sep  7 21:12 /home/sat/mcrl-v023-r8-shadow-verify.log
+drwxrwxr-x 18 sat sat    4096 Sep  7 21:09 /home/sat/mcrl-v023-r8-shadow-view
+drwxrwxr-x  4 sat sat    4096 Sep  7 12:50 /home/sat/mcrl-v023-real-shards-rehearsal
+drwxrwxr-x  4 sat sat    4096 Sep  7 15:29 /home/sat/mcrl-v023-real-shards-rehearsal-r8
+drwxrwxr-x 10 sat sat    4096 Sep  8 08:16 /home/sat/mcrl-v023-review-stagec
+drwxrwxr-x  2 sat sat    4096 Sep  7 23:50 /home/sat/mcrl-v023-stageA-OFFLINE-GATE-NONFORMAL-20260907T234617Z
+drwxrwxr-x  3 sat sat    4096 Sep  8 11:25 /home/sat/mcrl-v023-stageA-OFFLINE-GATE-NONFORMAL-20260908T111104Z
+drwxrwxr-x  3 sat sat    4096 Sep  8 14:50 /home/sat/mcrl-v023-stageA-OFFLINE-GATE-NONFORMAL-20260908T143541Z
+drwxrwxr-x  2 sat sat    4096 Sep  8 00:46 /home/sat/mcrl-v023-stageA-OFFLINE-GATE-POSTBIND-20260908T003033Z
+drwxrwxr-x  2 sat sat    4096 Sep  8 00:06 /home/sat/mcrl-v023-stageA-OFFLINE-GATE-PREBIND-20260908T000625Z
+drwxrwxr-x  2 sat sat    4096 Sep  8 00:11 /home/sat/mcrl-v023-stageA-OFFLINE-GATE-PREBIND-20260908T000741Z-r8
+drwx------  5 sat sat    4096 Sep  7 15:56 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T154653Z
+drwx------  2 sat sat    4096 Sep  7 15:50 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T154653Z-diagnostic
+drwx------  2 sat sat    4096 Sep  7 15:52 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T154653Z-diagnostic2
+drwx------  2 sat sat    4096 Sep  7 15:55 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T154653Z-diagnostic3
+-rw-rw-r--  1 sat sat   31591 Sep  7 16:01 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T154653Z.log
+drwx------  2 sat sat    4096 Sep  7 16:43 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T164144Z-diagnostic
+-rw-rw-r--  1 sat sat    5170 Sep  7 16:44 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T164144Z.log
+drwx------  2 sat sat    4096 Sep  7 18:04 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T180346Z-diagnostic
+drwx------  5 sat sat    4096 Sep  7 19:51 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z
+drwx------  5 sat sat    4096 Sep  7 19:51 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-control2
+drwx------  2 sat sat    4096 Sep  7 19:51 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-diagnostic
+drwx------  5 sat sat    4096 Sep  7 19:53 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-drill-bd
+drwx------  5 sat sat    4096 Sep  7 19:53 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-drill-ck
+drwx------  5 sat sat    4096 Sep  7 19:53 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-drill-nb
+drwx------  5 sat sat    4096 Sep  7 19:55 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-probe-tmp
+drwx------  5 sat sat    4096 Sep  7 19:55 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-probe-tmpfile
+drwxrwxr-x  2 sat sat    4096 Sep  7 19:56 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-receipts
+drwx------  5 sat sat    4096 Sep  7 19:56 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T194951Z-selproof
+drwx------  5 sat sat    4096 Sep  7 20:41 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z
+drwx------  5 sat sat    4096 Sep  7 20:43 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-control2
+drwx------  2 sat sat    4096 Sep  7 20:41 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-diagnostic
+drwx------  6 sat sat    4096 Sep  7 20:42 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-drill-ckpt
+drwx------  6 sat sat    4096 Sep  7 20:42 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-drill-ckptrcpt
+drwx------  6 sat sat    4096 Sep  7 20:41 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-drill-exportdir
+drwx------  6 sat sat    4096 Sep  7 20:42 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-drill-exportman
+drwx------  6 sat sat    4096 Sep  7 20:45 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-drill-exportmember
+drwx------  5 sat sat    4096 Sep  7 20:42 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-drill-nonbound
+drwx------  6 sat sat    4096 Sep  7 20:42 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-drill-sidecar
+drwxrwxr-x  2 sat sat    4096 Sep  7 20:45 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T204043Z-receipts
+drwx------  2 sat sat    4096 Sep  7 21:58 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T215820Z-diagnostic
+drwxrwxr-x  2 sat sat    4096 Sep  7 21:58 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260907T215820Z-receipts
+drwx------  5 sat sat    4096 Sep  7 18:58 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260908T185657Z
+drwx------  5 sat sat    4096 Sep  7 19:02 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260908T185657Z-control2
+drwx------  2 sat sat    4096 Sep  7 18:57 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260908T185657Z-diagnostic
+drwx------  5 sat sat    4096 Sep  7 19:00 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260908T185657Z-drill-bd
+drwx------  5 sat sat    4096 Sep  7 19:05 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260908T185657Z-drill-bd2
+drwx------  5 sat sat    4096 Sep  7 19:00 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260908T185657Z-drill-nb
+-rw-rw-r--  1 sat sat     134 Sep  7 18:58 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-20260908T185657Z.log
+dr-xr-xr-x  2 sat sat    4096 Sep  7 15:28 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-target-root
+drwxr-xr-x  2 sat sat    4096 Sep  7 15:44 /home/sat/mcrl-v023-stageA-SYNTH-REHEARSAL-NONFORMAL-target-root-r2
+drwxrwxr-x  2 sat sat    4096 Sep  8 00:35 /home/sat/mcrl-v023-stageA-attempt2-notes
+drwxrwxr-x  2 sat sat    4096 Sep  8 14:55 /home/sat/mcrl-v023-stageA-attempt3-notes
+drwxrwxr-x  4 sat sat    4096 Sep  7 14:46 /home/sat/mcrl-v023-stageB-REHEARSAL-NONFORMAL-20260907T144352Z
+-rw-rw-r--  1 sat sat    5949 Sep  7 14:47 /home/sat/mcrl-v023-stageB-REHEARSAL-NONFORMAL-20260907T144352Z.log
+drwxrwxr-x  5 sat sat    4096 Sep  7 19:12 /home/sat/mcrl-v023-stageC-CHUNK-ACCEPTANCE-NONFORMAL-20260907T185925Z
+drwxrwxr-x  7 sat sat    4096 Sep  7 18:59 /home/sat/mcrl-v023-stageC-CHUNK-ACCEPTANCE-NONFORMAL-20260907T185925Z-checkout
+drwxrwxr-x  8 sat sat    4096 Sep  7 21:54 /home/sat/mcrl-v023-stageC-CHUNK-ACCEPTANCE-NONFORMAL-20260907T210729Z-checkout
+drwxrwxr-x  3 sat sat    4096 Sep  7 21:54 /home/sat/mcrl-v023-stageC-CHUNK-ACCEPTANCE-NONFORMAL-20260907T215059Z
+drwxrwxr-x  3 sat sat    4096 Sep  7 16:33 /home/sat/mcrl-v023-stageC-REHEARSAL-NONFORMAL-20260907T151800Z
+-rw-rw-r--  1 sat sat    3977 Sep  7 16:33 /home/sat/mcrl-v023-stageC-REHEARSAL-NONFORMAL-20260907T151800Z.log
+drwxr-xr-x  7 sat sat    4096 Sep  7 15:59 /home/sat/mcrl-v023-successor-shadow-20260907
+drwxrwxr-x  2 sat sat    4096 Sep  7 14:25 /home/sat/mcrl-v023-two-route-REHEARSAL-NONFORMAL-20260907T142523Z
+drwxrwxr-x  2 sat sat    4096 Sep  7 14:36 /home/sat/mcrl-v023-two-route-REHEARSAL-NONFORMAL-20260907T143655Z
+drwxrwxr-x  3 sat sat    4096 Sep  7 15:44 /home/sat/mcrl-v023-two-route-REHEARSAL-NONFORMAL-20260907T154338Z
+drwxrwxr-x  3 sat sat    4096 Sep  7 15:46 /home/sat/mcrl-v023-two-route-REHEARSAL-NONFORMAL-20260907T154523Z
+drwxrwxr-x  2 sat sat    4096 Sep  8 06:46 /home/sat/mcrl-v024-codex-b1
+drwxrwxr-x 13 sat sat    4096 Sep  8 13:21 /home/sat/mcrl-v024-codex-iter2
+drwxrwxr-x  2 sat sat    4096 Sep  8 08:30 /home/sat/mcrl-v024-codex-probefix
+drwxrwxr-x  2 sat sat    4096 Sep  8 07:10 /home/sat/mcrl-v024-probe-launch-20260908
+drwxrwxr-x  2 sat sat    4096 Sep  8 10:25 /home/sat/mcrl-v024-probe-launch-20260908-r2
+drwxrwxr-x 11 sat sat    4096 Sep  8 08:29 /home/sat/mcrl-v024-regime-b
+drwxrwxr-x  3 sat sat    4096 Sep  8 07:05 /home/sat/mcrl-v024-regime-probe-20260908-r1
+drwxrwxr-x  4 sat sat    4096 Sep  8 10:21 /home/sat/mcrl-v024-regime-probe-20260908-r2
+drwxrwxr-x 18 sat sat    4096 Sep 10 06:11 /home/sat/mcrl-v025-arch-ws
+drwxrwxr-x 11 sat sat    4096 Sep 10 01:37 /home/sat/mcrl-v025-beam-ws
+drwxrwxr-x 16 sat sat    4096 Sep 10 05:53 /home/sat/mcrl-v025-c1c2-ws
+drwxrwxr-x 14 sat sat    4096 Sep 10 00:55 /home/sat/mcrl-v025-c1c2suff-ws
+drwxrwxr-x 10 sat sat    4096 Sep 10 04:18 /home/sat/mcrl-v025-ceiling30-ws
+drwxrwxr-x 11 sat sat    4096 Sep 10 06:02 /home/sat/mcrl-v025-certprofile-ws
+drwxrwxr-x 17 sat sat    4096 Sep  9 15:27 /home/sat/mcrl-v025-coalgen-ws
+drwxrwxr-x 13 sat sat    4096 Sep  8 18:08 /home/sat/mcrl-v025-codex-ws-anglekat
+drwxrwxr-x 16 sat sat    4096 Sep  9 02:44 /home/sat/mcrl-v025-codex-ws-engine
+drwxrwxr-x 14 sat sat    4096 Sep  8 20:20 /home/sat/mcrl-v025-codex-ws-provider
+drwxrwxr-x 13 sat sat    4096 Sep  8 21:25 /home/sat/mcrl-v025-codex-ws-slice
+drwxrwxr-x 13 sat sat    4096 Sep  9 04:07 /home/sat/mcrl-v025-codex-ws-stagec
+drwxrwxr-x 14 sat sat    4096 Sep  9 00:52 /home/sat/mcrl-v025-codex-ws-synth
+drwxrwxr-x  5 sat sat    4096 Sep 10 05:21 /home/sat/mcrl-v025-coverage-ws
+drwxrwxr-x 16 sat sat    4096 Sep  9 14:53 /home/sat/mcrl-v025-curve-ws
+drwxrwxr-x  3 sat sat    4096 Sep  9 13:39 /home/sat/mcrl-v025-datepool-ws
+drwxrwxr-x 10 sat sat    4096 Sep  9 13:22 /home/sat/mcrl-v025-dates-ws
+drwxrwxr-x  3 sat sat    4096 Sep  9 13:00 /home/sat/mcrl-v025-design-ws
+drwxrwxr-x 11 sat sat    4096 Sep 10 04:38 /home/sat/mcrl-v025-floor-ws
+drwxrwxr-x 23 sat sat    4096 Sep  9 23:01 /home/sat/mcrl-v025-harness-ws
+drwxrwxr-x 11 sat sat    4096 Sep  9 07:56 /home/sat/mcrl-v025-headroom-ws
+drwxrwxr-x 10 sat sat    4096 Sep 10 04:38 /home/sat/mcrl-v025-ladder-ws
+drwxrwxr-x 14 sat sat    4096 Sep  9 13:21 /home/sat/mcrl-v025-mutants-ws
+drwxrwxr-x 11 sat sat    4096 Sep  9 17:13 /home/sat/mcrl-v025-offlinesuni-ws
+drwxrwxr-x 13 sat sat    4096 Sep 10 04:20 /home/sat/mcrl-v025-oracle-ws
+drwxrwxr-x 14 sat sat    4096 Sep  9 12:47 /home/sat/mcrl-v025-pilot-ws
+drwxrwxr-x 12 sat sat    4096 Sep 10 06:19 /home/sat/mcrl-v025-prevalence-ws
+drwxrwxr-x 13 sat sat    4096 Sep 10 06:01 /home/sat/mcrl-v025-probe-ws
+drwxrwxr-x  9 sat sat    4096 Sep  9 07:44 /home/sat/mcrl-v025-probe-ws-acm2
+drwxrwxr-x 12 sat sat    4096 Sep  9 03:51 /home/sat/mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner
+drwxrwxr-x 10 sat sat    4096 Sep  9 08:30 /home/sat/mcrl-v025-probe-ws-widened
+drwxrwxr-x  3 sat sat    4096 Sep  9 14:10 /home/sat/mcrl-v025-provenance-ws
+drwxrwxr-x 10 sat sat    4096 Sep  8 18:42 /home/sat/mcrl-v025-provider-fix-snapshot-20260908
+drwxrwxr-x 11 sat sat    4096 Sep  8 20:20 /home/sat/mcrl-v025-provider-fix2-snapshot-20260908
+drwxrwxr-x 10 sat sat    4096 Sep  8 20:27 /home/sat/mcrl-v025-provider-gh
+drwxrwxr-x 10 sat sat    4096 Sep  8 17:32 /home/sat/mcrl-v025-provider-v1-snapshot-20260908
+drwxrwxr-x 16 sat sat    4096 Sep 10 06:02 /home/sat/mcrl-v025-rank-ws
+drwxrwxr-x 18 sat sat    4096 Sep  9 18:03 /home/sat/mcrl-v025-replay-ws
+drwxrwxr-x 17 sat sat    4096 Sep 10 03:48 /home/sat/mcrl-v025-retrain-ws
+drwxrwxr-x 11 sat sat    4096 Sep  9 18:21 /home/sat/mcrl-v025-rule-ws
+drwxrwxr-x 17 sat sat    4096 Sep 10 04:25 /home/sat/mcrl-v025-selector-ws
+drwxrwxr-x 12 sat sat    4096 Sep  9 14:22 /home/sat/mcrl-v025-sensitivity-ws
+drwxrwxr-x 11 sat sat    4096 Sep  8 16:27 /home/sat/mcrl-v025-stage2-snapshot-20260908
+drwxrwxr-x 11 sat sat    4096 Sep  8 17:41 /home/sat/mcrl-v025-stage3-snapshot-20260908
+drwxrwxr-x 11 sat sat    4096 Sep  8 19:16 /home/sat/mcrl-v025-stage4-snapshot-20260908
+drwxrwxr-x 11 sat sat    4096 Sep  8 20:50 /home/sat/mcrl-v025-stage4b-snapshot-20260908
+drwxrwxr-x 11 sat sat    4096 Sep  8 21:32 /home/sat/mcrl-v025-stage4c-snapshot-20260908
+drwxrwxr-x 11 sat sat    4096 Sep  9 00:14 /home/sat/mcrl-v025-stage4d-snapshot-20260909
+drwxrwxr-x 14 sat sat    4096 Sep  9 05:58 /home/sat/mcrl-v025-stage4h-auditcopy
+drwxrwxr-x 13 sat sat    4096 Sep  9 02:07 /home/sat/mcrl-v025-stagec-costcopy
+drwxrwxr-x 10 sat sat    4096 Sep  8 19:26 /home/sat/mcrl-v025-stagec1-snapshot-20260908
+drwxrwxr-x 10 sat sat    4096 Sep  8 20:58 /home/sat/mcrl-v025-stagec2-snapshot-20260908
+drwxrwxr-x 10 sat sat    4096 Sep  9 00:18 /home/sat/mcrl-v025-stagec3-snapshot-20260909
+drwxrwxr-x 11 sat sat    4096 Sep  9 04:07 /home/sat/mcrl-v025-stagec4b-auditcopy
+drwxrwxr-x 10 sat sat    4096 Sep  9 04:07 /home/sat/mcrl-v025-stagec4b-snapshot-20260909
+drwxrwxr-x  5 sat sat    4096 Sep 10 06:39 /home/sat/mcrl-v025-strategic-astra-ws
+drwxrwxr-x  3 sat sat    4096 Sep 10 06:19 /home/sat/mcrl-v025-strategic-fable-ws
+drwxrwxr-x  3 sat sat    4096 Sep  9 14:14 /home/sat/mcrl-v025-suni-ws
+drwxrwxr-x 11 sat sat    4096 Sep  9 00:52 /home/sat/mcrl-v025-synth-r2-snapshot-20260909
+drwxrwxr-x 11 sat sat    4096 Sep  8 20:28 /home/sat/mcrl-v025-synth-snapshot-20260908
+drwxrwxr-x 14 sat sat    4096 Sep 10 03:54 /home/sat/mcrl-v025-witness-ws
+drwxrwxr-x 11 sat sat    4096 Sep  3 00:39 /home/sat/mcrl-zero-energy-c3-v012-20260903-r1
+drwxrwxr-x 10 sat sat    4096 Sep  3 03:35 /home/sat/mcrl-zero-energy-c3-v013-20260903-r1
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/synthetic.py
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/merge.py
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/acceptance.py
+/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+
+codex
+My earlier answer did rely on the first-move obstruction, so that conclusion must be withdrawn. Under catalogue argmax, C3 can change the winner whenever its score difference between two rows overcomes their additive gap. The unchanged-assignment receipts remain unexplained; the cancellation arithmetic still holds.
+exec
+/bin/bash -lc "sed -n '20,45p' /home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py; sed -n '355,385p' /home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/synthetic.py; sed -n '665,692p' /home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/merge.py; sed -n '65,85p' /home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/acceptance.py; sed -n '155,205p' /home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py; sed -n '475,535p' /home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py" in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+)
+from .shards import SourceShard
+from .state import Q1_SCHEMA_SHA256, Q2_SCHEMA_SHA256, SourceRow
+from .coalitions import CoalitionContext, CoalitionShard
+
+
+Route = Literal["C1", "C2", "C3"]
+ROUTES: tuple[Route, ...] = ("C1", "C2", "C3")
+LEARNED_ARMS = ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL")
+ARM_ORDER = (*LEARNED_ARMS, "BASELINE")
+SOURCE_MAP: Mapping[str, Mapping[Route, str]] = {
+    "FULL": {"C1": "informed", "C2": "informed", "C3": "informed"},
+    "DROP_C1": {"C1": "neutral", "C2": "informed", "C3": "informed"},
+    "DROP_C2": {"C1": "informed", "C2": "neutral", "C3": "informed"},
+    "DROP_C3": {"C1": "informed", "C2": "informed", "C3": "neutral"},
+    "ALL_NEUTRAL_CONTROL": {"C1": "neutral", "C2": "neutral", "C3": "neutral"},
+}
+CHECKPOINT_SCHEMA = "mcrl-v025-stagec-lineage-checkpoint-v1"
+CHECKPOINT_EVERY_SOURCE_EPOCHS = 100
+LEGACY_EPOCH_BUDGET = 2000
+LEARNER_SEED_DOMAINS = tuple(f"V025_LEARNER/seed/{index}" for index in range(1, 13))
+LEARNER_SEEDS = tuple(seed_from_domain(domain) for domain in LEARNER_SEED_DOMAINS)
+
+# Literal copy of the heterogeneous V0.23 seam and the production classes it
+# delegates to.  Only input_dim is supplied by the sealed Stage-C schemas.
+LEGACY_TRAINER_LITERALS: Mapping[str, object] = {
+                exact_nominal_score=lambda candidate: float(
+                    sum(action_index == 1 for action_index in candidate)
+                ),
+                coordinator_information=coordinator,
+                arm_information_interfaces=interfaces,
+                matched_information_sha256=matched,
+            ).profile
+        else:
+            if model is None:
+                raise StageCContractError(
+                    "learned synthetic arm requires a model"
+                )
+            contexts = {
+                profile: self.coalition_context(profile, tables)
+                for profile in ((0, 0), (1, 0), (0, 1), (1, 1))
+            }
+            coordinator, interfaces, matched, catalogue = self.selection_authority(tables, base)
+            selector = ProfileSelector("S0" if arm == "S0" else "S3")
+            decision = selector.select_timed(
+                deadline_s=10.0,
+                model=model,
+                tables=tables,
+                catalogue=catalogue,
+                base_profile=base,
+                jointly_legal=lambda candidate: candidate != (1, 1),
+                service_guard=lambda _candidate: True,
+                coalition_context=contexts,
+                exact_psi=(lambda profile: 2.0 if profile == (1, 1) else 0.0),
+                coordinator_information=coordinator,
+                arm_information_interfaces=interfaces,
+                matched_information_sha256=matched,
+        if unit is None or unit_id in seen or unit_payload != asdict(unit):
+            raise StageCContractError("receipt unit is unexpected, duplicate, or drifted")
+        seen.add(unit_id)
+        if receipt.get("allocation_manifest_digest") != manifest.digest:
+            raise StageCContractError("receipt allocation authority drifted")
+        if receipt.get("experiment_binding") != {
+            "experiment_id": unit.experiment_id,
+            "schema": unit.experiment_schema,
+            "definition_sha256": unit.experiment_definition_sha256,
+            "execution_kind": unit.experiment_execution_kind,
+            "checkpoint_sha256": unit.experiment_checkpoint_sha256,
+        }:
+            raise StageCContractError("receipt experiment binding drifted")
+        if (
+            receipt.get("arm_order") != list(ARM_ORDER)
+            or receipt.get("supportive_comparators") != ["S0", "S_UNI"]
+        ):
+            raise StageCContractError("receipt policy inventory drifted")
+        conformance = receipt.get("conformance")
+        if (
+            not isinstance(conformance, dict)
+            or conformance.get("schema")
+            != "mcrl-v025-stagec-harness-conformance-v1"
+            or conformance.get("null_equals_base") is not True
+            or conformance.get("joint_profile_validation") is not True
+            or not isinstance(conformance.get("receipt_sha256"), str)
+            or len(conformance["receipt_sha256"]) != 64
+            or any(
+                    },
+                )
+            }
+            for contrast_index, arm in enumerate(DROP_ARMS):
+                log_effect = (
+                    math.log1p(true_relative_gain[contrast_index])
+                    + date_effect[contrast_index, date_index]
+                    + seed_effect[contrast_index, seed_index]
+                )
+                drop_ee = 100.0 / math.exp(log_effect)
+                arms[arm] = AdditiveTotals(bits=drop_ee * energy, **common)
+            # Non-primary policies are present so these clusters can also be
+            # fed to report inventory paths without changing primary inference.
+            for arm in (*ARM_ORDER[4:], "S0", "S_UNI"):
+                arms[arm] = AdditiveTotals(bits=98.0 * energy, **common)
+            clusters[(date, 1000 + seed_index)] = arms
+    return clusters
+
+
+def crossed_inference_calibration(
+    *,
+    candidate: NetworkOutcome,
+    default: NetworkOutcome,
+    *,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+) -> C1Label:
+    """Whole-network C1 difference versus the declared default action."""
+
+    eta, kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    core = (candidate.bits - default.bits) - eta * (candidate.joules - default.joules)
+    # Phi_1=.5 and Phi_2=1 are prices in κ-bit units.  Dividing the physical
+    # surplus by κ and then adding Phi therefore keeps the target dimensionless.
+    phi = candidate.phi - default.phi
+    return C1Label(core, phi, core / kappa + phi)
+
+
+@dataclass(frozen=True)
+class OffsetProjection:
+    offset_index: int
+    valid: bool
+    survives: bool
+    outcome: NetworkOutcome
+    background_power_recomputed: bool
+    required_power_w: float | None
+    power_cap_w: float | None
+    min_decoding_margin_db: float
+    mean_acm_se_bit_s_hz: float
+
+    def __post_init__(self) -> None:
+        if self.offset_index not in range(1, FORECAST_OFFSETS + 1):
+            raise MCRLContractError("forecast offset is outside the frozen three offsets")
+        if not self.background_power_recomputed:
+            raise MCRLContractError("projection reused stale background powers")
+        if not math.isfinite(self.min_decoding_margin_db) or not math.isfinite(self.mean_acm_se_bit_s_hz):
+            raise MCRLContractError("projection margin/SE must be finite")
+        if (self.required_power_w is None) != (self.power_cap_w is None):
+            raise MCRLContractError("required power and cap must be supplied together")
+        if self.required_power_w is not None and (
+            not math.isfinite(self.required_power_w)
+            or not math.isfinite(self.power_cap_w)
+            or self.required_power_w < 0.0
+            or self.power_cap_w <= 0.0
+        ):
+            raise MCRLContractError("invalid projected required-power/cap values")
+
+    @property
+        *(frozenset((user,)) for user in users),
+    }
+    supplied = set(outcomes_by_subset)
+    if not sparse_required <= supplied:
+        raise MCRLContractError(
+            "set-score decomposition needs empty, singleton, and complete outcomes"
+        )
+    eta, kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    phi = exact(phi_difference)
+    values = {
+        subset: outcome.bits - eta * outcome.joules
+        for subset, outcome in outcomes_by_subset.items()
+    }
+    base = values[frozenset()]
+    d_by_user = tuple(
+        (user, values[frozenset((user,))] - base) for user in users
+    )
+    joint = values[frozenset(users)] - base
+    interaction = joint - sum((value for _user, value in d_by_user), Fraction())
+    complete_powerset = {
+        frozenset(subset)
+        for size in range(len(users) + 1)
+        for subset in itertools.combinations(users, size)
+    }
+    if len(users) < 2:
+        credits = tuple((user, Fraction()) for user in users)
+        credit_split = "EXACT_TRIVIAL"
+    elif len(users) <= 4 and supplied == complete_powerset:
+        allocated = c3_set_interaction(
+            coalition_users=users,
+            outcomes_by_subset=outcomes_by_subset,
+            lambda_bits_per_j=lambda_bits_per_j,
+            eta_ref=eta_ref,
+            kappa_bits_per_user_step=kappa_bits_per_user_step,
+        )
+        credits = allocated.z3_by_user
+        credit_split = "EXACT_SHAPLEY_SMALL_SET"
+    else:
+        credits = ()
+        credit_split = "NOT_COMPUTED_LARGE_SET" if len(users) > 4 else "NOT_SUPPLIED_SMALL_SET"
+    if credits and sum((value for _user, value in credits), Fraction()) != interaction:
+        raise MCRLContractError("set-score Shapley credits do not conserve Psi_A")
+    c1 = sum((value for _user, value in d_by_user), Fraction()) / kappa
+    c3 = interaction / kappa
+    if c1 + c3 != joint / kappa:
+        raise MCRLContractError("C1 + C3 does not equal the complete F change")
+    return SetScoreDecomposition(
+        users,
+        d_by_user,
+        interaction,
+        credits,
+        credit_split,
+        joint,
+        phi,
+        c1,
+        c3,
+    )
+
+exec
+/bin/bash -lc "sed -n '1510,1575p' /home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py; sed -n '630,780p' /home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py" in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+    contexts = {}
+    for config in legal_catalogue:
+        if len(exact[config.configuration_id]["changed"]) >= 2:
+            contexts[config.configuration_id] = _coalition_context(
+                tape=tape, step_index=step_index, anchor=anchor,
+                selected=config, rows_by_user_action=rows_by_user_action,
+            )
+    for seed in LEARNER_SEEDS:
+        exact_scores = []
+        additive_scores = []
+        learned_scores_by_arm = {arm: [] for arm in PILOT_ARMS}
+        deltas_by_arm = {}
+        c2_tie_pairs = 0
+        c2_eligible_pairs = 0
+        for arm in PILOT_ARMS:
+            model = models[(seed, arm)]
+            deltas = {}
+            for (user, action), row in rows_by_user_action.items():
+                reference = rows_by_user_action[(user, anchor.mapping[user])]
+                q2_delta = model.q2.score(row.q2_state) - model.q2.score(reference.q2_state)
+                deltas[(user, action)] = (
+                    model.q1.score(row.q1_state) - model.q1.score(reference.q1_state)
+                    + q2_delta
+                )
+                if arm == "FULL" and action != anchor.mapping[user]:
+                    c2_eligible_pairs += 1
+                    c2_tie_pairs += int(q2_delta == 0.0)
+            deltas_by_arm[arm] = deltas
+        c2_tie_fraction = (
+            c2_tie_pairs / c2_eligible_pairs if c2_eligible_pairs else None
+        )
+        for config in legal_catalogue:
+            context = contexts.get(config.configuration_id)
+            full_additive = math.fsum(
+                deltas_by_arm["FULL"][(user, config.mapping[user])]
+                for user in anchor.mapping
+            )
+            exact_scores.append((full_additive + exact[config.configuration_id]["psi"], config.configuration_id, config))
+            additive_scores.append((full_additive, config.configuration_id, config))
+            for arm in PILOT_ARMS:
+                model = models[(seed, arm)]
+                score = math.fsum(
+                    deltas_by_arm[arm][(user, config.mapping[user])]
+                    for user in anchor.mapping
+                )
+                if context is not None:
+                    score += model.interaction(context)
+                learned_scores_by_arm[arm].append((score, config.configuration_id, config))
+        exact_choice = min(exact_scores, key=lambda row: (-row[0], row[1]))[2]
+        additive_choice = min(additive_scores, key=lambda row: (-row[0], row[1]))[2]
+        selections[(seed, "S0")] = exact_s0
+        for arm in PILOT_ARMS:
+            selections[(seed, arm)] = min(
+                learned_scores_by_arm[arm], key=lambda row: (-row[0], row[1])
+            )[2]
+        diagnostics[seed] = {
+            "top_choice_agreement": selections[(seed, "FULL")].assignments == exact_choice.assignments,
+            "additive_choice": additive_choice,
+            "exact_choice": exact_choice,
+            "anchor": anchor_name,
+            # Minimal-pilot C2 tie statistic: over the FULL arm, the fraction of
+            # non-incumbent (user, action) candidates whose C2 head score is
+            # exactly equal to the incumbent's, i.e. C2 cannot discriminate the
+            # move at all and the ranking falls through to C1 + the tie-break.
+            "c2_tie": c2_tie_fraction,
+            "c2_tie_pairs": c2_tie_pairs,
+        profile: Profile,
+        reference: Profile,
+        *,
+        knockout: str | None,
+    ) -> float:
+        total = 0.0
+        for table, selected, baseline in zip(tables, profile, reference, strict=True):
+            if knockout != "C1":
+                total += model.score("C1", table.q1_states[selected]) - model.score(
+                    "C1", table.q1_states[baseline]
+                )
+            if knockout != "C2":
+                total += model.score("C2", table.q2_states[selected]) - model.score(
+                    "C2", table.q2_states[baseline]
+                )
+        return total
+
+    def select(
+        self,
+        *,
+        base_profile: Profile,
+        tables: Sequence[UserActionTable],
+        catalogue: Sequence[Profile],
+        jointly_legal: Callable[[Profile], bool],
+        service_guard: Callable[[Profile], bool],
+        model: V1ThreeRouteModel | None = None,
+        coalition_context: Mapping[Profile, CoalitionContext] | None = None,
+        exact_psi: Callable[[Profile], float] | None = None,
+        exact_nominal_score: Callable[[Profile], float] | None = None,
+        knockout_route: Route | None = None,
+        coordinator_information: CoordinatorInformation,
+        arm_information_interfaces: Mapping[str, ArmInformationInterface],
+        matched_information_sha256: str,
+        model_checkpoint_sha256: str | None = None,
+        knockout_experiment: CheckpointKnockoutExperiment | None = None,
+    ) -> SelectorDecision:
+        self._authenticate_inputs(
+            base_profile=base_profile,
+            tables=tables,
+            catalogue=catalogue,
+            coordinator_information=coordinator_information,
+            arm_information_interfaces=arm_information_interfaces,
+            matched_information_sha256=matched_information_sha256,
+            coalition_context=coalition_context if self.mode != "S_UNI" else None,
+        )
+        if self.mode == "S3" and model_checkpoint_sha256 is None:
+            raise StageCContractError("S3 requires a deployed checkpoint identity")
+        if knockout_route is not None:
+            if (
+                knockout_experiment is None
+                or model_checkpoint_sha256 != knockout_experiment.checkpoint_sha256
+                or knockout_route not in knockout_experiment.zeroed_deployed_routes
+            ):
+                raise StageCContractError("knockout is not bound to the deployed checkpoint")
+        if not jointly_legal(base_profile) or not service_guard(base_profile):
+            raise StageCContractError("selector requires a prevalidated BASE")
+        if self.mode == "S_UNI":
+            if exact_nominal_score is None:
+                raise StageCContractError("S_UNI requires exact nominal joint physics")
+            current = base_profile
+            evaluated = 0
+            while True:
+                best = current
+                best_score = exact_nominal_score(current)
+                evaluated += 1
+                for user_index, table in enumerate(tables):
+                    for action_index, legal in enumerate(table.action_mask):
+                        if not legal or action_index == current[user_index]:
+                            continue
+                        candidate = (*current[:user_index], action_index, *current[user_index + 1 :])
+                        if not jointly_legal(candidate) or not service_guard(candidate):
+                            continue
+                        score = exact_nominal_score(candidate)
+                        evaluated += 1
+                        if score > best_score:
+                            best, best_score = candidate, score
+                if best == current:
+                    return SelectorDecision("S_UNI", current, best_score, False, None, True, evaluated)
+                current = best
+
+        if model is None or coalition_context is None:
+            raise StageCContractError(f"{self.mode} requires model and coalition contexts")
+        if self.mode == "S0" and exact_psi is None:
+            raise StageCContractError("S0 requires exact Psi")
+        best = base_profile
+        best_score = float("-inf")
+        evaluated = 0
+        for profile in (base_profile, *catalogue):
+            if len(profile) != len(tables) or not jointly_legal(profile) or not service_guard(profile):
+                continue
+            additive = self._additive_score(
+                model, tables, profile, base_profile, knockout=knockout_route
+            )
+            interaction = 0.0
+            if knockout_route != "C3":
+                interaction = (
+                    model.interaction(coalition_context[profile])
+                    if self.mode == "S3"
+                    else float(exact_psi(profile))
+                )
+            score = additive + interaction
+            evaluated += 1
+            if score > best_score:
+                best, best_score = profile, score
+        if evaluated == 0:
+            return SelectorDecision(self.mode, base_profile, 0.0, True, "empty_legal_catalogue", None, 0)
+        return SelectorDecision(self.mode, best, best_score, False, None, None, evaluated)
+
+    def select_timed(self, *, deadline_s: float = DEPLOYMENT_DEADLINE_S, **kwargs: object) -> SelectorDecision:
+        """F2: validate BASE in the parent, then kill the coordinator on timeout."""
+
+        base_profile = kwargs.get("base_profile")
+        jointly_legal = kwargs.get("jointly_legal")
+        service_guard = kwargs.get("service_guard")
+        if (
+            not isinstance(base_profile, tuple)
+            or not callable(jointly_legal)
+            or not callable(service_guard)
+            or not jointly_legal(base_profile)
+            or not service_guard(base_profile)
+        ):
+            raise StageCContractError("timed selector requires prevalidated BASE")
+        if deadline_s <= 0.0:
+            raise StageCContractError("selector deadline must be positive")
+        context = multiprocessing.get_context("fork")
+        parent, child = context.Pipe(duplex=False)
+
+        def work() -> None:
+            try:
+                child.send(("ok", self.select(**kwargs)))
+            except BaseException as error:
+                child.send(("error", type(error).__name__))
+            finally:
+                child.close()
+
+        started = time.monotonic()
+        process = context.Process(target=work, name="stagec-profile-selector")
+        process.start()
+        child.close()
+        process.join(deadline_s)
+        if process.is_alive():
+            pid = process.pid
+            process.kill()
+            process.join()
+            parent.close()
+            return SelectorDecision(
+                self.mode,
+                base_profile,
+                0.0,
+                True,
+                "runner_deadline_process_killed",
+
+exec
+/bin/bash -lc "nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -B - <<'PY'
+import math
+s, r, v = 480.113, -440.079, 40.034
+for name, value in (
+    ('componentwise_condition', (abs(s)+abs(r))/v),
+    ('one_percent_absolute_bound', .01*(abs(s)+abs(r))),
+    ('one_percent_residual_relative_percent', abs(r)/v),
+    ('independent_relative_rms_amplification', math.hypot(s,r)/v),
+    ('direct_one_percent_absolute', .01*v),
+    ('three_innovation_rms_bound', math.sqrt(3)),
+    ('ratio_of_reported_medians', 200.4/8.02),
+    ('sealed_best_over_reference_percent_if_same_metric', 100*(1/(1-.098698)-1)),
+    ('margin_q_best_over_reference_percent_if_same_metric', 100*(1/(1-.035590)-1)),
+):
+    print(f'{name}: {value:.10f}')
+PY" in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+componentwise_condition: 22.9852625269
+one_percent_absolute_bound: 9.2019200000
+one_percent_residual_relative_percent: 10.9926312634
+independent_relative_rms_amplification: 16.2684094709
+direct_one_percent_absolute: 0.4003400000
+three_innovation_rms_bound: 1.7320508076
+ratio_of_reported_medians: 24.9875311721
+sealed_best_over_reference_percent_if_same_metric: 10.9506025727
+margin_q_best_over_reference_percent_if_same_metric: 3.6903391711
+
+codex
+The code also shows that the pilot builds a C3 context for every catalogue row with at least two changes. Missing contexts could still matter, but “most rows lack context” needs a measured count.
+
+I’m separating three claims in the answer: catalogue argmax permits C3 to affect selection; information-based decompositions can avoid forced cancellation in a population sense; neither fact establishes substantial pooled-EE gains from all three routes.
+exec
+/bin/bash -lc "git status --short; rg -n 'SelectorMode|def select\\(|for profile in|for config in legal_catalogue|contexts =|LEARNED_ARMS|core =|interaction = joint' /home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py /home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py /home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py /home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py" in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+?? DECOMP-ASTRA-2026-09-10.md
+?? STRATEGIC-REVIEW-ASTRA-2026-09-10.md
+/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py:75:    score = 0.0
+/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py:169:    core = (candidate.bits - default.bits) - eta * (candidate.joules - default.joules)
+/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py:290:    core = Fraction()
+/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py:497:    interaction = joint - sum((value for _user, value in d_by_user), Fraction())
+/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/targets.py:652:    interaction = joint - additive
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:28:LEARNED_ARMS = ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL")
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:29:ARM_ORDER = (*LEARNED_ARMS, "BASELINE")
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:346:        self.models = {arm: template.clone() for arm in LEARNED_ARMS}
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:367:        epoch_losses: dict[str, dict[str, float]] = {arm: {} for arm in LEARNED_ARMS}
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:371:            for arm in LEARNED_ARMS:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:412:            "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:414:            "arms": {arm: self.models[arm].payload() for arm in LEARNED_ARMS},
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:438:            "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:463:        if not isinstance(arms, dict) or set(arms) != set(LEARNED_ARMS):
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:465:        for arm in LEARNED_ARMS:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:576:        contexts = tuple(row.context for row in rows)
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1005:        self.models = {arm: template.clone() for arm in LEARNED_ARMS}
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1018:        losses: dict[str, dict[str, float]] = {arm: {} for arm in LEARNED_ARMS}
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1021:            for arm in LEARNED_ARMS:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1027:        for arm in LEARNED_ARMS:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1082:            "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1083:            "arms": {arm: self.models[arm].payload() for arm in LEARNED_ARMS},
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1139:            arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1163:        if not isinstance(arms, dict) or set(arms) != set(LEARNED_ARMS):
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1165:        for arm in LEARNED_ARMS:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:1192:    "AdamMLPHead", "AdamSetInteractionHead", "ARM_ORDER", "CHECKPOINT_EVERY_SOURCE_EPOCHS", "LEARNED_ARMS", "LineageOrchestrator",
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:49:    LEARNED_ARMS,
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:77:REPORTED_ARMS = (*LEARNED_ARMS, "BASELINE", "S0", "S_UNI")
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:80:PILOT_ARMS = tuple(LEARNED_ARMS)
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:608:            core = (
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1177:    tasks = [(seed, arm) for seed in LEARNER_SEEDS for arm in LEARNED_ARMS]
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1331:    base_core = (
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1414:            score = (
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1510:    contexts = {}
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1511:    for config in legal_catalogue:
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1541:        for config in legal_catalogue:
+/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1551:                score = math.fsum(
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:62:SelectorMode = Literal["S3", "S0", "S_UNI"]
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:67:    mode: SelectorMode
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:138:    best_score = float("-inf")
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:139:    for profile in catalogue:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:142:        score = DeploymentAdapter._profile_q12(model, tables, profile)
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:144:            best, best_score = profile, score
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:239:    def select(
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:285:            best_score = self._profile_q12(model, tables, base_profile) + coordinator(
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:300:            for profile in ordered:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:315:                score = self._profile_q12(model, tables, profile) + coordinator(
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:321:                    best, best_score = profile, score
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:485:        current_score = exact_nominal_score(current)
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:487:        best_score = current_score
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:495:                score = exact_nominal_score(candidate)
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:497:                    best, best_score = candidate, score
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:506:    def __init__(self, mode: SelectorMode) -> None:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:533:        legal = tuple(profile for profile in catalogue if jointly_legal(profile))
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:537:        best_score = float("-inf")
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:538:        for profile in legal:
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:539:            score = sum(
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:545:                best, best_score = profile, score
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:583:        supplied = {canonical_sha256(cls._profile_payload(profile, tables)) for profile in catalogue}
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:585:            canonical_sha256(profile.payload()) for profile in coordinator_information.catalogue
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:647:    def select(
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:693:                best_score = exact_nominal_score(current)
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:702:                        score = exact_nominal_score(candidate)
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:705:                            best, best_score = candidate, score
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:715:        best_score = float("-inf")
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:717:        for profile in (base_profile, *catalogue):
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:730:            score = additive + interaction
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:733:                best, best_score = profile, score
+/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:810:    "ProfileSelector", "ResolvedProfile", "SelectorDecision", "SelectorMode", "UserActionTable", "deployment_capability_manifest",
+
+exec
+/bin/bash -lc "cat > DECOMP-ASTRA-2026-09-10.md <<'EOF'
+**A better-conditioned three-source design is possible on paper under catalogue argmax, but achieving three substantial, separately attributable pooled-EE gains here remains open; my earlier first-move impossibility argument was wrong.**
+
+My inclination is now constructive: the corrected selector removes the supposed structural barrier to C3. That is a substantial revision, not merely a qualification. I can give a precise information-based construction and a conditioning theorem, but cannot establish its operational assumptions or the required EE effects from the supplied evidence. Below I give the strongest opposing case before reaching that conclusion.
+
+This answer supersedes my earlier DECOMP answer. The correction governs every statement below; the repeated first-improvement description and reachability argument in the older question are superseded. I ran no training, simulation, or evaluation. I used one Python process, under "'`nice -n 15`, for arithmetic. I changed only this requested answer file and did not modify `/home/sat/mcrl-leo-handover`. I did not read the other strategic review or seek the pending measurement'"'s results.
+
+**Verified from code and supplied measurements.**
+
+I inspected the adjacent selector checkout. Its [pilot selection loop](/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1542) scores every legal catalogue configuration with the learned additive terms plus the interaction, when a context exists, and selects by descending score then lexicographic configuration ID. Its [ProfileSelector](/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:647) puts unilateral search in the S_UNI branch; the S3/S0 branch evaluates complete catalogue profiles with additive plus interaction. The generic loop retains the first equal-scoring profile, so its ordering contract matters; the pilot implements the specified lexical tie rule explicitly. I use the controller's corrected deployed contract, including that tie rule.
+
+The [learned-arm inventory](/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:28) contains FULL, three DROP arms, and ALL_NEUTRAL_CONTROL. [Synthetic routing](/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/synthetic.py:372) sends learned arms to S3. The receipt inventory separately identifies S0 and S_UNI as supportive comparators. This corroborates the correction; it does not authenticate every reporting bridge.
+
+An additional code detail narrows one hypothesis: [pilot context construction](/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1510) creates a context for every catalogue configuration whose recorded changed set has size at least two. Thus context omission for empty/singleton rows is structural in this loop. Whether most actual rows fall into those categories, or another bridge omits contexts, still requires counts. I did not measure them.
+
+I accept as controller-supplied measurements, without independently reproducing them:
+
+- DROP_C3 changed zero proposed assignments at all three anchors; FULL and DROP_C3 committed byte-identical assignments in the r8 smoke under both provisioning rules. These remain unexplained. The known provisioning bridge defect is a candidate explanation, not an established explanation of every receipt.
+- The decomposition example is "'`480.113 - 440.079 = 40.034`. The C1 variance shares and the provenance of all 176,223 surrogate-labelled source rows stand.
+- Demand-capped assignment headroom survives: the nearest-start reference is 9.8698% below the best endpoint found under SEALED and 3.5590% below it under MARGIN_Q. SEALED reaches the 1.504 Gbit user-anchor cap nowhere; MARGIN_Q reaches it for 552/800 user-anchors.
+- Realised-SINR mode crediting gives +248.86% demand-capped at identical transmit power. It is an oracle, not evidence that a causal decision-time policy attains that gain.
+- Scalar `evaluate` integrates all 48 boundaries regardless of `boundary_indices`; `evaluate_many` honours the subset. Their disagreement is mainly semantic. Global path authority remains UNDETERMINED.
+- Five learned arms, 2,000 epochs, cadence 100 round-trip through the sealed checkpoint format; resume is bit-exact. Eight arms fail, and 3,000/9,000 epochs fail with source-cursor drift. These are implementation constraints, not evidence about EE.
+
+**Derived on paper: the actual decision-influence condition.**
+
+Let K be the same guard-admissible catalogue for a comparison. Let A(x) be the combined C1/C2 score and R(x) the C3 score actually supplied to the selector, including zero where the implementation omits it. Let x0 win without C3. A competitor y defeats x0 with C3 when
+
+`R(y) - R(x0) > A(x0) - A(y)`,
+
+or when equality holds and y precedes x0 under the sealed tie rule. In implementation, the decisive comparison is between the final binary64 scores; this real-arithmetic inequality describes the mechanism away from rounding-sensitive ties.
+
+There is no intermediate profile and no first move. A zero residual on singletons imposes no restriction on the residual difference between two multi-user catalogue rows. C3 can also change the winner by penalising the additive winner more heavily than a competitor; it need not give anything a positive bonus.
+
+For example, with two admissible multi-user rows:
+
+| Row | Additive | C3 | Total |
+|---|---:|---:|---:|
+| x | 12 | -4 | 8 |
+| y | 10 | -1 | 9 |
+
+The additive selector picks x; the full selector picks y. All numbers are exactly representable in binary64. This example is compatible with a residual that is identically zero on every singleton. It disproves my previous claimed learned-arm reachability obstruction.
+
+The same margin-crossing condition applies to any route. For comparisons between separately trained factor arms, the additive scores may also change: the clean inequality above isolates C3 at fixed other scores. It must not be mistaken for a complete explanation of an independently trained FULL-versus-DROP contrast.
+
+A different winner can become a different commit if it survives the unchanged guard, deadline and downstream commit machinery. A later fallback can erase the difference. Catalogue reachability therefore establishes a causal channel, not an observed committed contribution.
+
+**Derived on paper: what remains poorly conditioned.**
+
+For independently approximated components S and R, each with relative error bounded by epsilon,
+
+`|error(S+R)| / |S+R| <= epsilon (|S|+|R|)/|S+R|`.
+
+Here the componentwise condition number is
+
+`(480.113 + 440.079)/40.034 = 22.9852625`.
+
+At 1% component errors the worst-case absolute error is `9.20192`, or `22.9853%` of the reconstructed total. With exact C1 and a 1% residual error, it is `4.40079`, or `10.9926%`. Independent zero-mean errors with equal relative RMS size would give amplification `16.2684`; those error assumptions are illustrative, not measured.
+
+This is a prediction-error sensitivity calculation. Binary64 subtraction alone is not plausibly a 23% error mechanism. Nor is 40.034 necessarily a winner-versus-runner-up margin. Catalogue rankings depend on differences between rows, so anchor-common errors cancel, while row-varying errors may overwhelm much smaller margins. The required operational quantities are pairwise score errors and catalogue gaps.
+
+If the original target definitions are retained exactly, the residual is uniquely fixed by `R = Delta F - S`. No algebraic relabelling can change these measured component magnitudes. Multiplying by kappa and undoing the conversion cannot improve this relative condition number. Correlated prediction errors could improve actual reconstruction, but the supplied data do not establish that correlation.
+
+A direct prediction of the net 40.034, with an assumed 1% relative error on that net target, would have absolute error 0.40034. That shows the distinction between predicting the net and reconstructing it from two large estimates; it does not prove the direct prediction is that accurate, or supply three information sources.
+
+There is a minor aggregation qualification: `200.4/8.02 = 24.9875`, not 20.5. A median of anchorwise ratios can differ from a ratio of separately reported medians. Neither version changes this argument.
+
+**A precise constructive candidate: masked conditional-information innovations of the complete-profile score.**
+
+This is a proposed replacement of route semantics, not a reinterpretation of the original targets. Its independent rationale is to attribute information about the actual decision score without forcing one predictor to undo the sum of many default-based counterfactuals.
+
+Let Y(x) be the exact sealed boundary-0 `B(x) - eta_ref E(x)` for a complete catalogue profile x, in bits. The sealed 10th-percentile fading convention remains inside the definition of Y. Conditional expectation below forecasts this already-defined scalar; it does not replace percentile scoring with mean fading, change eta_ref, or introduce a future objective.
+
+Define common information I0 as the actual information all arms must retain, including the legal query and mandatory coordinator inputs. It must not be artificially stripped to manufacture route gains. Define three additional blocks by provenance:
+
+| Replacement route | Information available at decision time | Predicted quantity and units |
+|---|---|---|
+| R1: local-link innovation | Current own-link observations and nominal own-link/action descriptors beyond I0 | Change in the conditional forecast of complete-profile F contributed by this information, in bits |
+| R2: temporal innovation | Already available history and nominal persistence forecasts at exactly the three sealed offsets, beyond common/local information | Further change in that same boundary-0 forecast, in bits |
+| R3: relational innovation | Available cross-link/resource information, such as beam-specific cross-gains, occupancy and activation descriptors for the queried assignment, beyond preceding information | Further change in that same forecast, in bits |
+
+Candidate assignments are known queries. Realised future fading, future measured survival, solved candidate outcomes, and realised-SINR oracle credit are not decision-time inputs. These are proposed provenance boundaries, not a verified field-level partition of the present schemas. If a mandatory common field or an earlier block already determines a proposed source, its conditional information contribution is zero. In particular, three-offset forecasts that add nothing about boundary-0 F cannot be made useful by silently changing the target to future reward.
+
+Fix the order local, temporal, relational by the interpretation above, before new outcome measurements. Use the existing authorised population/panel sampling law, not a distribution selected to improve signs. For each active-source subset J, set
+
+`Q_J(x) = E[Y(x) | I0, X_J]`,
+
+where X_J contains only the sources present in J. Start with `Q_empty`. Traverse active sources in the fixed order; if P is the set of active predecessors of route r, define
+
+`R_r''^J(x) = Q_(P union {r})(x) - Q_P(x)`.
+
+Absent routes contribute zero. The score telescopes:
+
+`Q_empty(x) + sum_(r in J) R_r''^J(x) = Q_J(x)`.
+
+This is a three-stage forecasting decomposition with a common forecast, not three artificial shares of a physical reward. Each stage has its own incremental information meaning. All three increments have the same units. A sealed kappa conversion could express them in the existing score units, but it is not the source of improved conditioning.
+
+Source ablation must propagate through the entire computation. With temporal information absent, the relational increment is `Q_{1,3} - Q_{1}`, not the full-system `Q_{1,2,3} - Q_{1,2}` with its temporal dependence intact. Preprocessing and candidate generation must also obey the declared information contract; unavoidable common legality information stays common. A simple zeroing of one full-system output is only a head knockout, not automatically this source ablation.
+
+Consequently, this construction requires an explicit policy/interface change: new route targets, input ownership, conditioning masks, training targets and combiner. It also requires a declared treatment of the present Phi/C2 shaping terms; it cannot claim numerical equivalence to their sum while replacing them with forecasts of F. Its rationale is fidelity to the sealed F target and information attribution, not a hoped-for route sign. It leaves the legal catalogue, served guard, objective, reporting, percentile and tie rule intact. It is not a drop-in checkpoint change. If “separately ablatable” is required to mean only zeroing fixed outputs while all others remain unchanged, this candidate does not satisfy that narrower interface without a declared change.
+
+**Derived on paper: the construction'"'s conditioning theorem and its limits.**
+
+Assume Y is square-integrable and the conditional forecasts are exact population projections. For a fixed subset J, its ordered innovations satisfy
+
+"'`E[R_r''^J | preceding information] = 0`,
+
+and different innovations are orthogonal in L2. For a fixed catalogue pair (x,y), included as a query in common information, define
+
+`D_r = R_r''^J(y) - R_r''^J(x)`.
+
+These pairwise innovations are also orthogonal, so
+
+`||sum_r D_r||_2''^2 = sum_r ||D_r||_2''^2`.
+
+For three nonzero routes, if each estimated pairwise innovation has error norm at most `epsilon ||D_r||_2`, then
+
+`||sum_r error_r||_2 <= epsilon sum_r ||D_r||_2`
+
+`<= sqrt(3) epsilon ||sum_r D_r||_2`.
+
+The amplification bound is `sqrt(3) = 1.73205`: 1% relative RMS errors give at most 1.73205% relative RMS error in the informative sum. This bound does not require independent errors. Including an estimated common-score difference as a fourth orthogonal term gives the analogous bound 2, under the same component-relative RMS assumptions.
+
+This removes forced cancellation in population variance: orthogonal increments add squared norms instead of being defined to cancel large unilateral benefits. It is a precise sense in which the construction is better conditioned than the default-sum residual representation.
+
+It is not a pointwise improvement theorem for the measured anchor. The 22.9853 figure is pointwise; 1.73205 is a population RMS bound under strong forecasting assumptions. Individual innovations can still nearly cancel on a particular row pair, estimated heads need not be orthogonal, and relative errors of the stipulated size are not guaranteed. Winner selection also conditions on an extreme among many rows; fixed-pair RMS control alone does not control that maximum or guarantee the argmax. I cannot infer new route values, or a new condition number for the 40.034 example, from the supplied totals.
+
+There is no distribution-free bounded relative condition number for every nontrivial three-term signed sum: `(t, -t + delta, 0)` has ratio approaching infinity as nonzero delta approaches zero. Thus “better conditioned everywhere for every near tie” would be too strong without further restrictions. The candidate offers a population theorem and a testable operational hypothesis, not that guarantee.
+
+**Derived on paper: how each replacement route can change selection.**
+
+For authentic source ablation, compare `Q_J` with `Q_(J without {r})`. The relevant source contribution to a row pair is
+
+`D_r,conditional = [Q_J(y)-Q_J(x)] - [Q_(J without {r})(y)-Q_(J without {r})(x)]`.
+
+If the without-source margin is -2 bits and this contribution is +3 bits, the with-source margin is +1 bit. This is an exact-binary64 winner switch in a two-row guarded catalogue. A conditional innovation can take +3 in one information state and a balancing negative value elsewhere, so the witness is compatible with its zero conditional mean.
+
+The witness applies separately to local, temporal and relational information. None is forced to vanish on single-user deviations, and none needs such a deviation to reach a multi-user row. For the original C3, the earlier 12/10 example already supplies the corresponding witness. The corrected requirement is therefore “can change the selected catalogue row and survive commitment,” not “can cause a first move.”
+
+These are existence proofs of a channel. They do not show that this catalogue has a suitable pair for every route, that those routes contain unique information, or that the switched commit improves reporting EE.
+
+**The strongest case against my constructive inclination.**
+
+The strongest “no” is not the withdrawn search argument. It is that a genuine third source may not exist for this task, the proposed conditioning improvement may be irrelevant at winning margins, and the remaining objective headroom may not support three material effects.
+
+If route names must retain their literal declared targets, C1 and C3 retain the measured cancellation by definition. If temporal inputs are determined by local/common geometry, their innovation is identically zero. If resource information is already in mandatory coordinator inputs, calling it a new source creates no unique information. If all admissible source effects are row-constant, no argmax changes. Even nonzero effects may be redundant, so FULL need not improve over every pair. Better prediction of boundary-0 F may have no positive effect on pooled 48-boundary EE. A single masked complete-score predictor with three input blocks could also fail the owner'"'s intended meaning of three learned routes unless the policy change is expressly declared.
+
+These are serious objections. For a particular authenticated information partition, "'`Q_J = Q_(J without {r})` almost surely would prove that source has no incremental Bayes forecasting contribution. For a fixed implemented scorer, identical rankings and identical downstream execution would prove no committed effect on that panel. If the original numerical targets cannot change, their residual is algebraically unique and its observed conditioning cannot be repaired by renaming.
+
+My answer is that none of those stronger premises has been established for every admissible replacement. The 2.1% Phi variance share is not an upper bound on predictability from decision-time information: geometry and resource inputs can predict physical bits, externalities and energy. The externality'"'s 0.0109 between-anchor share prevents dismissing it as an anchor-only intercept; it does not prove that it is unpredictable or uniquely predictable by R3. The unchanged-commit receipts do not distinguish a small score effect, missing context, redundancy, or a bridge problem. The orthogonal construction demonstrates mathematical possibility under stated assumptions, and catalogue argmax supplies the required influence channel.
+
+I can therefore answer the universal impossibility argument, but cannot answer the empirical objection that this system's three sources may lack sufficient unique decision value. That unresolved objection prevents an unconditional “yes” to the owner's complete requirement. It also does not justify a universal “no.”
+
+**Derived and inferred: what the new headroom does and does not establish.**
+
+The earlier suggestion that the demand cap might erase the measured assignment headroom is obsolete. The reported 9.8698% and 3.5590% gaps survive that numerator. These are gaps to endpoints found, not certified global-optimum gaps; they do not establish those endpoints are in the learned catalogue. A redesign that needs absent rows would require a separately declared catalogue policy change and is not part of this proposal.
+
+Headroom is not a budget of three independent gains. Routes may exploit the same configurations. Conversely, the stated ordering does not imply that three singleton percentage improvements must add arithmetically, so a small total gap is not by itself an impossibility proof. The oracle mode result is also not evidence of three sources and cannot be inserted into the decision-time inputs. Its causal measurement remains pending.
+
+For reporting, write pooled capped bits as C and pooled joules as E. With positive denominators,
+
+"'`EE_new > EE_old iff Delta C - EE_old Delta E > 0`.
+
+The sealed selector ranks boundary-0 `B - eta_ref E`, not this reporting contrast. A representation change does not remove differences in boundary aggregation, cap treatment or reference price. Therefore even an exact F ranking and genuine information gains cannot prove the required pooled-EE ordering. No loss value supplies that missing evidence.
+
+The shipped bounded gain-ratio surrogates do not validate either the original physical targets or the proposed complete-score forecasts. Faithful labels are necessary to assess those target claims. Their estimated 29 serial worker-hours do not establish that three useful routes are learnable, and I am not authorising or running their generation here.
+
+**Measurements and interpretation fixed before any new experiment.**
+
+The following specify evidence for the existing claims, not new scientific gates. They do not select a run by an observed result. Pending diagnostics should be reported as originally defined. Any changed policy must have its inputs, targets, neutralisation, scoring arithmetic and evaluation inventory declared before its outcomes are measured; failure must remain a reportable result.
+
+1. **Explain the existing zero-change receipts on the corrected path.** On the already fixed catalogue/panel, record row ID, changed-set size, legality/guard status, context presence, C1/C2 sum, actual C3 output, final binary64 score and tie ordering. For the additive winner x0, record each competitor'"'s additive gap and "'`R(y)-R(x0)`. This directly tests whether C3 crosses any winning margin; global C3 magnitude or additive spread alone is insufficient. Record both fixed-checkpoint knockout contrasts and independently trained factor-arm contrasts under their existing meanings. Trace model/checkpoint identity, selected assignment, bridge input, actual committed assignment and fallback reason. No rank crossing supports a ranking explanation on those cases; a rank crossing erased before commit points downstream. Context counts identify omitted support. None proves its cause in advance.
+
+2. **Authenticate information and targets for any declared replacement.** Enumerate every field, its timestamp, dependencies, common ownership and use under each mask. Establish whether temporal/relational information is already recoverable from common or earlier inputs. Record the same sealed complete-profile F targets, including percentile and units, under the already authorised data protocol. Compare prediction errors against these targets, not against the tanh corpus. An absent or redundant source rejects the claimed three-distinct-source interpretation for that design; three named networks are not sufficient evidence.
+
+3. **Measure conditioning on the fixed full catalogue.** Retain exact and predicted row scores and pairwise margins, route increments, absolute errors, error covariance, zero/near-zero margins, ties, winning gaps and argmax agreement. Report component-to-net ratios separately for rows and relevant row pairs. For the innovation candidate, report L2 orthogonality departures and errors of each conditional forecast, as well as the actual winning-margin behaviour. Do not call a lower RMS loss, a changed normalisation, or a small average error a successful EE contribution. If operational errors still arise from comparable cancellation and ranking instability, the claimed practical conditioning improvement is unsupported even if the population theorem remains true.
+
+4. **Resolve reporting semantics by the sealed specification.** Record boundary indices requested and actually integrated in both paths. Compare matched all-48-boundary requests and aligned per-boundary quantities, without selecting the implementation with better route signs. The known subset discrepancy is a semantic fact, not yet a blanket designation of a faulty or authoritative path. Preserve global authority as UNDETERMINED until specification evidence resolves it. Any change to sealed behaviour must be declared as policy, not presented as a convenient bug fix. Do not pool incomparable boundary sets into a route effect.
+
+5. **Evaluate precisely the owner'"'s contrasts under the existing reporting protocol.** Let P0 be the declared reference baseline and P_J the explicitly specified policy with active sources J. ALL_NEUTRAL_CONTROL remains P_empty under its own name; it is never relabelled P0. If “baseline plus route” is a different policy wrapper from a factorial singleton, that wrapper must be specified and measured explicitly. Compute EE as pooled capped committed bits divided by pooled committed joules over the 48 boundaries, with the sealed energy accounting, scoring and guard. Report each singleton's gain over P0, FULL against each pair, and every pair against ALL_NEUTRAL_CONTROL, plus matched source contrasts and commit differences. Treat the two provisioning rules separately according to their existing status; do not choose the favourable one after inspection.
+
+6. **Respect the actual checkpoint and experiment inventory.** The five-arm format covers FULL, the three pairs represented by DROP arms, and ALL_NEUTRAL_CONTROL. It does not supply the three singleton policies. The complete eight-subset claim therefore cannot be established from that five-arm inventory alone. Do not request an eight-arm sealed checkpoint or extend epochs to 3,000/9,000. Singleton evidence needs an explicitly declared evaluation/ablation extension with valid provenance, or an explicitly declared format change; neither is silently authorised by this design answer. Recomputed masked forecasts are not automatically equivalent to separately trained source-neutral arms. Five arms, 2,000 epochs and cadence 100 establish feasibility for the existing format only. No new training is proposed here.
+
+For the stated endpoint requirement, a nonpositive singleton gain, FULL failing to exceed a pair, or a pair failing to exceed ALL_NEUTRAL_CONTROL rejects that ordering for the evaluated design and panel, subject to the existing inference rules. About 1% singleton gains do not meet the owner's stated materiality requirement. No exact materiality threshold beyond that exclusion was supplied; use an already authorised definition if present, otherwise report effect sizes and leave borderline materiality unresolved. I will not invent a new threshold or scientific gate. Unchanged commits with matched accounting establish zero contribution on those cases. Passing source or conditioning diagnostics cannot replace passing the EE requirement.
+
+No TEST split, formula/sign/threshold/seed/horizon/coefficient tuning, altered acceptance rule, or outcome-selected rerun is part of this specification. It does not propose changing the sealed objective, cap, fading percentile, served guard or catalogue to make a route positive.
+
+**Conclusion after answering the opposing case.**
+
+For the original residual, condition (c) is not the binding obstruction: the corrected catalogue selector can use C3 immediately. Its observed zero decision effect remains an empirical question. Condition (b) remains a measured weakness of the fixed target representation. Neither fact proves that the general three-source requirement is impossible.
+
+For the proposed masked conditional-information innovations, (a) is precise at the information-contract level, (b) has a population conditioning theorem, and (c) has an explicit catalogue winner-switch witness. Actual field-level distinctness, operational conditioning and substantial committed pooled-EE effects are unestablished. I cannot honestly claim a completed admissible implementation satisfying all three, or prove that none exists.
+
+The system can currently support the narrower findings of a poorly conditioned declared decomposition, a corpus/target mismatch, zero observed C3 commitment effect on the stated receipts, and genuine demand-capped assignment headroom. A future fixed evaluation could support a useful total-score predictor, one or two effective sources, or the full three-source claim. The complete three-substantial-route result remains open, for empirical information and endpoint reasons—not because a learned arm cannot make its first move.
+EOF" in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+codex
+The draft gives a precise candidate with a population conditioning bound of √3 for three information increments, while making clear that this does not prove better behaviour at catalogue-winning margins. It also addresses a coverage gap: the five-arm checkpoint contains FULL, three pairs and the all-neutral control, so it cannot by itself establish the required singleton gains. I’ll check the final wording and print the complete file.
+exec
+/bin/bash -lc 'wc -l -w -c DECOMP-ASTRA-2026-09-10.md; git status --short' in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+  193  3992 28294 DECOMP-ASTRA-2026-09-10.md
+?? DECOMP-ASTRA-2026-09-10.md
+?? STRATEGIC-REVIEW-ASTRA-2026-09-10.md
+
+exec
+/bin/bash -lc 'cat DECOMP-ASTRA-2026-09-10.md' in /home/sat/mcrl-v025-strategic-astra-ws
+ succeeded in 0ms:
+**A better-conditioned three-source design is possible on paper under catalogue argmax, but achieving three substantial, separately attributable pooled-EE gains here remains open; my earlier first-move impossibility argument was wrong.**
+
+My inclination is now constructive: the corrected selector removes the supposed structural barrier to C3. That is a substantial revision, not merely a qualification. I can give a precise information-based construction and a conditioning theorem, but cannot establish its operational assumptions or the required EE effects from the supplied evidence. Below I give the strongest opposing case before reaching that conclusion.
+
+This answer supersedes my earlier DECOMP answer. The correction governs every statement below; the repeated first-improvement description and reachability argument in the older question are superseded. I ran no training, simulation, or evaluation. I used one Python process, under `nice -n 15`, for arithmetic. I changed only this requested answer file and did not modify `/home/sat/mcrl-leo-handover`. I did not read the other strategic review or seek the pending measurement's results.
+
+**Verified from code and supplied measurements.**
+
+I inspected the adjacent selector checkout. Its [pilot selection loop](/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1542) scores every legal catalogue configuration with the learned additive terms plus the interaction, when a context exists, and selects by descending score then lexicographic configuration ID. Its [ProfileSelector](/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/deployment.py:647) puts unilateral search in the S_UNI branch; the S3/S0 branch evaluates complete catalogue profiles with additive plus interaction. The generic loop retains the first equal-scoring profile, so its ordering contract matters; the pilot implements the specified lexical tie rule explicitly. I use the controller's corrected deployed contract, including that tie rule.
+
+The [learned-arm inventory](/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/learner.py:28) contains FULL, three DROP arms, and ALL_NEUTRAL_CONTROL. [Synthetic routing](/home/sat/mcrl-v025-selector-ws/src/mcrl/stagec_v025/synthetic.py:372) sends learned arms to S3. The receipt inventory separately identifies S0 and S_UNI as supportive comparators. This corroborates the correction; it does not authenticate every reporting bridge.
+
+An additional code detail narrows one hypothesis: [pilot context construction](/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py:1510) creates a context for every catalogue configuration whose recorded changed set has size at least two. Thus context omission for empty/singleton rows is structural in this loop. Whether most actual rows fall into those categories, or another bridge omits contexts, still requires counts. I did not measure them.
+
+I accept as controller-supplied measurements, without independently reproducing them:
+
+- DROP_C3 changed zero proposed assignments at all three anchors; FULL and DROP_C3 committed byte-identical assignments in the r8 smoke under both provisioning rules. These remain unexplained. The known provisioning bridge defect is a candidate explanation, not an established explanation of every receipt.
+- The decomposition example is `480.113 - 440.079 = 40.034`. The C1 variance shares and the provenance of all 176,223 surrogate-labelled source rows stand.
+- Demand-capped assignment headroom survives: the nearest-start reference is 9.8698% below the best endpoint found under SEALED and 3.5590% below it under MARGIN_Q. SEALED reaches the 1.504 Gbit user-anchor cap nowhere; MARGIN_Q reaches it for 552/800 user-anchors.
+- Realised-SINR mode crediting gives +248.86% demand-capped at identical transmit power. It is an oracle, not evidence that a causal decision-time policy attains that gain.
+- Scalar `evaluate` integrates all 48 boundaries regardless of `boundary_indices`; `evaluate_many` honours the subset. Their disagreement is mainly semantic. Global path authority remains UNDETERMINED.
+- Five learned arms, 2,000 epochs, cadence 100 round-trip through the sealed checkpoint format; resume is bit-exact. Eight arms fail, and 3,000/9,000 epochs fail with source-cursor drift. These are implementation constraints, not evidence about EE.
+
+**Derived on paper: the actual decision-influence condition.**
+
+Let K be the same guard-admissible catalogue for a comparison. Let A(x) be the combined C1/C2 score and R(x) the C3 score actually supplied to the selector, including zero where the implementation omits it. Let x0 win without C3. A competitor y defeats x0 with C3 when
+
+`R(y) - R(x0) > A(x0) - A(y)`,
+
+or when equality holds and y precedes x0 under the sealed tie rule. In implementation, the decisive comparison is between the final binary64 scores; this real-arithmetic inequality describes the mechanism away from rounding-sensitive ties.
+
+There is no intermediate profile and no first move. A zero residual on singletons imposes no restriction on the residual difference between two multi-user catalogue rows. C3 can also change the winner by penalising the additive winner more heavily than a competitor; it need not give anything a positive bonus.
+
+For example, with two admissible multi-user rows:
+
+| Row | Additive | C3 | Total |
+|---|---:|---:|---:|
+| x | 12 | -4 | 8 |
+| y | 10 | -1 | 9 |
+
+The additive selector picks x; the full selector picks y. All numbers are exactly representable in binary64. This example is compatible with a residual that is identically zero on every singleton. It disproves my previous claimed learned-arm reachability obstruction.
+
+The same margin-crossing condition applies to any route. For comparisons between separately trained factor arms, the additive scores may also change: the clean inequality above isolates C3 at fixed other scores. It must not be mistaken for a complete explanation of an independently trained FULL-versus-DROP contrast.
+
+A different winner can become a different commit if it survives the unchanged guard, deadline and downstream commit machinery. A later fallback can erase the difference. Catalogue reachability therefore establishes a causal channel, not an observed committed contribution.
+
+**Derived on paper: what remains poorly conditioned.**
+
+For independently approximated components S and R, each with relative error bounded by epsilon,
+
+`|error(S+R)| / |S+R| <= epsilon (|S|+|R|)/|S+R|`.
+
+Here the componentwise condition number is
+
+`(480.113 + 440.079)/40.034 = 22.9852625`.
+
+At 1% component errors the worst-case absolute error is `9.20192`, or `22.9853%` of the reconstructed total. With exact C1 and a 1% residual error, it is `4.40079`, or `10.9926%`. Independent zero-mean errors with equal relative RMS size would give amplification `16.2684`; those error assumptions are illustrative, not measured.
+
+This is a prediction-error sensitivity calculation. Binary64 subtraction alone is not plausibly a 23% error mechanism. Nor is 40.034 necessarily a winner-versus-runner-up margin. Catalogue rankings depend on differences between rows, so anchor-common errors cancel, while row-varying errors may overwhelm much smaller margins. The required operational quantities are pairwise score errors and catalogue gaps.
+
+If the original target definitions are retained exactly, the residual is uniquely fixed by `R = Delta F - S`. No algebraic relabelling can change these measured component magnitudes. Multiplying by kappa and undoing the conversion cannot improve this relative condition number. Correlated prediction errors could improve actual reconstruction, but the supplied data do not establish that correlation.
+
+A direct prediction of the net 40.034, with an assumed 1% relative error on that net target, would have absolute error 0.40034. That shows the distinction between predicting the net and reconstructing it from two large estimates; it does not prove the direct prediction is that accurate, or supply three information sources.
+
+There is a minor aggregation qualification: `200.4/8.02 = 24.9875`, not 20.5. A median of anchorwise ratios can differ from a ratio of separately reported medians. Neither version changes this argument.
+
+**A precise constructive candidate: masked conditional-information innovations of the complete-profile score.**
+
+This is a proposed replacement of route semantics, not a reinterpretation of the original targets. Its independent rationale is to attribute information about the actual decision score without forcing one predictor to undo the sum of many default-based counterfactuals.
+
+Let Y(x) be the exact sealed boundary-0 `B(x) - eta_ref E(x)` for a complete catalogue profile x, in bits. The sealed 10th-percentile fading convention remains inside the definition of Y. Conditional expectation below forecasts this already-defined scalar; it does not replace percentile scoring with mean fading, change eta_ref, or introduce a future objective.
+
+Define common information I0 as the actual information all arms must retain, including the legal query and mandatory coordinator inputs. It must not be artificially stripped to manufacture route gains. Define three additional blocks by provenance:
+
+| Replacement route | Information available at decision time | Predicted quantity and units |
+|---|---|---|
+| R1: local-link innovation | Current own-link observations and nominal own-link/action descriptors beyond I0 | Change in the conditional forecast of complete-profile F contributed by this information, in bits |
+| R2: temporal innovation | Already available history and nominal persistence forecasts at exactly the three sealed offsets, beyond common/local information | Further change in that same boundary-0 forecast, in bits |
+| R3: relational innovation | Available cross-link/resource information, such as beam-specific cross-gains, occupancy and activation descriptors for the queried assignment, beyond preceding information | Further change in that same forecast, in bits |
+
+Candidate assignments are known queries. Realised future fading, future measured survival, solved candidate outcomes, and realised-SINR oracle credit are not decision-time inputs. These are proposed provenance boundaries, not a verified field-level partition of the present schemas. If a mandatory common field or an earlier block already determines a proposed source, its conditional information contribution is zero. In particular, three-offset forecasts that add nothing about boundary-0 F cannot be made useful by silently changing the target to future reward.
+
+Fix the order local, temporal, relational by the interpretation above, before new outcome measurements. Use the existing authorised population/panel sampling law, not a distribution selected to improve signs. For each active-source subset J, set
+
+`Q_J(x) = E[Y(x) | I0, X_J]`,
+
+where X_J contains only the sources present in J. Start with `Q_empty`. Traverse active sources in the fixed order; if P is the set of active predecessors of route r, define
+
+`R_r^J(x) = Q_(P union {r})(x) - Q_P(x)`.
+
+Absent routes contribute zero. The score telescopes:
+
+`Q_empty(x) + sum_(r in J) R_r^J(x) = Q_J(x)`.
+
+This is a three-stage forecasting decomposition with a common forecast, not three artificial shares of a physical reward. Each stage has its own incremental information meaning. All three increments have the same units. A sealed kappa conversion could express them in the existing score units, but it is not the source of improved conditioning.
+
+Source ablation must propagate through the entire computation. With temporal information absent, the relational increment is `Q_{1,3} - Q_{1}`, not the full-system `Q_{1,2,3} - Q_{1,2}` with its temporal dependence intact. Preprocessing and candidate generation must also obey the declared information contract; unavoidable common legality information stays common. A simple zeroing of one full-system output is only a head knockout, not automatically this source ablation.
+
+Consequently, this construction requires an explicit policy/interface change: new route targets, input ownership, conditioning masks, training targets and combiner. It also requires a declared treatment of the present Phi/C2 shaping terms; it cannot claim numerical equivalence to their sum while replacing them with forecasts of F. Its rationale is fidelity to the sealed F target and information attribution, not a hoped-for route sign. It leaves the legal catalogue, served guard, objective, reporting, percentile and tie rule intact. It is not a drop-in checkpoint change. If “separately ablatable” is required to mean only zeroing fixed outputs while all others remain unchanged, this candidate does not satisfy that narrower interface without a declared change.
+
+**Derived on paper: the construction's conditioning theorem and its limits.**
+
+Assume Y is square-integrable and the conditional forecasts are exact population projections. For a fixed subset J, its ordered innovations satisfy
+
+`E[R_r^J | preceding information] = 0`,
+
+and different innovations are orthogonal in L2. For a fixed catalogue pair (x,y), included as a query in common information, define
+
+`D_r = R_r^J(y) - R_r^J(x)`.
+
+These pairwise innovations are also orthogonal, so
+
+`||sum_r D_r||_2^2 = sum_r ||D_r||_2^2`.
+
+For three nonzero routes, if each estimated pairwise innovation has error norm at most `epsilon ||D_r||_2`, then
+
+`||sum_r error_r||_2 <= epsilon sum_r ||D_r||_2`
+
+`<= sqrt(3) epsilon ||sum_r D_r||_2`.
+
+The amplification bound is `sqrt(3) = 1.73205`: 1% relative RMS errors give at most 1.73205% relative RMS error in the informative sum. This bound does not require independent errors. Including an estimated common-score difference as a fourth orthogonal term gives the analogous bound 2, under the same component-relative RMS assumptions.
+
+This removes forced cancellation in population variance: orthogonal increments add squared norms instead of being defined to cancel large unilateral benefits. It is a precise sense in which the construction is better conditioned than the default-sum residual representation.
+
+It is not a pointwise improvement theorem for the measured anchor. The 22.9853 figure is pointwise; 1.73205 is a population RMS bound under strong forecasting assumptions. Individual innovations can still nearly cancel on a particular row pair, estimated heads need not be orthogonal, and relative errors of the stipulated size are not guaranteed. Winner selection also conditions on an extreme among many rows; fixed-pair RMS control alone does not control that maximum or guarantee the argmax. I cannot infer new route values, or a new condition number for the 40.034 example, from the supplied totals.
+
+There is no distribution-free bounded relative condition number for every nontrivial three-term signed sum: `(t, -t + delta, 0)` has ratio approaching infinity as nonzero delta approaches zero. Thus “better conditioned everywhere for every near tie” would be too strong without further restrictions. The candidate offers a population theorem and a testable operational hypothesis, not that guarantee.
+
+**Derived on paper: how each replacement route can change selection.**
+
+For authentic source ablation, compare `Q_J` with `Q_(J without {r})`. The relevant source contribution to a row pair is
+
+`D_r,conditional = [Q_J(y)-Q_J(x)] - [Q_(J without {r})(y)-Q_(J without {r})(x)]`.
+
+If the without-source margin is -2 bits and this contribution is +3 bits, the with-source margin is +1 bit. This is an exact-binary64 winner switch in a two-row guarded catalogue. A conditional innovation can take +3 in one information state and a balancing negative value elsewhere, so the witness is compatible with its zero conditional mean.
+
+The witness applies separately to local, temporal and relational information. None is forced to vanish on single-user deviations, and none needs such a deviation to reach a multi-user row. For the original C3, the earlier 12/10 example already supplies the corresponding witness. The corrected requirement is therefore “can change the selected catalogue row and survive commitment,” not “can cause a first move.”
+
+These are existence proofs of a channel. They do not show that this catalogue has a suitable pair for every route, that those routes contain unique information, or that the switched commit improves reporting EE.
+
+**The strongest case against my constructive inclination.**
+
+The strongest “no” is not the withdrawn search argument. It is that a genuine third source may not exist for this task, the proposed conditioning improvement may be irrelevant at winning margins, and the remaining objective headroom may not support three material effects.
+
+If route names must retain their literal declared targets, C1 and C3 retain the measured cancellation by definition. If temporal inputs are determined by local/common geometry, their innovation is identically zero. If resource information is already in mandatory coordinator inputs, calling it a new source creates no unique information. If all admissible source effects are row-constant, no argmax changes. Even nonzero effects may be redundant, so FULL need not improve over every pair. Better prediction of boundary-0 F may have no positive effect on pooled 48-boundary EE. A single masked complete-score predictor with three input blocks could also fail the owner's intended meaning of three learned routes unless the policy change is expressly declared.
+
+These are serious objections. For a particular authenticated information partition, `Q_J = Q_(J without {r})` almost surely would prove that source has no incremental Bayes forecasting contribution. For a fixed implemented scorer, identical rankings and identical downstream execution would prove no committed effect on that panel. If the original numerical targets cannot change, their residual is algebraically unique and its observed conditioning cannot be repaired by renaming.
+
+My answer is that none of those stronger premises has been established for every admissible replacement. The 2.1% Phi variance share is not an upper bound on predictability from decision-time information: geometry and resource inputs can predict physical bits, externalities and energy. The externality's 0.0109 between-anchor share prevents dismissing it as an anchor-only intercept; it does not prove that it is unpredictable or uniquely predictable by R3. The unchanged-commit receipts do not distinguish a small score effect, missing context, redundancy, or a bridge problem. The orthogonal construction demonstrates mathematical possibility under stated assumptions, and catalogue argmax supplies the required influence channel.
+
+I can therefore answer the universal impossibility argument, but cannot answer the empirical objection that this system's three sources may lack sufficient unique decision value. That unresolved objection prevents an unconditional “yes” to the owner's complete requirement. It also does not justify a universal “no.”
+
+**Derived and inferred: what the new headroom does and does not establish.**
+
+The earlier suggestion that the demand cap might erase the measured assignment headroom is obsolete. The reported 9.8698% and 3.5590% gaps survive that numerator. These are gaps to endpoints found, not certified global-optimum gaps; they do not establish those endpoints are in the learned catalogue. A redesign that needs absent rows would require a separately declared catalogue policy change and is not part of this proposal.
+
+Headroom is not a budget of three independent gains. Routes may exploit the same configurations. Conversely, the stated ordering does not imply that three singleton percentage improvements must add arithmetically, so a small total gap is not by itself an impossibility proof. The oracle mode result is also not evidence of three sources and cannot be inserted into the decision-time inputs. Its causal measurement remains pending.
+
+For reporting, write pooled capped bits as C and pooled joules as E. With positive denominators,
+
+`EE_new > EE_old iff Delta C - EE_old Delta E > 0`.
+
+The sealed selector ranks boundary-0 `B - eta_ref E`, not this reporting contrast. A representation change does not remove differences in boundary aggregation, cap treatment or reference price. Therefore even an exact F ranking and genuine information gains cannot prove the required pooled-EE ordering. No loss value supplies that missing evidence.
+
+The shipped bounded gain-ratio surrogates do not validate either the original physical targets or the proposed complete-score forecasts. Faithful labels are necessary to assess those target claims. Their estimated 29 serial worker-hours do not establish that three useful routes are learnable, and I am not authorising or running their generation here.
+
+**Measurements and interpretation fixed before any new experiment.**
+
+The following specify evidence for the existing claims, not new scientific gates. They do not select a run by an observed result. Pending diagnostics should be reported as originally defined. Any changed policy must have its inputs, targets, neutralisation, scoring arithmetic and evaluation inventory declared before its outcomes are measured; failure must remain a reportable result.
+
+1. **Explain the existing zero-change receipts on the corrected path.** On the already fixed catalogue/panel, record row ID, changed-set size, legality/guard status, context presence, C1/C2 sum, actual C3 output, final binary64 score and tie ordering. For the additive winner x0, record each competitor's additive gap and `R(y)-R(x0)`. This directly tests whether C3 crosses any winning margin; global C3 magnitude or additive spread alone is insufficient. Record both fixed-checkpoint knockout contrasts and independently trained factor-arm contrasts under their existing meanings. Trace model/checkpoint identity, selected assignment, bridge input, actual committed assignment and fallback reason. No rank crossing supports a ranking explanation on those cases; a rank crossing erased before commit points downstream. Context counts identify omitted support. None proves its cause in advance.
+
+2. **Authenticate information and targets for any declared replacement.** Enumerate every field, its timestamp, dependencies, common ownership and use under each mask. Establish whether temporal/relational information is already recoverable from common or earlier inputs. Record the same sealed complete-profile F targets, including percentile and units, under the already authorised data protocol. Compare prediction errors against these targets, not against the tanh corpus. An absent or redundant source rejects the claimed three-distinct-source interpretation for that design; three named networks are not sufficient evidence.
+
+3. **Measure conditioning on the fixed full catalogue.** Retain exact and predicted row scores and pairwise margins, route increments, absolute errors, error covariance, zero/near-zero margins, ties, winning gaps and argmax agreement. Report component-to-net ratios separately for rows and relevant row pairs. For the innovation candidate, report L2 orthogonality departures and errors of each conditional forecast, as well as the actual winning-margin behaviour. Do not call a lower RMS loss, a changed normalisation, or a small average error a successful EE contribution. If operational errors still arise from comparable cancellation and ranking instability, the claimed practical conditioning improvement is unsupported even if the population theorem remains true.
+
+4. **Resolve reporting semantics by the sealed specification.** Record boundary indices requested and actually integrated in both paths. Compare matched all-48-boundary requests and aligned per-boundary quantities, without selecting the implementation with better route signs. The known subset discrepancy is a semantic fact, not yet a blanket designation of a faulty or authoritative path. Preserve global authority as UNDETERMINED until specification evidence resolves it. Any change to sealed behaviour must be declared as policy, not presented as a convenient bug fix. Do not pool incomparable boundary sets into a route effect.
+
+5. **Evaluate precisely the owner's contrasts under the existing reporting protocol.** Let P0 be the declared reference baseline and P_J the explicitly specified policy with active sources J. ALL_NEUTRAL_CONTROL remains P_empty under its own name; it is never relabelled P0. If “baseline plus route” is a different policy wrapper from a factorial singleton, that wrapper must be specified and measured explicitly. Compute EE as pooled capped committed bits divided by pooled committed joules over the 48 boundaries, with the sealed energy accounting, scoring and guard. Report each singleton's gain over P0, FULL against each pair, and every pair against ALL_NEUTRAL_CONTROL, plus matched source contrasts and commit differences. Treat the two provisioning rules separately according to their existing status; do not choose the favourable one after inspection.
+
+6. **Respect the actual checkpoint and experiment inventory.** The five-arm format covers FULL, the three pairs represented by DROP arms, and ALL_NEUTRAL_CONTROL. It does not supply the three singleton policies. The complete eight-subset claim therefore cannot be established from that five-arm inventory alone. Do not request an eight-arm sealed checkpoint or extend epochs to 3,000/9,000. Singleton evidence needs an explicitly declared evaluation/ablation extension with valid provenance, or an explicitly declared format change; neither is silently authorised by this design answer. Recomputed masked forecasts are not automatically equivalent to separately trained source-neutral arms. Five arms, 2,000 epochs and cadence 100 establish feasibility for the existing format only. No new training is proposed here.
+
+For the stated endpoint requirement, a nonpositive singleton gain, FULL failing to exceed a pair, or a pair failing to exceed ALL_NEUTRAL_CONTROL rejects that ordering for the evaluated design and panel, subject to the existing inference rules. About 1% singleton gains do not meet the owner's stated materiality requirement. No exact materiality threshold beyond that exclusion was supplied; use an already authorised definition if present, otherwise report effect sizes and leave borderline materiality unresolved. I will not invent a new threshold or scientific gate. Unchanged commits with matched accounting establish zero contribution on those cases. Passing source or conditioning diagnostics cannot replace passing the EE requirement.
+
+No TEST split, formula/sign/threshold/seed/horizon/coefficient tuning, altered acceptance rule, or outcome-selected rerun is part of this specification. It does not propose changing the sealed objective, cap, fading percentile, served guard or catalogue to make a route positive.
+
+**Conclusion after answering the opposing case.**
+
+For the original residual, condition (c) is not the binding obstruction: the corrected catalogue selector can use C3 immediately. Its observed zero decision effect remains an empirical question. Condition (b) remains a measured weakness of the fixed target representation. Neither fact proves that the general three-source requirement is impossible.
+
+For the proposed masked conditional-information innovations, (a) is precise at the information-contract level, (b) has a population conditioning theorem, and (c) has an explicit catalogue winner-switch witness. Actual field-level distinctness, operational conditioning and substantial committed pooled-EE effects are unestablished. I cannot honestly claim a completed admissible implementation satisfying all three, or prove that none exists.
+
+The system can currently support the narrower findings of a poorly conditioned declared decomposition, a corpus/target mismatch, zero observed C3 commitment effect on the stated receipts, and genuine demand-capped assignment headroom. A future fixed evaluation could support a useful total-score predictor, one or two effective sources, or the full three-source claim. The complete three-substantial-route result remains open, for empirical information and endpoint reasons—not because a learned arm cannot make its first move.
+
+codex
+Written to [DECOMP-ASTRA-2026-09-10.md](/home/sat/mcrl-v025-strategic-astra-ws/DECOMP-ASTRA-2026-09-10.md) and printed in full to stdout.
+
+The corrected answer withdraws the first-move obstruction, develops a conditional-information decomposition, and leaves substantial three-route EE gains unresolved. No training or code changes; one arithmetic-only Python process under `nice -n 15`.
+tokens used
+63,223
