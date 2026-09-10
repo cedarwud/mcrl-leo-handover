@@ -100,3 +100,49 @@ ranking. Wall 2 is about the archive versus the effect size.
 
 **Options 1 and 2 are experiments. Option 3 is a decision. Option 4 is a design change.** None
 of them is training, and training does not become informative until at least one is settled.
+
+---
+
+# ERRATUM to this record — 2026-09-10 11:35 UTC, before it was sent to any reviewer
+
+**Section 1's amplification argument is withdrawn.** It used
+`+480.113 / -440.079 / +40.034` and the `22.985x` figure from
+`SELECTOR-DIAGNOSIS-2026-09-09.md`. `PATH-ARTEFACT-CHECKS-2026-09-10.md`, produced three hours
+before this record, found that exact cancellation to be **inside the sampled mixed-path
+artefact envelope**: over eight sampled anchors `|99*epsilon|` spans `127.2` to `2107.1` kappa,
+`|Psi| = 440.079` sits inside it, and step 16 matches both magnitude (`-440.93`) and sign.
+Its verdict: the `22.99x` conditioning figure is **not established**.
+
+**I recorded that, and then used the same numbers as the basis of a wall three hours later.**
+This is the same failure as the day's other retractions: a finding that was present, correct
+and filed, and not applied.
+
+**What survives, on path-clean evidence only.**
+
+`8.02` (best single-user move), `200.4` (summed surpluses over 82 users) and the `20.5x` ratio
+come from a different probe — `TARGET-DESIGN-2026-09-10.md` — which **explicitly corrected the
+path mixing**: *"I corrected the probe to force both through `evaluate_many`. All numbers below
+are from the corrected run."* It verified its gauge exactly: the target at the base action is
+`0.0` in all 2,400 groups. Those numbers are clean.
+
+**But the strongest form of wall 1 needs no derived arithmetic at all:**
+
+> `C1REAL`: the sealed head's held-out **top-1 accuracy is `0.1711`**; the **constant
+> predictor's floor is `0.1716`**. The flexible high-capacity model on the same inputs reaches
+> `0.1854`.
+
+**A head whose argmax agrees with the truth no more often than a constant predictor cannot
+systematically select better configurations.** That is a direct measurement, path-clean, with
+no conditioning argument, no amplification factor and no cancellation.
+
+**Wall 2 is untouched.** It rests on the project's own power analysis and the archive count,
+neither of which involves the evaluation path.
+
+**Revised statement of the two walls:**
+
+1. **Selection accuracy.** The declared C1 head's argmax is at the constant-predictor floor,
+   and a high-capacity model on the same inputs barely moves it. *(A repaired schema, effective
+   dimension 12 -> 14, is being re-tested.)*
+2. **Detectability.** The contract states `+1%` is undetectable with ~160 dates under any seed
+   count at date SD ~5%; the band being chased is `+0.899%` to `+1.29%`; the archive holds 166
+   dates; the learner has one.
