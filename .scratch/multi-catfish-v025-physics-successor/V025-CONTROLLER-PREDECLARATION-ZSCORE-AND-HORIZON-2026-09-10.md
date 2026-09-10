@@ -92,3 +92,59 @@ of the form "we can just rerun it" is about the cheap half.
   on a hunch.
 - **Longer horizon rerun:** held until the 500-step contrasts exist, so that the horizon change
   is justified by LRSWEEP's pre-declared rule and not by a disliked outcome.
+
+---
+
+## Amendment 1 to this document — 2026-09-10 ~15:35Z, still before any contrast exists
+
+**Item E's reasoning about the horizon was backwards, and I am reversing it.**
+
+E said: hold the longer-horizon rerun "until the 500-step contrasts exist, so that the horizon
+change is justified by LRSWEEP's pre-declared rule and not by a disliked outcome."
+
+That gets it exactly the wrong way round. LRSWEEP's rule was **already** fixed before it ran,
+and LRSWEEP computed **no EE**. Acting on it **now** is acting on a criterion that predates
+every outcome. Waiting until the 500-step contrast lands and *then* extending would apply the
+same rule **after** seeing the result — which is the contaminated version, not the clean one.
+
+**Deciding the horizon now is strictly cleaner than deciding it later.** Held-then-acted is
+the pattern I have to avoid, not the pattern I should follow.
+
+### What I will not do
+
+**Pick a bigger number.** "500 is inadequate, so use 2000" is choosing a horizon by feel.
+LRSWEEP does not say what horizon suffices, and its C3 loss was still moving 6.89-8.96% per
+100 steps at step 500, so 2000 may not suffice either.
+
+### What replaces it
+
+**Make the horizon a stopping rule against LRSWEEP's already-declared criterion**, not a
+literal: run with cadence-100 checkpoints to a stated cap, and take the **first checkpoint
+that satisfies the pre-declared stability condition** (objective within 1%, level R2 within
+0.01, ordering and top-1 within 0.005, over the preceding 100 steps). If no checkpoint in the
+run satisfies it, the run reports **non-convergent**, and no head from it is used to state that
+a route is dead.
+
+### The prior question, dispatched as `HORIZON`
+
+Before committing the compute, establish **which lever is actually needed**, because the two
+differ by more than an order of magnitude in cost:
+
+- **more steps** — safe, changes nothing procedurally; at ~11 min per 500-step seed, a
+  4,000-step 16-seed run is roughly **23 hours**, which does not fit alongside the current
+  board;
+- **minibatching** — the runner currently takes **one full-batch Adam update per epoch**, so
+  36,360 rows produce **one** update. Minibatches of 256 would give ~142 updates per pass and
+  reach in one pass what the present configuration reaches in 142 epochs. This is a **training
+  procedure change**, not a hyperparameter, and it must be declared as one.
+
+`HORIZON` runs one seed and one route both ways, applies LRSWEEP's existing rule to both, and
+reports which reaches admissibility and at what wall cost. **It selects nothing on EE and
+computes no EE.**
+
+### Standing consequence for tonight's two runs
+
+They continue to completion. They remain a valid **paired** comparison at equal budget. If
+`HORIZON` shows the present configuration cannot reach admissibility at any practical horizon,
+then the correct reading of tonight's runs is **"the optimisation was under-run"**, and that
+reading was fixed here, before the contrasts were seen.
