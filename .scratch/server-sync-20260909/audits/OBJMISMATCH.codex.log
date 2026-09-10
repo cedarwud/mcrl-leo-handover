@@ -6412,3 +6412,221 @@ codex
 The benchmark is still running after one minute for 2,701 configurations × 48 boundaries. That confirms the expensive part is exactly the requested horizon substitution, not tape construction or receipt plumbing; I’ll retain resumable per-anchor output and expose both physical-boundary counts and measured wall cost in the final report.
 codex
 At three minutes, the first full-neighborhood horizon evaluation has not completed. I’m letting this bounded pilot finish so the implementation can report an honest cost multiplier and so I can choose a worker layout that stays within the four-worker cap without creating avoidable memory pressure.
+codex
+Five minutes for one 2,700-row scan implies a naive objective-consistent convergence replay would be many hours even with four workers. I’m checking whether the dense evaluator’s native 256-row chunks can be checkpointed/reused without changing candidate order or strict acceptance; that is an implementation optimization only, not an objective or rule change.
+exec
+/bin/bash -lc "rg -n 'previous_(boundary|rate|decode|energy)' sealed/src/mcrl/physics_v025/batch.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+244:        previous_rate = previous_decode = previous_energy = None
+246:        previous_boundary = None
+509:            if previous_rate is not None and previous_boundary is not None:
+510:                elapsed_s = (boundary - previous_boundary) * D2_MEASUREMENT_STEP_S
+511:                bits[low:high] += 0.5 * (previous_rate + boundary_rate) * elapsed_s
+513:                    previous_decode.astype(np.float64) + boundary_decode.astype(np.float64)
+515:                components[low:high] += 0.5 * (previous_energy + boundary_energy) * elapsed_s
+516:            previous_rate = boundary_rate
+517:            previous_decode = boundary_decode
+518:            previous_energy = boundary_energy
+519:            previous_boundary = boundary
+523:        if len(boundary_indices) == 1 and previous_rate is not None:
+525:            bits[low:high] += previous_rate * duration_s
+526:            decoding[low:high] += previous_decode.astype(np.float64) * duration_s
+527:            components[low:high] += previous_energy * duration_s
+
+codex
+The pilot has crossed nine minutes. The key reusable optimization is now clear: a 48-boundary endpoint is an integral over 47 adjacent intervals, so horizon work can be divided across workers with shared endpoints and deterministically recombined. I’ll validate that decomposition against the sealed full evaluator before using it; if it is not numerically identical enough to preserve every strict comparison, the script will fall back to the full route and record that cost.
+ exited 130 in 793304ms:
+candidates 2700
+
+exec
+/bin/bash -lc "sed -n '1,260p' tests/harness/test_reseeded_span.py && sed -n '1,180p' harness/variants/v_margin_q.py" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+import json
+import math
+from pathlib import Path
+
+from harness.reseeded_span import (
+    ARMS,
+    REPO,
+    _algorithm_digest,
+    _canonical_digest,
+    build_report,
+)
+
+
+PATHS = {
+    "SEALED": REPO / "receipts/reseeded-span-sealed.json",
+    "MARGIN_Q": REPO / "receipts/reseeded-span-margin-q.json",
+}
+
+
+def receipts():
+    return {
+        name: json.loads(path.read_text(encoding="ascii"))
+        for name, path in PATHS.items()
+    }
+
+
+def test_receipts_are_complete_self_consistent_and_use_current_algorithm():
+    for name, receipt in receipts().items():
+        assert receipt["variant"] == name
+        assert receipt["complete"] is True
+        assert len(receipt["anchors"]) == 20
+        assert receipt["receipt_sha256"] == _canonical_digest(receipt)
+        assert receipt["reseeded_span_algorithm_sha256"] == _algorithm_digest()
+        assert receipt["first_improvement_implementation_sha256"] == (
+            "003bdee1df908fddf652f2f8069c31a6297a7f7178bbb83338d09b3f4add9928"
+        )
+
+
+def test_pooled_metrics_pairings_and_decomposition_recompute():
+    for receipt in receipts().values():
+        summary = receipt["summary"]
+        for arm in ARMS:
+            rows = [row["committed"][arm] for row in receipt["anchors"]]
+            bits = math.fsum(row["bits"] for row in rows)
+            joules = math.fsum(row["joules"] for row in rows)
+            pooled = summary["pooled"][arm]
+            assert pooled["bits"] == bits
+            assert pooled["joules"] == joules
+            assert pooled["ee_bit_per_j"] == bits / joules
+            assert pooled["served_count_sum"] == sum(row["served_count"] for row in rows)
+            assert pooled["rate_target_attained_count_sum"] == sum(
+                row["rate_target_attained_count"] for row in rows
+            )
+
+        for pairing in summary["pairings"].values():
+            over = summary["pooled"][pairing["over"]]["ee_bit_per_j"]
+            base = summary["pooled"][pairing["base"]]["ee_bit_per_j"]
+            assert pairing["pooled_relative_ee_gain"] == over / base - 1.0
+            values = [row["relative_ee_gain"] for row in pairing["per_anchor"]]
+            assert pairing["negative_anchor_count"] == sum(value < 0 for value in values)
+            assert pairing["zero_anchor_count"] == sum(value == 0 for value in values)
+            assert pairing["positive_anchor_count"] == sum(value > 0 for value in values)
+
+        decomposition = summary[
+            "archived_span_decomposition_additive_relative_to_U_best"
+        ]
+        terms = (
+            decomposition["search_order_U_first_minus_U_best"],
+            decomposition["correct_coordination_J_from_first_minus_U_first"],
+            decomposition["joint_seed_effect_J_from_best_minus_J_from_first"],
+        )
+        assert math.isclose(
+            sum(terms),
+            decomposition["sum_equals_archived_span"],
+            rel_tol=0.0,
+            abs_tol=2e-15,
+        )
+
+
+def test_selection_controls_and_report_are_exact():
+    data = receipts()
+    for receipt in data.values():
+        assert receipt["summary"]["joint_arms_same_configuration_count"] == 0
+        for row in receipt["anchors"]:
+            for arm in ("J_from_best", "J_from_first"):
+                selected = row["joint_selection"][arm]
+                assert selected["guard_reference"] == (
+                    "BASELINE selection-time served_PHY count"
+                )
+                assert selected["strict_selection_objective_improvement"] is True
+                assert selected["selected_coalition_size"] >= 2
+
+    rendered = build_report(PATHS["SEALED"], PATHS["MARGIN_Q"])
+    report_path = REPO / "RESEEDED-SPAN-2026-09-10.md"
+    assert report_path.read_text(encoding="utf-8") == rendered
+    assert rendered.startswith(
+        "**Correctly paired coordination span (`J_from_first` over `U_first`): "
+        "`SEALED` +4.6046% (1/20 negative anchors); "
+        "`MARGIN_Q` +1.2913% (6/20 negative anchors).**"
+    )
+"""MARGIN_Q -- provision against Gamma divided by the judged fading quantile.
+
+The sealed path provisions transmit power against the rate-target SINR
+threshold ``Gamma`` and is then judged at the alpha-fading quantile ``q``.
+This variant provisions against ``Gamma / q`` -- that is, it adds a fading
+margin of ``-10 log10(q)`` dB, using the *same* quantile the committed mode
+selection is later judged at.  Exactly one line of the sealed evaluator
+differs; every other equation is the sealed one.
+"""
+
+from __future__ import annotations
+
+NAME = "MARGIN_Q"
+DESCRIPTION = (
+    "Provision against Gamma / q, where q is the same alpha-fading product "
+    "quantile the committed mode selection is judged at "
+    "(margin_dB = -10 log10 q). All other equations are sealed."
+)
+
+
+def build(sealed):
+    module = sealed.load_module(
+        "harness_variant_margin_q",
+        sealed.SEALED_ROOT / ".scratch/ladder-floor-20260910/margin_batch.py",
+    )
+    return module.evaluate_ar_tdm_catalogue
+
+exec
+/bin/bash -lc 'free -h && df -h . /tmp && nproc && ps -eo pid,ni,pcpu,pmem,comm,args --sort=-pcpu | head -15' in /home/sat/mcrl-v025-harness-ws
+ succeeded in 0ms:
+               total        used        free      shared  buff/cache   available
+Mem:            91Gi        40Gi       901Mi        20Gi        72Gi        51Gi
+Swap:          8.0Gi       8.0Gi       180Ki
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv  3.6T  1.7T  1.8T  49% /home/sat/mcrl-v025-harness-ws
+tmpfs                               46G   29G   18G  62% /tmp
+20
+    PID  NI %CPU %MEM COMMAND         COMMAND
+      1   0  0.0  0.0 codex           codex-linux-sandbox --sandbox-policy-cwd /home/sat/mcrl-v025-harness-ws --command-cwd /home/sat/mcrl-v025-harness-ws --permission-profile {"type":"managed","file_system":{"type":"restricted","entries":[{"path":{"type":"special","value":{"kind":"root"}},"access":"read"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-harness-ws"},"access":"write"},{"path":{"type":"special","value":{"kind":"slash_tmp"}},"access":"write"},{"path":{"type":"special","value":{"kind":"tmpdir"}},"access":"write"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-harness-ws/.git"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-harness-ws/.agents"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-harness-ws/.codex"},"access":"read","missing_path_behavior":"skip"}]},"network":"restricted"} --apply-seccomp-then-exec -- /bin/bash -c __CODEX_SNAPSHOT_OVERRIDE_SET_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS+x}" __CODEX_SNAPSHOT_OVERRIDE_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS-}" __CODEX_SNAPSHOT_OVERRIDE_SET_1="${CODEX_PERMISSION_PROFILE+x}" __CODEX_SNAPSHOT_OVERRIDE_1="${CODEX_PERMISSION_PROFILE-}" __CODEX_SNAPSHOT_OVERRIDE_SET_2="${CODEX_PLUGIN_METRICS_OUTPUT+x}" __CODEX_SNAPSHOT_OVERRIDE_2="${CODEX_PLUGIN_METRICS_OUTPUT-}" __CODEX_SNAPSHOT_OVERRIDE_SET_3="${CODEX_SESSION_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_3="${CODEX_SESSION_ID-}" __CODEX_SNAPSHOT_OVERRIDE_SET_4="${CODEX_THREAD_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_4="${CODEX_THREAD_ID-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0="${ALL_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_0="${ALL_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1="${BUNDLE_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_1="${BUNDLE_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2="${BUNDLE_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_2="${BUNDLE_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3="${BUNDLE_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_3="${BUNDLE_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4="${BUNDLE_SSL_CA_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_4="${BUNDLE_SSL_CA_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5="${CARGO_HTTP_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_5="${CARGO_HTTP_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6="${CODEX_CA_CERTIFICATE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_6="${CODEX_CA_CERTIFICATE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8="${CODEX_NETWORK_PROXY_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_8="${CODEX_NETWORK_PROXY_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9="${CODEX_NETWORK_PROXY_ATTRIBUTION+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_9="${CODEX_NETWORK_PROXY_ATTRIBUTION-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12="${CURL_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_12="${CURL_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13="${DOCKER_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_13="${DOCKER_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14="${DOCKER_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_14="${DOCKER_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15="${ELECTRON_GET_USE_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_15="${ELECTRON_GET_USE_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16="${FTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_16="${FTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17="${GIT_SSL_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_17="${GIT_SSL_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18="${HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_18="${HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19="${HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_19="${HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20="${NODE_EXTRA_CA_CERTS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_20="${NODE_EXTRA_CA_CERTS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21="${NODE_USE_ENV_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_21="${NODE_USE_ENV_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22="${NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_22="${NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23="${NPM_CONFIG_CAFILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_23="${NPM_CONFIG_CAFILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24="${NPM_CONFIG_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_24="${NPM_CONFIG_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25="${NPM_CONFIG_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_25="${NPM_CONFIG_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26="${NPM_CONFIG_NOPROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_26="${NPM_CONFIG_NOPROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27="${NPM_CONFIG_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_27="${NPM_CONFIG_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28="${PIP_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_28="${PIP_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29="${PIP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_29="${PIP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30="${REQUESTS_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_30="${REQUESTS_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31="${SSL_CERT_FILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_31="${SSL_CERT_FILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32="${WSS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_32="${WSS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33="${WS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_33="${WS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34="${YARN_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_34="${YARN_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35="${YARN_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_35="${YARN_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36="${YARN_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_36="${YARN_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37="${all_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_37="${all_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38="${ftp_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_38="${ftp_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39="${http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_39="${http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40="${https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_40="${https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41="${no_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_41="${no_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42="${npm_config_cafile+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_42="${npm_config_cafile-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43="${npm_config_http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_43="${npm_config_http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44="${npm_config_https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_44="${npm_config_https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45="${npm_config_noproxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_45="${npm_config_noproxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46="${npm_config_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_46="${npm_config_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47="${ws_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_47="${ws_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48="${wss_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_48="${wss_proxy-}" __CODEX_SNAPSHOT_PROXY_ENV_SET="${CODEX_NETWORK_PROXY_ACTIVE+x}"  if . '/home/sat/.codex/shell_snapshots/01a08978-f28d-7260-801a-b86eb942152b.1789012800145627331.sh' >/dev/null 2>&1; then :; fi  if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_0}" ]; then export CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS="${__CODEX_SNAPSHOT_OVERRIDE_0}"; else unset CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_1}" ]; then export CODEX_PERMISSION_PROFILE="${__CODEX_SNAPSHOT_OVERRIDE_1}"; else unset CODEX_PERMISSION_PROFILE; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_2}" ]; then export CODEX_PLUGIN_METRICS_OUTPUT="${__CODEX_SNAPSHOT_OVERRIDE_2}"; else unset CODEX_PLUGIN_METRICS_OUTPUT; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_3}" ]; then export CODEX_SESSION_ID="${__CODEX_SNAPSHOT_OVERRIDE_3}"; else unset CODEX_SESSION_ID; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_4}" ]; then export CODEX_THREAD_ID="${__CODEX_SNAPSHOT_OVERRIDE_4}"; else unset CODEX_THREAD_ID; fi if [ -n "$__CODEX_SNAPSHOT_PROXY_ENV_SET" ] || [ -n "${CODEX_NETWORK_PROXY_ACTIVE+x}" ]; then if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0}" ]; then export ALL_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_0}"; else unset ALL_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1}" ]; then export BUNDLE_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_1}"; else unset BUNDLE_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2}" ]; then export BUNDLE_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_2}"; else unset BUNDLE_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3}" ]; then export BUNDLE_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_3}"; else unset BUNDLE_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4}" ]; then export BUNDLE_SSL_CA_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_4}"; else unset BUNDLE_SSL_CA_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5}" ]; then export CARGO_HTTP_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_5}"; else unset CARGO_HTTP_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6}" ]; then export CODEX_CA_CERTIFICATE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_6}"; else unset CODEX_CA_CERTIFICATE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7}" ]; then export CODEX_NETWORK_ALLOW_LOCAL_BINDING="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_7}"; else unset CODEX_NETWORK_ALLOW_LOCAL_BINDING; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8}" ]; then export CODEX_NETWORK_PROXY_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_8}"; else unset CODEX_NETWORK_PROXY_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9}" ]; then export CODEX_NETWORK_PROXY_ATTRIBUTION="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_9}"; else unset CODEX_NETWORK_PROXY_ATTRIBUTION; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10}" ]; then export CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_10}"; else unset CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11}" ]; then export CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_11}"; else unset CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12}" ]; then export CURL_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_12}"; else unset CURL_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13}" ]; then export DOCKER_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_13}"; else unset DOCKER_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14}" ]; then export DOCKER_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_14}"; else unset DOCKER_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15}" ]; then export ELECTRON_GET_USE_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_15}"; else unset ELECTRON_GET_USE_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16}" ]; then export FTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_16}"; else unset FTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17}" ]; then export GIT_SSL_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_17}"; else unset GIT_SSL_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18}" ]; then export HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_18}"; else unset HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19}" ]; then export HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_19}"; else unset HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20}" ]; then export NODE_EXTRA_CA_CERTS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_20}"; else unset NODE_EXTRA_CA_CERTS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21}" ]; then export NODE_USE_ENV_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_21}"; else unset NODE_USE_ENV_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22}" ]; then export NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_22}"; else unset NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23}" ]; then export NPM_CONFIG_CAFILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_23}"; else unset NPM_CONFIG_CAFILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24}" ]; then export NPM_CONFIG_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_24}"; else unset NPM_CONFIG_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25}" ]; then export NPM_CONFIG_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_25}"; else unset NPM_CONFIG_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26}" ]; then export NPM_CONFIG_NOPROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_26}"; else unset NPM_CONFIG_NOPROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27}" ]; then export NPM_CONFIG_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_27}"; else unset NPM_CONFIG_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28}" ]; then export PIP_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_28}"; else unset PIP_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29}" ]; then export PIP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_29}"; else unset PIP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30}" ]; then export REQUESTS_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_30}"; else unset REQUESTS_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31}" ]; then export SSL_CERT_FILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_31}"; else unset SSL_CERT_FILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32}" ]; then export WSS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_32}"; else unset WSS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33}" ]; then export WS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_33}"; else unset WS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34}" ]; then export YARN_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_34}"; else unset YARN_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35}" ]; then export YARN_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_35}"; else unset YARN_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36}" ]; then export YARN_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_36}"; else unset YARN_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37}" ]; then export all_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_37}"; else unset all_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38}" ]; then export ftp_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_38}"; else unset ftp_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39}" ]; then export http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_39}"; else unset http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40}" ]; then export https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_40}"; else unset https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41}" ]; then export no_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_41}"; else unset no_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42}" ]; then export npm_config_cafile="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_42}"; else unset npm_config_cafile; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43}" ]; then export npm_config_http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_43}"; else unset npm_config_http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44}" ]; then export npm_config_https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_44}"; else unset npm_config_https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45}" ]; then export npm_config_noproxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_45}"; else unset npm_config_noproxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46}" ]; then export npm_config_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_46}"; else unset npm_config_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47}" ]; then export ws_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_47}"; else unset ws_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48}" ]; then export wss_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_48}"; else unset wss_proxy; fi fi if [ -n "${PATH:-}" ]; then export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path':"$PATH"; else export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path'; fi  exec '/bin/bash' -c 'free -h && df -h . /tmp && nproc && ps -eo pid,ni,pcpu,pmem,comm,args --sort=-pcpu | head -15'
+      2   0  0.0  0.0 bash            /bin/bash -c free -h && df -h . /tmp && nproc && ps -eo pid,ni,pcpu,pmem,comm,args --sort=-pcpu | head -15
+      6   0  0.0  0.0 ps              ps -eo pid,ni,pcpu,pmem,comm,args --sort=-pcpu
+      7   0  0.0  0.0 head            head -15
+
+exec
+/bin/bash -lc "env PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json,time,math
+from harness import sealed,panel
+from harness.runner import install_variant
+from harness.cache import HarnessCache
+from harness.reseeded_span import _configuration
+ref=sealed.reference_runner();tree=sealed.verify();install_variant('SEALED')
+from mcrl.physics_v025.provider_legacy import factory
+w=s=0;domain=ref.probe.PROBE_WORLD_DOMAINS[w];c=HarnessCache();key=c.world_key(sealed_manifest=tree.manifest_sha256,domain=domain,steps=5,start_time_s=0.,provider='mcrl.physics_v025.provider_legacy.factory'); tape,*_=c.world(key,lambda:None)
+row=json.load(open('receipts/reseeded-span-sealed.json'))['anchors'][0];base=ref.probe._base_configuration(tape,s,'nearest-eligible');cfg=_configuration(ref,base,row['committed']['U_first'],'x')
+def ev(indices):
+ e=ref.probe.StepEvaluator(tape,ref.probe._setting('a-r0'),s,transition_from=base,field='realised',run_setting=ref.probe.run_setting_for('a-r0'),boundary_indices=indices,fading_quantile_alpha=.10);e.evaluate_many((cfg,));p=e._evaluated[cfg.configuration_id];return p.bits,p.joules
+st=time.perf_counter();full=ev(tuple(range(48)));print('full',full,'s',time.perf_counter()-st)
+vals=[];st=time.perf_counter()
+for i in range(47): vals.append(ev((i,i+1)))
+pair=(sum(x[0] for x in vals),sum(x[1] for x in vals));print('pair',pair,'s',time.perf_counter()-st,'diff',pair[0]-full[0],pair[1]-full[1], 'fsum',math.fsum(x[0] for x in vals)-full[0],math.fsum(x[1] for x in vals)-full[1])
+PY" in /home/sat/mcrl-v025-harness-ws
+ succeeded in 3534ms:
+full (80505381293.75662, 2564.9750917498936) s 1.4144242930051405
+pair (80505381293.75662, 2564.9750917498936) s 1.0426893910043873 diff 0.0 0.0 fsum 0.0 0.0
+
+exec
+/bin/bash -lc "env PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import json,time,math
+from harness import sealed,panel
+from harness.runner import install_variant
+from harness.cache import HarnessCache
+from harness.reseeded_span import _configuration
+ref=sealed.reference_runner();tree=sealed.verify();install_variant('SEALED')
+from mcrl.physics_v025.provider_legacy import factory
+domain=ref.probe.PROBE_WORLD_DOMAINS[0];c=HarnessCache();key=c.world_key(sealed_manifest=tree.manifest_sha256,domain=domain,steps=5,start_time_s=0.,provider='mcrl.physics_v025.provider_legacy.factory'); tape,*_=c.world(key,lambda:None)
+row=json.load(open('receipts/reseeded-span-sealed.json'))['anchors'][0];base=ref.probe._base_configuration(tape,0,'nearest-eligible');u=_configuration(ref,base,row['committed']['U_first'],'x');opts,_=ref.probe._legal_options(tape,0);cs=[]
+for user in sorted(opts):
+ for ident in opts[user]:
+  if ident"'!=u.mapping[user]:
+   m=dict(u.mapping);m[user]=ident;cs.append(ref._configuration(base,m,'"'c'))
+cs=tuple(cs[:256]); print('n',len(cs),flush=True)
+def ev(indices):
+ e=ref.probe.StepEvaluator(tape,ref.probe._setting('a-r0'),0,transition_from=base,field='realised',run_setting=ref.probe.run_setting_for('a-r0'),boundary_indices=indices,fading_quantile_alpha=.10);e.evaluate_many(cs);return [(e._evaluated[x.configuration_id].bits,e._evaluated[x.configuration_id].joules) if x.configuration_id in e._evaluated else None for x in cs]
+st=time.perf_counter();full=ev(tuple(range(48)));print('full_s',time.perf_counter()-st,flush=True)
+st=time.perf_counter();pairs=[ev((i,i+1)) for i in range(47)];print('pairs_s',time.perf_counter()-st,flush=True)
+for k in (0,17,255):
+ if full[k] is None or any(x[k] is None for x in pairs): print('invalid',k);continue
+ b=sum(x[k][0] for x in pairs);j=sum(x[k][1] for x in pairs);print(k,b-full[k][0],j-full[k][1])
+PY" in /home/sat/mcrl-v025-harness-ws

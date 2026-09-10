@@ -1,0 +1,39 @@
+Workspace: the current directory, `/home/sat/mcrl-v025-floor-ws`. The prior attempt is `/home/sat/mcrl-v025-ceiling30-ws/CONTROL-LAW-FAST-LOOK-2026-09-10.md` with its script under `.scratch/` there — **read it and reuse its search, changing only what is recorded.** Read-only elsewhere. Interpreter `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`, `nice -n 15`. Never modify `/home/sat/mcrl-leo-handover` or its virtual environment. **At most 3 concurrent workers. Aim to finish within thirty minutes.**
+
+`DIAGNOSTIC_NOT_CLAIM`, `FAST_LOOK_TWO_ANCHORS`. No learner, no training. No sealed constant, threshold, sign, seed, horizon, price, guard, acceptance rule or declared control law is changed; the alternative settings are a diagnostic on a copy.
+
+# Why this is being re-run
+
+The prior fast look reported **+113.4 %** pooled efficiency over the declared control law at fixed assignment, with integrated bits up **115.3 %** while joules rose **0.87 %**. Rate-target attainment went from 142 of 200 users to 200 of 200.
+
+**Those figures do not reconcile.** Bringing 58 users up to their target cannot raise delivered bits by 115 %. The great majority of the gain must therefore be capacity delivered to users **already at their target** — bits nobody requested. The field's convention, established from twelve papers, is to credit `min(capacity, demand)`.
+
+An attempted rescoring could not resolve this: the search kept its chosen power and mode vectors only in memory and serialised nothing per user. **That is the defect this re-run fixes.**
+
+# What to do
+
+Re-run the same coarse search on the same two anchors under the corrected `MARGIN_Q` rule, with the assignment held fixed exactly as before. Change one thing: **record enough to rescore.**
+
+For **both** the declared law and the best-found settings, serialise per boundary and per rational subslot:
+- the chosen radiated power and transmitted mode per active beam;
+- **delivered bits per user**, so per-user integrated delivery over the endpoint can be reconstructed;
+- the per-user rate-target attainment flag.
+
+Write those records alongside the aggregates, with a digest.
+
+Then report pooled efficiency and the relative gain under **three numerators**:
+
+1. **`CAPACITY`** — delivered ACM capacity, reproducing the prior headline as a correctness check;
+2. **`DEMAND_CAPPED`** — per user, `min(delivered, contracted rate)`, stating exactly where the cap is applied and why that placement is faithful;
+3. **`ATTAINMENT_ONLY`** — bits credited only for users attaining the target over the endpoint.
+
+And give **the split**: of the extra bits, how many went to users already at target under the declared law, and how many to bringing the 58 non-attainers up.
+
+# Rules
+
+- **Lead with the demand-capped gain.** If it is small, say so in the first line. The project has spent a day learning that headline numbers deflate under stricter accounting, and it would rather know now.
+- Do not refine the search to improve any number. Use the same grid and the same acceptance rule as before; only the recording changes.
+- If the search is not reproducible from the prior script, say so and stop rather than substituting a different search.
+- Every number reproducible from a script left here with exact commands.
+
+Write `FAST-LOOK-RESCORED-2026-09-10.md` in the workspace root and print it in full as your final message. Lead with one line: the demand-capped gain against the capacity gain, and the split of the extra bits.
