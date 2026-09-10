@@ -204,3 +204,92 @@ contribution.
 learned multi-component coordinator evaluated under a decision-time budget. But the room there
 has to be found, not assumed: a 2026 paper does joint handover and power under deep
 reinforcement learning with a split discrete-continuous action.
+
+---
+
+# UPDATE — 2026-09-10 ~15:40Z. Read this before acting on anything above.
+
+**Two findings since this document was written change what §8, §9 and §10 mean. Neither
+changes §1–§7, which describe structure rather than results.**
+
+## U1. The comparison family exists for the first time, and it inverts the reference frame
+
+Nothing above mentions a non-learned comparison family, because **none had ever been run on
+this panel.** One now has (`STATIC-BASELINE-FAMILY-2026-09-10.md`, 12-anchor development
+panel, full-buffer numerator, both parity gates reproducing the sealed `PANELCEIL` receipt
+exactly — 12/12 configuration IDs):
+
+| arm | pooled EE (Mbit/J) | served | active beams |
+|---|---:|---:|---:|
+| `RSS_MAX` — demand-blind greedy on link gain | **41.621560** | **1200/1200** | 47.8 |
+| `MYOPIC_GREEDY` — one-step greedy on `F` | 28.668530 | 1186/1200 | 89.4 |
+| `FIRST_IMPROVEMENT_FP` — the certified fixed point | 13.430253 | 1036/1200 | 64.2 |
+| `RANDOM` | 11.233999 | 1102/1200 | 81.8 |
+| `NEAREST_ELIGIBLE` — geometric base | 11.027760 | 960/1200 | 57.3 |
+| `ROUND_ROBIN` | 3.441227 | 798/1200 | 100.0 |
+
+**`RSS_MAX` uses less information than the learned selector** — no demand, occupancy,
+interference, energy or fading — and delivers **31.7% more bits on 57.5% less energy at full
+service**. Because bits are strictly higher and energy strictly lower, **`F(RSS_MAX) > F(FP)`
+for every `eta >= 0`**: the certified fixed point is not a good point of its own objective. It
+is a local optimum of a **single-user move class**.
+
+**Consequences for the sections above.**
+
+- **§9 item 4 is now understated.** The retractions were about arithmetic and attribution.
+  This is about the reference: every headroom, ceiling and route-contrast figure produced
+  before today was measured around a profile that a one-line rule beats **3.099x**.
+- **§8's disagreement is unaffected but reframed.** Whichever survival reading is adopted,
+  it is stated relative to a base. Which base is now an open question, not a given.
+- **§9 item 3's `-0.01745`** was measured against `ALL_NEUTRAL_CONTROL` at that base. It
+  remains the only reading of the actual question that exists, and it remains negative.
+- **`RANDOM` beats the geometric base by +1.87%.** The sub-random check the owner asked for is
+  failed by the geometric base.
+
+## U2. The optimisation is under-run, so tonight's contrasts cannot settle route deadness
+
+`LR-CONVERGENCE-SWEEP-2026-09-10.md`, under a rule fixed before it ran and computing no EE:
+**21 of 21 route x learning-rate cells fail at 500 epochs**; none of the three current literals
+is admissible; the runner takes **one full-batch Adam update per epoch**, so "500 epochs" is
+**500 gradient steps**, with C3 loss still moving 6.89–8.96% per 100 steps at step 500.
+
+**Tonight's two 16-seed runs remain a valid paired comparison at equal budget. They cannot
+establish that a route is dead.** `HORIZON` is measuring whether more steps or minibatching is
+the lever; the horizon becomes a stopping rule against the already-declared stability criterion
+rather than a chosen number.
+
+## U3. What this does and does not do to the killed routes
+
+**Does not revive anything.** No kill has been overturned. What has changed is that the
+**condition** under which several of them were taken is now known to have been broken.
+
+`KILLTRIAGE` is classifying every recorded kill as died-on-mechanism (reference-independent) or
+died-on-magnitude-against-BASE (at risk). `BASIN` is measuring the minimum number of
+**simultaneous** user changes needed for the first F-improving move from base toward `RSS_MAX`
+— because escaping a basin where no unilateral move helps but a joint move does **is** the
+interaction route, and the probe that ruled C3 dead computed its marginals around the base.
+
+## U4. What is now safe to write, and what is not
+
+**Safe.** §1–§7 as written. The non-learned comparison family's definitions and numbers above:
+they are on a parity-checked receipt and do not move when the algorithm changes. These belong
+in the experimental chapter's comparison section and can be drafted now.
+
+**Not safe.** Any ceiling or headroom percentage. Any statement that a route is dead. The
+method chapter's core equation `F = B - eta_ref*E - Phi`, until `BASIN` reports whether the
+failure is search-limited or objective-limited — that distinction decides whether `eta_ref`
+stays frozen, and a frozen linear scalarisation is exactly the object Calvo-Fullana Prop. 1
+addresses.
+
+## U5. The hypothesis that prompted the measurement is not supported in its stated form
+
+The comparison family was commissioned partly to test whether this project's base is in the
+sibling project's shared-Q + argmax collapsed regime, where spreading users fixed it. On this
+panel the opposite holds: **`ROUND_ROBIN` at 100 active beams — maximally spread — is the worst
+arm by 12.1x**, paying 5.5x the energy for less than half the bits; the **most concentrated**
+arm with the **lowest** action diversity is the best. This is consistent with the recorded
+physics: per-beam power is a max over served users, so opening a beam pays a near-full PA.
+
+**The conclusion the hypothesis pointed at — that judgements were made against a broken
+reference — is confirmed. The mechanism it proposed is not.** `CROWDCOST` is running the
+controlled version.
