@@ -7238,3 +7238,1938 @@ index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97
 
 codex
 Calibration is in the first anchor’s tape/exact evaluation; no completion line yet. The process is running at niceness 15 with all numerical-library threads pinned to one.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+codex
+The first calibration anchor is slower than the historical 49 s row-path figure because its one-time four-step tape build is also happening before the timed section; that setup remains excluded from the reported per-anchor row rate. I’m letting the exact and coalition variants finish before interpreting it.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+codex
+Anchor 1 is deliberately the long calibration case: it runs three exact builds (baseline, coalition-enabled, and warm repeat) plus both fallback variants. This directly tests whether coalition inclusion explains the 632.83 s publication. Peak RSS is checked after every variant.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+codex
+Anchor 1 completed at 1.005 GiB peak RSS. Baseline exact was 61.985 s versus 0.954 s fallback; enabling coalition raised exact to 64.963 s and fallback to 4.061 s. Coalition explains the evaluation-count configuration behind the old 632.83/4.79 comparison, but not its tenfold exact runtime—source/engine vintage or machine state is also material. Three more carriers/world samples are running.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+codex
+Anchor 2 is still in its exact evaluation. The process remains below the safety threshold; no parallel Python workers have been launched during calibration.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+codex
+Anchors 2 and 3 completed at 60.379 s and 55.088 s exact, with 0.949 s and 0.759 s fallback. Peak RSS remains 1.047 GiB. The last calibration point changes to world 2, which tests world-dependent density as well as carrier differences.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+ succeeded in 516369ms:
+anchor 1/4, peak RSS 1.005 GiB {"specification": [0, 0, 0], "measurements": [{"path": "primitive", "coalition": false, "wall_s": 0.954, "physics": 48}, {"path": "exact", "coalition": false, "wall_s": 61.985, "physics": 3576}, {"path": "primitive", "coalition": true, "wall_s": 4.061, "physics": 938}, {"path": "exact", "coalition": true, "wall_s": 64.963, "physics": 4580}, {"path": "exact", "coalition": false, "wall_s": 61.89, "physics": 3576}]}
+anchor 2/4, peak RSS 1.047 GiB {"specification": [0, 0, 1], "measurements": [{"path": "primitive", "coalition": false, "wall_s": 0.949, "physics": 48}, {"path": "exact", "coalition": false, "wall_s": 60.379, "physics": 3576}]}
+anchor 3/4, peak RSS 1.047 GiB {"specification": [0, 0, 2], "measurements": [{"path": "primitive", "coalition": false, "wall_s": 0.759, "physics": 48}, {"path": "exact", "coalition": false, "wall_s": 55.088, "physics": 3492}]}
+anchor 4/4, peak RSS 1.215 GiB {"specification": [1, 0, 0], "measurements": [{"path": "primitive", "coalition": false, "wall_s": 1.019, "physics": 48}, {"path": "exact", "coalition": false, "wall_s": 66.46, "physics": 3556}]}
+{"PART_1_RESULT": {"anchors": 4, "configuration": {"fresh_evaluators": true, "full_legal_actions": false, "include_coalition": false, "one_carrier_per_anchor": true, "selection_and_forecast_boundaries": [0], "tape_build_excluded": true}, "exact_mean_s_per_anchor": 60.978123695982504, "primitive_mean_s_per_anchor": 0.920269631256815, "projected_180_anchors_3_processes_s": 3658.68742175895, "projected_90_anchors_3_processes_s": 1829.343710879475, "ratio_exact_over_primitive": 66.26114958580617}}
+/home/sat/mcrl-v025-datepool-ws/.scratch/exact-source-build/calibration-results.json
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+exec
+/bin/bash -lc "sed -n '1,110p' /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py
+rg -n '"'^def angle_between_deg'"' /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl -S
+sed -n '395,485p' /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py
+sed -n '220,320p' /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/stagec_v025/state.py" in /home/sat/mcrl-v025-datepool-ws
+ succeeded in 0ms:
+"""Primitive V0.25 worlds backed by the read-only legacy scenario stack.
+
+The binding deliberately has only one interpretation of a physical beam:
+``(NORAD, cell_id)``.  ``cell_id`` is the legacy earth-fixed hex-cell index;
+its reuse colour is ``CellGrid.colors[cell_id]``.  Thus a beam identity is
+stable when action slots or a user's seven-cell neighbourhood are re-keyed.
+
+An episode start is drawn exactly as in the C3-S screen: a world seed is
+expanded by ``SeedSequence.spawn(4)``, child zero draws a TRAIN epoch and
+child one scatters/moves the 100 users.  Element sets are selected once at
+that epoch.  For each NORAD the closest epoch in the available files at
+date-1/date/date+1 is retained, subject to the legacy 24-hour age ceiling;
+the selected TLE is then propagated for the whole tape (it is not reselected
+at each boundary).
+
+The legacy D2/TTT history uses 47 samples spanning 46 measurement intervals
+backward and ending at each decision instant.  V0.25 integration instead
+uses 48 boundaries spanning 47 intervals forward from that instant.  The
+provider takes boundary-zero eligibility from the legacy backward history,
+then advances it only for k=1..47; no forward sample can admit a candidate at
+the decision instant.
+
+Engine boundaries are immutable NumPy arrays.  Python candidate objects are
+created only by the audit view.  No environment, ``SatelliteSet``, sgp4
+``Satrec``, or process-global world cache crosses the primitive seam.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import datetime as dt
+import hashlib
+import math
+from pathlib import Path
+from typing import Iterable
+
+import numpy as np
+
+from mcrl.errors import MCRLContractError
+from mcrl.env.constants import AREA_CENTER_LAT_DEG, AREA_CENTER_LON_DEG, R_E_KM
+from mcrl.env.d2 import elevation_for_slant_range
+from mcrl.env.action_contract import NUM_BEAM_SLOTS, NUM_SATELLITE_SLOTS
+from mcrl.env.ephemeris import (
+    TEST,
+    TRAIN,
+    BlockAlternatingSplit,
+    EpisodeStartSampler,
+    select_elements,
+    step_times,
+)
+from mcrl.env.geometry import angle_between_deg, local_km_to_geodetic
+from mcrl.env.link_budget import link_power_factor
+from mcrl.env.mobility import MobilityConfig
+from mcrl.env.scenario import ScenarioConfig, ScenarioDriver
+from mcrl.env.tle import TleArchive
+from mcrl.runtime.training_pipeline import _evaluation_rngs
+
+from .channel import (
+    interference_receive_gain_linear,
+    keyed_fading_gain,
+    scintillation_loss_db,
+    transmit_gain_linear,
+)
+from .constants_v025 import (
+    D2_HYSTERESIS_KM,
+    D2_MEASUREMENT_STEP_S,
+    D2_SUBINTERVALS,
+    D2_THRESHOLD_KM,
+    D2_TTT_S,
+    DECISION_INTERVAL_S,
+    IDENTITY_REFRESH_DECISIONS,
+    MINIMUM_ALTITUDE_KM,
+    MINIMUM_ELEVATION_DEG,
+    RX_GAIN_MAX_DBI,
+    constant_manifest,
+)
+from .tapes import (
+    PrimitiveBoundary,
+    PrimitiveStepArrays,
+    ProviderAttestation,
+    UserLayout,
+    canonical_bytes,
+)
+
+
+DEFAULT_TLE_ROOT = Path("~/demo/tle_data/starlink/tle")
+CANONICAL_STEPS = 30
+FORECAST_STEPS = 3
+CANONICAL_TAPE_STEPS = CANONICAL_STEPS + FORECAST_STEPS
+_FUTURE_SECONDS = 900.0
+_FUTURE_INTERVALS = int(math.ceil(_FUTURE_SECONDS / D2_MEASUREMENT_STEP_S))
+_TIME_TOLERANCE_S = 2.0e-10
+
+
+@dataclass(frozen=True)
+class _StepState:
+    user_ecef_km: np.ndarray
+    user_xy_km: np.ndarray
+    norad_ids: np.ndarray
+    cell_ids: np.ndarray
+    occupied: np.ndarray
+    ttt_elapsed: np.ndarray
+    reachable: np.ndarray
+    legacy_mask: np.ndarray
+
+
+@dataclass(frozen=True)
+class _WorldState:
+    start_utc: dt.datetime
+    training_seed: int
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/geometry.py:248:def angle_between_deg(
+        if arrays["identities"].shape != (rows, 2):
+            raise MCRLContractError("step identities must have shape (R,2)")
+        if arrays["aggressor_identities"].shape != (aggressors, 2):
+            raise MCRLContractError("aggressor identities must have shape (A,2)")
+        for name in ("row_user_column", "legacy_action_index", "colors", "row_wanted_slot"):
+            if arrays[name].shape != (rows,):
+                raise MCRLContractError(f"{name} must have shape (R,)")
+        for name in (
+            "elevations_deg", "d2_entry_elevations_deg", "slants_km",
+            "d2_distances_km", "visible", "d2_eligible", "cell_reachable",
+            "nominal_gain", "realised_gain", "remaining_visibility_s",
+            "remaining_d2_s", "visibility_right_censored",
+            "d2_right_censored",
+        ):
+            if arrays[name].shape != (D2_SUBINTERVALS + 1, rows):
+                raise MCRLContractError(f"{name} must have shape (48,R)")
+        if arrays["aggressor_colors"].shape != (aggressors,):
+            raise MCRLContractError("aggressor_colors must have shape (A,)")
+        if arrays["aggressor_satellite_column"].shape != (aggressors,):
+            raise MCRLContractError("aggressor satellite columns must have shape (A,)")
+        if arrays["cross_base_nominal"].shape != (48, users, aggressors):
+            raise MCRLContractError("cross_base_nominal must have shape (48,U,A)")
+        if arrays["fading_by_satellite"].shape[:2] != (48, users):
+            raise MCRLContractError("fading_by_satellite must have shape (48,U,S)")
+        slots = arrays["receive_gain_by_wanted_slot"].shape[2]
+        if arrays["receive_gain_by_wanted_slot"].shape != (48, users, slots, satellites):
+            raise MCRLContractError(
+                "receive_gain_by_wanted_slot must have shape (48,U,L,S)"
+            )
+        if np.any(arrays["row_user_column"] < 0) or np.any(arrays["row_user_column"] >= users):
+            raise MCRLContractError("row user column is outside the user array")
+        if np.any(arrays["aggressor_satellite_column"] < 0) or np.any(
+            arrays["aggressor_satellite_column"] >= satellites
+        ):
+            raise MCRLContractError("aggressor satellite column is invalid")
+        if not np.all(np.isfinite(times)):
+            raise MCRLContractError("step boundary times must be finite")
+        for name, value in arrays.items():
+            frozen = np.array(value, copy=True)
+            frozen.setflags(write=False)
+            object.__setattr__(self, name, frozen)
+
+    def __len__(self) -> int:
+        return D2_SUBINTERVALS + 1
+
+    def _row_index(self) -> dict[tuple[int, BeamIdentity], int]:
+        return {
+            (int(self.users[int(self.row_user_column[row])]),
+             (int(identity[0]), int(identity[1]))): row
+            for row, identity in enumerate(self.identities)
+        }
+
+    def _aggressor_index(self) -> dict[BeamIdentity, int]:
+        return {
+            (int(identity[0]), int(identity[1])): index
+            for index, identity in enumerate(self.aggressor_identities)
+        }
+
+    def _cross(self, boundary_index: int, victim_row: int, aggressor: BeamIdentity) -> tuple[float, float]:
+        aggressor_index = self._aggressor_index().get(aggressor)
+        if aggressor_index is None:
+            return 0.0, 0.0
+        return self._cross_at_index(boundary_index, victim_row, aggressor_index)
+
+    def _cross_at_index(
+        self, boundary_index: int, victim_row: int, aggressor_index: int
+    ) -> tuple[float, float]:
+        aggressor = tuple(
+            int(value) for value in self.aggressor_identities[aggressor_index]
+        )
+        if tuple(int(value) for value in self.identities[victim_row]) == aggressor:
+            return 0.0, 0.0
+        if int(self.colors[victim_row]) != int(self.aggressor_colors[aggressor_index]):
+            return 0.0, 0.0
+        user = int(self.row_user_column[victim_row])
+        wanted_slot = int(self.row_wanted_slot[victim_row])
+        satellite = int(self.aggressor_satellite_column[aggressor_index])
+        nominal = float(
+            self.cross_base_nominal[boundary_index, user, aggressor_index]
+            * self.receive_gain_by_wanted_slot[boundary_index, user, wanted_slot, satellite]
+        )
+        realised = nominal * float(self.fading_by_satellite[boundary_index, user, satellite])
+        return nominal, realised
+
+    def boundary_view(self, boundary_index: int) -> PrimitiveBoundary:
+        """Materialise the expensive object view only for audit/KAT callers."""
+
+        if type(boundary_index) is not int or not 0 <= boundary_index < len(self):
+            raise MCRLContractError("boundary index must be in 0..47")
+        aggressors = [
+            (int(identity[0]), int(identity[1]))
+    calibration_digest: str
+    provider_digest: str
+    archive_digest: str
+    allocation_manifest_digest: str
+    lambda_bits_per_j: float
+    eta_ref_bits_per_j: float
+    kappa_normalization_bits: float
+    base_action_index: int
+    actions: Sequence[ActionEvaluation]
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRow:
+    schema: str
+    split: str
+    world_id: str
+    world_seed: int
+    learner_seed: int | None
+    anchor_id: str
+    anchor_index: int
+    decision_time_utc: str
+    decision_time_ns: int
+    user_id: int
+    action_index: int
+    action: PhysicalAction
+    reference_action: bool
+    action_mask: tuple[bool, ...]
+    q1_state: tuple[float, ...]
+    q2_state: tuple[float, ...]
+    incumbent_context_nominal_decoding_margin_db_hex: str
+    q1_schema_sha256: str
+    q2_schema_sha256: str
+    setting_id: str
+    code_digest: str
+    physics_digest: str
+    launch_digest: str
+    catalogue_digest: str
+    setting_digest: str
+    calibration_digest: str
+    provider_digest: str
+    archive_digest: str
+    allocation_manifest_digest: str
+    lambda_bits_per_j_hex: str
+    eta_ref_bits_per_j_hex: str
+    kappa_normalization_bits_hex: str
+    c1_label_bits_hex: str
+    c1_phi_difference_hex: str
+    c2_label_bits_hex: str
+    c1_label_normalized_hex: str
+    c2_label_normalized_hex: str
+    source_provenance_sha256: str
+    forecast_method_sha256: str
+    visible_primitives_sha256: str
+    tle_provenance: str
+    future_tle_access: str
+    terminal: bool
+    null_action: bool
+    outage: bool
+
+    def payload(self) -> dict[str, object]:
+        payload = asdict(self)
+        payload["action"] = self.action.payload()
+        payload["action_mask"] = list(self.action_mask)
+        payload["q1_state"] = [float_hex(value) for value in self.q1_state]
+        payload["q2_state"] = [float_hex(value) for value in self.q2_state]
+        return payload
+
+
+def _normalize(raw: Sequence[float], specs: Sequence[FeatureSpec]) -> tuple[float, ...]:
+    if len(raw) != len(specs):
+        raise StageCContractError("state field count disagrees with schema")
+    result = tuple(float(value) / spec.scale for value, spec in zip(raw, specs, strict=True))
+    if not all(math.isfinite(value) for value in result):
+        raise StageCContractError("state values must be finite")
+    return result
+
+
+def kappa_normalization_bits(kappa_bits_per_user_s: float) -> float:
+    """Controller-sealed conversion from calibration rate to one user-step."""
+
+    value = float(kappa_bits_per_user_s)
+    if not math.isfinite(value) or value <= 0.0:
+        raise StageCContractError("kappa bits/user-second must be positive and finite")
+    return value * DECISION_INTERVAL_S
+
+
+def _validate_anchor(anchor: PerAnchorEvaluation) -> None:
+    if anchor.split != "TRAIN":
+        raise StageCContractError("Stage C source construction is TRAIN-only")
+    if not anchor.actions:
+        raise StageCContractError("anchor must carry at least the explicit null action")
+    if not 0 <= anchor.base_action_index < len(anchor.actions):
+        raise StageCContractError("base_action_index is outside the action table")
+    if not anchor.actions[anchor.base_action_index].legal:
+        raise StageCContractError("BASE action must be legal")
+    if not any(item.legal and item.action.is_null for item in anchor.actions):
+        raise StageCContractError("anchor must include an explicit legal null action")
+    if (
+        not math.isfinite(anchor.kappa_normalization_bits)
+        or anchor.kappa_normalization_bits <= 0.0
+    ):
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+index 04365ae5e2176444b8a26998b674e7a04b5380e9..fa036755f35f241d9b07ed77d9498b97c5c8baa6
+--- a/.scratch/exact-source-build/calibrate.py
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -7,13 +7,13 @@
+ 
+ from __future__ import annotations
+ 
+-import concurrent.futures
+ from fractions import Fraction
+ import hashlib
+ import importlib.util
+ import json
+ import os
+ from pathlib import Path
++import resource
+ import statistics
+ import sys
+ import time
+@@ -115,6 +115,9 @@
+     finally:
+         pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
+     wall = time.perf_counter() - started
++    peak_rss_bytes = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++    if peak_rss_bytes > 6_000_000_000:
++        raise MemoryError(f"peak RSS exceeded 6 GB: {peak_rss_bytes}")
+     return {
+         "path": path,
+         "include_coalition": include_coalition,
+@@ -124,6 +127,7 @@
+         "physics_boundary_evaluations": int(built["physics_calls"]),
+         "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
+         "catalogue_count": int(built["catalogue_count"]),
++        "peak_rss_bytes": peak_rss_bytes,
+     }
+ 
+ 
+@@ -219,12 +223,11 @@
+     assert_runtime()
+     started = time.perf_counter()
+     rows = []
+-    # The coordinator is itself a Python process.  It computes one anchor while
+-    # three children compute the others, keeping the literal process total at 4.
+-    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
+-        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
+-        own = worker(ANCHORS[0])
+-        rows.append(own)
++    # Serial calibration avoids memory-bandwidth contention and keeps the
++    # measurement comparable with the two published single-process timings.
++    for ordinal, item in enumerate(ANCHORS, start=1):
++        row = worker(item)
++        rows.append(row)
+         short = [
+             {
+                 "path": value["path"],
+@@ -232,23 +235,14 @@
+                 "wall_s": round(float(value["wall_s"]), 3),
+                 "physics": value["physics_boundary_evaluations"],
+             }
+-            for value in own["measurements"]
++            for value in row["measurements"]
+         ]
+-        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
+-        for future in concurrent.futures.as_completed(futures):
+-            item = futures[future]
+-            row = future.result()
+-            rows.append(row)
+-            short = [
+-                {
+-                    "path": value["path"],
+-                    "coalition": value["include_coalition"],
+-                    "wall_s": round(float(value["wall_s"]), 3),
+-                    "physics": value["physics_boundary_evaluations"],
+-                }
+-                for value in row["measurements"]
+-            ]
+-            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++        peak = max(int(value["peak_rss_bytes"]) for value in row["measurements"])
++        print(
++            f"anchor {ordinal}/{len(ANCHORS)}, peak RSS {peak / 2**30:.3f} GiB "
++            + json.dumps({"specification": item, "measurements": short}),
++            flush=True,
++        )
+     rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
+     baseline = [
+         value
+@@ -265,7 +259,7 @@
+         "schema": "v025-exact-source-calibration-v1",
+         "label": "DIAGNOSTIC_NOT_CLAIM",
+         "interpreter": sys.executable,
+-        "max_processes": 4,
++        "max_processes": 1,
+         "nice": os.getpriority(os.PRIO_PROCESS, 0),
+         "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
+         "anchor_specifications": [list(row) for row in ANCHORS],
+@@ -283,8 +277,8 @@
+             "exact_mean_s_per_anchor": exact_mean,
+             "primitive_mean_s_per_anchor": primitive_mean,
+             "ratio_exact_over_primitive": exact_mean / primitive_mean,
+-            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
+-            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++            "projected_90_anchors_3_processes_s": exact_mean * 90 / 3,
++            "projected_180_anchors_3_processes_s": exact_mean * 180 / 3,
+         },
+         "wall_s": time.perf_counter() - started,
+     }
+
+codex
+Part 1 is complete and was printed before generation: reconciled baseline rate 60.978 s/anchor (exact) versus 0.920 s (fallback), 66.26×; paper projections are 30.49 min for 90 and 60.98 min for 180 at three ideal workers. I’m now implementing the two-file-per-anchor format and the three-process execution cap; Part 2 has not started yet.
