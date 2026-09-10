@@ -15,7 +15,7 @@ Contract §C3 is the source-training contrast: for each of three learned routes,
 - **Existing sealed learning rates and architectures, unchanged**: the first route at 1.0e-2 with one hidden layer of 8 and ReLU; the second at 1.0e-3 with 100-50-50 and tanh; the third at 1.0e-3 with 64-64 and ReLU; Adam with the sealed betas and epsilon; one deterministic full-batch update per route per source epoch. **Do not tune any of these.** If a route fails to train, report that as the finding.
 - **Two learner seeds**, the smallest number that exposes seed sensitivity at all.
 - **The smallest anchor set that exercises every branch**, chosen by the harness's own smoke configuration. State it.
-- **Checkpoints every 100 source epochs**, as the contract requires, and run to a **pre-declared** epoch count that you state in the report before showing any contrast.
+- **Two thousand source epochs, checkpointed every 100.** This budget was declared by the controller before this task was dispatched and before any result existed, and it is not yours to change. It is chosen because a previous pilot reached that count, so the machinery is known to get there, and because that pilot's behaviour moved across the range — from −2.4 % at 200 through −1.6 % at 1000 to +15.6 % at 2000 — so the interval is where the curve is informative. **Report the contrast at epoch 2000 and show all twenty checkpoints beside it.**
 
 # What to report
 
@@ -25,6 +25,12 @@ Contract §C3 is the source-training contrast: for each of three learned routes,
 4. **Served counts and rate-target attainment, separately**, never merged.
 5. **Whether any arm failed to differ from the full arm at all**, which would indicate the intervention did not take effect in that route.
 6. **Wall time and cost**, so the owner can size the confirmatory run.
+
+7. **A convergence verdict per route**, against this rule, declared here before the run and not to be reinterpreted afterwards:
+   - validation objective still decreasing at epoch 2000 → **under-trained**; the remedy is more epochs, **not** a different learning rate;
+   - validation objective oscillating without settling → **learning rate too high for that route**;
+   - validation objective flat early and high → learning rate too low, or capacity or features are the limit, which needs further diagnosis rather than a rate change.
+   State which case each route falls into, or that none applies.
 
 # Rules
 
