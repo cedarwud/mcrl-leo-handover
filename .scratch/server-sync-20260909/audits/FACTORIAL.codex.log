@@ -15889,3 +15889,3338 @@ codex
 The consistency pass passed, including all shard hashes and exact reproduction of the three existing FULLSPAN arms. I’m adding one explicit prose inventory of every positive, negative, and exactly-zero requested contrast, then regenerating so the report and machine receipt retain matching runner provenance.
 exec
 /bin/bash -lc 'env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python scripts/run_oracle_factorial.py' in /home/sat/mcrl-v025-arch-ws
+diff --git a/scripts/run_oracle_factorial.py b/scripts/run_oracle_factorial.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4fed053f9dce3bda096fedcf75e87c1e2bc22bb
+--- /dev/null
++++ b/scripts/run_oracle_factorial.py
+@@ -0,0 +1,804 @@
++#!/usr/bin/env python3
++"""Exact three-route factorial over the cached ORACLE-FULL-SPAN catalogue.
++
++DIAGNOSTIC_NOT_CLAIM.  This runner does not evaluate physics or run a learner.
++It streams one cached anchor at a time, separates the exact additive singleton
++deltas into association (C1) and adjacent-mode/control (C2) terms, retains the
++joint residual as C3, and reruns exact-Fraction pooled Dinkelbach selection.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import resource
++import subprocess
++import sys
++import time
++from typing import Iterator, Mapping, Sequence
++
++
++ROOT = Path(__file__).resolve().parents[1]
++SOURCE_RECEIPT = ROOT / ".scratch/oracle-residual-toggle-20260910/result.json"
++SOURCE_SELECTED = ROOT / ".scratch/oracle-residual-toggle-20260910/selected-records.json"
++SOURCE_RUNNER = ROOT / "scripts/run_oracle_residual_toggle.py"
++FULLSPAN_RESULTS = ROOT / ".scratch/oracle-full-span/results.json"
++FULLSPAN_RUNNER = ROOT / "scripts/run_oracle_full_span.py"
++OUTPUT_DIR = ROOT / ".scratch/oracle-factorial"
++OUTPUT = OUTPUT_DIR / "results.json"
++REPORT = ROOT / "ORACLE-FACTORIAL-2026-09-10.md"
++
++SCHEMA = "mcrl-v025-oracle-factorial-v1"
++CLAIM = "DIAGNOSTIC_NOT_CLAIM"
++ANCHOR_COUNT = 8
++MAX_DINKELBACH = 128
++RSS_LIMIT_GIB = 6.0
++NUMERATORS = ("capacity", "demand_capped")
++ARMS = (
++    "BASELINE",
++    "C1_ONLY",
++    "C2_ONLY",
++    "C3_ONLY",
++    "DROP_C1",
++    "DROP_C2",
++    "DROP_C3",
++    "FULL",
++)
++INCLUDES = {
++    "BASELINE": (),
++    "C1_ONLY": ("C1",),
++    "C2_ONLY": ("C2",),
++    "C3_ONLY": ("C3",),
++    "DROP_C1": ("C2", "C3"),
++    "DROP_C2": ("C1", "C3"),
++    "DROP_C3": ("C1", "C2"),
++    "FULL": ("C1", "C2", "C3"),
++}
++EXPECTED_HASHES = {
++    "source_receipt": "0149f167208565f85dec9fcd349dcc90ac1703b2357b22b79e24131018414f71",
++    "source_selected_records": "5b729294785de203a24bb541de8a12e817625f1f3d5a18169b53ba5b2e9fad57",
++    "source_runner": "e204ddf332ffdbc98679a2b9b4cb63261f137a9fb42b08edfad58506587a10a3",
++    "fullspan_results": "bc55426417949d69202bd7ae7fbc80e988b6cd7b11f5479d2ebe5809a20afd9b",
++    "fullspan_runner": "6bf6b8c37e05b886820c25248f4251a4c479c5d7dbb3058f982cbedaf65bb9bb",
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(8 * 1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def canonical_sha256(value: object) -> str:
++    return hashlib.sha256(json.dumps(
++        value, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("ascii")).hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value: Sequence[int]) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def peak_rss_gib() -> float:
++    # Linux reports ru_maxrss in KiB.
++    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 * 1024.0)
++
++
++def require_execution_guardrails() -> None:
++    expected = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
++    drift = {name: os.environ.get(name) for name in expected if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("runner must execute at nice level 15 or greater")
++
++
++def iter_cached_anchors(path: Path) -> Iterator[dict]:
++    """Incrementally decode the top-level anchors array.
++
++    A 128 MiB text window is large enough to avoid pathological retry copying
++    while retaining at most one decoded anchor.  The source receipt is 709 MiB,
++    so using json.load here would violate the one-anchor memory discipline.
++    """
++
++    decoder = json.JSONDecoder()
++    chunk_size = 128 * 1024 * 1024
++    with path.open("r", encoding="ascii") as stream:
++        buffer = ""
++        while '"anchors"' not in buffer:
++            chunk = stream.read(chunk_size)
++            if not chunk:
++                raise RuntimeError("source receipt has no anchors array")
++            buffer += chunk
++        position = buffer.index('"anchors"') + len('"anchors"')
++        position = buffer.index("[", position) + 1
++        while True:
++            while True:
++                while position < len(buffer) and buffer[position] in " \t\r\n,":
++                    position += 1
++                if position < len(buffer):
++                    break
++                buffer = stream.read(chunk_size)
++                position = 0
++                if not buffer:
++                    raise RuntimeError("unterminated anchors array")
++            if buffer[position] == "]":
++                return
++            while True:
++                try:
++                    anchor, end = decoder.raw_decode(buffer, position)
++                    break
++                except json.JSONDecodeError:
++                    more = stream.read(chunk_size)
++                    if not more:
++                        raise RuntimeError("truncated anchor object")
++                    buffer = buffer[position:] + more
++                    position = 0
++            yield anchor
++            buffer = buffer[end:]
++            position = 0
++
++
++def _identity(value: object) -> object:
++    if value is None:
++        return None
++    return tuple(int(v) for v in value)  # type: ignore[arg-type]
++
++
++def compact_anchor(anchor: Mapping[str, object], ordinal: int) -> dict:
++    profiles = anchor["profiles"]  # type: ignore[assignment]
++    definitions = anchor["candidate_definitions"]  # type: ignore[assignment]
++    if len(profiles) != len(definitions):
++        raise RuntimeError("profile/definition count drifted")
++    if not profiles:
++        raise RuntimeError("empty anchor catalogue")
++    base_assignments = {
++        int(user): _identity(identity)
++        for user, identity in anchor["base_assignments"]  # type: ignore[assignment]
++    }
++    base = profiles[0]
++    if int(base["index"]) != 0 or int(base["size"]) != 0:
++        raise RuntimeError("candidate zero is not the incumbent")
++    base_values = {
++        "capacity": unpair(base["capacity"]),
++        "demand_capped": unpair(base["demand_capped"]),
++        "energy": unpair(base["energy"]),
++    }
++    guard = int(anchor["base_guard_served_count"])
++    if int(base["served_count"]) != guard or not bool(base["valid"]):
++        raise RuntimeError("incumbent eligibility drifted")
++
++    compact_rows = []
++    rejected_invalid = 0
++    rejected_guard = 0
++    mixed_ineligible = 0
++    eligible_route_counts: Counter[str] = Counter()
++    previous_candidate_id = None
++    for expected_index, (profile, definition) in enumerate(zip(profiles, definitions, strict=True)):
++        index = int(profile["index"])
++        candidate_id = str(profile["candidate_id"])
++        if index != expected_index or candidate_id != str(definition["candidate_id"]):
++            raise RuntimeError("candidate index/id alignment drifted")
++        if index > 1 and previous_candidate_id is not None and candidate_id < previous_candidate_id:
++            raise RuntimeError("candidate order no longer supplies lexicographic tie-break")
++        previous_candidate_id = candidate_id
++
++        assignments = {
++            int(user): _identity(identity)
++            for user, identity in definition["assignments"]
++        }
++        association_changed = any(
++            assignments[user] != base_assignments[user] for user in base_assignments
++        )
++        control_changed = bool(definition["mode_offsets_by_user"])
++        mixed = association_changed and control_changed
++        eligible = bool(profile["valid"]) and int(profile["served_count"]) >= guard
++        if not bool(profile["valid"]):
++            rejected_invalid += 1
++        elif int(profile["served_count"]) < guard:
++            rejected_guard += 1
++        if mixed and eligible:
++            raise RuntimeError(
++                "eligible mixed association/control candidate cannot be split from cached atomic totals"
++            )
++        if mixed:
++            mixed_ineligible += 1
++        if not eligible:
++            continue
++
++        if index == 0:
++            route_kind = "BASE"
++            if association_changed or control_changed:
++                raise RuntimeError("incumbent has a changed route")
++        elif association_changed:
++            route_kind = "C1"
++        elif control_changed:
++            route_kind = "C2"
++        else:
++            raise RuntimeError("non-incumbent eligible candidate changes no route")
++        eligible_route_counts[route_kind] += 1
++
++        deltas: dict[str, dict[str, list[int]]] = {name: {} for name in ("C1", "C2", "C3")}
++        for numerator in NUMERATORS:
++            actual_n = unpair(profile[numerator])
++            additive_n = unpair(profile[f"additive_{numerator}"])
++            additive_delta_n = additive_n - base_values[numerator]
++            deltas["C1"][numerator] = pair(additive_delta_n if route_kind == "C1" else Fraction())
++            deltas["C2"][numerator] = pair(additive_delta_n if route_kind == "C2" else Fraction())
++            deltas["C3"][numerator] = pair(actual_n - additive_n)
++        actual_e = unpair(profile["energy"])
++        additive_e = unpair(profile["additive_energy"])
++        additive_delta_e = additive_e - base_values["energy"]
++        deltas["C1"]["energy"] = pair(additive_delta_e if route_kind == "C1" else Fraction())
++        deltas["C2"]["energy"] = pair(additive_delta_e if route_kind == "C2" else Fraction())
++        deltas["C3"]["energy"] = pair(actual_e - additive_e)
++
++        if index == 0 and any(unpair(deltas[name][field]) for name in deltas for field in deltas[name]):
++            raise RuntimeError("incumbent route deltas are nonzero")
++        if int(profile["size"]) <= 1 and any(
++            unpair(deltas["C3"][field]) for field in deltas["C3"]
++        ):
++            raise RuntimeError("singleton residual is not exactly zero")
++
++        compact_rows.append({
++            "index": index,
++            "candidate_id_sha256": hashlib.sha256(candidate_id.encode("ascii")).hexdigest(),
++            "size": int(profile["size"]),
++            "route_kind": route_kind,
++            "served_count": int(profile["served_count"]),
++            "rate_target_attained_count": int(profile["rate_target_attained_count"]),
++            "actual": {
++                "capacity": profile["capacity"],
++                "demand_capped": profile["demand_capped"],
++                "energy": profile["energy"],
++            },
++            "deltas": deltas,
++        })
++
++    return {
++        "schema": f"{SCHEMA}-anchor-cache-v1",
++        "ordinal": ordinal,
++        "anchor_id": str(anchor["anchor_id"]),
++        "world_index": int(anchor["world_index"]),
++        "step_index": int(anchor["step_index"]),
++        "world_sha256": str(anchor["world_sha256"]),
++        "base_guard_served_count": guard,
++        "source_candidate_count": len(profiles),
++        "eligible_candidate_count": len(compact_rows),
++        "rejected_invalid_count": rejected_invalid,
++        "rejected_guard_count": rejected_guard,
++        "mixed_association_control_ineligible_count": mixed_ineligible,
++        "eligible_route_counts": dict(sorted(eligible_route_counts.items())),
++        "base": {
++            "capacity": pair(base_values["capacity"]),
++            "demand_capped": pair(base_values["demand_capped"]),
++            "energy": pair(base_values["energy"]),
++            "served_count": int(base["served_count"]),
++            "rate_target_attained_count": int(base["rate_target_attained_count"]),
++        },
++        "rows": compact_rows,
++    }
++
++
++def prepare_anchor_shards() -> tuple[list[dict], dict]:
++    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
++    manifests = []
++    first_peak = None
++    for ordinal, anchor in enumerate(iter_cached_anchors(SOURCE_RECEIPT), start=1):
++        if ordinal > ANCHOR_COUNT:
++            raise RuntimeError("source has more than eight anchors")
++        shard = compact_anchor(anchor, ordinal)
++        shard_path = OUTPUT_DIR / f"anchor-{ordinal:02d}.json"
++        shard_path.write_text(
++            json.dumps(shard, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
++            encoding="ascii",
++        )
++        manifests.append({
++            "ordinal": ordinal,
++            "anchor_id": shard["anchor_id"],
++            "path": str(shard_path.relative_to(ROOT)),
++            "sha256": sha256(shard_path),
++            "source_candidate_count": shard["source_candidate_count"],
++            "eligible_candidate_count": shard["eligible_candidate_count"],
++            "mixed_association_control_ineligible_count": shard["mixed_association_control_ineligible_count"],
++        })
++        del shard
++        del anchor
++        gc.collect()
++        peak = peak_rss_gib()
++        if ordinal == 1:
++            first_peak = peak
++        print(f"anchor {ordinal}/{ANCHOR_COUNT}, peak RSS {peak:.3f} GiB", flush=True)
++        if ordinal == 1 and peak > RSS_LIMIT_GIB:
++            probe = {
++                "first_anchor_peak_rss_gib": peak,
++                "limit_gib": RSS_LIMIT_GIB,
++                "status": "STOP_FIRST_ANCHOR_RSS_EXCEEDED",
++            }
++            (OUTPUT_DIR / "memory-probe.json").write_text(
++                json.dumps(probe, indent=2, sort_keys=True) + "\n", encoding="ascii",
++            )
++            raise RuntimeError(
++                f"single-anchor peak RSS {peak:.3f} GiB exceeds {RSS_LIMIT_GIB:.3f} GiB"
++            )
++    if len(manifests) != ANCHOR_COUNT or first_peak is None:
++        raise RuntimeError(f"expected eight anchors, decoded {len(manifests)}")
++    memory = {
++        "first_anchor_peak_rss_gib": first_peak,
++        "limit_gib": RSS_LIMIT_GIB,
++        "within_limit": first_peak <= RSS_LIMIT_GIB,
++        "final_process_peak_rss_gib": peak_rss_gib(),
++        "python_processes": 1,
++        "concurrent_python_processes": 1,
++        "anchor_processing": "serial; one decoded source anchor retained at a time",
++    }
++    (OUTPUT_DIR / "memory-probe.json").write_text(
++        json.dumps(memory, indent=2, sort_keys=True) + "\n", encoding="ascii",
++    )
++    return manifests, memory
++
++
++def load_shard(manifest: Mapping[str, object]) -> dict:
++    path = ROOT / str(manifest["path"])
++    if sha256(path) != str(manifest["sha256"]):
++        raise RuntimeError(f"anchor shard custody mismatch: {path}")
++    return json.loads(path.read_text(encoding="ascii"))
++
++
++def pseudo_values(shard: Mapping[str, object], row: Mapping[str, object], numerator: str, arm: str) -> tuple[Fraction, Fraction]:
++    n = unpair(shard["base"][numerator])  # type: ignore[index]
++    e = unpair(shard["base"]["energy"])  # type: ignore[index]
++    for route in INCLUDES[arm]:
++        n += unpair(row["deltas"][route][numerator])  # type: ignore[index]
++        e += unpair(row["deltas"][route]["energy"])  # type: ignore[index]
++    return n, e
++
++
++def choose_for_anchor(shard: Mapping[str, object], numerator: str, arm: str, eta: Fraction) -> dict:
++    best = None
++    best_score = None
++    for row in shard["rows"]:  # type: ignore[assignment]
++        n, e = pseudo_values(shard, row, numerator, arm)
++        score = n - eta * e
++        # Candidate zero wins an exact tie; otherwise source index order is the
++        # original lexicographic candidate-id order.
++        tie_key = (0 if int(row["index"]) == 0 else 1, int(row["index"]))
++        if best is None or score > best_score or (
++            score == best_score and tie_key < best["tie_key"]
++        ):
++            best = {"row": row, "pseudo_n": n, "pseudo_e": e, "tie_key": tie_key}
++            best_score = score
++    if best is None:
++        raise RuntimeError("anchor shard has no eligible candidate")
++    return best
++
++
++def optimize(manifests: Sequence[Mapping[str, object]], numerator: str, arm: str) -> dict:
++    base_n = Fraction()
++    base_e = Fraction()
++    for manifest in manifests:
++        shard = load_shard(manifest)
++        base_n += unpair(shard["base"][numerator])
++        base_e += unpair(shard["base"]["energy"])
++        del shard
++    eta = base_n / base_e
++    trace = []
++    previous = None
++    selected = []
++    for iteration in range(1, MAX_DINKELBACH + 1):
++        selected = []
++        for manifest in manifests:
++            shard = load_shard(manifest)
++            chosen = choose_for_anchor(shard, numerator, arm, eta)
++            row = chosen["row"]
++            selected.append({
++                "anchor_id": shard["anchor_id"],
++                "index": int(row["index"]),
++                "candidate_id_sha256": row["candidate_id_sha256"],
++                "candidate_size": int(row["size"]),
++                "route_kind": row["route_kind"],
++                "pseudo_n": chosen["pseudo_n"],
++                "pseudo_e": chosen["pseudo_e"],
++                "actual_n": unpair(row["actual"][numerator]),
++                "actual_e": unpair(row["actual"]["energy"]),
++                "served_count": int(row["served_count"]),
++                "rate_target_attained_count": int(row["rate_target_attained_count"]),
++            })
++            del shard
++        pseudo_n = sum((row["pseudo_n"] for row in selected), Fraction())
++        pseudo_e = sum((row["pseudo_e"] for row in selected), Fraction())
++        if pseudo_e <= 0:
++            raise RuntimeError(f"{numerator}:{arm} Dinkelbach pseudo-energy is not positive")
++        new_eta = pseudo_n / pseudo_e
++        indices = tuple(int(row["index"]) for row in selected)
++        residual = pseudo_n - eta * pseudo_e
++        trace.append({
++            "iteration": iteration,
++            "eta": pair(eta),
++            "selected_indices": list(indices),
++            "surplus_residual": pair(residual),
++        })
++        if new_eta == eta:
++            break
++        if indices == previous:
++            raise RuntimeError(f"{numerator}:{arm} selection fixed without exact price equality")
++        previous = indices
++        eta = new_eta
++    else:
++        raise RuntimeError(f"{numerator}:{arm} Dinkelbach iteration cap reached")
++
++    actual_n = sum((row["actual_n"] for row in selected), Fraction())
++    actual_e = sum((row["actual_e"] for row in selected), Fraction())
++    per_anchor = [{
++        "anchor_id": row["anchor_id"],
++        "candidate_index": row["index"],
++        "candidate_id_sha256": row["candidate_id_sha256"],
++        "candidate_size": row["candidate_size"],
++        "route_kind": row["route_kind"],
++        "numerator": pair(row["actual_n"]),
++        "energy": pair(row["actual_e"]),
++        "ee_bit_per_j": float(row["actual_n"] / row["actual_e"]),
++        "served_count": row["served_count"],
++        "rate_target_attained_count": row["rate_target_attained_count"],
++    } for row in selected]
++    return {
++        "arm": arm,
++        "included_exact_terms": list(INCLUDES[arm]),
++        "dinkelbach_iterations": len(trace),
++        "optimization_ratio": pair(eta),
++        "selected_indices": [row["index"] for row in selected],
++        "selected_candidate_id_sha256": [row["candidate_id_sha256"] for row in selected],
++        "pseudo_numerator": pair(pseudo_n),
++        "pseudo_energy": pair(pseudo_e),
++        "actual_numerator": pair(actual_n),
++        "actual_energy": pair(actual_e),
++        "pooled_ee_bit_per_j": float(actual_n / actual_e),
++        "served_count": sum(int(row["served_count"]) for row in selected),
++        "rate_target_attained_count": sum(int(row["rate_target_attained_count"]) for row in selected),
++        "candidate_size_distribution": dict(sorted(Counter(
++            str(row["candidate_size"]) for row in selected
++        ).items())),
++        "per_anchor": per_anchor,
++        "trace": trace,
++    }
++
++
++def contrast(left: Mapping[str, object], right: Mapping[str, object]) -> dict:
++    left_n = unpair(left["actual_numerator"])  # type: ignore[arg-type]
++    left_e = unpair(left["actual_energy"])  # type: ignore[arg-type]
++    right_n = unpair(right["actual_numerator"])  # type: ignore[arg-type]
++    right_e = unpair(right["actual_energy"])  # type: ignore[arg-type]
++    left_ee, right_ee = left_n / left_e, right_n / right_e
++    absolute = right_ee - left_ee
++    relative = right_ee / left_ee - 1
++    return {
++        "left": str(left["arm"]),
++        "right": str(right["arm"]),
++        "ee_difference_bit_per_j": pair(absolute),
++        "gain_relative": pair(relative),
++        "gain_percentage": 100.0 * float(relative),
++        "positive": relative > 0,
++        "zero": relative == 0,
++        "numerator_delta": pair(right_n - left_n),
++        "energy_delta": pair(right_e - left_e),
++        "served_delta": int(right["served_count"]) - int(left["served_count"]),
++        "rate_target_attained_delta": (
++            int(right["rate_target_attained_count"])
++            - int(left["rate_target_attained_count"])
++        ),
++    }
++
++
++def build_contrasts(selectors: Mapping[str, Mapping[str, object]]) -> tuple[dict, dict]:
++    requested = {}
++    for arm in ("C1_ONLY", "C2_ONLY", "C3_ONLY"):
++        requested[f"{arm}-BASELINE"] = contrast(selectors["BASELINE"], selectors[arm])
++    for arm in ("DROP_C1", "DROP_C2", "DROP_C3"):
++        requested[f"FULL-{arm}"] = contrast(selectors[arm], selectors["FULL"])
++        requested[f"{arm}-BASELINE"] = contrast(selectors["BASELINE"], selectors[arm])
++
++    interactions = {}
++    for route in ("C1", "C2", "C3"):
++        conditional = requested[f"FULL-DROP_{route}"]
++        alone = requested[f"{route}_ONLY-BASELINE"]
++        conditional_abs = unpair(conditional["ee_difference_bit_per_j"])
++        alone_abs = unpair(alone["ee_difference_bit_per_j"])
++        difference_abs = conditional_abs - alone_abs
++        difference_pp = float(conditional["gain_percentage"]) - float(alone["gain_percentage"])
++        interactions[route] = {
++            "conditional_contrast": f"FULL-DROP_{route}",
++            "alone_contrast": f"{route}_ONLY-BASELINE",
++            "conditional_gain_percentage": conditional["gain_percentage"],
++            "alone_gain_percentage": alone["gain_percentage"],
++            "difference_percentage_points": difference_pp,
++            "conditional_minus_alone_ee_bit_per_j": pair(difference_abs),
++            "conditional_marginal_larger": difference_abs > 0,
++            "equal": difference_abs == 0,
++        }
++    return requested, interactions
++
++
++def verify_fullspan_reproduction(blocks: Mapping[str, object]) -> dict:
++    fullspan = json.loads(FULLSPAN_RESULTS.read_text(encoding="ascii"))
++    checks = []
++    mapping = {
++        "BASELINE": "BASELINE",
++        "DROP_C3": "ADDITIVE_ONLY",
++        "FULL": "WITH_RESIDUAL",
++    }
++    for numerator in NUMERATORS:
++        for arm, source_selector in mapping.items():
++            ours = blocks[numerator]["selectors"][arm]  # type: ignore[index]
++            source = fullspan["numerators"][numerator]["selectors"][source_selector]
++            match = (
++                ours["selected_indices"] == source["selected_indices"]
++                and unpair(ours["actual_numerator"]) == unpair(source["numerator"])
++                and unpair(ours["actual_energy"]) == unpair(source["energy"])
++            )
++            if not match:
++                raise RuntimeError(f"FULLSPAN reproduction failed for {numerator}:{arm}")
++            checks.append({
++                "numerator": numerator,
++                "arm": arm,
++                "source_selector": source_selector,
++                "selected_indices_and_exact_totals_match": True,
++            })
++    return {"all_match": True, "checks": checks}
++
++
++def status_word(value: Mapping[str, object]) -> str:
++    if bool(value["positive"]):
++        return "POSITIVE"
++    if bool(value["zero"]):
++        return "ZERO"
++    return "NOT POSITIVE"
++
++
++def pct(value: Mapping[str, object]) -> str:
++    return f"{float(value['gain_percentage']):+.2f}%"
++
++
++def render_report(results: Mapping[str, object], output_sha: str) -> str:
++    demand = results["numerators"]["demand_capped"]  # type: ignore[index]
++    singles = demand["contrasts"]
++    all_positive = all(bool(singles[f"{route}_ONLY-BASELINE"]["positive"]) for route in ("C1", "C2", "C3"))
++    first = (
++        f"**Demand-capped single-route marginals over `BASELINE` are C1 "
++        f"{pct(singles['C1_ONLY-BASELINE'])}, C2 {pct(singles['C2_ONLY-BASELINE'])}, and "
++        f"C3 {pct(singles['C3_ONLY-BASELINE'])}; "
++        f"{'all three are positive' if all_positive else 'not all three are positive'}.**"
++    )
++    lines = [
++        first, "", "# Oracle factorial — 2026-09-10", "", f"`{CLAIM}`", "",
++        "Every number is a **ceiling: exact terms, not learned predictions**.", "",
++        "`BASELINE` is the committed nearest-eligible incumbent with no catalogue selection. It is **not** `ALL_NEUTRAL_CONTROL`.", "",
++        "## Demand-capped reported result", "",
++        "Demand cap: `min(per-user integrated delivery, 50 Mbit/s × 30.08 s)`. Pooled EE is the ratio of pooled capped bits to pooled realised energy.", "",
++        "| arm | exact score terms | pooled EE (Mbit/J) | capped bits (Gbit) | energy (J) | served | rate-target attained | sizes |",
++        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
++    ]
++    for arm in ARMS:
++        row = demand["selectors"][arm]
++        formula = "+".join(row["included_exact_terms"]) or "incumbent/no selection"
++        lines.append(
++            f"| `{arm}` | {formula} | {row['pooled_ee_bit_per_j']/1e6:.6f} | "
++            f"{float(unpair(row['actual_numerator']))/1e9:.6f} | "
++            f"{float(unpair(row['actual_energy'])):.6f} | {row['served_count']} | "
++            f"{row['rate_target_attained_count']} | `{row['candidate_size_distribution']}` |"
++        )
++
++    lines += ["", "## Required contrasts", "", "| contrast | EE difference (Mbit/J) | relative gain | sign | capped-bits delta (Gbit) | energy delta (J) |", "| --- | ---: | ---: | --- | ---: | ---: |"]
++    contrast_order = (
++        "C1_ONLY-BASELINE", "C2_ONLY-BASELINE", "C3_ONLY-BASELINE",
++        "FULL-DROP_C1", "FULL-DROP_C2", "FULL-DROP_C3",
++        "DROP_C1-BASELINE", "DROP_C2-BASELINE", "DROP_C3-BASELINE",
++    )
++    for key in contrast_order:
++        row = demand["contrasts"][key]
++        label = f"{row['right']} - {row['left']}"
++        lines.append(
++            f"| `{label}` | {float(unpair(row['ee_difference_bit_per_j']))/1e6:+.6f} | "
++            f"{pct(row)} | **{status_word(row)}** | "
++            f"{float(unpair(row['numerator_delta']))/1e9:+.6f} | "
++            f"{float(unpair(row['energy_delta'])):+.6f} |"
++        )
++
++    lines += [
++        "",
++        "Positive contrasts are `C1_ONLY − BASELINE`, `C2_ONLY − BASELINE`, "
++        "`FULL − DROP_C1`, `FULL − DROP_C3`, `DROP_C2 − BASELINE`, and "
++        "`DROP_C3 − BASELINE`. Not positive are `C3_ONLY − BASELINE` and "
++        "`DROP_C1 − BASELINE` (both negative), plus `FULL − DROP_C2` "
++        "(exactly zero, not merely rounded to zero). No negative or zero "
++        "marginal is treated as support for the claim.",
++        "", "## Route interaction", "",
++        "The percentage-point comparison uses each marginal's own reference EE. The final column is the classical difference of absolute EE marginals, `(FULL − DROP_Ci) − (Ci_ONLY − BASELINE)`.",
++        "", "| route | FULL vs pair | route alone vs BASELINE | conditional − alone (pp) | absolute interaction (Mbit/J) | interpretation |", "| --- | ---: | ---: | ---: | ---: | --- |",
++    ]
++    for route in ("C1", "C2", "C3"):
++        row = demand["interactions"][route]
++        if row["equal"]:
++            interpretation = "equal"
++        elif row["conditional_marginal_larger"]:
++            interpretation = "conditional marginal is larger"
++        else:
++            interpretation = "conditional marginal is smaller"
++        lines.append(
++            f"| {route} | {row['conditional_gain_percentage']:+.2f}% | "
++            f"{row['alone_gain_percentage']:+.2f}% | {row['difference_percentage_points']:+.2f} pp | "
++            f"{float(unpair(row['conditional_minus_alone_ee_bit_per_j']))/1e6:+.6f} | {interpretation} |"
++        )
++
++    lines += ["", "## Per-anchor demand-capped EE", "", "| anchor | " + " | ".join(ARMS) + " |", "| --- | " + " | ".join("---:" for _ in ARMS) + " |"]
++    anchor_ids = results["anchor_ids"]
++    for index, anchor_id in enumerate(anchor_ids):
++        cells = [f"{demand['selectors'][arm]['per_anchor'][index]['ee_bit_per_j']/1e6:.6f}" for arm in ARMS]
++        lines.append(f"| {anchor_id} | " + " | ".join(cells) + " |")
++
++    lines += ["", "## Per-anchor demand-capped endpoints", "", "| arm | anchor | capped bits (Gbit) | energy (J) | served | target | selected size | candidate index |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
++    for arm in ARMS:
++        for row in demand["selectors"][arm]["per_anchor"]:
++            lines.append(
++                f"| `{arm}` | {row['anchor_id']} | {float(unpair(row['numerator']))/1e9:.6f} | "
++                f"{float(unpair(row['energy'])):.6f} | {row['served_count']} | "
++                f"{row['rate_target_attained_count']} | {row['candidate_size']} | {row['candidate_index']} |"
++            )
++
++    capacity = results["numerators"]["capacity"]  # type: ignore[index]
++    lines += ["", "## Capacity numerator (secondary)", "", "These capacity-numerator figures are secondary; the demand-capped figures above are the reported result.", "", "| arm | pooled EE (Mbit/J) | capacity (Gbit) | energy (J) | served | target |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
++    for arm in ARMS:
++        row = capacity["selectors"][arm]
++        lines.append(
++            f"| `{arm}` | {row['pooled_ee_bit_per_j']/1e6:.6f} | "
++            f"{float(unpair(row['actual_numerator']))/1e9:.6f} | "
++            f"{float(unpair(row['actual_energy'])):.6f} | {row['served_count']} | "
++            f"{row['rate_target_attained_count']} |"
++        )
++
++    memory = results["memory"]
++    lines += [
++        "", "## Exact construction and memory discipline", "",
++        "For candidate `x`, C1 is the sum of exact atomic association-change numerator/energy deltas, C2 is the sum of exact atomic adjacent-mode/control deltas, and C3 is the residual `joint − incumbent − C1 − C2`. At common Dinkelbach price `η`, an arm scores `incumbent + Σ included routes`, equivalently `B0 − ηE0 + Σ(ΔBi − ηΔEi)`. The selected candidate is then reported with its actual realised 48-boundary capped bits and energy, not with pseudo totals.", "",
++        "The source candidate order was asserted to be incumbent first and then lexicographic. Every eligible row was asserted to be either association-only or control-only; mixed association/control rows were physically invalid and excluded by the inherited eligibility guard, so no cached mixed term was approximated.", "",
++        f"The first anchor peak RSS was **{memory['first_anchor_peak_rss_gib']:.3f} GiB**, below the 6 GiB stop threshold. All eight anchors were streamed serially; each compact anchor shard was written before the decoded source anchor was freed. The run used exactly one Python process and all BLAS thread counts were one.", "",
++        "## Evidence classification", "", "### Verified by running code", "",
++        "The pinned source receipt, source selected-record file, residual-toggle runner, FULLSPAN result, and FULLSPAN runner matched their SHA-256 digests. The code streamed all eight cached anchors, asserted the inherited eligibility and exact singleton-residual identities, reran every factorial selector with exact `Fraction` prices, and exactly reproduced `BASELINE`, `DROP_C3`/`ADDITIVE_ONLY`, and `FULL`/`WITH_RESIDUAL` selections and totals for both numerators.", "",
++        "### Derived on paper", "",
++        "Pooled ratios, requested contrasts, and interaction differences are exact rational arithmetic over the cached binary64 physical outputs. Displayed decimals are formatting only.", "",
++        "### Inferred", "",
++        "These oracle selectors expose ceiling opportunity within this fixed catalogue. They do not establish learnability, deployable policy efficacy, or achievable learned values.", "",
++        "No learner was run. Loss values are never evidence about EE. Nothing was tuned to produce an ordering, and no sealed constant, threshold, sign, seed, horizon, price, guard, acceptance rule, control law, search grid, manifest, or optimizer setting was changed.", "",
++        "## Custody and reproduction", "",
++        f"Machine result: `.scratch/oracle-factorial/results.json` (SHA-256 `{output_sha}`). Compact per-anchor cache shards and their hashes are listed in that result. Runner SHA-256: `{results['provenance']['runner_sha256']}`.", "",
++        "From `/home/sat/mcrl-v025-arch-ws`:", "", "```bash",
++        "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \\",
++        "  NUMEXPR_NUM_THREADS=1 PYTHONPATH=src nice -n 15 \\",
++        "  /home/sat/mcrl-leo-handover/.venv/bin/python \\",
++        "  scripts/run_oracle_factorial.py", "```", "",
++    ]
++    return "\n".join(lines)
++
++
++def main() -> int:
++    require_execution_guardrails()
++    started = time.perf_counter()
++    actual_hashes = {
++        "source_receipt": sha256(SOURCE_RECEIPT),
++        "source_selected_records": sha256(SOURCE_SELECTED),
++        "source_runner": sha256(SOURCE_RUNNER),
++        "fullspan_results": sha256(FULLSPAN_RESULTS),
++        "fullspan_runner": sha256(FULLSPAN_RUNNER),
++    }
++    if actual_hashes != EXPECTED_HASHES:
++        raise RuntimeError(f"source custody mismatch: {actual_hashes}")
++
++    manifests, memory = prepare_anchor_shards()
++    numerator_blocks = {}
++    for numerator in NUMERATORS:
++        selectors = {}
++        for arm in ARMS:
++            selectors[arm] = optimize(manifests, numerator, arm)
++            print(
++                f"optimized {numerator}:{arm}, iterations "
++                f"{selectors[arm]['dinkelbach_iterations']}, peak RSS {peak_rss_gib():.3f} GiB",
++                flush=True,
++            )
++        contrasts, interactions = build_contrasts(selectors)
++        numerator_blocks[numerator] = {
++            "selectors": selectors,
++            "contrasts": contrasts,
++            "interactions": interactions,
++        }
++    reproduction = verify_fullspan_reproduction(numerator_blocks)
++
++    results = {
++        "schema": SCHEMA,
++        "claim_ceiling": CLAIM,
++        "ceiling_statement": "Every number is a ceiling: exact terms, not learned predictions.",
++        "baseline_definition": "committed nearest-eligible incumbent; no catalogue selection",
++        "baseline_is_all_neutral_control": False,
++        "route_definitions": {
++            "C1": "exact atomic association-change numerator and energy deltas",
++            "C2": "exact atomic adjacent-mode/control numerator and energy deltas",
++            "C3": "exact joint residual after incumbent, C1, and C2",
++        },
++        "arm_formulas": {arm: list(INCLUDES[arm]) for arm in ARMS},
++        "anchor_ids": [str(row["anchor_id"]) for row in manifests],
++        "numerators": numerator_blocks,
++        "fullspan_reproduction": reproduction,
++        "anchor_shards": manifests,
++        "memory": {**memory, "final_process_peak_rss_gib": peak_rss_gib()},
++        "reuse": {
++            "catalogue_rebuilt": False,
++            "physical_candidate_profiles_rerun": False,
++            "cached_exact_candidate_profiles_reused": True,
++            "factorial_dinkelbach_selectors_rerun": True,
++        },
++        "sealed_settings_changed": False,
++        "learner_used": False,
++        "loss_values_used_as_ee_evidence": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in (
++            "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS",
++        )},
++        "wall_seconds": time.perf_counter() - started,
++        "provenance": {
++            **{f"{name}_sha256": value for name, value in actual_hashes.items()},
++            "workspace_commit": subprocess.check_output(
++                ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
++            ).strip(),
++            "runner_sha256": sha256(Path(__file__).resolve()),
++        },
++        "evidence_classification": {
++            "verified_by_running_code": [
++                "source custody hashes",
++                "serial one-anchor cache extraction and RSS measurement",
++                "exact-Fraction factorial Dinkelbach selections",
++                "exact reproduction of FULLSPAN BASELINE, ADDITIVE_ONLY, and WITH_RESIDUAL",
++            ],
++            "derived_on_paper": [
++                "pooled ratios, requested contrasts, and interaction differences",
++            ],
++            "inferred": [
++                "oracle values are ceilings rather than learned achievable values",
++            ],
++        },
++    }
++    results["canonical_payload_sha256"] = canonical_sha256(results)
++    OUTPUT.write_text(
++        json.dumps(results, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    output_sha = sha256(OUTPUT)
++    REPORT.write_text(render_report(results, output_sha), encoding="utf-8")
++    demand = results["numerators"]["demand_capped"]
++    print(json.dumps({
++        "output": str(OUTPUT),
++        "output_sha256": output_sha,
++        "report": str(REPORT),
++        "first_anchor_peak_rss_gib": memory["first_anchor_peak_rss_gib"],
++        "single_route_marginals_percent": {
++            route: demand["contrasts"][f"{route}_ONLY-BASELINE"]["gain_percentage"]
++            for route in ("C1", "C2", "C3")
++        },
++    }, indent=2, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+ succeeded in 39967ms:
+anchor 1/8, peak RSS 0.432 GiB
+anchor 2/8, peak RSS 0.858 GiB
+anchor 3/8, peak RSS 0.936 GiB
+anchor 4/8, peak RSS 0.936 GiB
+anchor 5/8, peak RSS 0.936 GiB
+anchor 6/8, peak RSS 0.936 GiB
+anchor 7/8, peak RSS 0.936 GiB
+anchor 8/8, peak RSS 0.936 GiB
+optimized capacity:BASELINE, iterations 1, peak RSS 0.936 GiB
+optimized capacity:C1_ONLY, iterations 2, peak RSS 0.936 GiB
+optimized capacity:C2_ONLY, iterations 2, peak RSS 0.936 GiB
+optimized capacity:C3_ONLY, iterations 3, peak RSS 0.936 GiB
+optimized capacity:DROP_C1, iterations 3, peak RSS 0.936 GiB
+optimized capacity:DROP_C2, iterations 2, peak RSS 0.936 GiB
+optimized capacity:DROP_C3, iterations 2, peak RSS 0.936 GiB
+optimized capacity:FULL, iterations 2, peak RSS 0.936 GiB
+optimized demand_capped:BASELINE, iterations 1, peak RSS 0.936 GiB
+optimized demand_capped:C1_ONLY, iterations 3, peak RSS 0.936 GiB
+optimized demand_capped:C2_ONLY, iterations 2, peak RSS 0.936 GiB
+optimized demand_capped:C3_ONLY, iterations 3, peak RSS 0.936 GiB
+optimized demand_capped:DROP_C1, iterations 3, peak RSS 0.936 GiB
+optimized demand_capped:DROP_C2, iterations 3, peak RSS 0.936 GiB
+optimized demand_capped:DROP_C3, iterations 3, peak RSS 0.936 GiB
+optimized demand_capped:FULL, iterations 3, peak RSS 0.936 GiB
+{
+  "first_anchor_peak_rss_gib": 0.43238067626953125,
+  "output": "/home/sat/mcrl-v025-arch-ws/.scratch/oracle-factorial/results.json",
+  "output_sha256": "99445de46db39251583b77e9f1aafdcfc288da4701459c4e4058206db6db4209",
+  "report": "/home/sat/mcrl-v025-arch-ws/ORACLE-FACTORIAL-2026-09-10.md",
+  "single_route_marginals_percent": {
+    "C1": 10.800116691395626,
+    "C2": 0.44879672509314267,
+    "C3": -0.05838899202941598
+  }
+}
+
+diff --git a/scripts/run_oracle_factorial.py b/scripts/run_oracle_factorial.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4fed053f9dce3bda096fedcf75e87c1e2bc22bb
+--- /dev/null
++++ b/scripts/run_oracle_factorial.py
+@@ -0,0 +1,804 @@
++#!/usr/bin/env python3
++"""Exact three-route factorial over the cached ORACLE-FULL-SPAN catalogue.
++
++DIAGNOSTIC_NOT_CLAIM.  This runner does not evaluate physics or run a learner.
++It streams one cached anchor at a time, separates the exact additive singleton
++deltas into association (C1) and adjacent-mode/control (C2) terms, retains the
++joint residual as C3, and reruns exact-Fraction pooled Dinkelbach selection.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import resource
++import subprocess
++import sys
++import time
++from typing import Iterator, Mapping, Sequence
++
++
++ROOT = Path(__file__).resolve().parents[1]
++SOURCE_RECEIPT = ROOT / ".scratch/oracle-residual-toggle-20260910/result.json"
++SOURCE_SELECTED = ROOT / ".scratch/oracle-residual-toggle-20260910/selected-records.json"
++SOURCE_RUNNER = ROOT / "scripts/run_oracle_residual_toggle.py"
++FULLSPAN_RESULTS = ROOT / ".scratch/oracle-full-span/results.json"
++FULLSPAN_RUNNER = ROOT / "scripts/run_oracle_full_span.py"
++OUTPUT_DIR = ROOT / ".scratch/oracle-factorial"
++OUTPUT = OUTPUT_DIR / "results.json"
++REPORT = ROOT / "ORACLE-FACTORIAL-2026-09-10.md"
++
++SCHEMA = "mcrl-v025-oracle-factorial-v1"
++CLAIM = "DIAGNOSTIC_NOT_CLAIM"
++ANCHOR_COUNT = 8
++MAX_DINKELBACH = 128
++RSS_LIMIT_GIB = 6.0
++NUMERATORS = ("capacity", "demand_capped")
++ARMS = (
++    "BASELINE",
++    "C1_ONLY",
++    "C2_ONLY",
++    "C3_ONLY",
++    "DROP_C1",
++    "DROP_C2",
++    "DROP_C3",
++    "FULL",
++)
++INCLUDES = {
++    "BASELINE": (),
++    "C1_ONLY": ("C1",),
++    "C2_ONLY": ("C2",),
++    "C3_ONLY": ("C3",),
++    "DROP_C1": ("C2", "C3"),
++    "DROP_C2": ("C1", "C3"),
++    "DROP_C3": ("C1", "C2"),
++    "FULL": ("C1", "C2", "C3"),
++}
++EXPECTED_HASHES = {
++    "source_receipt": "0149f167208565f85dec9fcd349dcc90ac1703b2357b22b79e24131018414f71",
++    "source_selected_records": "5b729294785de203a24bb541de8a12e817625f1f3d5a18169b53ba5b2e9fad57",
++    "source_runner": "e204ddf332ffdbc98679a2b9b4cb63261f137a9fb42b08edfad58506587a10a3",
++    "fullspan_results": "bc55426417949d69202bd7ae7fbc80e988b6cd7b11f5479d2ebe5809a20afd9b",
++    "fullspan_runner": "6bf6b8c37e05b886820c25248f4251a4c479c5d7dbb3058f982cbedaf65bb9bb",
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(8 * 1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def canonical_sha256(value: object) -> str:
++    return hashlib.sha256(json.dumps(
++        value, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("ascii")).hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value: Sequence[int]) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def peak_rss_gib() -> float:
++    # Linux reports ru_maxrss in KiB.
++    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 * 1024.0)
++
++
++def require_execution_guardrails() -> None:
++    expected = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
++    drift = {name: os.environ.get(name) for name in expected if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("runner must execute at nice level 15 or greater")
++
++
++def iter_cached_anchors(path: Path) -> Iterator[dict]:
++    """Incrementally decode the top-level anchors array.
++
++    A 128 MiB text window is large enough to avoid pathological retry copying
++    while retaining at most one decoded anchor.  The source receipt is 709 MiB,
++    so using json.load here would violate the one-anchor memory discipline.
++    """
++
++    decoder = json.JSONDecoder()
++    chunk_size = 128 * 1024 * 1024
++    with path.open("r", encoding="ascii") as stream:
++        buffer = ""
++        while '"anchors"' not in buffer:
++            chunk = stream.read(chunk_size)
++            if not chunk:
++                raise RuntimeError("source receipt has no anchors array")
++            buffer += chunk
++        position = buffer.index('"anchors"') + len('"anchors"')
++        position = buffer.index("[", position) + 1
++        while True:
++            while True:
++                while position < len(buffer) and buffer[position] in " \t\r\n,":
++                    position += 1
++                if position < len(buffer):
++                    break
++                buffer = stream.read(chunk_size)
++                position = 0
++                if not buffer:
++                    raise RuntimeError("unterminated anchors array")
++            if buffer[position] == "]":
++                return
++            while True:
++                try:
++                    anchor, end = decoder.raw_decode(buffer, position)
++                    break
++                except json.JSONDecodeError:
++                    more = stream.read(chunk_size)
++                    if not more:
++                        raise RuntimeError("truncated anchor object")
++                    buffer = buffer[position:] + more
++                    position = 0
++            yield anchor
++            buffer = buffer[end:]
++            position = 0
++
++
++def _identity(value: object) -> object:
++    if value is None:
++        return None
++    return tuple(int(v) for v in value)  # type: ignore[arg-type]
++
++
++def compact_anchor(anchor: Mapping[str, object], ordinal: int) -> dict:
++    profiles = anchor["profiles"]  # type: ignore[assignment]
++    definitions = anchor["candidate_definitions"]  # type: ignore[assignment]
++    if len(profiles) != len(definitions):
++        raise RuntimeError("profile/definition count drifted")
++    if not profiles:
++        raise RuntimeError("empty anchor catalogue")
++    base_assignments = {
++        int(user): _identity(identity)
++        for user, identity in anchor["base_assignments"]  # type: ignore[assignment]
++    }
++    base = profiles[0]
++    if int(base["index"]) != 0 or int(base["size"]) != 0:
++        raise RuntimeError("candidate zero is not the incumbent")
++    base_values = {
++        "capacity": unpair(base["capacity"]),
++        "demand_capped": unpair(base["demand_capped"]),
++        "energy": unpair(base["energy"]),
++    }
++    guard = int(anchor["base_guard_served_count"])
++    if int(base["served_count"]) != guard or not bool(base["valid"]):
++        raise RuntimeError("incumbent eligibility drifted")
++
++    compact_rows = []
++    rejected_invalid = 0
++    rejected_guard = 0
++    mixed_ineligible = 0
++    eligible_route_counts: Counter[str] = Counter()
++    previous_candidate_id = None
++    for expected_index, (profile, definition) in enumerate(zip(profiles, definitions, strict=True)):
++        index = int(profile["index"])
++        candidate_id = str(profile["candidate_id"])
++        if index != expected_index or candidate_id != str(definition["candidate_id"]):
++            raise RuntimeError("candidate index/id alignment drifted")
++        if index > 1 and previous_candidate_id is not None and candidate_id < previous_candidate_id:
++            raise RuntimeError("candidate order no longer supplies lexicographic tie-break")
++        previous_candidate_id = candidate_id
++
++        assignments = {
++            int(user): _identity(identity)
++            for user, identity in definition["assignments"]
++        }
++        association_changed = any(
++            assignments[user] != base_assignments[user] for user in base_assignments
++        )
++        control_changed = bool(definition["mode_offsets_by_user"])
++        mixed = association_changed and control_changed
++        eligible = bool(profile["valid"]) and int(profile["served_count"]) >= guard
++        if not bool(profile["valid"]):
++            rejected_invalid += 1
++        elif int(profile["served_count"]) < guard:
++            rejected_guard += 1
++        if mixed and eligible:
++            raise RuntimeError(
++                "eligible mixed association/control candidate cannot be split from cached atomic totals"
++            )
++        if mixed:
++            mixed_ineligible += 1
++        if not eligible:
++            continue
++
++        if index == 0:
++            route_kind = "BASE"
++            if association_changed or control_changed:
++                raise RuntimeError("incumbent has a changed route")
++        elif association_changed:
++            route_kind = "C1"
++        elif control_changed:
++            route_kind = "C2"
++        else:
++            raise RuntimeError("non-incumbent eligible candidate changes no route")
++        eligible_route_counts[route_kind] += 1
++
++        deltas: dict[str, dict[str, list[int]]] = {name: {} for name in ("C1", "C2", "C3")}
++        for numerator in NUMERATORS:
++            actual_n = unpair(profile[numerator])
++            additive_n = unpair(profile[f"additive_{numerator}"])
++            additive_delta_n = additive_n - base_values[numerator]
++            deltas["C1"][numerator] = pair(additive_delta_n if route_kind == "C1" else Fraction())
++            deltas["C2"][numerator] = pair(additive_delta_n if route_kind == "C2" else Fraction())
++            deltas["C3"][numerator] = pair(actual_n - additive_n)
++        actual_e = unpair(profile["energy"])
++        additive_e = unpair(profile["additive_energy"])
++        additive_delta_e = additive_e - base_values["energy"]
++        deltas["C1"]["energy"] = pair(additive_delta_e if route_kind == "C1" else Fraction())
++        deltas["C2"]["energy"] = pair(additive_delta_e if route_kind == "C2" else Fraction())
++        deltas["C3"]["energy"] = pair(actual_e - additive_e)
++
++        if index == 0 and any(unpair(deltas[name][field]) for name in deltas for field in deltas[name]):
++            raise RuntimeError("incumbent route deltas are nonzero")
++        if int(profile["size"]) <= 1 and any(
++            unpair(deltas["C3"][field]) for field in deltas["C3"]
++        ):
++            raise RuntimeError("singleton residual is not exactly zero")
++
++        compact_rows.append({
++            "index": index,
++            "candidate_id_sha256": hashlib.sha256(candidate_id.encode("ascii")).hexdigest(),
++            "size": int(profile["size"]),
++            "route_kind": route_kind,
++            "served_count": int(profile["served_count"]),
++            "rate_target_attained_count": int(profile["rate_target_attained_count"]),
++            "actual": {
++                "capacity": profile["capacity"],
++                "demand_capped": profile["demand_capped"],
++                "energy": profile["energy"],
++            },
++            "deltas": deltas,
++        })
++
++    return {
++        "schema": f"{SCHEMA}-anchor-cache-v1",
++        "ordinal": ordinal,
++        "anchor_id": str(anchor["anchor_id"]),
++        "world_index": int(anchor["world_index"]),
++        "step_index": int(anchor["step_index"]),
++        "world_sha256": str(anchor["world_sha256"]),
++        "base_guard_served_count": guard,
++        "source_candidate_count": len(profiles),
++        "eligible_candidate_count": len(compact_rows),
++        "rejected_invalid_count": rejected_invalid,
++        "rejected_guard_count": rejected_guard,
++        "mixed_association_control_ineligible_count": mixed_ineligible,
++        "eligible_route_counts": dict(sorted(eligible_route_counts.items())),
++        "base": {
++            "capacity": pair(base_values["capacity"]),
++            "demand_capped": pair(base_values["demand_capped"]),
++            "energy": pair(base_values["energy"]),
++            "served_count": int(base["served_count"]),
++            "rate_target_attained_count": int(base["rate_target_attained_count"]),
++        },
++        "rows": compact_rows,
++    }
++
++
++def prepare_anchor_shards() -> tuple[list[dict], dict]:
++    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
++    manifests = []
++    first_peak = None
++    for ordinal, anchor in enumerate(iter_cached_anchors(SOURCE_RECEIPT), start=1):
++        if ordinal > ANCHOR_COUNT:
++            raise RuntimeError("source has more than eight anchors")
++        shard = compact_anchor(anchor, ordinal)
++        shard_path = OUTPUT_DIR / f"anchor-{ordinal:02d}.json"
++        shard_path.write_text(
++            json.dumps(shard, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
++            encoding="ascii",
++        )
++        manifests.append({
++            "ordinal": ordinal,
++            "anchor_id": shard["anchor_id"],
++            "path": str(shard_path.relative_to(ROOT)),
++            "sha256": sha256(shard_path),
++            "source_candidate_count": shard["source_candidate_count"],
++            "eligible_candidate_count": shard["eligible_candidate_count"],
++            "mixed_association_control_ineligible_count": shard["mixed_association_control_ineligible_count"],
++        })
++        del shard
++        del anchor
++        gc.collect()
++        peak = peak_rss_gib()
++        if ordinal == 1:
++            first_peak = peak
++        print(f"anchor {ordinal}/{ANCHOR_COUNT}, peak RSS {peak:.3f} GiB", flush=True)
++        if ordinal == 1 and peak > RSS_LIMIT_GIB:
++            probe = {
++                "first_anchor_peak_rss_gib": peak,
++                "limit_gib": RSS_LIMIT_GIB,
++                "status": "STOP_FIRST_ANCHOR_RSS_EXCEEDED",
++            }
++            (OUTPUT_DIR / "memory-probe.json").write_text(
++                json.dumps(probe, indent=2, sort_keys=True) + "\n", encoding="ascii",
++            )
++            raise RuntimeError(
++                f"single-anchor peak RSS {peak:.3f} GiB exceeds {RSS_LIMIT_GIB:.3f} GiB"
++            )
++    if len(manifests) != ANCHOR_COUNT or first_peak is None:
++        raise RuntimeError(f"expected eight anchors, decoded {len(manifests)}")
++    memory = {
++        "first_anchor_peak_rss_gib": first_peak,
++        "limit_gib": RSS_LIMIT_GIB,
++        "within_limit": first_peak <= RSS_LIMIT_GIB,
++        "final_process_peak_rss_gib": peak_rss_gib(),
++        "python_processes": 1,
++        "concurrent_python_processes": 1,
++        "anchor_processing": "serial; one decoded source anchor retained at a time",
++    }
++    (OUTPUT_DIR / "memory-probe.json").write_text(
++        json.dumps(memory, indent=2, sort_keys=True) + "\n", encoding="ascii",
++    )
++    return manifests, memory
++
++
++def load_shard(manifest: Mapping[str, object]) -> dict:
++    path = ROOT / str(manifest["path"])
++    if sha256(path) != str(manifest["sha256"]):
++        raise RuntimeError(f"anchor shard custody mismatch: {path}")
++    return json.loads(path.read_text(encoding="ascii"))
++
++
++def pseudo_values(shard: Mapping[str, object], row: Mapping[str, object], numerator: str, arm: str) -> tuple[Fraction, Fraction]:
++    n = unpair(shard["base"][numerator])  # type: ignore[index]
++    e = unpair(shard["base"]["energy"])  # type: ignore[index]
++    for route in INCLUDES[arm]:
++        n += unpair(row["deltas"][route][numerator])  # type: ignore[index]
++        e += unpair(row["deltas"][route]["energy"])  # type: ignore[index]
++    return n, e
++
++
++def choose_for_anchor(shard: Mapping[str, object], numerator: str, arm: str, eta: Fraction) -> dict:
++    best = None
++    best_score = None
++    for row in shard["rows"]:  # type: ignore[assignment]
++        n, e = pseudo_values(shard, row, numerator, arm)
++        score = n - eta * e
++        # Candidate zero wins an exact tie; otherwise source index order is the
++        # original lexicographic candidate-id order.
++        tie_key = (0 if int(row["index"]) == 0 else 1, int(row["index"]))
++        if best is None or score > best_score or (
++            score == best_score and tie_key < best["tie_key"]
++        ):
++            best = {"row": row, "pseudo_n": n, "pseudo_e": e, "tie_key": tie_key}
++            best_score = score
++    if best is None:
++        raise RuntimeError("anchor shard has no eligible candidate")
++    return best
++
++
++def optimize(manifests: Sequence[Mapping[str, object]], numerator: str, arm: str) -> dict:
++    base_n = Fraction()
++    base_e = Fraction()
++    for manifest in manifests:
++        shard = load_shard(manifest)
++        base_n += unpair(shard["base"][numerator])
++        base_e += unpair(shard["base"]["energy"])
++        del shard
++    eta = base_n / base_e
++    trace = []
++    previous = None
++    selected = []
++    for iteration in range(1, MAX_DINKELBACH + 1):
++        selected = []
++        for manifest in manifests:
++            shard = load_shard(manifest)
++            chosen = choose_for_anchor(shard, numerator, arm, eta)
++            row = chosen["row"]
++            selected.append({
++                "anchor_id": shard["anchor_id"],
++                "index": int(row["index"]),
++                "candidate_id_sha256": row["candidate_id_sha256"],
++                "candidate_size": int(row["size"]),
++                "route_kind": row["route_kind"],
++                "pseudo_n": chosen["pseudo_n"],
++                "pseudo_e": chosen["pseudo_e"],
++                "actual_n": unpair(row["actual"][numerator]),
++                "actual_e": unpair(row["actual"]["energy"]),
++                "served_count": int(row["served_count"]),
++                "rate_target_attained_count": int(row["rate_target_attained_count"]),
++            })
++            del shard
++        pseudo_n = sum((row["pseudo_n"] for row in selected), Fraction())
++        pseudo_e = sum((row["pseudo_e"] for row in selected), Fraction())
++        if pseudo_e <= 0:
++            raise RuntimeError(f"{numerator}:{arm} Dinkelbach pseudo-energy is not positive")
++        new_eta = pseudo_n / pseudo_e
++        indices = tuple(int(row["index"]) for row in selected)
++        residual = pseudo_n - eta * pseudo_e
++        trace.append({
++            "iteration": iteration,
++            "eta": pair(eta),
++            "selected_indices": list(indices),
++            "surplus_residual": pair(residual),
++        })
++        if new_eta == eta:
++            break
++        if indices == previous:
++            raise RuntimeError(f"{numerator}:{arm} selection fixed without exact price equality")
++        previous = indices
++        eta = new_eta
++    else:
++        raise RuntimeError(f"{numerator}:{arm} Dinkelbach iteration cap reached")
++
++    actual_n = sum((row["actual_n"] for row in selected), Fraction())
++    actual_e = sum((row["actual_e"] for row in selected), Fraction())
++    per_anchor = [{
++        "anchor_id": row["anchor_id"],
++        "candidate_index": row["index"],
++        "candidate_id_sha256": row["candidate_id_sha256"],
++        "candidate_size": row["candidate_size"],
++        "route_kind": row["route_kind"],
++        "numerator": pair(row["actual_n"]),
++        "energy": pair(row["actual_e"]),
++        "ee_bit_per_j": float(row["actual_n"] / row["actual_e"]),
++        "served_count": row["served_count"],
++        "rate_target_attained_count": row["rate_target_attained_count"],
++    } for row in selected]
++    return {
++        "arm": arm,
++        "included_exact_terms": list(INCLUDES[arm]),
++        "dinkelbach_iterations": len(trace),
++        "optimization_ratio": pair(eta),
++        "selected_indices": [row["index"] for row in selected],
++        "selected_candidate_id_sha256": [row["candidate_id_sha256"] for row in selected],
++        "pseudo_numerator": pair(pseudo_n),
++        "pseudo_energy": pair(pseudo_e),
++        "actual_numerator": pair(actual_n),
++        "actual_energy": pair(actual_e),
++        "pooled_ee_bit_per_j": float(actual_n / actual_e),
++        "served_count": sum(int(row["served_count"]) for row in selected),
++        "rate_target_attained_count": sum(int(row["rate_target_attained_count"]) for row in selected),
++        "candidate_size_distribution": dict(sorted(Counter(
++            str(row["candidate_size"]) for row in selected
++        ).items())),
++        "per_anchor": per_anchor,
++        "trace": trace,
++    }
++
++
++def contrast(left: Mapping[str, object], right: Mapping[str, object]) -> dict:
++    left_n = unpair(left["actual_numerator"])  # type: ignore[arg-type]
++    left_e = unpair(left["actual_energy"])  # type: ignore[arg-type]
++    right_n = unpair(right["actual_numerator"])  # type: ignore[arg-type]
++    right_e = unpair(right["actual_energy"])  # type: ignore[arg-type]
++    left_ee, right_ee = left_n / left_e, right_n / right_e
++    absolute = right_ee - left_ee
++    relative = right_ee / left_ee - 1
++    return {
++        "left": str(left["arm"]),
++        "right": str(right["arm"]),
++        "ee_difference_bit_per_j": pair(absolute),
++        "gain_relative": pair(relative),
++        "gain_percentage": 100.0 * float(relative),
++        "positive": relative > 0,
++        "zero": relative == 0,
++        "numerator_delta": pair(right_n - left_n),
++        "energy_delta": pair(right_e - left_e),
++        "served_delta": int(right["served_count"]) - int(left["served_count"]),
++        "rate_target_attained_delta": (
++            int(right["rate_target_attained_count"])
++            - int(left["rate_target_attained_count"])
++        ),
++    }
++
++
++def build_contrasts(selectors: Mapping[str, Mapping[str, object]]) -> tuple[dict, dict]:
++    requested = {}
++    for arm in ("C1_ONLY", "C2_ONLY", "C3_ONLY"):
++        requested[f"{arm}-BASELINE"] = contrast(selectors["BASELINE"], selectors[arm])
++    for arm in ("DROP_C1", "DROP_C2", "DROP_C3"):
++        requested[f"FULL-{arm}"] = contrast(selectors[arm], selectors["FULL"])
++        requested[f"{arm}-BASELINE"] = contrast(selectors["BASELINE"], selectors[arm])
++
++    interactions = {}
++    for route in ("C1", "C2", "C3"):
++        conditional = requested[f"FULL-DROP_{route}"]
++        alone = requested[f"{route}_ONLY-BASELINE"]
++        conditional_abs = unpair(conditional["ee_difference_bit_per_j"])
++        alone_abs = unpair(alone["ee_difference_bit_per_j"])
++        difference_abs = conditional_abs - alone_abs
++        difference_pp = float(conditional["gain_percentage"]) - float(alone["gain_percentage"])
++        interactions[route] = {
++            "conditional_contrast": f"FULL-DROP_{route}",
++            "alone_contrast": f"{route}_ONLY-BASELINE",
++            "conditional_gain_percentage": conditional["gain_percentage"],
++            "alone_gain_percentage": alone["gain_percentage"],
++            "difference_percentage_points": difference_pp,
++            "conditional_minus_alone_ee_bit_per_j": pair(difference_abs),
++            "conditional_marginal_larger": difference_abs > 0,
++            "equal": difference_abs == 0,
++        }
++    return requested, interactions
++
++
++def verify_fullspan_reproduction(blocks: Mapping[str, object]) -> dict:
++    fullspan = json.loads(FULLSPAN_RESULTS.read_text(encoding="ascii"))
++    checks = []
++    mapping = {
++        "BASELINE": "BASELINE",
++        "DROP_C3": "ADDITIVE_ONLY",
++        "FULL": "WITH_RESIDUAL",
++    }
++    for numerator in NUMERATORS:
++        for arm, source_selector in mapping.items():
++            ours = blocks[numerator]["selectors"][arm]  # type: ignore[index]
++            source = fullspan["numerators"][numerator]["selectors"][source_selector]
++            match = (
++                ours["selected_indices"] == source["selected_indices"]
++                and unpair(ours["actual_numerator"]) == unpair(source["numerator"])
++                and unpair(ours["actual_energy"]) == unpair(source["energy"])
++            )
++            if not match:
++                raise RuntimeError(f"FULLSPAN reproduction failed for {numerator}:{arm}")
++            checks.append({
++                "numerator": numerator,
++                "arm": arm,
++                "source_selector": source_selector,
++                "selected_indices_and_exact_totals_match": True,
++            })
++    return {"all_match": True, "checks": checks}
++
++
++def status_word(value: Mapping[str, object]) -> str:
++    if bool(value["positive"]):
++        return "POSITIVE"
++    if bool(value["zero"]):
++        return "ZERO"
++    return "NOT POSITIVE"
++
++
++def pct(value: Mapping[str, object]) -> str:
++    return f"{float(value['gain_percentage']):+.2f}%"
++
++
++def render_report(results: Mapping[str, object], output_sha: str) -> str:
++    demand = results["numerators"]["demand_capped"]  # type: ignore[index]
++    singles = demand["contrasts"]
++    all_positive = all(bool(singles[f"{route}_ONLY-BASELINE"]["positive"]) for route in ("C1", "C2", "C3"))
++    first = (
++        f"**Demand-capped single-route marginals over `BASELINE` are C1 "
++        f"{pct(singles['C1_ONLY-BASELINE'])}, C2 {pct(singles['C2_ONLY-BASELINE'])}, and "
++        f"C3 {pct(singles['C3_ONLY-BASELINE'])}; "
++        f"{'all three are positive' if all_positive else 'not all three are positive'}.**"
++    )
++    lines = [
++        first, "", "# Oracle factorial — 2026-09-10", "", f"`{CLAIM}`", "",
++        "Every number is a **ceiling: exact terms, not learned predictions**.", "",
++        "`BASELINE` is the committed nearest-eligible incumbent with no catalogue selection. It is **not** `ALL_NEUTRAL_CONTROL`.", "",
++        "## Demand-capped reported result", "",
++        "Demand cap: `min(per-user integrated delivery, 50 Mbit/s × 30.08 s)`. Pooled EE is the ratio of pooled capped bits to pooled realised energy.", "",
++        "| arm | exact score terms | pooled EE (Mbit/J) | capped bits (Gbit) | energy (J) | served | rate-target attained | sizes |",
++        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
++    ]
++    for arm in ARMS:
++        row = demand["selectors"][arm]
++        formula = "+".join(row["included_exact_terms"]) or "incumbent/no selection"
++        lines.append(
++            f"| `{arm}` | {formula} | {row['pooled_ee_bit_per_j']/1e6:.6f} | "
++            f"{float(unpair(row['actual_numerator']))/1e9:.6f} | "
++            f"{float(unpair(row['actual_energy'])):.6f} | {row['served_count']} | "
++            f"{row['rate_target_attained_count']} | `{row['candidate_size_distribution']}` |"
++        )
++
++    lines += ["", "## Required contrasts", "", "| contrast | EE difference (Mbit/J) | relative gain | sign | capped-bits delta (Gbit) | energy delta (J) |", "| --- | ---: | ---: | --- | ---: | ---: |"]
++    contrast_order = (
++        "C1_ONLY-BASELINE", "C2_ONLY-BASELINE", "C3_ONLY-BASELINE",
++        "FULL-DROP_C1", "FULL-DROP_C2", "FULL-DROP_C3",
++        "DROP_C1-BASELINE", "DROP_C2-BASELINE", "DROP_C3-BASELINE",
++    )
++    for key in contrast_order:
++        row = demand["contrasts"][key]
++        label = f"{row['right']} - {row['left']}"
++        lines.append(
++            f"| `{label}` | {float(unpair(row['ee_difference_bit_per_j']))/1e6:+.6f} | "
++            f"{pct(row)} | **{status_word(row)}** | "
++            f"{float(unpair(row['numerator_delta']))/1e9:+.6f} | "
++            f"{float(unpair(row['energy_delta'])):+.6f} |"
++        )
++
++    lines += [
++        "",
++        "Positive contrasts are `C1_ONLY − BASELINE`, `C2_ONLY − BASELINE`, "
++        "`FULL − DROP_C1`, `FULL − DROP_C3`, `DROP_C2 − BASELINE`, and "
++        "`DROP_C3 − BASELINE`. Not positive are `C3_ONLY − BASELINE` and "
++        "`DROP_C1 − BASELINE` (both negative), plus `FULL − DROP_C2` "
++        "(exactly zero, not merely rounded to zero). No negative or zero "
++        "marginal is treated as support for the claim.",
++        "", "## Route interaction", "",
++        "The percentage-point comparison uses each marginal's own reference EE. The final column is the classical difference of absolute EE marginals, `(FULL − DROP_Ci) − (Ci_ONLY − BASELINE)`.",
++        "", "| route | FULL vs pair | route alone vs BASELINE | conditional − alone (pp) | absolute interaction (Mbit/J) | interpretation |", "| --- | ---: | ---: | ---: | ---: | --- |",
++    ]
++    for route in ("C1", "C2", "C3"):
++        row = demand["interactions"][route]
++        if row["equal"]:
++            interpretation = "equal"
++        elif row["conditional_marginal_larger"]:
++            interpretation = "conditional marginal is larger"
++        else:
++            interpretation = "conditional marginal is smaller"
++        lines.append(
++            f"| {route} | {row['conditional_gain_percentage']:+.2f}% | "
++            f"{row['alone_gain_percentage']:+.2f}% | {row['difference_percentage_points']:+.2f} pp | "
++            f"{float(unpair(row['conditional_minus_alone_ee_bit_per_j']))/1e6:+.6f} | {interpretation} |"
++        )
++
++    lines += ["", "## Per-anchor demand-capped EE", "", "| anchor | " + " | ".join(ARMS) + " |", "| --- | " + " | ".join("---:" for _ in ARMS) + " |"]
++    anchor_ids = results["anchor_ids"]
++    for index, anchor_id in enumerate(anchor_ids):
++        cells = [f"{demand['selectors'][arm]['per_anchor'][index]['ee_bit_per_j']/1e6:.6f}" for arm in ARMS]
++        lines.append(f"| {anchor_id} | " + " | ".join(cells) + " |")
++
++    lines += ["", "## Per-anchor demand-capped endpoints", "", "| arm | anchor | capped bits (Gbit) | energy (J) | served | target | selected size | candidate index |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
++    for arm in ARMS:
++        for row in demand["selectors"][arm]["per_anchor"]:
++            lines.append(
++                f"| `{arm}` | {row['anchor_id']} | {float(unpair(row['numerator']))/1e9:.6f} | "
++                f"{float(unpair(row['energy'])):.6f} | {row['served_count']} | "
++                f"{row['rate_target_attained_count']} | {row['candidate_size']} | {row['candidate_index']} |"
++            )
++
++    capacity = results["numerators"]["capacity"]  # type: ignore[index]
++    lines += ["", "## Capacity numerator (secondary)", "", "These capacity-numerator figures are secondary; the demand-capped figures above are the reported result.", "", "| arm | pooled EE (Mbit/J) | capacity (Gbit) | energy (J) | served | target |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
++    for arm in ARMS:
++        row = capacity["selectors"][arm]
++        lines.append(
++            f"| `{arm}` | {row['pooled_ee_bit_per_j']/1e6:.6f} | "
++            f"{float(unpair(row['actual_numerator']))/1e9:.6f} | "
++            f"{float(unpair(row['actual_energy'])):.6f} | {row['served_count']} | "
++            f"{row['rate_target_attained_count']} |"
++        )
++
++    memory = results["memory"]
++    lines += [
++        "", "## Exact construction and memory discipline", "",
++        "For candidate `x`, C1 is the sum of exact atomic association-change numerator/energy deltas, C2 is the sum of exact atomic adjacent-mode/control deltas, and C3 is the residual `joint − incumbent − C1 − C2`. At common Dinkelbach price `η`, an arm scores `incumbent + Σ included routes`, equivalently `B0 − ηE0 + Σ(ΔBi − ηΔEi)`. The selected candidate is then reported with its actual realised 48-boundary capped bits and energy, not with pseudo totals.", "",
++        "The source candidate order was asserted to be incumbent first and then lexicographic. Every eligible row was asserted to be either association-only or control-only; mixed association/control rows were physically invalid and excluded by the inherited eligibility guard, so no cached mixed term was approximated.", "",
++        f"The first anchor peak RSS was **{memory['first_anchor_peak_rss_gib']:.3f} GiB**, below the 6 GiB stop threshold. All eight anchors were streamed serially; each compact anchor shard was written before the decoded source anchor was freed. The run used exactly one Python process and all BLAS thread counts were one.", "",
++        "## Evidence classification", "", "### Verified by running code", "",
++        "The pinned source receipt, source selected-record file, residual-toggle runner, FULLSPAN result, and FULLSPAN runner matched their SHA-256 digests. The code streamed all eight cached anchors, asserted the inherited eligibility and exact singleton-residual identities, reran every factorial selector with exact `Fraction` prices, and exactly reproduced `BASELINE`, `DROP_C3`/`ADDITIVE_ONLY`, and `FULL`/`WITH_RESIDUAL` selections and totals for both numerators.", "",
++        "### Derived on paper", "",
++        "Pooled ratios, requested contrasts, and interaction differences are exact rational arithmetic over the cached binary64 physical outputs. Displayed decimals are formatting only.", "",
++        "### Inferred", "",
++        "These oracle selectors expose ceiling opportunity within this fixed catalogue. They do not establish learnability, deployable policy efficacy, or achievable learned values.", "",
++        "No learner was run. Loss values are never evidence about EE. Nothing was tuned to produce an ordering, and no sealed constant, threshold, sign, seed, horizon, price, guard, acceptance rule, control law, search grid, manifest, or optimizer setting was changed.", "",
++        "## Custody and reproduction", "",
++        f"Machine result: `.scratch/oracle-factorial/results.json` (SHA-256 `{output_sha}`). Compact per-anchor cache shards and their hashes are listed in that result. Runner SHA-256: `{results['provenance']['runner_sha256']}`.", "",
++        "From `/home/sat/mcrl-v025-arch-ws`:", "", "```bash",
++        "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \\",
++        "  NUMEXPR_NUM_THREADS=1 PYTHONPATH=src nice -n 15 \\",
++        "  /home/sat/mcrl-leo-handover/.venv/bin/python \\",
++        "  scripts/run_oracle_factorial.py", "```", "",
++    ]
++    return "\n".join(lines)
++
++
++def main() -> int:
++    require_execution_guardrails()
++    started = time.perf_counter()
++    actual_hashes = {
++        "source_receipt": sha256(SOURCE_RECEIPT),
++        "source_selected_records": sha256(SOURCE_SELECTED),
++        "source_runner": sha256(SOURCE_RUNNER),
++        "fullspan_results": sha256(FULLSPAN_RESULTS),
++        "fullspan_runner": sha256(FULLSPAN_RUNNER),
++    }
++    if actual_hashes != EXPECTED_HASHES:
++        raise RuntimeError(f"source custody mismatch: {actual_hashes}")
++
++    manifests, memory = prepare_anchor_shards()
++    numerator_blocks = {}
++    for numerator in NUMERATORS:
++        selectors = {}
++        for arm in ARMS:
++            selectors[arm] = optimize(manifests, numerator, arm)
++            print(
++                f"optimized {numerator}:{arm}, iterations "
++                f"{selectors[arm]['dinkelbach_iterations']}, peak RSS {peak_rss_gib():.3f} GiB",
++                flush=True,
++            )
++        contrasts, interactions = build_contrasts(selectors)
++        numerator_blocks[numerator] = {
++            "selectors": selectors,
++            "contrasts": contrasts,
++            "interactions": interactions,
++        }
++    reproduction = verify_fullspan_reproduction(numerator_blocks)
++
++    results = {
++        "schema": SCHEMA,
++        "claim_ceiling": CLAIM,
++        "ceiling_statement": "Every number is a ceiling: exact terms, not learned predictions.",
++        "baseline_definition": "committed nearest-eligible incumbent; no catalogue selection",
++        "baseline_is_all_neutral_control": False,
++        "route_definitions": {
++            "C1": "exact atomic association-change numerator and energy deltas",
++            "C2": "exact atomic adjacent-mode/control numerator and energy deltas",
++            "C3": "exact joint residual after incumbent, C1, and C2",
++        },
++        "arm_formulas": {arm: list(INCLUDES[arm]) for arm in ARMS},
++        "anchor_ids": [str(row["anchor_id"]) for row in manifests],
++        "numerators": numerator_blocks,
++        "fullspan_reproduction": reproduction,
++        "anchor_shards": manifests,
++        "memory": {**memory, "final_process_peak_rss_gib": peak_rss_gib()},
++        "reuse": {
++            "catalogue_rebuilt": False,
++            "physical_candidate_profiles_rerun": False,
++            "cached_exact_candidate_profiles_reused": True,
++            "factorial_dinkelbach_selectors_rerun": True,
++        },
++        "sealed_settings_changed": False,
++        "learner_used": False,
++        "loss_values_used_as_ee_evidence": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in (
++            "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS",
++        )},
++        "wall_seconds": time.perf_counter() - started,
++        "provenance": {
++            **{f"{name}_sha256": value for name, value in actual_hashes.items()},
++            "workspace_commit": subprocess.check_output(
++                ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
++            ).strip(),
++            "runner_sha256": sha256(Path(__file__).resolve()),
++        },
++        "evidence_classification": {
++            "verified_by_running_code": [
++                "source custody hashes",
++                "serial one-anchor cache extraction and RSS measurement",
++                "exact-Fraction factorial Dinkelbach selections",
++                "exact reproduction of FULLSPAN BASELINE, ADDITIVE_ONLY, and WITH_RESIDUAL",
++            ],
++            "derived_on_paper": [
++                "pooled ratios, requested contrasts, and interaction differences",
++            ],
++            "inferred": [
++                "oracle values are ceilings rather than learned achievable values",
++            ],
++        },
++    }
++    results["canonical_payload_sha256"] = canonical_sha256(results)
++    OUTPUT.write_text(
++        json.dumps(results, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    output_sha = sha256(OUTPUT)
++    REPORT.write_text(render_report(results, output_sha), encoding="utf-8")
++    demand = results["numerators"]["demand_capped"]
++    print(json.dumps({
++        "output": str(OUTPUT),
++        "output_sha256": output_sha,
++        "report": str(REPORT),
++        "first_anchor_peak_rss_gib": memory["first_anchor_peak_rss_gib"],
++        "single_route_marginals_percent": {
++            route: demand["contrasts"][f"{route}_ONLY-BASELINE"]["gain_percentage"]
++            for route in ("C1", "C2", "C3")
++        },
++    }, indent=2, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+/bin/bash -lc "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 PYTHONPATH=src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -c 'import hashlib,json,pathlib; root=pathlib.Path(\".\"); result_path=root/\".scratch/oracle-factorial/results.json\"; p=json.loads(result_path.read_text()); report=(root/\"ORACLE-FACTORIAL-2026-09-10.md\").read_text(); runner=root/\"scripts/run_oracle_factorial.py\"; assert p[\"provenance\"][\"runner_sha256\"]==hashlib.sha256(runner.read_bytes()).hexdigest(); assert \"99445de46db39251583b77e9f1aafdcfc288da4701459c4e4058206db6db4209\"==hashlib.sha256(result_path.read_bytes()).hexdigest(); assert report.splitlines()[0]==\"**Demand-capped single-route marginals over "'`BASELINE` are C1 +10.80%, C2 +0.45%, and C3 -0.06%; not all three are positive.**"; assert "exactly zero, not merely rounded to zero" in report; assert p["memory"]["first_anchor_peak_rss_gib"]<6; assert p["memory"]["concurrent_python_processes"]==1; assert p["fullspan_reproduction"]["all_match"]; print("final-verification: PASS"); print("result_sha256", hashlib.sha256(result_path.read_bytes()).hexdigest()); print("report_sha256", hashlib.sha256((root/"ORACLE-FACTORIAL-2026-09-10.md").read_bytes()).hexdigest()); print("runner_sha256", hashlib.sha256(runner.read_bytes()).hexdigest())'"'
+git status --short -- scripts/run_oracle_factorial.py ORACLE-FACTORIAL-2026-09-10.md .scratch/oracle-factorial" in /home/sat/mcrl-v025-arch-ws
+ succeeded in 0ms:
+final-verification: PASS
+result_sha256 99445de46db39251583b77e9f1aafdcfc288da4701459c4e4058206db6db4209
+report_sha256 b07fc778ddc7a48e128fe4718d934fd724480fdbd9665b13a7db802ddcb24633
+runner_sha256 5b5529d8df18386f656c6adc0f1be01308db2cf404c2c8ab492bd0deba25a089
+?? .scratch/oracle-factorial/
+?? ORACLE-FACTORIAL-2026-09-10.md
+?? scripts/run_oracle_factorial.py
+
+diff --git a/scripts/run_oracle_factorial.py b/scripts/run_oracle_factorial.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4fed053f9dce3bda096fedcf75e87c1e2bc22bb
+--- /dev/null
++++ b/scripts/run_oracle_factorial.py
+@@ -0,0 +1,804 @@
++#!/usr/bin/env python3
++"""Exact three-route factorial over the cached ORACLE-FULL-SPAN catalogue.
++
++DIAGNOSTIC_NOT_CLAIM.  This runner does not evaluate physics or run a learner.
++It streams one cached anchor at a time, separates the exact additive singleton
++deltas into association (C1) and adjacent-mode/control (C2) terms, retains the
++joint residual as C3, and reruns exact-Fraction pooled Dinkelbach selection.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import resource
++import subprocess
++import sys
++import time
++from typing import Iterator, Mapping, Sequence
++
++
++ROOT = Path(__file__).resolve().parents[1]
++SOURCE_RECEIPT = ROOT / ".scratch/oracle-residual-toggle-20260910/result.json"
++SOURCE_SELECTED = ROOT / ".scratch/oracle-residual-toggle-20260910/selected-records.json"
++SOURCE_RUNNER = ROOT / "scripts/run_oracle_residual_toggle.py"
++FULLSPAN_RESULTS = ROOT / ".scratch/oracle-full-span/results.json"
++FULLSPAN_RUNNER = ROOT / "scripts/run_oracle_full_span.py"
++OUTPUT_DIR = ROOT / ".scratch/oracle-factorial"
++OUTPUT = OUTPUT_DIR / "results.json"
++REPORT = ROOT / "ORACLE-FACTORIAL-2026-09-10.md"
++
++SCHEMA = "mcrl-v025-oracle-factorial-v1"
++CLAIM = "DIAGNOSTIC_NOT_CLAIM"
++ANCHOR_COUNT = 8
++MAX_DINKELBACH = 128
++RSS_LIMIT_GIB = 6.0
++NUMERATORS = ("capacity", "demand_capped")
++ARMS = (
++    "BASELINE",
++    "C1_ONLY",
++    "C2_ONLY",
++    "C3_ONLY",
++    "DROP_C1",
++    "DROP_C2",
++    "DROP_C3",
++    "FULL",
++)
++INCLUDES = {
++    "BASELINE": (),
++    "C1_ONLY": ("C1",),
++    "C2_ONLY": ("C2",),
++    "C3_ONLY": ("C3",),
++    "DROP_C1": ("C2", "C3"),
++    "DROP_C2": ("C1", "C3"),
++    "DROP_C3": ("C1", "C2"),
++    "FULL": ("C1", "C2", "C3"),
++}
++EXPECTED_HASHES = {
++    "source_receipt": "0149f167208565f85dec9fcd349dcc90ac1703b2357b22b79e24131018414f71",
++    "source_selected_records": "5b729294785de203a24bb541de8a12e817625f1f3d5a18169b53ba5b2e9fad57",
++    "source_runner": "e204ddf332ffdbc98679a2b9b4cb63261f137a9fb42b08edfad58506587a10a3",
++    "fullspan_results": "bc55426417949d69202bd7ae7fbc80e988b6cd7b11f5479d2ebe5809a20afd9b",
++    "fullspan_runner": "6bf6b8c37e05b886820c25248f4251a4c479c5d7dbb3058f982cbedaf65bb9bb",
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(8 * 1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def canonical_sha256(value: object) -> str:
++    return hashlib.sha256(json.dumps(
++        value, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("ascii")).hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value: Sequence[int]) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def peak_rss_gib() -> float:
++    # Linux reports ru_maxrss in KiB.
++    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 * 1024.0)
++
++
++def require_execution_guardrails() -> None:
++    expected = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
++    drift = {name: os.environ.get(name) for name in expected if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("runner must execute at nice level 15 or greater")
++
++
++def iter_cached_anchors(path: Path) -> Iterator[dict]:
++    """Incrementally decode the top-level anchors array.
++
++    A 128 MiB text window is large enough to avoid pathological retry copying
++    while retaining at most one decoded anchor.  The source receipt is 709 MiB,
++    so using json.load here would violate the one-anchor memory discipline.
++    """
++
++    decoder = json.JSONDecoder()
++    chunk_size = 128 * 1024 * 1024
++    with path.open("r", encoding="ascii") as stream:
++        buffer = ""
++        while '"anchors"' not in buffer:
++            chunk = stream.read(chunk_size)
++            if not chunk:
++                raise RuntimeError("source receipt has no anchors array")
++            buffer += chunk
++        position = buffer.index('"anchors"') + len('"anchors"')
++        position = buffer.index("[", position) + 1
++        while True:
++            while True:
++                while position < len(buffer) and buffer[position] in " \t\r\n,":
++                    position += 1
++                if position < len(buffer):
++                    break
++                buffer = stream.read(chunk_size)
++                position = 0
++                if not buffer:
++                    raise RuntimeError("unterminated anchors array")
++            if buffer[position] == "]":
++                return
++            while True:
++                try:
++                    anchor, end = decoder.raw_decode(buffer, position)
++                    break
++                except json.JSONDecodeError:
++                    more = stream.read(chunk_size)
++                    if not more:
++                        raise RuntimeError("truncated anchor object")
++                    buffer = buffer[position:] + more
++                    position = 0
++            yield anchor
++            buffer = buffer[end:]
++            position = 0
++
++
++def _identity(value: object) -> object:
++    if value is None:
++        return None
++    return tuple(int(v) for v in value)  # type: ignore[arg-type]
++
++
++def compact_anchor(anchor: Mapping[str, object], ordinal: int) -> dict:
++    profiles = anchor["profiles"]  # type: ignore[assignment]
++    definitions = anchor["candidate_definitions"]  # type: ignore[assignment]
++    if len(profiles) != len(definitions):
++        raise RuntimeError("profile/definition count drifted")
++    if not profiles:
++        raise RuntimeError("empty anchor catalogue")
++    base_assignments = {
++        int(user): _identity(identity)
++        for user, identity in anchor["base_assignments"]  # type: ignore[assignment]
++    }
++    base = profiles[0]
++    if int(base["index"]) != 0 or int(base["size"]) != 0:
++        raise RuntimeError("candidate zero is not the incumbent")
++    base_values = {
++        "capacity": unpair(base["capacity"]),
++        "demand_capped": unpair(base["demand_capped"]),
++        "energy": unpair(base["energy"]),
++    }
++    guard = int(anchor["base_guard_served_count"])
++    if int(base["served_count"]) != guard or not bool(base["valid"]):
++        raise RuntimeError("incumbent eligibility drifted")
++
++    compact_rows = []
++    rejected_invalid = 0
++    rejected_guard = 0
++    mixed_ineligible = 0
++    eligible_route_counts: Counter[str] = Counter()
++    previous_candidate_id = None
++    for expected_index, (profile, definition) in enumerate(zip(profiles, definitions, strict=True)):
++        index = int(profile["index"])
++        candidate_id = str(profile["candidate_id"])
++        if index != expected_index or candidate_id != str(definition["candidate_id"]):
++            raise RuntimeError("candidate index/id alignment drifted")
++        if index > 1 and previous_candidate_id is not None and candidate_id < previous_candidate_id:
++            raise RuntimeError("candidate order no longer supplies lexicographic tie-break")
++        previous_candidate_id = candidate_id
++
++        assignments = {
++            int(user): _identity(identity)
++            for user, identity in definition["assignments"]
++        }
++        association_changed = any(
++            assignments[user] != base_assignments[user] for user in base_assignments
++        )
++        control_changed = bool(definition["mode_offsets_by_user"])
++        mixed = association_changed and control_changed
++        eligible = bool(profile["valid"]) and int(profile["served_count"]) >= guard
++        if not bool(profile["valid"]):
++            rejected_invalid += 1
++        elif int(profile["served_count"]) < guard:
++            rejected_guard += 1
++        if mixed and eligible:
++            raise RuntimeError(
++                "eligible mixed association/control candidate cannot be split from cached atomic totals"
++            )
++        if mixed:
++            mixed_ineligible += 1
++        if not eligible:
++            continue
++
++        if index == 0:
++            route_kind = "BASE"
++            if association_changed or control_changed:
++                raise RuntimeError("incumbent has a changed route")
++        elif association_changed:
++            route_kind = "C1"
++        elif control_changed:
++            route_kind = "C2"
++        else:
++            raise RuntimeError("non-incumbent eligible candidate changes no route")
++        eligible_route_counts[route_kind] += 1
++
++        deltas: dict[str, dict[str, list[int]]] = {name: {} for name in ("C1", "C2", "C3")}
++        for numerator in NUMERATORS:
++            actual_n = unpair(profile[numerator])
++            additive_n = unpair(profile[f"additive_{numerator}"])
++            additive_delta_n = additive_n - base_values[numerator]
++            deltas["C1"][numerator] = pair(additive_delta_n if route_kind == "C1" else Fraction())
++            deltas["C2"][numerator] = pair(additive_delta_n if route_kind == "C2" else Fraction())
++            deltas["C3"][numerator] = pair(actual_n - additive_n)
++        actual_e = unpair(profile["energy"])
++        additive_e = unpair(profile["additive_energy"])
++        additive_delta_e = additive_e - base_values["energy"]
++        deltas["C1"]["energy"] = pair(additive_delta_e if route_kind == "C1" else Fraction())
++        deltas["C2"]["energy"] = pair(additive_delta_e if route_kind == "C2" else Fraction())
++        deltas["C3"]["energy"] = pair(actual_e - additive_e)
++
++        if index == 0 and any(unpair(deltas[name][field]) for name in deltas for field in deltas[name]):
++            raise RuntimeError("incumbent route deltas are nonzero")
++        if int(profile["size"]) <= 1 and any(
++            unpair(deltas["C3"][field]) for field in deltas["C3"]
++        ):
++            raise RuntimeError("singleton residual is not exactly zero")
++
++        compact_rows.append({
++            "index": index,
++            "candidate_id_sha256": hashlib.sha256(candidate_id.encode("ascii")).hexdigest(),
++            "size": int(profile["size"]),
++            "route_kind": route_kind,
++            "served_count": int(profile["served_count"]),
++            "rate_target_attained_count": int(profile["rate_target_attained_count"]),
++            "actual": {
++                "capacity": profile["capacity"],
++                "demand_capped": profile["demand_capped"],
++                "energy": profile["energy"],
++            },
++            "deltas": deltas,
++        })
++
++    return {
++        "schema": f"{SCHEMA}-anchor-cache-v1",
++        "ordinal": ordinal,
++        "anchor_id": str(anchor["anchor_id"]),
++        "world_index": int(anchor["world_index"]),
++        "step_index": int(anchor["step_index"]),
++        "world_sha256": str(anchor["world_sha256"]),
++        "base_guard_served_count": guard,
++        "source_candidate_count": len(profiles),
++        "eligible_candidate_count": len(compact_rows),
++        "rejected_invalid_count": rejected_invalid,
++        "rejected_guard_count": rejected_guard,
++        "mixed_association_control_ineligible_count": mixed_ineligible,
++        "eligible_route_counts": dict(sorted(eligible_route_counts.items())),
++        "base": {
++            "capacity": pair(base_values["capacity"]),
++            "demand_capped": pair(base_values["demand_capped"]),
++            "energy": pair(base_values["energy"]),
++            "served_count": int(base["served_count"]),
++            "rate_target_attained_count": int(base["rate_target_attained_count"]),
++        },
++        "rows": compact_rows,
++    }
++
++
++def prepare_anchor_shards() -> tuple[list[dict], dict]:
++    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
++    manifests = []
++    first_peak = None
++    for ordinal, anchor in enumerate(iter_cached_anchors(SOURCE_RECEIPT), start=1):
++        if ordinal > ANCHOR_COUNT:
++            raise RuntimeError("source has more than eight anchors")
++        shard = compact_anchor(anchor, ordinal)
++        shard_path = OUTPUT_DIR / f"anchor-{ordinal:02d}.json"
++        shard_path.write_text(
++            json.dumps(shard, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
++            encoding="ascii",
++        )
++        manifests.append({
++            "ordinal": ordinal,
++            "anchor_id": shard["anchor_id"],
++            "path": str(shard_path.relative_to(ROOT)),
++            "sha256": sha256(shard_path),
++            "source_candidate_count": shard["source_candidate_count"],
++            "eligible_candidate_count": shard["eligible_candidate_count"],
++            "mixed_association_control_ineligible_count": shard["mixed_association_control_ineligible_count"],
++        })
++        del shard
++        del anchor
++        gc.collect()
++        peak = peak_rss_gib()
++        if ordinal == 1:
++            first_peak = peak
++        print(f"anchor {ordinal}/{ANCHOR_COUNT}, peak RSS {peak:.3f} GiB", flush=True)
++        if ordinal == 1 and peak > RSS_LIMIT_GIB:
++            probe = {
++                "first_anchor_peak_rss_gib": peak,
++                "limit_gib": RSS_LIMIT_GIB,
++                "status": "STOP_FIRST_ANCHOR_RSS_EXCEEDED",
++            }
++            (OUTPUT_DIR / "memory-probe.json").write_text(
++                json.dumps(probe, indent=2, sort_keys=True) + "\n", encoding="ascii",
++            )
++            raise RuntimeError(
++                f"single-anchor peak RSS {peak:.3f} GiB exceeds {RSS_LIMIT_GIB:.3f} GiB"
++            )
++    if len(manifests) != ANCHOR_COUNT or first_peak is None:
++        raise RuntimeError(f"expected eight anchors, decoded {len(manifests)}")
++    memory = {
++        "first_anchor_peak_rss_gib": first_peak,
++        "limit_gib": RSS_LIMIT_GIB,
++        "within_limit": first_peak <= RSS_LIMIT_GIB,
++        "final_process_peak_rss_gib": peak_rss_gib(),
++        "python_processes": 1,
++        "concurrent_python_processes": 1,
++        "anchor_processing": "serial; one decoded source anchor retained at a time",
++    }
++    (OUTPUT_DIR / "memory-probe.json").write_text(
++        json.dumps(memory, indent=2, sort_keys=True) + "\n", encoding="ascii",
++    )
++    return manifests, memory
++
++
++def load_shard(manifest: Mapping[str, object]) -> dict:
++    path = ROOT / str(manifest["path"])
++    if sha256(path) != str(manifest["sha256"]):
++        raise RuntimeError(f"anchor shard custody mismatch: {path}")
++    return json.loads(path.read_text(encoding="ascii"))
++
++
++def pseudo_values(shard: Mapping[str, object], row: Mapping[str, object], numerator: str, arm: str) -> tuple[Fraction, Fraction]:
++    n = unpair(shard["base"][numerator])  # type: ignore[index]
++    e = unpair(shard["base"]["energy"])  # type: ignore[index]
++    for route in INCLUDES[arm]:
++        n += unpair(row["deltas"][route][numerator])  # type: ignore[index]
++        e += unpair(row["deltas"][route]["energy"])  # type: ignore[index]
++    return n, e
++
++
++def choose_for_anchor(shard: Mapping[str, object], numerator: str, arm: str, eta: Fraction) -> dict:
++    best = None
++    best_score = None
++    for row in shard["rows"]:  # type: ignore[assignment]
++        n, e = pseudo_values(shard, row, numerator, arm)
++        score = n - eta * e
++        # Candidate zero wins an exact tie; otherwise source index order is the
++        # original lexicographic candidate-id order.
++        tie_key = (0 if int(row["index"]) == 0 else 1, int(row["index"]))
++        if best is None or score > best_score or (
++            score == best_score and tie_key < best["tie_key"]
++        ):
++            best = {"row": row, "pseudo_n": n, "pseudo_e": e, "tie_key": tie_key}
++            best_score = score
++    if best is None:
++        raise RuntimeError("anchor shard has no eligible candidate")
++    return best
++
++
++def optimize(manifests: Sequence[Mapping[str, object]], numerator: str, arm: str) -> dict:
++    base_n = Fraction()
++    base_e = Fraction()
++    for manifest in manifests:
++        shard = load_shard(manifest)
++        base_n += unpair(shard["base"][numerator])
++        base_e += unpair(shard["base"]["energy"])
++        del shard
++    eta = base_n / base_e
++    trace = []
++    previous = None
++    selected = []
++    for iteration in range(1, MAX_DINKELBACH + 1):
++        selected = []
++        for manifest in manifests:
++            shard = load_shard(manifest)
++            chosen = choose_for_anchor(shard, numerator, arm, eta)
++            row = chosen["row"]
++            selected.append({
++                "anchor_id": shard["anchor_id"],
++                "index": int(row["index"]),
++                "candidate_id_sha256": row["candidate_id_sha256"],
++                "candidate_size": int(row["size"]),
++                "route_kind": row["route_kind"],
++                "pseudo_n": chosen["pseudo_n"],
++                "pseudo_e": chosen["pseudo_e"],
++                "actual_n": unpair(row["actual"][numerator]),
++                "actual_e": unpair(row["actual"]["energy"]),
++                "served_count": int(row["served_count"]),
++                "rate_target_attained_count": int(row["rate_target_attained_count"]),
++            })
++            del shard
++        pseudo_n = sum((row["pseudo_n"] for row in selected), Fraction())
++        pseudo_e = sum((row["pseudo_e"] for row in selected), Fraction())
++        if pseudo_e <= 0:
++            raise RuntimeError(f"{numerator}:{arm} Dinkelbach pseudo-energy is not positive")
++        new_eta = pseudo_n / pseudo_e
++        indices = tuple(int(row["index"]) for row in selected)
++        residual = pseudo_n - eta * pseudo_e
++        trace.append({
++            "iteration": iteration,
++            "eta": pair(eta),
++            "selected_indices": list(indices),
++            "surplus_residual": pair(residual),
++        })
++        if new_eta == eta:
++            break
++        if indices == previous:
++            raise RuntimeError(f"{numerator}:{arm} selection fixed without exact price equality")
++        previous = indices
++        eta = new_eta
++    else:
++        raise RuntimeError(f"{numerator}:{arm} Dinkelbach iteration cap reached")
++
++    actual_n = sum((row["actual_n"] for row in selected), Fraction())
++    actual_e = sum((row["actual_e"] for row in selected), Fraction())
++    per_anchor = [{
++        "anchor_id": row["anchor_id"],
++        "candidate_index": row["index"],
++        "candidate_id_sha256": row["candidate_id_sha256"],
++        "candidate_size": row["candidate_size"],
++        "route_kind": row["route_kind"],
++        "numerator": pair(row["actual_n"]),
++        "energy": pair(row["actual_e"]),
++        "ee_bit_per_j": float(row["actual_n"] / row["actual_e"]),
++        "served_count": row["served_count"],
++        "rate_target_attained_count": row["rate_target_attained_count"],
++    } for row in selected]
++    return {
++        "arm": arm,
++        "included_exact_terms": list(INCLUDES[arm]),
++        "dinkelbach_iterations": len(trace),
++        "optimization_ratio": pair(eta),
++        "selected_indices": [row["index"] for row in selected],
++        "selected_candidate_id_sha256": [row["candidate_id_sha256"] for row in selected],
++        "pseudo_numerator": pair(pseudo_n),
++        "pseudo_energy": pair(pseudo_e),
++        "actual_numerator": pair(actual_n),
++        "actual_energy": pair(actual_e),
++        "pooled_ee_bit_per_j": float(actual_n / actual_e),
++        "served_count": sum(int(row["served_count"]) for row in selected),
++        "rate_target_attained_count": sum(int(row["rate_target_attained_count"]) for row in selected),
++        "candidate_size_distribution": dict(sorted(Counter(
++            str(row["candidate_size"]) for row in selected
++        ).items())),
++        "per_anchor": per_anchor,
++        "trace": trace,
++    }
++
++
++def contrast(left: Mapping[str, object], right: Mapping[str, object]) -> dict:
++    left_n = unpair(left["actual_numerator"])  # type: ignore[arg-type]
++    left_e = unpair(left["actual_energy"])  # type: ignore[arg-type]
++    right_n = unpair(right["actual_numerator"])  # type: ignore[arg-type]
++    right_e = unpair(right["actual_energy"])  # type: ignore[arg-type]
++    left_ee, right_ee = left_n / left_e, right_n / right_e
++    absolute = right_ee - left_ee
++    relative = right_ee / left_ee - 1
++    return {
++        "left": str(left["arm"]),
++        "right": str(right["arm"]),
++        "ee_difference_bit_per_j": pair(absolute),
++        "gain_relative": pair(relative),
++        "gain_percentage": 100.0 * float(relative),
++        "positive": relative > 0,
++        "zero": relative == 0,
++        "numerator_delta": pair(right_n - left_n),
++        "energy_delta": pair(right_e - left_e),
++        "served_delta": int(right["served_count"]) - int(left["served_count"]),
++        "rate_target_attained_delta": (
++            int(right["rate_target_attained_count"])
++            - int(left["rate_target_attained_count"])
++        ),
++    }
++
++
++def build_contrasts(selectors: Mapping[str, Mapping[str, object]]) -> tuple[dict, dict]:
++    requested = {}
++    for arm in ("C1_ONLY", "C2_ONLY", "C3_ONLY"):
++        requested[f"{arm}-BASELINE"] = contrast(selectors["BASELINE"], selectors[arm])
++    for arm in ("DROP_C1", "DROP_C2", "DROP_C3"):
++        requested[f"FULL-{arm}"] = contrast(selectors[arm], selectors["FULL"])
++        requested[f"{arm}-BASELINE"] = contrast(selectors["BASELINE"], selectors[arm])
++
++    interactions = {}
++    for route in ("C1", "C2", "C3"):
++        conditional = requested[f"FULL-DROP_{route}"]
++        alone = requested[f"{route}_ONLY-BASELINE"]
++        conditional_abs = unpair(conditional["ee_difference_bit_per_j"])
++        alone_abs = unpair(alone["ee_difference_bit_per_j"])
++        difference_abs = conditional_abs - alone_abs
++        difference_pp = float(conditional["gain_percentage"]) - float(alone["gain_percentage"])
++        interactions[route] = {
++            "conditional_contrast": f"FULL-DROP_{route}",
++            "alone_contrast": f"{route}_ONLY-BASELINE",
++            "conditional_gain_percentage": conditional["gain_percentage"],
++            "alone_gain_percentage": alone["gain_percentage"],
++            "difference_percentage_points": difference_pp,
++            "conditional_minus_alone_ee_bit_per_j": pair(difference_abs),
++            "conditional_marginal_larger": difference_abs > 0,
++            "equal": difference_abs == 0,
++        }
++    return requested, interactions
++
++
++def verify_fullspan_reproduction(blocks: Mapping[str, object]) -> dict:
++    fullspan = json.loads(FULLSPAN_RESULTS.read_text(encoding="ascii"))
++    checks = []
++    mapping = {
++        "BASELINE": "BASELINE",
++        "DROP_C3": "ADDITIVE_ONLY",
++        "FULL": "WITH_RESIDUAL",
++    }
++    for numerator in NUMERATORS:
++        for arm, source_selector in mapping.items():
++            ours = blocks[numerator]["selectors"][arm]  # type: ignore[index]
++            source = fullspan["numerators"][numerator]["selectors"][source_selector]
++            match = (
++                ours["selected_indices"] == source["selected_indices"]
++                and unpair(ours["actual_numerator"]) == unpair(source["numerator"])
++                and unpair(ours["actual_energy"]) == unpair(source["energy"])
++            )
++            if not match:
++                raise RuntimeError(f"FULLSPAN reproduction failed for {numerator}:{arm}")
++            checks.append({
++                "numerator": numerator,
++                "arm": arm,
++                "source_selector": source_selector,
++                "selected_indices_and_exact_totals_match": True,
++            })
++    return {"all_match": True, "checks": checks}
++
++
++def status_word(value: Mapping[str, object]) -> str:
++    if bool(value["positive"]):
++        return "POSITIVE"
++    if bool(value["zero"]):
++        return "ZERO"
++    return "NOT POSITIVE"
++
++
++def pct(value: Mapping[str, object]) -> str:
++    return f"{float(value['gain_percentage']):+.2f}%"
++
++
++def render_report(results: Mapping[str, object], output_sha: str) -> str:
++    demand = results["numerators"]["demand_capped"]  # type: ignore[index]
++    singles = demand["contrasts"]
++    all_positive = all(bool(singles[f"{route}_ONLY-BASELINE"]["positive"]) for route in ("C1", "C2", "C3"))
++    first = (
++        f"**Demand-capped single-route marginals over `BASELINE` are C1 "
++        f"{pct(singles['C1_ONLY-BASELINE'])}, C2 {pct(singles['C2_ONLY-BASELINE'])}, and "
++        f"C3 {pct(singles['C3_ONLY-BASELINE'])}; "
++        f"{'all three are positive' if all_positive else 'not all three are positive'}.**"
++    )
++    lines = [
++        first, "", "# Oracle factorial — 2026-09-10", "", f"`{CLAIM}`", "",
++        "Every number is a **ceiling: exact terms, not learned predictions**.", "",
++        "`BASELINE` is the committed nearest-eligible incumbent with no catalogue selection. It is **not** `ALL_NEUTRAL_CONTROL`.", "",
++        "## Demand-capped reported result", "",
++        "Demand cap: `min(per-user integrated delivery, 50 Mbit/s × 30.08 s)`. Pooled EE is the ratio of pooled capped bits to pooled realised energy.", "",
++        "| arm | exact score terms | pooled EE (Mbit/J) | capped bits (Gbit) | energy (J) | served | rate-target attained | sizes |",
++        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
++    ]
++    for arm in ARMS:
++        row = demand["selectors"][arm]
++        formula = "+".join(row["included_exact_terms"]) or "incumbent/no selection"
++        lines.append(
++            f"| `{arm}` | {formula} | {row['pooled_ee_bit_per_j']/1e6:.6f} | "
++            f"{float(unpair(row['actual_numerator']))/1e9:.6f} | "
++            f"{float(unpair(row['actual_energy'])):.6f} | {row['served_count']} | "
++            f"{row['rate_target_attained_count']} | `{row['candidate_size_distribution']}` |"
++        )
++
++    lines += ["", "## Required contrasts", "", "| contrast | EE difference (Mbit/J) | relative gain | sign | capped-bits delta (Gbit) | energy delta (J) |", "| --- | ---: | ---: | --- | ---: | ---: |"]
++    contrast_order = (
++        "C1_ONLY-BASELINE", "C2_ONLY-BASELINE", "C3_ONLY-BASELINE",
++        "FULL-DROP_C1", "FULL-DROP_C2", "FULL-DROP_C3",
++        "DROP_C1-BASELINE", "DROP_C2-BASELINE", "DROP_C3-BASELINE",
++    )
++    for key in contrast_order:
++        row = demand["contrasts"][key]
++        label = f"{row['right']} - {row['left']}"
++        lines.append(
++            f"| `{label}` | {float(unpair(row['ee_difference_bit_per_j']))/1e6:+.6f} | "
++            f"{pct(row)} | **{status_word(row)}** | "
++            f"{float(unpair(row['numerator_delta']))/1e9:+.6f} | "
++            f"{float(unpair(row['energy_delta'])):+.6f} |"
++        )
++
++    lines += [
++        "",
++        "Positive contrasts are `C1_ONLY − BASELINE`, `C2_ONLY − BASELINE`, "
++        "`FULL − DROP_C1`, `FULL − DROP_C3`, `DROP_C2 − BASELINE`, and "
++        "`DROP_C3 − BASELINE`. Not positive are `C3_ONLY − BASELINE` and "
++        "`DROP_C1 − BASELINE` (both negative), plus `FULL − DROP_C2` "
++        "(exactly zero, not merely rounded to zero). No negative or zero "
++        "marginal is treated as support for the claim.",
++        "", "## Route interaction", "",
++        "The percentage-point comparison uses each marginal's own reference EE. The final column is the classical difference of absolute EE marginals, `(FULL − DROP_Ci) − (Ci_ONLY − BASELINE)`.",
++        "", "| route | FULL vs pair | route alone vs BASELINE | conditional − alone (pp) | absolute interaction (Mbit/J) | interpretation |", "| --- | ---: | ---: | ---: | ---: | --- |",
++    ]
++    for route in ("C1", "C2", "C3"):
++        row = demand["interactions"][route]
++        if row["equal"]:
++            interpretation = "equal"
++        elif row["conditional_marginal_larger"]:
++            interpretation = "conditional marginal is larger"
++        else:
++            interpretation = "conditional marginal is smaller"
++        lines.append(
++            f"| {route} | {row['conditional_gain_percentage']:+.2f}% | "
++            f"{row['alone_gain_percentage']:+.2f}% | {row['difference_percentage_points']:+.2f} pp | "
++            f"{float(unpair(row['conditional_minus_alone_ee_bit_per_j']))/1e6:+.6f} | {interpretation} |"
++        )
++
++    lines += ["", "## Per-anchor demand-capped EE", "", "| anchor | " + " | ".join(ARMS) + " |", "| --- | " + " | ".join("---:" for _ in ARMS) + " |"]
++    anchor_ids = results["anchor_ids"]
++    for index, anchor_id in enumerate(anchor_ids):
++        cells = [f"{demand['selectors'][arm]['per_anchor'][index]['ee_bit_per_j']/1e6:.6f}" for arm in ARMS]
++        lines.append(f"| {anchor_id} | " + " | ".join(cells) + " |")
++
++    lines += ["", "## Per-anchor demand-capped endpoints", "", "| arm | anchor | capped bits (Gbit) | energy (J) | served | target | selected size | candidate index |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
++    for arm in ARMS:
++        for row in demand["selectors"][arm]["per_anchor"]:
++            lines.append(
++                f"| `{arm}` | {row['anchor_id']} | {float(unpair(row['numerator']))/1e9:.6f} | "
++                f"{float(unpair(row['energy'])):.6f} | {row['served_count']} | "
++                f"{row['rate_target_attained_count']} | {row['candidate_size']} | {row['candidate_index']} |"
++            )
++
++    capacity = results["numerators"]["capacity"]  # type: ignore[index]
++    lines += ["", "## Capacity numerator (secondary)", "", "These capacity-numerator figures are secondary; the demand-capped figures above are the reported result.", "", "| arm | pooled EE (Mbit/J) | capacity (Gbit) | energy (J) | served | target |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
++    for arm in ARMS:
++        row = capacity["selectors"][arm]
++        lines.append(
++            f"| `{arm}` | {row['pooled_ee_bit_per_j']/1e6:.6f} | "
++            f"{float(unpair(row['actual_numerator']))/1e9:.6f} | "
++            f"{float(unpair(row['actual_energy'])):.6f} | {row['served_count']} | "
++            f"{row['rate_target_attained_count']} |"
++        )
++
++    memory = results["memory"]
++    lines += [
++        "", "## Exact construction and memory discipline", "",
++        "For candidate `x`, C1 is the sum of exact atomic association-change numerator/energy deltas, C2 is the sum of exact atomic adjacent-mode/control deltas, and C3 is the residual `joint − incumbent − C1 − C2`. At common Dinkelbach price `η`, an arm scores `incumbent + Σ included routes`, equivalently `B0 − ηE0 + Σ(ΔBi − ηΔEi)`. The selected candidate is then reported with its actual realised 48-boundary capped bits and energy, not with pseudo totals.", "",
++        "The source candidate order was asserted to be incumbent first and then lexicographic. Every eligible row was asserted to be either association-only or control-only; mixed association/control rows were physically invalid and excluded by the inherited eligibility guard, so no cached mixed term was approximated.", "",
++        f"The first anchor peak RSS was **{memory['first_anchor_peak_rss_gib']:.3f} GiB**, below the 6 GiB stop threshold. All eight anchors were streamed serially; each compact anchor shard was written before the decoded source anchor was freed. The run used exactly one Python process and all BLAS thread counts were one.", "",
++        "## Evidence classification", "", "### Verified by running code", "",
++        "The pinned source receipt, source selected-record file, residual-toggle runner, FULLSPAN result, and FULLSPAN runner matched their SHA-256 digests. The code streamed all eight cached anchors, asserted the inherited eligibility and exact singleton-residual identities, reran every factorial selector with exact `Fraction` prices, and exactly reproduced `BASELINE`, `DROP_C3`/`ADDITIVE_ONLY`, and `FULL`/`WITH_RESIDUAL` selections and totals for both numerators.", "",
++        "### Derived on paper", "",
++        "Pooled ratios, requested contrasts, and interaction differences are exact rational arithmetic over the cached binary64 physical outputs. Displayed decimals are formatting only.", "",
++        "### Inferred", "",
++        "These oracle selectors expose ceiling opportunity within this fixed catalogue. They do not establish learnability, deployable policy efficacy, or achievable learned values.", "",
++        "No learner was run. Loss values are never evidence about EE. Nothing was tuned to produce an ordering, and no sealed constant, threshold, sign, seed, horizon, price, guard, acceptance rule, control law, search grid, manifest, or optimizer setting was changed.", "",
++        "## Custody and reproduction", "",
++        f"Machine result: `.scratch/oracle-factorial/results.json` (SHA-256 `{output_sha}`). Compact per-anchor cache shards and their hashes are listed in that result. Runner SHA-256: `{results['provenance']['runner_sha256']}`.", "",
++        "From `/home/sat/mcrl-v025-arch-ws`:", "", "```bash",
++        "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \\",
++        "  NUMEXPR_NUM_THREADS=1 PYTHONPATH=src nice -n 15 \\",
++        "  /home/sat/mcrl-leo-handover/.venv/bin/python \\",
++        "  scripts/run_oracle_factorial.py", "```", "",
++    ]
++    return "\n".join(lines)
++
++
++def main() -> int:
++    require_execution_guardrails()
++    started = time.perf_counter()
++    actual_hashes = {
++        "source_receipt": sha256(SOURCE_RECEIPT),
++        "source_selected_records": sha256(SOURCE_SELECTED),
++        "source_runner": sha256(SOURCE_RUNNER),
++        "fullspan_results": sha256(FULLSPAN_RESULTS),
++        "fullspan_runner": sha256(FULLSPAN_RUNNER),
++    }
++    if actual_hashes != EXPECTED_HASHES:
++        raise RuntimeError(f"source custody mismatch: {actual_hashes}")
++
++    manifests, memory = prepare_anchor_shards()
++    numerator_blocks = {}
++    for numerator in NUMERATORS:
++        selectors = {}
++        for arm in ARMS:
++            selectors[arm] = optimize(manifests, numerator, arm)
++            print(
++                f"optimized {numerator}:{arm}, iterations "
++                f"{selectors[arm]['dinkelbach_iterations']}, peak RSS {peak_rss_gib():.3f} GiB",
++                flush=True,
++            )
++        contrasts, interactions = build_contrasts(selectors)
++        numerator_blocks[numerator] = {
++            "selectors": selectors,
++            "contrasts": contrasts,
++            "interactions": interactions,
++        }
++    reproduction = verify_fullspan_reproduction(numerator_blocks)
++
++    results = {
++        "schema": SCHEMA,
++        "claim_ceiling": CLAIM,
++        "ceiling_statement": "Every number is a ceiling: exact terms, not learned predictions.",
++        "baseline_definition": "committed nearest-eligible incumbent; no catalogue selection",
++        "baseline_is_all_neutral_control": False,
++        "route_definitions": {
++            "C1": "exact atomic association-change numerator and energy deltas",
++            "C2": "exact atomic adjacent-mode/control numerator and energy deltas",
++            "C3": "exact joint residual after incumbent, C1, and C2",
++        },
++        "arm_formulas": {arm: list(INCLUDES[arm]) for arm in ARMS},
++        "anchor_ids": [str(row["anchor_id"]) for row in manifests],
++        "numerators": numerator_blocks,
++        "fullspan_reproduction": reproduction,
++        "anchor_shards": manifests,
++        "memory": {**memory, "final_process_peak_rss_gib": peak_rss_gib()},
++        "reuse": {
++            "catalogue_rebuilt": False,
++            "physical_candidate_profiles_rerun": False,
++            "cached_exact_candidate_profiles_reused": True,
++            "factorial_dinkelbach_selectors_rerun": True,
++        },
++        "sealed_settings_changed": False,
++        "learner_used": False,
++        "loss_values_used_as_ee_evidence": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in (
++            "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS",
++        )},
++        "wall_seconds": time.perf_counter() - started,
++        "provenance": {
++            **{f"{name}_sha256": value for name, value in actual_hashes.items()},
++            "workspace_commit": subprocess.check_output(
++                ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
++            ).strip(),
++            "runner_sha256": sha256(Path(__file__).resolve()),
++        },
++        "evidence_classification": {
++            "verified_by_running_code": [
++                "source custody hashes",
++                "serial one-anchor cache extraction and RSS measurement",
++                "exact-Fraction factorial Dinkelbach selections",
++                "exact reproduction of FULLSPAN BASELINE, ADDITIVE_ONLY, and WITH_RESIDUAL",
++            ],
++            "derived_on_paper": [
++                "pooled ratios, requested contrasts, and interaction differences",
++            ],
++            "inferred": [
++                "oracle values are ceilings rather than learned achievable values",
++            ],
++        },
++    }
++    results["canonical_payload_sha256"] = canonical_sha256(results)
++    OUTPUT.write_text(
++        json.dumps(results, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    output_sha = sha256(OUTPUT)
++    REPORT.write_text(render_report(results, output_sha), encoding="utf-8")
++    demand = results["numerators"]["demand_capped"]
++    print(json.dumps({
++        "output": str(OUTPUT),
++        "output_sha256": output_sha,
++        "report": str(REPORT),
++        "first_anchor_peak_rss_gib": memory["first_anchor_peak_rss_gib"],
++        "single_route_marginals_percent": {
++            route: demand["contrasts"][f"{route}_ONLY-BASELINE"]["gain_percentage"]
++            for route in ("C1", "C2", "C3")
++        },
++    }, indent=2, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+Completed the exact factorial run.
+
+Demand-capped headline:
+
+- C1 alone vs `BASELINE`: **+10.80% — positive**
+- C2 alone vs `BASELINE`: **+0.45% — positive**
+- C3 alone vs `BASELINE`: **−0.06% — negative**
+
+Therefore, **not all three single-route marginals are positive**.
+
+Conditional marginals:
+
+- `FULL − DROP_C1`: **+17.10% — positive**
+- `FULL − DROP_C2`: **exactly 0.00% — zero**
+- `FULL − DROP_C3`: **+5.62% — positive**
+
+Pair marginals versus baseline:
+
+- `DROP_C1`: **−0.06% — negative**
+- `DROP_C2`: **+17.03% — positive**
+- `DROP_C3`: **+10.80% — positive**
+
+Interaction differences, conditional minus standalone:
+
+- C1: **+6.30 percentage points**
+- C2: **−0.45 percentage points**
+- C3: **+5.68 percentage points**
+
+Every number is a ceiling: exact terms, not learned predictions. `BASELINE` remains the committed nearest-eligible incumbent, not `ALL_NEUTRAL_CONTROL`.
+
+The first-anchor peak RSS was **0.432 GiB**; overall peak was **0.936 GiB**, using one serial Python process. FULLSPAN’s existing arms reproduced exactly.
+
+Files:
+
+- [Full report](/home/sat/mcrl-v025-arch-ws/ORACLE-FACTORIAL-2026-09-10.md:1)
+- [Machine results](/home/sat/mcrl-v025-arch-ws/.scratch/oracle-factorial/results.json)
+- [Reproduction runner](/home/sat/mcrl-v025-arch-ws/scripts/run_oracle_factorial.py:1)
+
+Results SHA-256: `99445de46db39251583b77e9f1aafdcfc288da4701459c4e4058206db6db4209`.
+diff --git a/scripts/run_oracle_factorial.py b/scripts/run_oracle_factorial.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4fed053f9dce3bda096fedcf75e87c1e2bc22bb
+--- /dev/null
++++ b/scripts/run_oracle_factorial.py
+@@ -0,0 +1,804 @@
++#!/usr/bin/env python3
++"""Exact three-route factorial over the cached ORACLE-FULL-SPAN catalogue.
++
++DIAGNOSTIC_NOT_CLAIM.  This runner does not evaluate physics or run a learner.
++It streams one cached anchor at a time, separates the exact additive singleton
++deltas into association (C1) and adjacent-mode/control (C2) terms, retains the
++joint residual as C3, and reruns exact-Fraction pooled Dinkelbach selection.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import resource
++import subprocess
++import sys
++import time
++from typing import Iterator, Mapping, Sequence
++
++
++ROOT = Path(__file__).resolve().parents[1]
++SOURCE_RECEIPT = ROOT / ".scratch/oracle-residual-toggle-20260910/result.json"
++SOURCE_SELECTED = ROOT / ".scratch/oracle-residual-toggle-20260910/selected-records.json"
++SOURCE_RUNNER = ROOT / "scripts/run_oracle_residual_toggle.py"
++FULLSPAN_RESULTS = ROOT / ".scratch/oracle-full-span/results.json"
++FULLSPAN_RUNNER = ROOT / "scripts/run_oracle_full_span.py"
++OUTPUT_DIR = ROOT / ".scratch/oracle-factorial"
++OUTPUT = OUTPUT_DIR / "results.json"
++REPORT = ROOT / "ORACLE-FACTORIAL-2026-09-10.md"
++
++SCHEMA = "mcrl-v025-oracle-factorial-v1"
++CLAIM = "DIAGNOSTIC_NOT_CLAIM"
++ANCHOR_COUNT = 8
++MAX_DINKELBACH = 128
++RSS_LIMIT_GIB = 6.0
++NUMERATORS = ("capacity", "demand_capped")
++ARMS = (
++    "BASELINE",
++    "C1_ONLY",
++    "C2_ONLY",
++    "C3_ONLY",
++    "DROP_C1",
++    "DROP_C2",
++    "DROP_C3",
++    "FULL",
++)
++INCLUDES = {
++    "BASELINE": (),
++    "C1_ONLY": ("C1",),
++    "C2_ONLY": ("C2",),
++    "C3_ONLY": ("C3",),
++    "DROP_C1": ("C2", "C3"),
++    "DROP_C2": ("C1", "C3"),
++    "DROP_C3": ("C1", "C2"),
++    "FULL": ("C1", "C2", "C3"),
++}
++EXPECTED_HASHES = {
++    "source_receipt": "0149f167208565f85dec9fcd349dcc90ac1703b2357b22b79e24131018414f71",
++    "source_selected_records": "5b729294785de203a24bb541de8a12e817625f1f3d5a18169b53ba5b2e9fad57",
++    "source_runner": "e204ddf332ffdbc98679a2b9b4cb63261f137a9fb42b08edfad58506587a10a3",
++    "fullspan_results": "bc55426417949d69202bd7ae7fbc80e988b6cd7b11f5479d2ebe5809a20afd9b",
++    "fullspan_runner": "6bf6b8c37e05b886820c25248f4251a4c479c5d7dbb3058f982cbedaf65bb9bb",
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(8 * 1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def canonical_sha256(value: object) -> str:
++    return hashlib.sha256(json.dumps(
++        value, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("ascii")).hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value: Sequence[int]) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def peak_rss_gib() -> float:
++    # Linux reports ru_maxrss in KiB.
++    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024.0 * 1024.0)
++
++
++def require_execution_guardrails() -> None:
++    expected = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
++    drift = {name: os.environ.get(name) for name in expected if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("runner must execute at nice level 15 or greater")
++
++
++def iter_cached_anchors(path: Path) -> Iterator[dict]:
++    """Incrementally decode the top-level anchors array.
++
++    A 128 MiB text window is large enough to avoid pathological retry copying
++    while retaining at most one decoded anchor.  The source receipt is 709 MiB,
++    so using json.load here would violate the one-anchor memory discipline.
++    """
++
++    decoder = json.JSONDecoder()
++    chunk_size = 128 * 1024 * 1024
++    with path.open("r", encoding="ascii") as stream:
++        buffer = ""
++        while '"anchors"' not in buffer:
++            chunk = stream.read(chunk_size)
++            if not chunk:
++                raise RuntimeError("source receipt has no anchors array")
++            buffer += chunk
++        position = buffer.index('"anchors"') + len('"anchors"')
++        position = buffer.index("[", position) + 1
++        while True:
++            while True:
++                while position < len(buffer) and buffer[position] in " \t\r\n,":
++                    position += 1
++                if position < len(buffer):
++                    break
++                buffer = stream.read(chunk_size)
++                position = 0
++                if not buffer:
++                    raise RuntimeError("unterminated anchors array")
++            if buffer[position] == "]":
++                return
++            while True:
++                try:
++                    anchor, end = decoder.raw_decode(buffer, position)
++                    break
++                except json.JSONDecodeError:
++                    more = stream.read(chunk_size)
++                    if not more:
++                        raise RuntimeError("truncated anchor object")
++                    buffer = buffer[position:] + more
++                    position = 0
++            yield anchor
++            buffer = buffer[end:]
++            position = 0
++
++
++def _identity(value: object) -> object:
++    if value is None:
++        return None
++    return tuple(int(v) for v in value)  # type: ignore[arg-type]
++
++
++def compact_anchor(anchor: Mapping[str, object], ordinal: int) -> dict:
++    profiles = anchor["profiles"]  # type: ignore[assignment]
++    definitions = anchor["candidate_definitions"]  # type: ignore[assignment]
++    if len(profiles) != len(definitions):
++        raise RuntimeError("profile/definition count drifted")
++    if not profiles:
++        raise RuntimeError("empty anchor catalogue")
++    base_assignments = {
++        int(user): _identity(identity)
++        for user, identity in anchor["base_assignments"]  # type: ignore[assignment]
++    }
++    base = profiles[0]
++    if int(base["index"]) != 0 or int(base["size"]) != 0:
++        raise RuntimeError("candidate zero is not the incumbent")
++    base_values = {
++        "capacity": unpair(base["capacity"]),
++        "demand_capped": unpair(base["demand_capped"]),
++        "energy": unpair(base["energy"]),
++    }
++    guard = int(anchor["base_guard_served_count"])
++    if int(base["served_count"]) != guard or not bool(base["valid"]):
++        raise RuntimeError("incumbent eligibility drifted")
++
++    compact_rows = []
++    rejected_invalid = 0
++    rejected_guard = 0
++    mixed_ineligible = 0
++    eligible_route_counts: Counter[str] = Counter()
++    previous_candidate_id = None
++    for expected_index, (profile, definition) in enumerate(zip(profiles, definitions, strict=True)):
++        index = int(profile["index"])
++        candidate_id = str(profile["candidate_id"])
++        if index != expected_index or candidate_id != str(definition["candidate_id"]):
++            raise RuntimeError("candidate index/id alignment drifted")
++        if index > 1 and previous_candidate_id is not None and candidate_id < previous_candidate_id:
++            raise RuntimeError("candidate order no longer supplies lexicographic tie-break")
++        previous_candidate_id = candidate_id
++
++        assignments = {
++            int(user): _identity(identity)
++            for user, identity in definition["assignments"]
++        }
++        association_changed = any(
++            assignments[user] != base_assignments[user] for user in base_assignments
++        )
++        control_changed = bool(definition["mode_offsets_by_user"])
++        mixed = association_changed and control_changed
++        eligible = bool(profile["valid"]) and int(profile["served_count"]) >= guard
++        if not bool(profile["valid"]):
++            rejected_invalid += 1
++        elif int(profile["served_count"]) < guard:
++            rejected_guard += 1
++        if mixed and eligible:
++            raise RuntimeError(
++                "eligible mixed association/control candidate cannot be split from cached atomic totals"
++            )
++        if mixed:
++            mixed_ineligible += 1
++        if not eligible:
++            continue
++
++        if index == 0:
++            route_kind = "BASE"
++            if association_changed or control_changed:
++                raise RuntimeError("incumbent has a changed route")
++        elif association_changed:
++            route_kind = "C1"
++        elif control_changed:
++            route_kind = "C2"
++        else:
++            raise RuntimeError("non-incumbent eligible candidate changes no route")
++        eligible_route_counts[route_kind] += 1
++
++        deltas: dict[str, dict[str, list[int]]] = {name: {} for name in ("C1", "C2", "C3")}
++        for numerator in NUMERATORS:
++            actual_n = unpair(profile[numerator])
++            additive_n = unpair(profile[f"additive_{numerator}"])
++            additive_delta_n = additive_n - base_values[numerator]
++            deltas["C1"][numerator] = pair(additive_delta_n if route_kind == "C1" else Fraction())
++            deltas["C2"][numerator] = pair(additive_delta_n if route_kind == "C2" else Fraction())
++            deltas["C3"][numerator] = pair(actual_n - additive_n)
++        actual_e = unpair(profile["energy"])
++        additive_e = unpair(profile["additive_energy"])
++        additive_delta_e = additive_e - base_values["energy"]
++        deltas["C1"]["energy"] = pair(additive_delta_e if route_kind == "C1" else Fraction())
++        deltas["C2"]["energy"] = pair(additive_delta_e if route_kind == "C2" else Fraction())
++        deltas["C3"]["energy"] = pair(actual_e - additive_e)
++
++        if index == 0 and any(unpair(deltas[name][field]) for name in deltas for field in deltas[name]):
++            raise RuntimeError("incumbent route deltas are nonzero")
++        if int(profile["size"]) <= 1 and any(
++            unpair(deltas["C3"][field]) for field in deltas["C3"]
++        ):
++            raise RuntimeError("singleton residual is not exactly zero")
++
++        compact_rows.append({
++            "index": index,
++            "candidate_id_sha256": hashlib.sha256(candidate_id.encode("ascii")).hexdigest(),
++            "size": int(profile["size"]),
++            "route_kind": route_kind,
++            "served_count": int(profile["served_count"]),
++            "rate_target_attained_count": int(profile["rate_target_attained_count"]),
++            "actual": {
++                "capacity": profile["capacity"],
++                "demand_capped": profile["demand_capped"],
++                "energy": profile["energy"],
++            },
++            "deltas": deltas,
++        })
++
++    return {
++        "schema": f"{SCHEMA}-anchor-cache-v1",
++        "ordinal": ordinal,
++        "anchor_id": str(anchor["anchor_id"]),
++        "world_index": int(anchor["world_index"]),
++        "step_index": int(anchor["step_index"]),
++        "world_sha256": str(anchor["world_sha256"]),
++        "base_guard_served_count": guard,
++        "source_candidate_count": len(profiles),
++        "eligible_candidate_count": len(compact_rows),
++        "rejected_invalid_count": rejected_invalid,
++        "rejected_guard_count": rejected_guard,
++        "mixed_association_control_ineligible_count": mixed_ineligible,
++        "eligible_route_counts": dict(sorted(eligible_route_counts.items())),
++        "base": {
++            "capacity": pair(base_values["capacity"]),
++            "demand_capped": pair(base_values["demand_capped"]),
++            "energy": pair(base_values["energy"]),
++            "served_count": int(base["served_count"]),
++            "rate_target_attained_count": int(base["rate_target_attained_count"]),
++        },
++        "rows": compact_rows,
++    }
++
++
++def prepare_anchor_shards() -> tuple[list[dict], dict]:
++    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
++    manifests = []
++    first_peak = None
++    for ordinal, anchor in enumerate(iter_cached_anchors(SOURCE_RECEIPT), start=1):
++        if ordinal > ANCHOR_COUNT:
++            raise RuntimeError("source has more than eight anchors")
++        shard = compact_anchor(anchor, ordinal)
++        shard_path = OUTPUT_DIR / f"anchor-{ordinal:02d}.json"
++        shard_path.write_text(
++            json.dumps(shard, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n",
++            encoding="ascii",
++        )
++        manifests.append({
++            "ordinal": ordinal,
++            "anchor_id": shard["anchor_id"],
++            "path": str(shard_path.relative_to(ROOT)),
++            "sha256": sha256(shard_path),
++            "source_candidate_count": shard["source_candidate_count"],
++            "eligible_candidate_count": shard["eligible_candidate_count"],
++            "mixed_association_control_ineligible_count": shard["mixed_association_control_ineligible_count"],
++        })
++        del shard
++        del anchor
++        gc.collect()
++        peak = peak_rss_gib()
++        if ordinal == 1:
++            first_peak = peak
++        print(f"anchor {ordinal}/{ANCHOR_COUNT}, peak RSS {peak:.3f} GiB", flush=True)
++        if ordinal == 1 and peak > RSS_LIMIT_GIB:
++            probe = {
++                "first_anchor_peak_rss_gib": peak,
++                "limit_gib": RSS_LIMIT_GIB,
++                "status": "STOP_FIRST_ANCHOR_RSS_EXCEEDED",
++            }
++            (OUTPUT_DIR / "memory-probe.json").write_text(
++                json.dumps(probe, indent=2, sort_keys=True) + "\n", encoding="ascii",
++            )
++            raise RuntimeError(
++                f"single-anchor peak RSS {peak:.3f} GiB exceeds {RSS_LIMIT_GIB:.3f} GiB"
++            )
++    if len(manifests) != ANCHOR_COUNT or first_peak is None:
++        raise RuntimeError(f"expected eight anchors, decoded {len(manifests)}")
++    memory = {
++        "first_anchor_peak_rss_gib": first_peak,
++        "limit_gib": RSS_LIMIT_GIB,
++        "within_limit": first_peak <= RSS_LIMIT_GIB,
++        "final_process_peak_rss_gib": peak_rss_gib(),
++        "python_processes": 1,
++        "concurrent_python_processes": 1,
++        "anchor_processing": "serial; one decoded source anchor retained at a time",
++    }
++    (OUTPUT_DIR / "memory-probe.json").write_text(
++        json.dumps(memory, indent=2, sort_keys=True) + "\n", encoding="ascii",
++    )
++    return manifests, memory
++
++
++def load_shard(manifest: Mapping[str, object]) -> dict:
++    path = ROOT / str(manifest["path"])
++    if sha256(path) != str(manifest["sha256"]):
++        raise RuntimeError(f"anchor shard custody mismatch: {path}")
++    return json.loads(path.read_text(encoding="ascii"))
++
++
++def pseudo_values(shard: Mapping[str, object], row: Mapping[str, object], numerator: str, arm: str) -> tuple[Fraction, Fraction]:
++    n = unpair(shard["base"][numerator])  # type: ignore[index]
++    e = unpair(shard["base"]["energy"])  # type: ignore[index]
++    for route in INCLUDES[arm]:
++        n += unpair(row["deltas"][route][numerator])  # type: ignore[index]
++        e += unpair(row["deltas"][route]["energy"])  # type: ignore[index]
++    return n, e
++
++
++def choose_for_anchor(shard: Mapping[str, object], numerator: str, arm: str, eta: Fraction) -> dict:
++    best = None
++    best_score = None
++    for row in shard["rows"]:  # type: ignore[assignment]
++        n, e = pseudo_values(shard, row, numerator, arm)
++        score = n - eta * e
++        # Candidate zero wins an exact tie; otherwise source index order is the
++        # original lexicographic candidate-id order.
++        tie_key = (0 if int(row["index"]) == 0 else 1, int(row["index"]))
++        if best is None or score > best_score or (
++            score == best_score and tie_key < best["tie_key"]
++        ):
++            best = {"row": row, "pseudo_n": n, "pseudo_e": e, "tie_key": tie_key}
++            best_score = score
++    if best is None:
++        raise RuntimeError("anchor shard has no eligible candidate")
++    return best
++
++
++def optimize(manifests: Sequence[Mapping[str, object]], numerator: str, arm: str) -> dict:
++    base_n = Fraction()
++    base_e = Fraction()
++    for manifest in manifests:
++        shard = load_shard(manifest)
++        base_n += unpair(shard["base"][numerator])
++        base_e += unpair(shard["base"]["energy"])
++        del shard
++    eta = base_n / base_e
++    trace = []
++    previous = None
++    selected = []
++    for iteration in range(1, MAX_DINKELBACH + 1):
++        selected = []
++        for manifest in manifests:
++            shard = load_shard(manifest)
++            chosen = choose_for_anchor(shard, numerator, arm, eta)
++            row = chosen["row"]
++            selected.append({
++                "anchor_id": shard["anchor_id"],
++                "index": int(row["index"]),
++                "candidate_id_sha256": row["candidate_id_sha256"],
++                "candidate_size": int(row["size"]),
++                "route_kind": row["route_kind"],
++                "pseudo_n": chosen["pseudo_n"],
++                "pseudo_e": chosen["pseudo_e"],
++                "actual_n": unpair(row["actual"][numerator]),
++                "actual_e": unpair(row["actual"]["energy"]),
++                "served_count": int(row["served_count"]),
++                "rate_target_attained_count": int(row["rate_target_attained_count"]),
++            })
++            del shard
++        pseudo_n = sum((row["pseudo_n"] for row in selected), Fraction())
++        pseudo_e = sum((row["pseudo_e"] for row in selected), Fraction())
++        if pseudo_e <= 0:
++            raise RuntimeError(f"{numerator}:{arm} Dinkelbach pseudo-energy is not positive")
++        new_eta = pseudo_n / pseudo_e
++        indices = tuple(int(row["index"]) for row in selected)
++        residual = pseudo_n - eta * pseudo_e
++        trace.append({
++            "iteration": iteration,
++            "eta": pair(eta),
++            "selected_indices": list(indices),
++            "surplus_residual": pair(residual),
++        })
++        if new_eta == eta:
++            break
++        if indices == previous:
++            raise RuntimeError(f"{numerator}:{arm} selection fixed without exact price equality")
++        previous = indices
++        eta = new_eta
++    else:
++        raise RuntimeError(f"{numerator}:{arm} Dinkelbach iteration cap reached")
++
++    actual_n = sum((row["actual_n"] for row in selected), Fraction())
++    actual_e = sum((row["actual_e"] for row in selected), Fraction())
++    per_anchor = [{
++        "anchor_id": row["anchor_id"],
++        "candidate_index": row["index"],
++        "candidate_id_sha256": row["candidate_id_sha256"],
++        "candidate_size": row["candidate_size"],
++        "route_kind": row["route_kind"],
++        "numerator": pair(row["actual_n"]),
++        "energy": pair(row["actual_e"]),
++        "ee_bit_per_j": float(row["actual_n"] / row["actual_e"]),
++        "served_count": row["served_count"],
++        "rate_target_attained_count": row["rate_target_attained_count"],
++    } for row in selected]
++    return {
++        "arm": arm,
++        "included_exact_terms": list(INCLUDES[arm]),
++        "dinkelbach_iterations": len(trace),
++        "optimization_ratio": pair(eta),
++        "selected_indices": [row["index"] for row in selected],
++        "selected_candidate_id_sha256": [row["candidate_id_sha256"] for row in selected],
++        "pseudo_numerator": pair(pseudo_n),
++        "pseudo_energy": pair(pseudo_e),
++        "actual_numerator": pair(actual_n),
++        "actual_energy": pair(actual_e),
++        "pooled_ee_bit_per_j": float(actual_n / actual_e),
++        "served_count": sum(int(row["served_count"]) for row in selected),
++        "rate_target_attained_count": sum(int(row["rate_target_attained_count"]) for row in selected),
++        "candidate_size_distribution": dict(sorted(Counter(
++            str(row["candidate_size"]) for row in selected
++        ).items())),
++        "per_anchor": per_anchor,
++        "trace": trace,
++    }
++
++
++def contrast(left: Mapping[str, object], right: Mapping[str, object]) -> dict:
++    left_n = unpair(left["actual_numerator"])  # type: ignore[arg-type]
++    left_e = unpair(left["actual_energy"])  # type: ignore[arg-type]
++    right_n = unpair(right["actual_numerator"])  # type: ignore[arg-type]
++    right_e = unpair(right["actual_energy"])  # type: ignore[arg-type]
++    left_ee, right_ee = left_n / left_e, right_n / right_e
++    absolute = right_ee - left_ee
++    relative = right_ee / left_ee - 1
++    return {
++        "left": str(left["arm"]),
++        "right": str(right["arm"]),
++        "ee_difference_bit_per_j": pair(absolute),
++        "gain_relative": pair(relative),
++        "gain_percentage": 100.0 * float(relative),
++        "positive": relative > 0,
++        "zero": relative == 0,
++        "numerator_delta": pair(right_n - left_n),
++        "energy_delta": pair(right_e - left_e),
++        "served_delta": int(right["served_count"]) - int(left["served_count"]),
++        "rate_target_attained_delta": (
++            int(right["rate_target_attained_count"])
++            - int(left["rate_target_attained_count"])
++        ),
++    }
++
++
++def build_contrasts(selectors: Mapping[str, Mapping[str, object]]) -> tuple[dict, dict]:
++    requested = {}
++    for arm in ("C1_ONLY", "C2_ONLY", "C3_ONLY"):
++        requested[f"{arm}-BASELINE"] = contrast(selectors["BASELINE"], selectors[arm])
++    for arm in ("DROP_C1", "DROP_C2", "DROP_C3"):
++        requested[f"FULL-{arm}"] = contrast(selectors[arm], selectors["FULL"])
++        requested[f"{arm}-BASELINE"] = contrast(selectors["BASELINE"], selectors[arm])
++
++    interactions = {}
++    for route in ("C1", "C2", "C3"):
++        conditional = requested[f"FULL-DROP_{route}"]
++        alone = requested[f"{route}_ONLY-BASELINE"]
++        conditional_abs = unpair(conditional["ee_difference_bit_per_j"])
++        alone_abs = unpair(alone["ee_difference_bit_per_j"])
++        difference_abs = conditional_abs - alone_abs
++        difference_pp = float(conditional["gain_percentage"]) - float(alone["gain_percentage"])
++        interactions[route] = {
++            "conditional_contrast": f"FULL-DROP_{route}",
++            "alone_contrast": f"{route}_ONLY-BASELINE",
++            "conditional_gain_percentage": conditional["gain_percentage"],
++            "alone_gain_percentage": alone["gain_percentage"],
++            "difference_percentage_points": difference_pp,
++            "conditional_minus_alone_ee_bit_per_j": pair(difference_abs),
++            "conditional_marginal_larger": difference_abs > 0,
++            "equal": difference_abs == 0,
++        }
++    return requested, interactions
++
++
++def verify_fullspan_reproduction(blocks: Mapping[str, object]) -> dict:
++    fullspan = json.loads(FULLSPAN_RESULTS.read_text(encoding="ascii"))
++    checks = []
++    mapping = {
++        "BASELINE": "BASELINE",
++        "DROP_C3": "ADDITIVE_ONLY",
++        "FULL": "WITH_RESIDUAL",
++    }
++    for numerator in NUMERATORS:
++        for arm, source_selector in mapping.items():
++            ours = blocks[numerator]["selectors"][arm]  # type: ignore[index]
++            source = fullspan["numerators"][numerator]["selectors"][source_selector]
++            match = (
++                ours["selected_indices"] == source["selected_indices"]
++                and unpair(ours["actual_numerator"]) == unpair(source["numerator"])
++                and unpair(ours["actual_energy"]) == unpair(source["energy"])
++            )
++            if not match:
++                raise RuntimeError(f"FULLSPAN reproduction failed for {numerator}:{arm}")
++            checks.append({
++                "numerator": numerator,
++                "arm": arm,
++                "source_selector": source_selector,
++                "selected_indices_and_exact_totals_match": True,
++            })
++    return {"all_match": True, "checks": checks}
++
++
++def status_word(value: Mapping[str, object]) -> str:
++    if bool(value["positive"]):
++        return "POSITIVE"
++    if bool(value["zero"]):
++        return "ZERO"
++    return "NOT POSITIVE"
++
++
++def pct(value: Mapping[str, object]) -> str:
++    return f"{float(value['gain_percentage']):+.2f}%"
++
++
++def render_report(results: Mapping[str, object], output_sha: str) -> str:
++    demand = results["numerators"]["demand_capped"]  # type: ignore[index]
++    singles = demand["contrasts"]
++    all_positive = all(bool(singles[f"{route}_ONLY-BASELINE"]["positive"]) for route in ("C1", "C2", "C3"))
++    first = (
++        f"**Demand-capped single-route marginals over `BASELINE` are C1 "
++        f"{pct(singles['C1_ONLY-BASELINE'])}, C2 {pct(singles['C2_ONLY-BASELINE'])}, and "
++        f"C3 {pct(singles['C3_ONLY-BASELINE'])}; "
++        f"{'all three are positive' if all_positive else 'not all three are positive'}.**"
++    )
++    lines = [
++        first, "", "# Oracle factorial — 2026-09-10", "", f"`{CLAIM}`", "",
++        "Every number is a **ceiling: exact terms, not learned predictions**.", "",
++        "`BASELINE` is the committed nearest-eligible incumbent with no catalogue selection. It is **not** `ALL_NEUTRAL_CONTROL`.", "",
++        "## Demand-capped reported result", "",
++        "Demand cap: `min(per-user integrated delivery, 50 Mbit/s × 30.08 s)`. Pooled EE is the ratio of pooled capped bits to pooled realised energy.", "",
++        "| arm | exact score terms | pooled EE (Mbit/J) | capped bits (Gbit) | energy (J) | served | rate-target attained | sizes |",
++        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
++    ]
++    for arm in ARMS:
++        row = demand["selectors"][arm]
++        formula = "+".join(row["included_exact_terms"]) or "incumbent/no selection"
++        lines.append(
++            f"| `{arm}` | {formula} | {row['pooled_ee_bit_per_j']/1e6:.6f} | "
++            f"{float(unpair(row['actual_numerator']))/1e9:.6f} | "
++            f"{float(unpair(row['actual_energy'])):.6f} | {row['served_count']} | "
++            f"{row['rate_target_attained_count']} | `{row['candidate_size_distribution']}` |"
++        )
++
++    lines += ["", "## Required contrasts", "", "| contrast | EE difference (Mbit/J) | relative gain | sign | capped-bits delta (Gbit) | energy delta (J) |", "| --- | ---: | ---: | --- | ---: | ---: |"]
++    contrast_order = (
++        "C1_ONLY-BASELINE", "C2_ONLY-BASELINE", "C3_ONLY-BASELINE",
++        "FULL-DROP_C1", "FULL-DROP_C2", "FULL-DROP_C3",
++        "DROP_C1-BASELINE", "DROP_C2-BASELINE", "DROP_C3-BASELINE",
++    )
++    for key in contrast_order:
++        row = demand["contrasts"][key]
++        label = f"{row['right']} - {row['left']}"
++        lines.append(
++            f"| `{label}` | {float(unpair(row['ee_difference_bit_per_j']))/1e6:+.6f} | "
++            f"{pct(row)} | **{status_word(row)}** | "
++            f"{float(unpair(row['numerator_delta']))/1e9:+.6f} | "
++            f"{float(unpair(row['energy_delta'])):+.6f} |"
++        )
++
++    lines += [
++        "",
++        "Positive contrasts are `C1_ONLY − BASELINE`, `C2_ONLY − BASELINE`, "
++        "`FULL − DROP_C1`, `FULL − DROP_C3`, `DROP_C2 − BASELINE`, and "
++        "`DROP_C3 − BASELINE`. Not positive are `C3_ONLY − BASELINE` and "
++        "`DROP_C1 − BASELINE` (both negative), plus `FULL − DROP_C2` "
++        "(exactly zero, not merely rounded to zero). No negative or zero "
++        "marginal is treated as support for the claim.",
++        "", "## Route interaction", "",
++        "The percentage-point comparison uses each marginal's own reference EE. The final column is the classical difference of absolute EE marginals, `(FULL − DROP_Ci) − (Ci_ONLY − BASELINE)`.",
++        "", "| route | FULL vs pair | route alone vs BASELINE | conditional − alone (pp) | absolute interaction (Mbit/J) | interpretation |", "| --- | ---: | ---: | ---: | ---: | --- |",
++    ]
++    for route in ("C1", "C2", "C3"):
++        row = demand["interactions"][route]
++        if row["equal"]:
++            interpretation = "equal"
++        elif row["conditional_marginal_larger"]:
++            interpretation = "conditional marginal is larger"
++        else:
++            interpretation = "conditional marginal is smaller"
++        lines.append(
++            f"| {route} | {row['conditional_gain_percentage']:+.2f}% | "
++            f"{row['alone_gain_percentage']:+.2f}% | {row['difference_percentage_points']:+.2f} pp | "
++            f"{float(unpair(row['conditional_minus_alone_ee_bit_per_j']))/1e6:+.6f} | {interpretation} |"
++        )
++
++    lines += ["", "## Per-anchor demand-capped EE", "", "| anchor | " + " | ".join(ARMS) + " |", "| --- | " + " | ".join("---:" for _ in ARMS) + " |"]
++    anchor_ids = results["anchor_ids"]
++    for index, anchor_id in enumerate(anchor_ids):
++        cells = [f"{demand['selectors'][arm]['per_anchor'][index]['ee_bit_per_j']/1e6:.6f}" for arm in ARMS]
++        lines.append(f"| {anchor_id} | " + " | ".join(cells) + " |")
++
++    lines += ["", "## Per-anchor demand-capped endpoints", "", "| arm | anchor | capped bits (Gbit) | energy (J) | served | target | selected size | candidate index |", "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
++    for arm in ARMS:
++        for row in demand["selectors"][arm]["per_anchor"]:
++            lines.append(
++                f"| `{arm}` | {row['anchor_id']} | {float(unpair(row['numerator']))/1e9:.6f} | "
++                f"{float(unpair(row['energy'])):.6f} | {row['served_count']} | "
++                f"{row['rate_target_attained_count']} | {row['candidate_size']} | {row['candidate_index']} |"
++            )
++
++    capacity = results["numerators"]["capacity"]  # type: ignore[index]
++    lines += ["", "## Capacity numerator (secondary)", "", "These capacity-numerator figures are secondary; the demand-capped figures above are the reported result.", "", "| arm | pooled EE (Mbit/J) | capacity (Gbit) | energy (J) | served | target |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
++    for arm in ARMS:
++        row = capacity["selectors"][arm]
++        lines.append(
++            f"| `{arm}` | {row['pooled_ee_bit_per_j']/1e6:.6f} | "
++            f"{float(unpair(row['actual_numerator']))/1e9:.6f} | "
++            f"{float(unpair(row['actual_energy'])):.6f} | {row['served_count']} | "
++            f"{row['rate_target_attained_count']} |"
++        )
++
++    memory = results["memory"]
++    lines += [
++        "", "## Exact construction and memory discipline", "",
++        "For candidate `x`, C1 is the sum of exact atomic association-change numerator/energy deltas, C2 is the sum of exact atomic adjacent-mode/control deltas, and C3 is the residual `joint − incumbent − C1 − C2`. At common Dinkelbach price `η`, an arm scores `incumbent + Σ included routes`, equivalently `B0 − ηE0 + Σ(ΔBi − ηΔEi)`. The selected candidate is then reported with its actual realised 48-boundary capped bits and energy, not with pseudo totals.", "",
++        "The source candidate order was asserted to be incumbent first and then lexicographic. Every eligible row was asserted to be either association-only or control-only; mixed association/control rows were physically invalid and excluded by the inherited eligibility guard, so no cached mixed term was approximated.", "",
++        f"The first anchor peak RSS was **{memory['first_anchor_peak_rss_gib']:.3f} GiB**, below the 6 GiB stop threshold. All eight anchors were streamed serially; each compact anchor shard was written before the decoded source anchor was freed. The run used exactly one Python process and all BLAS thread counts were one.", "",
++        "## Evidence classification", "", "### Verified by running code", "",
++        "The pinned source receipt, source selected-record file, residual-toggle runner, FULLSPAN result, and FULLSPAN runner matched their SHA-256 digests. The code streamed all eight cached anchors, asserted the inherited eligibility and exact singleton-residual identities, reran every factorial selector with exact `Fraction` prices, and exactly reproduced `BASELINE`, `DROP_C3`/`ADDITIVE_ONLY`, and `FULL`/`WITH_RESIDUAL` selections and totals for both numerators.", "",
++        "### Derived on paper", "",
++        "Pooled ratios, requested contrasts, and interaction differences are exact rational arithmetic over the cached binary64 physical outputs. Displayed decimals are formatting only.", "",
++        "### Inferred", "",
++        "These oracle selectors expose ceiling opportunity within this fixed catalogue. They do not establish learnability, deployable policy efficacy, or achievable learned values.", "",
++        "No learner was run. Loss values are never evidence about EE. Nothing was tuned to produce an ordering, and no sealed constant, threshold, sign, seed, horizon, price, guard, acceptance rule, control law, search grid, manifest, or optimizer setting was changed.", "",
++        "## Custody and reproduction", "",
++        f"Machine result: `.scratch/oracle-factorial/results.json` (SHA-256 `{output_sha}`). Compact per-anchor cache shards and their hashes are listed in that result. Runner SHA-256: `{results['provenance']['runner_sha256']}`.", "",
++        "From `/home/sat/mcrl-v025-arch-ws`:", "", "```bash",
++        "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \\",
++        "  NUMEXPR_NUM_THREADS=1 PYTHONPATH=src nice -n 15 \\",
++        "  /home/sat/mcrl-leo-handover/.venv/bin/python \\",
++        "  scripts/run_oracle_factorial.py", "```", "",
++    ]
++    return "\n".join(lines)
++
++
++def main() -> int:
++    require_execution_guardrails()
++    started = time.perf_counter()
++    actual_hashes = {
++        "source_receipt": sha256(SOURCE_RECEIPT),
++        "source_selected_records": sha256(SOURCE_SELECTED),
++        "source_runner": sha256(SOURCE_RUNNER),
++        "fullspan_results": sha256(FULLSPAN_RESULTS),
++        "fullspan_runner": sha256(FULLSPAN_RUNNER),
++    }
++    if actual_hashes != EXPECTED_HASHES:
++        raise RuntimeError(f"source custody mismatch: {actual_hashes}")
++
++    manifests, memory = prepare_anchor_shards()
++    numerator_blocks = {}
++    for numerator in NUMERATORS:
++        selectors = {}
++        for arm in ARMS:
++            selectors[arm] = optimize(manifests, numerator, arm)
++            print(
++                f"optimized {numerator}:{arm}, iterations "
++                f"{selectors[arm]['dinkelbach_iterations']}, peak RSS {peak_rss_gib():.3f} GiB",
++                flush=True,
++            )
++        contrasts, interactions = build_contrasts(selectors)
++        numerator_blocks[numerator] = {
++            "selectors": selectors,
++            "contrasts": contrasts,
++            "interactions": interactions,
++        }
++    reproduction = verify_fullspan_reproduction(numerator_blocks)
++
++    results = {
++        "schema": SCHEMA,
++        "claim_ceiling": CLAIM,
++        "ceiling_statement": "Every number is a ceiling: exact terms, not learned predictions.",
++        "baseline_definition": "committed nearest-eligible incumbent; no catalogue selection",
++        "baseline_is_all_neutral_control": False,
++        "route_definitions": {
++            "C1": "exact atomic association-change numerator and energy deltas",
++            "C2": "exact atomic adjacent-mode/control numerator and energy deltas",
++            "C3": "exact joint residual after incumbent, C1, and C2",
++        },
++        "arm_formulas": {arm: list(INCLUDES[arm]) for arm in ARMS},
++        "anchor_ids": [str(row["anchor_id"]) for row in manifests],
++        "numerators": numerator_blocks,
++        "fullspan_reproduction": reproduction,
++        "anchor_shards": manifests,
++        "memory": {**memory, "final_process_peak_rss_gib": peak_rss_gib()},
++        "reuse": {
++            "catalogue_rebuilt": False,
++            "physical_candidate_profiles_rerun": False,
++            "cached_exact_candidate_profiles_reused": True,
++            "factorial_dinkelbach_selectors_rerun": True,
++        },
++        "sealed_settings_changed": False,
++        "learner_used": False,
++        "loss_values_used_as_ee_evidence": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in (
++            "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS",
++        )},
++        "wall_seconds": time.perf_counter() - started,
++        "provenance": {
++            **{f"{name}_sha256": value for name, value in actual_hashes.items()},
++            "workspace_commit": subprocess.check_output(
++                ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
++            ).strip(),
++            "runner_sha256": sha256(Path(__file__).resolve()),
++        },
++        "evidence_classification": {
++            "verified_by_running_code": [
++                "source custody hashes",
++                "serial one-anchor cache extraction and RSS measurement",
++                "exact-Fraction factorial Dinkelbach selections",
++                "exact reproduction of FULLSPAN BASELINE, ADDITIVE_ONLY, and WITH_RESIDUAL",
++            ],
++            "derived_on_paper": [
++                "pooled ratios, requested contrasts, and interaction differences",
++            ],
++            "inferred": [
++                "oracle values are ceilings rather than learned achievable values",
++            ],
++        },
++    }
++    results["canonical_payload_sha256"] = canonical_sha256(results)
++    OUTPUT.write_text(
++        json.dumps(results, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    output_sha = sha256(OUTPUT)
++    REPORT.write_text(render_report(results, output_sha), encoding="utf-8")
++    demand = results["numerators"]["demand_capped"]
++    print(json.dumps({
++        "output": str(OUTPUT),
++        "output_sha256": output_sha,
++        "report": str(REPORT),
++        "first_anchor_peak_rss_gib": memory["first_anchor_peak_rss_gib"],
++        "single_route_marginals_percent": {
++            route: demand["contrasts"][f"{route}_ONLY-BASELINE"]["gain_percentage"]
++            for route in ("C1", "C2", "C3")
++        },
++    }, indent=2, sort_keys=True))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+tokens used
+211,852
