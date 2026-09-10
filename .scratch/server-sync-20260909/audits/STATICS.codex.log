@@ -1,0 +1,2879 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-rank-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08bd8-1dd2-75f3-b5b4-b07337490890
+--------
+user
+# STATICS — the non-learned baseline family on the training panel
+
+Workspace `/home/sat/mcrl-v025-rank-ws`. Interpreter
+`/home/sat/mcrl-leo-handover/.venv/bin/python` only. **Never modify**
+`/home/sat/mcrl-leo-handover` or its `.venv`. **Design-phase measurement, not a claim.**
+
+**Resource limits, enforced.** Load hit 157 with 0 GB free twice today. **Hard cap: 3 python
+processes, `nice -n 15`, all BLAS threads = 1, peak RSS under 5 GB per process.** Print a
+peak-RSS line and an `anchor k/N` progress line. **Three training runs and eight jobs are
+live** — read only from their directories, write only into your own.
+
+## Why
+
+A sibling project's win bar was *"beat plain shared-Q + a **weak static**"*, with the strong
+static held as the teacher/ceiling and **explicitly dropped as a comparison-to-win**. Its most
+consequential measurement was not that the learned method underperformed — it was that the
+learned method **lost to `round_robin`**, and that a collapsed policy is **worse than random**,
+because the environment punishes crowding superlinearly.
+
+This project has a strong static already measured on its training panel
+(`TRAINING-PANEL-CEILINGS-2026-09-10.md`, `/home/sat/mcrl-v025-ceiling30-ws`) and one weak
+static (the geometric nearest-eligible base). **It has no round-robin, no load-balancing
+heuristic, no myopic greedy, and no random floor.** Without those, "the learned proposal is
+worth something" cannot be stated at all.
+
+## What to measure
+
+On the **same 12-anchor training panel**, with **exactly the construction `PANELCEIL` used** —
+same anchors, same guard, same tie-break, same corrected provisioning, same realised 48-boundary
+pooling, **declared full-buffer numerator, no demand cap** (declaration v1.8 item 5) — evaluate
+this family. **Define each precisely in the report before giving its number; do not assume I
+know what you implemented.**
+
+| arm | what it is |
+|---|---|
+| `RANDOM` | uniform over each user's legal options, a stated seed, **the absolute floor** |
+| `ROUND_ROBIN` | a load-equalising assignment over legal options; state the exact rule |
+| `RSS_MAX` | demand-blind greedy on best link quality — the classic weak static |
+| `NEAREST_ELIGIBLE` | the geometric carrier base already measured at `11.027760`; **reproduce it as a parity check on your harness** |
+| `MYOPIC_GREEDY` | one-step greedy on the declared objective using nominal physics, users in a stated order |
+| `FIRST_IMPROVEMENT_FP` | the certified fixed point, `13.430253` — **strong static**, reproduce as the second parity check |
+
+**The two parity checks matter more than the new arms.** If you cannot reproduce `11.027760`
+and `13.430253` on your harness, stop and report that: every other number would be on a
+different scale.
+
+## Report per arm
+
+- pooled EE (Mbit/J), pooled bits, pooled joules, on the declared numerator;
+- **served PHY** and **rate-target attainment**;
+- **`modal_frac`** (share of users on the single most-chosen beam), **`active`** (distinct beams
+  and satellites), **`argmax_distinct`**;
+- wall-clock per anchor, so the cheap arms' cost is on record.
+
+Then one ordering table, cheapest to most expensive, with pooled EE beside it.
+
+## What this is for, stated so the framing is not lost
+
+The comparison structure this establishes is:
+
+- **the weak-static family is the floor a learned proposal must clear** to be worth anything;
+- **the strong static is the ceiling and is not a win target** — the owner has already said the
+  system need not beat classical search;
+- **random is the sanity floor**: a policy below it is not merely weak, it is crowding, and the
+  environment punishes crowding superlinearly.
+
+**Do not rank the learned arms here** — no learned checkpoint is read by this job. It produces
+the reference scale that the learned numbers will later be placed against.
+
+## Rules
+
+- Separate **verified by running code**, **derived on paper**, **inferred**.
+- Loss values are never evidence about EE. No learner is trained or scored here.
+- Report every arm, including any that is worse than `RANDOM`. **Especially those.**
+- Use development anchors only. **Do not read the 48 evaluation-only claim dates.**
+- Change no sealed artefact.
+
+Write to `/home/sat/mcrl-v025-rank-ws/STATIC-BASELINE-FAMILY-2026-09-10.md`, first line one
+bolded sentence giving the pooled EE of `RANDOM`, `ROUND_ROBIN`, `RSS_MAX`, `MYOPIC_GREEDY` and
+the two parity checks, and whether both parity checks reproduced.
+codex
+I’ll first reconstruct the sealed `PANELCEIL` harness and verify the two parity arms before computing any new baseline. I’ll keep execution to one nice’d Python process with single-threaded BLAS, report progress and peak RSS, and will stop without publishing cross-scale numbers if either parity check fails.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '"'!**/.git/**'"' -g 'TRAINING-PANEL-CEILINGS-2026-09-10.md' -g '*PANELCEIL*' -g '*.py' | sed -n '1,240p'" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-rank-ws
+src/mcrl/env/tle.py
+src/mcrl/env/mobility.py
+src/mcrl/env/geometry.py
+src/mcrl/env/cells.py
+src/mcrl/env/observation_provenance.py
+src/mcrl/env/keyed_fading.py
+src/mcrl/env/candidates.py
+src/mcrl/env/pointing.py
+src/mcrl/env/d2.py
+src/mcrl/env/constants.py
+src/mcrl/env/__init__.py
+src/mcrl/env/antenna.py
+src/mcrl/env/scenario.py
+src/mcrl/env/action_contract.py
+src/mcrl/env/step.py
+src/mcrl/env/service.py
+src/mcrl/env/reference_policy.py
+src/mcrl/env/ephemeris.py
+src/mcrl/env/interference.py
+src/mcrl/env/dwell.py
+src/mcrl/env/step_types.py
+src/mcrl/env/link_budget.py
+scripts/run_v025_pilot_c3.py
+src/mcrl/__init__.py
+scripts/feasibility_is_fading_free.py
+scripts/qe_premise.py
+scripts/dt_sweep2.py
+scripts/freeze_prereg.py
+scripts/run_head_pivotality_probe.py
+scripts/outage_frozen.py
+scripts/run_corrected_probes.py
+scripts/two_timescale_check.py
+scripts/ceiling_and_segments.py
+scripts/qe_rekey.py
+scripts/w02_ephemeris_survey.py
+scripts/signed_drop_dt30.py
+scripts/run_server_training.py
+scripts/w02_split_shift_check.py
+scripts/run_probes.py
+scripts/segment_budget.py
+scripts/analyze_corrected_postrun.py
+scripts/sensitivity_arm.py
+scripts/w04_d2_survey.py
+scripts/run_probe_p3.py
+src/mcrl/stagec_v025/learner.py
+src/mcrl/stagec_v025/deployment.py
+src/mcrl/stagec_v025/synthetic.py
+src/mcrl/stagec_v025/state.py
+src/mcrl/stagec_v025/arms.py
+src/mcrl/stagec_v025/interfaces.py
+src/mcrl/stagec_v025/__init__.py
+src/mcrl/stagec_v025/canonical.py
+src/mcrl/stagec_v025/coalitions.py
+src/mcrl/stagec_v025/evaluation.py
+src/mcrl/stagec_v025/shards.py
+src/mcrl/stagec_v025/merge.py
+src/mcrl/stagec_v025/experiments.py
+src/mcrl/stagec_v025/acceptance.py
+src/mcrl/errors.py
+src/mcrl/algorithms/ee_axis_relational_zr_c3_head_v019.py
+src/mcrl/algorithms/ee_axis_v04_hybrid.py
+src/mcrl/algorithms/ee_axis_action_shared_meanmax.py
+src/mcrl/algorithms/ee_axis_relational_zr_c3_head.py
+src/mcrl/algorithms/ee_axis_action_shared.py
+src/mcrl/algorithms/ee_axis_v07_c2_fast_q2.py
+src/mcrl/algorithms/ee_axis_pairwise.py
+src/mcrl/algorithms/modqn.py
+src/mcrl/algorithms/ee_axis_v07_c2_focal_next.py
+src/mcrl/algorithms/ee_axis_v014_head.py
+src/mcrl/algorithms/__init__.py
+src/mcrl/algorithms/ee_axis_lcsrs_three_route.py
+src/mcrl/algorithms/ee_axis_v014_q3_support_head.py
+src/mcrl/algorithms/ee_axis_lcsrs_c3_head.py
+src/mcrl/algorithms/ee_axis_v04_c2_parallel.py
+src/mcrl/algorithms/ee_axis_v06_c2_k1.py
+src/mcrl/artifacts/__init__.py
+src/mcrl/artifacts/models.py
+src/mcrl/artifacts/io.py
+src/mcrl/physics_v025/calibration.py
+src/mcrl/physics_v025/integration.py
+src/mcrl/physics_v025/targets.py
+src/mcrl/physics_v025/channel.py
+src/mcrl/physics_v025/tapes.py
+src/mcrl/physics_v025/adapter.py
+src/mcrl/physics_v025/batch.py
+src/mcrl/physics_v025/acm.py
+src/mcrl/physics_v025/state_v025.py
+src/mcrl/physics_v025/provider_legacy.py
+src/mcrl/physics_v025/endpoint.py
+src/mcrl/physics_v025/__init__.py
+src/mcrl/physics_v025/resolution.py
+src/mcrl/physics_v025/constants_v025.py
+src/mcrl/physics_v025/parity/__init__.py
+src/mcrl/physics_v025/architectures.py
+src/mcrl/physics_v025/matrix.py
+src/mcrl/physics_v025/energy.py
+src/mcrl/runtime/ee_axis_v07_c2_dataset.py
+src/mcrl/runtime/finiteness.py
+src/mcrl/runtime/trainer_config_validation.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_formal_verdict_writer.py
+src/mcrl/runtime/ee_axis_opening_pairs.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_encoder.py
+src/mcrl/runtime/ee_axis_v04_c3_selector.py
+src/mcrl/runtime/ee_axis_joint_c3.py
+src/mcrl/runtime/ee_axis_targets.py
+src/mcrl/runtime/ee_axis_v07_c2_d2.py
+src/mcrl/runtime/ee_axis_v015_c3_selector.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_gate_fit.py
+src/mcrl/runtime/probe_p6.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_q13.py
+src/mcrl/runtime/probe_harness.py
+src/mcrl/runtime/replay_buffer.py
+src/mcrl/runtime/ee_axis_training_schedule.py
+src/mcrl/runtime/ee_axis_e1_ladder.py
+src/mcrl/runtime/head_pivotality.py
+src/mcrl/runtime/ee_axis_v07_c2_policy.py
+src/mcrl/runtime/ee_axis_e1_split.py
+src/mcrl/runtime/outage_gate.py
+src/mcrl/runtime/ee_axis_opening_runner.py
+src/mcrl/runtime/ee_axis_temporal_capture.py
+src/mcrl/runtime/ee_axis_e1_statistics.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_learner.py
+src/mcrl/runtime/ee_axis_v07_c2_robust_proxy.py
+src/mcrl/runtime/ee_axis_expected_zr_c3.py
+src/mcrl/runtime/probe_p5.py
+src/mcrl/runtime/prereg_draft.py
+src/mcrl/runtime/ee_axis_v06_c2_k1.py
+src/mcrl/runtime/prereg.py
+src/mcrl/runtime/ee_axis_relational_zr_c3.py
+src/mcrl/runtime/reward_calibration.py
+src/mcrl/runtime/probe_p2.py
+src/mcrl/runtime/__init__.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_teacher.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_pipeline.py
+src/mcrl/runtime/bessel.py
+src/mcrl/runtime/state_encoding.py
+src/mcrl/runtime/ee_axis_v014_q3_pairs.py
+src/mcrl/runtime/probe_p3.py
+src/mcrl/runtime/ee_axis_instrument_validity.py
+src/mcrl/runtime/ee_axis_v016_c3_origin_state.py
+src/mcrl/runtime/ee_axis_opening_source.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_learner_contract_v2.py
+src/mcrl/runtime/ee_axis_matched_opening.py
+src/mcrl/runtime/ee_axis_c1_dull_source.py
+src/mcrl/runtime/ee_axis_v04_c3_dataset.py
+src/mcrl/runtime/ee_axis_calibration.py
+src/mcrl/runtime/ee_axis_zero_marginal_c3.py
+src/mcrl/runtime/ee_axis_pnfe.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_state_authority.py
+src/mcrl/runtime/ee_axis_temporal_dataset.py
+src/mcrl/runtime/ee_axis_c2_neutral_source.py
+src/mcrl/runtime/ee_axis_reference_probe.py
+tests/test_w62_ee_axis_e1_ladder.py
+src/mcrl/runtime/ee_axis_state.py
+src/mcrl/runtime/probe_p4.py
+src/mcrl/runtime/ee_axis_v07_c2_fast_proxy.py
+src/mcrl/runtime/ee_axis_v015_c3_state.py
+src/mcrl/runtime/ee_axis_v015_c3_pivotal.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_dataset.py
+src/mcrl/runtime/ee_axis_source_selectors.py
+src/mcrl/runtime/ee_axis_v023_episode_screen.py
+src/mcrl/runtime/ee_axis_v07_c2_focal_next.py
+src/mcrl/runtime/probe_p7.py
+src/mcrl/runtime/ee_axis_v014_q3_state.py
+src/mcrl/runtime/ee_axis_pnfe_live.py
+src/mcrl/runtime/ee_axis_e1_c2_schedule.py
+tests/test_w66_e1_pretest_diagnostics.py
+tests/test_w03_cells.py
+tests/test_w141_ee_axis_zero_marginal_c3_live.py
+tests/test_w02_tle.py
+tests/test_w180_ee_axis_expected_zr_c3.py
+tests/test_w41_c2_v03b_reactive_gate_integrity.py
+tests/test_w201_ee_axis_lcsrs_final_verifier.py
+tests/test_w197_ee_axis_lcsrs_composition_adapter.py
+tests/test_w67_e1_pretest_diagnostic_runner.py
+tests/test_w25_probe_p3.py
+tests/test_w102_v06_c2_k1_t1_runner.py
+tests/test_w77_ee_axis_v04_c3_opening_source.py
+tests/test_w120_ee_axis_v07_c2_parallel_targets.py
+tests/test_w128_ee_axis_v07_c2_native28_source.py
+tests/test_w138_v011_joint_c3_ordered_oracle.py
+tests/test_w149_ee_axis_v014_q2_pairs.py
+tests/test_w124_ee_axis_v07_c2_fast_proxy.py
+tests/test_w53_ee_axis_calibration.py
+tests/test_w119_ee_axis_v07_c2_d2_runner_integration.py
+tests/test_w133_ee_axis_pnfe_live.py
+src/mcrl/runtime/energy_efficiency.py
+tests/test_w99_v05_c2_controlled_source.py
+src/mcrl/runtime/ee_axis_v04_c3_state.py
+tests/test_w109_v06_c2_k1_bounded_episode.py
+tests/test_w05_dwell.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_learner.py
+tests/test_w118_ee_axis_v07_c2_d2_adjudicator.py
+src/mcrl/runtime/ee_axis_ops3.py
+tests/test_w145_v013_result_verifier.py
+tests/test_w193_ee_axis_lcsrs_c3_gate_metrics.py
+tests/test_w12_collapse_metrics.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_state.py
+tests/test_w17_interference.py
+tests/test_w18_mask_can_bind.py
+src/mcrl/runtime/ee_axis_v04_c3_learnability.py
+tests/test_trainer_config_validation.py
+tests/test_w112_focal_removed_evaluation.py
+src/mcrl/runtime/objective_math.py
+src/mcrl/runtime/ee_axis_v014_q2_state.py
+src/mcrl/runtime/ee_axis_coalition_residual_c3.py
+src/mcrl/runtime/probe_p1.py
+src/mcrl/runtime/ee_axis_zero_marginal_c3_live.py
+src/mcrl/runtime/trainer_env.py
+src/mcrl/runtime/ee_axis_v04_c2_sibling_schedule.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_source_artifact.py
+src/mcrl/runtime/ee_axis_b402_c3_softkl.py
+src/mcrl/runtime/ee_axis_v06_c2_k1_learner_prep.py
+src/mcrl/runtime/ee_axis_v04_c3_schedule.py
+src/mcrl/runtime/ee_axis_v07_c2_parallel_targets.py
+src/mcrl/runtime/trainer_spec.py
+src/mcrl/runtime/ee_axis_v015_c3_csr.py
+src/mcrl/runtime/ee_axis_v014_q2_pairs.py
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py
+src/mcrl/runtime/ee_axis_evaluation.py
+src/mcrl/runtime/ee_surplus_targets.py
+src/mcrl/runtime/ee_axis_v014_gate.py
+src/mcrl/runtime/q_network.py
+src/mcrl/runtime/ee_axis_c1_selector.py
+src/mcrl/runtime/collapse_metrics.py
+src/mcrl/runtime/ee_axis_v018_gate.py
+src/mcrl/runtime/ee_axis_v04_c2_q13_continuation.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_gate_metrics.py
+src/mcrl/runtime/ee_axis_temporal_pairs.py
+src/mcrl/runtime/ee_axis_opening_dataset.py
+src/mcrl/runtime/ee_axis_pilot_runner.py
+src/mcrl/runtime/ee_axis_v05_c2_controlled_tape.py
+src/mcrl/runtime/ee_axis_ops3_live.py
+src/mcrl/runtime/ee_axis_v07_c2_state.py
+src/mcrl/runtime/ee_axis_v014_learnability.py
+src/mcrl/runtime/ee_axis_lcsrs_c3_topology.py
+src/mcrl/runtime/ee_axis_v04_c3_opening_source.py
+tests/test_w135_ee_axis_matched_opening.py
+tests/test_w147_ee_axis_v014_head.py
+tests/test_w30_server_training_cli.py
+
+exec
+/bin/bash -lc "find .. -name AGENTS.md -print; ls -la; ls -la /home/sat/mcrl-v025-ceiling30-ws | sed -n '1,160p'; ps -eo pid,ni,rss,comm,args --sort=-rss | awk '"'$4 ~ /python/ {print}'"' | sed -n '1,40p'" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 4042ms:
+../mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-rule-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-rule-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-rule-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-rule-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-weights-consolidated/misc/local-artifacts/AGENTS.md
+../modqn-paper-exploration/artifacts/AGENTS.md
+../modqn-paper-exploration/AGENTS.md
+../modqn-paper-exploration/configs/AGENTS.md
+../mcrl-v025-oracle-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-oracle-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-oracle-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-oracle-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../route-c-wt/artifacts/AGENTS.md
+../route-c-wt/AGENTS.md
+../route-c-wt/configs/AGENTS.md
+../mcrl-v025-harness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-harness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-harness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-harness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-witness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-witness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-witness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-witness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-mutants-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-mutants-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-mutants-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-mutants-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-replay-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-replay-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-replay-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-replay-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-retrain-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-retrain-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-curve-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-curve-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-curve-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-curve-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../papers/ntn-showcase-stack/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/.claude/worktrees/agent-a8c62735f67d75e76/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/.claude/worktrees/agent-a690ab3579d07fcc4/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/.claude/worktrees/agent-ab7769d15c9dc18c4/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/configs/AGENTS.md
+../papers/modqn-exp-grid-overlay-20260821/configs/AGENTS.md
+../papers/modqn-paper-reproduction-exp-strategy-20260818/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction-exp-strategy-20260818/configs/AGENTS.md
+../papers/modqn-paper-reproduction-sync-20260818/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction-sync-20260818/configs/AGENTS.md
+../papers/AGENTS.md
+../papers/modqn-paper-reproduction/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/.claude/worktrees/agent-a8c62735f67d75e76/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/.claude/worktrees/agent-a690ab3579d07fcc4/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/.claude/worktrees/agent-ab7769d15c9dc18c4/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/configs/AGENTS.md
+../mcrl-hub-copy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-hub-copy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-hub-copy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-hub-copy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-beam-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-beam-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-beam-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-beam-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-provider-gh/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-provider-gh/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-provider-gh/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-provider-gh/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../fields-flow/AGENTS.md
+../work/fields-flow-p1-20260809/fields-flow-tabletop/apps/life/AGENTS.md
+../work/fields-flow-p1-20260809/fields-flow-tabletop/AGENTS.md
+../modqn-acrm-only-fast/artifacts/AGENTS.md
+../modqn-acrm-only-fast/configs/AGENTS.md
+../mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-c1c2-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-c1c2-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-queue-exp-fast/artifacts/AGENTS.md
+../modqn-queue-exp-fast/configs/AGENTS.md
+../mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-directmain9k/artifacts/AGENTS.md
+../modqn-directmain9k/configs/AGENTS.md
+../mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-review-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-review-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-review-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-review-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-headroom-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-headroom-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-headroom-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-headroom-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../abl9k-eq327-eq11/artifacts/AGENTS.md
+../abl9k-eq327-eq11/configs/AGENTS.md
+../mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../fields-flow-lora/AGENTS.md
+../mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-teacher96/artifacts/AGENTS.md
+../modqn-teacher96/configs/AGENTS.md
+../mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-hub/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-hub/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-hub/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-hub/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-figures-deps/papers/modqn-paper-reproduction/AGENTS.md
+../modqn-step8-main/artifacts/AGENTS.md
+../modqn-step8-main/AGENTS.md
+../modqn-step8-main/configs/AGENTS.md
+../mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../.replay-server-v025-synth/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../.replay-server-v025-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../.replay-server-v025-synth/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../.replay-server-v025-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-coalgen-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-coalgen-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-coalgen-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-coalgen-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-paper-reproduction/artifacts/AGENTS.md
+../modqn-paper-reproduction/AGENTS.md
+../modqn-paper-reproduction/configs/AGENTS.md
+../mcrl-v025-prevalence-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-prevalence-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-prevalence-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-prevalence-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-arch-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-arch-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v024-regime-b/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v024-regime-b/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v024-regime-b/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v024-regime-b/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../reeval-wt/artifacts/AGENTS.md
+../reeval-wt/AGENTS.md
+../reeval-wt/configs/AGENTS.md
+../modqn-batch2/artifacts/AGENTS.md
+../modqn-batch2/configs/AGENTS.md
+../mcrl-leo-handover-wip/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-leo-handover-wip/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-leo-handover-wip/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-leo-handover-wip/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-teacher30-retest/artifacts/AGENTS.md
+../modqn-teacher30-retest/configs/AGENTS.md
+../mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../.codex/.tmp/plugins/plugins/zoom/AGENTS.md
+../.codex/.tmp/plugins/plugins/build-web-apps/skills/supabase-best-practices/AGENTS.md
+../.codex/.tmp/plugins/plugins/build-web-apps/skills/react-best-practices/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145814Z-85a6f50e-1408ea2d/artifacts/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145814Z-85a6f50e-1408ea2d/configs/AGENTS.md
+../mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T121205Z-a69998d01f65/artifacts/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T121205Z-a69998d01f65/configs/AGENTS.md
+../mcrl-v025-certprofile-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-certprofile-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-certprofile-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-certprofile-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-exploration-vault/modqn-paper-exploration/AGENTS.md
+../fields-flow-tabletop/apps/life/AGENTS.md
+../fields-flow-tabletop/AGENTS.md
+../mcrl-v024-codex-iter2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v024-codex-iter2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v024-codex-iter2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v024-codex-iter2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../devkit-vault/modqn-paper-reproduction/AGENTS.md
+../mcrl-v025-probe-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-probe-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-probe-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-probe-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-c3s-run/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-c3s-run/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-c3s-run/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-c3s-run/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145523Z-85a6f50e-1d9bf514/artifacts/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145523Z-85a6f50e-1d9bf514/configs/AGENTS.md
+../mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-abl9k/artifacts/AGENTS.md
+../modqn-abl9k/configs/AGENTS.md
+../ntn-sim-core/AGENTS.md
+../mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-leo-handover-e1/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-leo-handover-e1/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-leo-handover-e1/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-leo-handover-e1/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-floor-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-floor-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-floor-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-floor-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-paired-action-temporal-alignment-checkout-20260723/artifacts/AGENTS.md
+../modqn-paired-action-temporal-alignment-checkout-20260723/AGENTS.md
+../modqn-paired-action-temporal-alignment-checkout-20260723/configs/AGENTS.md
+../mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-pilot-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-pilot-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-pilot-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-pilot-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-ladder-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-ladder-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-ladder-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-ladder-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-score/artifacts/AGENTS.md
+../modqn-score/configs/AGENTS.md
+../modqn-teacher500/artifacts/AGENTS.md
+../modqn-teacher500/configs/AGENTS.md
+../mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-leo-handover-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-leo-handover-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-leo-handover-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-leo-handover-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-ep2k/artifacts/AGENTS.md
+../modqn-ep2k/configs/AGENTS.md
+../mcrl-v025-rank-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-rank-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-rank-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-rank-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-dates-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-dates-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-dates-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-dates-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+total 7748
+drwxrwxr-x  16 sat sat    4096 Sep 10 06:02 .
+drwxr-x--- 420 sat sat   36864 Sep 10 13:31 ..
+dr-xr-xr-x   2 sat sat      40 Sep 10 15:03 .agents
+dr-xr-xr-x   2 sat sat      40 Sep 10 15:03 .codex
+drwxrwxr-x   7 sat sat    4096 Sep  9 12:44 .git
+-rw-rw-r--   1 sat sat     141 Sep  8 13:54 .gitignore
+drwxrwxr-x   3 sat sat    4096 Sep  8 14:25 .pytest_cache
+drwxrwxr-x 123 sat sat   12288 Sep 10 05:38 .scratch
+drwxrwxr-x   5 sat sat    4096 Sep  9 09:14 .tmp
+drwxrwxr-x   2 sat sat    4096 Sep  9 02:24 .tmp-prompts
+drwxrwxr-x   4 sat sat    4096 Sep  8 14:25 .venv
+-rw-rw-r--   1 sat sat    5878 Sep  9 11:42 EPOCH-TREND-2026-09-09.md
+-rw-rw-r--   1 sat sat    5099 Sep  8 13:54 GIT-EXCLUDED-LARGE-FILES-2026-09-07.tsv
+-rw-rw-r--   1 sat sat   10895 Sep 10 06:35 MULTISTART-DEMAND-CAPPED-2026-09-10.md
+-rw-rw-r--   1 sat sat    4776 Sep  9 12:22 MUTANT-WITNESS-2026-09-09.md
+-rw-rw-r--   1 sat sat    7179 Sep  8 13:54 README.md
+-rw-rw-r--   1 sat sat   16952 Sep  9 09:14 V025-PILOT-MIN-REPORT-2026-09-09.md
+-rw-rw-r--   1 sat sat     102 Sep  9 09:04 V025-PILOT-MIN-REPORT-2026-09-09.md.sha256
+-r--r--r--   1 sat sat    2318 Sep  9 02:24 V025-PILOT-TRACK-DECLARATION-2026-09-09.md
+-rw-rw-r--   1 sat sat    5090 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md
+-rw-rw-r--   1 sat sat   13496 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+-rw-rw-r--   1 sat sat    2387 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+-rw-rw-r--   1 sat sat    3623 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+drwxrwxr-x   3 sat sat    4096 Sep  8 13:54 archive
+drwxrwxr-x  93 sat sat   16384 Sep  9 11:37 artifacts
+-rw-rw-r--   1 sat sat   27701 Sep  8 13:54 astra-adjudication-audit-bundle.zip
+-rw-rw-r--   1 sat sat 2724687 Sep  8 13:54 chapter4-0826.pptx
+-rw-rw-r--   1 sat sat 4421142 Sep  8 13:54 chapter5-0826.pptx
+-rw-rw-r--   1 sat sat   31483 Sep  8 13:54 deep-research-report.md
+drwxrwxr-x   3 sat sat   12288 Sep  8 13:54 docs
+-rw-rw-r--   1 sat sat   42603 Sep  8 13:54 gpt-dr.md
+-rw-rw-r--   1 sat sat   17603 Sep  8 13:54 gpt.md
+-rw-rw-r--   1 sat sat  396582 Sep  8 13:54 gpt.pdf
+-rw-rw-r--   1 sat sat     612 Sep  8 13:54 pyproject.toml
+-rw-rw-r--   1 sat sat      83 Sep  8 13:54 replay-world-2026121706.log
+drwxrwxr-x   3 sat sat    4096 Sep  9 08:33 scripts
+drwxrwxr-x   3 sat sat    4096 Sep  8 13:54 src
+drwxrwxr-x   5 sat sat   20480 Sep  9 11:16 tests
+total 7704
+drwxrwxr-x  10 sat sat    4096 Sep 10 13:53 .
+drwxr-x--- 420 sat sat   36864 Sep 10 13:31 ..
+drwxrwxr-x   7 sat sat    4096 Sep  9 16:28 .git
+-rw-rw-r--   1 sat sat     141 Sep  9 05:54 .gitignore
+drwxrwxr-x 124 sat sat   12288 Sep 10 12:33 .scratch
+-rw-rw-r--   1 sat sat   10380 Sep  9 19:42 CEILING-30-DATES-2026-09-10.md
+-rw-rw-r--   1 sat sat   13239 Sep  9 23:14 CEILING30-MARGIN-2026-09-10.md
+-rw-rw-r--   1 sat sat    6149 Sep 10 04:08 CONTROL-LAW-FAST-LOOK-2026-09-10.md
+-rw-rw-r--   1 sat sat    5782 Sep 10 04:18 FAST-LOOK-DEMAND-CAPPED-2026-09-10.md
+-rw-rw-r--   1 sat sat    5099 Sep  9 05:54 GIT-EXCLUDED-LARGE-FILES-2026-09-07.tsv
+-rw-rw-r--   1 sat sat    7179 Sep  9 05:54 README.md
+-rw-rw-r--   1 sat sat   13535 Sep 10 13:53 TRAINING-PANEL-CEILINGS-2026-09-10.md
+drwxrwxr-x   3 sat sat    4096 Sep  9 05:54 archive
+drwxrwxr-x  86 sat sat   16384 Sep  9 05:54 artifacts
+-rw-rw-r--   1 sat sat   27701 Sep  9 05:54 astra-adjudication-audit-bundle.zip
+-rw-rw-r--   1 sat sat 2724687 Sep  9 05:54 chapter4-0826.pptx
+-rw-rw-r--   1 sat sat 4421142 Sep  9 05:54 chapter5-0826.pptx
+-rw-rw-r--   1 sat sat   31483 Sep  9 05:54 deep-research-report.md
+drwxrwxr-x   3 sat sat   12288 Sep  9 05:54 docs
+-rw-rw-r--   1 sat sat   42603 Sep  9 05:54 gpt-dr.md
+-rw-rw-r--   1 sat sat   17603 Sep  9 05:54 gpt.md
+-rw-rw-r--   1 sat sat  396582 Sep  9 05:54 gpt.pdf
+-rw-rw-r--   1 sat sat     612 Sep  9 05:54 pyproject.toml
+-rw-rw-r--   1 sat sat      83 Sep  9 05:54 replay-world-2026121706.log
+drwxrwxr-x   2 sat sat    4096 Sep  9 05:54 scripts
+drwxrwxr-x   3 sat sat    4096 Sep  9 05:54 src
+drwxrwxr-x   3 sat sat   20480 Sep  9 05:54 tests
+
+exec
+/bin/bash -lc "sed -n '1,260p' /home/sat/mcrl-v025-ceiling30-ws/TRAINING-PANEL-CEILINGS-2026-09-10.md; rg -n \"PANELCEIL|FIRST_IMPROVEMENT|NEAREST_ELIGIBLE|11\\.027760|13\\.430253|full-buffer|no demand cap|modal_frac|argmax_distinct\" /home/sat/mcrl-v025-ceiling30-ws --glob '"'!artifacts/**'"' --glob '"'!*.pptx'"' --glob '"'!*.pdf'"' | sed -n '1,300p'" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 30ms:
+:    runner = build_reference_policy(NEAREST_ELIGIBLE, seed=1)
+/home/sat/mcrl-v025-ceiling30-ws/tests/test_w11_reference_policy_and_p1.py:173:    first = build_reference_policy(NEAREST_ELIGIBLE, 1).act(
+/home/sat/mcrl-v025-ceiling30-ws/tests/test_w11_reference_policy_and_p1.py:176:    second = build_reference_policy(NEAREST_ELIGIBLE, 1).act(
+/home/sat/mcrl-v025-ceiling30-ws/tests/test_w11_reference_policy_and_p1.py:361:            policy=build_reference_policy(NEAREST_ELIGIBLE, 1),
+/home/sat/mcrl-v025-ceiling30-ws/tests/test_w11_reference_policy_and_p1.py:371:            policy=build_reference_policy(NEAREST_ELIGIBLE, 1),
+/home/sat/mcrl-v025-ceiling30-ws/tests/test_w11_reference_policy_and_p1.py:399:            policy=build_reference_policy(NEAREST_ELIGIBLE, 1),
+/home/sat/mcrl-v025-ceiling30-ws/tests/test_w11_reference_policy_and_p1.py:411:        policy=build_reference_policy(NEAREST_ELIGIBLE, 1),
+/home/sat/mcrl-v025-ceiling30-ws/tests/test_w11_reference_policy_and_p1.py:435:        policy=build_reference_policy(NEAREST_ELIGIBLE, 1),
+/home/sat/mcrl-v025-ceiling30-ws/tests/test_w11_reference_policy_and_p1.py:448:        policy=build_reference_policy(NEAREST_ELIGIBLE, 1),
+/home/sat/mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/env/reference_policy.py:29:NEAREST_ELIGIBLE = "nearest-eligible"
+/home/sat/mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/env/reference_policy.py:44:    NEAREST_ELIGIBLE,
+/home/sat/mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/env/reference_policy.py:50:    NEAREST_ELIGIBLE: "best D2 margin, own cell, first valid in slot order",
+/home/sat/mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/env/reference_policy.py:93:        if self.name == NEAREST_ELIGIBLE:
+
+exec
+/bin/bash -lc "wc -l /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/build_report.py; sed -n '1,260p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py; sed -n '261,620p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 0ms:
+  848 /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py
+  300 /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/build_report.py
+ 1148 total
+#!/usr/bin/env python3
+"""Exact/oracle ceilings on the EXACTGEN2 prefix frozen on 2026-09-10.
+
+The source tree and virtual environment are read-only inputs.  This runner uses
+one Python process, one thread per numerical runtime, and writes only its local
+resumable receipt.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass
+from fractions import Fraction
+import hashlib
+import importlib.util
+import itertools
+import json
+import math
+import os
+from pathlib import Path
+import resource
+import sys
+import time
+from typing import Iterable, Mapping, Sequence
+
+
+WORKSPACE = Path("/home/sat/mcrl-v025-ceiling30-ws")
+SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
+PILOT_PATH = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
+CALIBRATION_PATH = (
+    SOURCE_ROOT
+    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
+    / "PILOT_NOT_CLAIM-calibration.json"
+)
+CORPUS = Path(
+    "/home/sat/mcrl-v025-datepool-ws/artifacts/"
+    "v025-exact-source-20260910-BUILD_NOT_CLAIM"
+)
+STAGING = CORPUS / ".staging-separated-v1"
+OUTPUT = WORKSPACE / ".scratch/panelceil/panelceil-receipt.json"
+PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
+THREAD_VARS = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
+)
+MAX_RSS_BYTES = 5_000_000_000
+CHECKPOINTS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.08, 45.0, 60.0)
+UNILATERAL_BATCH_SIZE = 16
+JOINT_BATCH_SIZE = 32
+OCCUPANT_SUBSET_MAX_SIZE = 4
+OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+JOINT_CANDIDATE_CAP = 4_096
+CARRIERS = ("nearest-eligible", "stay-if-possible", "random-masked")
+RESULT_SHA256 = (
+    "3d60bb26178b4a46a0783c55b8b1ffd1607183bd45a010dbb5690bb8c07e075e",
+    "22b07dd2b3c0485efc219e8eab73841638c31529bb2084cd094f33db1d549338",
+    "b819cbbbcff71d400eb6f668a1d44331a0fe957bff981279be06d6fdb1062171",
+    "2bf74d32269ad6848cc2e105a7aa5f72a6ffb53605625e406c962c8effa3a41f",
+    "0c5b13ff841c64c63594a404fe26075a19266f97c2a18497ee9089b26ca6a845",
+    "39ef0bd999f05b61540db8c3144aff5db07b54224b8437536ed7bba2748fc465",
+    "af628997b5a9092ba1a8189f29efaceac475e26cb7e9aafeff0a408738c2c79b",
+    "7d930399012976e9b0b6a30a2b1f41350b6e6baedcf998a23a7f0f4b5fa76e25",
+    "9b647b26b6b03df2ebd1254061f03236523f5b26051b245f60ced8f4f0c3ba38",
+    "d3a04cb6fe982c8fbd2bd685266cece2db31fd02115fecc689a1f74978947d8d",
+    "76d93fe4b070920aabf2917dafcbff8c535a8478b50422942fff0147b417a74a",
+    "c8fbdcd0e317c816213c85764bf6b95333d242e1e9e52dbb7b286b75ff25632d",
+)
+PILOT_SHA256 = "95103bb96caaa130659fa0d509f19409574b406798a173e278a7d9dac12b7435"
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def canonical_digest(payload: Mapping[str, object]) -> str:
+    unsigned = dict(payload)
+    unsigned.pop("receipt_sha256", None)
+    return hashlib.sha256(json.dumps(
+        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+
+
+def atomic_write(payload: dict) -> None:
+    payload["receipt_sha256"] = canonical_digest(payload)
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(OUTPUT)
+
+
+def peak_rss_bytes() -> int:
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
+
+
+def assert_rss() -> int:
+    value = peak_rss_bytes()
+    if value >= MAX_RSS_BYTES:
+        raise MemoryError(f"peak RSS {value} is not below 5 GB")
+    return value
+
+
+def assert_runtime() -> None:
+    if sys.executable != PYTHON:
+        raise RuntimeError(f"wrong interpreter: {sys.executable}")
+    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
+        raise RuntimeError("niceness is below 15")
+    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
+    if bad:
+        raise RuntimeError(f"thread pins are not all one: {bad}")
+
+
+def load_pilot():
+    if sha256(PILOT_PATH) != PILOT_SHA256:
+        raise RuntimeError("source pilot changed after panel freeze")
+    sys.path.insert(0, str(SOURCE_ROOT / "src"))
+    name = "panelceil_exactgen2_pilot"
+    spec = importlib.util.spec_from_file_location(name, PILOT_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot import source pilot")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_calibration(pilot):
+    payload = json.loads(CALIBRATION_PATH.read_text(encoding="ascii"))
+    def ratio(name: str) -> Fraction:
+        numerator, denominator = payload[name]
+        return Fraction(numerator, denominator)
+    return pilot.PilotCalibration(
+        eta_ref=ratio("eta_ref"),
+        lambda_bits_per_j=ratio("lambda_bits_per_j"),
+        kappa_bits_per_user_step=ratio("kappa_bits_per_user_step"),
+        bits_ref=ratio("bits_ref"),
+        joules_ref=ratio("joules_ref"),
+        users=int(payload["users"]),
+    )
+
+
+def frozen_panel() -> list[dict[str, object]]:
+    rows = []
+    for index, expected_hash in enumerate(RESULT_SHA256):
+        root = STAGING / f"global-{index:03d}"
+        result_path = root / f"BUILD_NOT_CLAIM-anchor-{index:03d}.result.json"
+        if not result_path.is_file() or sha256(result_path) != expected_hash:
+            raise RuntimeError(f"frozen result absent or changed: {result_path}")
+        row = json.loads(result_path.read_text(encoding="utf-8"))
+        step, carrier_index = divmod(index, len(CARRIERS))
+        if (
+            row["global_anchor_index"] != index
+            or row["world_index"] != 1
+            or row["step_index"] != step
+            or row["carrier_index"] != carrier_index
+            or row["carrier"] != CARRIERS[carrier_index]
+        ):
+            raise RuntimeError(f"declared-order mismatch at anchor {index}")
+        physics_path = root / "physics" / str(row["physics_relative_path"])
+        if not physics_path.is_file() or sha256(physics_path) != row["physics_sha256"]:
+            raise RuntimeError(f"physics shard absent or changed at anchor {index}")
+        rows.append({
+            "global_anchor_index": index,
+            "world_index": 1,
+            "world_id": row["world_id"],
+            "step_index": step,
+            "carrier_index": carrier_index,
+            "carrier": row["carrier"],
+            "result_path": str(result_path),
+            "result_sha256": expected_hash,
+            "physics_path": str(physics_path),
+            "physics_sha256": row["physics_sha256"],
+            "rows": row["row_count"],
+            "configurations": row["configuration_count"],
+        })
+    return rows
+
+
+def source_base_metric(panel_row: Mapping[str, object]) -> tuple[dict, dict]:
+    context = None
+    base = None
+    with Path(str(panel_row["physics_path"])).open(encoding="utf-8") as handle:
+        header = json.loads(next(handle))
+        for line in handle:
+            row = json.loads(line)
+            if row["schema"] == "mcrl-v025-exact-source-anchor-context-v1":
+                context = row
+            elif (
+                row["schema"] == "mcrl-v025-exact-source-configuration-physics-v1"
+                and row["delta_from_default"] == []
+            ):
+                base = row["current"]
+            if context is not None and base is not None:
+                break
+    if context is None or base is None:
+        raise RuntimeError("physics shard omitted anchor context or default profile")
+    if header["global_anchor_index"] != panel_row["global_anchor_index"]:
+        raise RuntimeError("physics header anchor mismatch")
+    return context, base
+
+
+def exact_float(value: float) -> Fraction:
+    if not math.isfinite(value):
+        raise RuntimeError("non-finite exact coefficient")
+    return Fraction.from_float(float(value))
+
+
+def served(profile) -> int:
+    return sum(bool(value) for value in profile.score.served_phy.values())
+
+
+def objective(runner, calibration, incumbent, config, profile, rekeys) -> Fraction:
+    # Match the standing anytime and coordination oracle: exact system
+    # objective F = B - eta_ref E.  Phi belongs to the source-label
+    # decomposition, not to either quoted ceiling's fixed-point construction.
+    return runner._objective(profile, calibration)
+
+
+def candidate(runner, base, current, user: int, identity, kind: str):
+    mapping = dict(current.mapping)
+    mapping[user] = identity
+    return runner._configuration(base, mapping, kind=kind)
+
+
+def new_selection_evaluator(
+    runner, tape, step_index, incumbent, run_setting, *, field="realised"
+):
+    return runner.StepEvaluator(
+        tape,
+        runner._setting("a-r0"),
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
+        field=field,
+        counter=runner.EvaluationCounter(),
+        run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+
+
+@dataclass
+class SearchRun:
+    selected: object
+    moves: list[tuple[float, object]]
+    receipt: dict[str, object]
+    best_alternatives: dict[int, tuple[int, int]]
+
+
+def first_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)  # F2: validated a0 exists before coordinator time.
+    guard = served(base_profile)
+    started = time.perf_counter()
+    options, census = runner._legal_options(tape, step_index)
+    rekeys = runner._rekeyed_users(tape, step_index)
+    current = base
+    moves: list[tuple[float, object]] = [(0.0, base)]
+    passes_with_moves = comparisons = submissions = 0
+    while True:
+        pass_started = time.perf_counter() - started
+        moves_this_pass = 0
+        terminal_counts = {
+            "legal_unilateral_alternatives_evaluated": 0,
+            "physically_invalid_alternatives": 0,
+            "service_guard_rejected_alternatives": 0,
+            "strictly_improving_alternatives": 0,
+        }
+        for user in sorted(options):
+            current_profile = evaluator.evaluate(current)
+            current_value = objective(
+                runner, calibration, incumbent, current, current_profile, rekeys
+            )
+            identities = [row for row in options[user] if row != current.mapping[user]]
+            accepted = None
+            for offset in range(0, len(identities), UNILATERAL_BATCH_SIZE):
+                batch = tuple(candidate(
+                    runner, base, current, user, identity,
+                    "panelceil-first-improvement",
+                ) for identity in identities[offset:offset + UNILATERAL_BATCH_SIZE])
+                evaluator.evaluate_many(batch)
+                submissions += len(batch)
+                terminal_counts["legal_unilateral_alternatives_evaluated"] += len(batch)
+                for row in batch:
+                    comparisons += 1
+                    profile = evaluator._evaluated.get(row.configuration_id)
+                    if profile is None:
+                        terminal_counts["physically_invalid_alternatives"] += 1
+                        continue
+                    if served(profile) < guard:
+                        terminal_counts["service_guard_rejected_alternatives"] += 1
+                        continue
+                    value = objective(runner, calibration, incumbent, row, profile, rekeys)
+                    if value > current_value:
+                        terminal_counts["strictly_improving_alternatives"] += 1
+                        accepted = row
+                        break
+                if accepted is not None:
+                    current = accepted
+                    moves_this_pass += 1
+                    moves.append((time.perf_counter() - started, current))
+                    break
+        pass_finished = time.perf_counter() - started
+        if moves_this_pass == 0:
+            if terminal_counts["strictly_improving_alternatives"] != 0:
+                raise RuntimeError("zero-move certificate contains an improvement")
+            break
+        passes_with_moves += 1
+
+    best_alternatives = {}
+    for user in sorted(options):
+        rows = []
+        for identity in options[user]:
+            if identity == current.mapping[user]:
+                continue
+            row = candidate(runner, base, current, user, identity, "panelceil-terminal-alternate")
+            profile = evaluator._evaluated.get(row.configuration_id)
+            if profile is not None:
+                rows.append((
+                    objective(runner, calibration, incumbent, row, profile, rekeys),
+                    row.configuration_id,
+                    identity,
+                ))
+        if rows:
+            best_alternatives[user] = min(rows, key=lambda item: (-item[0], item[1]))[2]
+    return SearchRun(current, moves, {
+        "algorithm": "deterministic cyclic first-improvement",
+        "candidate_order": "ascending user ID; each user's declared legal-option order",
+        "microbatch_size": UNILATERAL_BATCH_SIZE,
+        "baseline_served_guard": guard,
+        "legal_option_census": census,
+        "accepted_moves": len(moves) - 1,
+        "passes_with_moves": passes_with_moves,
+        "total_passes_including_certificate": passes_with_moves + 1,
+        "candidate_comparisons_through_certificate": comparisons,
+        "physically_submitted_candidates_through_certificate": submissions,
+        "last_improvement_seconds": moves[-1][0],
+        "finding_seconds": pass_started,
+        "terminal_certificate_seconds": pass_finished - pass_started,
+        "total_including_certificate_seconds": pass_finished,
+        "termination_certificate": {
+            "complete": True,
+            "statement": "Every legal unilateral alternative was evaluated at the final iterate and none strictly improves guarded F.",
+            **terminal_counts,
+        },
+    }, best_alternatives)
+
+
+def best_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)
+    guard = served(base_profile)
+    started = time.perf_counter()
+    options, census = runner._legal_options(tape, step_index)
+    rekeys = runner._rekeyed_users(tape, step_index)
+    current = base
+    moves: list[tuple[float, object]] = [(0.0, base)]
+    passes_with_moves = comparisons = 0
+    while True:
+        pass_started = time.perf_counter() - started
+        moves_this_pass = 0
+        terminal_counts = {
+            "legal_unilateral_alternatives_evaluated": 0,
+            "physically_invalid_alternatives": 0,
+            "service_guard_rejected_alternatives": 0,
+            "strictly_improving_alternatives": 0,
+        }
+        for user in sorted(options):
+            current_profile = evaluator.evaluate(current)
+            current_value = objective(
+                runner, calibration, incumbent, current, current_profile, rekeys
+            )
+            candidates = tuple(candidate(
+                runner, base, current, user, identity,
+                "panelceil-best-improvement",
+            ) for identity in options[user] if identity != current.mapping[user])
+            for offset in range(0, len(candidates), UNILATERAL_BATCH_SIZE):
+                evaluator.evaluate_many(
+                    candidates[offset:offset + UNILATERAL_BATCH_SIZE]
+                )
+            terminal_counts["legal_unilateral_alternatives_evaluated"] += len(candidates)
+            improving = []
+            for row in candidates:
+                comparisons += 1
+                profile = evaluator._evaluated.get(row.configuration_id)
+                if profile is None:
+                    terminal_counts["physically_invalid_alternatives"] += 1
+                    continue
+                if served(profile) < guard:
+                    terminal_counts["service_guard_rejected_alternatives"] += 1
+                    continue
+                value = objective(runner, calibration, incumbent, row, profile, rekeys)
+                if value > current_value:
+                    terminal_counts["strictly_improving_alternatives"] += 1
+                    improving.append((value, row.configuration_id, row))
+            if improving:
+                current = min(improving, key=lambda item: (-item[0], item[1]))[2]
+                moves_this_pass += 1
+                moves.append((time.perf_counter() - started, current))
+        pass_finished = time.perf_counter() - started
+        if moves_this_pass == 0:
+            if terminal_counts["strictly_improving_alternatives"] != 0:
+                raise RuntimeError("zero-move best-improvement certificate contains an improvement")
+            break
+        passes_with_moves += 1
+    return SearchRun(current, moves, {
+        "algorithm": "deterministic cyclic best-improvement",
+        "candidate_order": "ascending user ID; declared legal options in ordered microbatches of 16; exact best response per user; stable configuration-ID tie-break",
+        "microbatch_size": UNILATERAL_BATCH_SIZE,
+        "baseline_served_guard": guard,
+        "legal_option_census": census,
+        "accepted_moves": len(moves) - 1,
+        "passes_with_moves": passes_with_moves,
+        "total_passes_including_certificate": passes_with_moves + 1,
+        "candidate_comparisons_through_certificate": comparisons,
+        "last_improvement_seconds": moves[-1][0],
+        "finding_seconds": pass_started,
+        "terminal_certificate_seconds": pass_finished - pass_started,
+        "total_including_certificate_seconds": pass_finished,
+        "termination_certificate": {
+            "complete": True,
+            "statement": "Every legal unilateral alternative was evaluated at the final iterate and none strictly improves guarded F.",
+            **terminal_counts,
+        },
+    }, {})
+
+
+def interference_contributors(tape, step_index: int, current, victim: int) -> tuple[int, ...]:
+    mapping = current.mapping
+    victim_beam = mapping[victim]
+    if victim_beam is None:
+        return ()
+    occupancy = Counter(identity for identity in mapping.values() if identity is not None)
+    arrays = tape.steps[step_index].arrays
+    if arrays is None:
+        raise RuntimeError("exact panel requires primitive arrays")
+    victim_row = arrays._row_index().get((victim, victim_beam))
+    aggressor_of = arrays._aggressor_index()
+    if victim_row is None:
+        return ()
+    scores = []
+    for user, beam in sorted(mapping.items()):
+        if user == victim or beam is None or beam == victim_beam:
+            continue
+        column = aggressor_of.get(beam)
+        if column is None:
+            continue
+        score = arrays._cross_at_index(0, victim_row, column)[0] / occupancy[beam]
+        if score > 0.0:
+            scores.append((score, user))
+    return tuple(user for _, user in sorted(scores, key=lambda item: (-item[0], item[1])))
+
+
+def build_joint_candidates(runner, tape, step_index: int, base, unilateral, best_alternatives):
+    options, _ = runner._legal_options(tape, step_index)
+    current = unilateral.mapping
+    by_beam = {
+        beam: tuple(user for user, identity in sorted(current.items()) if identity == beam)
+        for beam in sorted({identity for identity in current.values() if identity is not None})
+    }
+    aliases: dict[tuple, list[dict[str, object]]] = {}
+    configs = {}
+    families = Counter()
+    def add(mapping, family: str, coalition: Sequence[int], detail: str) -> None:
+        changed = tuple(user for user in sorted(current) if mapping[user] != current[user])
+        if len(changed) < 2:
+            return
+        assignments = tuple(sorted(mapping.items()))
+        aliases.setdefault(assignments, []).append({
+            "family": family, "coalition_users": list(sorted(coalition)),
+            "changed_users": list(changed), "detail": detail,
+        })
+        if assignments not in configs:
+            configs[assignments] = runner._configuration(base, mapping, kind=family)
+            families[family] += 1
+    occupant_rows = 0
+    for beam, occupants in by_beam.items():
+        for size in range(2, min(OCCUPANT_SUBSET_MAX_SIZE, len(occupants)) + 1):
+            for coalition in itertools.combinations(occupants, size):
+                if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+                    break
+                if any(user not in best_alternatives for user in coalition):
+                    continue
+                mapping = dict(current)
+                for user in coalition:
+                    mapping[user] = best_alternatives[user]
+                add(mapping, "beam-occupant-subset", coalition,
+                    f"origin={beam[0]}:{beam[1]};size={size}")
+                occupant_rows += 1
+            if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+                break
+        if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+            break
+    for victim in sorted(current):
+        if victim not in best_alternatives:
+            continue
+        contributors = interference_contributors(tape, step_index, unilateral, victim)
+        for count in (2, 3):
+            if len(contributors) < count:
+                continue
+            coalition = (victim, *contributors[:count])
+            if any(user not in best_alternatives for user in coalition):
+                continue
+            mapping = dict(current)
+            for user in coalition:
+                mapping[user] = best_alternatives[user]
+            add(mapping, f"victim-plus-top-{count}-contributors", coalition,
+                f"victim={victim};contributors={','.join(map(str, contributors[:count]))}")
+    for beam, occupants in by_beam.items():
+        if len(occupants) < 2:
+            continue
+        common = set(options[occupants[0]])
+        for user in occupants[1:]:
+            common.intersection_update(options[user])
+        common.discard(beam)
+        for destination in sorted(common):
+            mapping = dict(current)
+            for user in occupants:
+                mapping[user] = destination
+            add(mapping, "complete-beam-evacuation", occupants,
+                f"origin={beam[0]}:{beam[1]};destination={destination[0]}:{destination[1]}")
+    ordered = tuple(configs[key] for key in sorted(configs))
+    if len(ordered) > JOINT_CANDIDATE_CAP:
+        raise RuntimeError(f"joint catalogue {len(ordered)} exceeds {JOINT_CANDIDATE_CAP}")
+    return ordered, aliases, dict(sorted(families.items()))
+
+
+def joint_optimum(runner, calibration, tape, step_index, base, incumbent, run_setting, first):
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)
+    seed_profile = evaluator.evaluate(first.selected)
+    guard = served(base_profile)
+    candidates, aliases, families = build_joint_candidates(
+        runner, tape, step_index, base, first.selected, first.best_alternatives
+    )
+    before = evaluator.counter.boundary_evaluations
+    for offset in range(0, len(candidates), JOINT_BATCH_SIZE):
+        evaluator.evaluate_many(candidates[offset:offset + JOINT_BATCH_SIZE])
+    best = first.selected
+    best_profile = seed_profile
+    rekeys = runner._rekeyed_users(tape, step_index)
+    qualifying = 0
+    for row in candidates:
+        profile = evaluator._evaluated.get(row.configuration_id)
+        if profile is None or served(profile) < guard:
+            continue
+        value = objective(runner, calibration, incumbent, row, profile, rekeys)
+        best_value = objective(runner, calibration, incumbent, best, best_profile, rekeys)
+        if value > objective(runner, calibration, incumbent, first.selected, seed_profile, rekeys):
+            qualifying += 1
+        if value > best_value or (
+            value == best_value and best is not first.selected
+            and row.configuration_id < best.configuration_id
+        ):
+            best, best_profile = row, profile
+    changed = [user for user in sorted(first.selected.mapping)
+               if first.selected.mapping[user] != best.mapping[user]]
+    return best, {
+        "catalogue_unique": len(candidates),
+        "catalogue_aliases": sum(len(value) for value in aliases.values()),
+        "family_unique_counts": families,
+        "joint_boundary_evaluations": evaluator.counter.boundary_evaluations - before,
+        "qualifying_strict_objective_improvements": qualifying,
+        "strict_selection_objective_improvement": best.assignments != first.selected.assignments,
+        "selected_coalition_size": len(changed),
+        "selected_coalition_users": changed,
+    }
+
+
+def config_at(run: SearchRun, seconds: float):
+    selected = run.moves[0][1]
+    for accepted, config in run.moves[1:]:
+        if accepted > seconds:
+            break
+        selected = config
+    return selected
+
+
+def metric(profile) -> dict[str, object]:
+    attained = profile.score.rate_target_attained
+    if attained is None:
+        raise RuntimeError("committed profile omitted rate-target attainment")
+    return {
+        "configuration_id": profile.config.configuration_id,
+        "assignments": [[user, None if identity is None else list(identity)]
+                        for user, identity in profile.config.assignments],
+        "bits": float(profile.bits),
+        "joules": float(profile.joules),
+        "ee_bit_per_j": float(profile.bits) / float(profile.joules),
+        "served_count": served(profile),
+        "rate_target_attained_count": sum(bool(value) for value in attained.values()),
+        "user_count": len(attained),
+    }
+
+
+def committed_metrics(runner, tape, step_index, incumbent, run_setting, configs):
+    evaluator = runner.StepEvaluator(
+        tape, runner._setting("a-r0"), step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
+        field="realised", counter=runner.EvaluationCounter(),
+        run_setting=run_setting, boundary_indices=tuple(range(48)),
+    )
+    result = {}
+    for name, config in configs.items():
+        evaluator.evaluate_many((config,))
+        profile = evaluator._evaluated.get(config.configuration_id)
+        if profile is None:
+            raise RuntimeError(f"invalid committed config for {name}")
+        result[name] = metric(profile)
+    return result
+
+
+def context_mapping(rows) -> dict[int, tuple[int, int] | None]:
+    return {
+
+exec
+/bin/bash -lc "sed -n '620,900p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py; sed -n '1,340p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/build_report.py; find /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil -maxdepth 1 -type f -printf '%f %s bytes\\n' | sort" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 0ms:
+    return {
+        int(user): (None if identity is None else (int(identity[0]), int(identity[1])))
+        for user, identity in rows
+    }
+
+
+def verify_source_base(runner, profile, incumbent, context: Mapping[str, object], source: Mapping[str, object]) -> dict[str, object]:
+    if profile.config.configuration_id != context["default_configuration_id"]:
+        raise RuntimeError("reconstructed base configuration differs from exact corpus")
+    if dict(profile.config.mapping) != context_mapping(context["default_mapping"]):
+        raise RuntimeError("reconstructed base mapping differs from exact corpus")
+    if dict(incumbent.mapping) != context_mapping(context["incumbent_mapping"]):
+        raise RuntimeError("reconstructed incumbent mapping differs from exact corpus")
+    source_bits = float.fromhex(str(source["whole_network_bits_hex"]))
+    source_joules = float.fromhex(str(source["whole_network_joules_hex"]))
+    source_served = sum(bool(row["served_phy"]) for row in source["per_user"])
+    return {
+        "configuration_id_exact_match": True,
+        "default_mapping_exact_match": True,
+        "incumbent_mapping_exact_match": True,
+        "served_count_exact_match": served(profile) == source_served,
+        "singleton_served_count": served(profile),
+        "corpus_dense_batch_served_count": source_served,
+        "bits_close_rel_1e_10": math.isclose(
+            float(profile.bits), source_bits, rel_tol=1e-10, abs_tol=1e-5
+        ),
+        "joules_close_rel_1e_10": math.isclose(
+            float(profile.joules), source_joules, rel_tol=1e-10, abs_tol=1e-10
+        ),
+        "bits": float(profile.bits) - source_bits,
+        "joules": float(profile.joules) - source_joules,
+        "ee_bit_per_j": (
+            float(profile.bits) / float(profile.joules) - source_bits / source_joules
+        ),
+        "explanation": (
+            "The corpus recorded this configuration inside its complete dense action batch; "
+            "the oracle harness evaluates it as a singleton. Configuration ID plus the "
+            "complete default and incumbent mappings are required to match; metric and PHY "
+            "service-threshold differences are retained rather than silently treated as "
+            "provenance failure."
+        ),
+    }
+
+
+def pool(rows: Sequence[Mapping[str, object]], name: str) -> dict[str, object]:
+    metrics = [row["committed"][name] for row in rows]
+    bits = math.fsum(float(row["bits"]) for row in metrics)
+    joules = math.fsum(float(row["joules"]) for row in metrics)
+    return {
+        "bits": bits, "joules": joules, "ee_bit_per_j": bits / joules,
+        "served_count": sum(int(row["served_count"]) for row in metrics),
+        "rate_target_attained_count": sum(int(row["rate_target_attained_count"]) for row in metrics),
+        "user_count": sum(int(row["user_count"]) for row in metrics),
+    }
+
+
+def summarize(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    names = ("BASE", "U_FIRST", "U_BEST", "J_FROM_FIRST", *(
+        f"U_FIRST_AT_{seconds:g}" for seconds in CHECKPOINTS
+    ))
+    pooled = {name: pool(rows, name) for name in names}
+    coordination = []
+    for row in rows:
+        u = row["committed"]["U_FIRST"]["ee_bit_per_j"]
+        j = row["committed"]["J_FROM_FIRST"]["ee_bit_per_j"]
+        coordination.append({
+            "global_anchor_index": row["global_anchor_index"],
+            "relative_ee_gain": j / u - 1.0,
+        })
+    return {
+        "pooled": pooled,
+        "coordination_ceiling_relative_to_first": (
+            pooled["J_FROM_FIRST"]["ee_bit_per_j"] / pooled["U_FIRST"]["ee_bit_per_j"] - 1.0
+        ),
+        "coordination_per_anchor": coordination,
+        "coordination_non_positive_anchor_count": sum(row["relative_ee_gain"] <= 0 for row in coordination),
+        "traversal_order_gap_first_over_best": (
+            pooled["U_FIRST"]["ee_bit_per_j"] / pooled["U_BEST"]["ee_bit_per_j"] - 1.0
+        ),
+        "acceleration_headroom_convergence_over_10s": (
+            pooled["U_FIRST"]["ee_bit_per_j"] / pooled["U_FIRST_AT_10"]["ee_bit_per_j"] - 1.0
+        ),
+    }
+
+
+def main() -> int:
+    assert_runtime()
+    panel = frozen_panel()
+    pilot = load_pilot()
+    runner = pilot.ENGINE
+    calibration = load_calibration(pilot)
+    run_setting = runner.run_setting_for("a-r0")
+    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+    from mcrl.physics_v025.tapes import build_world_tape
+    print("panel " + json.dumps([
+        f"{row['world_id']}|step={row['step_index']}|carrier={row['carrier']}"
+        for row in panel
+    ]), flush=True)
+    print(f"peak RSS {peak_rss_bytes() / 2**30:.3f} GiB before tape", flush=True)
+    tape_started = time.perf_counter()
+    tape = build_world_tape(
+        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
+        steps=33, start_time_s=0.0,
+    )
+    tape_wall = time.perf_counter() - tape_started
+    print(f"peak RSS {assert_rss() / 2**30:.3f} GiB after tape", flush=True)
+    payload = {
+        "schema": "mcrl-v025-training-panel-ceilings-v1",
+        "status": "RUNNING",
+        "claim_status": "EXACT_ORACLE_DIAGNOSTIC_NOT_LEARNED_ACHIEVEMENT",
+        "panel_frozen_at_start": panel,
+        "panel_count": len(panel),
+        "panel_prefix_rule": "completed global indices 0..11 present at task start in declared order",
+        "world_tape": {
+            "domain": tape.domain, "seed": tape.seed,
+            "digest": tape.digest, "construction_seconds": tape_wall,
+        },
+        "calibration": calibration.payload(),
+        "selection_information_class": "exact realised boundary-0 joint physics; no future-boundary information; system F = B - eta_ref*E",
+        "selection_estimand": "strict guarded improvement in exact F at realised boundary 0",
+        "committed_estimand": "pooled sum(full-buffer decoded bits)/sum(modelled partial-payload DC joules) over 48 realised boundaries",
+        "numerator": "declared saturated full-buffer successfully decoded forward-downlink information bits; no demand cap",
+        "fixed_point_orders": {
+            "first": "ascending users; declared legal options; first strict improvement in ordered microbatches of 16",
+            "best": "ascending users; declared legal-option order in microbatches of 16; exact best strict response per user; stable configuration-ID tie-break",
+        },
+        "timing_contract": "a0 constructed and validated before timer; timer includes legal-option construction and exact search; one process; only moves whose evaluation completed by checkpoint are credited",
+        "joint_catalogue": {
+            "construction": "reseeded from U_FIRST: within-beam occupant subsets size 2..4, victim plus top-2/top-3 physical nominal interferers, complete-beam evacuations",
+            "occupant_subset_total_cap": OCCUPANT_SUBSET_TOTAL_CAP,
+            "joint_candidate_cap": JOINT_CANDIDATE_CAP,
+            "exhausted": True,
+        },
+        "process_count": 1,
+        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
+        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
+        "python": sys.executable,
+        "pilot_sha256": sha256(PILOT_PATH),
+        "engine_sha256": sha256(SOURCE_ROOT / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"),
+        "anchors": [],
+    }
+    if OUTPUT.exists():
+        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
+        if previous.get("panel_frozen_at_start") != panel:
+            raise RuntimeError("resume panel differs from frozen panel")
+        payload["anchors"] = previous.get("anchors", [])
+    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
+    for position, panel_row in enumerate(panel, 1):
+        index = int(panel_row["global_anchor_index"])
+        if index in completed:
+            print(f"anchor {position}/{len(panel)} resume-complete peak RSS {assert_rss()/2**30:.3f} GiB", flush=True)
+            continue
+        step_index = int(panel_row["step_index"])
+        carrier = str(panel_row["carrier"])
+        base = runner._base_configuration(tape, step_index, carrier)
+        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
+        context, corpus_base = source_base_metric(panel_row)
+        check_evaluator = new_selection_evaluator(
+            runner, tape, step_index, incumbent, run_setting, field="nominal"
+        )
+        source_base_delta = verify_source_base(
+            runner, check_evaluator.evaluate(base), incumbent, context, corpus_base
+        )
+        anchor_started = time.perf_counter()
+        first = first_improvement(
+            runner, calibration, tape, step_index, base, incumbent, run_setting
+        )
+        best = best_improvement(
+            runner, calibration, tape, step_index, base, incumbent, run_setting
+        )
+        joint, joint_receipt = joint_optimum(
+            runner, calibration, tape, step_index, base, incumbent, run_setting, first
+        )
+        configs = {
+            "BASE": base,
+            "U_FIRST": first.selected,
+            "U_BEST": best.selected,
+            "J_FROM_FIRST": joint,
+        }
+        configs.update({
+            f"U_FIRST_AT_{seconds:g}": config_at(first, seconds)
+            for seconds in CHECKPOINTS
+        })
+        committed = committed_metrics(
+            runner, tape, step_index, incumbent, run_setting, configs
+        )
+        row = {
+            "global_anchor_index": index,
+            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
+            "world_id": panel_row["world_id"],
+            "step_index": step_index,
+            "carrier": carrier,
+            "source_base_configuration_and_incumbent_mappings_verified": True,
+            "source_base_singleton_minus_corpus_dense_batch": source_base_delta,
+            "first_improvement": first.receipt,
+            "best_improvement": best.receipt,
+            "joint_selection": joint_receipt,
+            "committed": committed,
+            "anchor_wall_seconds": time.perf_counter() - anchor_started,
+            "peak_rss_bytes": assert_rss(),
+        }
+        payload["anchors"].append(row)
+        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
+        payload["summary"] = summarize(payload["anchors"])
+        payload["peak_rss_bytes"] = assert_rss()
+        atomic_write(payload)
+        print(
+            f"anchor {position}/{len(panel)} completed peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB "
+            + json.dumps({
+                "global": index, "step": step_index, "carrier": carrier,
+                "first_s": round(first.receipt["total_including_certificate_seconds"], 3),
+                "best_s": round(best.receipt["total_including_certificate_seconds"], 3),
+                "joint_n": joint_receipt["catalogue_unique"],
+                "wall_s": round(row["anchor_wall_seconds"], 3),
+            }, sort_keys=True),
+            flush=True,
+        )
+    payload["status"] = "COMPLETE"
+    payload["summary"] = summarize(payload["anchors"])
+    payload["peak_rss_bytes"] = assert_rss()
+    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
+    atomic_write(payload)
+    print(f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final ({payload['peak_rss_bytes']} bytes)", flush=True)
+    print(json.dumps(payload["summary"], sort_keys=True), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+#!/usr/bin/env python3
+"""Audit PANELCEIL receipt and deterministically render its Markdown report."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import resource
+
+
+ROOT = Path("/home/sat/mcrl-v025-ceiling30-ws")
+RECEIPT = ROOT / ".scratch/panelceil/panelceil-receipt.json"
+RUNNER = ROOT / ".scratch/panelceil/run_panelceil.py"
+BUILDER = ROOT / ".scratch/panelceil/build_report.py"
+DISCARDED = ROOT / ".scratch/panelceil/panelceil-nominal-G-diagnostic.json"
+PREALIGNED = ROOT / ".scratch/panelceil/panelceil-pre-aligned-best-batching.json"
+REPORT = ROOT / "TRAINING-PANEL-CEILINGS-2026-09-10.md"
+EXPECTED_INDICES = list(range(12))
+CHECKPOINTS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.08, 45.0, 60.0)
+THREAD_VARS = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
+)
+
+
+def sha256(path: Path) -> str:
+    result = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            result.update(block)
+    return result.hexdigest()
+
+
+def canonical_digest(payload: dict) -> str:
+    unsigned = dict(payload)
+    unsigned.pop("receipt_sha256", None)
+    return hashlib.sha256(json.dumps(
+        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+
+
+def pooled(rows, name):
+    metrics = [row["committed"][name] for row in rows]
+    bits = math.fsum(float(row["bits"]) for row in metrics)
+    joules = math.fsum(float(row["joules"]) for row in metrics)
+    return {
+        "bits": bits,
+        "joules": joules,
+        "ee_bit_per_j": bits / joules,
+        "served_count": sum(int(row["served_count"]) for row in metrics),
+        "rate_target_attained_count": sum(
+            int(row["rate_target_attained_count"]) for row in metrics
+        ),
+        "user_count": sum(int(row["user_count"]) for row in metrics),
+    }
+
+
+def close_dict(left, right):
+    for key in left:
+        if isinstance(left[key], float):
+            if not math.isclose(left[key], float(right[key]), rel_tol=2e-15, abs_tol=1e-9):
+                raise RuntimeError(f"reaggregation mismatch {key}: {left[key]} != {right[key]}")
+        elif left[key] != right[key]:
+            raise RuntimeError(f"reaggregation mismatch {key}: {left[key]} != {right[key]}")
+
+
+def pct(value):
+    return f"{100.0 * value:+.6f}%"
+
+
+def ee(metric):
+    return float(metric["ee_bit_per_j"]) / 1e6
+
+
+def checkpoint_name(seconds):
+    return f"U_FIRST_AT_{seconds:g}"
+
+
+def main():
+    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
+        raise RuntimeError("report builder niceness below 15")
+    if any(os.environ.get(name) != "1" for name in THREAD_VARS):
+        raise RuntimeError("report builder thread pins are not all one")
+    payload = json.loads(RECEIPT.read_text(encoding="utf-8"))
+    if payload["receipt_sha256"] != canonical_digest(payload):
+        raise RuntimeError("receipt digest mismatch")
+    if payload["status"] != "COMPLETE" or payload["panel_count"] != 12:
+        raise RuntimeError("receipt is not a complete 12-anchor run")
+    rows = payload["anchors"]
+    if [row["global_anchor_index"] for row in rows] != EXPECTED_INDICES:
+        raise RuntimeError("anchor prefix/order mismatch")
+    if payload["peak_rss_bytes"] >= 5_000_000_000:
+        raise RuntimeError("peak RSS cap violated")
+    if payload["process_count"] != 1 or payload["niceness"] < 15:
+        raise RuntimeError("process/niceness contract violated")
+    if set(payload["thread_pins"].values()) != {"1"}:
+        raise RuntimeError("stored thread-pin contract violated")
+
+    for row in rows:
+        if not row["source_base_configuration_and_incumbent_mappings_verified"]:
+            raise RuntimeError("source mapping provenance failure")
+        for arm in ("first_improvement", "best_improvement"):
+            cert = row[arm]["termination_certificate"]
+            if not cert["complete"] or cert["strictly_improving_alternatives"] != 0:
+                raise RuntimeError(f"bad terminal certificate: {row['global_anchor_index']} {arm}")
+            if "guarded F" not in cert["statement"]:
+                raise RuntimeError("terminal certificate objective label is not F")
+        joint = row["joint_selection"]
+        if joint["joint_boundary_evaluations"] != joint["catalogue_unique"]:
+            raise RuntimeError("joint catalogue was not exactly exhausted")
+
+    names = ["BASE", "U_FIRST", "U_BEST", "J_FROM_FIRST"] + [
+        checkpoint_name(seconds) for seconds in CHECKPOINTS
+    ]
+    independently_pooled = {name: pooled(rows, name) for name in names}
+    for name, metric in independently_pooled.items():
+        close_dict(metric, payload["summary"]["pooled"][name])
+
+    base = independently_pooled["BASE"]
+    first = independently_pooled["U_FIRST"]
+    best = independently_pooled["U_BEST"]
+    joint = independently_pooled["J_FROM_FIRST"]
+    at10 = independently_pooled["U_FIRST_AT_10"]
+    coordination = ee(joint) / ee(first) - 1.0
+    acceleration = ee(first) / ee(at10) - 1.0
+    traversal = ee(first) / ee(best) - 1.0
+    for observed, expected, label in (
+        (coordination, payload["summary"]["coordination_ceiling_relative_to_first"], "coordination"),
+        (acceleration, payload["summary"]["acceleration_headroom_convergence_over_10s"], "acceleration"),
+        (traversal, payload["summary"]["traversal_order_gap_first_over_best"], "traversal"),
+    ):
+        if not math.isclose(observed, expected, rel_tol=2e-15, abs_tol=1e-15):
+            raise RuntimeError(f"{label} summary mismatch")
+
+    gains = []
+    nonpositive = 0
+    for row in rows:
+        u = row["committed"]["U_FIRST"]
+        j = row["committed"]["J_FROM_FIRST"]
+        gain = ee(j) / ee(u) - 1.0
+        gains.append(gain)
+        nonpositive += gain <= 0.0
+    if nonpositive != payload["summary"]["coordination_non_positive_anchor_count"]:
+        raise RuntimeError("nonpositive coordination count mismatch")
+
+    selection_strict = sum(
+        bool(row["joint_selection"]["strict_selection_objective_improvement"])
+        for row in rows
+    )
+    joint_total = sum(row["joint_selection"]["catalogue_unique"] for row in rows)
+    served_schedule_matches = sum(
+        bool(row["source_base_singleton_minus_corpus_dense_batch"]["served_count_exact_match"])
+        for row in rows
+    )
+    numeric_schedule_matches = sum(
+        bool(row["source_base_singleton_minus_corpus_dense_batch"]["bits_close_rel_1e_10"])
+        and bool(row["source_base_singleton_minus_corpus_dense_batch"]["joules_close_rel_1e_10"])
+        for row in rows
+    )
+
+    lines = []
+    lines.append(
+        f"**On the frozen 12-anchor training panel, the bounded coordination ceiling is {pct(coordination)} over its certified first-improvement fixed point, the acceleration ceiling is {pct(acceleration)} ({ee(at10):.6f} -> {ee(first):.6f} Mbit/J) over the actual 10 s incumbent, and first-improvement finishes {pct(traversal)} above best-improvement solely from traversal order.**"
+    )
+    lines += [
+        "",
+        "# Training-panel oracle ceilings — 2026-09-10",
+        "",
+        "`EXACT_ORACLE_DIAGNOSTIC_NOT_LEARNED_ACHIEVEMENT`. No learner, training run, policy run, or loss-based inference was performed. The older 8-anchor coordination value and 20-anchor acceleration value are not reused, stacked, or compared with these values.",
+        "",
+        "## Result",
+        "",
+        "All pooled EE values are ratios of pooled sums, `sum(decoded bits) / sum(joules)`, not means of anchor-local ratios.",
+        "",
+        "| construction | pooled bits (Tbit) | pooled joules | EE (Mbit/J) | served PHY | rate-target attained | relation used here |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+        f"| legal base | {base['bits']/1e12:.6f} | {base['joules']:.6f} | {ee(base):.6f} | {base['served_count']}/1200 | {base['rate_target_attained_count']}/1200 | descriptive only |",
+        f"| first-improvement incumbent at 10 s | {at10['bits']/1e12:.6f} | {at10['joules']:.6f} | {ee(at10):.6f} | {at10['served_count']}/1200 | {at10['rate_target_attained_count']}/1200 | actual comparator |",
+        f"| certified first-improvement fixed point | {first['bits']/1e12:.6f} | {first['joules']:.6f} | {ee(first):.6f} | {first['served_count']}/1200 | {first['rate_target_attained_count']}/1200 | acceleration numerator; coordination reference |",
+        f"| certified best-improvement fixed point | {best['bits']/1e12:.6f} | {best['joules']:.6f} | {ee(best):.6f} | {best['served_count']}/1200 | {best['rate_target_attained_count']}/1200 | traversal-order reference |",
+        f"| bounded joint selector from first fixed point | {joint['bits']/1e12:.6f} | {joint['joules']:.6f} | {ee(joint):.6f} | {joint['served_count']}/1200 | {joint['rate_target_attained_count']}/1200 | coordination numerator |",
+        "",
+        f"The actual score to beat at 10 s is therefore **{ee(at10):.6f} Mbit/J**, with **{at10['bits']/1e12:.6f} Tbit**, **{at10['joules']:,.6f} J**, **{at10['served_count']:,}/{at10['user_count']:,} served PHY**, and **{at10['rate_target_attained_count']:,}/{at10['user_count']:,} attaining the rate target**.",
+        "",
+        "## Construction and estimand binding",
+        "",
+        "| reported figure | reference construction | information class | estimand and numerator | panel | traversal/order |",
+        "|---|---|---|---|---|---|",
+        "| coordination ceiling | bounded joint catalogue reseeded from each anchor's certified first-improvement fixed point; denominator is that same fixed point | exact realised boundary 0 for selection; current anchor plus declared prior-step incumbent; no future boundary | committed pooled EE over 48 realised boundaries; numerator is saturated full-buffer successfully decoded forward-downlink information bits, with no demand cap | frozen exact-path prefix, 12 anchors | first fixed point: ascending user ID, declared legal-option order, first strict guarded `F` improvement in ordered batches of 16; joint catalogue in stable assignment order, batches of 32 |",
+        "| acceleration ceiling | certified first-improvement endpoint divided by the configuration actually held at 10 s | same exact realised boundary-0 `F`; the 48-boundary endpoint never feeds selection | same 48-boundary committed pooled EE and full-buffer decoded-bit numerator | same 12 anchors | same first-improvement traversal; only moves whose evaluation completed by the checkpoint are credited |",
+        "| traversal-order gap | first-improvement endpoint divided by best-improvement endpoint, both starting at the same base and using the same guard | same exact realised boundary-0 `F`, declared option order, and 16-row microbatch shape | same 48-boundary committed pooled EE and full-buffer decoded-bit numerator | same 12 anchors | first: first strict response; best: exact best strict response per user with stable configuration-ID tie-break |",
+        "| 10 s comparator score | configuration held by first-improvement at 10 s, pooled across anchors | same as acceleration row | absolute 48-boundary committed pooled EE; same numerator | same 12 anchors | same checkpoint-safe first-improvement traversal |",
+        "",
+        "Here `F = decoded bits - eta_ref * joules`. The served-PHY count is the selection guard and a separately reported outcome. Rate-target attainment is also separately reported; neither is folded into the EE numerator. Base construction and validation occur before the search stopwatch; the stopwatch begins immediately before legal-option construction. Joint catalogue construction/scoring and every 48-boundary committed evaluation occur after unilateral timing.",
+        "",
+        "## Verified by running code",
+        "",
+        f"- All 12 first-improvement and all 12 best-improvement terminal certificates are complete. Each final pass evaluated every declared legal unilateral alternative and found zero strict guarded-`F` improvements.",
+        f"- The bounded joint catalogues contained {joint_total:,} unique configurations in total and were exactly exhausted. The selected joint configuration strictly improved boundary-0 `F` over its seed on {selection_strict}/12 anchors; the seed itself remained eligible.",
+        f"- Peak RSS was **{payload['peak_rss_bytes']/2**30:.3f} GiB** ({payload['peak_rss_bytes']:,} bytes), below 5 GB. One Python process ran at niceness {payload['niceness']}; all six recorded BLAS/OpenMP-related thread controls were `1`.",
+        "- The interpreter was `/home/sat/mcrl-leo-handover/.venv/bin/python`. The read-only handover tree and its virtual environment were not modified. All generated files are under this workspace.",
+        f"- Exact corpus provenance passed for configuration ID and complete default/incumbent mappings on 12/12 anchors. The corpus's dense nominal source call and the singleton nominal provenance check were numerically close at `1e-10` on {numeric_schedule_matches}/12 anchors and had equal served counts on {served_schedule_matches}/12. This is a verified evaluator batch-schedule sensitivity, so corpus-stored dense metrics were not substituted for the oracle's fixed singleton/microbatch schedule.",
+        "- A discarded diagnostic selected on nominal `G = F + kappa*Phi`; it is preserved only as `.scratch/panelceil/panelceil-nominal-G-diagnostic.json` and supplies no reported number here. The reportable run selects on realised boundary-0 `F`, matching the standing oracle construction.",
+        "",
+        "## Derived on paper from verified aggregates",
+        "",
+        f"- Coordination: `{ee(joint):.9f} / {ee(first):.9f} - 1 = {pct(coordination)}`.",
+        f"- Acceleration: `{ee(first):.9f} / {ee(at10):.9f} - 1 = {pct(acceleration)}`.",
+        f"- Traversal order: `{ee(first):.9f} / {ee(best):.9f} - 1 = {pct(traversal)}`.",
+        "",
+        "### Anytime first-improvement curve",
+        "",
+        "| checkpoint | bits (Tbit) | joules | EE (Mbit/J) | served PHY | rate-target attained | headroom to convergence |",
+        "|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for seconds in CHECKPOINTS:
+        metric = independently_pooled[checkpoint_name(seconds)]
+        headroom = ee(first) / ee(metric) - 1.0
+        lines.append(
+            f"| {seconds:g} s | {metric['bits']/1e12:.6f} | {metric['joules']:.6f} | {ee(metric):.6f} | {metric['served_count']}/1200 | {metric['rate_target_attained_count']}/1200 | {pct(headroom)} |"
+        )
+    lines.append(
+        f"| convergence | {first['bits']/1e12:.6f} | {first['joules']:.6f} | {ee(first):.6f} | {first['served_count']}/1200 | {first['rate_target_attained_count']}/1200 | +0.000000% |"
+    )
+    lines += [
+        "",
+        "### Coordination by anchor",
+        "",
+        f"The committed joint-over-first gain is nonpositive on **{nonpositive}/12** anchors. Selection is information-matched at boundary 0; a strict selection-`F` gain need not imply a positive 48-boundary EE gain.",
+        "",
+        "| anchor | first EE | joint EE | joint/first - 1 | served first -> joint | attained first -> joint | joint candidates | first total incl. certificate | best total incl. certificate |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row, gain in zip(rows, gains):
+        u = row["committed"]["U_FIRST"]
+        j = row["committed"]["J_FROM_FIRST"]
+        lines.append(
+            f"| {row['global_anchor_index']}: s{row['step_index']}/{row['carrier']} | {ee(u):.6f} | {ee(j):.6f} | {pct(gain)} | {u['served_count']} -> {j['served_count']} | {u['rate_target_attained_count']} -> {j['rate_target_attained_count']} | {row['joint_selection']['catalogue_unique']} | {row['first_improvement']['total_including_certificate_seconds']:.3f} s | {row['best_improvement']['total_including_certificate_seconds']:.3f} s |"
+        )
+
+    lines += [
+        "",
+        "## Inferred",
+        "",
+        f"- On this panel, traversal order moves the committed fixed-point EE by {pct(traversal)}, while bounded coordination adds {pct(coordination)} over the first-improvement reference. The ordering effect is therefore material but smaller than this panel's pooled coordination band; this does not transfer the older panels' relationship.",
+        f"- The pooled coordination gain is heterogeneous: {nonpositive}/12 anchor-local gains are nonpositive, and the pooled positive value is driven by the remaining anchors. It should be used as a panel-level ceiling, not as an every-anchor guarantee.",
+        f"- A future learned result can be expressed against the acceleration ceiling only relative to the actual 10 s comparator ({ee(at10):.6f} Mbit/J), and against the coordination ceiling only relative to the certified first-improvement reference ({ee(first):.6f} Mbit/J). The two percentages cannot be stacked.",
+        "- These are exact/oracle diagnostic opportunities under the stated information and catalogue bounds. They are not predictions of what a learner will achieve.",
+        "",
+        "## Frozen panel",
+        "",
+        "The source state declared a larger build, but the anchor budget was the completed clean prefix present when the task began. The frozen prefix is global indices 0–11 in declared order: world 1; steps 0, 1, 2, 3; and, within each step, `nearest-eligible`, `stay-if-possible`, `random-masked`. Later-arriving source anchors were excluded.",
+        "",
+        "| global | anchor | source configurations | source rows | result SHA-256 |",
+        "|---:|---|---:|---:|---|",
+    ]
+    for row, panel_row in zip(rows, payload["panel_frozen_at_start"]):
+        lines.append(
+            f"| {row['global_anchor_index']} | `{row['anchor_id']}` | {panel_row['configurations']} | {panel_row['rows']} | `{panel_row['result_sha256']}` |"
+        )
+
+    lines += [
+        "",
+        "## Machine evidence",
+        "",
+        "```text",
+        f"{payload['receipt_sha256']}  .scratch/panelceil/panelceil-receipt.json",
+        f"{sha256(RUNNER)}  .scratch/panelceil/run_panelceil.py",
+        f"{sha256(BUILDER)}  .scratch/panelceil/build_report.py",
+        f"{sha256(DISCARDED)}  .scratch/panelceil/panelceil-nominal-G-diagnostic.json  [discarded diagnostic; not a result source]",
+        f"{sha256(PREALIGNED)}  .scratch/panelceil/panelceil-pre-aligned-best-batching.json  [discarded pre-alignment diagnostic; not a result source]",
+        f"{payload['pilot_sha256']}  /home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py  [read-only]",
+        f"{payload['engine_sha256']}  /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py  [read-only]",
+        "```",
+        "",
+        f"World tape: domain `{payload['world_tape']['domain']}`, seed `{payload['world_tape']['seed']}`, digest `{payload['world_tape']['digest']}`. The final receipt required no post-run numeric, configuration, or objective-label correction.",
+        "",
+        "Reproduction uses the mandated interpreter with `nice -n 15` and all six thread variables set to `1`:",
+        "",
+        "```bash",
+        "OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/panelceil/run_panelceil.py",
+        "OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/panelceil/build_report.py",
+        "```",
+        "",
+    ]
+
+    rendered = "\n".join(lines)
+    REPORT.write_text(rendered, encoding="utf-8")
+    report_hash = sha256(REPORT)
+    peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
+    print(f"anchor 12/12 report-audit-complete")
+    print(f"peak RSS {peak/2**30:.3f} GiB report builder ({peak} bytes)")
+    print(f"report_sha256={report_hash} receipt_sha256={payload['receipt_sha256']}")
+
+
+if __name__ == "__main__":
+    main()
+build_report.py 20122 bytes
+fix_receipt_objective_label.py 1796 bytes
+panelceil-nominal-G-diagnostic.json 2000688 bytes
+panelceil-pre-aligned-best-batching.json 1887680 bytes
+panelceil-receipt.json 1889597 bytes
+run_panelceil.py 38285 bytes
+
+codex
+The ceiling report and receipt establish the exact frozen prefix and evaluation contract. I’m now binding each new policy to the same legal-option list and the same 48-boundary committed evaluator; the main ambiguity I’m resolving from source is what field is the authoritative nominal link-quality/RSS value, so `RSS_MAX` is genuinely demand-blind and not a disguised objective optimizer.
+exec
+/bin/bash -lc "rg -n \"class Primitive|class .*Arrays|desired|receive|rx_|signal|link.*quality|_legal_options|def _base_configuration|def _configuration|StepEvaluator\" /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py /home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025 /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env | sed -n '1,360p'" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py:276:    evaluator = ENGINE.StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py:301:        options, census = ENGINE._legal_options(tape, step_index)
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py:384:    current = ENGINE.StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py:550:    current = ENGINE.StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py:1401:    options, _ = ENGINE._legal_options(tape, step_index)
+/home/sat/mcrl-v025-c1c2suff-ws/scripts/run_v025_pilot_c3.py:1678:                realised = ENGINE.StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:204:            "top_legal_options_per_user": TOP_PROPOSALS,
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:380:def _base_configuration(tape: ExogenousWorldTape, step_index: int, carrier: str) -> Configuration:
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:422:def _legal_options(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:481:    options, census = _legal_options(tape, step_index)
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:527:def _configuration(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:555:    all_options, raw_census = _legal_options(tape, step_index)
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:593:        nominal = StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:763:class StepEvaluator:
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1094:            nominal_evaluator = StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1119:            evaluated = StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1194:        evaluator = StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1356:def _configuration_factor_scores(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1365:    evaluator: StepEvaluator,
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1615:        evaluator = StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1710:    evaluator: StepEvaluator,
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1837:    evaluator: StepEvaluator,
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:1850:    options, _census = _legal_options(tape, step_index)
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2006:    nominal_evaluator = StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2122:        "phi_signalling_qos_preference": float(phi),
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2272:                    "phi_numerator_hex": float(arm["phi_signalling_qos_preference"]).hex(),
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2332:                payload["phi_signalling_qos_preference"]
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2380:            "phi_signalling_qos_preference": math.fsum(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2381:                float(row["phi_signalling_qos_preference"]) for row in arms
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608:    selection_evaluator = StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2757:    evaluator = StepEvaluator(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:3105:            "phi_signalling_qos_preference": math.fsum(
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:3106:                float(row["phi_signalling_qos_preference"]) for row in rows
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/geometry.py:256:    receive envelope, whose logarithm is defined on degrees.  Passing
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/keyed_fading.py:12:the same physical user and satellite receive the same underlying draw in two
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:127:def receive_gain_dbi(separation_deg: np.ndarray | float) -> np.ndarray:
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:140:        raise MCRLContractError("receive separations must be finite and nonnegative")
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:156:def receive_gain_linear(separation_deg: np.ndarray | float) -> np.ndarray:
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:157:    return 10.0 ** (receive_gain_dbi(separation_deg) / 10.0)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:160:def interference_receive_gain_linear(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:173:    envelope = receive_gain_linear(separation)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:328:    "interference_receive_gain_linear",
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:331:    "receive_gain_dbi",
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:332:    "receive_gain_linear",
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/pointing.py:25:**degrees**, because the S.465 receive envelope and ``mu_of`` are defined on
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/pointing.py:98:        * the gain layer takes **degrees** (``mu_of``, and the S.465 receive
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:24:from .channel import interference_receive_gain_linear, keyed_fading_gain
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:212:class PrimitiveCandidate:
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:325:class PrimitiveBoundary:
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:346:class PrimitiveStepArrays:
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:381:    receive_gain_by_wanted_slot: np.ndarray
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:419:        slots = arrays["receive_gain_by_wanted_slot"].shape[2]
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:420:        if arrays["receive_gain_by_wanted_slot"].shape != (48, users, slots, satellites):
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:422:                "receive_gain_by_wanted_slot must have shape (48,U,L,S)"
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:474:            * self.receive_gain_by_wanted_slot[boundary_index, user, wanted_slot, satellite]
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:584:            receive = self.receive_gain_by_wanted_slot[
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:590:            block = base_cross * receive
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:938:class PrimitiveWorldProvider(Protocol):
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:1154:        rx_peak = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:1177:                    rx_ratio = float(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:1178:                        interference_receive_gain_linear(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:1182:                    ) / rx_peak
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py:1183:                    cross = (1.2e-13 + 0.1e-13 * user) * rx_ratio
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:1:"""Transmit and receive antenna patterns (SDD §3.4b, §3.7 P-2/P-10, G-7/G-10).
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:197:def receive_gain_dbi(separation_deg: np.ndarray) -> np.ndarray:
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:198:    """Terminal receive gain in dBi for an off-boresight angle in **degrees**.
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:220:def receive_gain_linear(separation_deg: np.ndarray) -> np.ndarray:
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:221:    return 10.0 ** (receive_gain_dbi(separation_deg) / 10.0)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:225:    receive_linear: np.ndarray,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:231:    ``receive_linear`` is ``(U, B)``, ``satellite_id_of_beam`` is ``(B,)``,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:234:    wanted signal, so the terminal antenna gives it ``G_R,max``.
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:245:    gains = np.array(receive_linear, dtype=np.float64, copy=True)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/antenna.py:249:        raise MCRLContractError("receive_linear must have shape (U, B)")
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/batch.py:127:    # 0=INVALID, 1=CONVERGED, 2=CONVERGED_SLOW.  A configuration receives
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/batch.py:228:            receive = arrays.receive_gain_by_wanted_slot[
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/batch.py:234:            nominal_cross = base_cross * receive
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:59:    interference_receive_gain_linear,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:492:        receive_gain: np.ndarray,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:496:        legacy = link_power_factor(slant_km, elevation_deg, receive_gain)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:730:        peak_receive = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:732:            slants, elevations, np.full_like(slants, peak_receive)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:847:        # Terminal receive gain is indexed by the victim's four frozen
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:868:        receive_vertex = np.broadcast_to(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:872:        receive_angles = angle_between_deg(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:873:            receive_vertex,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:875:                wanted_positions[:, :, :, None, :], receive_vertex.shape
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:878:                positions[:, None, None, :, :], receive_vertex.shape
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:884:        receive_gain = interference_receive_gain_linear(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:885:            receive_angles,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:886:            same_satellite=np.broadcast_to(same_satellite[None, :, :, :], receive_angles.shape),
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:965:            receive_gain_by_wanted_slot=receive_gain,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/constants_v025.py:44:IMPLEMENTATION_MARGIN_DB = 1.7  # Provenance: round-3 §2.9 prospective common receiver allowance (VERIFY_SOURCE).
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/constants_v025.py:163:        "RECEIVER_NOISE_FIGURE_DB": "round-3 §2.6 retained receiver noise figure",
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/step.py:84:    candidate_received_power_terms,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/step.py:87:    received_power_terms,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/step.py:915:        terms = received_power_terms(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/step.py:1295:            terms = candidate_received_power_terms(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/link_budget.py:648:def g_over_t_db_per_k(receive_gain_dbi: float) -> float:
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/link_budget.py:650:    return receive_gain_dbi - 10.0 * math.log10(SYSTEM_TEMPERATURE_K)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/link_budget.py:667:    receive_gain_linear: np.ndarray,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/link_budget.py:675:    the four losses of (3.10b), the receive gain of (3.10c), and the
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/link_budget.py:682:    receive = np.asarray(receive_gain_linear, dtype=np.float64)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/link_budget.py:683:    if np.any(receive < 0.0):
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/link_budget.py:684:        raise MCRLContractError("receive gain must be non-negative")
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/link_budget.py:685:    factor = 10.0 ** (-loss_db / 10.0) * receive
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/architectures.py:58:    Cross-gain entry ``[victim, aggressor]`` is received watts per aggressor
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:47:    receive_gain_linear,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:224:    # ``link_power_factor`` folds in G^R; here it must not, so the receive
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:277:def received_power_terms(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:313:    receive = receive_gain_linear(separation)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:314:    receive = apply_same_satellite_override(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:315:        receive, radiating.norad_ids, boresight_ids
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:322:        * receive
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:359:    ``power_terms`` is ``(U, B)`` from :func:`received_power_terms` — already
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:378:        raise MCRLContractError("received power terms must be non-negative")
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:408:    receive_gain: np.ndarray,
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:415:    is credited with less wanted signal than their beam actually puts out.
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:424:        * np.asarray(receive_gain, dtype=np.float64)
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:454:def candidate_received_power_terms(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:465:    terminal's receive gain depends on which satellite it is pointed at, and
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:500:        receive = apply_same_satellite_override(
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:501:            receive_gain_linear(separation), radiating.norad_ids, norads[:, slot]
+/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/env/interference.py:503:        terms[:, slot, :] = base * receive
+
+exec
+/bin/bash -lc "sed -n '200,520p' /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/tapes.py; sed -n '350,620p' /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py; sed -n '740,910p' /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 0ms:
+                "forecast": self.forecast_steps,
+            },
+            "production_factory": self.production_factory,
+            "inference": {
+                "date_panel_policy": self.date_panel_policy,
+                "primary_resampling": self.primary_resampling,
+                "world_pooling": self.world_pooling,
+            },
+        }
+
+
+@dataclass(frozen=True)
+class PrimitiveCandidate:
+    """Detached candidate/link state at one absolute boundary."""
+
+    user_id: int
+    identity: BeamIdentity
+    color: int
+    elevation_deg: float
+    d2_entry_elevation_deg: float
+    slant_km: float
+    d2_distance_km: float
+    visible: bool
+    d2_eligible: bool
+    nominal_gain: float
+    realised_gain: float
+    # Received watts per aggressor RF watt, indexed by physical aggressor NORAD.
+    nominal_cross_gain_by_norad: tuple[tuple[int, float], ...]
+    realised_cross_gain_by_norad: tuple[tuple[int, float], ...]
+    remaining_visibility_s: float
+    remaining_d2_s: float
+    cell_reachable: bool = True
+    # Stage-4 protocol: the physical aggressor key is (NORAD, cell), not
+    # merely NORAD.  The legacy fields remain as compatibility views for
+    # synthetic fixtures; real providers populate these identity-keyed rows.
+    nominal_cross_gain_by_identity: tuple[tuple[BeamIdentity, float], ...] = ()
+    realised_cross_gain_by_identity: tuple[tuple[BeamIdentity, float], ...] = ()
+    visibility_right_censored: bool = False
+    d2_right_censored: bool = False
+    # Provider-side coarse membership, retained independently of live masks.
+    coarse_shortlisted: bool = True
+
+    def __post_init__(self) -> None:
+        if self.visible != (self.elevation_deg >= MINIMUM_ELEVATION_DEG):
+            raise MCRLContractError("candidate visibility disagrees with live 10-degree floor")
+        if len(self.identity) != 2:
+            raise MCRLContractError("candidate identity must be (NORAD, beam-chain)")
+        if any(value < 0.0 or not math.isfinite(value) for value in (
+            self.slant_km,
+            self.d2_distance_km,
+            self.nominal_gain,
+            self.realised_gain,
+            self.remaining_visibility_s,
+            self.remaining_d2_s,
+        )):
+            raise MCRLContractError("candidate physical values must be finite and nonnegative")
+        if self.nominal_gain <= 0.0 or self.realised_gain <= 0.0:
+            raise MCRLContractError("direct channel gains must be positive")
+        for name in ("nominal_cross_gain_by_norad", "realised_cross_gain_by_norad"):
+            rows = getattr(self, name)
+            if tuple(sorted(rows)) != rows or len({norad for norad, _ in rows}) != len(rows):
+                raise MCRLContractError("cross-gain fields must use unique sorted NORAD order")
+            if any(type(norad) is not int or not math.isfinite(gain) or gain < 0.0 for norad, gain in rows):
+                raise MCRLContractError("cross-gain fields must be finite and nonnegative")
+        for name in (
+            "nominal_cross_gain_by_identity",
+            "realised_cross_gain_by_identity",
+        ):
+            rows = getattr(self, name)
+            if tuple(sorted(rows)) != rows or len({identity for identity, _ in rows}) != len(rows):
+                raise MCRLContractError(
+                    "identity cross-gain fields must use unique sorted physical identities"
+                )
+            if any(
+                len(identity) != 2
+                or any(type(value) is not int for value in identity)
+                or not math.isfinite(gain)
+                or gain < 0.0
+                for identity, gain in rows
+            ):
+                raise MCRLContractError(
+                    "identity cross-gain fields must be finite and nonnegative"
+                )
+
+    @property
+    def legal(self) -> bool:
+        return self.visible and self.d2_eligible and self.cell_reachable
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "user_id": self.user_id,
+            "identity": list(self.identity),
+            "color": self.color,
+            "elevation_deg": _f(self.elevation_deg),
+            "d2_entry_elevation_deg": _f(self.d2_entry_elevation_deg),
+            "slant_km": _f(self.slant_km),
+            "d2_distance_km": _f(self.d2_distance_km),
+            "visible_10deg": self.visible,
+            "d2_eligible": self.d2_eligible,
+            "nominal_gain": _f(self.nominal_gain),
+            "realised_gain": _f(self.realised_gain),
+            "nominal_cross_gain_by_norad": [
+                [norad, _f(gain)] for norad, gain in self.nominal_cross_gain_by_norad
+            ],
+            "realised_cross_gain_by_norad": [
+                [norad, _f(gain)] for norad, gain in self.realised_cross_gain_by_norad
+            ],
+            "remaining_visibility_s": _f(self.remaining_visibility_s),
+            "remaining_d2_s": _f(self.remaining_d2_s),
+            "cell_reachable": self.cell_reachable,
+            "nominal_cross_gain_by_identity": [
+                [list(identity), _f(gain)]
+                for identity, gain in self.nominal_cross_gain_by_identity
+            ],
+            "realised_cross_gain_by_identity": [
+                [list(identity), _f(gain)]
+                for identity, gain in self.realised_cross_gain_by_identity
+            ],
+            "visibility_right_censored": self.visibility_right_censored,
+            "d2_right_censored": self.d2_right_censored,
+            "coarse_shortlisted": self.coarse_shortlisted,
+        }
+
+
+@dataclass(frozen=True)
+class PrimitiveBoundary:
+    absolute_time_s: float
+    candidates: tuple[PrimitiveCandidate, ...]
+    cell_rekeyed_users: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        keys = [(row.user_id, row.identity) for row in self.candidates]
+        if len(keys) != len(set(keys)):
+            raise MCRLContractError("boundary has duplicate user/physical candidates")
+        if tuple(sorted(set(self.cell_rekeyed_users))) != self.cell_rekeyed_users:
+            raise MCRLContractError("cell re-key users must be unique and sorted")
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "absolute_time_s": _f(self.absolute_time_s),
+            "candidates": [row.payload() for row in self.candidates],
+            "cell_rekeyed_users": list(self.cell_rekeyed_users),
+        }
+
+
+@dataclass(frozen=True)
+class PrimitiveStepArrays:
+    """One 48-boundary step in compact, immutable NumPy form.
+
+    Cross-gain storage is factorised by victim user, wanted-satellite slot,
+    and physical aggressor.  This preserves the exact per-chain quantity
+    without materialising millions of Python tuples.  Object boundaries are
+    generated only by :meth:`boundary_view`, the audit/KAT compatibility
+    seam; engine geometry is assembled directly from these arrays.
+    """
+
+    absolute_time_s: np.ndarray
+    users: np.ndarray
+    row_user_column: np.ndarray
+    legacy_action_index: np.ndarray
+    identities: np.ndarray
+    colors: np.ndarray
+    elevations_deg: np.ndarray
+    d2_entry_elevations_deg: np.ndarray
+    slants_km: np.ndarray
+    d2_distances_km: np.ndarray
+    visible: np.ndarray
+    d2_eligible: np.ndarray
+    cell_reachable: np.ndarray
+    nominal_gain: np.ndarray
+    realised_gain: np.ndarray
+    remaining_visibility_s: np.ndarray
+    remaining_d2_s: np.ndarray
+    visibility_right_censored: np.ndarray
+    d2_right_censored: np.ndarray
+    aggressor_identities: np.ndarray
+    aggressor_colors: np.ndarray
+    aggressor_satellite_column: np.ndarray
+    row_wanted_slot: np.ndarray
+    cross_base_nominal: np.ndarray
+    fading_by_satellite: np.ndarray
+    receive_gain_by_wanted_slot: np.ndarray
+
+    def __post_init__(self) -> None:
+        arrays = {
+            name: np.asarray(getattr(self, name))
+            for name in self.__dataclass_fields__
+        }
+        times = arrays["absolute_time_s"]
+        rows = arrays["identities"].shape[0]
+        users = arrays["users"].shape[0]
+        aggressors = arrays["aggressor_identities"].shape[0]
+        satellites = arrays["fading_by_satellite"].shape[2]
+        if times.shape != (D2_SUBINTERVALS + 1,):
+            raise MCRLContractError("step arrays need exactly 48 boundary times")
+        if arrays["identities"].shape != (rows, 2):
+            raise MCRLContractError("step identities must have shape (R,2)")
+        if arrays["aggressor_identities"].shape != (aggressors, 2):
+            raise MCRLContractError("aggressor identities must have shape (A,2)")
+        for name in ("row_user_column", "legacy_action_index", "colors", "row_wanted_slot"):
+            if arrays[name].shape != (rows,):
+                raise MCRLContractError(f"{name} must have shape (R,)")
+        for name in (
+            "elevations_deg", "d2_entry_elevations_deg", "slants_km",
+            "d2_distances_km", "visible", "d2_eligible", "cell_reachable",
+            "nominal_gain", "realised_gain", "remaining_visibility_s",
+            "remaining_d2_s", "visibility_right_censored",
+            "d2_right_censored",
+        ):
+            if arrays[name].shape != (D2_SUBINTERVALS + 1, rows):
+                raise MCRLContractError(f"{name} must have shape (48,R)")
+        if arrays["aggressor_colors"].shape != (aggressors,):
+            raise MCRLContractError("aggressor_colors must have shape (A,)")
+        if arrays["aggressor_satellite_column"].shape != (aggressors,):
+            raise MCRLContractError("aggressor satellite columns must have shape (A,)")
+        if arrays["cross_base_nominal"].shape != (48, users, aggressors):
+            raise MCRLContractError("cross_base_nominal must have shape (48,U,A)")
+        if arrays["fading_by_satellite"].shape[:2] != (48, users):
+            raise MCRLContractError("fading_by_satellite must have shape (48,U,S)")
+        slots = arrays["receive_gain_by_wanted_slot"].shape[2]
+        if arrays["receive_gain_by_wanted_slot"].shape != (48, users, slots, satellites):
+            raise MCRLContractError(
+                "receive_gain_by_wanted_slot must have shape (48,U,L,S)"
+            )
+        if np.any(arrays["row_user_column"] < 0) or np.any(arrays["row_user_column"] >= users):
+            raise MCRLContractError("row user column is outside the user array")
+        if np.any(arrays["aggressor_satellite_column"] < 0) or np.any(
+            arrays["aggressor_satellite_column"] >= satellites
+        ):
+            raise MCRLContractError("aggressor satellite column is invalid")
+        if not np.all(np.isfinite(times)):
+            raise MCRLContractError("step boundary times must be finite")
+        for name, value in arrays.items():
+            frozen = np.array(value, copy=True)
+            frozen.setflags(write=False)
+            object.__setattr__(self, name, frozen)
+
+    def __len__(self) -> int:
+        return D2_SUBINTERVALS + 1
+
+    def _row_index(self) -> dict[tuple[int, BeamIdentity], int]:
+        return {
+            (int(self.users[int(self.row_user_column[row])]),
+             (int(identity[0]), int(identity[1]))): row
+            for row, identity in enumerate(self.identities)
+        }
+
+    def _aggressor_index(self) -> dict[BeamIdentity, int]:
+        return {
+            (int(identity[0]), int(identity[1])): index
+            for index, identity in enumerate(self.aggressor_identities)
+        }
+
+    def _cross(self, boundary_index: int, victim_row: int, aggressor: BeamIdentity) -> tuple[float, float]:
+        aggressor_index = self._aggressor_index().get(aggressor)
+        if aggressor_index is None:
+            return 0.0, 0.0
+        return self._cross_at_index(boundary_index, victim_row, aggressor_index)
+
+    def _cross_at_index(
+        self, boundary_index: int, victim_row: int, aggressor_index: int
+    ) -> tuple[float, float]:
+        aggressor = tuple(
+            int(value) for value in self.aggressor_identities[aggressor_index]
+        )
+        if tuple(int(value) for value in self.identities[victim_row]) == aggressor:
+            return 0.0, 0.0
+        if int(self.colors[victim_row]) != int(self.aggressor_colors[aggressor_index]):
+            return 0.0, 0.0
+        user = int(self.row_user_column[victim_row])
+        wanted_slot = int(self.row_wanted_slot[victim_row])
+        satellite = int(self.aggressor_satellite_column[aggressor_index])
+        nominal = float(
+            self.cross_base_nominal[boundary_index, user, aggressor_index]
+            * self.receive_gain_by_wanted_slot[boundary_index, user, wanted_slot, satellite]
+        )
+        realised = nominal * float(self.fading_by_satellite[boundary_index, user, satellite])
+        return nominal, realised
+
+    def boundary_view(self, boundary_index: int) -> PrimitiveBoundary:
+        """Materialise the expensive object view only for audit/KAT callers."""
+
+        if type(boundary_index) is not int or not 0 <= boundary_index < len(self):
+            raise MCRLContractError("boundary index must be in 0..47")
+        aggressors = [
+            (int(identity[0]), int(identity[1]))
+            for identity in self.aggressor_identities
+        ]
+        rows: list[PrimitiveCandidate] = []
+        for row, raw_identity in enumerate(self.identities):
+            identity = (int(raw_identity[0]), int(raw_identity[1]))
+            nominal_identity = []
+            realised_identity = []
+            for aggressor_index, aggressor in enumerate(aggressors):
+                if aggressor == identity or int(self.aggressor_colors[aggressor_index]) != int(self.colors[row]):
+                    continue
+                nominal, realised = self._cross(boundary_index, row, aggressor)
+                nominal_identity.append((aggressor, nominal))
+                realised_identity.append((aggressor, realised))
+            # Compatibility view: NORAD-only maps cannot represent multiple
+            # beams, so aggregate all emitted physical terms by NORAD.
+            nominal_norad: dict[int, float] = {}
+            realised_norad: dict[int, float] = {}
+            for (norad, _cell), gain in nominal_identity:
+                nominal_norad[norad] = nominal_norad.get(norad, 0.0) + gain
+            for (norad, _cell), gain in realised_identity:
+                realised_norad[norad] = realised_norad.get(norad, 0.0) + gain
+            rows.append(
+                PrimitiveCandidate(
+                    user_id=int(self.users[int(self.row_user_column[row])]),
+                    identity=identity,
+                    color=int(self.colors[row]),
+                    elevation_deg=float(self.elevations_deg[boundary_index, row]),
+                    d2_entry_elevation_deg=float(self.d2_entry_elevations_deg[boundary_index, row]),
+                    slant_km=float(self.slants_km[boundary_index, row]),
+                    d2_distance_km=float(self.d2_distances_km[boundary_index, row]),
+                    visible=bool(self.visible[boundary_index, row]),
+                    d2_eligible=bool(self.d2_eligible[boundary_index, row]),
+                    nominal_gain=float(self.nominal_gain[boundary_index, row]),
+                    realised_gain=float(self.realised_gain[boundary_index, row]),
+                    nominal_cross_gain_by_norad=tuple(sorted(nominal_norad.items())),
+
+
+@dataclass
+class EvaluationCounter:
+    boundary_evaluations: int = 0
+
+
+def _setting(label: str) -> PhysicsSetting:
+    matches = [setting for setting in MATRIX_SETTINGS if setting.label == label]
+    if len(matches) != 1:
+        raise ProbeError(f"cell must be one of the {len(MATRIX_SETTINGS)} declared labels: {label!r}")
+    return matches[0]
+
+
+def _provider_for_run(run_setting: SealedRunSetting) -> PrimitiveWorldProvider:
+    if run_setting.user_count == 100:
+        return WORLD_PROVIDER_FACTORY()
+    try:
+        return WORLD_PROVIDER_FACTORY(user_count=run_setting.user_count)  # type: ignore[call-arg]
+    except TypeError as error:
+        raise ProbeError("R2 requires a provider factory with a user_count parameter") from error
+
+
+def _world_domain(index: int, *, calibration: bool = False) -> str:
+    domains = CALIBRATION_WORLD_DOMAINS if calibration else PROBE_WORLD_DOMAINS
+    if index < 1 or index > len(domains):
+        raise ProbeError("world index is outside the declared domain inventory")
+    return domains[index - 1]
+
+
+def _base_configuration(tape: ExogenousWorldTape, step_index: int, carrier: str) -> Configuration:
+    action = next(
+        row for row in tape.carriers if row.step_index == step_index and row.carrier == carrier
+    )
+    mapping = dict(action.assignments)
+    step = tape.steps[step_index]
+    if step.arrays is not None:
+        arrays = step.arrays
+        live = arrays.visible[0] & arrays.d2_eligible[0] & arrays.cell_reachable[0]
+        users_with_legal = {
+            int(arrays.users[int(arrays.row_user_column[row])])
+            for row in np.flatnonzero(live).tolist()
+        }
+    else:
+        users_with_legal = {
+            row.user_id for row in step.boundaries[0].candidates if row.legal
+        }
+    # The opening reference is part of the selection contract: a user with
+    # no live legal action is NULL in BASE and in every derived catalogue row.
+    for user in mapping:
+        if user not in users_with_legal:
+            mapping[user] = None
+    return Configuration(
+        f"BASE:{carrier}", tuple(sorted(mapping.items())), 0, "reference"
+    )
+
+
+def _candidate_shortlist(boundary) -> set[tuple[int, tuple[int, int]]]:
+    """Coarse provider shortlist, before successor visibility/D2 masks."""
+
+    return {
+        (row.user_id, row.identity)
+        for row in boundary.candidates
+        if row.coarse_shortlisted
+    }
+
+
+def _rekeyed_users(tape: ExogenousWorldTape, step_index: int) -> tuple[int, ...]:
+    step = tape.steps[step_index]
+    return () if step.arrays is not None else step.boundaries[0].cell_rekeyed_users
+
+
+def _legal_options(
+    tape: ExogenousWorldTape, step_index: int
+) -> tuple[dict[int, tuple[tuple[int, int], ...]], dict[str, int]]:
+    """Return decision-instant legal options without materialising array rows."""
+
+    step = tape.steps[step_index]
+    users = tuple(sorted(user.user_id for user in tape.user_layout))
+    if step.arrays is not None:
+        arrays = step.arrays
+        live = arrays.visible[0] & arrays.d2_eligible[0] & arrays.cell_reachable[0]
+        options: dict[int, list[tuple[float, tuple[int, int]]]] = {user: [] for user in users}
+        for row in np.flatnonzero(live).tolist():
+            user = int(arrays.users[int(arrays.row_user_column[row])])
+            identity = tuple(int(value) for value in arrays.identities[row])
+            options[user].append((float(arrays.slants_km[0, row]), identity))
+        resolved = {
+            user: tuple(identity for _slant, identity in sorted(set(rows)))
+            for user, rows in options.items()
+        }
+        legal_count = int(np.count_nonzero(live))
+        return resolved, {
+            "coarse_shortlist_count": int(len(arrays.identities)),
+            "full_successor_legal_count": legal_count,
+            "candidate_shortlist_miss_count": 0,
+        }
+    first = step.boundaries[0]
+    full_legal = {(row.user_id, row.identity) for row in first.candidates if row.legal}
+    resolved = {
+        user: tuple(
+            row.identity
+            for row in sorted(
+                (
+                    row
+                    for row in first.candidates
+                    if row.user_id == user
+                    and row.legal
+                ),
+                key=lambda row: (row.slant_km, row.identity),
+            )
+        )
+        for user in users
+    }
+    return resolved, {
+        "coarse_shortlist_count": len(_candidate_shortlist(first)),
+        "full_successor_legal_count": len(full_legal),
+        "candidate_shortlist_miss_count": len(
+            full_legal - _candidate_shortlist(first)
+        ),
+    }
+
+
+def _selection_shortlist(
+    tape: ExogenousWorldTape,
+    step_index: int,
+    *,
+    run_setting: SealedRunSetting,
+) -> tuple[dict[int, tuple[tuple[int, int], ...]], dict[str, object]]:
+    """Top eight live actions by decision-instant nominal link margin."""
+
+    options, census = _legal_options(tape, step_index)
+    step = tape.steps[step_index]
+    ranked: dict[int, tuple[tuple[int, int], ...]] = {}
+    excluded_margins: list[float] = []
+    if step.arrays is not None:
+        arrays = step.arrays
+        row_of = arrays._row_index()
+        noise = noise_power_w(500_000_000.0)
+        for user, identities in options.items():
+            rows = []
+            for identity in identities:
+                row = row_of[(user, identity)]
+                sinr = BEAM_RF_CAP_W * float(arrays.nominal_gain[0, row]) / noise
+                margin = 10.0 * math.log10(max(sinr, np.finfo(float).tiny)) - SINR_MIN_DB
+                rows.append((margin, identity))
+            ordered = sorted(rows, key=lambda item: (-item[0], item[1]))
+            ranked[user] = tuple(identity for _margin, identity in ordered[:SHORTLIST_OPTIONS_PER_USER])
+            excluded_margins.extend(margin for margin, _identity in ordered[SHORTLIST_OPTIONS_PER_USER:])
+    else:
+        first = step.boundaries[0]
+        by_key = {(row.user_id, row.identity): row for row in first.candidates}
+        noise = noise_power_w(500_000_000.0)
+        for user, identities in options.items():
+            rows = []
+            for identity in identities:
+                candidate = by_key[(user, identity)]
+                sinr = BEAM_RF_CAP_W * candidate.nominal_gain / noise
+                margin = 10.0 * math.log10(max(sinr, np.finfo(float).tiny)) - SINR_MIN_DB
+                rows.append((margin, identity))
+            ordered = sorted(rows, key=lambda item: (-item[0], item[1]))
+            ranked[user] = tuple(identity for _margin, identity in ordered[:SHORTLIST_OPTIONS_PER_USER])
+            excluded_margins.extend(margin for margin, _identity in ordered[SHORTLIST_OPTIONS_PER_USER:])
+    kept = sum(len(rows) for rows in ranked.values())
+    total = sum(len(rows) for rows in options.values())
+    return ranked, {
+        **census,
+        "selection_shortlist_per_user": SHORTLIST_OPTIONS_PER_USER,
+        "selection_shortlist_count": kept,
+        "legal_options_outside_selection_shortlist": total - kept,
+        "best_excluded_nominal_margin_db": (
+            None if not excluded_margins else max(excluded_margins)
+        ),
+        "shortlist_superset_miss_count": census["candidate_shortlist_miss_count"],
+    }
+
+
+def _configuration(
+    base: Configuration,
+    mapping: Mapping[int, tuple[int, int] | None],
+    *,
+    kind: str,
+) -> Configuration:
+    assignments = tuple(sorted(mapping.items()))
+    base_map = base.mapping
+    changed = sum(base_map[user] != identity for user, identity in assignments)
+    encoded = ";".join(
+        f"{user}:NULL" if identity is None else f"{user}:{identity[0]}:{identity[1]}"
+        for user, identity in assignments
+    )
+    return Configuration(f"CFG:{encoded}", assignments, changed, kind)
+
+
+def _catalogue_with_census(
+    tape: ExogenousWorldTape,
+    step_index: int,
+    base: Configuration,
+    *,
+    setting: PhysicsSetting | None = None,
+    calibration: CalibrationValues | None = None,
+    counter: EvaluationCounter | None = None,
+    run_setting: SealedRunSetting | None = None,
+) -> tuple[tuple[Configuration, ...], dict[str, object]]:
+    users = tuple(sorted(user.user_id for user in tape.user_layout))
+    active_run = run_setting_for("a-r0") if run_setting is None else run_setting
+    all_options, raw_census = _legal_options(tape, step_index)
+    product_size = math.prod(
+        len(all_options[user]) if all_options[user] else 1 for user in users
+    )
+    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+        options, census = all_options, raw_census
+    else:
+        options, census = _selection_shortlist(
+            tape, step_index, run_setting=active_run
+        )
+    factors = tuple(options[user] if options[user] else (None,) for user in users)
+    rows: list[Configuration] = [base]
+    base_map = base.mapping
+    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+        for product in itertools.product(*factors):
+            mapping = dict(zip(users, product, strict=True))
+            if mapping == base_map:
+                continue
+            rows.append(_configuration(base, mapping, kind="complete-cartesian"))
+        mode = "complete-cartesian"
+    else:
+        # (i) every legal unilateral move; an option-less user keeps the
+        # explicit null action and never collapses the other users' catalogue.
+        unilaterals: dict[int, list[Configuration]] = {user: [] for user in users}
+        for user in users:
+            for identity in options[user]:
+                if identity == base_map[user]:
+                    continue
+                mapping = dict(base_map)
+                mapping[user] = identity
+                row = _configuration(base, mapping, kind="unilateral")
+                rows.append(row)
+                unilaterals[user].append(row)
+
+        # Rank users by the best exact nonlinear nominal single-user surplus
+        # at the decision instant.  The one-boundary result is held over the
+        # step only for this causal selection-time ranking.
+        rank_setting = _setting("a-r0") if setting is None else setting
+        nominal = StepEvaluator(
+            tape,
+            rank_setting,
+            step_index,
+            transition_from=base,
+            field="nominal",
+            counter=counter,
+            run_setting=active_run,
+            boundary_indices=(0,),
+        )
+        rank_rows = [base] + [row for values in unilaterals.values() for row in values]
+        nominal.evaluate_many(rank_rows)
+        nominal_base = nominal.evaluate(base)
+        eta = Fraction() if calibration is None else calibration.eta_ref
+        kappa = Fraction(1) if calibration is None else calibration.kappa_bits_per_user_step
+        best_surplus = {}
+        for user in users:
+            values = []
+            for row in unilaterals[user]:
+                profile = nominal.evaluate(row)
+                core = Fraction(str(profile.bits - nominal_base.bits)) - eta * Fraction(
+                    str(profile.joules - nominal_base.joules)
+                )
+                core += kappa * _phi_for(base, row)
+                values.append(core)
+            best_surplus[user] = max(values, default=Fraction(-10**30))
+        ranked_users = sorted(
+            users,
+    after: Configuration,
+    decision_time_s: float,
+    *,
+    cell_rekeyed_users: Iterable[int] = (),
+) -> tuple[InterruptionEvent, ...]:
+    """Translate that ledger to H/SH useful-time removals at the decision instant."""
+
+    mapping = {
+        "beam_change": "same_satellite_beam_change",
+        "satellite_change": "satellite_change",
+        "cell_rekey": "same_satellite_beam_change",
+        "initial_entry": "initial_entry",
+        "reentry": "reentry",
+    }
+    return tuple(
+        InterruptionEvent(event.user_id, decision_time_s, mapping[event.kind])
+        for event in _physical_events(
+            before, after, cell_rekeyed_users=cell_rekeyed_users
+        )
+        if event.kind in mapping
+    )
+
+
+class StepEvaluator:
+    """Architecture/configuration cache; treatment cells only rescore it."""
+
+    def __init__(
+        self,
+        tape: ExogenousWorldTape,
+        setting: PhysicsSetting,
+        step_index: int,
+        *,
+        transition_from: Configuration,
+        cell_rekeyed_users: Iterable[int] = (),
+        field: str = "realised",
+        counter: EvaluationCounter | None = None,
+        run_setting: SealedRunSetting | None = None,
+        boundary_indices: tuple[int, ...] = tuple(range(48)),
+    ) -> None:
+        self.tape = tape
+        self.setting = setting
+        self.step_index = step_index
+        self.transition_from = transition_from
+        self.cell_rekeyed_users = tuple(cell_rekeyed_users)
+        self.field = field
+        self.counter = counter
+        self.run_setting = run_setting_for(setting.label) if run_setting is None else run_setting
+        self.boundary_indices = boundary_indices
+        self._shared: dict[str, object] = {}
+        self._evaluated: dict[str, EvaluatedProfile] = {}
+        self._invalid: set[str] = set()
+        self.physical_evaluations = 0
+
+    def evaluate_many(self, configs: Sequence[Configuration]) -> None:
+        """Populate the cache through the dense real-world ``a-r0`` path."""
+
+        missing = [row for row in configs if row.configuration_id not in self._evaluated]
+        step = self.tape.steps[self.step_index]
+        if not missing or step.arrays is None or self.setting.label != "a-r0":
+            for config in missing:
+                self.evaluate(config)
+            return
+        arrays = step.arrays
+        row_of = arrays._row_index()
+        users = tuple(int(value) for value in arrays.users)
+        selected = np.full((len(missing), len(users)), -1, dtype=np.int64)
+        absent = np.zeros(len(missing), dtype=np.bool_)
+        for config_index, config in enumerate(missing):
+            mapping = config.mapping
+            for user_column, user in enumerate(users):
+                identity = mapping[user]
+                if identity is not None:
+                    row = row_of.get((user, identity))
+                    if row is None:
+                        absent[config_index] = True
+                    else:
+                        selected[config_index, user_column] = row
+        result = evaluate_ar_tdm_catalogue(
+            arrays,
+            selected,
+            field=self.field,
+            rate_target_bps=self.run_setting.rate_target_bps,
+            circuit_power_per_active_chain_w=self.run_setting.circuit_power_per_active_chain_w,
+            boundary_indices=self.boundary_indices,
+        )
+        mode_names = ("NO_MODE",) + tuple(row.name for row in ACM_MODES)
+        for index, config in enumerate(missing):
+            if absent[index] or not bool(result.valid[index]):
+                self._invalid.add(config.configuration_id)
+                continue
+            per_user_bits = {
+                user: float(result.bits[index, column])
+                for column, user in enumerate(users)
+            }
+            decoding = {
+                user: float(result.decoding_time_s[index, column])
+                for column, user in enumerate(users)
+            }
+            served = {user: decoding[user] > 0.0 for user in users}
+            feasible = {
+                user: bool(result.feasible[index, column])
+                for column, user in enumerate(users)
+            }
+            attained = {
+                user: bool(result.attained[index, column])
+                for column, user in enumerate(users)
+            }
+            score = CellScore(
+                self.setting,
+                per_user_bits,
+                float(result.joules[index]),
+                decoding,
+                dict(decoding),
+                served,
+                attained,
+                feasible,
+                None,
+                self.run_setting.rate_target_bps,
+                True,
+                float(result.residual_w[index]),
+            )
+            components = {
+                "pa_j": float(result.pa_j[index]),
+                "circuit_j": float(result.circuit_j[index]),
+                "standby_j": 0.0,
+                "baseband_j": float(result.baseband_j[index]),
+                "bus_j": 0.0,
+            }
+            counts = {
+                name: int(result.mode_counts[index, column])
+                for column, name in enumerate(mode_names)
+                if result.mode_counts[index, column]
+            }
+            profile = EvaluatedProfile(
+                config,
+                score,
+                components,
+                (
+                    0.0
+                    if self.run_setting.circuit_power_per_active_chain_w == 0.0
+                    else components["circuit_j"] / self.run_setting.circuit_power_per_active_chain_w
+                ),
+                components["baseband_j"] / 0.200,
+                counts,
+                int(result.plateau_users[index]),
+                len(users),
+                int(result.cap_hits[index]),
+                int(result.transmissions[index]),
+                None,
+                {0: "INVALID", 1: "CONVERGED", 2: "CONVERGED_SLOW"}[
+                    int(result.certificate_status[index])
+                ],
+                int(result.certificate_iterations[index]),
+                float(result.max_rf_power_w[index]),
+                float(result.min_decoding_margin_db[index]),
+                float(result.mean_acm_se_bit_s_hz[index]),
+            )
+            self._evaluated[config.configuration_id] = profile
+        evaluations = len(missing) * len(self.boundary_indices)
+        self.physical_evaluations += evaluations
+        if self.counter is not None:
+            self.counter.boundary_evaluations += evaluations
+
+    def evaluate(self, config: Configuration) -> EvaluatedProfile:
+        if config.configuration_id in self._evaluated:
+            return self._evaluated[config.configuration_id]
+        geometry = self.tape.geometry_for(step_index=self.step_index, assignments=config.mapping)
+        shared = build_shared_tape(
+            self.setting.architecture,
+            geometry,
+            self.tape.inventory,
+
