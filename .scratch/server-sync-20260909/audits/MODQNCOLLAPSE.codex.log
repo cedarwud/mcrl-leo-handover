@@ -1,0 +1,135 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-mqcollapse-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08c6c-638f-71e3-9ba9-5068ae4f50bf
+--------
+user
+# MODQNCOLLAPSE — is the MODQN policy itself collapsed? Answer it in its own environment, without the blocked bridge
+
+Workspace `/home/sat/mcrl-v025-mqcollapse-ws`. Interpreter
+`/home/sat/mcrl-leo-handover/.venv/bin/python` only. **Never modify**
+`/home/sat/mcrl-leo-handover` or its `.venv`, and **do not modify the legacy adapter or the
+checkpoint** — read-only, and assert the checkpoint SHA-256 before and after.
+
+**Resource limits.** **Hard cap: 2 python processes, `nice -n 16`, all BLAS threads = 1, peak
+RSS under 4 GB.** Print peak RSS and progress.
+
+## The question, and why it does not need the blocked bridge
+
+The owner asked whether MODQN is in the shared-Q + argmax collapsed regime a sibling project
+documented. That question is about the **policy's action distribution** — `modal_frac`, active
+beams, action diversity. **It does not require scoring, EE, or the V0.25 evaluator.**
+
+`MODQN-BRIDGE-2026-09-10.md` (`/home/sat/mcrl-v025-bridge-ws`) established that the V0.25 ->
+legacy 112-field projection **cannot be completed without invention**: only indices 0-27 are
+derivable, **84 fields are MISSING**, and it correctly refused to substitute nominal gain for
+SINR, zero for off-axis angle, or served occupancy for ungated demand.
+
+**So do not use that path.** Run the policy **in its own native legacy environment**, where its
+observation is authentic by construction.
+
+Identity, from `BASELINE-MODQN-REFERENCE-2026-09-10.md`: the unchanged externally authenticated
+pre-Catfish MODQN checkpoint, SHA-256
+`e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`, **112 states, 28 actions**,
+9,000 training episodes, admitted through
+`.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py`.
+
+## What to measure
+
+Roll the frozen policy out on **legacy development scenarios only** and report, per step and
+pooled:
+
+1. **`modal_frac`** — largest single physical-beam occupancy divided by user count.
+2. **`active`** — distinct selected physical beams, and distinct satellites.
+3. **`argmax_distinct`** — distinct chosen action slots divided by user count.
+4. The **full occupancy histogram**, including the tail.
+5. The same four for a **zero-learning myopic control** you define and state, in the same
+   environment. **This is the comparison that carries the finding** — a sibling project's most
+   striking result was that a trivial rule beat its learned baseline.
+
+State the scenario count, the seeds, and the step count.
+
+## The comparison the owner needs
+
+This project's own learned `a0` was measured by `BASE-COLLAPSE-DIAGNOSIS-2026-09-10.md`
+(`/home/sat/mcrl-v025-probe-ws`): **`modal_frac = 0.05236`, `active = 49.07` beams /
+`5.79` satellites, `argmax_distinct = 0.49070`**, against a zero-learning myopic control at
+`0.05500`, `51.68 / 5.18`, `0.51682`.
+
+Place MODQN's numbers beside those. **State plainly that the two are measured in different
+environments** — V0.23 legacy for MODQN, V0.25 for `a0` — and that concentration statistics are
+policy properties that are **comparable in kind but not in physics**. Do not merge them into
+one ranking.
+
+**Do not invent a collapsed/not-collapsed threshold.** Report the numbers, state what the
+sibling project's collapsed regime and spread regime looked like, and say where MODQN sits
+relative to both. If it sits in between, say that.
+
+## Also report, because it decides how much this answer is worth
+
+Whether the legacy environment MODQN is rolled out in is **the environment it was trained on**.
+If the legacy environment has itself changed since the checkpoint was produced, the rollout
+measures a policy under distribution shift and the concentration statistics are weaker
+evidence. **Check it and say so** rather than assuming.
+
+## Rules
+
+- Separate **verified by running code**, **derived on paper**, **inferred**.
+- **Compute no EE**, and make no comparison of MODQN's EE to anything. This job answers a
+  concentration question only. The EE gate remains blocked on the owner's comparator binding.
+- Loss values are never evidence about EE.
+- Development scenarios only. **Do not read the 48 evaluation-only claim dates.**
+- Change no sealed artefact. Assert the checkpoint digest before and after and report both.
+- **If MODQN turns out not to be collapsed, say so plainly.** That is the more likely outcome
+  given this project's own `a0` is not, and it must not be softened — it would close the last
+  live part of the hypothesis that prompted today's work.
+
+Write to `/home/sat/mcrl-v025-mqcollapse-ws/MODQN-COLLAPSE-2026-09-10.md`, first line one
+bolded sentence giving MODQN's `modal_frac`, `active`, and `argmax_distinct`, the same for the
+myopic control, and where they sit relative to the sibling project's two regimes.
+codex
+I’m using the research skill because this is an evidence-gathering task that must end in a traceable Markdown report. I’ll first map the authenticated checkpoint, adapter, native legacy environment, and development-scenario sources, then run only concentration diagnostics under the stated process and memory caps.
+exec
+/bin/bash -lc "sed -n '1,240p' /home/sat/.codex/skills/research/SKILL.md" in /home/sat/mcrl-v025-mqcollapse-ws
+ succeeded in 0ms:
+---
+name: research
+description: Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. Use when the user wants a topic researched, docs or API facts gathered, or reading legwork delegated to a background agent.
+---
+
+<!-- project-skills-adapter:start -->
+Follow this skill subject to user and higher-priority project instructions.
+Set one checkable completion criterion. Inspect bundled helpers only after an
+execution error.
+
+Without a configured, authorized tracker, use `.scratch/<feature>/spec.md`,
+`.scratch/<feature>/issues/`, or `.scratch/<effort>/map.md` as applicable.
+External messages, installs, commits, pushes, branch changes, destructive
+actions, and out-of-scope writes still require authority.
+
+Read the extended
+[runtime contract](../select-project-skill/references/runtime.md) only for a
+cross-skill transition, implementation/review orchestration, handoff
+consumption, or a host-specific prerequisite. Verify the criterion before
+claiming success; missing requirements are `blocked`, not simulated success.
+
+Only when the request explicitly authorizes a controlled Project Skills
+sampling run, read the [feedback instructions](../select-project-skill/references/feedback.md)
+and record its terminal event. Ordinary work does not record events.
+<!-- project-skills-adapter:end -->
+
+Spin up a **background agent** to do the research, so you keep working while it reads.
+
+Its job:
+
+1. Investigate the question against **primary sources** — official docs, source code, specs, first-party APIs — not a secondary write-up of them. Follow every claim back to the source that owns it.
+2. Write the findings to a single Markdown file, citing each claim's source.
+3. Save it where the repo already keeps such notes; match the existing convention, and if there is none, put it somewhere sensible and say where.
+
