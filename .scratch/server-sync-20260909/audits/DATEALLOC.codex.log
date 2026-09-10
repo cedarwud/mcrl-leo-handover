@@ -2698,3 +2698,692 @@ exec
 ?? .scratch/date-variance/
 ?? DATE-VARIANCE-2026-09-09.md
 
+exec
+/bin/bash -lc "nice -n 15 /usr/bin/python3 -B - <<'PY'
+from datetime import date, timedelta
+from math import ceil, sqrt
+from statistics import NormalDist
+origin=date(2025,7,27)
+missing=set('2025-08-02 2025-08-07 2025-08-22 2025-09-17 2025-10-18 2025-10-25 2025-11-09 2026-01-12 2026-02-25 2026-03-04 2026-03-14 2026-03-15 2026-06-17 2026-06-21 2026-06-30 2026-07-25 2026-08-04'.split())
+archive=[origin+timedelta(days=i) for i in range(390) if (origin+timedelta(days=i)).isoformat() not in missing]
+train={d.isoformat() for d in archive if (d-origin).days%16<7}
+old=set('2025-07-28 2025-08-14 2025-10-02 2025-10-31 2025-11-02 2025-11-22 2025-12-05 2025-12-23 2025-12-24 2026-01-07 2026-01-20 2026-01-23 2026-01-25 2026-02-06 2026-02-08 2026-03-28 2026-04-30 2026-05-01 2026-05-28 2026-05-30 2026-06-15 2026-08-05 2026-03-11 2025-11-16'.split())
+diag=set('2025-07-31 2025-08-18 2025-09-03 2025-09-30 2025-10-17 2025-11-04 2025-11-20 2025-12-07 2025-12-24 2026-01-03 2026-01-04 2026-01-06 2026-01-07 2026-01-09 2026-01-19 2026-01-21 2026-01-22 2026-01-24 2026-01-25 2026-02-20 2026-03-09 2026-03-27 2026-04-13 2026-04-30 2026-05-16 2026-06-02 2026-06-29 2026-07-17 2026-08-02 2026-08-20'.split())
+retained={'2025-12-05','2026-02-06'}
+quarantine={'2026-01-25','2026-03-28'}
+used=old|diag
+fresh=train-used
+evaldates=set(retained)
+print('COUNTS archive/train/test/embargo',len(archive),len(train),sum(8<=(d-origin).days%16<15 for d in archive),sum((d-origin).days%16 in (7,15) for d in archive))
+print('old/diag/intersection/union/fresh',len(old),len(diag),len(old&diag),len(used),len(fresh))
+for k in range(6):
+    f=sorted(d for d in fresh if (date.fromisoformat(d)-origin).days//65==k)
+    r=sorted(d for d in retained if (date.fromisoformat(d)-origin).days//65==k)
+    n=8-len(r)
+    assert len(f)>=n
+    chosen=[f[((2*j+1)*len(f))//(2*n)] for j in range(n)]
+    evaldates.update(chosen)
+    print('STRATUM',k,'range',origin+timedelta(days=65*k),origin+timedelta(days=65*k+64),'fresh',len(f),'E',', '.join(sorted(r+chosen)))
+source=train-evaldates-quarantine
+assert len(evaldates)==48 and len(source)==116 and not(source&evaldates)
+print('SOURCE',', '.join(sorted(source)))
+print('SOURCE committed',', '.join(sorted(used-retained-quarantine)))
+print('SOURCE fresh',len(source-used),'E new',len(evaldates-retained))
+N=NormalDist(); z=N.inv_cdf(.975); s=.751
+for effect in [2,1,.75]:
+    gap=effect-.5
+    row=[]
+    for m in [1,3,6]:
+        zp=N.inv_cdf(1-.2/m)
+        required=(s*(z+zp)/gap)**2
+        budget=(gap/(z+zp))**2-(1/sqrt(16))**2
+        row.append((m,ceil(required),None if budget<=0 else ceil(s*s/budget)))
+    print('POWER effect',effect,'m/date-only/with1ppseed16',row)
+print('48 date-only SE/95halfwidth',s/sqrt(48),z*s/sqrt(48))
+print('SD upper one-sided95 using chi29 .05=17.708',s*sqrt(29/17.708))
+print('halfwidth48_upperSD',z*s*sqrt(29/17.708)/sqrt(48))
+for d in [46,48,70,116,112]:
+    print('COST dates/corehrs/ideal4wall/observedmixwall',d,.3*d,.3*d/4,9975.81387795118/30/3600*d)
+print('mean core/date',6.1677232075/30,'mean wall mins',9975.81387795118/30/60,'construction mins/date',1131.2709393199766/30/60)
+print('dense10 receipt core/wallmin',.3260719913888889,508.6684611660021/60)
+PY" in /home/sat/mcrl-v025-dates-ws
+ succeeded in 0ms:
+COUNTS archive/train/test/embargo 373 166 160 47
+old/diag/intersection/union/fresh 24 30 4 50 116
+STRATUM 0 range 2025-07-27 2025-09-29 fresh 22 E 2025-07-29, 2025-08-12, 2025-08-15, 2025-08-28, 2025-08-31, 2025-09-13, 2025-09-15, 2025-09-19
+STRATUM 1 range 2025-09-30 2025-12-03 fresh 19 E 2025-10-03, 2025-10-05, 2025-10-16, 2025-10-21, 2025-11-03, 2025-11-17, 2025-11-19, 2025-12-02
+STRATUM 2 range 2025-12-04 2026-02-06 fresh 12 E 2025-12-05, 2025-12-06, 2025-12-18, 2025-12-20, 2025-12-22, 2026-01-08, 2026-02-05, 2026-02-06
+STRATUM 3 range 2026-02-07 2026-04-12 fresh 21 E 2026-02-09, 2026-02-21, 2026-02-24, 2026-03-10, 2026-03-13, 2026-03-26, 2026-04-09, 2026-04-11
+STRATUM 4 range 2026-04-13 2026-06-16 fresh 21 E 2026-04-15, 2026-04-26, 2026-04-29, 2026-05-13, 2026-05-15, 2026-05-29, 2026-06-12, 2026-06-14
+STRATUM 5 range 2026-06-17 2026-08-20 fresh 21 E 2026-06-28, 2026-07-02, 2026-07-14, 2026-07-18, 2026-07-20, 2026-08-01, 2026-08-16, 2026-08-18
+SOURCE 2025-07-27, 2025-07-28, 2025-07-30, 2025-07-31, 2025-08-01, 2025-08-13, 2025-08-14, 2025-08-16, 2025-08-17, 2025-08-18, 2025-08-29, 2025-08-30, 2025-09-01, 2025-09-02, 2025-09-03, 2025-09-14, 2025-09-16, 2025-09-18, 2025-09-29, 2025-09-30, 2025-10-01, 2025-10-02, 2025-10-04, 2025-10-15, 2025-10-17, 2025-10-19, 2025-10-20, 2025-10-31, 2025-11-01, 2025-11-02, 2025-11-04, 2025-11-05, 2025-11-06, 2025-11-16, 2025-11-18, 2025-11-20, 2025-11-21, 2025-11-22, 2025-12-03, 2025-12-04, 2025-12-07, 2025-12-08, 2025-12-19, 2025-12-21, 2025-12-23, 2025-12-24, 2026-01-03, 2026-01-04, 2026-01-05, 2026-01-06, 2026-01-07, 2026-01-09, 2026-01-19, 2026-01-20, 2026-01-21, 2026-01-22, 2026-01-23, 2026-01-24, 2026-02-04, 2026-02-07, 2026-02-08, 2026-02-10, 2026-02-20, 2026-02-22, 2026-02-23, 2026-02-26, 2026-03-08, 2026-03-09, 2026-03-11, 2026-03-12, 2026-03-24, 2026-03-25, 2026-03-27, 2026-03-29, 2026-03-30, 2026-04-10, 2026-04-12, 2026-04-13, 2026-04-14, 2026-04-25, 2026-04-27, 2026-04-28, 2026-04-30, 2026-05-01, 2026-05-11, 2026-05-12, 2026-05-14, 2026-05-16, 2026-05-17, 2026-05-27, 2026-05-28, 2026-05-30, 2026-05-31, 2026-06-01, 2026-06-02, 2026-06-13, 2026-06-15, 2026-06-16, 2026-06-18, 2026-06-29, 2026-07-01, 2026-07-03, 2026-07-04, 2026-07-15, 2026-07-16, 2026-07-17, 2026-07-19, 2026-07-30, 2026-07-31, 2026-08-02, 2026-08-03, 2026-08-05, 2026-08-15, 2026-08-17, 2026-08-19, 2026-08-20
+SOURCE committed 2025-07-28, 2025-07-31, 2025-08-14, 2025-08-18, 2025-09-03, 2025-09-30, 2025-10-02, 2025-10-17, 2025-10-31, 2025-11-02, 2025-11-04, 2025-11-16, 2025-11-20, 2025-11-22, 2025-12-07, 2025-12-23, 2025-12-24, 2026-01-03, 2026-01-04, 2026-01-06, 2026-01-07, 2026-01-09, 2026-01-19, 2026-01-20, 2026-01-21, 2026-01-22, 2026-01-23, 2026-01-24, 2026-02-08, 2026-02-20, 2026-03-09, 2026-03-11, 2026-03-27, 2026-04-13, 2026-04-30, 2026-05-01, 2026-05-16, 2026-05-28, 2026-05-30, 2026-06-02, 2026-06-15, 2026-06-29, 2026-07-17, 2026-08-02, 2026-08-05, 2026-08-20
+SOURCE fresh 70 E new 46
+POWER effect 2 m/date-only/with1ppseed16 [(1, 2, 3), (3, 4, 5), (6, 4, 7)]
+POWER effect 1 m/date-only/with1ppseed16 [(1, 18, None), (3, 28, None), (6, 33, None)]
+POWER effect 0.75 m/date-only/with1ppseed16 [(1, 71, None), (3, 109, None), (6, 130, None)]
+48 date-only SE/95halfwidth 0.10839751304035225 0.21245522157280122
+SD upper one-sided95 using chi29 .05=17.708 0.9610681376538621
+halfwidth48_upperSD 0.27188274851106614
+COST dates/corehrs/ideal4wall/observedmixwall 46 13.799999999999999 3.4499999999999997 4.248957762831058
+COST dates/corehrs/ideal4wall/observedmixwall 48 14.399999999999999 3.5999999999999996 4.433695056867191
+COST dates/corehrs/ideal4wall/observedmixwall 70 21.0 5.25 6.465805291264654
+COST dates/corehrs/ideal4wall/observedmixwall 116 34.8 8.7 10.71476305409571
+COST dates/corehrs/ideal4wall/observedmixwall 112 33.6 8.4 10.345288466023446
+mean core/date 0.20559077358333333 mean wall mins 5.542118821083989 construction mins/date 0.6284838551777647
+dense10 receipt core/wallmin 0.3260719913888889 8.477807686100034
+
+codex
+The calendar arithmetic confirms 166 TRAIN dates. The original 24 used/reserved dates and the later 30-date diagnostic cover 50 distinct dates, leaving 116 uncommitted dates. The allocation is 48 evaluation dates, 116 source/development dates, and two quarantined reservations. At the measured SD, an ideal date-only calculation needs 18 dates for a predeclared +1% contrast to clear the +0.5% margin with 80% power; learner-seed variance and calibration remain separate limits.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-dates-ws/DATE-ALLOCATION-DECISION-2026-09-10.md
+diff --git a/DATE-ALLOCATION-DECISION-2026-09-10.md b/DATE-ALLOCATION-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc57f11b8bc483859e7f1012edbdcea67bd00452
+--- /dev/null
++++ b/DATE-ALLOCATION-DECISION-2026-09-10.md
+@@ -0,0 +1,138 @@
++**Allocate the 166 TRAIN dates to 116 source/development dates, 48 evaluation-only claim dates, and two quarantined claim reservations; the archive suffices for this allocation and conditional date-only sizing, but does not establish adequate power for the learned claim or supply the former 160 fresh claim dates.**
++
++DATEALLOC — binding delegated decision, 2026-09-10. The date-allocation question is CLOSED. This document prospectively replaces the approximately 160-date allocation in §D1 and resolves the ambiguous phrase “training on the claim panel”; it does not alter sealed files, margins, arms, physics, checkpoints, or the acceptance rule. No experiment was run.
++
++Evidence labels throughout: **Verified** means a file actually opened, distinguishing a recorded assertion from executable enforcement; **Derived** means arithmetic or a mathematical argument under explicit assumptions; **Inferred** means an adjudicative interpretation. **Decision** denotes a new rule imposed here, not a fact claimed to have existed previously.
++
++Citation roots: `W/` = `/home/sat/mcrl-v025-dates-ws/`; `C/` = `/home/sat/mcrl-v025-strategic-astra-ws/controller-records/`; `M/` = `/home/sat/mcrl-v025-ceiling30-ws/`; `H/` = `/home/sat/mcrl-hub-copy/.scratch/multi-catfish-v025-physics-successor/`; `A/` = `/home/sat/mcrl-v023-codex-audits/parallel-20260909/`. Line numbers refer to the opened files. Controller mirrors establish the recorded instruction, not successful execution.
++
++**What is established and what this decision changes**
++
++**Verified.** The contract evaluates on TRAIN and explicitly says “no TEST.” Its coordination claim requires held-out realised pooled EE. The primary learned experiment compares informative versus neutral source training, retaining all heads, and its three FULL-versus-DROP contrasts form an intersection–union conjunction. The endpoint is pooled ΣB/ΣE; the lower 2.5th percentile must exceed +0.5% relative. These are different questions from whether a bounded oracle beats unilateral search. [H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:19–31.]
++
++**Verified.** The September 9 open-decision record names additional-date world generation as the longest-lead blocked item. It records options, not an allocation. Its suggestion that training dates are abundant is contradicted by the subsequent archive erratum. [C/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md:23–36; C/V025-CONTROLLER-FINDING-ARCHIVE-AND-GROWTH-2026-09-09.md:41–48.]
++
++**Verified, executable finding.** The guard is real, but incomplete: it rejects a CLAIM_PANEL date accompanied by **any other supplied role**, including a training role if supplied. However, mandatory development roles are only PROBE, CALIBRATION, REHEARSAL, KAT, SYNTHETIC_REAL and SMOKE. Manifest construction requires those roles and CLAIM_PANEL, but neither requires training-source identities nor reconciles against the source corpus. Thus “never compares” in DATE-VARIANCE:22 means **no compulsory comparison against actual training provenance**, not that the predicate is incapable of comparing a training row. The emitted freshness flag is not proof of source exclusion. [W/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:195–204,5726–5777.]
++
++**Verified, written rule.** The freshness amendment says “any successor development activity,” then enumerates roles without training; another declaration literally says “source generation and training on the claim panel.” Source disjointness was therefore neither completely enforced nor unambiguously specified. This decision makes it compulsory for the learned claim. The existing uppercase TEST exclusion remains unchanged; this creates no TEST split. [C/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7–9; C/V025-PILOT-TRACK-DECLARATION-2026-09-09.md:12–16; W/src/mcrl/physics_v025/provider_legacy.py:145–158.]
++
++**Must dates be disjoint? The estimation answer**
++
++**Derived.** Date overlap is not intrinsically biased. Fix the historical archive A, training information T, fitted policies π(T), date weights w_d and within-date scenario distribution Z. If evaluation scenarios are independent of training conditional on A and their dates, and policies and analysis are frozen, then for an additive paired outcome g,
++
++`E[Σ_d w_d mean_i g(π(T), A_d, Z_di) | A,T] = Σ_d w_d E_Z[g(π(T), A_d,Z)].`
++
++This estimates fresh-scenario performance on that fixed familiar-date distribution even when training used the same dates. It does not estimate performance on unseen dates. For pooled EE the unbiased pieces are bits and energy totals; their finite-sample ratio is not generally unbiased. A second-order ratio bias is approximately `μ_B Var(E_hat)/μ_E^3 − Cov(B_hat,E_hat)/μ_E^2`. Date disjointness does not itself remove that ratio bias.
++
++**Derived.** For an unseen-date contrast, overlap can instead introduce *differential training-exposure benefit*. In a simple equally weighted additive model, let f be the evaluation mass on exposed dates and b_F,b_D be FULL's and DROP's mean exposure benefits relative to the corresponding unexposed performance. Then the overlap contribution to contrast bias is `f(b_F−b_D)`. Pairing cancels common shocks, not unequal exposure benefits. FULL-minus-S_UNI can be especially asymmetric when only FULL is fitted. The sign can be positive or negative. For pooled ratios the corresponding calculation must use arm-specific bits/energy contributions and their weights, not simply the fraction of calendar dates.
++
++**Verified → Derived.** The receipts supply no controlled trained-versus-untrained exposure contrast. The one-date learner finding cannot estimate a between-date effect; CEILING30-MARGIN explicitly contains no learner or training run. Consequently the receipts provide **no nontrivial numerical bound on overlap bias**, and 0.751% is not such a bound. The observed minimum/maximum of oracle gains do not bound learned counterfactuals. A useful finite relative-effect bound would additionally require bounds on performance and a positive comparator-EE floor not supplied by these receipts; the contract even permits zero bits and records undefined comparator-zero draws. [C/V025-CONTROLLER-FINDING-ONE-DATE-2026-09-09.md:11–18; M/CEILING30-MARGIN-2026-09-10.md:3–5,29–35; H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:30.]
++
++**UNDETERMINED — numerical overlap bias.** The single settling experiment is a temporally stratified, randomised source-date-inclusion experiment: matched training budgets and learner seeds, policies trained with versus without the assigned dates, evaluated on the same fresh within-date worlds, reporting the difference-in-differences for each claimed contrast. A retrospective comparison of easy exposed dates against different unexposed dates would not identify this effect. This experiment is not a prerequisite for the allocation and is not run here.
++
++**Decision.** Require disjoint **world start dates** for claim evaluation versus all informative and neutral training sources, fitted preprocessing, warm starts, calibration, and development outcomes. This protects the interpretation “evaluation on source-excluded TRAIN start dates within the frozen historical archive” without needing an unsupported bound on training exposure. Overlap remains acceptable for learner-free development diagnostics and for an explicitly conditional familiar-date benchmark; those results cannot substitute for this learned confirmation panel.
++
++**Decision, scope of separation.** No additional calendar buffer is imposed. The provider uses date−1/date/date+1 files, so neighbouring source and evaluation starts can share exogenous TLE inputs. Disjoint file windows would require at least three calendar days between starts, and still would not establish independent constellations. We permit that shared exogenous archive and prohibit shared generated worlds, trajectories, labelled anchors and fitted evaluation information. This is a start-date holdout, not a claim of unseen orbital records, future-constellation generalisation or independent daily geometry. That narrower interpretation is deliberate; a costly new embargo has no receipt-supported bias reduction here. [Verified window: W/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5778–5783; W/src/mcrl/env/ephemeris.py:97–113. Derived separation distance: two ±1-day windows are disjoint when their centres differ by at least three days.]
++
++**The exact allocation and immutable commitments**
++
++**Verified.** The frozen inventory has 373 files: 166 TRAIN, 160 TEST, 47 embargo. The erratum correctly replaces the misleading 124× comparison with 166/160 ≈ 1.04×. Independent corroboration is the frozen preregistration's split fields. The calendar rule is seven TRAIN days, one embargo, seven TEST days, one embargo from 2025-07-27, filtered by existing filenames. [C/V025-CONTROLLER-FINDING-ARCHIVE-AND-GROWTH-2026-09-09.md:6,41–48; W/artifacts/PREREG-FROZEN-2026-08-25-R2.json:2794–2805; W/src/mcrl/env/ephemeris.py:255–278.]
++
++**Derived, checked by arithmetic.** Reconstructing the inclusive 390-calendar-day span through 2026-08-20, subtracting the 17 missing dates enumerated in W/DATE-VARIANCE-2026-09-09.md:30–42, and applying that cycle reproduces 373/166/160/47. This is verification against the recorded inventory, not a new TLE census or a content measurement.
++
++**Verified.** The old ledger has 24 identities on 22 distinct dates; adding the earlier namespace makes 24 distinct TRAIN dates. Four are claim reservations, so subtracting all 24 as spent development would be wrong. Formal role counts and the prospective replacement of rejected claim world 1 with world 5 are recorded in the stage-4h report. The date mapping is the earlier filename-based reconstruction, whose inventory explicitly says the sealed manifest bytes were absent from this checkout. [W/DATE-VARIANCE-2026-09-09.md:65–80; W/.scratch/date-variance/inventory.md:58–64,94–105; W/.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:84.]
++
++The following historical assignments remain recorded and cannot be made fresh by renaming a role:
++
++| Existing role | Committed dates | Decision |
++|---|---|---|
++| PROBE_R2 | 2026-05-30, 2025-07-28, 2026-05-01, 2026-05-28 | Remain development |
++| CAL_R2 | 2026-08-05, 2025-11-22 | Remain calibration/development |
++| Earlier source worlds 1/2 | 2026-01-07, 2026-03-11 | Remain source/development |
++| Earlier evaluation world 3 | 2025-11-16 | Remains development evaluation |
++| REHEARSAL | 2026-01-07 | Remains development |
++| KAT, both namespaces | 2025-12-24, 2026-04-30, 2025-11-02, 2025-10-31, 2025-07-28, 2026-02-08, 2025-08-14, 2026-01-20 | Remain development |
++| SYNTHETIC_REAL | 2026-01-23, 2026-06-15, 2025-12-23, 2025-08-14 | Remain development |
++| SMOKE | 2025-10-02 | Remains development |
++| CLAIM_PANEL worlds 2 and 5 | 2026-02-06, 2025-12-05 | Retain in evaluation pool |
++| CLAIM_PANEL worlds 3 and 4 | 2026-01-25, 2026-03-28 | Retain reservation history; quarantine, neither source nor fresh claim |
++
++Sources for every mapping: W/.scratch/date-variance/inventory.md:68–88,96–105. **Inferred conservative adjudication:** 2026-03-28 is already in the quarantined earlier namespace, and 2026-01-25 now has an opened diagnostic outcome. Neither is silently recycled into fresh confirmation. No sealed reservation is edited. [W/DATE-VARIANCE-2026-09-09.md:70,80; M/CEILING30-MARGIN-2026-09-10.md:57.]
++
++**Verified.** All 30 dates in CEILING30-MARGIN are also committed development/calibration evidence, regardless of the sign of their outcomes:
++
++`2025-07-31, 2025-08-18, 2025-09-03, 2025-09-30, 2025-10-17, 2025-11-04, 2025-11-20, 2025-12-07, 2025-12-24, 2026-01-03, 2026-01-04, 2026-01-06, 2026-01-07, 2026-01-09, 2026-01-19, 2026-01-21, 2026-01-22, 2026-01-24, 2026-01-25, 2026-02-20, 2026-03-09, 2026-03-27, 2026-04-13, 2026-04-30, 2026-05-16, 2026-06-02, 2026-06-29, 2026-07-17, 2026-08-02, 2026-08-20`.
++
++[M/CEILING30-MARGIN-2026-09-10.md:37–68.] **Derived:** their intersection with the original 24-date set is {2025-12-24, 2026-01-07, 2026-01-25, 2026-04-30}. The union is therefore 24+30−4 = **50** dates: 46 source/development-side commitments, two retained clean claim reservations and two quarantined reservations. There are **116** dates outside this union.
++
++**Decision, reproducible selection rule.** Freeze the archive and the two commitment lists above. Divide the 390-calendar-day span into six consecutive 65-day strata. Each stratum receives eight evaluation dates, for 48 total. Retain 2025-12-05 and 2026-02-06 in their stratum. Within stratum k, sort the dates outside the 50-date union chronologically as `F_k`, with length m. Let `n = 8 − retained_claim_count(k)`. Select zero-based indices `floor((2j+1)m/(2n))`, for `j = 0,…,n−1`. Use calendar days, not a calendar compressed around missing files. No outcome, route sign, effect magnitude, satellite count or run time enters this rule.
++
++| Stratum | Available uncommitted dates | The eight evaluation dates |
++|---|---:|---|
++| 2025-07-27…2025-09-29 | 22 | 2025-07-29, 2025-08-12, 2025-08-15, 2025-08-28, 2025-08-31, 2025-09-13, 2025-09-15, 2025-09-19 |
++| 2025-09-30…2025-12-03 | 19 | 2025-10-03, 2025-10-05, 2025-10-16, 2025-10-21, 2025-11-03, 2025-11-17, 2025-11-19, 2025-12-02 |
++| 2025-12-04…2026-02-06 | 12 | 2025-12-05, 2025-12-06, 2025-12-18, 2025-12-20, 2025-12-22, 2026-01-08, 2026-02-05, 2026-02-06 |
++| 2026-02-07…2026-04-12 | 21 | 2026-02-09, 2026-02-21, 2026-02-24, 2026-03-10, 2026-03-13, 2026-03-26, 2026-04-09, 2026-04-11 |
++| 2026-04-13…2026-06-16 | 21 | 2026-04-15, 2026-04-26, 2026-04-29, 2026-05-13, 2026-05-15, 2026-05-29, 2026-06-12, 2026-06-14 |
++| 2026-06-17…2026-08-20 | 21 | 2026-06-28, 2026-07-02, 2026-07-14, 2026-07-18, 2026-07-20, 2026-08-01, 2026-08-16, 2026-08-18 |
++
++**Derived allocation:** E has 48 dates, including 46 newly assigned dates. Q = {2026-01-25, 2026-03-28}. The source/development pool is exactly `S = recorded TRAIN archive \ (E ∪ Q)`, with **116** dates: 46 existing commitments plus 70 newly assigned source dates. This complement rule completely enumerates S without an arbitrary second selection. Source eligibility is not permission to repurpose sealed calibration/probe artefacts; those identities keep their roles, and any new source worlds have separate lineage.
++
++**Decision, why 48.** It is a fixed, temporally spread resource allocation, not a fitted optimum: eight dates in each of six calendar strata while leaving substantial source diversity. A 48-date resource envelope and the same six-stratum construction were already proposed before the corrected 30-date result existed. This decision now makes the allocation concrete and uses the supplied SD to assess its limits, rather than choosing dates or a target effect from observed gains. [Historical proposal only: A/DATEPOOL-ADJUDICATION-2026-09-09.md:49,70,74–88.]
++
++**Decision, enforcement required at consumption.** Every source builder and claim runner must consume this same allocation, assert TRAIN membership, assert `S ∩ E = ∅`, reject Q, and reconcile actual world starts and full source lineage rather than trust declared roles alone. Include informative/neutral sources, preprocessing and inherited checkpoints. Claim outcomes remain inaccessible to training and selection; world/mobility/fading lineage must prevent scenario reuse. An unexpected prior-use collision or missing input fails closed; it does not trigger an outcome-chosen replacement or migrate an E date into S. The concrete partition above remains the decision. No code or sealed manifest was changed in this document-only task. Completeness of unlisted historical lineage is **UNDETERMINED**; one complete actual-source/development-manifest reconciliation against E settles it. The 48-date count is a recorded-inventory allocation, not a certification that every sibling experiment has been inventoried.
++
++**Archive sufficiency and the governing power statement**
++
++**Verified.** V1.1 changes the design to 16 learner seeds, two worlds per date and approximately 160 claim dates. It explicitly **withdraws and replaces** v1 §E's analytic power statement with the measured synthetic calibration table: at 16 seeds, conjunction success 0.675 ± 0.065 at 5% date SD, and 0.980 ± 0.019 at 3% date SD, with seed SD 1% and planning alternative +2% against the +0.5% margin. It discloses nominal-95% interval undercoverage. V1.2 preserves the panel and margins and additionally requires calibration of the decision bound's own one-sided coverage. That is the governing statement before this allocation amendment, not the original “+1% is undetectable” paragraph. [H/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md:3–17; H/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md:3,8.]
++
++**Verified.** The requested empirical SD is **0.751 percentage points** across 30 dates for `ORACLE_SET / UNILATERAL − 1`, after each date pools bits and energy over its anchors. The aggregate records `sample_sd = 0.007512355732348572`; this is a relative-gain SD, not the contract's simulated 5% log-effect SD. The report is descriptive over fixed TRAIN dates and contains no learner. Its 196 unequal anchors also differ from the contracted two-world learned panel. [M/CEILING30-MARGIN-2026-09-10.md:5,29–35,122,140–142; M/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json:116–121.]
++
++**Derived, paper planning only.** To avoid silently changing scales, use percentage-point relative gains here: s = 0.751, practical margin δ = 0.5. For independent date contributions with negligible other variance and a Gaussian known-SD approximation,
++
++`D ≈ ceil{[(z_0.975 + z_power) s / (Δ* − δ)]²}`.
++
++The contract's actual prospective alternative is **+2%**, not the observed +0.717% oracle mean. The +1% and +0.75% rows below are fixed sensitivity scenarios. For m simultaneous required inequalities, setting each marginal failure probability to at most `0.20/m` gives at least 80% conjunction power by the union bound, without assuming independent contrasts. This is a power calculation, not a Bonferroni change to the sealed intersection–union test.
++
++| Prospective effect versus +0.5% margin | One contrast, 80% | Three-contrast conjunction, ≥80% | Six-inequality conjunction, ≥80% |
++|---|---:|---:|---:|
++| +2% (contract alternative) | 2 | 4 | 4 |
++| +1% sensitivity | 18 | 28 | 33 |
++| +0.75% sensitivity | 71 | 109 | 130 |
++
++These are **date-only normal-approximation counts**, not valid tiny-sample bootstrap designs. In particular, “2 dates” is not a recommendation to perform inference with two clusters. Keeping 48 supplies replication and temporal coverage well above those optimistic +2% counts. For one +1% contrast it also accommodates approximately twice the nominal date variance (36 dates by the same arithmetic). At D=48, date-only SE is 0.1084 percentage points and the Gaussian 95% half-width is 0.2125 points. All inputs and calculations are stated; none uses a route's observed sign.
++
++**Derived limitation.** For a learned contrast, even granting the oracle SD as a planning proxy, `Var ≈ s_date²/D + s_seed²/16 + residual/world terms`. At the old *assumed*, not measured, seed SD of 1 percentage point, the seed-only SE floor is 0.25 points. No number of dates then reaches 80% marginal power for +1% versus +0.5% under this approximation; the requisite total SE is about 0.1785 points. For +2%, the same arithmetic needs approximately 3/5/7 dates for one/three/six contrasts, before residual terms. Thus neither “166 dates cannot work” nor “48 guarantees the learned claim” follows from the receipts. More dates cannot compensate for every variance component.
++
++**Verified → Decision.** A later recorded owner requirement names six strict inequalities, including standalone route comparisons, while saying it changes no sealed threshold. It does not supply a new six-contrast calibration or a minimal positive effect. Arbitrarily small strict positivity has no finite universal sample-size requirement. The six-column sensitivity above does not reinterpret that requirement as permission to lower the +0.5% sealed margin. [C/V025-CONTROLLER-REQUIREMENT-SHARPENED-2026-09-10.md:3–5,12–27.]
++
++**UNDETERMINED — evaluation dates required for the actual learned conjunction.** A single matched development-panel study of the frozen learned FULL/DROP and required standalone contrasts, crossed over dates and 16 learner seeds with additive bits/energy/QoS receipts, would supply the missing variance/covariance inputs; its predeclared analysis must calibrate the actual pooled decision bound and conjunction at the fixed planning alternative and allocation. Oracle SD alone cannot answer it. This is the remaining statistical measurement, not a reopening of the source/evaluation allocation. No claim of calibrated power transfers from the withdrawn analytic paragraph, from the 160-date table, or from this 48-date arithmetic.
++
++**Decision on sufficiency.** The archive supplies the **48** allocated evaluation dates and the **116** source/development dates. It is sufficient for this operational allocation and, conditionally, for date-only planning at the contract's +2% alternative and the +1% sensitivity. It is insufficient for the +0.75% date-only scenario and for a 160-fresh-date claim panel after retaining this source allocation. The final learned claim's power is UNDETERMINED, rather than certified by substituting a convenient SD. The outcome rule may return inconclusive; no positive result is owed by the allocation.
++
++**World generation: backlog, cost and shortfall**
++
++**Verified → Inferred.** D=1 describes the completed learner evaluation on `V025_PROBE/world/3`, 2025-11-16. It is a world-generation/evaluation backlog in a restricted pilot, not the intended scientific design: the minimal pilot explicitly used one evaluation world and two learner seeds; the controller finding names new-world generation as the repair, while the contract calls for approximately 160 dates. Training sources used worlds 1/2 on two dates; repeated source epochs and checkpoints create neither new source dates nor new evaluation dates. [C/V025-CONTROLLER-FINDING-ONE-DATE-2026-09-09.md:11–18,27–33; /home/sat/mcrl-v025-retrain-ws/V025-PILOT-MIN-REPORT-2026-09-09.md:7–24; W/DATE-VARIANCE-2026-09-09.md:65–72; H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:28.]
++
++**Verified cost, qualified.** FINDING-CEILING-INTERVAL:29 reports about eight wall minutes and 0.3 core-hours per date at eight to ten anchors. Actual aggregate receipt entries corroborate this order of magnitude: a ten-anchor date used 0.3261 core-hours and 508.67 seconds; the next eight-anchor date used 0.3175 core-hours and 493.88 seconds. Across the complete, mostly six-anchor panel, the exact totals are 6.1677 core-hours and 9,975.81 wall seconds for 30 dates, including 1,131.27 seconds of construction. Therefore 0.3 is a reasonable denser-ladder allowance, **not** the measured all-panel mean, which is 0.2056 core-hours and 5.542 wall minutes/date. [C/V025-CONTROLLER-FINDING-CEILING-INTERVAL-2026-09-10.md:28–29; M/.scratch/oracle-ceiling30/ceiling30-aggregate.json:113–139,545–549; A/CEILING30-CODEX-2026-09-10.md:72,76,79–82.]
++
++**Derived planning, four total processes maximum, no launch here.** At 0.3 core-hours per date, ideal wall time is `0.3 × date_count / 4` hours. That assumes four fully useful cores; actual ladder receipts used one coordinator plus three selection workers and achieve less than ideal utilisation. Budget the approximately eight-minute observed denser-date wall rate as a second, more conservative projection:
++
++| Work remaining or counterfactual | Date count | Core-hours allowance | Ideal wall at 4 processes | At ~8 wall minutes/date |
++|---|---:|---:|---:|---:|
++| New evaluation assignments, beyond two retained reservations | 46 | 13.8 | 3.45 h | 6.13 h |
++| Complete fresh claim-date ladder, crediting no completed claim outcome | 48 | 14.4 | 3.60 h | 6.40 h |
++| Newly available source dates, if all receive the same ladder | 70 | 21.0 | 5.25 h | 9.33 h |
++| Extra dates to restore 160 evaluations while retaining S and Q | 112 | 33.6 | 8.40 h | 14.93 h |
++
++The one completed learner date and the 30 opened diagnostic dates contribute **zero completed fresh claim dates**. Unopened reservations establish assignment, not completed claim evaluation. Tape existence also cannot be inferred from the ceiling receipts: their tapes were held in RAM and not serialised. [W/DATE-VARIANCE-2026-09-09.md:69–80; A/CEILING30-CODEX-2026-09-10.md:82.]
++
++**Decision.** No new archive dates are required to implement the adopted allocation. More worlds on its dates are required. World generation can now be scheduled against S and E without another allocation decision; all independent physics/admission and integrity gates continue to apply. This adjudication launches nothing. The ladder allowance includes search/evaluation and is not a measured cost for full source labelling, 16-seed training, or two-world-per-date full-horizon claim evaluation. Their total wall time is **UNDETERMINED**; one representative end-to-end contracted date receipt at a fixed four-process cap would settle the per-date cost. Generating worlds cannot manufacture the 112 missing calendar dates in the rejected 160-date layout: that would first require a separately frozen archive expansion, never TEST reuse.
++
++**Strongest case against this allocation, and answer**
++
++The strongest objection is that 48 is an engineering envelope supported by variance from the wrong experiment. It reduces a sealed 160-date panel; the measured oracle SD need not match learned FULL-versus-DROP pooled influence variance; neighbouring dates can remain dependent; and holding out dates does not guarantee useful learning from the source pool. Even the date-only +0.75% sensitivity needs 71 dates. A conditional familiar-date evaluation with independently generated worlds could validly overlap source dates and preserve more evaluation coverage. The two historically conflicting reservations and incomplete global lineage further weaken any blanket claim of freshness. These objections follow from the estimand distinction, arithmetic and enforcement findings above, not from whether a preferred route won.
++
++**Answer and final ruling.** I accept those limitations and reject the claim that a 160-date calibration already certifies this experiment. I nevertheless choose **116 source/development, 48 evaluation-only, two quarantined**, because it fixes the missing operational boundary, preserves broad training support and clean start-date evaluation, and is compatible with measured date-only precision at the pre-existing +2% planning alternative without consuming TEST or choosing favourable outcomes. The panel estimates performance on these source-excluded historical TRAIN starts; it is not asserted to be a probability sample of all 166 dates. Actual claim power and residual date dependence must be reported honestly, and failure remains an admissible outcome. The allocation is final; uncertainty about efficacy is not authority to change its dates, margins, model or sign rules after results.
++
++Verification performed: read-only documents, source and existing JSON receipts; one `nice -n 15 /usr/bin/python3 -B` process using standard-library calendar/set arithmetic and normal-quantile planning from literal recorded inputs. No physical measurement, simulation, training, TLE-content read, dependency install, sealed-file mutation, or modification of `/home/sat/mcrl-leo-handover` or its `.venv`. This decision file is the sole new deliverable.
+
+diff --git a/DATE-ALLOCATION-DECISION-2026-09-10.md b/DATE-ALLOCATION-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc57f11b8bc483859e7f1012edbdcea67bd00452
+--- /dev/null
++++ b/DATE-ALLOCATION-DECISION-2026-09-10.md
+@@ -0,0 +1,138 @@
++**Allocate the 166 TRAIN dates to 116 source/development dates, 48 evaluation-only claim dates, and two quarantined claim reservations; the archive suffices for this allocation and conditional date-only sizing, but does not establish adequate power for the learned claim or supply the former 160 fresh claim dates.**
++
++DATEALLOC — binding delegated decision, 2026-09-10. The date-allocation question is CLOSED. This document prospectively replaces the approximately 160-date allocation in §D1 and resolves the ambiguous phrase “training on the claim panel”; it does not alter sealed files, margins, arms, physics, checkpoints, or the acceptance rule. No experiment was run.
++
++Evidence labels throughout: **Verified** means a file actually opened, distinguishing a recorded assertion from executable enforcement; **Derived** means arithmetic or a mathematical argument under explicit assumptions; **Inferred** means an adjudicative interpretation. **Decision** denotes a new rule imposed here, not a fact claimed to have existed previously.
++
++Citation roots: `W/` = `/home/sat/mcrl-v025-dates-ws/`; `C/` = `/home/sat/mcrl-v025-strategic-astra-ws/controller-records/`; `M/` = `/home/sat/mcrl-v025-ceiling30-ws/`; `H/` = `/home/sat/mcrl-hub-copy/.scratch/multi-catfish-v025-physics-successor/`; `A/` = `/home/sat/mcrl-v023-codex-audits/parallel-20260909/`. Line numbers refer to the opened files. Controller mirrors establish the recorded instruction, not successful execution.
++
++**What is established and what this decision changes**
++
++**Verified.** The contract evaluates on TRAIN and explicitly says “no TEST.” Its coordination claim requires held-out realised pooled EE. The primary learned experiment compares informative versus neutral source training, retaining all heads, and its three FULL-versus-DROP contrasts form an intersection–union conjunction. The endpoint is pooled ΣB/ΣE; the lower 2.5th percentile must exceed +0.5% relative. These are different questions from whether a bounded oracle beats unilateral search. [H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:19–31.]
++
++**Verified.** The September 9 open-decision record names additional-date world generation as the longest-lead blocked item. It records options, not an allocation. Its suggestion that training dates are abundant is contradicted by the subsequent archive erratum. [C/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md:23–36; C/V025-CONTROLLER-FINDING-ARCHIVE-AND-GROWTH-2026-09-09.md:41–48.]
++
++**Verified, executable finding.** The guard is real, but incomplete: it rejects a CLAIM_PANEL date accompanied by **any other supplied role**, including a training role if supplied. However, mandatory development roles are only PROBE, CALIBRATION, REHEARSAL, KAT, SYNTHETIC_REAL and SMOKE. Manifest construction requires those roles and CLAIM_PANEL, but neither requires training-source identities nor reconciles against the source corpus. Thus “never compares” in DATE-VARIANCE:22 means **no compulsory comparison against actual training provenance**, not that the predicate is incapable of comparing a training row. The emitted freshness flag is not proof of source exclusion. [W/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:195–204,5726–5777.]
++
++**Verified, written rule.** The freshness amendment says “any successor development activity,” then enumerates roles without training; another declaration literally says “source generation and training on the claim panel.” Source disjointness was therefore neither completely enforced nor unambiguously specified. This decision makes it compulsory for the learned claim. The existing uppercase TEST exclusion remains unchanged; this creates no TEST split. [C/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7–9; C/V025-PILOT-TRACK-DECLARATION-2026-09-09.md:12–16; W/src/mcrl/physics_v025/provider_legacy.py:145–158.]
++
++**Must dates be disjoint? The estimation answer**
++
++**Derived.** Date overlap is not intrinsically biased. Fix the historical archive A, training information T, fitted policies π(T), date weights w_d and within-date scenario distribution Z. If evaluation scenarios are independent of training conditional on A and their dates, and policies and analysis are frozen, then for an additive paired outcome g,
++
++`E[Σ_d w_d mean_i g(π(T), A_d, Z_di) | A,T] = Σ_d w_d E_Z[g(π(T), A_d,Z)].`
++
++This estimates fresh-scenario performance on that fixed familiar-date distribution even when training used the same dates. It does not estimate performance on unseen dates. For pooled EE the unbiased pieces are bits and energy totals; their finite-sample ratio is not generally unbiased. A second-order ratio bias is approximately `μ_B Var(E_hat)/μ_E^3 − Cov(B_hat,E_hat)/μ_E^2`. Date disjointness does not itself remove that ratio bias.
++
++**Derived.** For an unseen-date contrast, overlap can instead introduce *differential training-exposure benefit*. In a simple equally weighted additive model, let f be the evaluation mass on exposed dates and b_F,b_D be FULL's and DROP's mean exposure benefits relative to the corresponding unexposed performance. Then the overlap contribution to contrast bias is `f(b_F−b_D)`. Pairing cancels common shocks, not unequal exposure benefits. FULL-minus-S_UNI can be especially asymmetric when only FULL is fitted. The sign can be positive or negative. For pooled ratios the corresponding calculation must use arm-specific bits/energy contributions and their weights, not simply the fraction of calendar dates.
++
++**Verified → Derived.** The receipts supply no controlled trained-versus-untrained exposure contrast. The one-date learner finding cannot estimate a between-date effect; CEILING30-MARGIN explicitly contains no learner or training run. Consequently the receipts provide **no nontrivial numerical bound on overlap bias**, and 0.751% is not such a bound. The observed minimum/maximum of oracle gains do not bound learned counterfactuals. A useful finite relative-effect bound would additionally require bounds on performance and a positive comparator-EE floor not supplied by these receipts; the contract even permits zero bits and records undefined comparator-zero draws. [C/V025-CONTROLLER-FINDING-ONE-DATE-2026-09-09.md:11–18; M/CEILING30-MARGIN-2026-09-10.md:3–5,29–35; H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:30.]
++
++**UNDETERMINED — numerical overlap bias.** The single settling experiment is a temporally stratified, randomised source-date-inclusion experiment: matched training budgets and learner seeds, policies trained with versus without the assigned dates, evaluated on the same fresh within-date worlds, reporting the difference-in-differences for each claimed contrast. A retrospective comparison of easy exposed dates against different unexposed dates would not identify this effect. This experiment is not a prerequisite for the allocation and is not run here.
++
++**Decision.** Require disjoint **world start dates** for claim evaluation versus all informative and neutral training sources, fitted preprocessing, warm starts, calibration, and development outcomes. This protects the interpretation “evaluation on source-excluded TRAIN start dates within the frozen historical archive” without needing an unsupported bound on training exposure. Overlap remains acceptable for learner-free development diagnostics and for an explicitly conditional familiar-date benchmark; those results cannot substitute for this learned confirmation panel.
++
++**Decision, scope of separation.** No additional calendar buffer is imposed. The provider uses date−1/date/date+1 files, so neighbouring source and evaluation starts can share exogenous TLE inputs. Disjoint file windows would require at least three calendar days between starts, and still would not establish independent constellations. We permit that shared exogenous archive and prohibit shared generated worlds, trajectories, labelled anchors and fitted evaluation information. This is a start-date holdout, not a claim of unseen orbital records, future-constellation generalisation or independent daily geometry. That narrower interpretation is deliberate; a costly new embargo has no receipt-supported bias reduction here. [Verified window: W/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5778–5783; W/src/mcrl/env/ephemeris.py:97–113. Derived separation distance: two ±1-day windows are disjoint when their centres differ by at least three days.]
++
++**The exact allocation and immutable commitments**
++
++**Verified.** The frozen inventory has 373 files: 166 TRAIN, 160 TEST, 47 embargo. The erratum correctly replaces the misleading 124× comparison with 166/160 ≈ 1.04×. Independent corroboration is the frozen preregistration's split fields. The calendar rule is seven TRAIN days, one embargo, seven TEST days, one embargo from 2025-07-27, filtered by existing filenames. [C/V025-CONTROLLER-FINDING-ARCHIVE-AND-GROWTH-2026-09-09.md:6,41–48; W/artifacts/PREREG-FROZEN-2026-08-25-R2.json:2794–2805; W/src/mcrl/env/ephemeris.py:255–278.]
++
++**Derived, checked by arithmetic.** Reconstructing the inclusive 390-calendar-day span through 2026-08-20, subtracting the 17 missing dates enumerated in W/DATE-VARIANCE-2026-09-09.md:30–42, and applying that cycle reproduces 373/166/160/47. This is verification against the recorded inventory, not a new TLE census or a content measurement.
++
++**Verified.** The old ledger has 24 identities on 22 distinct dates; adding the earlier namespace makes 24 distinct TRAIN dates. Four are claim reservations, so subtracting all 24 as spent development would be wrong. Formal role counts and the prospective replacement of rejected claim world 1 with world 5 are recorded in the stage-4h report. The date mapping is the earlier filename-based reconstruction, whose inventory explicitly says the sealed manifest bytes were absent from this checkout. [W/DATE-VARIANCE-2026-09-09.md:65–80; W/.scratch/date-variance/inventory.md:58–64,94–105; W/.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:84.]
++
++The following historical assignments remain recorded and cannot be made fresh by renaming a role:
++
++| Existing role | Committed dates | Decision |
++|---|---|---|
++| PROBE_R2 | 2026-05-30, 2025-07-28, 2026-05-01, 2026-05-28 | Remain development |
++| CAL_R2 | 2026-08-05, 2025-11-22 | Remain calibration/development |
++| Earlier source worlds 1/2 | 2026-01-07, 2026-03-11 | Remain source/development |
++| Earlier evaluation world 3 | 2025-11-16 | Remains development evaluation |
++| REHEARSAL | 2026-01-07 | Remains development |
++| KAT, both namespaces | 2025-12-24, 2026-04-30, 2025-11-02, 2025-10-31, 2025-07-28, 2026-02-08, 2025-08-14, 2026-01-20 | Remain development |
++| SYNTHETIC_REAL | 2026-01-23, 2026-06-15, 2025-12-23, 2025-08-14 | Remain development |
++| SMOKE | 2025-10-02 | Remains development |
++| CLAIM_PANEL worlds 2 and 5 | 2026-02-06, 2025-12-05 | Retain in evaluation pool |
++| CLAIM_PANEL worlds 3 and 4 | 2026-01-25, 2026-03-28 | Retain reservation history; quarantine, neither source nor fresh claim |
++
++Sources for every mapping: W/.scratch/date-variance/inventory.md:68–88,96–105. **Inferred conservative adjudication:** 2026-03-28 is already in the quarantined earlier namespace, and 2026-01-25 now has an opened diagnostic outcome. Neither is silently recycled into fresh confirmation. No sealed reservation is edited. [W/DATE-VARIANCE-2026-09-09.md:70,80; M/CEILING30-MARGIN-2026-09-10.md:57.]
++
++**Verified.** All 30 dates in CEILING30-MARGIN are also committed development/calibration evidence, regardless of the sign of their outcomes:
++
++`2025-07-31, 2025-08-18, 2025-09-03, 2025-09-30, 2025-10-17, 2025-11-04, 2025-11-20, 2025-12-07, 2025-12-24, 2026-01-03, 2026-01-04, 2026-01-06, 2026-01-07, 2026-01-09, 2026-01-19, 2026-01-21, 2026-01-22, 2026-01-24, 2026-01-25, 2026-02-20, 2026-03-09, 2026-03-27, 2026-04-13, 2026-04-30, 2026-05-16, 2026-06-02, 2026-06-29, 2026-07-17, 2026-08-02, 2026-08-20`.
++
++[M/CEILING30-MARGIN-2026-09-10.md:37–68.] **Derived:** their intersection with the original 24-date set is {2025-12-24, 2026-01-07, 2026-01-25, 2026-04-30}. The union is therefore 24+30−4 = **50** dates: 46 source/development-side commitments, two retained clean claim reservations and two quarantined reservations. There are **116** dates outside this union.
++
++**Decision, reproducible selection rule.** Freeze the archive and the two commitment lists above. Divide the 390-calendar-day span into six consecutive 65-day strata. Each stratum receives eight evaluation dates, for 48 total. Retain 2025-12-05 and 2026-02-06 in their stratum. Within stratum k, sort the dates outside the 50-date union chronologically as `F_k`, with length m. Let `n = 8 − retained_claim_count(k)`. Select zero-based indices `floor((2j+1)m/(2n))`, for `j = 0,…,n−1`. Use calendar days, not a calendar compressed around missing files. No outcome, route sign, effect magnitude, satellite count or run time enters this rule.
++
++| Stratum | Available uncommitted dates | The eight evaluation dates |
++|---|---:|---|
++| 2025-07-27…2025-09-29 | 22 | 2025-07-29, 2025-08-12, 2025-08-15, 2025-08-28, 2025-08-31, 2025-09-13, 2025-09-15, 2025-09-19 |
++| 2025-09-30…2025-12-03 | 19 | 2025-10-03, 2025-10-05, 2025-10-16, 2025-10-21, 2025-11-03, 2025-11-17, 2025-11-19, 2025-12-02 |
++| 2025-12-04…2026-02-06 | 12 | 2025-12-05, 2025-12-06, 2025-12-18, 2025-12-20, 2025-12-22, 2026-01-08, 2026-02-05, 2026-02-06 |
++| 2026-02-07…2026-04-12 | 21 | 2026-02-09, 2026-02-21, 2026-02-24, 2026-03-10, 2026-03-13, 2026-03-26, 2026-04-09, 2026-04-11 |
++| 2026-04-13…2026-06-16 | 21 | 2026-04-15, 2026-04-26, 2026-04-29, 2026-05-13, 2026-05-15, 2026-05-29, 2026-06-12, 2026-06-14 |
++| 2026-06-17…2026-08-20 | 21 | 2026-06-28, 2026-07-02, 2026-07-14, 2026-07-18, 2026-07-20, 2026-08-01, 2026-08-16, 2026-08-18 |
++
++**Derived allocation:** E has 48 dates, including 46 newly assigned dates. Q = {2026-01-25, 2026-03-28}. The source/development pool is exactly `S = recorded TRAIN archive \ (E ∪ Q)`, with **116** dates: 46 existing commitments plus 70 newly assigned source dates. This complement rule completely enumerates S without an arbitrary second selection. Source eligibility is not permission to repurpose sealed calibration/probe artefacts; those identities keep their roles, and any new source worlds have separate lineage.
++
++**Decision, why 48.** It is a fixed, temporally spread resource allocation, not a fitted optimum: eight dates in each of six calendar strata while leaving substantial source diversity. A 48-date resource envelope and the same six-stratum construction were already proposed before the corrected 30-date result existed. This decision now makes the allocation concrete and uses the supplied SD to assess its limits, rather than choosing dates or a target effect from observed gains. [Historical proposal only: A/DATEPOOL-ADJUDICATION-2026-09-09.md:49,70,74–88.]
++
++**Decision, enforcement required at consumption.** Every source builder and claim runner must consume this same allocation, assert TRAIN membership, assert `S ∩ E = ∅`, reject Q, and reconcile actual world starts and full source lineage rather than trust declared roles alone. Include informative/neutral sources, preprocessing and inherited checkpoints. Claim outcomes remain inaccessible to training and selection; world/mobility/fading lineage must prevent scenario reuse. An unexpected prior-use collision or missing input fails closed; it does not trigger an outcome-chosen replacement or migrate an E date into S. The concrete partition above remains the decision. No code or sealed manifest was changed in this document-only task. Completeness of unlisted historical lineage is **UNDETERMINED**; one complete actual-source/development-manifest reconciliation against E settles it. The 48-date count is a recorded-inventory allocation, not a certification that every sibling experiment has been inventoried.
++
++**Archive sufficiency and the governing power statement**
++
++**Verified.** V1.1 changes the design to 16 learner seeds, two worlds per date and approximately 160 claim dates. It explicitly **withdraws and replaces** v1 §E's analytic power statement with the measured synthetic calibration table: at 16 seeds, conjunction success 0.675 ± 0.065 at 5% date SD, and 0.980 ± 0.019 at 3% date SD, with seed SD 1% and planning alternative +2% against the +0.5% margin. It discloses nominal-95% interval undercoverage. V1.2 preserves the panel and margins and additionally requires calibration of the decision bound's own one-sided coverage. That is the governing statement before this allocation amendment, not the original “+1% is undetectable” paragraph. [H/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md:3–17; H/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md:3,8.]
++
++**Verified.** The requested empirical SD is **0.751 percentage points** across 30 dates for `ORACLE_SET / UNILATERAL − 1`, after each date pools bits and energy over its anchors. The aggregate records `sample_sd = 0.007512355732348572`; this is a relative-gain SD, not the contract's simulated 5% log-effect SD. The report is descriptive over fixed TRAIN dates and contains no learner. Its 196 unequal anchors also differ from the contracted two-world learned panel. [M/CEILING30-MARGIN-2026-09-10.md:5,29–35,122,140–142; M/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json:116–121.]
++
++**Derived, paper planning only.** To avoid silently changing scales, use percentage-point relative gains here: s = 0.751, practical margin δ = 0.5. For independent date contributions with negligible other variance and a Gaussian known-SD approximation,
++
++`D ≈ ceil{[(z_0.975 + z_power) s / (Δ* − δ)]²}`.
++
++The contract's actual prospective alternative is **+2%**, not the observed +0.717% oracle mean. The +1% and +0.75% rows below are fixed sensitivity scenarios. For m simultaneous required inequalities, setting each marginal failure probability to at most `0.20/m` gives at least 80% conjunction power by the union bound, without assuming independent contrasts. This is a power calculation, not a Bonferroni change to the sealed intersection–union test.
++
++| Prospective effect versus +0.5% margin | One contrast, 80% | Three-contrast conjunction, ≥80% | Six-inequality conjunction, ≥80% |
++|---|---:|---:|---:|
++| +2% (contract alternative) | 2 | 4 | 4 |
++| +1% sensitivity | 18 | 28 | 33 |
++| +0.75% sensitivity | 71 | 109 | 130 |
++
++These are **date-only normal-approximation counts**, not valid tiny-sample bootstrap designs. In particular, “2 dates” is not a recommendation to perform inference with two clusters. Keeping 48 supplies replication and temporal coverage well above those optimistic +2% counts. For one +1% contrast it also accommodates approximately twice the nominal date variance (36 dates by the same arithmetic). At D=48, date-only SE is 0.1084 percentage points and the Gaussian 95% half-width is 0.2125 points. All inputs and calculations are stated; none uses a route's observed sign.
++
++**Derived limitation.** For a learned contrast, even granting the oracle SD as a planning proxy, `Var ≈ s_date²/D + s_seed²/16 + residual/world terms`. At the old *assumed*, not measured, seed SD of 1 percentage point, the seed-only SE floor is 0.25 points. No number of dates then reaches 80% marginal power for +1% versus +0.5% under this approximation; the requisite total SE is about 0.1785 points. For +2%, the same arithmetic needs approximately 3/5/7 dates for one/three/six contrasts, before residual terms. Thus neither “166 dates cannot work” nor “48 guarantees the learned claim” follows from the receipts. More dates cannot compensate for every variance component.
++
++**Verified → Decision.** A later recorded owner requirement names six strict inequalities, including standalone route comparisons, while saying it changes no sealed threshold. It does not supply a new six-contrast calibration or a minimal positive effect. Arbitrarily small strict positivity has no finite universal sample-size requirement. The six-column sensitivity above does not reinterpret that requirement as permission to lower the +0.5% sealed margin. [C/V025-CONTROLLER-REQUIREMENT-SHARPENED-2026-09-10.md:3–5,12–27.]
++
++**UNDETERMINED — evaluation dates required for the actual learned conjunction.** A single matched development-panel study of the frozen learned FULL/DROP and required standalone contrasts, crossed over dates and 16 learner seeds with additive bits/energy/QoS receipts, would supply the missing variance/covariance inputs; its predeclared analysis must calibrate the actual pooled decision bound and conjunction at the fixed planning alternative and allocation. Oracle SD alone cannot answer it. This is the remaining statistical measurement, not a reopening of the source/evaluation allocation. No claim of calibrated power transfers from the withdrawn analytic paragraph, from the 160-date table, or from this 48-date arithmetic.
++
++**Decision on sufficiency.** The archive supplies the **48** allocated evaluation dates and the **116** source/development dates. It is sufficient for this operational allocation and, conditionally, for date-only planning at the contract's +2% alternative and the +1% sensitivity. It is insufficient for the +0.75% date-only scenario and for a 160-fresh-date claim panel after retaining this source allocation. The final learned claim's power is UNDETERMINED, rather than certified by substituting a convenient SD. The outcome rule may return inconclusive; no positive result is owed by the allocation.
++
++**World generation: backlog, cost and shortfall**
++
++**Verified → Inferred.** D=1 describes the completed learner evaluation on `V025_PROBE/world/3`, 2025-11-16. It is a world-generation/evaluation backlog in a restricted pilot, not the intended scientific design: the minimal pilot explicitly used one evaluation world and two learner seeds; the controller finding names new-world generation as the repair, while the contract calls for approximately 160 dates. Training sources used worlds 1/2 on two dates; repeated source epochs and checkpoints create neither new source dates nor new evaluation dates. [C/V025-CONTROLLER-FINDING-ONE-DATE-2026-09-09.md:11–18,27–33; /home/sat/mcrl-v025-retrain-ws/V025-PILOT-MIN-REPORT-2026-09-09.md:7–24; W/DATE-VARIANCE-2026-09-09.md:65–72; H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:28.]
++
++**Verified cost, qualified.** FINDING-CEILING-INTERVAL:29 reports about eight wall minutes and 0.3 core-hours per date at eight to ten anchors. Actual aggregate receipt entries corroborate this order of magnitude: a ten-anchor date used 0.3261 core-hours and 508.67 seconds; the next eight-anchor date used 0.3175 core-hours and 493.88 seconds. Across the complete, mostly six-anchor panel, the exact totals are 6.1677 core-hours and 9,975.81 wall seconds for 30 dates, including 1,131.27 seconds of construction. Therefore 0.3 is a reasonable denser-ladder allowance, **not** the measured all-panel mean, which is 0.2056 core-hours and 5.542 wall minutes/date. [C/V025-CONTROLLER-FINDING-CEILING-INTERVAL-2026-09-10.md:28–29; M/.scratch/oracle-ceiling30/ceiling30-aggregate.json:113–139,545–549; A/CEILING30-CODEX-2026-09-10.md:72,76,79–82.]
++
++**Derived planning, four total processes maximum, no launch here.** At 0.3 core-hours per date, ideal wall time is `0.3 × date_count / 4` hours. That assumes four fully useful cores; actual ladder receipts used one coordinator plus three selection workers and achieve less than ideal utilisation. Budget the approximately eight-minute observed denser-date wall rate as a second, more conservative projection:
++
++| Work remaining or counterfactual | Date count | Core-hours allowance | Ideal wall at 4 processes | At ~8 wall minutes/date |
++|---|---:|---:|---:|---:|
++| New evaluation assignments, beyond two retained reservations | 46 | 13.8 | 3.45 h | 6.13 h |
++| Complete fresh claim-date ladder, crediting no completed claim outcome | 48 | 14.4 | 3.60 h | 6.40 h |
++| Newly available source dates, if all receive the same ladder | 70 | 21.0 | 5.25 h | 9.33 h |
++| Extra dates to restore 160 evaluations while retaining S and Q | 112 | 33.6 | 8.40 h | 14.93 h |
++
++The one completed learner date and the 30 opened diagnostic dates contribute **zero completed fresh claim dates**. Unopened reservations establish assignment, not completed claim evaluation. Tape existence also cannot be inferred from the ceiling receipts: their tapes were held in RAM and not serialised. [W/DATE-VARIANCE-2026-09-09.md:69–80; A/CEILING30-CODEX-2026-09-10.md:82.]
++
++**Decision.** No new archive dates are required to implement the adopted allocation. More worlds on its dates are required. World generation can now be scheduled against S and E without another allocation decision; all independent physics/admission and integrity gates continue to apply. This adjudication launches nothing. The ladder allowance includes search/evaluation and is not a measured cost for full source labelling, 16-seed training, or two-world-per-date full-horizon claim evaluation. Their total wall time is **UNDETERMINED**; one representative end-to-end contracted date receipt at a fixed four-process cap would settle the per-date cost. Generating worlds cannot manufacture the 112 missing calendar dates in the rejected 160-date layout: that would first require a separately frozen archive expansion, never TEST reuse.
++
++**Strongest case against this allocation, and answer**
++
++The strongest objection is that 48 is an engineering envelope supported by variance from the wrong experiment. It reduces a sealed 160-date panel; the measured oracle SD need not match learned FULL-versus-DROP pooled influence variance; neighbouring dates can remain dependent; and holding out dates does not guarantee useful learning from the source pool. Even the date-only +0.75% sensitivity needs 71 dates. A conditional familiar-date evaluation with independently generated worlds could validly overlap source dates and preserve more evaluation coverage. The two historically conflicting reservations and incomplete global lineage further weaken any blanket claim of freshness. These objections follow from the estimand distinction, arithmetic and enforcement findings above, not from whether a preferred route won.
++
++**Answer and final ruling.** I accept those limitations and reject the claim that a 160-date calibration already certifies this experiment. I nevertheless choose **116 source/development, 48 evaluation-only, two quarantined**, because it fixes the missing operational boundary, preserves broad training support and clean start-date evaluation, and is compatible with measured date-only precision at the pre-existing +2% planning alternative without consuming TEST or choosing favourable outcomes. The panel estimates performance on these source-excluded historical TRAIN starts; it is not asserted to be a probability sample of all 166 dates. Actual claim power and residual date dependence must be reported honestly, and failure remains an admissible outcome. The allocation is final; uncertainty about efficacy is not authority to change its dates, margins, model or sign rules after results.
++
++Verification performed: read-only documents, source and existing JSON receipts; one `nice -n 15 /usr/bin/python3 -B` process using standard-library calendar/set arithmetic and normal-quantile planning from literal recorded inputs. No physical measurement, simulation, training, TLE-content read, dependency install, sealed-file mutation, or modification of `/home/sat/mcrl-leo-handover` or its `.venv`. This decision file is the sole new deliverable.
+
+exec
+/bin/bash -lc "sed -n '1,8p' DATE-ALLOCATION-DECISION-2026-09-10.md; tail -10 DATE-ALLOCATION-DECISION-2026-09-10.md; wc -l -w DATE-ALLOCATION-DECISION-2026-09-10.md; git status --short; nl -ba /home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json | sed -n '108,124p'" in /home/sat/mcrl-v025-dates-ws
+ succeeded in 5ms:
+   108	  },
+   109	  "margin_q_statistics": {
+   110	    "ci95_t": [
+   111	      0.004362997745343988,
+   112	      0.009973317209281681
+   113	    ],
+   114	    "maximum": 0.03246174016456993,
+   115	    "maximum_date": "2025-09-03",
+   116	    "mean": 0.007168157477312835,
+   117	    "minimum": -0.0026546738504419354,
+   118	    "minimum_date": "2026-03-09",
+   119	    "n_dates": 30,
+   120	    "negative_dates": 4,
+   121	    "sample_sd": 0.007512355732348572,
+   122	    "zero_dates": 0
+   123	  },
+   124	  "paired_difference_margin_q_minus_sealed_statistics": {
+
+diff --git a/DATE-ALLOCATION-DECISION-2026-09-10.md b/DATE-ALLOCATION-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc57f11b8bc483859e7f1012edbdcea67bd00452
+--- /dev/null
++++ b/DATE-ALLOCATION-DECISION-2026-09-10.md
+@@ -0,0 +1,138 @@
++**Allocate the 166 TRAIN dates to 116 source/development dates, 48 evaluation-only claim dates, and two quarantined claim reservations; the archive suffices for this allocation and conditional date-only sizing, but does not establish adequate power for the learned claim or supply the former 160 fresh claim dates.**
++
++DATEALLOC — binding delegated decision, 2026-09-10. The date-allocation question is CLOSED. This document prospectively replaces the approximately 160-date allocation in §D1 and resolves the ambiguous phrase “training on the claim panel”; it does not alter sealed files, margins, arms, physics, checkpoints, or the acceptance rule. No experiment was run.
++
++Evidence labels throughout: **Verified** means a file actually opened, distinguishing a recorded assertion from executable enforcement; **Derived** means arithmetic or a mathematical argument under explicit assumptions; **Inferred** means an adjudicative interpretation. **Decision** denotes a new rule imposed here, not a fact claimed to have existed previously.
++
++Citation roots: `W/` = `/home/sat/mcrl-v025-dates-ws/`; `C/` = `/home/sat/mcrl-v025-strategic-astra-ws/controller-records/`; `M/` = `/home/sat/mcrl-v025-ceiling30-ws/`; `H/` = `/home/sat/mcrl-hub-copy/.scratch/multi-catfish-v025-physics-successor/`; `A/` = `/home/sat/mcrl-v023-codex-audits/parallel-20260909/`. Line numbers refer to the opened files. Controller mirrors establish the recorded instruction, not successful execution.
++
++**What is established and what this decision changes**
++
++**Verified.** The contract evaluates on TRAIN and explicitly says “no TEST.” Its coordination claim requires held-out realised pooled EE. The primary learned experiment compares informative versus neutral source training, retaining all heads, and its three FULL-versus-DROP contrasts form an intersection–union conjunction. The endpoint is pooled ΣB/ΣE; the lower 2.5th percentile must exceed +0.5% relative. These are different questions from whether a bounded oracle beats unilateral search. [H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:19–31.]
++
++**Verified.** The September 9 open-decision record names additional-date world generation as the longest-lead blocked item. It records options, not an allocation. Its suggestion that training dates are abundant is contradicted by the subsequent archive erratum. [C/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md:23–36; C/V025-CONTROLLER-FINDING-ARCHIVE-AND-GROWTH-2026-09-09.md:41–48.]
++
++**Verified, executable finding.** The guard is real, but incomplete: it rejects a CLAIM_PANEL date accompanied by **any other supplied role**, including a training role if supplied. However, mandatory development roles are only PROBE, CALIBRATION, REHEARSAL, KAT, SYNTHETIC_REAL and SMOKE. Manifest construction requires those roles and CLAIM_PANEL, but neither requires training-source identities nor reconciles against the source corpus. Thus “never compares” in DATE-VARIANCE:22 means **no compulsory comparison against actual training provenance**, not that the predicate is incapable of comparing a training row. The emitted freshness flag is not proof of source exclusion. [W/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:195–204,5726–5777.]
++
++**Verified, written rule.** The freshness amendment says “any successor development activity,” then enumerates roles without training; another declaration literally says “source generation and training on the claim panel.” Source disjointness was therefore neither completely enforced nor unambiguously specified. This decision makes it compulsory for the learned claim. The existing uppercase TEST exclusion remains unchanged; this creates no TEST split. [C/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7–9; C/V025-PILOT-TRACK-DECLARATION-2026-09-09.md:12–16; W/src/mcrl/physics_v025/provider_legacy.py:145–158.]
++
++**Must dates be disjoint? The estimation answer**
++
++**Derived.** Date overlap is not intrinsically biased. Fix the historical archive A, training information T, fitted policies π(T), date weights w_d and within-date scenario distribution Z. If evaluation scenarios are independent of training conditional on A and their dates, and policies and analysis are frozen, then for an additive paired outcome g,
++
++`E[Σ_d w_d mean_i g(π(T), A_d, Z_di) | A,T] = Σ_d w_d E_Z[g(π(T), A_d,Z)].`
++
++This estimates fresh-scenario performance on that fixed familiar-date distribution even when training used the same dates. It does not estimate performance on unseen dates. For pooled EE the unbiased pieces are bits and energy totals; their finite-sample ratio is not generally unbiased. A second-order ratio bias is approximately `μ_B Var(E_hat)/μ_E^3 − Cov(B_hat,E_hat)/μ_E^2`. Date disjointness does not itself remove that ratio bias.
++
++**Derived.** For an unseen-date contrast, overlap can instead introduce *differential training-exposure benefit*. In a simple equally weighted additive model, let f be the evaluation mass on exposed dates and b_F,b_D be FULL's and DROP's mean exposure benefits relative to the corresponding unexposed performance. Then the overlap contribution to contrast bias is `f(b_F−b_D)`. Pairing cancels common shocks, not unequal exposure benefits. FULL-minus-S_UNI can be especially asymmetric when only FULL is fitted. The sign can be positive or negative. For pooled ratios the corresponding calculation must use arm-specific bits/energy contributions and their weights, not simply the fraction of calendar dates.
++
++**Verified → Derived.** The receipts supply no controlled trained-versus-untrained exposure contrast. The one-date learner finding cannot estimate a between-date effect; CEILING30-MARGIN explicitly contains no learner or training run. Consequently the receipts provide **no nontrivial numerical bound on overlap bias**, and 0.751% is not such a bound. The observed minimum/maximum of oracle gains do not bound learned counterfactuals. A useful finite relative-effect bound would additionally require bounds on performance and a positive comparator-EE floor not supplied by these receipts; the contract even permits zero bits and records undefined comparator-zero draws. [C/V025-CONTROLLER-FINDING-ONE-DATE-2026-09-09.md:11–18; M/CEILING30-MARGIN-2026-09-10.md:3–5,29–35; H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:30.]
++
++**UNDETERMINED — numerical overlap bias.** The single settling experiment is a temporally stratified, randomised source-date-inclusion experiment: matched training budgets and learner seeds, policies trained with versus without the assigned dates, evaluated on the same fresh within-date worlds, reporting the difference-in-differences for each claimed contrast. A retrospective comparison of easy exposed dates against different unexposed dates would not identify this effect. This experiment is not a prerequisite for the allocation and is not run here.
++
++**Decision.** Require disjoint **world start dates** for claim evaluation versus all informative and neutral training sources, fitted preprocessing, warm starts, calibration, and development outcomes. This protects the interpretation “evaluation on source-excluded TRAIN start dates within the frozen historical archive” without needing an unsupported bound on training exposure. Overlap remains acceptable for learner-free development diagnostics and for an explicitly conditional familiar-date benchmark; those results cannot substitute for this learned confirmation panel.
++
++**Decision, scope of separation.** No additional calendar buffer is imposed. The provider uses date−1/date/date+1 files, so neighbouring source and evaluation starts can share exogenous TLE inputs. Disjoint file windows would require at least three calendar days between starts, and still would not establish independent constellations. We permit that shared exogenous archive and prohibit shared generated worlds, trajectories, labelled anchors and fitted evaluation information. This is a start-date holdout, not a claim of unseen orbital records, future-constellation generalisation or independent daily geometry. That narrower interpretation is deliberate; a costly new embargo has no receipt-supported bias reduction here. [Verified window: W/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5778–5783; W/src/mcrl/env/ephemeris.py:97–113. Derived separation distance: two ±1-day windows are disjoint when their centres differ by at least three days.]
++
++**The exact allocation and immutable commitments**
++
++**Verified.** The frozen inventory has 373 files: 166 TRAIN, 160 TEST, 47 embargo. The erratum correctly replaces the misleading 124× comparison with 166/160 ≈ 1.04×. Independent corroboration is the frozen preregistration's split fields. The calendar rule is seven TRAIN days, one embargo, seven TEST days, one embargo from 2025-07-27, filtered by existing filenames. [C/V025-CONTROLLER-FINDING-ARCHIVE-AND-GROWTH-2026-09-09.md:6,41–48; W/artifacts/PREREG-FROZEN-2026-08-25-R2.json:2794–2805; W/src/mcrl/env/ephemeris.py:255–278.]
++
++**Derived, checked by arithmetic.** Reconstructing the inclusive 390-calendar-day span through 2026-08-20, subtracting the 17 missing dates enumerated in W/DATE-VARIANCE-2026-09-09.md:30–42, and applying that cycle reproduces 373/166/160/47. This is verification against the recorded inventory, not a new TLE census or a content measurement.
++
++**Verified.** The old ledger has 24 identities on 22 distinct dates; adding the earlier namespace makes 24 distinct TRAIN dates. Four are claim reservations, so subtracting all 24 as spent development would be wrong. Formal role counts and the prospective replacement of rejected claim world 1 with world 5 are recorded in the stage-4h report. The date mapping is the earlier filename-based reconstruction, whose inventory explicitly says the sealed manifest bytes were absent from this checkout. [W/DATE-VARIANCE-2026-09-09.md:65–80; W/.scratch/date-variance/inventory.md:58–64,94–105; W/.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:84.]
++
++The following historical assignments remain recorded and cannot be made fresh by renaming a role:
++
++| Existing role | Committed dates | Decision |
++|---|---|---|
++| PROBE_R2 | 2026-05-30, 2025-07-28, 2026-05-01, 2026-05-28 | Remain development |
++| CAL_R2 | 2026-08-05, 2025-11-22 | Remain calibration/development |
++| Earlier source worlds 1/2 | 2026-01-07, 2026-03-11 | Remain source/development |
++| Earlier evaluation world 3 | 2025-11-16 | Remains development evaluation |
++| REHEARSAL | 2026-01-07 | Remains development |
++| KAT, both namespaces | 2025-12-24, 2026-04-30, 2025-11-02, 2025-10-31, 2025-07-28, 2026-02-08, 2025-08-14, 2026-01-20 | Remain development |
++| SYNTHETIC_REAL | 2026-01-23, 2026-06-15, 2025-12-23, 2025-08-14 | Remain development |
++| SMOKE | 2025-10-02 | Remains development |
++| CLAIM_PANEL worlds 2 and 5 | 2026-02-06, 2025-12-05 | Retain in evaluation pool |
++| CLAIM_PANEL worlds 3 and 4 | 2026-01-25, 2026-03-28 | Retain reservation history; quarantine, neither source nor fresh claim |
++
++Sources for every mapping: W/.scratch/date-variance/inventory.md:68–88,96–105. **Inferred conservative adjudication:** 2026-03-28 is already in the quarantined earlier namespace, and 2026-01-25 now has an opened diagnostic outcome. Neither is silently recycled into fresh confirmation. No sealed reservation is edited. [W/DATE-VARIANCE-2026-09-09.md:70,80; M/CEILING30-MARGIN-2026-09-10.md:57.]
++
++**Verified.** All 30 dates in CEILING30-MARGIN are also committed development/calibration evidence, regardless of the sign of their outcomes:
++
++`2025-07-31, 2025-08-18, 2025-09-03, 2025-09-30, 2025-10-17, 2025-11-04, 2025-11-20, 2025-12-07, 2025-12-24, 2026-01-03, 2026-01-04, 2026-01-06, 2026-01-07, 2026-01-09, 2026-01-19, 2026-01-21, 2026-01-22, 2026-01-24, 2026-01-25, 2026-02-20, 2026-03-09, 2026-03-27, 2026-04-13, 2026-04-30, 2026-05-16, 2026-06-02, 2026-06-29, 2026-07-17, 2026-08-02, 2026-08-20`.
++
++[M/CEILING30-MARGIN-2026-09-10.md:37–68.] **Derived:** their intersection with the original 24-date set is {2025-12-24, 2026-01-07, 2026-01-25, 2026-04-30}. The union is therefore 24+30−4 = **50** dates: 46 source/development-side commitments, two retained clean claim reservations and two quarantined reservations. There are **116** dates outside this union.
++
++**Decision, reproducible selection rule.** Freeze the archive and the two commitment lists above. Divide the 390-calendar-day span into six consecutive 65-day strata. Each stratum receives eight evaluation dates, for 48 total. Retain 2025-12-05 and 2026-02-06 in their stratum. Within stratum k, sort the dates outside the 50-date union chronologically as `F_k`, with length m. Let `n = 8 − retained_claim_count(k)`. Select zero-based indices `floor((2j+1)m/(2n))`, for `j = 0,…,n−1`. Use calendar days, not a calendar compressed around missing files. No outcome, route sign, effect magnitude, satellite count or run time enters this rule.
++
++| Stratum | Available uncommitted dates | The eight evaluation dates |
++|---|---:|---|
++| 2025-07-27…2025-09-29 | 22 | 2025-07-29, 2025-08-12, 2025-08-15, 2025-08-28, 2025-08-31, 2025-09-13, 2025-09-15, 2025-09-19 |
++| 2025-09-30…2025-12-03 | 19 | 2025-10-03, 2025-10-05, 2025-10-16, 2025-10-21, 2025-11-03, 2025-11-17, 2025-11-19, 2025-12-02 |
++| 2025-12-04…2026-02-06 | 12 | 2025-12-05, 2025-12-06, 2025-12-18, 2025-12-20, 2025-12-22, 2026-01-08, 2026-02-05, 2026-02-06 |
++| 2026-02-07…2026-04-12 | 21 | 2026-02-09, 2026-02-21, 2026-02-24, 2026-03-10, 2026-03-13, 2026-03-26, 2026-04-09, 2026-04-11 |
++| 2026-04-13…2026-06-16 | 21 | 2026-04-15, 2026-04-26, 2026-04-29, 2026-05-13, 2026-05-15, 2026-05-29, 2026-06-12, 2026-06-14 |
++| 2026-06-17…2026-08-20 | 21 | 2026-06-28, 2026-07-02, 2026-07-14, 2026-07-18, 2026-07-20, 2026-08-01, 2026-08-16, 2026-08-18 |
++
++**Derived allocation:** E has 48 dates, including 46 newly assigned dates. Q = {2026-01-25, 2026-03-28}. The source/development pool is exactly `S = recorded TRAIN archive \ (E ∪ Q)`, with **116** dates: 46 existing commitments plus 70 newly assigned source dates. This complement rule completely enumerates S without an arbitrary second selection. Source eligibility is not permission to repurpose sealed calibration/probe artefacts; those identities keep their roles, and any new source worlds have separate lineage.
++
++**Decision, why 48.** It is a fixed, temporally spread resource allocation, not a fitted optimum: eight dates in each of six calendar strata while leaving substantial source diversity. A 48-date resource envelope and the same six-stratum construction were already proposed before the corrected 30-date result existed. This decision now makes the allocation concrete and uses the supplied SD to assess its limits, rather than choosing dates or a target effect from observed gains. [Historical proposal only: A/DATEPOOL-ADJUDICATION-2026-09-09.md:49,70,74–88.]
++
++**Decision, enforcement required at consumption.** Every source builder and claim runner must consume this same allocation, assert TRAIN membership, assert `S ∩ E = ∅`, reject Q, and reconcile actual world starts and full source lineage rather than trust declared roles alone. Include informative/neutral sources, preprocessing and inherited checkpoints. Claim outcomes remain inaccessible to training and selection; world/mobility/fading lineage must prevent scenario reuse. An unexpected prior-use collision or missing input fails closed; it does not trigger an outcome-chosen replacement or migrate an E date into S. The concrete partition above remains the decision. No code or sealed manifest was changed in this document-only task. Completeness of unlisted historical lineage is **UNDETERMINED**; one complete actual-source/development-manifest reconciliation against E settles it. The 48-date count is a recorded-inventory allocation, not a certification that every sibling experiment has been inventoried.
++
++**Archive sufficiency and the governing power statement**
++
++**Verified.** V1.1 changes the design to 16 learner seeds, two worlds per date and approximately 160 claim dates. It explicitly **withdraws and replaces** v1 §E's analytic power statement with the measured synthetic calibration table: at 16 seeds, conjunction success 0.675 ± 0.065 at 5% date SD, and 0.980 ± 0.019 at 3% date SD, with seed SD 1% and planning alternative +2% against the +0.5% margin. It discloses nominal-95% interval undercoverage. V1.2 preserves the panel and margins and additionally requires calibration of the decision bound's own one-sided coverage. That is the governing statement before this allocation amendment, not the original “+1% is undetectable” paragraph. [H/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md:3–17; H/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md:3,8.]
++
++**Verified.** The requested empirical SD is **0.751 percentage points** across 30 dates for `ORACLE_SET / UNILATERAL − 1`, after each date pools bits and energy over its anchors. The aggregate records `sample_sd = 0.007512355732348572`; this is a relative-gain SD, not the contract's simulated 5% log-effect SD. The report is descriptive over fixed TRAIN dates and contains no learner. Its 196 unequal anchors also differ from the contracted two-world learned panel. [M/CEILING30-MARGIN-2026-09-10.md:5,29–35,122,140–142; M/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json:116–121.]
++
++**Derived, paper planning only.** To avoid silently changing scales, use percentage-point relative gains here: s = 0.751, practical margin δ = 0.5. For independent date contributions with negligible other variance and a Gaussian known-SD approximation,
++
++`D ≈ ceil{[(z_0.975 + z_power) s / (Δ* − δ)]²}`.
++
++The contract's actual prospective alternative is **+2%**, not the observed +0.717% oracle mean. The +1% and +0.75% rows below are fixed sensitivity scenarios. For m simultaneous required inequalities, setting each marginal failure probability to at most `0.20/m` gives at least 80% conjunction power by the union bound, without assuming independent contrasts. This is a power calculation, not a Bonferroni change to the sealed intersection–union test.
++
++| Prospective effect versus +0.5% margin | One contrast, 80% | Three-contrast conjunction, ≥80% | Six-inequality conjunction, ≥80% |
++|---|---:|---:|---:|
++| +2% (contract alternative) | 2 | 4 | 4 |
++| +1% sensitivity | 18 | 28 | 33 |
++| +0.75% sensitivity | 71 | 109 | 130 |
++
++These are **date-only normal-approximation counts**, not valid tiny-sample bootstrap designs. In particular, “2 dates” is not a recommendation to perform inference with two clusters. Keeping 48 supplies replication and temporal coverage well above those optimistic +2% counts. For one +1% contrast it also accommodates approximately twice the nominal date variance (36 dates by the same arithmetic). At D=48, date-only SE is 0.1084 percentage points and the Gaussian 95% half-width is 0.2125 points. All inputs and calculations are stated; none uses a route's observed sign.
++
++**Derived limitation.** For a learned contrast, even granting the oracle SD as a planning proxy, `Var ≈ s_date²/D + s_seed²/16 + residual/world terms`. At the old *assumed*, not measured, seed SD of 1 percentage point, the seed-only SE floor is 0.25 points. No number of dates then reaches 80% marginal power for +1% versus +0.5% under this approximation; the requisite total SE is about 0.1785 points. For +2%, the same arithmetic needs approximately 3/5/7 dates for one/three/six contrasts, before residual terms. Thus neither “166 dates cannot work” nor “48 guarantees the learned claim” follows from the receipts. More dates cannot compensate for every variance component.
++
++**Verified → Decision.** A later recorded owner requirement names six strict inequalities, including standalone route comparisons, while saying it changes no sealed threshold. It does not supply a new six-contrast calibration or a minimal positive effect. Arbitrarily small strict positivity has no finite universal sample-size requirement. The six-column sensitivity above does not reinterpret that requirement as permission to lower the +0.5% sealed margin. [C/V025-CONTROLLER-REQUIREMENT-SHARPENED-2026-09-10.md:3–5,12–27.]
++
++**UNDETERMINED — evaluation dates required for the actual learned conjunction.** A single matched development-panel study of the frozen learned FULL/DROP and required standalone contrasts, crossed over dates and 16 learner seeds with additive bits/energy/QoS receipts, would supply the missing variance/covariance inputs; its predeclared analysis must calibrate the actual pooled decision bound and conjunction at the fixed planning alternative and allocation. Oracle SD alone cannot answer it. This is the remaining statistical measurement, not a reopening of the source/evaluation allocation. No claim of calibrated power transfers from the withdrawn analytic paragraph, from the 160-date table, or from this 48-date arithmetic.
++
++**Decision on sufficiency.** The archive supplies the **48** allocated evaluation dates and the **116** source/development dates. It is sufficient for this operational allocation and, conditionally, for date-only planning at the contract's +2% alternative and the +1% sensitivity. It is insufficient for the +0.75% date-only scenario and for a 160-fresh-date claim panel after retaining this source allocation. The final learned claim's power is UNDETERMINED, rather than certified by substituting a convenient SD. The outcome rule may return inconclusive; no positive result is owed by the allocation.
++
++**World generation: backlog, cost and shortfall**
++
++**Verified → Inferred.** D=1 describes the completed learner evaluation on `V025_PROBE/world/3`, 2025-11-16. It is a world-generation/evaluation backlog in a restricted pilot, not the intended scientific design: the minimal pilot explicitly used one evaluation world and two learner seeds; the controller finding names new-world generation as the repair, while the contract calls for approximately 160 dates. Training sources used worlds 1/2 on two dates; repeated source epochs and checkpoints create neither new source dates nor new evaluation dates. [C/V025-CONTROLLER-FINDING-ONE-DATE-2026-09-09.md:11–18,27–33; /home/sat/mcrl-v025-retrain-ws/V025-PILOT-MIN-REPORT-2026-09-09.md:7–24; W/DATE-VARIANCE-2026-09-09.md:65–72; H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:28.]
++
++**Verified cost, qualified.** FINDING-CEILING-INTERVAL:29 reports about eight wall minutes and 0.3 core-hours per date at eight to ten anchors. Actual aggregate receipt entries corroborate this order of magnitude: a ten-anchor date used 0.3261 core-hours and 508.67 seconds; the next eight-anchor date used 0.3175 core-hours and 493.88 seconds. Across the complete, mostly six-anchor panel, the exact totals are 6.1677 core-hours and 9,975.81 wall seconds for 30 dates, including 1,131.27 seconds of construction. Therefore 0.3 is a reasonable denser-ladder allowance, **not** the measured all-panel mean, which is 0.2056 core-hours and 5.542 wall minutes/date. [C/V025-CONTROLLER-FINDING-CEILING-INTERVAL-2026-09-10.md:28–29; M/.scratch/oracle-ceiling30/ceiling30-aggregate.json:113–139,545–549; A/CEILING30-CODEX-2026-09-10.md:72,76,79–82.]
++
++**Derived planning, four total processes maximum, no launch here.** At 0.3 core-hours per date, ideal wall time is `0.3 × date_count / 4` hours. That assumes four fully useful cores; actual ladder receipts used one coordinator plus three selection workers and achieve less than ideal utilisation. Budget the approximately eight-minute observed denser-date wall rate as a second, more conservative projection:
++
++| Work remaining or counterfactual | Date count | Core-hours allowance | Ideal wall at 4 processes | At ~8 wall minutes/date |
++|---|---:|---:|---:|---:|
++| New evaluation assignments, beyond two retained reservations | 46 | 13.8 | 3.45 h | 6.13 h |
++| Complete fresh claim-date ladder, crediting no completed claim outcome | 48 | 14.4 | 3.60 h | 6.40 h |
++| Newly available source dates, if all receive the same ladder | 70 | 21.0 | 5.25 h | 9.33 h |
++| Extra dates to restore 160 evaluations while retaining S and Q | 112 | 33.6 | 8.40 h | 14.93 h |
++
++The one completed learner date and the 30 opened diagnostic dates contribute **zero completed fresh claim dates**. Unopened reservations establish assignment, not completed claim evaluation. Tape existence also cannot be inferred from the ceiling receipts: their tapes were held in RAM and not serialised. [W/DATE-VARIANCE-2026-09-09.md:69–80; A/CEILING30-CODEX-2026-09-10.md:82.]
++
++**Decision.** No new archive dates are required to implement the adopted allocation. More worlds on its dates are required. World generation can now be scheduled against S and E without another allocation decision; all independent physics/admission and integrity gates continue to apply. This adjudication launches nothing. The ladder allowance includes search/evaluation and is not a measured cost for full source labelling, 16-seed training, or two-world-per-date full-horizon claim evaluation. Their total wall time is **UNDETERMINED**; one representative end-to-end contracted date receipt at a fixed four-process cap would settle the per-date cost. Generating worlds cannot manufacture the 112 missing calendar dates in the rejected 160-date layout: that would first require a separately frozen archive expansion, never TEST reuse.
++
++**Strongest case against this allocation, and answer**
++
++The strongest objection is that 48 is an engineering envelope supported by variance from the wrong experiment. It reduces a sealed 160-date panel; the measured oracle SD need not match learned FULL-versus-DROP pooled influence variance; neighbouring dates can remain dependent; and holding out dates does not guarantee useful learning from the source pool. Even the date-only +0.75% sensitivity needs 71 dates. A conditional familiar-date evaluation with independently generated worlds could validly overlap source dates and preserve more evaluation coverage. The two historically conflicting reservations and incomplete global lineage further weaken any blanket claim of freshness. These objections follow from the estimand distinction, arithmetic and enforcement findings above, not from whether a preferred route won.
++
++**Answer and final ruling.** I accept those limitations and reject the claim that a 160-date calibration already certifies this experiment. I nevertheless choose **116 source/development, 48 evaluation-only, two quarantined**, because it fixes the missing operational boundary, preserves broad training support and clean start-date evaluation, and is compatible with measured date-only precision at the pre-existing +2% planning alternative without consuming TEST or choosing favourable outcomes. The panel estimates performance on these source-excluded historical TRAIN starts; it is not asserted to be a probability sample of all 166 dates. Actual claim power and residual date dependence must be reported honestly, and failure remains an admissible outcome. The allocation is final; uncertainty about efficacy is not authority to change its dates, margins, model or sign rules after results.
++
++Verification performed: read-only documents, source and existing JSON receipts; one `nice -n 15 /usr/bin/python3 -B` process using standard-library calendar/set arithmetic and normal-quantile planning from literal recorded inputs. No physical measurement, simulation, training, TLE-content read, dependency install, sealed-file mutation, or modification of `/home/sat/mcrl-leo-handover` or its `.venv`. This decision file is the sole new deliverable.
+
+codex
+Written: [DATE-ALLOCATION-DECISION-2026-09-10.md](/home/sat/mcrl-v025-dates-ws/DATE-ALLOCATION-DECISION-2026-09-10.md).
+
+Decision: **116 source/development dates, 48 evaluation-only dates, two quarantined reservations.** The archive supplies this allocation; calibrated power for the learned claim remains undetermined.
+
+Includes exact dates, deterministic selection, citations, bias analysis, sizing, costs, and the strongest counterargument. No measurements ran or sealed material changed.
+diff --git a/DATE-ALLOCATION-DECISION-2026-09-10.md b/DATE-ALLOCATION-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc57f11b8bc483859e7f1012edbdcea67bd00452
+--- /dev/null
++++ b/DATE-ALLOCATION-DECISION-2026-09-10.md
+@@ -0,0 +1,138 @@
++**Allocate the 166 TRAIN dates to 116 source/development dates, 48 evaluation-only claim dates, and two quarantined claim reservations; the archive suffices for this allocation and conditional date-only sizing, but does not establish adequate power for the learned claim or supply the former 160 fresh claim dates.**
++
++DATEALLOC — binding delegated decision, 2026-09-10. The date-allocation question is CLOSED. This document prospectively replaces the approximately 160-date allocation in §D1 and resolves the ambiguous phrase “training on the claim panel”; it does not alter sealed files, margins, arms, physics, checkpoints, or the acceptance rule. No experiment was run.
++
++Evidence labels throughout: **Verified** means a file actually opened, distinguishing a recorded assertion from executable enforcement; **Derived** means arithmetic or a mathematical argument under explicit assumptions; **Inferred** means an adjudicative interpretation. **Decision** denotes a new rule imposed here, not a fact claimed to have existed previously.
++
++Citation roots: `W/` = `/home/sat/mcrl-v025-dates-ws/`; `C/` = `/home/sat/mcrl-v025-strategic-astra-ws/controller-records/`; `M/` = `/home/sat/mcrl-v025-ceiling30-ws/`; `H/` = `/home/sat/mcrl-hub-copy/.scratch/multi-catfish-v025-physics-successor/`; `A/` = `/home/sat/mcrl-v023-codex-audits/parallel-20260909/`. Line numbers refer to the opened files. Controller mirrors establish the recorded instruction, not successful execution.
++
++**What is established and what this decision changes**
++
++**Verified.** The contract evaluates on TRAIN and explicitly says “no TEST.” Its coordination claim requires held-out realised pooled EE. The primary learned experiment compares informative versus neutral source training, retaining all heads, and its three FULL-versus-DROP contrasts form an intersection–union conjunction. The endpoint is pooled ΣB/ΣE; the lower 2.5th percentile must exceed +0.5% relative. These are different questions from whether a bounded oracle beats unilateral search. [H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:19–31.]
++
++**Verified.** The September 9 open-decision record names additional-date world generation as the longest-lead blocked item. It records options, not an allocation. Its suggestion that training dates are abundant is contradicted by the subsequent archive erratum. [C/V025-CONTROLLER-OPEN-DECISION-EVAL-DATE-POOL-2026-09-09.md:23–36; C/V025-CONTROLLER-FINDING-ARCHIVE-AND-GROWTH-2026-09-09.md:41–48.]
++
++**Verified, executable finding.** The guard is real, but incomplete: it rejects a CLAIM_PANEL date accompanied by **any other supplied role**, including a training role if supplied. However, mandatory development roles are only PROBE, CALIBRATION, REHEARSAL, KAT, SYNTHETIC_REAL and SMOKE. Manifest construction requires those roles and CLAIM_PANEL, but neither requires training-source identities nor reconciles against the source corpus. Thus “never compares” in DATE-VARIANCE:22 means **no compulsory comparison against actual training provenance**, not that the predicate is incapable of comparing a training row. The emitted freshness flag is not proof of source exclusion. [W/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:195–204,5726–5777.]
++
++**Verified, written rule.** The freshness amendment says “any successor development activity,” then enumerates roles without training; another declaration literally says “source generation and training on the claim panel.” Source disjointness was therefore neither completely enforced nor unambiguously specified. This decision makes it compulsory for the learned claim. The existing uppercase TEST exclusion remains unchanged; this creates no TEST split. [C/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.5-AMENDMENT-2026-09-08.md:7–9; C/V025-PILOT-TRACK-DECLARATION-2026-09-09.md:12–16; W/src/mcrl/physics_v025/provider_legacy.py:145–158.]
++
++**Must dates be disjoint? The estimation answer**
++
++**Derived.** Date overlap is not intrinsically biased. Fix the historical archive A, training information T, fitted policies π(T), date weights w_d and within-date scenario distribution Z. If evaluation scenarios are independent of training conditional on A and their dates, and policies and analysis are frozen, then for an additive paired outcome g,
++
++`E[Σ_d w_d mean_i g(π(T), A_d, Z_di) | A,T] = Σ_d w_d E_Z[g(π(T), A_d,Z)].`
++
++This estimates fresh-scenario performance on that fixed familiar-date distribution even when training used the same dates. It does not estimate performance on unseen dates. For pooled EE the unbiased pieces are bits and energy totals; their finite-sample ratio is not generally unbiased. A second-order ratio bias is approximately `μ_B Var(E_hat)/μ_E^3 − Cov(B_hat,E_hat)/μ_E^2`. Date disjointness does not itself remove that ratio bias.
++
++**Derived.** For an unseen-date contrast, overlap can instead introduce *differential training-exposure benefit*. In a simple equally weighted additive model, let f be the evaluation mass on exposed dates and b_F,b_D be FULL's and DROP's mean exposure benefits relative to the corresponding unexposed performance. Then the overlap contribution to contrast bias is `f(b_F−b_D)`. Pairing cancels common shocks, not unequal exposure benefits. FULL-minus-S_UNI can be especially asymmetric when only FULL is fitted. The sign can be positive or negative. For pooled ratios the corresponding calculation must use arm-specific bits/energy contributions and their weights, not simply the fraction of calendar dates.
++
++**Verified → Derived.** The receipts supply no controlled trained-versus-untrained exposure contrast. The one-date learner finding cannot estimate a between-date effect; CEILING30-MARGIN explicitly contains no learner or training run. Consequently the receipts provide **no nontrivial numerical bound on overlap bias**, and 0.751% is not such a bound. The observed minimum/maximum of oracle gains do not bound learned counterfactuals. A useful finite relative-effect bound would additionally require bounds on performance and a positive comparator-EE floor not supplied by these receipts; the contract even permits zero bits and records undefined comparator-zero draws. [C/V025-CONTROLLER-FINDING-ONE-DATE-2026-09-09.md:11–18; M/CEILING30-MARGIN-2026-09-10.md:3–5,29–35; H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:30.]
++
++**UNDETERMINED — numerical overlap bias.** The single settling experiment is a temporally stratified, randomised source-date-inclusion experiment: matched training budgets and learner seeds, policies trained with versus without the assigned dates, evaluated on the same fresh within-date worlds, reporting the difference-in-differences for each claimed contrast. A retrospective comparison of easy exposed dates against different unexposed dates would not identify this effect. This experiment is not a prerequisite for the allocation and is not run here.
++
++**Decision.** Require disjoint **world start dates** for claim evaluation versus all informative and neutral training sources, fitted preprocessing, warm starts, calibration, and development outcomes. This protects the interpretation “evaluation on source-excluded TRAIN start dates within the frozen historical archive” without needing an unsupported bound on training exposure. Overlap remains acceptable for learner-free development diagnostics and for an explicitly conditional familiar-date benchmark; those results cannot substitute for this learned confirmation panel.
++
++**Decision, scope of separation.** No additional calendar buffer is imposed. The provider uses date−1/date/date+1 files, so neighbouring source and evaluation starts can share exogenous TLE inputs. Disjoint file windows would require at least three calendar days between starts, and still would not establish independent constellations. We permit that shared exogenous archive and prohibit shared generated worlds, trajectories, labelled anchors and fitted evaluation information. This is a start-date holdout, not a claim of unseen orbital records, future-constellation generalisation or independent daily geometry. That narrower interpretation is deliberate; a costly new embargo has no receipt-supported bias reduction here. [Verified window: W/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:5778–5783; W/src/mcrl/env/ephemeris.py:97–113. Derived separation distance: two ±1-day windows are disjoint when their centres differ by at least three days.]
++
++**The exact allocation and immutable commitments**
++
++**Verified.** The frozen inventory has 373 files: 166 TRAIN, 160 TEST, 47 embargo. The erratum correctly replaces the misleading 124× comparison with 166/160 ≈ 1.04×. Independent corroboration is the frozen preregistration's split fields. The calendar rule is seven TRAIN days, one embargo, seven TEST days, one embargo from 2025-07-27, filtered by existing filenames. [C/V025-CONTROLLER-FINDING-ARCHIVE-AND-GROWTH-2026-09-09.md:6,41–48; W/artifacts/PREREG-FROZEN-2026-08-25-R2.json:2794–2805; W/src/mcrl/env/ephemeris.py:255–278.]
++
++**Derived, checked by arithmetic.** Reconstructing the inclusive 390-calendar-day span through 2026-08-20, subtracting the 17 missing dates enumerated in W/DATE-VARIANCE-2026-09-09.md:30–42, and applying that cycle reproduces 373/166/160/47. This is verification against the recorded inventory, not a new TLE census or a content measurement.
++
++**Verified.** The old ledger has 24 identities on 22 distinct dates; adding the earlier namespace makes 24 distinct TRAIN dates. Four are claim reservations, so subtracting all 24 as spent development would be wrong. Formal role counts and the prospective replacement of rejected claim world 1 with world 5 are recorded in the stage-4h report. The date mapping is the earlier filename-based reconstruction, whose inventory explicitly says the sealed manifest bytes were absent from this checkout. [W/DATE-VARIANCE-2026-09-09.md:65–80; W/.scratch/date-variance/inventory.md:58–64,94–105; W/.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4H-REPORT-2026-09-09.md:84.]
++
++The following historical assignments remain recorded and cannot be made fresh by renaming a role:
++
++| Existing role | Committed dates | Decision |
++|---|---|---|
++| PROBE_R2 | 2026-05-30, 2025-07-28, 2026-05-01, 2026-05-28 | Remain development |
++| CAL_R2 | 2026-08-05, 2025-11-22 | Remain calibration/development |
++| Earlier source worlds 1/2 | 2026-01-07, 2026-03-11 | Remain source/development |
++| Earlier evaluation world 3 | 2025-11-16 | Remains development evaluation |
++| REHEARSAL | 2026-01-07 | Remains development |
++| KAT, both namespaces | 2025-12-24, 2026-04-30, 2025-11-02, 2025-10-31, 2025-07-28, 2026-02-08, 2025-08-14, 2026-01-20 | Remain development |
++| SYNTHETIC_REAL | 2026-01-23, 2026-06-15, 2025-12-23, 2025-08-14 | Remain development |
++| SMOKE | 2025-10-02 | Remains development |
++| CLAIM_PANEL worlds 2 and 5 | 2026-02-06, 2025-12-05 | Retain in evaluation pool |
++| CLAIM_PANEL worlds 3 and 4 | 2026-01-25, 2026-03-28 | Retain reservation history; quarantine, neither source nor fresh claim |
++
++Sources for every mapping: W/.scratch/date-variance/inventory.md:68–88,96–105. **Inferred conservative adjudication:** 2026-03-28 is already in the quarantined earlier namespace, and 2026-01-25 now has an opened diagnostic outcome. Neither is silently recycled into fresh confirmation. No sealed reservation is edited. [W/DATE-VARIANCE-2026-09-09.md:70,80; M/CEILING30-MARGIN-2026-09-10.md:57.]
++
++**Verified.** All 30 dates in CEILING30-MARGIN are also committed development/calibration evidence, regardless of the sign of their outcomes:
++
++`2025-07-31, 2025-08-18, 2025-09-03, 2025-09-30, 2025-10-17, 2025-11-04, 2025-11-20, 2025-12-07, 2025-12-24, 2026-01-03, 2026-01-04, 2026-01-06, 2026-01-07, 2026-01-09, 2026-01-19, 2026-01-21, 2026-01-22, 2026-01-24, 2026-01-25, 2026-02-20, 2026-03-09, 2026-03-27, 2026-04-13, 2026-04-30, 2026-05-16, 2026-06-02, 2026-06-29, 2026-07-17, 2026-08-02, 2026-08-20`.
++
++[M/CEILING30-MARGIN-2026-09-10.md:37–68.] **Derived:** their intersection with the original 24-date set is {2025-12-24, 2026-01-07, 2026-01-25, 2026-04-30}. The union is therefore 24+30−4 = **50** dates: 46 source/development-side commitments, two retained clean claim reservations and two quarantined reservations. There are **116** dates outside this union.
++
++**Decision, reproducible selection rule.** Freeze the archive and the two commitment lists above. Divide the 390-calendar-day span into six consecutive 65-day strata. Each stratum receives eight evaluation dates, for 48 total. Retain 2025-12-05 and 2026-02-06 in their stratum. Within stratum k, sort the dates outside the 50-date union chronologically as `F_k`, with length m. Let `n = 8 − retained_claim_count(k)`. Select zero-based indices `floor((2j+1)m/(2n))`, for `j = 0,…,n−1`. Use calendar days, not a calendar compressed around missing files. No outcome, route sign, effect magnitude, satellite count or run time enters this rule.
++
++| Stratum | Available uncommitted dates | The eight evaluation dates |
++|---|---:|---|
++| 2025-07-27…2025-09-29 | 22 | 2025-07-29, 2025-08-12, 2025-08-15, 2025-08-28, 2025-08-31, 2025-09-13, 2025-09-15, 2025-09-19 |
++| 2025-09-30…2025-12-03 | 19 | 2025-10-03, 2025-10-05, 2025-10-16, 2025-10-21, 2025-11-03, 2025-11-17, 2025-11-19, 2025-12-02 |
++| 2025-12-04…2026-02-06 | 12 | 2025-12-05, 2025-12-06, 2025-12-18, 2025-12-20, 2025-12-22, 2026-01-08, 2026-02-05, 2026-02-06 |
++| 2026-02-07…2026-04-12 | 21 | 2026-02-09, 2026-02-21, 2026-02-24, 2026-03-10, 2026-03-13, 2026-03-26, 2026-04-09, 2026-04-11 |
++| 2026-04-13…2026-06-16 | 21 | 2026-04-15, 2026-04-26, 2026-04-29, 2026-05-13, 2026-05-15, 2026-05-29, 2026-06-12, 2026-06-14 |
++| 2026-06-17…2026-08-20 | 21 | 2026-06-28, 2026-07-02, 2026-07-14, 2026-07-18, 2026-07-20, 2026-08-01, 2026-08-16, 2026-08-18 |
++
++**Derived allocation:** E has 48 dates, including 46 newly assigned dates. Q = {2026-01-25, 2026-03-28}. The source/development pool is exactly `S = recorded TRAIN archive \ (E ∪ Q)`, with **116** dates: 46 existing commitments plus 70 newly assigned source dates. This complement rule completely enumerates S without an arbitrary second selection. Source eligibility is not permission to repurpose sealed calibration/probe artefacts; those identities keep their roles, and any new source worlds have separate lineage.
++
++**Decision, why 48.** It is a fixed, temporally spread resource allocation, not a fitted optimum: eight dates in each of six calendar strata while leaving substantial source diversity. A 48-date resource envelope and the same six-stratum construction were already proposed before the corrected 30-date result existed. This decision now makes the allocation concrete and uses the supplied SD to assess its limits, rather than choosing dates or a target effect from observed gains. [Historical proposal only: A/DATEPOOL-ADJUDICATION-2026-09-09.md:49,70,74–88.]
++
++**Decision, enforcement required at consumption.** Every source builder and claim runner must consume this same allocation, assert TRAIN membership, assert `S ∩ E = ∅`, reject Q, and reconcile actual world starts and full source lineage rather than trust declared roles alone. Include informative/neutral sources, preprocessing and inherited checkpoints. Claim outcomes remain inaccessible to training and selection; world/mobility/fading lineage must prevent scenario reuse. An unexpected prior-use collision or missing input fails closed; it does not trigger an outcome-chosen replacement or migrate an E date into S. The concrete partition above remains the decision. No code or sealed manifest was changed in this document-only task. Completeness of unlisted historical lineage is **UNDETERMINED**; one complete actual-source/development-manifest reconciliation against E settles it. The 48-date count is a recorded-inventory allocation, not a certification that every sibling experiment has been inventoried.
++
++**Archive sufficiency and the governing power statement**
++
++**Verified.** V1.1 changes the design to 16 learner seeds, two worlds per date and approximately 160 claim dates. It explicitly **withdraws and replaces** v1 §E's analytic power statement with the measured synthetic calibration table: at 16 seeds, conjunction success 0.675 ± 0.065 at 5% date SD, and 0.980 ± 0.019 at 3% date SD, with seed SD 1% and planning alternative +2% against the +0.5% margin. It discloses nominal-95% interval undercoverage. V1.2 preserves the panel and margins and additionally requires calibration of the decision bound's own one-sided coverage. That is the governing statement before this allocation amendment, not the original “+1% is undetectable” paragraph. [H/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md:3–17; H/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md:3,8.]
++
++**Verified.** The requested empirical SD is **0.751 percentage points** across 30 dates for `ORACLE_SET / UNILATERAL − 1`, after each date pools bits and energy over its anchors. The aggregate records `sample_sd = 0.007512355732348572`; this is a relative-gain SD, not the contract's simulated 5% log-effect SD. The report is descriptive over fixed TRAIN dates and contains no learner. Its 196 unequal anchors also differ from the contracted two-world learned panel. [M/CEILING30-MARGIN-2026-09-10.md:5,29–35,122,140–142; M/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json:116–121.]
++
++**Derived, paper planning only.** To avoid silently changing scales, use percentage-point relative gains here: s = 0.751, practical margin δ = 0.5. For independent date contributions with negligible other variance and a Gaussian known-SD approximation,
++
++`D ≈ ceil{[(z_0.975 + z_power) s / (Δ* − δ)]²}`.
++
++The contract's actual prospective alternative is **+2%**, not the observed +0.717% oracle mean. The +1% and +0.75% rows below are fixed sensitivity scenarios. For m simultaneous required inequalities, setting each marginal failure probability to at most `0.20/m` gives at least 80% conjunction power by the union bound, without assuming independent contrasts. This is a power calculation, not a Bonferroni change to the sealed intersection–union test.
++
++| Prospective effect versus +0.5% margin | One contrast, 80% | Three-contrast conjunction, ≥80% | Six-inequality conjunction, ≥80% |
++|---|---:|---:|---:|
++| +2% (contract alternative) | 2 | 4 | 4 |
++| +1% sensitivity | 18 | 28 | 33 |
++| +0.75% sensitivity | 71 | 109 | 130 |
++
++These are **date-only normal-approximation counts**, not valid tiny-sample bootstrap designs. In particular, “2 dates” is not a recommendation to perform inference with two clusters. Keeping 48 supplies replication and temporal coverage well above those optimistic +2% counts. For one +1% contrast it also accommodates approximately twice the nominal date variance (36 dates by the same arithmetic). At D=48, date-only SE is 0.1084 percentage points and the Gaussian 95% half-width is 0.2125 points. All inputs and calculations are stated; none uses a route's observed sign.
++
++**Derived limitation.** For a learned contrast, even granting the oracle SD as a planning proxy, `Var ≈ s_date²/D + s_seed²/16 + residual/world terms`. At the old *assumed*, not measured, seed SD of 1 percentage point, the seed-only SE floor is 0.25 points. No number of dates then reaches 80% marginal power for +1% versus +0.5% under this approximation; the requisite total SE is about 0.1785 points. For +2%, the same arithmetic needs approximately 3/5/7 dates for one/three/six contrasts, before residual terms. Thus neither “166 dates cannot work” nor “48 guarantees the learned claim” follows from the receipts. More dates cannot compensate for every variance component.
++
++**Verified → Decision.** A later recorded owner requirement names six strict inequalities, including standalone route comparisons, while saying it changes no sealed threshold. It does not supply a new six-contrast calibration or a minimal positive effect. Arbitrarily small strict positivity has no finite universal sample-size requirement. The six-column sensitivity above does not reinterpret that requirement as permission to lower the +0.5% sealed margin. [C/V025-CONTROLLER-REQUIREMENT-SHARPENED-2026-09-10.md:3–5,12–27.]
++
++**UNDETERMINED — evaluation dates required for the actual learned conjunction.** A single matched development-panel study of the frozen learned FULL/DROP and required standalone contrasts, crossed over dates and 16 learner seeds with additive bits/energy/QoS receipts, would supply the missing variance/covariance inputs; its predeclared analysis must calibrate the actual pooled decision bound and conjunction at the fixed planning alternative and allocation. Oracle SD alone cannot answer it. This is the remaining statistical measurement, not a reopening of the source/evaluation allocation. No claim of calibrated power transfers from the withdrawn analytic paragraph, from the 160-date table, or from this 48-date arithmetic.
++
++**Decision on sufficiency.** The archive supplies the **48** allocated evaluation dates and the **116** source/development dates. It is sufficient for this operational allocation and, conditionally, for date-only planning at the contract's +2% alternative and the +1% sensitivity. It is insufficient for the +0.75% date-only scenario and for a 160-fresh-date claim panel after retaining this source allocation. The final learned claim's power is UNDETERMINED, rather than certified by substituting a convenient SD. The outcome rule may return inconclusive; no positive result is owed by the allocation.
++
++**World generation: backlog, cost and shortfall**
++
++**Verified → Inferred.** D=1 describes the completed learner evaluation on `V025_PROBE/world/3`, 2025-11-16. It is a world-generation/evaluation backlog in a restricted pilot, not the intended scientific design: the minimal pilot explicitly used one evaluation world and two learner seeds; the controller finding names new-world generation as the repair, while the contract calls for approximately 160 dates. Training sources used worlds 1/2 on two dates; repeated source epochs and checkpoints create neither new source dates nor new evaluation dates. [C/V025-CONTROLLER-FINDING-ONE-DATE-2026-09-09.md:11–18,27–33; /home/sat/mcrl-v025-retrain-ws/V025-PILOT-MIN-REPORT-2026-09-09.md:7–24; W/DATE-VARIANCE-2026-09-09.md:65–72; H/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:28.]
++
++**Verified cost, qualified.** FINDING-CEILING-INTERVAL:29 reports about eight wall minutes and 0.3 core-hours per date at eight to ten anchors. Actual aggregate receipt entries corroborate this order of magnitude: a ten-anchor date used 0.3261 core-hours and 508.67 seconds; the next eight-anchor date used 0.3175 core-hours and 493.88 seconds. Across the complete, mostly six-anchor panel, the exact totals are 6.1677 core-hours and 9,975.81 wall seconds for 30 dates, including 1,131.27 seconds of construction. Therefore 0.3 is a reasonable denser-ladder allowance, **not** the measured all-panel mean, which is 0.2056 core-hours and 5.542 wall minutes/date. [C/V025-CONTROLLER-FINDING-CEILING-INTERVAL-2026-09-10.md:28–29; M/.scratch/oracle-ceiling30/ceiling30-aggregate.json:113–139,545–549; A/CEILING30-CODEX-2026-09-10.md:72,76,79–82.]
++
++**Derived planning, four total processes maximum, no launch here.** At 0.3 core-hours per date, ideal wall time is `0.3 × date_count / 4` hours. That assumes four fully useful cores; actual ladder receipts used one coordinator plus three selection workers and achieve less than ideal utilisation. Budget the approximately eight-minute observed denser-date wall rate as a second, more conservative projection:
++
++| Work remaining or counterfactual | Date count | Core-hours allowance | Ideal wall at 4 processes | At ~8 wall minutes/date |
++|---|---:|---:|---:|---:|
++| New evaluation assignments, beyond two retained reservations | 46 | 13.8 | 3.45 h | 6.13 h |
++| Complete fresh claim-date ladder, crediting no completed claim outcome | 48 | 14.4 | 3.60 h | 6.40 h |
++| Newly available source dates, if all receive the same ladder | 70 | 21.0 | 5.25 h | 9.33 h |
++| Extra dates to restore 160 evaluations while retaining S and Q | 112 | 33.6 | 8.40 h | 14.93 h |
++
++The one completed learner date and the 30 opened diagnostic dates contribute **zero completed fresh claim dates**. Unopened reservations establish assignment, not completed claim evaluation. Tape existence also cannot be inferred from the ceiling receipts: their tapes were held in RAM and not serialised. [W/DATE-VARIANCE-2026-09-09.md:69–80; A/CEILING30-CODEX-2026-09-10.md:82.]
++
++**Decision.** No new archive dates are required to implement the adopted allocation. More worlds on its dates are required. World generation can now be scheduled against S and E without another allocation decision; all independent physics/admission and integrity gates continue to apply. This adjudication launches nothing. The ladder allowance includes search/evaluation and is not a measured cost for full source labelling, 16-seed training, or two-world-per-date full-horizon claim evaluation. Their total wall time is **UNDETERMINED**; one representative end-to-end contracted date receipt at a fixed four-process cap would settle the per-date cost. Generating worlds cannot manufacture the 112 missing calendar dates in the rejected 160-date layout: that would first require a separately frozen archive expansion, never TEST reuse.
++
++**Strongest case against this allocation, and answer**
++
++The strongest objection is that 48 is an engineering envelope supported by variance from the wrong experiment. It reduces a sealed 160-date panel; the measured oracle SD need not match learned FULL-versus-DROP pooled influence variance; neighbouring dates can remain dependent; and holding out dates does not guarantee useful learning from the source pool. Even the date-only +0.75% sensitivity needs 71 dates. A conditional familiar-date evaluation with independently generated worlds could validly overlap source dates and preserve more evaluation coverage. The two historically conflicting reservations and incomplete global lineage further weaken any blanket claim of freshness. These objections follow from the estimand distinction, arithmetic and enforcement findings above, not from whether a preferred route won.
++
++**Answer and final ruling.** I accept those limitations and reject the claim that a 160-date calibration already certifies this experiment. I nevertheless choose **116 source/development, 48 evaluation-only, two quarantined**, because it fixes the missing operational boundary, preserves broad training support and clean start-date evaluation, and is compatible with measured date-only precision at the pre-existing +2% planning alternative without consuming TEST or choosing favourable outcomes. The panel estimates performance on these source-excluded historical TRAIN starts; it is not asserted to be a probability sample of all 166 dates. Actual claim power and residual date dependence must be reported honestly, and failure remains an admissible outcome. The allocation is final; uncertainty about efficacy is not authority to change its dates, margins, model or sign rules after results.
++
++Verification performed: read-only documents, source and existing JSON receipts; one `nice -n 15 /usr/bin/python3 -B` process using standard-library calendar/set arithmetic and normal-quantile planning from literal recorded inputs. No physical measurement, simulation, training, TLE-content read, dependency install, sealed-file mutation, or modification of `/home/sat/mcrl-leo-handover` or its `.venv`. This decision file is the sole new deliverable.
+
+tokens used
+130,399
