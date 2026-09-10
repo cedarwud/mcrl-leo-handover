@@ -143,3 +143,56 @@ point.
 The launch receipt states, for each scoring: the reference object and its construction, the
 information class, the estimand, the numerator, the panel identity (anchors, worlds, dates,
 seeds), and the fixed-point traversal order. **A figure missing any of these is not reported.**
+
+---
+
+# AMENDMENT 2 — the primary contrast must prove it is not a knockout. 2026-09-10 12:45 UTC.
+
+`NEUTRAL-VS-KNOCKOUT-2026-09-10.md` (`/home/sat/mcrl-v025-mutants-ws/`) reports:
+
+- **In principle, distinguishable.** The zero-target construction does not force the zero
+  function. At epoch 500 the neutral C3 head had held-out maximum absolute output
+  `20.6831760988` and parameter L2 norm `16.1992481613`. It had **not** collapsed to zero.
+  Source verified: `PairwiseBatch.neutral` replaces only `target_deltas` with
+  `np.zeros_like(...)` (`learner.py:146-164`); `CoalitionBatch.neutral` replaces only
+  `target_psi` (`:634-655`); feature rows, support, overlap, row weights, order and
+  optimisation dose are preserved (`:525-540`).
+- **In practice, identical on the tested slice.** At every checkpoint from 100 to 500,
+  neutral-present and C3-knockout selected **the same configuration at all five anchors**, so
+  bits, joules and pooled EE were identical. **0 of 5 anchors differed; the pooled EE
+  difference was exactly zero.**
+
+Scope: one route, one seed, five anchors. It does not establish that the full
+`ALL_NEUTRAL_CONTROL` panel is decision-identical to an all-route knockout. It does establish
+that **retaining and updating a neutral head is not by itself evidence of a distinct
+intervention.**
+
+## The requirement this adds to the run
+
+**`FULL - ALL_NEUTRAL_CONTROL` may not be reported as the primary number until decision-level
+separation from the corresponding all-route knockout is demonstrated on the same panel.**
+Absent that, the contrast is operationally a knockout contrast wearing a source-substitution
+label, and erratum 14 requires the two to be distinct interventions.
+
+**This needs no sixth arm.** The sealed inventory is exactly five and the checkpoint format
+rejects any other (`learner.py:1170-1171`). A knockout requires no training: it is the removal
+of the heads' contributions at scoring time. So the scoring harness must, from the **`FULL`
+checkpoint**, additionally evaluate the all-terms-removed selection and report:
+
+1. the number of anchors where `ALL_NEUTRAL_CONTROL`'s committed selection differs from the
+   all-knockout selection;
+2. their pooled EE difference on the declared full-buffer numerator;
+3. the same two figures at **every** checkpoint, so a separation that appears only late is
+   visible.
+
+**Reading, fixed now:** if those selections coincide at every anchor and every checkpoint, the
+primary contrast is reported as a **knockout** contrast and labelled as such, and no
+source-substitution claim is made from it.
+
+## Not contradicted by the fixture gate
+
+`TRAINING-RUNNER-2026-09-10.md` reports the arm-difference gate PASS 4/4, including
+`FULL vs ALL_NEUTRAL_CONTROL` at 182 versus 0 selection differences and pooled fixture EE
+`215.626778` versus `100.000000`. **That is a different comparison.** It shows `FULL` separates
+from neutral on a fixture built to separate them; it says nothing about whether **neutral
+separates from knockout**. The two must not be conflated.
