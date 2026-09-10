@@ -1,3 +1,9 @@
+> **DO NOT USE — 2026-09-10 16:12Z.** Erratum 19: two of the six values in this table
+> (`MYOPIC_GREEDY` 28.668530, `FIRST_IMPROVEMENT_FP` 13.430253) were produced on a contaminated
+> mixed scalar/dense evaluator path; on a clean path they are 31.078504 and 31.028111. The other
+> four are probably unaffected but unconfirmed. `STATICS2` is rebuilding the whole family.
+> **Do not merge any part of this into the thesis until that lands.**
+
 # 論文 delta — 實驗章「比較對象與參考尺度」一節（可直接併入）
 
 狀態：**可寫**。本節所有數值都在 parity 檢查過的收據上，且**不隨演算法設計改變而變動**。
