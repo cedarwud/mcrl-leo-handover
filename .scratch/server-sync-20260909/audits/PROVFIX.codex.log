@@ -30327,3 +30327,1631 @@ TARGET_ABSENT
 
 codex
 All requested figures now trace to opened files or receipts: the sealed censuses are 0/800, 0/2,000, and 0/12,000; the ladder receipt has 846,846 decoded attempts and 846,846 below required SE; STRICT is 548→780/800; and the stored rank statistic is 0.006006674…, reported as +0.006. I’m writing outcome (B) and explicitly answering the strongest policy-change case.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-arch-ws/PROVISIONING-DECISION-2026-09-10.md
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..df23268c028b4a5b51bd5a3f7c5cdece79f39679
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). Thus its “decode reserve” attaches to the selected transmitted mode; the text itself distinguishes that mode from the rate-target mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the detailed control-law receipt records `SEALED.c1.rate_target_attained_count = 0` over eight 100-user anchors. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json). The corresponding report prints `0→316` of 800 for SEALED. Source: [control-law report, line 13](/home/sat/mcrl-v025-arch-ws/CONTROL-LAW-CEILING-2026-09-10.md:13).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..df23268c028b4a5b51bd5a3f7c5cdece79f39679
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). Thus its “decode reserve” attaches to the selected transmitted mode; the text itself distinguishes that mode from the rate-target mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the detailed control-law receipt records `SEALED.c1.rate_target_attained_count = 0` over eight 100-user anchors. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json). The corresponding report prints `0→316` of 800 for SEALED. Source: [control-law report, line 13](/home/sat/mcrl-v025-arch-ws/CONTROL-LAW-CEILING-2026-09-10.md:13).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+exec
+/bin/bash -lc "sed -n '1,320p' PROVISIONING-DECISION-2026-09-10.md
+git diff --check -- PROVISIONING-DECISION-2026-09-10.md
+git status --short -- PROVISIONING-DECISION-2026-09-10.md" in /home/sat/mcrl-v025-arch-ws
+ succeeded in 0ms:
+**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
+
+# PROVFIX — provisioning decision, closed 2026-09-10
+
+## Disposition
+
+The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
+
+Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
+
+This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
+
+## Verified against files opened
+
+### The governing declarations
+
+I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
+
+The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
+
+> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
+
+Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
+
+The v1.1 amendment defines the target and accounting as follows:
+
+> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
+
+> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
+
+Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
+
+The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
+
+> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
+
+Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
+
+The v1.8 amendment makes the numerator and setpoint semantics explicit:
+
+> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
+
+Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
+
+The same amendment's pending correctness item did not promise target-mode delivery. It declared:
+
+> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
+
+It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). Thus its “decode reserve” attaches to the selected transmitted mode; the text itself distinguishes that mode from the rate-target mode.
+
+Finally, v1.9 resolves the provisioning question directly:
+
+> “**The margin must not be re-solved into transmit power (defect).**”
+
+> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
+
+Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
+
+### The requested factual checks
+
+- **0 of 800:** the detailed control-law receipt records `SEALED.c1.rate_target_attained_count = 0` over eight 100-user anchors. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json). The corresponding report prints `0→316` of 800 for SEALED. Source: [control-law report, line 13](/home/sat/mcrl-v025-arch-ws/CONTROL-LAW-CEILING-2026-09-10.md:13).
+- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
+- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
+- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
+- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
+- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
+
+These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
+
+### The two prior attacks
+
+The record search found both attacks specified in the commission.
+
+1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
+2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
+
+## Derived on paper
+
+Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
+
+`SINR_nominal = Γ_target`.
+
+The v1.9 selection view therefore tests modes against
+
+`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
+
+Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
+
+This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
+
+## Inferred
+
+The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
+
+Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
+
+## Strongest case for outcome (A), and answer
+
+The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
+
+It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
+
+This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
+
+## Closure
+
+**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+?? PROVISIONING-DECISION-2026-09-10.md
+
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..df23268c028b4a5b51bd5a3f7c5cdece79f39679
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). Thus its “decode reserve” attaches to the selected transmitted mode; the text itself distinguishes that mode from the rate-target mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the detailed control-law receipt records `SEALED.c1.rate_target_attained_count = 0` over eight 100-user anchors. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json). The corresponding report prints `0→316` of 800 for SEALED. Source: [control-law report, line 13](/home/sat/mcrl-v025-arch-ws/CONTROL-LAW-CEILING-2026-09-10.md:13).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+exec
+/bin/bash -lc "jq 'keys' /home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json
+jq '.. | objects | with_entries(select(.key | test(\"rate_target|attained\"; \"i\"))) | select(length > 0)' /home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json | head -n 160" in /home/sat/mcrl-v025-arch-ws
+ succeeded in 0ms:
+[
+  "anchors",
+  "beam_reference_implementation",
+  "beam_reference_implementation_sha256",
+  "catalogue_caps",
+  "claim_ceiling",
+  "committed_endpoint",
+  "complete",
+  "final_adapter_implementation",
+  "final_adapter_implementation_sha256",
+  "finished_unix",
+  "first_improvement_implementation",
+  "first_improvement_implementation_sha256",
+  "full_hpbw_deg",
+  "one_sided_half_power_deg",
+  "python",
+  "python_version",
+  "receipt_sha256",
+  "reseeded_joint_implementation",
+  "reseeded_joint_implementation_file_sha256",
+  "rule",
+  "schema",
+  "selection_objective",
+  "service_guard",
+  "source_receipt",
+  "source_receipt_file_sha256",
+  "started_unix",
+  "steps_per_world",
+  "strict_clearance_adapter_sha256",
+  "strict_clearance_source_sha256",
+  "summary",
+  "thread_environment",
+  "tie_break",
+  "users_per_anchor",
+  "world_count"
+]
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count": 0
+}
+{
+  "rate_target_attained_count": 0,
+  "rate_target_user_count": 100
+}
+{
+  "rate_target_attained_count_sum": 0,
+  "rate_target_user_count_sum": 800
+}
+{
+  "rate_target_attained_count_sum": 0,
+  "rate_target_user_count_sum": 800
+}
+{
+  "rate_target_attained_count_sum": 0,
+  "rate_target_user_count_sum": 800
+}
+{
+  "rate_target_attained_count_sum": 0,
+  "rate_target_user_count_sum": 800
+}
+
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..df23268c028b4a5b51bd5a3f7c5cdece79f39679
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). Thus its “decode reserve” attaches to the selected transmitted mode; the text itself distinguishes that mode from the rate-target mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the detailed control-law receipt records `SEALED.c1.rate_target_attained_count = 0` over eight 100-user anchors. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json). The corresponding report prints `0→316` of 800 for SEALED. Source: [control-law report, line 13](/home/sat/mcrl-v025-arch-ws/CONTROL-LAW-CEILING-2026-09-10.md:13).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+exec
+/bin/bash -lc "jq '.summary | with_entries(.value = {attained:.value.rate_target_attained_count_sum,total:.value.rate_target_user_count_sum})' /home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json" in /home/sat/mcrl-v025-arch-ws
+ exited 5 in 0ms:
+jq: error (at /home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json:19782): Cannot index boolean with string
+
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..df23268c028b4a5b51bd5a3f7c5cdece79f39679
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). Thus its “decode reserve” attaches to the selected transmitted mode; the text itself distinguishes that mode from the rate-target mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the detailed control-law receipt records `SEALED.c1.rate_target_attained_count = 0` over eight 100-user anchors. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json). The corresponding report prints `0→316` of 800 for SEALED. Source: [control-law report, line 13](/home/sat/mcrl-v025-arch-ws/CONTROL-LAW-CEILING-2026-09-10.md:13).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+exec
+/bin/bash -lc "jq '.summary | keys' /home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json
+jq '.summary | to_entries[] | select(.value|type==\"object\") | {key, value: (.value | with_entries(select(.key | test(\"rate_target\"))))}' /home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json" in /home/sat/mcrl-v025-arch-ws
+ succeeded in 0ms:
+[
+  "all_first_fixed_points_differ_from_best",
+  "all_joint_seeds_are_first_fixed_points",
+  "anchor_count",
+  "gap_change_decomposition",
+  "joint_strict_selection_improvement_count",
+  "pairings",
+  "pooled"
+]
+{
+  "key": "gap_change_decomposition",
+  "value": {}
+}
+{
+  "key": "pairings",
+  "value": {}
+}
+{
+  "key": "pooled",
+  "value": {}
+}
+
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..df23268c028b4a5b51bd5a3f7c5cdece79f39679
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). Thus its “decode reserve” attaches to the selected transmitted mode; the text itself distinguishes that mode from the rate-target mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the detailed control-law receipt records `SEALED.c1.rate_target_attained_count = 0` over eight 100-user anchors. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json). The corresponding report prints `0→316` of 800 for SEALED. Source: [control-law report, line 13](/home/sat/mcrl-v025-arch-ws/CONTROL-LAW-CEILING-2026-09-10.md:13).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+exec
+/bin/bash -lc "jq '.summary.pooled' /home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json" in /home/sat/mcrl-v025-arch-ws
+ succeeded in 0ms:
+{
+  "J_from_best": {
+    "bits": 675098265086.7003,
+    "ee_bit_per_j": 28502169.662307005,
+    "joules": 23685.85525541556,
+    "rate_target_attained_count_sum": 0,
+    "rate_target_user_count_sum": 800,
+    "served_count_sum": 790
+  },
+  "J_from_first": {
+    "bits": 707801014107.8081,
+    "ee_bit_per_j": 32326280.806304906,
+    "joules": 21895.528853098338,
+    "rate_target_attained_count_sum": 0,
+    "rate_target_user_count_sum": 800,
+    "served_count_sum": 786
+  },
+  "U_best": {
+    "bits": 656241599257.8644,
+    "ee_bit_per_j": 26762144.08274737,
+    "joules": 24521.263962588135,
+    "rate_target_attained_count_sum": 0,
+    "rate_target_user_count_sum": 800,
+    "served_count_sum": 779
+  },
+  "U_first": {
+    "bits": 697396175674.3306,
+    "ee_bit_per_j": 31197313.154705185,
+    "joules": 22354.366615355437,
+    "rate_target_attained_count_sum": 0,
+    "rate_target_user_count_sum": 800,
+    "served_count_sum": 782
+  }
+}
+
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..df23268c028b4a5b51bd5a3f7c5cdece79f39679
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). Thus its “decode reserve” attaches to the selected transmitted mode; the text itself distinguishes that mode from the rate-target mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the detailed control-law receipt records `SEALED.c1.rate_target_attained_count = 0` over eight 100-user anchors. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json). The corresponding report prints `0→316` of 800 for SEALED. Source: [control-law report, line 13](/home/sat/mcrl-v025-arch-ws/CONTROL-LAW-CEILING-2026-09-10.md:13).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-arch-ws/PROVISIONING-DECISION-2026-09-10.md
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..42a03aaeec6184d5fbe48e8ae7f86cf016d7b769
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). The text therefore expressly distinguishes the rate-target mode from the transmitted mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the sealed 1.66° receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 800` separately for each of `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed 1.66° receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..42a03aaeec6184d5fbe48e8ae7f86cf016d7b769
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). The text therefore expressly distinguishes the rate-target mode from the transmitted mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the sealed 1.66° receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 800` separately for each of `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed 1.66° receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+exec
+/bin/bash -lc "sed -n '1p' PROVISIONING-DECISION-2026-09-10.md
+git diff --check -- PROVISIONING-DECISION-2026-09-10.md
+git status --short -- PROVISIONING-DECISION-2026-09-10.md" in /home/sat/mcrl-v025-arch-ws
+ succeeded in 0ms:
+**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
+?? PROVISIONING-DECISION-2026-09-10.md
+
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..42a03aaeec6184d5fbe48e8ae7f86cf016d7b769
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). The text therefore expressly distinguishes the rate-target mode from the transmitted mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the sealed 1.66° receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 800` separately for each of `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed 1.66° receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+codex
+Outcome **(B)** is concluded and PROVFIX is closed.
+
+The decision, verified counts, declaration quotations, opposing case, and anti-straw-man analysis are recorded in [PROVISIONING-DECISION-2026-09-10.md](/home/sat/mcrl-v025-arch-ws/PROVISIONING-DECISION-2026-09-10.md).
+
+No sealed material was modified, and no Python process, simulation, or measurement was run.
+diff --git a/PROVISIONING-DECISION-2026-09-10.md b/PROVISIONING-DECISION-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..42a03aaeec6184d5fbe48e8ae7f86cf016d7b769
+--- /dev/null
++++ b/PROVISIONING-DECISION-2026-09-10.md
+@@ -0,0 +1,107 @@
++**Outcome (B): the sealed provisioning rule stands because the declarations make 50 Mbit/s a nominal synthetic power-control setpoint, expressly separate target attainment from PHY service, and promise no guaranteed-rate endpoint.**
++
++# PROVFIX — provisioning decision, closed 2026-09-10
++
++## Disposition
++
++The sealed provisioning rule is delivering the convention its declarations specify. It provisions executed and predicted power from nominal gains, then applies the pre-specified tenth-percentile wanted-link quantile only in the mode/service selection view. The resulting transmitted mode may be below the rate-target mode or absent. That consequence is severe, but it is not a failure of a declared guaranteed-rate service because no such service was declared.
++
++Accordingly, no provisioning policy change is authorised, no declaration is superseded, and no affected-comparison rerun is required. The observation **0 of 2,000 rate targets attained is not a breach**. PROVFIX is closed; changing the planning objective later would require a new, prospectively declared versioned amendment rather than reopening this item as defect correction.
++
++This disposition is based on the declared contract and its precedence, not on whether either provisioning convention improves any route's sign, any energy-efficiency figure, or any preferred result.
++
++## Verified against files opened
++
++### The governing declarations
++
++I read the base declaration and every amendment/erratum from v1.1 through v1.9 in full before forming this view.
++
++The base declaration expressly denies the promise whose alleged breach would be needed for outcome (A):
++
++> “**Service definition:** PHY decodability with QoS co-primaries (astra §2 item 10, 23). A guaranteed-rate service endpoint is not declared; if the owner later requires one it is a separate, additional endpoint.”
++
++Source: [base priority declaration, line 14](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-2026-09-08.md:14).
++
++The v1.1 amendment defines the target and accounting as follows:
++
++> “**Primary architecture: (a-r) `V025-ANGLE-RATE-TPC-TDM-ACM`** — memoryless angle-aware power control with a per-user nominal rate target r* = 50 000 000 bit/s (inherited as a synthetic operating point from Track B lever L1; explicitly not calibrated demand).”
++
++> “**Infeasibility / accounting:** if no MODCOD meets the rate at the cap, mark the target infeasible and transmit at the RF cap; keep actual partial delivery, interference and energy; no pruning or repacking. PHY service (decodability) is unchanged; rate-target attainment is reported separately. Bits = achieved decodable ACM bits (full buffer).”
++
++Source: [v1.1 amendment, lines 6–7](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.1-AMENDMENT-2026-09-08.md:6).
++
++The v1.7 erratum withdraws an availability interpretation and declares a scoring convention instead:
++
++> “The margin rationale is renamed, not re-justified. v1.6 §1 called the q₁₀ level ‘the standard 90 %-availability link-budget convention’. That is withdrawn: a per-link 10th-percentile channel-gain quantile does not establish 90 % network availability, and no such universal convention is claimed. The rule is named exactly what it is: a **pre-specified tenth-percentile channel-gain scoring rule**, applied identically to every arm, with the level fixed before any formal outcome and disclosed as having followed development inspection. Its diagnostic sensitivity at q₀₅/q₂₅ stands.”
++
++Source: [v1.7 erratum, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.7-ERRATUM-2026-09-09.md:5).
++
++The v1.8 amendment makes the numerator and setpoint semantics explicit:
++
++> “**Traffic model declared explicitly.** The numerator is saturated (full-buffer) decodable throughput under a per-user rate-target power controller; the rate target is a **power-control setpoint, not a demand model**, and realised per-user rates may exceed it. Reported alongside every claim: rate attainment, availability and the coverage/outage distribution. Finite demand or queues would be a versioned model amendment with affected comparisons re-run, never a relabelling.”
++
++Source: [v1.8 amendment, §5](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:9).
++
++The same amendment's pending correctness item did not promise target-mode delivery. It declared:
++
++> “if the transmitted mode is selected from realised information, that is a defect and is corrected before the formal matrix — the transmitted mode is chosen from the same causally available (margin-adjusted nominal) view used for selection, and credited bits are those of the transmitted mode when the realised SINR clears its threshold, zero otherwise.”
++
++It also required the engine to report “`m_target`, `m_tx` and the realised outcome separately per user-step.” Source: [v1.8 amendment, §8](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.8-AMENDMENT-2026-09-09.md:12). The text therefore expressly distinguishes the rate-target mode from the transmitted mode.
++
++Finally, v1.9 resolves the provisioning question directly:
++
++> “**The margin must not be re-solved into transmit power (defect).**”
++
++> “Corrected construction: **executed and predicted transmit power are computed from the nominal gains** (unchanged); the quantile enters **only the predicted reception of the wanted link** used to decide the transmitted mode and predicted service.”
++
++Source: [v1.9 amendment, §1](/home/sat/mcrl-records/decisions/V025-PHYSICS-SUCCESSOR-PRIORITY-DECLARATION-v1.9-AMENDMENT-2026-09-09.md:5). Section 2 separately keeps interference nominal, and §8 requires power, interference, and committed-profile endpoint invariance tests.
++
++### The requested factual checks
++
++- **0 of 800:** the sealed 1.66° receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 800` separately for each of `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed 1.66° receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/final-sealed-one-sided-1.66.json).
++- **0 of 2,000:** the sealed reseeded-span receipt records `rate_target_attained_count_sum = 0` and `rate_target_user_count_sum = 2000` for each of `BASELINE`, `U_best`, `U_first`, `J_from_best`, and `J_from_first`. Source: [sealed reseeded-span receipt](/home/sat/mcrl-v025-harness-ws/receipts/reseeded-span-sealed.json).
++- **0 of 12,000:** the per-user receipt contains five SEALED widths × eight anchors × three arms × 100 users = 12,000 user-anchor-arm rows; all 12,000 have `rate_target_attained = false`. Source: [per-user metric receipt](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/per-user-metric.json).
++- **846,846 of 846,846 decoded attempts:** the complete census receipt's pooled `original.ALL` row records `decoded = 846846` and `served_target_miss = 846846`. Here `served_target_miss` is the receipt's count of decoded attempts whose transmitted spectral efficiency is insufficient for `r*n/W`. Source: [complete census receipt](/home/sat/mcrl-v025-ladder-ws/.scratch/ladder-floor-20260910/scalar-census-summary-cleared.json). The report states the same interpretation explicitly. Source: [ladder report, rate-accounting section](/home/sat/mcrl-v025-ladder-ws/LADDER-FLOOR-2026-09-10.md:134).
++- **STRICT 548→780 of 800:** `CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md` reports exactly “Target attainment is 548 → 780 of 800 user-anchors.” Source: [demand-capped control-law report, line 46](/home/sat/mcrl-v025-floor-ws/CONTROL-LAW-DEMAND-CAPPED-2026-09-10.md:46). The detailed control-law receipt independently records 548 and 780. Source: [control-law receipt](/home/sat/mcrl-v025-arch-ws/.scratch/control-law-ceiling/control-law-ceiling.json).
++- **Spearman rho:** the 30-date report states `ρ=+0.006`; its aggregate receipt stores `spearman_rank_correlation = 0.006006674082313682`. Sources: [CEILING30 report, line 13](/home/sat/mcrl-v025-ceiling30-ws/CEILING30-MARGIN-2026-09-10.md:13) and [aggregate receipt](/home/sat/mcrl-v025-ceiling30-ws/.scratch/oracle-ceiling30-margin/ceiling30-margin-aggregate.json).
++
++These checks were read-only extractions and arithmetic over existing records. No simulation, measurement, model execution, or Python process was run, and no sealed material was modified.
++
++### The two prior attacks
++
++The record search found both attacks specified in the commission.
++
++1. On 2026-09-09 the controller recorded: “My rebuttal silently changed execution to `p_m`. That is a legitimate alternative controller, and its arithmetic is correct, but it answers a different question. I attacked a claim the declaration was not making.” Source: [first closed adjudication, lines 4–10](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-MARGIN-CLOSED-2026-09-09.md:4).
++2. On 2026-09-10 the controller recorded: “I rebuilt the same case against the same instruction, from a different direction, and did not notice,” then concluded that zero attainment was not a breached contract because no such promise was made. Source: [second adjudication, lines 6–15](/home/sat/mcrl-records/decisions/V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md:6).
++
++## Derived on paper
++
++Let `Γ_target` be the threshold of the lowest mode meeting the nominal rate target, and let the tenth-percentile gain factor be `q < 1`. At an uncapped nominal fixed point, the declared power controller gives
++
++`SINR_nominal = Γ_target`.
++
++The v1.9 selection view therefore tests modes against
++
++`SINR_predicted = q · SINR_nominal = q · Γ_target < Γ_target`.
++
++Consequently the target mode cannot qualify in that view: the transmitted mode is a lower mode if one clears, otherwise no mode is transmitted. A lower mode can decode while its spectral efficiency remains below the `r*n/W` needed for the nominal per-user target. This is exactly the distinction between `m_target`, `m_tx`, decoded PHY service, and separately reported rate attainment that v1.1 and v1.8 require.
++
++This derivation explains why zero endpoint attainment and successful lower-rate decoding can coexist. It does not turn those receipt counts into a promise the declarations did not make.
++
++## Inferred
++
++The corrected STRICT convention is scientifically consequential. Its 548→780 attainment result and the near-zero rank correlation show that it is a different policy capable of changing both service outcomes and the ordering of per-date coordination gains. Those facts are reasons to label and preserve the two conventions distinctly; they are not evidence that the earlier convention violated its own declared semantics.
++
++Because this decision makes no model change, v1.8 §5's rerun requirement is not triggered. If a later decision chooses target-mode delivery at the design percentile as a new planning objective, that would reverse v1.9 §1 and would require a versioned amendment and reruns of every affected comparison. That hypothetical is not part of this closed item.
++
++## Strongest case for outcome (A), and answer
++
++The strongest case for (A) is not that higher power is automatically more physical or that STRICT helps a preferred EE result. It is this: a controller named for a 50 Mbit/s rate target provisions nominal SINR exactly at the target-mode threshold, then predictably de-rates that SINR before mode selection; all three endpoint censuses report zero target attainment, every one of 846,846 decoded original attempts uses insufficient spectral efficiency, STRICT restores substantial attainment, and the two policies' date-level coordination rankings are essentially unrelated. Calling the quantile a “decode reserve” and the mechanism a “rate-target power controller” can therefore appear to promise target delivery at the scoring percentile. On engineering usefulness and reviewer expectations, that is a serious argument for adopting a different planning objective.
++
++It does not establish the premise required for (A): a declaration promising an outcome the sealed rule fails to deliver. The text expressly says “A guaranteed-rate service endpoint is not declared,” calls 50 Mbit/s “nominal” and “synthetic,” calls the target a “power-control setpoint, not a demand model,” keeps actual partial delivery, separates PHY service from rate attainment, withdraws the availability rationale, and finally commands that the margin not be re-solved into power. Section 8's causality correction promises that the mode selected from the margin-adjusted nominal view is the mode actually transmitted and credited on successful decoding; it does not promise that `m_tx = m_target`. The adverse counts demonstrate the declared policy's consequences, not noncompliance with it.
++
++This reading survives the anti-straw-man check. It accepts the opposing side's strongest evidence—the zero attainments, the 846,846 insufficient-SE decodes, STRICT's restored attainment, the rank-order change, and v1.8's reserve language—and answers the actual contractual question. It does not replace that question with the weaker claim that the alternative is mathematically invalid or inconsequential. The alternative is coherent and consequential; it is simply a policy change, not a correction compelled by breach.
++
++## Closure
++
++**The sealed rule stands. The 0/2,000 observation is not a breach. PROVFIX is closed with no policy amendment and no rerun obligation.**
+
+tokens used
+340,157
