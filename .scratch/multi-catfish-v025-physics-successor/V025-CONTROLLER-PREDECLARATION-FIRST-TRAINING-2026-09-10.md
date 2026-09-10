@@ -98,3 +98,48 @@ pleasing.
   11:40 UTC. Those two are never restated as one another.
 - The `RESIDTOGGLE` / `C3REACH` sign contradiction remains open; `SIGNFORK` was killed and has
   not been re-run.
+
+---
+
+# AMENDMENT — one run, two axes. 2026-09-10 11:55 UTC, before the run.
+
+**The coordination scoring and the acceleration scoring use the same checkpoints. They are one
+training run, scored twice, not two runs.** Recording this as an amendment because I wrote them
+as two separate pre-declarations an hour apart and did not notice they shared a training run
+until the owner pressed on why I was not directing the work.
+
+## The two scorings, from the same five checkpoints
+
+| | axis A — coordination | axis B — acceleration |
+|---|---|---|
+| reference | `ALL_NEUTRAL_CONTROL` | `ALL_NEUTRAL_CONTROL`, **and** the anytime incumbent at the same budget, reported beside it |
+| quantity | pooled EE | pooled EE **attained as a fraction of the certified fixed point's**, under the contract's **10 s** coordinator budget (contract v1 **F2**) |
+| oracle ceiling | `+0.899%` (8 anchors) / `+0.717%` (30 dates) | `+100.7%` above the 10 s anytime incumbent (20-anchor panel) |
+| numerator | declared full-buffer, no cap | declared full-buffer, no cap |
+| contrasts | `FULL - ALL_NEUTRAL_CONTROL`; `FULL - DROP_Ci` | identical set, on recovered fraction |
+
+**The owner's requirement is unchanged on both axes: each of C1, C2, C3 must raise EE.** What
+differs is the reference the gain is measured against, and therefore how large a gain is even
+available. The coordination axis has a measured oracle ceiling of about one per cent; the
+acceleration axis has a measured oracle ceiling of about one hundred per cent. **Changing axis
+is not changing the claim.**
+
+## Two panel identities that must not be silently merged
+
+The two oracle ceilings quoted above are **on different panels**: `+0.899%` is 8 anchors over
+TLE dates `2025-07-28` and `2026-05-30`; `+100.7%` is the twenty-anchor anytime panel. They are
+both relative pooled-EE gains, but against different references and on different anchor sets,
+and **they may not be stacked into a single ladder** without a measurement on one common panel.
+
+Related, and larger than the coordination band itself: search **traversal order** alone moves
+the fixed point by `8.13%` (`SEALED`) and `1.62%` (`MARGIN_Q`) — first-improvement versus
+best-improvement, on all 20 anchors, both rules
+(`ANYTIME-UNILATERAL-2026-09-10.md:11`). **Which fixed point is the reference matters about
+nine times more than the coordination gain above it.** Every reported figure names its fixed
+point.
+
+## Consequent requirement on the run
+
+The launch receipt states, for each scoring: the reference object and its construction, the
+information class, the estimand, the numerator, the panel identity (anchors, worlds, dates,
+seeds), and the fixed-point traversal order. **A figure missing any of these is not reported.**
