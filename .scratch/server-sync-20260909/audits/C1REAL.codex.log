@@ -1,0 +1,645 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-c1c2-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a089da-6351-7803-891c-895eed4e1864
+--------
+user
+# C1REAL — is the DECLARED C1 target learnable at all?
+
+`DIAGNOSTIC_NOT_CLAIM`. Workspace `/home/sat/mcrl-v025-c1c2-ws`. Interpreter
+`/home/sat/mcrl-leo-handover/.venv/bin/python` only. **Never modify**
+`/home/sat/mcrl-leo-handover` or its `.venv`. Change no sealed constant, threshold, sign,
+seed, horizon, price, guard, acceptance rule, control law, manifest or optimizer setting.
+**Hard cap: 3 concurrent python processes**, `nice -n 15`, all BLAS thread counts = 1.
+
+## Why this is the decisive question for route C1
+
+Every statement on record about C1 learnability was measured on the shipped pilot rows,
+whose C1 label is `kappa * tanh(log(gain ratio))` — a bounded, energy-free, per-user-local
+surrogate written by `_build_anchor_rows_primitive` (`scripts/run_v025_pilot_c3.py:355`,
+label at `:460`), because `PILOT_PRIMITIVE_SOURCE_FALLBACK = True` at `:89` makes the
+declared path at `:544+` unreachable. The declared target is
+`c1_difference_surplus` (`src/mcrl/physics_v025/targets.py:154-173`):
+`core = (cand.bits - def.bits) - eta*(cand.joules - def.joules)`, label `core/kappa + Phi`.
+
+A single prior probe (24 anchors, one linear model) reported held-out `R^2 = 0.151` and
+within-group pairwise ordering `0.650` on the declared target, against `0.598 / 0.801` on
+the surrogate. **That is thin evidence for a load-bearing conclusion.** This job measures
+it properly.
+
+## What to do
+
+1. **Build declared-target rows on the exact path.** Use the dormant branch — do not edit
+   the file on disk; set the flag on the imported module object in-process, as a prior
+   diagnostic did, and state that you did. Target **at least 60 anchors** across both
+   worlds `V025_PROBE/world/1` and `/2` if the time budget allows; the exact path has been
+   measured at roughly 49 s/anchor in one report and 633 s/anchor in another, on different
+   row densities — **measure it yourself and report what you got**, and scale the anchor
+   count to fit. State the count you achieved.
+2. **Verify the rows.** The C1 gauge must be exact: the target at the base action must be
+   `0.0` in every `(anchor, user)` group. Report the max absolute deviation. Also report the
+   decomposition identity residual.
+3. **Fit the sealed C1 architecture, not a convenience model.** The sealed learner literals
+   are C1: hidden `(8,)`, relu, lr `1.0e-2`, gauge_beta `0.2`, Adam `(0.9, 0.999)`, one
+   deterministic full-batch update per route per source epoch (`stagec_v025/learner.py:44-62`).
+   Use them. Report **held-out** performance under **leave-one-anchor-out** and
+   **leave-one-world-out**: level `R^2`, within-group pairwise ordering, and top-1 accuracy
+   (does the head's argmax over a user's legal options match the true argmax).
+4. **Report the same three metrics for four references**, so the numbers are interpretable:
+   - the sealed 16-D architecture on the declared target;
+   - a plain linear model on the declared target;
+   - the sealed architecture on the **surrogate** target (the easy problem, for contrast);
+   - a `Phi`-only ranker and a constant predictor (the floors).
+5. **Capacity vs information.** If the sealed `(8,)` head underperforms the linear model, or
+   both sit near the floor, distinguish the two explanations with evidence: widen the head
+   (report at 2-3 widths) and separately report the best achievable `R^2` of *any* function
+   of the 16 slots by fitting a high-capacity model. If a high-capacity model on the same 16
+   inputs also fails, the ceiling is **informational**, not architectural — say so plainly
+   and quantify it.
+6. **Which inputs carry it.** Report per-slot permutation importance on the declared target.
+   Note that slots 6 and 15 are exactly constant and slots 4 and 12 are exact indicator
+   functions of 3 and 11, so the effective input dimension is 12; treat attribution over
+   those pairs as arbitrary and say so.
+
+## Rules
+
+- Separate **verified by running code**, **derived on paper**, **inferred**.
+- Loss values are never evidence about EE. This job reports predictive quality of a head
+  against a declared target; it makes **no** EE claim.
+- No training of the production pipeline, no policy run, no acceptance test.
+- If the anchor budget forces a smaller sample than asked, say so and report the power of
+  what you did run rather than overstating it.
+
+Write to `/home/sat/mcrl-v025-c1c2-ws/C1-DECLARED-TARGET-LEARNABILITY-2026-09-10.md`,
+first line one bolded sentence giving held-out ordering and `R^2` on the declared target and
+whether the ceiling looks informational or architectural. Serialize to
+`.scratch/c1-declared/results.json`.
+codex
+I’m using the `diagnosing-bugs` workflow because this is an evidence-heavy diagnostic, not an implementation task. I’ll first map the dormant row-builder and sealed learner exactly, then run a timed small sample before committing the remaining anchor budget; all Python launches will use the specified interpreter, `nice -n 15`, one BLAS thread, and at most three concurrent processes.
+exec
+/bin/bash -lc "sed -n '1,240p' /home/sat/.codex/skills/diagnosing-bugs/SKILL.md && find .. -name AGENTS.md -print" in /home/sat/mcrl-v025-c1c2-ws
+ succeeded in 8413ms:
+../mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec3-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-rule-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-rule-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-rule-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-rule-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-weights-consolidated/misc/local-artifacts/AGENTS.md
+../modqn-paper-exploration/artifacts/AGENTS.md
+../modqn-paper-exploration/AGENTS.md
+../modqn-paper-exploration/configs/AGENTS.md
+../mcrl-v025-oracle-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-oracle-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-oracle-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-oracle-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../route-c-wt/artifacts/AGENTS.md
+../route-c-wt/AGENTS.md
+../route-c-wt/configs/AGENTS.md
+../mcrl-v025-harness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-harness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-harness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-harness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-provider-v1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-witness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-witness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-witness-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-witness-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-mutants-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-mutants-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-mutants-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-mutants-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-anglekat/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-replay-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-replay-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-replay-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-replay-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4b-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-latency/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-sensitivity-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-cand-a/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-ladder/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec4b-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-retrain-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-retrain-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-baselines/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-variants/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage3-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-curve-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-curve-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-curve-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-curve-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagec-fix6/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../papers/ntn-showcase-stack/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/.claude/worktrees/agent-a8c62735f67d75e76/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/.claude/worktrees/agent-a690ab3579d07fcc4/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/.claude/worktrees/agent-ab7769d15c9dc18c4/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r5-20260817-g/configs/AGENTS.md
+../papers/modqn-exp-grid-overlay-20260821/configs/AGENTS.md
+../papers/modqn-paper-reproduction-exp-strategy-20260818/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction-exp-strategy-20260818/configs/AGENTS.md
+../papers/modqn-paper-reproduction-sync-20260818/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction-sync-20260818/configs/AGENTS.md
+../papers/AGENTS.md
+../papers/modqn-paper-reproduction/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/artifacts/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/.claude/worktrees/agent-a8c62735f67d75e76/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/.claude/worktrees/agent-a690ab3579d07fcc4/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/.claude/worktrees/agent-ab7769d15c9dc18c4/configs/AGENTS.md
+../papers/modqn-paper-reproduction-r6-20260817-h/configs/AGENTS.md
+../mcrl-hub-copy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-hub-copy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-hub-copy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-hub-copy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-beam-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-beam-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-beam-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-beam-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-provider-gh/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-provider-gh/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-provider-gh/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-provider-gh/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../fields-flow/AGENTS.md
+../work/fields-flow-p1-20260809/fields-flow-tabletop/apps/life/AGENTS.md
+../work/fields-flow-p1-20260809/fields-flow-tabletop/AGENTS.md
+../modqn-acrm-only-fast/artifacts/AGENTS.md
+../modqn-acrm-only-fast/configs/AGENTS.md
+../mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-c1c2-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-c1c2-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-queue-exp-fast/artifacts/AGENTS.md
+../modqn-queue-exp-fast/configs/AGENTS.md
+../mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagec-m2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-directmain9k/artifacts/AGENTS.md
+../modqn-directmain9k/configs/AGENTS.md
+../mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec-costcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-review-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-review-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-review-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-review-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-headroom-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-headroom-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-headroom-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-headroom-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-synth-r2-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../abl9k-eq327-eq11/artifacts/AGENTS.md
+../abl9k-eq327-eq11/configs/AGENTS.md
+../mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-probe-ws-acm2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../fields-flow-lora/AGENTS.md
+../mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-c1c2suff-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-teacher96/artifacts/AGENTS.md
+../modqn-teacher96/configs/AGENTS.md
+../mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagec-q12/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-hub/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-hub/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-hub/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-hub/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-figures-deps/papers/modqn-paper-reproduction/AGENTS.md
+../modqn-step8-main/artifacts/AGENTS.md
+../modqn-step8-main/AGENTS.md
+../modqn-step8-main/configs/AGENTS.md
+../mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4c-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-provider-fix2-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-engine/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-ceiling30-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../.replay-server-v025-synth/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../.replay-server-v025-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../.replay-server-v025-synth/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../.replay-server-v025-synth/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-coalgen-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-coalgen-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-coalgen-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-coalgen-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-paper-reproduction/artifacts/AGENTS.md
+../modqn-paper-reproduction/AGENTS.md
+../modqn-paper-reproduction/configs/AGENTS.md
+../mcrl-v025-prevalence-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-prevalence-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-prevalence-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-prevalence-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-arch-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-arch-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v024-regime-b/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v024-regime-b/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v024-regime-b/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v024-regime-b/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-offlinesuni-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../reeval-wt/artifacts/AGENTS.md
+../reeval-wt/AGENTS.md
+../reeval-wt/configs/AGENTS.md
+../modqn-batch2/artifacts/AGENTS.md
+../modqn-batch2/configs/AGENTS.md
+../mcrl-leo-handover-wip/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-leo-handover-wip/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-leo-handover-wip/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-leo-handover-wip/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-teacher30-retest/artifacts/AGENTS.md
+../modqn-teacher30-retest/configs/AGENTS.md
+../mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4h-auditcopy/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../.codex/.tmp/plugins/plugins/zoom/AGENTS.md
+../.codex/.tmp/plugins/plugins/build-web-apps/skills/supabase-best-practices/AGENTS.md
+../.codex/.tmp/plugins/plugins/build-web-apps/skills/react-best-practices/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145814Z-85a6f50e-1408ea2d/artifacts/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145814Z-85a6f50e-1408ea2d/configs/AGENTS.md
+../mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-bughunt/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T121205Z-a69998d01f65/artifacts/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T121205Z-a69998d01f65/configs/AGENTS.md
+../mcrl-v025-certprofile-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-certprofile-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-certprofile-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-certprofile-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-exploration-vault/modqn-paper-exploration/AGENTS.md
+../fields-flow-tabletop/apps/life/AGENTS.md
+../fields-flow-tabletop/AGENTS.md
+../mcrl-v024-codex-iter2/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v024-codex-iter2/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v024-codex-iter2/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v024-codex-iter2/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix12/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stage4d-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec1-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../devkit-vault/modqn-paper-reproduction/AGENTS.md
+../mcrl-v025-probe-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-probe-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-probe-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-probe-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-c3s-run/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-c3s-run/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-c3s-run/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-c3s-run/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145523Z-85a6f50e-1d9bf514/artifacts/AGENTS.md
+../modqn-r3-preflight-worktree-corrected-r3-preflight-20260716T145523Z-85a6f50e-1d9bf514/configs/AGENTS.md
+../mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-confirm/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-slice/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-abl9k/artifacts/AGENTS.md
+../modqn-abl9k/configs/AGENTS.md
+../ntn-sim-core/AGENTS.md
+../mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-synth-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-leo-handover-e1/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-leo-handover-e1/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-leo-handover-e1/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-leo-handover-e1/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-floor-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-floor-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-floor-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-floor-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-paired-action-temporal-alignment-checkout-20260723/artifacts/AGENTS.md
+../modqn-paired-action-temporal-alignment-checkout-20260723/AGENTS.md
+../modqn-paired-action-temporal-alignment-checkout-20260723/configs/AGENTS.md
+../mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-probe-ws-widened/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-pilot-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-pilot-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-pilot-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-pilot-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-stagea-fix10/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-provider/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v023-codex-ws-c3s-diag/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-codex-ws-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-ladder-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-ladder-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-ladder-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-ladder-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-score/artifacts/AGENTS.md
+../modqn-score/configs/AGENTS.md
+../modqn-teacher500/artifacts/AGENTS.md
+../modqn-teacher500/configs/AGENTS.md
+../mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-stagec4b-snapshot-20260909/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-provider-fix-snapshot-20260908/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-leo-handover-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-leo-handover-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-leo-handover-stagec/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-leo-handover-stagec/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../modqn-ep2k/artifacts/AGENTS.md
+../modqn-ep2k/configs/AGENTS.md
+../mcrl-v025-rank-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-rank-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-rank-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-rank-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+../mcrl-v025-dates-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+../mcrl-v025-dates-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+../mcrl-v025-dates-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+../mcrl-v025-dates-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+
+exec
+/bin/bash -lc "wc -l /home/sat/.codex/skills/diagnosing-bugs/SKILL.md; sed -n '1,260p' /home/sat/.codex/skills/diagnosing-bugs/SKILL.md; pwd; rg --files -g 'AGENTS.md' -g 'CONTEXT.md' -g '"'!artifacts/**'"' -g '"'!**/.venv/**'"' | head -80" in /home/sat/mcrl-v025-c1c2-ws
+ succeeded in 0ms:
+161 /home/sat/.codex/skills/diagnosing-bugs/SKILL.md
+---
+name: diagnosing-bugs
+description: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", or reports something broken/throwing/failing/slow.
+---
+
+<!-- project-skills-adapter:start -->
+Follow this skill subject to user and higher-priority project instructions.
+Set one checkable completion criterion. Inspect bundled helpers only after an
+execution error.
+
+Without a configured, authorized tracker, use `.scratch/<feature>/spec.md`,
+`.scratch/<feature>/issues/`, or `.scratch/<effort>/map.md` as applicable.
+External messages, installs, commits, pushes, branch changes, destructive
+actions, and out-of-scope writes still require authority.
+
+Read the extended
+[runtime contract](../select-project-skill/references/runtime.md) only for a
+cross-skill transition, implementation/review orchestration, handoff
+consumption, or a host-specific prerequisite. Verify the criterion before
+claiming success; missing requirements are `blocked`, not simulated success.
+
+Only when the request explicitly authorizes a controlled Project Skills
+sampling run, read the [feedback instructions](../select-project-skill/references/feedback.md)
+and record its terminal event. Ordinary work does not record events.
+<!-- project-skills-adapter:end -->
+
+# Diagnosing Bugs
+
+A discipline for hard bugs. Skip phases only when explicitly justified.
+
+When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
+
+## Redact
+
+This skill has you show commands, outputs and captured artifacts. **Redact every secret first** — write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
+
+If the redacted output is not enough to diagnose the bug, say so and ask the user.
+
+## Phase 1 — Build a feedback loop
+
+**This is the skill.** Everything else is mechanical. If you have a **tight** pass/fail signal for the bug — one that goes red on _this_ bug — you will find the cause; bisection, hypothesis-testing, and instrumentation all just consume it. If you don't have one, no amount of staring at code will save you.
+
+Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give up.**
+
+### Ways to construct one — try them in roughly this order
+
+1. **Failing test** at whatever seam reaches the bug — unit, integration, e2e.
+2. **Curl / HTTP script** against a running dev server.
+3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.
+4. **Headless browser script** (Playwright / Puppeteer) — drives the UI, asserts on DOM/console/network.
+5. **Replay a captured trace.** Save a real network request / payload / event log to disk; replay it through the code path in isolation.
+6. **Throwaway harness.** Spin up a minimal subset of the system (one service, mocked deps) that exercises the bug code path with a single function call.
+7. **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
+8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check, repeat" so you can `git bisect run` it.
+9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.
+10. **HITL bash script.** Last resort. If a human must click, drive _them_ with `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
+
+Build the right feedback loop, and the bug is 90% fixed.
+
+### Tighten the loop
+
+Treat the loop as a product. Once you have _a_ loop, **tighten** it:
+
+- Can I make it faster? (Cache setup, skip unrelated init, narrow the test scope.)
+- Can I make the signal sharper? (Assert on the specific symptom, not "didn't crash".)
+- Can I make it more deterministic? (Pin time, seed RNG, isolate filesystem, freeze network.)
+
+A 30-second flaky loop is barely better than no loop; a 2-second deterministic one is tight — a debugging superpower.
+
+### Non-deterministic bugs
+
+The goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100×, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not — keep raising the rate until it's debuggable.
+
+### When you genuinely cannot build a loop
+
+Stop and say so explicitly. List what you tried. Ask the user for: (a) access to whatever environment reproduces it, (b) a redacted captured artifact (HAR file, log dump, core dump, screen recording with timestamps), or (c) permission to add temporary production instrumentation. Do **not** proceed to hypothesise without a loop.
+
+### Completion criterion — a tight loop that goes red
+
+Phase 1 is done when the loop is **tight** and **red-capable**: you can name **one command** — a script path, a test invocation, a curl — that you have **already run at least once** (show the invocation and its output, redacted), and that is:
+
+- [ ] **Red-capable** — it drives the actual bug code path and asserts the **user's exact symptom**, so it can go red on this bug and green once fixed. Not "runs without erroring" — it must be able to _catch this specific bug_.
+- [ ] **Deterministic** — same verdict every run (flaky bugs: a pinned, high reproduction rate, per above).
+- [ ] **Fast** — seconds, not minutes.
+- [ ] **Agent-runnable** — you can run it unattended; a human in the loop only via `scripts/hitl-loop.template.sh`.
+
+If you catch yourself reading code to build a theory before this command exists, **stop — jumping straight to a hypothesis is the exact failure this skill prevents.** No red-capable command, no Phase 2.
+
+## Phase 2 — Reproduce + minimise
+
+Run the loop. Watch it go red — the bug appears.
+
+Confirm:
+
+- [ ] The loop produces the failure mode the **user** described — not a different failure that happens to be nearby. Wrong bug = wrong fix.
+- [ ] The failure is reproducible across multiple runs (or, for non-deterministic bugs, reproducible at a high enough rate to debug against).
+- [ ] You have captured the exact symptom (error message, wrong output, slow timing) so later phases can verify the fix actually addresses it.
+
+### Minimise
+
+Once it's red, shrink the repro to the **smallest scenario that still goes red**. Cut inputs, callers, config, data, and steps **one at a time**, re-running the loop after each cut — keep only what's load-bearing for the failure.
+
+Why bother: a minimal repro shrinks the hypothesis space in Phase 3 (fewer moving parts left to suspect) and becomes the clean regression test in Phase 5.
+
+Done when **every remaining element is load-bearing** — removing any one of them makes the loop go green.
+
+Do not proceed until you have reproduced **and** minimised.
+
+## Phase 3 — Hypothesise
+
+Generate **3–5 ranked hypotheses** before testing any of them. Single-hypothesis generation anchors on the first plausible idea.
+
+Each hypothesis must be **falsifiable**: state the prediction it makes.
+
+> Format: "If <X> is the cause, then <changing Y> will make the bug disappear / <changing Z> will make it worse."
+
+If you cannot state the prediction, the hypothesis is a vibe — discard or sharpen it.
+
+**Show the ranked list to the user before testing.** They often have domain knowledge that re-ranks instantly ("we just deployed a change to #3"), or know hypotheses they've already ruled out. Cheap checkpoint, big time saver. Don't block on it — proceed with your ranking if the user is AFK.
+
+## Phase 4 — Instrument
+
+Each probe must map to a specific prediction from Phase 3. **Change one variable at a time.**
+
+Tool preference:
+
+1. **Debugger / REPL inspection** if the env supports it. One breakpoint beats ten logs.
+2. **Targeted logs** at the boundaries that distinguish hypotheses.
+3. Never "log everything and grep".
+
+**Tag every debug log** with a unique prefix, e.g. `[DEBUG-a4f2]`. Cleanup at the end becomes a single grep. Untagged logs survive; tagged logs die.
+
+**Perf branch.** For performance regressions, logs are usually wrong. Instead: establish a baseline measurement (timing harness, `performance.now()`, profiler, query plan), then bisect. Measure first, fix second.
+
+## Phase 5 — Fix + regression test
+
+Write the regression test **before the fix** — but only if there is a **correct seam** for it.
+
+A correct seam is one where the test exercises the **real bug pattern** as it occurs at the call site. If the only available seam is too shallow (single-caller test when the bug needs multiple callers, unit test that can't replicate the chain that triggered the bug), a regression test there gives false confidence.
+
+**If no correct seam exists, that itself is the finding.** Note it. The codebase architecture is preventing the bug from being locked down. Flag this for the next phase.
+
+If a correct seam exists:
+
+1. Turn the minimised repro into a failing test at that seam.
+2. Watch it fail.
+3. Apply the fix.
+4. Watch it pass.
+5. Re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
+
+## Phase 6 — Cleanup + post-mortem
+
+Required before declaring done:
+
+- [ ] Original repro no longer reproduces (re-run the Phase 1 loop)
+- [ ] Regression test passes (or absence of seam is documented)
+- [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
+- [ ] Throwaway prototypes deleted (or moved to a clearly-marked debug location)
+- [ ] The hypothesis that turned out correct is stated in the commit / PR message — so the next debugger learns
+
+**Then ask: what would have prevented this bug?** If the answer involves architectural change (no good test seam, tangled callers, hidden coupling) hand off to the `/improve-codebase-architecture` skill with the specifics. Make the recommendation **after** the fix is in, not before — you have more information now than when you started.
+/home/sat/mcrl-v025-c1c2-ws
+

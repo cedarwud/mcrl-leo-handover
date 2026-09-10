@@ -1,0 +1,78 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-prevalence-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a089da-b7d5-7320-be1c-ecf8ea261fa8
+--------
+user
+# MODEDEPLOY — how much of the mode-selection gap is causally reachable?
+
+`DIAGNOSTIC_NOT_CLAIM`. Workspace `/home/sat/mcrl-v025-prevalence-ws`. Interpreter
+`/home/sat/mcrl-leo-handover/.venv/bin/python` only. **Never modify**
+`/home/sat/mcrl-leo-handover` or its `.venv`. Change no sealed constant, threshold, sign,
+seed, horizon, price, guard, acceptance rule, control law, manifest or optimizer setting.
+**Hard cap: 3 concurrent python processes**, `nice -n 15`, all BLAS thread counts = 1.
+
+## Starting point
+
+`MODE-SELECTION-GAP-2026-09-10.md` in this workspace measured, at **identical transmit
+power**, that crediting the highest sealed mode cleared by **realised** SINR yields
+`+9,858,751` extra bit/J on delivered capacity and `+9,685,923` bit/J demand-capped
+(`3.892 -> 13.578 Mbit/J`, **+248.86%**), with the law selecting `NO_MODE` on **78.49%** of
+powered transmission records and a median rung gap of 3.
+
+**That counterfactual is an oracle**: it uses the realised fading draw to pick the mode.
+The declared scoring convention deliberately selects from a 10th-percentile fading quantile
+(`alpha = 0.10`), and that convention is **pre-declared and sealed** — v1.7 section 1 names
+the 10th percentile as a pre-specified *scoring* convention, and v1.9 section 1 states the
+margin must not be re-solved into transmit power. **This job does not propose changing any
+of that and must not.** It measures how much of the gap a *causal* rule could reach, so that
+the sealed convention's cost is known as a magnitude rather than assumed.
+
+## What to measure
+
+Hold **every transmit power exactly as the declared law set it** — assert exact equality of
+the pooled energy denominator before and after, as the prior report did. Vary only the
+credited mode, under a ladder of increasingly informed but **causal** selection rules. For
+each rule report delivered-capacity EE, demand-capped EE, the relative gain over the declared
+law, and the fraction of records that still select `NO_MODE`:
+
+- **R0 — declared law** (baseline, `alpha = 0.10`).
+- **R1 — quantile sweep**: the same rule at `alpha` in {0.10, 0.25, 0.50, 0.75, 0.90}. This
+  is a *sensitivity curve on a sealed convention*, reported as such; it changes nothing.
+- **R2 — one-step-stale feedback**: select the mode from the SINR *realised at the previous
+  boundary* for the same user/beam. This is the standard causal CQI-feedback rule and needs
+  no future information. Report how it behaves at the first boundary of each anchor and how
+  you handled it.
+- **R3 — stale feedback with a safety back-off**: R2 minus a fixed margin, swept over a small
+  declared set of back-offs, to expose the delivery/outage trade.
+- **R4 — oracle** (the prior report's rule), as the ceiling.
+
+For **R2 and R3** also report the **decode-failure rate** they would incur — a mode selected
+above what the realised SINR supports delivers nothing — and give the demand-capped EE **net
+of those failures**. A rule that raises credited bits while raising failures is not a gain;
+show both.
+
+Report a single table `R0..R4 x {capacity EE, demand-capped EE, decode-failure rate,
+NO_MODE fraction}`, plus the fraction of the R4-R0 gap that R2 and R3 recover.
+
+## Rules
+
+- The 10th-percentile convention is sealed. Do not argue against it, do not propose a change
+  to it, and do not present any row of this table as a defect. It is a magnitude.
+- Separate **verified by running code**, **derived on paper**, **inferred**.
+- Reuse the prior report's tape, anchors, and power vectors so the two are comparable; cite
+  its per-anchor power-vector SHA-256 values and re-verify them.
+- If a rule is infeasible within the budget, say so; do not substitute a proxy silently.
+
+Write to `/home/sat/mcrl-v025-prevalence-ws/MODE-CAUSAL-REACHABILITY-2026-09-10.md`,
+first line one bolded sentence giving the demand-capped gain of the best **causal** rule and
+the fraction of the oracle gap it recovers. Serialize to `.scratch/mode-causal/results.json`.
+codex
+I’ll reproduce the prior experiment from its recorded artifacts, verify the anchor power hashes and pooled energy identity, then add only the causal mode-crediting rules. I’ll keep execution to one `nice -n 15` Python process at a time with all BLAS thread counts pinned to 1, and I’ll label run-verified, paper-derived, and inferred findings separately.
