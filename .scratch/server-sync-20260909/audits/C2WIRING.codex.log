@@ -5353,3 +5353,3501 @@ index 0000000000000000000000000000000000000000..3f1991c1591202b9f89bb9e629a15947
 +if __name__ == "__main__":
 +    raise SystemExit(main())
 
+codex
+The bounded eight-anchor replay confirms 0/8 argmax flips at the live multiplier. The first possible change is not near 1: it occurs at exact boundary `k ≈ 17.246731713` on `world/1:step/3`, and the boundary is inclusive under the FACTORIAL tie-break.
+
+I’m now validating the distribution summaries, exact fractions, and source custody before writing the report.
+exec
+/bin/bash -lc "jq '{schema,classification,fixture, eta:.real_catalogue.common_eta_mbit_per_j, rows:.real_catalogue.catalogue_row_count, flips:.real_catalogue.argmax_choice_difference_count, aggregate:.real_catalogue.aggregate_distributions, aggregate_spreads:.real_catalogue.aggregate_spread_comparison, first_flip:.real_catalogue.first_flip, anchors:[.real_catalogue.per_anchor[] | {anchor_id,eligible_rows,route_kind_counts,without_c2_selected_index,with_c2_selected_index,selected_route_kind, C1:{zero:.C1_distribution.exact_zero_percentage,min:.C1_distribution.minimum_mbit,max:.C1_distribution.maximum_mbit,spread:.C1_distribution.spread_mbit},C2:{zero:.C2_distribution.exact_zero_percentage,min:.C2_distribution.minimum_mbit,p25:.C2_distribution.p25_mbit,median:.C2_distribution.median_mbit,p75:.C2_distribution.p75_mbit,max:.C2_distribution.maximum_mbit,mean:.C2_distribution.mean_mbit,std:.C2_distribution.population_stddev_mbit,spread:.C2_distribution.spread_mbit},TOTAL:{min:.FULL_score_distribution.minimum_mbit,max:.FULL_score_distribution.maximum_mbit,spread:.FULL_score_distribution.spread_mbit},spread_comparison,top_without_c2,first_flip}]}' .scratch/c2-wiring/results.json" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+{
+  "schema": "mcrl-v025-c2-wiring-diagnostic-v1",
+  "classification": "C2_REACHES_SCORE",
+  "fixture": {
+    "c1_present": true,
+    "construction": "row 0: C1=0,C2=0; row 1: C1=+1,C2=-2; C3=0; eta=1",
+    "drop_c2_selected_index": 1,
+    "eta": [
+      1,
+      1
+    ],
+    "full_selected_index": 0,
+    "kind": "synthetic_two_row_exact_fraction",
+    "uses_factorial_choose_for_anchor": true,
+    "verdict": "PASS"
+  },
+  "eta": 9.029225860975936,
+  "rows": 31133,
+  "flips": 0,
+  "aggregate": {
+    "C1": {
+      "count": 31133,
+      "exact_zero_count": 2158,
+      "exact_zero_fraction": [
+        2158,
+        31133
+      ],
+      "exact_zero_percentage": 6.931551729675906,
+      "maximum": [
+        1327647829299953237148558695656880897,
+        78601803503745400091705344
+      ],
+      "maximum_mbit": 16890.80619170132,
+      "mean": [
+        729197575417156992991064330764738705087,
+        4894219896964211082110124949504
+      ],
+      "mean_mbit": 148.99158410709416,
+      "median_mbit": 555.8251540726519,
+      "median_nearest_rank": [
+        21844429771428797434325305586797741,
+        39300901751872700045852672
+      ],
+      "minimum": [
+        -22146558444679674643792626251447605783,
+        314407214014981600366821376
+      ],
+      "minimum_mbit": -70439.09127232808,
+      "p25_mbit": -212.2790399686378,
+      "p25_nearest_rank": [
+        -33371030775157168358399506625436773,
+        157203607007490800183410688
+      ],
+      "p75_mbit": 1231.024821345299,
+      "p75_nearest_rank": [
+        12095096389452060907580974045212107,
+        9825225437968175011463168
+      ],
+      "population_stddev_mbit": 3120.260600794196,
+      "spread": [
+        27457149761879487592386861034075129371,
+        314407214014981600366821376
+      ],
+      "spread_mbit": 87329.89746402939
+    },
+    "C2": {
+      "count": 31133,
+      "exact_zero_count": 30004,
+      "exact_zero_fraction": [
+        30004,
+        31133
+      ],
+      "exact_zero_percentage": 96.37362284392766,
+      "maximum": [
+        92924733498620994020746630350594813,
+        157203607007490800183410688
+      ],
+      "maximum_mbit": 591.1106956610296,
+      "mean": [
+        -11085989002833821535129132483571688625,
+        4894219896964211082110124949504
+      ],
+      "mean_mbit": -2.265118698428373,
+      "median_mbit": 0.0,
+      "median_nearest_rank": [
+        0,
+        1
+      ],
+      "minimum": [
+        -7459401170593637100181095732616959,
+        4912612718984087505731584
+      ],
+      "minimum_mbit": -1518.4183238723156,
+      "p25_mbit": 0.0,
+      "p25_nearest_rank": [
+        0,
+        1
+      ],
+      "p75_mbit": 0.0,
+      "p75_nearest_rank": [
+        0,
+        1
+      ],
+      "population_stddev_mbit": 30.943920863178406,
+      "spread": [
+        331625570957617381226541693794337501,
+        157203607007490800183410688
+      ],
+      "spread_mbit": 2109.529019533345
+    },
+    "FULL_score": {
+      "count": 31133,
+      "exact_zero_count": 0,
+      "exact_zero_fraction": [
+        0,
+        1
+      ],
+      "exact_zero_percentage": 0.0,
+      "maximum": [
+        6118625690933092260052361744130985603,
+        314407214014981600366821376
+      ],
+      "maximum_mbit": 19460.831107525217,
+      "mean": [
+        -49027083555158815006788069086056921765071,
+        4894219896964211082110124949504
+      ],
+      "mean_mbit": -10017.343843820618,
+      "median_mbit": -1159.7108329188495,
+      "median_nearest_rank": [
+        -91155363010252319401748898637359327,
+        78601803503745400091705344
+      ],
+      "minimum": [
+        -136170112617000307925745973583369235,
+        2456306359492043752865792
+      ],
+      "minimum_mbit": -55436.941768599194,
+      "p25_mbit": -18506.98631706832,
+      "p25_nearest_rank": [
+        -2909365003881417695461295409631203295,
+        157203607007490800183410688
+      ],
+      "p75_mbit": 5107.169268051366,
+      "p75_nearest_rank": [
+        1605730861070962751764278951978822625,
+        314407214014981600366821376
+      ],
+      "population_stddev_mbit": 19670.03822310613,
+      "spread": [
+        23548400105909131674547846362802247683,
+        314407214014981600366821376
+      ],
+      "spread_mbit": 74897.7728761244
+    }
+  },
+  "aggregate_spreads": {
+    "c2_over_c1": 0.02415586277771878,
+    "c2_over_full_total": 0.028165443891400566
+  },
+  "first_flip": {
+    "anchor_id": "V025_PROBE_R2/world/1:step/3",
+    "at_boundary_index": 1169,
+    "boundary": [
+      1602647948148653845449188374968356494,
+      92924733498620994020746630350594813
+    ],
+    "boundary_decimal": 17.246731712956027,
+    "boundary_inclusive": true,
+    "condition": "k >= boundary",
+    "current_c2_term": [
+      0,
+      1
+    ],
+    "current_index": 5289,
+    "exists_for_k_ge_1": true,
+    "right_limit_c2_term": [
+      92924733498620994020746630350594813,
+      157203607007490800183410688
+    ],
+    "right_limit_index": 1169
+  },
+  "anchors": [
+    {
+      "anchor_id": "V025_PROBE_R2/world/1:step/0",
+      "eligible_rows": 3551,
+      "route_kind_counts": {
+        "BASE": 1,
+        "C1": 3298,
+        "C2": 252
+      },
+      "without_c2_selected_index": 2092,
+      "with_c2_selected_index": 2092,
+      "selected_route_kind": "C1",
+      "C1": {
+        "zero": 7.434525485778654,
+        "min": -41126.291374894776,
+        "max": 13495.65869330564,
+        "spread": 54621.950068200415
+      },
+      "C2": {
+        "zero": 96.33905941988172,
+        "min": -371.89508152418057,
+        "p25": 0.0,
+        "median": 0.0,
+        "p75": 0.0,
+        "max": 153.99487502387996,
+        "mean": -2.337524735326634,
+        "std": 22.26044009119708,
+        "spread": 525.8899565480606
+      },
+      "TOTAL": {
+        "min": -19076.280224002137,
+        "max": 3053.1914512056755,
+        "spread": 22129.471675207813
+      },
+      "spread_comparison": {
+        "c2_over_c1": 0.00962781365168105,
+        "c2_over_full_total": 0.023764234603812433
+      },
+      "top_without_c2": {
+        "c2_spread_over_immediate_gap": 14.237352358095016,
+        "c2_spread_over_next_distinct_gap": 14.237352358095016,
+        "immediate_runner_up_gap": [
+          2903341716178097096953418030887969,
+          78601803503745400091705344
+        ],
+        "immediate_runner_up_gap_mbit": 36.937342233371936,
+        "next_distinct_gap": [
+          2903341716178097096953418030887969,
+          78601803503745400091705344
+        ],
+        "next_distinct_gap_mbit": 36.937342233371936,
+        "top_tie_count": 1
+      },
+      "first_flip": {
+        "at_boundary_index": 2092,
+        "boundary": [
+          1725972686278759587952630176726572952,
+          24208549814421684170583998799214841
+        ],
+        "boundary_decimal": 71.29599664208516,
+        "boundary_inclusive": false,
+        "condition": "k > boundary",
+        "current_c2_term": [
+          0,
+          1
+        ],
+        "current_index": 2092,
+        "exists_for_k_ge_1": true,
+        "right_limit_c2_term": [
+          24208549814421684170583998799214841,
+          157203607007490800183410688
+        ],
+        "right_limit_index": 2753
+      }
+    },
+    {
+      "anchor_id": "V025_PROBE_R2/world/1:step/1",
+      "eligible_rows": 3836,
+      "route_kind_counts": {
+        "BASE": 1,
+        "C1": 3577,
+        "C2": 258
+      },
+      "without_c2_selected_index": 113,
+      "with_c2_selected_index": 113,
+      "selected_route_kind": "C1",
+      "C1": {
+        "zero": 6.856100104275287,
+        "min": -57034.29259538441,
+        "max": 16890.80619170132,
+        "spread": 73925.09878708572
+      },
+      "C2": {
+        "zero": 96.22002085505736,
+        "min": -790.4659366651414,
+        "p25": 0.0,
+        "median": 0.0,
+        "p75": 0.0,
+        "max": 177.1983699816435,
+        "mean": -3.6045150509729234,
+        "std": 31.03474555546078,
+        "spread": 967.6643066467848
+      },
+      "TOTAL": {
+        "min": -3691.3416617341736,
+        "max": 18702.81059194221,
+        "spread": 22394.152253676384
+      },
+      "spread_comparison": {
+        "c2_over_c1": 0.013089793893056386,
+        "c2_over_full_total": 0.043210579962361655
+      },
+      "top_without_c2": {
+        "c2_spread_over_immediate_gap": 7.392508229307581,
+        "c2_spread_over_next_distinct_gap": 7.392508229307581,
+        "immediate_runner_up_gap": [
+          10288816370484146018933635669155099,
+          78601803503745400091705344
+        ],
+        "immediate_runner_up_gap_mbit": 130.89796813623852,
+        "next_distinct_gap": [
+          10288816370484146018933635669155099,
+          78601803503745400091705344
+        ],
+        "next_distinct_gap_mbit": 130.89796813623852,
+        "top_tie_count": 1
+      },
+      "first_flip": {
+        "at_boundary_index": 113,
+        "boundary": [
+          4531326540641316472244352155702364715,
+          55712445833924482927048698853530898
+        ],
+        "boundary_decimal": 81.33418795055118,
+        "boundary_inclusive": false,
+        "condition": "k > boundary",
+        "current_c2_term": [
+          0,
+          1
+        ],
+        "current_index": 113,
+        "exists_for_k_ge_1": true,
+        "right_limit_c2_term": [
+          27856222916962241463524349426765449,
+          157203607007490800183410688
+        ],
+        "right_limit_index": 1692
+      }
+    },
+    {
+      "anchor_id": "V025_PROBE_R2/world/1:step/2",
+      "eligible_rows": 3918,
+      "route_kind_counts": {
+        "BASE": 1,
+        "C1": 3665,
+        "C2": 252
+      },
+      "without_c2_selected_index": 113,
+      "with_c2_selected_index": 113,
+      "selected_route_kind": "C1",
+      "C1": {
+        "zero": 6.636038795303726,
+        "min": -51490.00865221512,
+        "max": 6696.478250235494,
+        "spread": 58186.486902450604
+      },
+      "C2": {
+        "zero": 96.50331801939765,
+        "min": -520.1712838918603,
+        "p25": 0.0,
+        "median": 0.0,
+        "p75": 0.0,
+        "max": 137.73391824399138,
+        "mean": -2.462244262968852,
+        "std": 27.049197399969117,
+        "spread": 657.9052021358516
+      },
+      "TOTAL": {
+        "min": -10297.529946385452,
+        "max": 12621.88400398114,
+        "spread": 22919.413950366594
+      },
+      "spread_comparison": {
+        "c2_over_c1": 0.01130683835988976,
+        "c2_over_full_total": 0.028705149423130367
+      },
+      "top_without_c2": {
+        "c2_spread_over_immediate_gap": 16.700641112990567,
+        "c2_spread_over_next_distinct_gap": 16.700641112990567,
+        "immediate_runner_up_gap": [
+          3096440134992757943928174601379667,
+          78601803503745400091705344
+        ],
+        "immediate_runner_up_gap_mbit": 39.39400875000548,
+        "next_distinct_gap": [
+          3096440134992757943928174601379667,
+          78601803503745400091705344
+        ],
+        "next_distinct_gap_mbit": 39.39400875000548,
+        "top_tie_count": 1
+      },
+      "first_flip": {
+        "at_boundary_index": 113,
+        "boundary": [
+          3824476944849025857861494297680580515,
+          43304537510460573608036108762494852
+        ],
+        "boundary_decimal": 88.31584782368802,
+        "boundary_inclusive": false,
+        "condition": "k > boundary",
+        "current_c2_term": [
+          0,
+          1
+        ],
+        "current_index": 113,
+        "exists_for_k_ge_1": true,
+        "right_limit_c2_term": [
+          10826134377615143402009027190623713,
+          78601803503745400091705344
+        ],
+        "right_limit_index": 1366
+      }
+    },
+    {
+      "anchor_id": "V025_PROBE_R2/world/1:step/3",
+      "eligible_rows": 3456,
+      "route_kind_counts": {
+        "BASE": 1,
+        "C1": 3203,
+        "C2": 252
+      },
+      "without_c2_selected_index": 5289,
+      "with_c2_selected_index": 5289,
+      "selected_route_kind": "C1",
+      "C1": {
+        "zero": 7.841435185185185,
+        "min": -31698.425829191376,
+        "max": 6516.273592769448,
+        "spread": 38214.699421960824
+      },
+      "C2": {
+        "zero": 96.32523148148148,
+        "min": -1153.2038590456539,
+        "p25": 0.0,
+        "median": 0.0,
+        "p75": 0.0,
+        "max": 591.1106956610296,
+        "mean": -2.7591736928890604,
+        "std": 46.69048337984498,
+        "spread": 1744.3145547066833
+      },
+      "TOTAL": {
+        "min": -42110.47293975945,
+        "max": -23103.30861223431,
+        "spread": 19007.164327525137
+      },
+      "spread_comparison": {
+        "c2_over_c1": 0.045645120361833304,
+        "c2_over_full_total": 0.09177142495583426
+      },
+      "top_without_c2": {
+        "c2_spread_over_immediate_gap": 17.223934526139733,
+        "c2_spread_over_next_distinct_gap": 17.223934526139733,
+        "immediate_runner_up_gap": [
+          15920435562466860569597382328273025,
+          157203607007490800183410688
+        ],
+        "immediate_runner_up_gap_mbit": 101.27271164782019,
+        "next_distinct_gap": [
+          15920435562466860569597382328273025,
+          157203607007490800183410688
+        ],
+        "next_distinct_gap_mbit": 101.27271164782019,
+        "top_tie_count": 1
+      },
+      "first_flip": {
+        "at_boundary_index": 1169,
+        "boundary": [
+          1602647948148653845449188374968356494,
+          92924733498620994020746630350594813
+        ],
+        "boundary_decimal": 17.246731712956027,
+        "boundary_inclusive": true,
+        "condition": "k >= boundary",
+        "current_c2_term": [
+          0,
+          1
+        ],
+        "current_index": 5289,
+        "exists_for_k_ge_1": true,
+        "right_limit_c2_term": [
+          92924733498620994020746630350594813,
+          157203607007490800183410688
+        ],
+        "right_limit_index": 1169
+      }
+    },
+    {
+      "anchor_id": "V025_PROBE_R2/world/2:step/0",
+      "eligible_rows": 4043,
+      "route_kind_counts": {
+        "BASE": 1,
+        "C1": 3788,
+        "C2": 254
+      },
+      "without_c2_selected_index": 1824,
+      "with_c2_selected_index": 1824,
+      "selected_route_kind": "C1",
+      "C1": {
+        "zero": 6.406134058867178,
+        "min": -46876.85362462612,
+        "max": 13035.652809037942,
+        "spread": 59912.506433664064
+      },
+      "C2": {
+        "zero": 96.61142715805096,
+        "min": -756.4881175812108,
+        "p25": 0.0,
+        "median": 0.0,
+        "p75": 0.0,
+        "max": 264.57922595803734,
+        "mean": -2.054007257418541,
+        "std": 27.972228265418853,
+        "spread": 1021.0673435392481
+      },
+      "TOTAL": {
+        "min": -21681.168425475793,
+        "max": -7141.203942619612,
+        "spread": 14539.964482856181
+      },
+      "spread_comparison": {
+        "c2_over_c1": 0.01704264108312323,
+        "c2_over_full_total": 0.07022488567583303
+      },
+      "top_without_c2": {
+        "c2_spread_over_immediate_gap": 5.5272571989111245,
+        "c2_spread_over_next_distinct_gap": 5.5272571989111245,
+        "immediate_runner_up_gap": [
+          14520354637517887394955521754124749,
+          78601803503745400091705344
+        ],
+        "immediate_runner_up_gap_mbit": 184.73309759140562,
+        "next_distinct_gap": [
+          14520354637517887394955521754124749,
+          78601803503745400091705344
+        ],
+        "next_distinct_gap_mbit": 184.73309759140562,
+        "top_tie_count": 1
+      },
+      "first_flip": {
+        "at_boundary_index": 1824,
+        "boundary": [
+          781064608495852386327356007828840249,
+          20796404329926705765034753221177935
+        ],
+        "boundary_decimal": 37.557675649336886,
+        "boundary_inclusive": false,
+        "condition": "k > boundary",
+        "current_c2_term": [
+          0,
+          1
+        ],
+        "current_index": 1824,
+        "exists_for_k_ge_1": true,
+        "right_limit_c2_term": [
+          20796404329926705765034753221177935,
+          78601803503745400091705344
+        ],
+        "right_limit_index": 3820
+      }
+    },
+    {
+      "anchor_id": "V025_PROBE_R2/world/2:step/1",
+      "eligible_rows": 4118,
+      "route_kind_counts": {
+        "BASE": 1,
+        "C1": 3865,
+        "C2": 252
+      },
+      "without_c2_selected_index": 4465,
+      "with_c2_selected_index": 4465,
+      "selected_route_kind": "C1",
+      "C1": {
+        "zero": 6.143759106362312,
+        "min": -48869.41651292,
+        "max": 16115.19691736901,
+        "spread": 64984.613430289006
+      },
+      "C2": {
+        "zero": 96.43030597377367,
+        "min": -416.333074957153,
+        "p25": 0.0,
+        "median": 0.0,
+        "p75": 0.0,
+        "max": 202.70599950232847,
+        "mean": -2.4625642839220645,
+        "std": 22.275444089797375,
+        "spread": 619.0390744594815
+      },
+      "TOTAL": {
+        "min": 3300.3641002161703,
+        "max": 19460.831107525217,
+        "spread": 16160.467007309046
+      },
+      "spread_comparison": {
+        "c2_over_c1": 0.009525933013720912,
+        "c2_over_full_total": 0.0383057664224371
+      },
+      "top_without_c2": {
+        "c2_spread_over_immediate_gap": 0.8059853434018142,
+        "c2_spread_over_next_distinct_gap": 0.8059853434018142,
+        "immediate_runner_up_gap": [
+          60370313294328639777687286482504017,
+          78601803503745400091705344
+        ],
+        "immediate_runner_up_gap_mbit": 768.0525204673195,
+        "next_distinct_gap": [
+          60370313294328639777687286482504017,
+          78601803503745400091705344
+        ],
+        "next_distinct_gap_mbit": 768.0525204673195,
+        "top_tie_count": 1
+      },
+      "first_flip": {
+        "at_boundary_index": 3049,
+        "boundary": [
+          1600087190167906104952544520074706332,
+          31866114283824668925633445920863703
+        ],
+        "boundary_decimal": 50.21281151245086,
+        "boundary_inclusive": true,
+        "condition": "k >= boundary",
+        "current_c2_term": [
+          0,
+          1
+        ],
+        "current_index": 4465,
+        "exists_for_k_ge_1": true,
+        "right_limit_c2_term": [
+          31866114283824668925633445920863703,
+          157203607007490800183410688
+        ],
+        "right_limit_index": 3049
+      }
+    },
+    {
+      "anchor_id": "V025_PROBE_R2/world/2:step/2",
+      "eligible_rows": 4101,
+      "route_kind_counts": {
+        "BASE": 1,
+        "C1": 3848,
+        "C2": 252
+      },
+      "without_c2_selected_index": 1666,
+      "with_c2_selected_index": 1666,
+      "selected_route_kind": "C1",
+      "C1": {
+        "zero": 6.193611314313582,
+        "min": -70439.09127232808,
+        "max": 14167.93126382036,
+        "spread": 84607.02253614843
+      },
+      "C2": {
+        "zero": 96.07412826139966,
+        "min": -599.4266367922071,
+        "p25": 0.0,
+        "median": 0.0,
+        "p75": 0.0,
+        "max": 440.8579433707527,
+        "mean": -2.077741646306179,
+        "std": 31.039665569566356,
+        "spread": 1040.2845801629599
+      },
+      "TOTAL": {
+        "min": -4763.399480232501,
+        "max": 13814.77926883282,
+        "spread": 18578.178749065322
+      },
+      "spread_comparison": {
+        "c2_over_c1": 0.012295487407307085,
+        "c2_over_full_total": 0.05599497099333793
+      },
+      "top_without_c2": {
+        "c2_spread_over_immediate_gap": 5.6537496382858965,
+        "c2_spread_over_next_distinct_gap": 5.6537496382858965,
+        "immediate_runner_up_gap": [
+          57850629680684438925915724801059263,
+          314407214014981600366821376
+        ],
+        "immediate_runner_up_gap_mbit": 183.99905314490601,
+        "next_distinct_gap": [
+          57850629680684438925915724801059263,
+          314407214014981600366821376
+        ],
+        "next_distinct_gap_mbit": 183.99905314490601,
+        "top_tie_count": 1
+      },
+      "first_flip": {
+        "at_boundary_index": 1666,
+        "boundary": [
+          3122915730549024615983898571947059489,
+          138608917751572879425513427831534051
+        ],
+        "boundary_decimal": 22.53040988420521,
+        "boundary_inclusive": false,
+        "condition": "k > boundary",
+        "current_c2_term": [
+          0,
+          1
+        ],
+        "current_index": 1666,
+        "exists_for_k_ge_1": true,
+        "right_limit_c2_term": [
+          138608917751572879425513427831534051,
+          314407214014981600366821376
+        ],
+        "right_limit_index": 2842
+      }
+    },
+    {
+      "anchor_id": "V025_PROBE_R2/world/2:step/3",
+      "eligible_rows": 4110,
+      "route_kind_counts": {
+        "BASE": 1,
+        "C1": 3857,
+        "C2": 252
+      },
+      "without_c2_selected_index": 303,
+      "with_c2_selected_index": 303,
+      "selected_route_kind": "C1",
+      "C1": {
+        "zero": 8.126520681265207,
+        "min": -45913.83817689652,
+        "max": 7484.406059793554,
+        "spread": 53398.24423669008
+      },
+      "C2": {
+        "zero": 96.47201946472019,
+        "min": -1518.4183238723156,
+        "p25": 0.0,
+        "median": 0.0,
+        "p75": 0.0,
+        "max": 517.8799511343776,
+        "mean": -0.5459083961365254,
+        "std": 34.093105745895805,
+        "spread": 2036.298275006693
+      },
+      "TOTAL": {
+        "min": -55436.941768599194,
+        "max": -37408.98386863314,
+        "spread": 18027.95789996605
+      },
+      "spread_comparison": {
+        "c2_over_c1": 0.038134180329613666,
+        "c2_over_full_total": 0.11295224263922468
+      },
+      "top_without_c2": {
+        "c2_spread_over_immediate_gap": 14.635375893633944,
+        "c2_spread_over_next_distinct_gap": 14.635375893633944,
+        "immediate_runner_up_gap": [
+          10936290126768308266457066837161305,
+          78601803503745400091705344
+        ],
+        "immediate_runner_up_gap_mbit": 139.13535872299914,
+        "next_distinct_gap": [
+          10936290126768308266457066837161305,
+          78601803503745400091705344
+        ],
+        "next_distinct_gap_mbit": 139.13535872299914,
+        "top_tie_count": 1
+      },
+      "first_flip": {
+        "at_boundary_index": 303,
+        "boundary": [
+          636875289440378825057255883948364971,
+          27137532105062411621799786223312006
+        ],
+        "boundary_decimal": 23.46843062127864,
+        "boundary_inclusive": false,
+        "condition": "k > boundary",
+        "current_c2_term": [
+          0,
+          1
+        ],
+        "current_index": 303,
+        "exists_for_k_ge_1": true,
+        "right_limit_c2_term": [
+          40706298157593617432699679334968009,
+          78601803503745400091705344
+        ],
+        "right_limit_index": 2862
+      }
+    }
+  ]
+}
+
+diff --git a/.scratch/c2-wiring/diagnose_c2_wiring.py b/.scratch/c2-wiring/diagnose_c2_wiring.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f1991c1591202b9f89bb9e629a1594703a18bbe
+--- /dev/null
++++ b/.scratch/c2-wiring/diagnose_c2_wiring.py
+@@ -0,0 +1,431 @@
++#!/usr/bin/env python3
++"""Bounded C2 wiring diagnostic against the exact FACTORIAL selector."""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import statistics
++import sys
++from typing import Iterable, Mapping
++
++
++FACTORIAL_RUNNER = Path(
++    "/home/sat/mcrl-v025-arch-ws/scripts/run_oracle_factorial.py"
++)
++FACTORIAL_ROOT = FACTORIAL_RUNNER.parents[1]
++FACTORIAL_RESULTS = FACTORIAL_ROOT / ".scratch/oracle-factorial/results.json"
++OUTPUT = Path(__file__).with_name("results.json")
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++)
++
++
++def load_factorial_module():
++    spec = importlib.util.spec_from_file_location("oracle_factorial", FACTORIAL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {FACTORIAL_RUNNER}")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def require_guardrails() -> None:
++    drift = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("diagnostic must run at nice level 15 or greater")
++
++
++def synthetic_fixture(module) -> dict:
++    """A two-row catalogue where only a live C2 term can change the winner."""
++
++    zero_delta = {
++        route: {
++            "capacity": pair(Fraction()),
++            "demand_capped": pair(Fraction()),
++            "energy": pair(Fraction()),
++        }
++        for route in ("C1", "C2", "C3")
++    }
++    witness_delta = {
++        route: {
++            "capacity": pair(Fraction()),
++            "demand_capped": pair(Fraction()),
++            "energy": pair(Fraction()),
++        }
++        for route in ("C1", "C2", "C3")
++    }
++    # C1 alone makes row 1 win; the C2 term reverses that ranking.  Thus the
++    # fixture exercises the requested FULL-vs-DROP_C2 contrast with C1 present.
++    witness_delta["C1"]["demand_capped"] = pair(Fraction(1))
++    witness_delta["C2"]["demand_capped"] = pair(Fraction(-2))
++    shard = {
++        "base": {"demand_capped": pair(Fraction(10)), "energy": pair(Fraction(1))},
++        "rows": [
++            {"index": 0, "deltas": zero_delta},
++            {"index": 1, "deltas": witness_delta},
++        ],
++    }
++    eta = Fraction(1)
++    drop = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta)
++    full = module.choose_for_anchor(shard, "demand_capped", "FULL", eta)
++    drop_index = int(drop["row"]["index"])
++    full_index = int(full["row"]["index"])
++    passed = drop_index != full_index
++    if not passed:
++        raise AssertionError(
++            "FAIL: FULL and DROP_C2 agreed on the synthetic C2-only witness"
++        )
++    return {
++        "kind": "synthetic_two_row_exact_fraction",
++        "construction": "row 0: C1=0,C2=0; row 1: C1=+1,C2=-2; C3=0; eta=1",
++        "uses_factorial_choose_for_anchor": True,
++        "c1_present": True,
++        "eta": [eta.numerator, eta.denominator],
++        "drop_c2_selected_index": drop_index,
++        "full_selected_index": full_index,
++        "verdict": "PASS",
++    }
++
++
++def tie_key(row: Mapping[str, object]) -> tuple[int, int]:
++    index = int(row["index"])
++    return (0 if index == 0 else 1, index)
++
++
++def select_scaled(rows: list[dict], multiplier: Fraction) -> dict:
++    return min(
++        rows,
++        key=lambda row: (
++            -(row["without_c2_score"] + multiplier * row["c2_score"]),
++            tie_key(row),
++        ),
++    )
++
++
++def empirical_quantile(values: list[Fraction], numerator: int, denominator: int) -> Fraction:
++    """Nearest-rank empirical quantile, with q=0 returning the minimum."""
++
++    ordered = sorted(values)
++    if numerator == 0:
++        return ordered[0]
++    rank = (numerator * len(ordered) + denominator - 1) // denominator
++    return ordered[rank - 1]
++
++
++def distribution(values: list[Fraction]) -> dict:
++    if not values:
++        raise RuntimeError("cannot summarize an empty distribution")
++    exact_zero = sum(value == 0 for value in values)
++    minimum = min(values)
++    maximum = max(values)
++    mean = sum(values, Fraction()) / len(values)
++    floats = [float(value) / 1e6 for value in values]
++    return {
++        "count": len(values),
++        "exact_zero_count": exact_zero,
++        "exact_zero_fraction": pair(Fraction(exact_zero, len(values))),
++        "exact_zero_percentage": 100.0 * exact_zero / len(values),
++        "minimum": pair(minimum),
++        "p25_nearest_rank": pair(empirical_quantile(values, 1, 4)),
++        "median_nearest_rank": pair(empirical_quantile(values, 1, 2)),
++        "p75_nearest_rank": pair(empirical_quantile(values, 3, 4)),
++        "maximum": pair(maximum),
++        "mean": pair(mean),
++        "spread": pair(maximum - minimum),
++        "minimum_mbit": float(minimum) / 1e6,
++        "p25_mbit": float(empirical_quantile(values, 1, 4)) / 1e6,
++        "median_mbit": float(empirical_quantile(values, 1, 2)) / 1e6,
++        "p75_mbit": float(empirical_quantile(values, 3, 4)) / 1e6,
++        "maximum_mbit": float(maximum) / 1e6,
++        "mean_mbit": float(mean) / 1e6,
++        "population_stddev_mbit": statistics.pstdev(floats),
++        "spread_mbit": float(maximum - minimum) / 1e6,
++    }
++
++
++def first_flip(rows: list[dict]) -> dict:
++    current = select_scaled(rows, Fraction(1))
++    current_a = current["without_c2_score"]
++    current_b = current["c2_score"]
++    thresholds = []
++    for row in rows:
++        slope_gain = row["c2_score"] - current_b
++        if slope_gain <= 0:
++            continue
++        threshold = (current_a - row["without_c2_score"]) / slope_gain
++        if threshold >= 1:
++            thresholds.append(threshold)
++    if not thresholds:
++        return {"exists_for_k_ge_1": False}
++    boundary = min(thresholds)
++    at_boundary = select_scaled(rows, boundary)
++    scores_at_boundary = [
++        row["without_c2_score"] + boundary * row["c2_score"] for row in rows
++    ]
++    maximum = max(scores_at_boundary)
++    tied = [row for row, score in zip(rows, scores_at_boundary, strict=True) if score == maximum]
++    right_limit = min(tied, key=lambda row: (-row["c2_score"], tie_key(row)))
++    inclusive = int(at_boundary["index"]) != int(current["index"])
++    if int(right_limit["index"]) == int(current["index"]):
++        raise RuntimeError("computed boundary does not change the right-limit argmax")
++    return {
++        "exists_for_k_ge_1": True,
++        "boundary": pair(boundary),
++        "boundary_decimal": float(boundary),
++        "boundary_inclusive": inclusive,
++        "condition": "k >= boundary" if inclusive else "k > boundary",
++        "current_index": int(current["index"]),
++        "at_boundary_index": int(at_boundary["index"]),
++        "right_limit_index": int(right_limit["index"]),
++        "current_c2_term": pair(current_b),
++        "right_limit_c2_term": pair(right_limit["c2_score"]),
++    }
++
++
++def analyze_real_catalogue(module) -> dict:
++    source = json.loads(FACTORIAL_RESULTS.read_text(encoding="ascii"))
++    demand = source["numerators"]["demand_capped"]["selectors"]
++    eta_full = unpair(demand["FULL"]["optimization_ratio"])
++    eta_drop = unpair(demand["DROP_C2"]["optimization_ratio"])
++    if eta_full != eta_drop:
++        raise RuntimeError("FULL and DROP_C2 do not have a common exact final price")
++
++    manifests = source["anchor_shards"]
++    per_anchor = []
++    per_row_c2 = []
++    aggregate = {"C1": [], "C2": [], "FULL": []}
++    flips = 0
++    for manifest in manifests:
++        shard_path = FACTORIAL_ROOT / manifest["path"]
++        if sha256(shard_path) != manifest["sha256"]:
++            raise RuntimeError(f"anchor shard custody mismatch: {shard_path}")
++        shard = json.loads(shard_path.read_text(encoding="ascii"))
++        rows = []
++        for row in shard["rows"]:
++            terms = {}
++            for route in ("C1", "C2", "C3"):
++                delta_n = unpair(row["deltas"][route]["demand_capped"])
++                delta_e = unpair(row["deltas"][route]["energy"])
++                terms[route] = delta_n - eta_full * delta_e
++            base_score = (
++                unpair(shard["base"]["demand_capped"])
++                - eta_full * unpair(shard["base"]["energy"])
++            )
++            without = base_score + terms["C1"] + terms["C3"]
++            full = without + terms["C2"]
++            enriched = {
++                **row,
++                "base_score": base_score,
++                "c1_score": terms["C1"],
++                "c2_score": terms["C2"],
++                "c3_score": terms["C3"],
++                "without_c2_score": without,
++                "full_score": full,
++            }
++            rows.append(enriched)
++            aggregate["C1"].append(terms["C1"])
++            aggregate["C2"].append(terms["C2"])
++            aggregate["FULL"].append(full)
++            per_row_c2.append({
++                "anchor_id": shard["anchor_id"],
++                "candidate_index": int(row["index"]),
++                "route_kind": row["route_kind"],
++                "c2_score_term": pair(terms["C2"]),
++                "c2_score_term_mbit": float(terms["C2"]) / 1e6,
++            })
++
++        # Exercise the actual two declared arm paths at their common exact eta.
++        without_actual = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta_full)
++        with_actual = module.choose_for_anchor(shard, "demand_capped", "FULL", eta_full)
++        without_index = int(without_actual["row"]["index"])
++        with_index = int(with_actual["row"]["index"])
++        if without_index != int(select_scaled(rows, Fraction(0))["index"]):
++            raise RuntimeError("manual k=0 score disagrees with DROP_C2 arm")
++        if with_index != int(select_scaled(rows, Fraction(1))["index"]):
++            raise RuntimeError("manual k=1 score disagrees with FULL arm")
++        differs = without_index != with_index
++        flips += int(differs)
++
++        ranked_without = sorted(rows, key=lambda row: (-row["without_c2_score"], tie_key(row)))
++        top = ranked_without[0]["without_c2_score"]
++        second = ranked_without[1]["without_c2_score"]
++        next_distinct = next(
++            (row["without_c2_score"] for row in ranked_without if row["without_c2_score"] < top),
++            None,
++        )
++        tie_count = sum(row["without_c2_score"] == top for row in ranked_without)
++        c1_values = [row["c1_score"] for row in rows]
++        c2_values = [row["c2_score"] for row in rows]
++        full_values = [row["full_score"] for row in rows]
++        d1 = distribution(c1_values)
++        d2 = distribution(c2_values)
++        dt = distribution(full_values)
++        c2_spread = unpair(d2["spread"])
++        c1_spread = unpair(d1["spread"])
++        total_spread = unpair(dt["spread"])
++        immediate_gap = top - second
++        distinct_gap = None if next_distinct is None else top - next_distinct
++        per_anchor.append({
++            "anchor_id": shard["anchor_id"],
++            "eligible_rows": len(rows),
++            "route_kind_counts": dict(sorted(Counter(row["route_kind"] for row in rows).items())),
++            "without_c2_selected_index": without_index,
++            "with_c2_selected_index": with_index,
++            "choice_differs": differs,
++            "selected_route_kind": with_actual["row"]["route_kind"],
++            "C1_distribution": d1,
++            "C2_distribution": d2,
++            "FULL_score_distribution": dt,
++            "spread_comparison": {
++                "c2_over_c1": float(c2_spread / c1_spread) if c1_spread else None,
++                "c2_over_full_total": float(c2_spread / total_spread) if total_spread else None,
++            },
++            "top_without_c2": {
++                "top_tie_count": tie_count,
++                "immediate_runner_up_gap": pair(immediate_gap),
++                "immediate_runner_up_gap_mbit": float(immediate_gap) / 1e6,
++                "next_distinct_gap": None if distinct_gap is None else pair(distinct_gap),
++                "next_distinct_gap_mbit": None if distinct_gap is None else float(distinct_gap) / 1e6,
++                "c2_spread_over_immediate_gap": (
++                    None if immediate_gap == 0 else float(c2_spread / immediate_gap)
++                ),
++                "c2_spread_over_next_distinct_gap": (
++                    None if distinct_gap in (None, 0) else float(c2_spread / distinct_gap)
++                ),
++            },
++            "first_flip": first_flip(rows),
++        })
++
++    candidates = [
++        (unpair(anchor["first_flip"]["boundary"]), anchor)
++        for anchor in per_anchor
++        if anchor["first_flip"]["exists_for_k_ge_1"]
++    ]
++    if not candidates:
++        global_flip = {"exists_for_k_ge_1": False}
++    else:
++        boundary, anchor = min(candidates, key=lambda item: item[0])
++        global_flip = {
++            "exists_for_k_ge_1": True,
++            "anchor_id": anchor["anchor_id"],
++            **anchor["first_flip"],
++        }
++
++    aggregate_distributions = {
++        "C1": distribution(aggregate["C1"]),
++        "C2": distribution(aggregate["C2"]),
++        "FULL_score": distribution(aggregate["FULL"]),
++    }
++    return {
++        "numerator": "demand_capped",
++        "common_exact_eta_bit_per_j": pair(eta_full),
++        "common_eta_mbit_per_j": float(eta_full) / 1e6,
++        "anchor_count": len(per_anchor),
++        "catalogue_row_count": len(per_row_c2),
++        "argmax_choice_difference_count": flips,
++        "aggregate_distributions": aggregate_distributions,
++        "aggregate_spread_comparison": {
++            "c2_over_c1": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["C1"]["spread"])
++            ),
++            "c2_over_full_total": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["FULL_score"]["spread"])
++            ),
++        },
++        "first_flip": global_flip,
++        "per_anchor": per_anchor,
++        "per_catalogue_row_c2": per_row_c2,
++    }
++
++
++def main() -> int:
++    require_guardrails()
++    module = load_factorial_module()
++    fixture = synthetic_fixture(module)
++    real = analyze_real_catalogue(module)
++    result = {
++        "schema": "mcrl-v025-c2-wiring-diagnostic-v1",
++        "claim": "DIAGNOSTIC_NOT_CLAIM",
++        "classification": "C2_REACHES_SCORE",
++        "fixture": fixture,
++        "real_catalogue": real,
++        "evidence": {
++            "verified_by_running_code": [
++                "synthetic fixture through FACTORIAL choose_for_anchor",
++                "eight cached anchors replayed through FACTORIAL FULL and DROP_C2 arm paths",
++                "exact per-row terms and first-flip boundaries computed with Fraction",
++            ],
++            "derived_on_paper": [
++                "spread ratios and displayed decimal conversions from exact replay values"
++            ],
++            "inferred": [
++                "causal interpretation of real-catalogue inertness from support, spread, gaps, and first-flip scale"
++            ],
++        },
++        "learner_used": False,
++        "sealed_settings_changed": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in THREAD_VARIABLES},
++        "provenance": {
++            "factorial_runner": str(FACTORIAL_RUNNER),
++            "factorial_runner_sha256": sha256(FACTORIAL_RUNNER),
++            "factorial_results": str(FACTORIAL_RESULTS),
++            "factorial_results_sha256": sha256(FACTORIAL_RESULTS),
++            "diagnostic_runner": str(Path(__file__).resolve()),
++            "diagnostic_runner_sha256": sha256(Path(__file__)),
++        },
++    }
++    OUTPUT.write_text(
++        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    print(
++        "C2_WIRING_FIXTURE "
++        f"{fixture['verdict']}: DROP_C2={fixture['drop_c2_selected_index']} "
++        f"FULL={fixture['full_selected_index']}"
++    )
++    flip = real["first_flip"]
++    print(
++        f"REAL_CATALOGUE flips={real['argmax_choice_difference_count']}/"
++        f"{real['anchor_count']} first_boundary={flip.get('boundary_decimal')} "
++        f"condition={flip.get('condition')} anchor={flip.get('anchor_id')}"
++    )
++    print(f"WROTE {OUTPUT}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+/bin/bash -lc "jq '{provenance,evidence,learner_used,sealed_settings_changed,python,nice_level,thread_environment}' .scratch/c2-wiring/results.json && sha256sum .scratch/c2-wiring/results.json .scratch/c2-wiring/diagnose_c2_wiring.py /home/sat/mcrl-v025-arch-ws/.scratch/oracle-factorial/results.json /home/sat/mcrl-v025-arch-ws/scripts/run_oracle_factorial.py && jq -r '.real_catalogue.per_catalogue_row_c2 | group_by(.route_kind)[] | [.[0].route_kind, length, (map(select(.c2_score_term "'!= [0,1]))|length)] | @tsv'"' .scratch/c2-wiring/results.json" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 149ms:
+BASE	8	0
+C1	29101	0
+C2	2024	1129
+
+diff --git a/.scratch/c2-wiring/diagnose_c2_wiring.py b/.scratch/c2-wiring/diagnose_c2_wiring.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f1991c1591202b9f89bb9e629a1594703a18bbe
+--- /dev/null
++++ b/.scratch/c2-wiring/diagnose_c2_wiring.py
+@@ -0,0 +1,431 @@
++#!/usr/bin/env python3
++"""Bounded C2 wiring diagnostic against the exact FACTORIAL selector."""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import statistics
++import sys
++from typing import Iterable, Mapping
++
++
++FACTORIAL_RUNNER = Path(
++    "/home/sat/mcrl-v025-arch-ws/scripts/run_oracle_factorial.py"
++)
++FACTORIAL_ROOT = FACTORIAL_RUNNER.parents[1]
++FACTORIAL_RESULTS = FACTORIAL_ROOT / ".scratch/oracle-factorial/results.json"
++OUTPUT = Path(__file__).with_name("results.json")
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++)
++
++
++def load_factorial_module():
++    spec = importlib.util.spec_from_file_location("oracle_factorial", FACTORIAL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {FACTORIAL_RUNNER}")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def require_guardrails() -> None:
++    drift = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("diagnostic must run at nice level 15 or greater")
++
++
++def synthetic_fixture(module) -> dict:
++    """A two-row catalogue where only a live C2 term can change the winner."""
++
++    zero_delta = {
++        route: {
++            "capacity": pair(Fraction()),
++            "demand_capped": pair(Fraction()),
++            "energy": pair(Fraction()),
++        }
++        for route in ("C1", "C2", "C3")
++    }
++    witness_delta = {
++        route: {
++            "capacity": pair(Fraction()),
++            "demand_capped": pair(Fraction()),
++            "energy": pair(Fraction()),
++        }
++        for route in ("C1", "C2", "C3")
++    }
++    # C1 alone makes row 1 win; the C2 term reverses that ranking.  Thus the
++    # fixture exercises the requested FULL-vs-DROP_C2 contrast with C1 present.
++    witness_delta["C1"]["demand_capped"] = pair(Fraction(1))
++    witness_delta["C2"]["demand_capped"] = pair(Fraction(-2))
++    shard = {
++        "base": {"demand_capped": pair(Fraction(10)), "energy": pair(Fraction(1))},
++        "rows": [
++            {"index": 0, "deltas": zero_delta},
++            {"index": 1, "deltas": witness_delta},
++        ],
++    }
++    eta = Fraction(1)
++    drop = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta)
++    full = module.choose_for_anchor(shard, "demand_capped", "FULL", eta)
++    drop_index = int(drop["row"]["index"])
++    full_index = int(full["row"]["index"])
++    passed = drop_index != full_index
++    if not passed:
++        raise AssertionError(
++            "FAIL: FULL and DROP_C2 agreed on the synthetic C2-only witness"
++        )
++    return {
++        "kind": "synthetic_two_row_exact_fraction",
++        "construction": "row 0: C1=0,C2=0; row 1: C1=+1,C2=-2; C3=0; eta=1",
++        "uses_factorial_choose_for_anchor": True,
++        "c1_present": True,
++        "eta": [eta.numerator, eta.denominator],
++        "drop_c2_selected_index": drop_index,
++        "full_selected_index": full_index,
++        "verdict": "PASS",
++    }
++
++
++def tie_key(row: Mapping[str, object]) -> tuple[int, int]:
++    index = int(row["index"])
++    return (0 if index == 0 else 1, index)
++
++
++def select_scaled(rows: list[dict], multiplier: Fraction) -> dict:
++    return min(
++        rows,
++        key=lambda row: (
++            -(row["without_c2_score"] + multiplier * row["c2_score"]),
++            tie_key(row),
++        ),
++    )
++
++
++def empirical_quantile(values: list[Fraction], numerator: int, denominator: int) -> Fraction:
++    """Nearest-rank empirical quantile, with q=0 returning the minimum."""
++
++    ordered = sorted(values)
++    if numerator == 0:
++        return ordered[0]
++    rank = (numerator * len(ordered) + denominator - 1) // denominator
++    return ordered[rank - 1]
++
++
++def distribution(values: list[Fraction]) -> dict:
++    if not values:
++        raise RuntimeError("cannot summarize an empty distribution")
++    exact_zero = sum(value == 0 for value in values)
++    minimum = min(values)
++    maximum = max(values)
++    mean = sum(values, Fraction()) / len(values)
++    floats = [float(value) / 1e6 for value in values]
++    return {
++        "count": len(values),
++        "exact_zero_count": exact_zero,
++        "exact_zero_fraction": pair(Fraction(exact_zero, len(values))),
++        "exact_zero_percentage": 100.0 * exact_zero / len(values),
++        "minimum": pair(minimum),
++        "p25_nearest_rank": pair(empirical_quantile(values, 1, 4)),
++        "median_nearest_rank": pair(empirical_quantile(values, 1, 2)),
++        "p75_nearest_rank": pair(empirical_quantile(values, 3, 4)),
++        "maximum": pair(maximum),
++        "mean": pair(mean),
++        "spread": pair(maximum - minimum),
++        "minimum_mbit": float(minimum) / 1e6,
++        "p25_mbit": float(empirical_quantile(values, 1, 4)) / 1e6,
++        "median_mbit": float(empirical_quantile(values, 1, 2)) / 1e6,
++        "p75_mbit": float(empirical_quantile(values, 3, 4)) / 1e6,
++        "maximum_mbit": float(maximum) / 1e6,
++        "mean_mbit": float(mean) / 1e6,
++        "population_stddev_mbit": statistics.pstdev(floats),
++        "spread_mbit": float(maximum - minimum) / 1e6,
++    }
++
++
++def first_flip(rows: list[dict]) -> dict:
++    current = select_scaled(rows, Fraction(1))
++    current_a = current["without_c2_score"]
++    current_b = current["c2_score"]
++    thresholds = []
++    for row in rows:
++        slope_gain = row["c2_score"] - current_b
++        if slope_gain <= 0:
++            continue
++        threshold = (current_a - row["without_c2_score"]) / slope_gain
++        if threshold >= 1:
++            thresholds.append(threshold)
++    if not thresholds:
++        return {"exists_for_k_ge_1": False}
++    boundary = min(thresholds)
++    at_boundary = select_scaled(rows, boundary)
++    scores_at_boundary = [
++        row["without_c2_score"] + boundary * row["c2_score"] for row in rows
++    ]
++    maximum = max(scores_at_boundary)
++    tied = [row for row, score in zip(rows, scores_at_boundary, strict=True) if score == maximum]
++    right_limit = min(tied, key=lambda row: (-row["c2_score"], tie_key(row)))
++    inclusive = int(at_boundary["index"]) != int(current["index"])
++    if int(right_limit["index"]) == int(current["index"]):
++        raise RuntimeError("computed boundary does not change the right-limit argmax")
++    return {
++        "exists_for_k_ge_1": True,
++        "boundary": pair(boundary),
++        "boundary_decimal": float(boundary),
++        "boundary_inclusive": inclusive,
++        "condition": "k >= boundary" if inclusive else "k > boundary",
++        "current_index": int(current["index"]),
++        "at_boundary_index": int(at_boundary["index"]),
++        "right_limit_index": int(right_limit["index"]),
++        "current_c2_term": pair(current_b),
++        "right_limit_c2_term": pair(right_limit["c2_score"]),
++    }
++
++
++def analyze_real_catalogue(module) -> dict:
++    source = json.loads(FACTORIAL_RESULTS.read_text(encoding="ascii"))
++    demand = source["numerators"]["demand_capped"]["selectors"]
++    eta_full = unpair(demand["FULL"]["optimization_ratio"])
++    eta_drop = unpair(demand["DROP_C2"]["optimization_ratio"])
++    if eta_full != eta_drop:
++        raise RuntimeError("FULL and DROP_C2 do not have a common exact final price")
++
++    manifests = source["anchor_shards"]
++    per_anchor = []
++    per_row_c2 = []
++    aggregate = {"C1": [], "C2": [], "FULL": []}
++    flips = 0
++    for manifest in manifests:
++        shard_path = FACTORIAL_ROOT / manifest["path"]
++        if sha256(shard_path) != manifest["sha256"]:
++            raise RuntimeError(f"anchor shard custody mismatch: {shard_path}")
++        shard = json.loads(shard_path.read_text(encoding="ascii"))
++        rows = []
++        for row in shard["rows"]:
++            terms = {}
++            for route in ("C1", "C2", "C3"):
++                delta_n = unpair(row["deltas"][route]["demand_capped"])
++                delta_e = unpair(row["deltas"][route]["energy"])
++                terms[route] = delta_n - eta_full * delta_e
++            base_score = (
++                unpair(shard["base"]["demand_capped"])
++                - eta_full * unpair(shard["base"]["energy"])
++            )
++            without = base_score + terms["C1"] + terms["C3"]
++            full = without + terms["C2"]
++            enriched = {
++                **row,
++                "base_score": base_score,
++                "c1_score": terms["C1"],
++                "c2_score": terms["C2"],
++                "c3_score": terms["C3"],
++                "without_c2_score": without,
++                "full_score": full,
++            }
++            rows.append(enriched)
++            aggregate["C1"].append(terms["C1"])
++            aggregate["C2"].append(terms["C2"])
++            aggregate["FULL"].append(full)
++            per_row_c2.append({
++                "anchor_id": shard["anchor_id"],
++                "candidate_index": int(row["index"]),
++                "route_kind": row["route_kind"],
++                "c2_score_term": pair(terms["C2"]),
++                "c2_score_term_mbit": float(terms["C2"]) / 1e6,
++            })
++
++        # Exercise the actual two declared arm paths at their common exact eta.
++        without_actual = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta_full)
++        with_actual = module.choose_for_anchor(shard, "demand_capped", "FULL", eta_full)
++        without_index = int(without_actual["row"]["index"])
++        with_index = int(with_actual["row"]["index"])
++        if without_index != int(select_scaled(rows, Fraction(0))["index"]):
++            raise RuntimeError("manual k=0 score disagrees with DROP_C2 arm")
++        if with_index != int(select_scaled(rows, Fraction(1))["index"]):
++            raise RuntimeError("manual k=1 score disagrees with FULL arm")
++        differs = without_index != with_index
++        flips += int(differs)
++
++        ranked_without = sorted(rows, key=lambda row: (-row["without_c2_score"], tie_key(row)))
++        top = ranked_without[0]["without_c2_score"]
++        second = ranked_without[1]["without_c2_score"]
++        next_distinct = next(
++            (row["without_c2_score"] for row in ranked_without if row["without_c2_score"] < top),
++            None,
++        )
++        tie_count = sum(row["without_c2_score"] == top for row in ranked_without)
++        c1_values = [row["c1_score"] for row in rows]
++        c2_values = [row["c2_score"] for row in rows]
++        full_values = [row["full_score"] for row in rows]
++        d1 = distribution(c1_values)
++        d2 = distribution(c2_values)
++        dt = distribution(full_values)
++        c2_spread = unpair(d2["spread"])
++        c1_spread = unpair(d1["spread"])
++        total_spread = unpair(dt["spread"])
++        immediate_gap = top - second
++        distinct_gap = None if next_distinct is None else top - next_distinct
++        per_anchor.append({
++            "anchor_id": shard["anchor_id"],
++            "eligible_rows": len(rows),
++            "route_kind_counts": dict(sorted(Counter(row["route_kind"] for row in rows).items())),
++            "without_c2_selected_index": without_index,
++            "with_c2_selected_index": with_index,
++            "choice_differs": differs,
++            "selected_route_kind": with_actual["row"]["route_kind"],
++            "C1_distribution": d1,
++            "C2_distribution": d2,
++            "FULL_score_distribution": dt,
++            "spread_comparison": {
++                "c2_over_c1": float(c2_spread / c1_spread) if c1_spread else None,
++                "c2_over_full_total": float(c2_spread / total_spread) if total_spread else None,
++            },
++            "top_without_c2": {
++                "top_tie_count": tie_count,
++                "immediate_runner_up_gap": pair(immediate_gap),
++                "immediate_runner_up_gap_mbit": float(immediate_gap) / 1e6,
++                "next_distinct_gap": None if distinct_gap is None else pair(distinct_gap),
++                "next_distinct_gap_mbit": None if distinct_gap is None else float(distinct_gap) / 1e6,
++                "c2_spread_over_immediate_gap": (
++                    None if immediate_gap == 0 else float(c2_spread / immediate_gap)
++                ),
++                "c2_spread_over_next_distinct_gap": (
++                    None if distinct_gap in (None, 0) else float(c2_spread / distinct_gap)
++                ),
++            },
++            "first_flip": first_flip(rows),
++        })
++
++    candidates = [
++        (unpair(anchor["first_flip"]["boundary"]), anchor)
++        for anchor in per_anchor
++        if anchor["first_flip"]["exists_for_k_ge_1"]
++    ]
++    if not candidates:
++        global_flip = {"exists_for_k_ge_1": False}
++    else:
++        boundary, anchor = min(candidates, key=lambda item: item[0])
++        global_flip = {
++            "exists_for_k_ge_1": True,
++            "anchor_id": anchor["anchor_id"],
++            **anchor["first_flip"],
++        }
++
++    aggregate_distributions = {
++        "C1": distribution(aggregate["C1"]),
++        "C2": distribution(aggregate["C2"]),
++        "FULL_score": distribution(aggregate["FULL"]),
++    }
++    return {
++        "numerator": "demand_capped",
++        "common_exact_eta_bit_per_j": pair(eta_full),
++        "common_eta_mbit_per_j": float(eta_full) / 1e6,
++        "anchor_count": len(per_anchor),
++        "catalogue_row_count": len(per_row_c2),
++        "argmax_choice_difference_count": flips,
++        "aggregate_distributions": aggregate_distributions,
++        "aggregate_spread_comparison": {
++            "c2_over_c1": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["C1"]["spread"])
++            ),
++            "c2_over_full_total": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["FULL_score"]["spread"])
++            ),
++        },
++        "first_flip": global_flip,
++        "per_anchor": per_anchor,
++        "per_catalogue_row_c2": per_row_c2,
++    }
++
++
++def main() -> int:
++    require_guardrails()
++    module = load_factorial_module()
++    fixture = synthetic_fixture(module)
++    real = analyze_real_catalogue(module)
++    result = {
++        "schema": "mcrl-v025-c2-wiring-diagnostic-v1",
++        "claim": "DIAGNOSTIC_NOT_CLAIM",
++        "classification": "C2_REACHES_SCORE",
++        "fixture": fixture,
++        "real_catalogue": real,
++        "evidence": {
++            "verified_by_running_code": [
++                "synthetic fixture through FACTORIAL choose_for_anchor",
++                "eight cached anchors replayed through FACTORIAL FULL and DROP_C2 arm paths",
++                "exact per-row terms and first-flip boundaries computed with Fraction",
++            ],
++            "derived_on_paper": [
++                "spread ratios and displayed decimal conversions from exact replay values"
++            ],
++            "inferred": [
++                "causal interpretation of real-catalogue inertness from support, spread, gaps, and first-flip scale"
++            ],
++        },
++        "learner_used": False,
++        "sealed_settings_changed": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in THREAD_VARIABLES},
++        "provenance": {
++            "factorial_runner": str(FACTORIAL_RUNNER),
++            "factorial_runner_sha256": sha256(FACTORIAL_RUNNER),
++            "factorial_results": str(FACTORIAL_RESULTS),
++            "factorial_results_sha256": sha256(FACTORIAL_RESULTS),
++            "diagnostic_runner": str(Path(__file__).resolve()),
++            "diagnostic_runner_sha256": sha256(Path(__file__)),
++        },
++    }
++    OUTPUT.write_text(
++        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    print(
++        "C2_WIRING_FIXTURE "
++        f"{fixture['verdict']}: DROP_C2={fixture['drop_c2_selected_index']} "
++        f"FULL={fixture['full_selected_index']}"
++    )
++    flip = real["first_flip"]
++    print(
++        f"REAL_CATALOGUE flips={real['argmax_choice_difference_count']}/"
++        f"{real['anchor_count']} first_boundary={flip.get('boundary_decimal')} "
++        f"condition={flip.get('condition')} anchor={flip.get('anchor_id')}"
++    )
++    print(f"WROTE {OUTPUT}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+2026-09-10T09:01:52.860615Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-09-10T09:08:17.522132Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+2026-09-10T09:18:42.805992Z ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit
+apply patch
+patch: completed
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/c2-wiring/diagnose_c2_wiring.py
+diff --git a/.scratch/c2-wiring/diagnose_c2_wiring.py b/.scratch/c2-wiring/diagnose_c2_wiring.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ae5144e2bb2f628eb982797cb04be2927c7d1cd
+--- /dev/null
++++ b/.scratch/c2-wiring/diagnose_c2_wiring.py
+@@ -0,0 +1,443 @@
++#!/usr/bin/env python3
++"""Bounded C2 wiring diagnostic against the exact FACTORIAL selector."""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import statistics
++import sys
++from typing import Iterable, Mapping
++
++
++FACTORIAL_RUNNER = Path(
++    "/home/sat/mcrl-v025-arch-ws/scripts/run_oracle_factorial.py"
++)
++FACTORIAL_ROOT = FACTORIAL_RUNNER.parents[1]
++FACTORIAL_RESULTS = FACTORIAL_ROOT / ".scratch/oracle-factorial/results.json"
++OUTPUT = Path(__file__).with_name("results.json")
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++)
++
++
++def load_factorial_module():
++    spec = importlib.util.spec_from_file_location("oracle_factorial", FACTORIAL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {FACTORIAL_RUNNER}")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def require_guardrails() -> None:
++    drift = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("diagnostic must run at nice level 15 or greater")
++
++
++def synthetic_fixture(module) -> dict:
++    """A source-shaped catalogue where a live C2 term changes the winner."""
++
++    def profile(index: int, candidate_id: str, numerator: int) -> dict:
++        return {
++            "index": index,
++            "candidate_id": candidate_id,
++            "size": 0 if index == 0 else 1,
++            "valid": True,
++            "served_count": 1,
++            "rate_target_attained_count": 1,
++            "capacity": pair(Fraction(numerator)),
++            "demand_capped": pair(Fraction(numerator)),
++            "energy": pair(Fraction(1)),
++            "additive_capacity": pair(Fraction(numerator)),
++            "additive_demand_capped": pair(Fraction(numerator)),
++            "additive_energy": pair(Fraction(1)),
++        }
++
++    source_anchor = {
++        "anchor_id": "SYNTHETIC_C2_WIRING",
++        "world_index": 0,
++        "step_index": 0,
++        "world_sha256": "synthetic",
++        "base_assignments": [[1, [100, 1]]],
++        "base_guard_served_count": 1,
++        "profiles": [
++            profile(0, "base", 10),
++            profile(1, "assoc", 11),
++            profile(2, "control", 12),
++        ],
++        "candidate_definitions": [
++            {"candidate_id": "base", "assignments": [[1, [100, 1]]], "mode_offsets_by_user": []},
++            {"candidate_id": "assoc", "assignments": [[1, [101, 1]]], "mode_offsets_by_user": []},
++            {"candidate_id": "control", "assignments": [[1, [100, 1]]], "mode_offsets_by_user": [[1, 1]]},
++        ],
++    }
++    shard = module.compact_anchor(source_anchor, 1)
++    eta = Fraction(1)
++    drop = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta)
++    full = module.choose_for_anchor(shard, "demand_capped", "FULL", eta)
++    drop_index = int(drop["row"]["index"])
++    full_index = int(full["row"]["index"])
++    passed = drop_index != full_index
++    if not passed:
++        raise AssertionError(
++            "FAIL: FULL and DROP_C2 agreed on the synthetic C2-only witness"
++        )
++    return {
++        "kind": "synthetic_three_row_source_shaped_exact_fraction",
++        "construction": (
++            "base row B=10,E=1; association row B=11,E=1; "
++            "mode-offset row B=12,E=1; all residuals zero; eta=1"
++        ),
++        "uses_factorial_compact_anchor": True,
++        "uses_factorial_choose_for_anchor": True,
++        "c1_present": True,
++        "eta": [eta.numerator, eta.denominator],
++        "drop_c2_selected_index": drop_index,
++        "full_selected_index": full_index,
++        "verdict": "PASS",
++    }
++
++
++def tie_key(row: Mapping[str, object]) -> tuple[int, int]:
++    index = int(row["index"])
++    return (0 if index == 0 else 1, index)
++
++
++def select_scaled(rows: list[dict], multiplier: Fraction) -> dict:
++    return min(
++        rows,
++        key=lambda row: (
++            -(row["without_c2_score"] + multiplier * row["c2_score"]),
++            tie_key(row),
++        ),
++    )
++
++
++def empirical_quantile(values: list[Fraction], numerator: int, denominator: int) -> Fraction:
++    """Nearest-rank empirical quantile, with q=0 returning the minimum."""
++
++    ordered = sorted(values)
++    if numerator == 0:
++        return ordered[0]
++    rank = (numerator * len(ordered) + denominator - 1) // denominator
++    return ordered[rank - 1]
++
++
++def distribution(values: list[Fraction]) -> dict:
++    if not values:
++        raise RuntimeError("cannot summarize an empty distribution")
++    exact_zero = sum(value == 0 for value in values)
++    minimum = min(values)
++    maximum = max(values)
++    mean = sum(values, Fraction()) / len(values)
++    floats = [float(value) / 1e6 for value in values]
++    return {
++        "count": len(values),
++        "exact_zero_count": exact_zero,
++        "exact_zero_fraction": pair(Fraction(exact_zero, len(values))),
++        "exact_zero_percentage": 100.0 * exact_zero / len(values),
++        "minimum": pair(minimum),
++        "p25_nearest_rank": pair(empirical_quantile(values, 1, 4)),
++        "median_nearest_rank": pair(empirical_quantile(values, 1, 2)),
++        "p75_nearest_rank": pair(empirical_quantile(values, 3, 4)),
++        "maximum": pair(maximum),
++        "mean": pair(mean),
++        "spread": pair(maximum - minimum),
++        "minimum_mbit": float(minimum) / 1e6,
++        "p25_mbit": float(empirical_quantile(values, 1, 4)) / 1e6,
++        "median_mbit": float(empirical_quantile(values, 1, 2)) / 1e6,
++        "p75_mbit": float(empirical_quantile(values, 3, 4)) / 1e6,
++        "maximum_mbit": float(maximum) / 1e6,
++        "mean_mbit": float(mean) / 1e6,
++        "population_stddev_mbit": statistics.pstdev(floats),
++        "spread_mbit": float(maximum - minimum) / 1e6,
++    }
++
++
++def first_flip(rows: list[dict]) -> dict:
++    current = select_scaled(rows, Fraction(1))
++    current_a = current["without_c2_score"]
++    current_b = current["c2_score"]
++    thresholds = []
++    for row in rows:
++        slope_gain = row["c2_score"] - current_b
++        if slope_gain <= 0:
++            continue
++        threshold = (current_a - row["without_c2_score"]) / slope_gain
++        if threshold >= 1:
++            thresholds.append(threshold)
++    if not thresholds:
++        return {"exists_for_k_ge_1": False}
++    boundary = min(thresholds)
++    at_boundary = select_scaled(rows, boundary)
++    scores_at_boundary = [
++        row["without_c2_score"] + boundary * row["c2_score"] for row in rows
++    ]
++    maximum = max(scores_at_boundary)
++    tied = [row for row, score in zip(rows, scores_at_boundary, strict=True) if score == maximum]
++    right_limit = min(tied, key=lambda row: (-row["c2_score"], tie_key(row)))
++    inclusive = int(at_boundary["index"]) != int(current["index"])
++    if int(right_limit["index"]) == int(current["index"]):
++        raise RuntimeError("computed boundary does not change the right-limit argmax")
++    return {
++        "exists_for_k_ge_1": True,
++        "boundary": pair(boundary),
++        "boundary_decimal": float(boundary),
++        "boundary_inclusive": inclusive,
++        "condition": "k >= boundary" if inclusive else "k > boundary",
++        "current_index": int(current["index"]),
++        "at_boundary_index": int(at_boundary["index"]),
++        "right_limit_index": int(right_limit["index"]),
++        "current_c2_term": pair(current_b),
++        "right_limit_c2_term": pair(right_limit["c2_score"]),
++    }
++
++
++def analyze_real_catalogue(module) -> dict:
++    source = json.loads(FACTORIAL_RESULTS.read_text(encoding="ascii"))
++    demand = source["numerators"]["demand_capped"]["selectors"]
++    eta_full = unpair(demand["FULL"]["optimization_ratio"])
++    eta_drop = unpair(demand["DROP_C2"]["optimization_ratio"])
++    if eta_full != eta_drop:
++        raise RuntimeError("FULL and DROP_C2 do not have a common exact final price")
++
++    manifests = source["anchor_shards"]
++    per_anchor = []
++    per_row_c2 = []
++    aggregate = {"C1": [], "C2": [], "FULL": []}
++    flips = 0
++    for manifest in manifests:
++        shard_path = FACTORIAL_ROOT / manifest["path"]
++        if sha256(shard_path) != manifest["sha256"]:
++            raise RuntimeError(f"anchor shard custody mismatch: {shard_path}")
++        shard = json.loads(shard_path.read_text(encoding="ascii"))
++        rows = []
++        for row in shard["rows"]:
++            terms = {}
++            for route in ("C1", "C2", "C3"):
++                delta_n = unpair(row["deltas"][route]["demand_capped"])
++                delta_e = unpair(row["deltas"][route]["energy"])
++                terms[route] = delta_n - eta_full * delta_e
++            base_score = (
++                unpair(shard["base"]["demand_capped"])
++                - eta_full * unpair(shard["base"]["energy"])
++            )
++            without = base_score + terms["C1"] + terms["C3"]
++            full = without + terms["C2"]
++            enriched = {
++                **row,
++                "base_score": base_score,
++                "c1_score": terms["C1"],
++                "c2_score": terms["C2"],
++                "c3_score": terms["C3"],
++                "without_c2_score": without,
++                "full_score": full,
++            }
++            rows.append(enriched)
++            aggregate["C1"].append(terms["C1"])
++            aggregate["C2"].append(terms["C2"])
++            aggregate["FULL"].append(full)
++            per_row_c2.append({
++                "anchor_id": shard["anchor_id"],
++                "candidate_index": int(row["index"]),
++                "route_kind": row["route_kind"],
++                "c2_score_term": pair(terms["C2"]),
++                "c2_score_term_mbit": float(terms["C2"]) / 1e6,
++            })
++
++        # Exercise the actual two declared arm paths at their common exact eta.
++        without_actual = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta_full)
++        with_actual = module.choose_for_anchor(shard, "demand_capped", "FULL", eta_full)
++        without_index = int(without_actual["row"]["index"])
++        with_index = int(with_actual["row"]["index"])
++        if without_index != int(select_scaled(rows, Fraction(0))["index"]):
++            raise RuntimeError("manual k=0 score disagrees with DROP_C2 arm")
++        if with_index != int(select_scaled(rows, Fraction(1))["index"]):
++            raise RuntimeError("manual k=1 score disagrees with FULL arm")
++        differs = without_index != with_index
++        flips += int(differs)
++
++        ranked_without = sorted(rows, key=lambda row: (-row["without_c2_score"], tie_key(row)))
++        top = ranked_without[0]["without_c2_score"]
++        second = ranked_without[1]["without_c2_score"]
++        next_distinct = next(
++            (row["without_c2_score"] for row in ranked_without if row["without_c2_score"] < top),
++            None,
++        )
++        tie_count = sum(row["without_c2_score"] == top for row in ranked_without)
++        c1_values = [row["c1_score"] for row in rows]
++        c2_values = [row["c2_score"] for row in rows]
++        full_values = [row["full_score"] for row in rows]
++        d1 = distribution(c1_values)
++        d2 = distribution(c2_values)
++        dt = distribution(full_values)
++        c2_spread = unpair(d2["spread"])
++        c1_spread = unpair(d1["spread"])
++        total_spread = unpair(dt["spread"])
++        immediate_gap = top - second
++        distinct_gap = None if next_distinct is None else top - next_distinct
++        per_anchor.append({
++            "anchor_id": shard["anchor_id"],
++            "eligible_rows": len(rows),
++            "route_kind_counts": dict(sorted(Counter(row["route_kind"] for row in rows).items())),
++            "without_c2_selected_index": without_index,
++            "with_c2_selected_index": with_index,
++            "choice_differs": differs,
++            "selected_route_kind": with_actual["row"]["route_kind"],
++            "C1_distribution": d1,
++            "C2_distribution": d2,
++            "FULL_score_distribution": dt,
++            "spread_comparison": {
++                "c2_over_c1": float(c2_spread / c1_spread) if c1_spread else None,
++                "c2_over_full_total": float(c2_spread / total_spread) if total_spread else None,
++            },
++            "top_without_c2": {
++                "top_tie_count": tie_count,
++                "immediate_runner_up_gap": pair(immediate_gap),
++                "immediate_runner_up_gap_mbit": float(immediate_gap) / 1e6,
++                "next_distinct_gap": None if distinct_gap is None else pair(distinct_gap),
++                "next_distinct_gap_mbit": None if distinct_gap is None else float(distinct_gap) / 1e6,
++                "c2_spread_over_immediate_gap": (
++                    None if immediate_gap == 0 else float(c2_spread / immediate_gap)
++                ),
++                "c2_spread_over_next_distinct_gap": (
++                    None if distinct_gap in (None, 0) else float(c2_spread / distinct_gap)
++                ),
++            },
++            "first_flip": first_flip(rows),
++        })
++
++    candidates = [
++        (unpair(anchor["first_flip"]["boundary"]), anchor)
++        for anchor in per_anchor
++        if anchor["first_flip"]["exists_for_k_ge_1"]
++    ]
++    if not candidates:
++        global_flip = {"exists_for_k_ge_1": False}
++    else:
++        boundary, anchor = min(candidates, key=lambda item: item[0])
++        global_flip = {
++            "exists_for_k_ge_1": True,
++            "anchor_id": anchor["anchor_id"],
++            **anchor["first_flip"],
++        }
++
++    aggregate_distributions = {
++        "C1": distribution(aggregate["C1"]),
++        "C2": distribution(aggregate["C2"]),
++        "FULL_score": distribution(aggregate["FULL"]),
++    }
++    return {
++        "numerator": "demand_capped",
++        "common_exact_eta_bit_per_j": pair(eta_full),
++        "common_eta_mbit_per_j": float(eta_full) / 1e6,
++        "anchor_count": len(per_anchor),
++        "catalogue_row_count": len(per_row_c2),
++        "argmax_choice_difference_count": flips,
++        "aggregate_distributions": aggregate_distributions,
++        "aggregate_spread_comparison": {
++            "c2_over_c1": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["C1"]["spread"])
++            ),
++            "c2_over_full_total": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["FULL_score"]["spread"])
++            ),
++        },
++        "first_flip": global_flip,
++        "per_anchor": per_anchor,
++        "per_catalogue_row_c2": per_row_c2,
++    }
++
++
++def main() -> int:
++    require_guardrails()
++    module = load_factorial_module()
++    fixture = synthetic_fixture(module)
++    real = analyze_real_catalogue(module)
++    result = {
++        "schema": "mcrl-v025-c2-wiring-diagnostic-v1",
++        "claim": "DIAGNOSTIC_NOT_CLAIM",
++        "classification": "C2_REACHES_SCORE",
++        "fixture": fixture,
++        "real_catalogue": real,
++        "evidence": {
++            "verified_by_running_code": [
++                "synthetic fixture through FACTORIAL choose_for_anchor",
++                "eight cached anchors replayed through FACTORIAL FULL and DROP_C2 arm paths",
++                "exact per-row terms and first-flip boundaries computed with Fraction",
++            ],
++            "derived_on_paper": [
++                "spread ratios and displayed decimal conversions from exact replay values"
++            ],
++            "inferred": [
++                "causal interpretation of real-catalogue inertness from support, spread, gaps, and first-flip scale"
++            ],
++        },
++        "learner_used": False,
++        "sealed_settings_changed": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in THREAD_VARIABLES},
++        "provenance": {
++            "factorial_runner": str(FACTORIAL_RUNNER),
++            "factorial_runner_sha256": sha256(FACTORIAL_RUNNER),
++            "factorial_results": str(FACTORIAL_RESULTS),
++            "factorial_results_sha256": sha256(FACTORIAL_RESULTS),
++            "diagnostic_runner": str(Path(__file__).resolve()),
++            "diagnostic_runner_sha256": sha256(Path(__file__)),
++        },
++    }
++    OUTPUT.write_text(
++        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    print(
++        "C2_WIRING_FIXTURE "
++        f"{fixture['verdict']}: DROP_C2={fixture['drop_c2_selected_index']} "
++        f"FULL={fixture['full_selected_index']}"
++    )
++    flip = real["first_flip"]
++    print(
++        f"REAL_CATALOGUE flips={real['argmax_choice_difference_count']}/"
++        f"{real['anchor_count']} first_boundary={flip.get('boundary_decimal')} "
++        f"condition={flip.get('condition')} anchor={flip.get('anchor_id')}"
++    )
++    print(f"WROTE {OUTPUT}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/c2-wiring/diagnose_c2_wiring.py b/.scratch/c2-wiring/diagnose_c2_wiring.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ae5144e2bb2f628eb982797cb04be2927c7d1cd
+--- /dev/null
++++ b/.scratch/c2-wiring/diagnose_c2_wiring.py
+@@ -0,0 +1,443 @@
++#!/usr/bin/env python3
++"""Bounded C2 wiring diagnostic against the exact FACTORIAL selector."""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import statistics
++import sys
++from typing import Iterable, Mapping
++
++
++FACTORIAL_RUNNER = Path(
++    "/home/sat/mcrl-v025-arch-ws/scripts/run_oracle_factorial.py"
++)
++FACTORIAL_ROOT = FACTORIAL_RUNNER.parents[1]
++FACTORIAL_RESULTS = FACTORIAL_ROOT / ".scratch/oracle-factorial/results.json"
++OUTPUT = Path(__file__).with_name("results.json")
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++)
++
++
++def load_factorial_module():
++    spec = importlib.util.spec_from_file_location("oracle_factorial", FACTORIAL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {FACTORIAL_RUNNER}")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def require_guardrails() -> None:
++    drift = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("diagnostic must run at nice level 15 or greater")
++
++
++def synthetic_fixture(module) -> dict:
++    """A source-shaped catalogue where a live C2 term changes the winner."""
++
++    def profile(index: int, candidate_id: str, numerator: int) -> dict:
++        return {
++            "index": index,
++            "candidate_id": candidate_id,
++            "size": 0 if index == 0 else 1,
++            "valid": True,
++            "served_count": 1,
++            "rate_target_attained_count": 1,
++            "capacity": pair(Fraction(numerator)),
++            "demand_capped": pair(Fraction(numerator)),
++            "energy": pair(Fraction(1)),
++            "additive_capacity": pair(Fraction(numerator)),
++            "additive_demand_capped": pair(Fraction(numerator)),
++            "additive_energy": pair(Fraction(1)),
++        }
++
++    source_anchor = {
++        "anchor_id": "SYNTHETIC_C2_WIRING",
++        "world_index": 0,
++        "step_index": 0,
++        "world_sha256": "synthetic",
++        "base_assignments": [[1, [100, 1]]],
++        "base_guard_served_count": 1,
++        "profiles": [
++            profile(0, "base", 10),
++            profile(1, "assoc", 11),
++            profile(2, "control", 12),
++        ],
++        "candidate_definitions": [
++            {"candidate_id": "base", "assignments": [[1, [100, 1]]], "mode_offsets_by_user": []},
++            {"candidate_id": "assoc", "assignments": [[1, [101, 1]]], "mode_offsets_by_user": []},
++            {"candidate_id": "control", "assignments": [[1, [100, 1]]], "mode_offsets_by_user": [[1, 1]]},
++        ],
++    }
++    shard = module.compact_anchor(source_anchor, 1)
++    eta = Fraction(1)
++    drop = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta)
++    full = module.choose_for_anchor(shard, "demand_capped", "FULL", eta)
++    drop_index = int(drop["row"]["index"])
++    full_index = int(full["row"]["index"])
++    passed = drop_index != full_index
++    if not passed:
++        raise AssertionError(
++            "FAIL: FULL and DROP_C2 agreed on the synthetic C2-only witness"
++        )
++    return {
++        "kind": "synthetic_three_row_source_shaped_exact_fraction",
++        "construction": (
++            "base row B=10,E=1; association row B=11,E=1; "
++            "mode-offset row B=12,E=1; all residuals zero; eta=1"
++        ),
++        "uses_factorial_compact_anchor": True,
++        "uses_factorial_choose_for_anchor": True,
++        "c1_present": True,
++        "eta": [eta.numerator, eta.denominator],
++        "drop_c2_selected_index": drop_index,
++        "full_selected_index": full_index,
++        "verdict": "PASS",
++    }
++
++
++def tie_key(row: Mapping[str, object]) -> tuple[int, int]:
++    index = int(row["index"])
++    return (0 if index == 0 else 1, index)
++
++
++def select_scaled(rows: list[dict], multiplier: Fraction) -> dict:
++    return min(
++        rows,
++        key=lambda row: (
++            -(row["without_c2_score"] + multiplier * row["c2_score"]),
++            tie_key(row),
++        ),
++    )
++
++
++def empirical_quantile(values: list[Fraction], numerator: int, denominator: int) -> Fraction:
++    """Nearest-rank empirical quantile, with q=0 returning the minimum."""
++
++    ordered = sorted(values)
++    if numerator == 0:
++        return ordered[0]
++    rank = (numerator * len(ordered) + denominator - 1) // denominator
++    return ordered[rank - 1]
++
++
++def distribution(values: list[Fraction]) -> dict:
++    if not values:
++        raise RuntimeError("cannot summarize an empty distribution")
++    exact_zero = sum(value == 0 for value in values)
++    minimum = min(values)
++    maximum = max(values)
++    mean = sum(values, Fraction()) / len(values)
++    floats = [float(value) / 1e6 for value in values]
++    return {
++        "count": len(values),
++        "exact_zero_count": exact_zero,
++        "exact_zero_fraction": pair(Fraction(exact_zero, len(values))),
++        "exact_zero_percentage": 100.0 * exact_zero / len(values),
++        "minimum": pair(minimum),
++        "p25_nearest_rank": pair(empirical_quantile(values, 1, 4)),
++        "median_nearest_rank": pair(empirical_quantile(values, 1, 2)),
++        "p75_nearest_rank": pair(empirical_quantile(values, 3, 4)),
++        "maximum": pair(maximum),
++        "mean": pair(mean),
++        "spread": pair(maximum - minimum),
++        "minimum_mbit": float(minimum) / 1e6,
++        "p25_mbit": float(empirical_quantile(values, 1, 4)) / 1e6,
++        "median_mbit": float(empirical_quantile(values, 1, 2)) / 1e6,
++        "p75_mbit": float(empirical_quantile(values, 3, 4)) / 1e6,
++        "maximum_mbit": float(maximum) / 1e6,
++        "mean_mbit": float(mean) / 1e6,
++        "population_stddev_mbit": statistics.pstdev(floats),
++        "spread_mbit": float(maximum - minimum) / 1e6,
++    }
++
++
++def first_flip(rows: list[dict]) -> dict:
++    current = select_scaled(rows, Fraction(1))
++    current_a = current["without_c2_score"]
++    current_b = current["c2_score"]
++    thresholds = []
++    for row in rows:
++        slope_gain = row["c2_score"] - current_b
++        if slope_gain <= 0:
++            continue
++        threshold = (current_a - row["without_c2_score"]) / slope_gain
++        if threshold >= 1:
++            thresholds.append(threshold)
++    if not thresholds:
++        return {"exists_for_k_ge_1": False}
++    boundary = min(thresholds)
++    at_boundary = select_scaled(rows, boundary)
++    scores_at_boundary = [
++        row["without_c2_score"] + boundary * row["c2_score"] for row in rows
++    ]
++    maximum = max(scores_at_boundary)
++    tied = [row for row, score in zip(rows, scores_at_boundary, strict=True) if score == maximum]
++    right_limit = min(tied, key=lambda row: (-row["c2_score"], tie_key(row)))
++    inclusive = int(at_boundary["index"]) != int(current["index"])
++    if int(right_limit["index"]) == int(current["index"]):
++        raise RuntimeError("computed boundary does not change the right-limit argmax")
++    return {
++        "exists_for_k_ge_1": True,
++        "boundary": pair(boundary),
++        "boundary_decimal": float(boundary),
++        "boundary_inclusive": inclusive,
++        "condition": "k >= boundary" if inclusive else "k > boundary",
++        "current_index": int(current["index"]),
++        "at_boundary_index": int(at_boundary["index"]),
++        "right_limit_index": int(right_limit["index"]),
++        "current_c2_term": pair(current_b),
++        "right_limit_c2_term": pair(right_limit["c2_score"]),
++    }
++
++
++def analyze_real_catalogue(module) -> dict:
++    source = json.loads(FACTORIAL_RESULTS.read_text(encoding="ascii"))
++    demand = source["numerators"]["demand_capped"]["selectors"]
++    eta_full = unpair(demand["FULL"]["optimization_ratio"])
++    eta_drop = unpair(demand["DROP_C2"]["optimization_ratio"])
++    if eta_full != eta_drop:
++        raise RuntimeError("FULL and DROP_C2 do not have a common exact final price")
++
++    manifests = source["anchor_shards"]
++    per_anchor = []
++    per_row_c2 = []
++    aggregate = {"C1": [], "C2": [], "FULL": []}
++    flips = 0
++    for manifest in manifests:
++        shard_path = FACTORIAL_ROOT / manifest["path"]
++        if sha256(shard_path) != manifest["sha256"]:
++            raise RuntimeError(f"anchor shard custody mismatch: {shard_path}")
++        shard = json.loads(shard_path.read_text(encoding="ascii"))
++        rows = []
++        for row in shard["rows"]:
++            terms = {}
++            for route in ("C1", "C2", "C3"):
++                delta_n = unpair(row["deltas"][route]["demand_capped"])
++                delta_e = unpair(row["deltas"][route]["energy"])
++                terms[route] = delta_n - eta_full * delta_e
++            base_score = (
++                unpair(shard["base"]["demand_capped"])
++                - eta_full * unpair(shard["base"]["energy"])
++            )
++            without = base_score + terms["C1"] + terms["C3"]
++            full = without + terms["C2"]
++            enriched = {
++                **row,
++                "base_score": base_score,
++                "c1_score": terms["C1"],
++                "c2_score": terms["C2"],
++                "c3_score": terms["C3"],
++                "without_c2_score": without,
++                "full_score": full,
++            }
++            rows.append(enriched)
++            aggregate["C1"].append(terms["C1"])
++            aggregate["C2"].append(terms["C2"])
++            aggregate["FULL"].append(full)
++            per_row_c2.append({
++                "anchor_id": shard["anchor_id"],
++                "candidate_index": int(row["index"]),
++                "route_kind": row["route_kind"],
++                "c2_score_term": pair(terms["C2"]),
++                "c2_score_term_mbit": float(terms["C2"]) / 1e6,
++            })
++
++        # Exercise the actual two declared arm paths at their common exact eta.
++        without_actual = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta_full)
++        with_actual = module.choose_for_anchor(shard, "demand_capped", "FULL", eta_full)
++        without_index = int(without_actual["row"]["index"])
++        with_index = int(with_actual["row"]["index"])
++        if without_index != int(select_scaled(rows, Fraction(0))["index"]):
++            raise RuntimeError("manual k=0 score disagrees with DROP_C2 arm")
++        if with_index != int(select_scaled(rows, Fraction(1))["index"]):
++            raise RuntimeError("manual k=1 score disagrees with FULL arm")
++        differs = without_index != with_index
++        flips += int(differs)
++
++        ranked_without = sorted(rows, key=lambda row: (-row["without_c2_score"], tie_key(row)))
++        top = ranked_without[0]["without_c2_score"]
++        second = ranked_without[1]["without_c2_score"]
++        next_distinct = next(
++            (row["without_c2_score"] for row in ranked_without if row["without_c2_score"] < top),
++            None,
++        )
++        tie_count = sum(row["without_c2_score"] == top for row in ranked_without)
++        c1_values = [row["c1_score"] for row in rows]
++        c2_values = [row["c2_score"] for row in rows]
++        full_values = [row["full_score"] for row in rows]
++        d1 = distribution(c1_values)
++        d2 = distribution(c2_values)
++        dt = distribution(full_values)
++        c2_spread = unpair(d2["spread"])
++        c1_spread = unpair(d1["spread"])
++        total_spread = unpair(dt["spread"])
++        immediate_gap = top - second
++        distinct_gap = None if next_distinct is None else top - next_distinct
++        per_anchor.append({
++            "anchor_id": shard["anchor_id"],
++            "eligible_rows": len(rows),
++            "route_kind_counts": dict(sorted(Counter(row["route_kind"] for row in rows).items())),
++            "without_c2_selected_index": without_index,
++            "with_c2_selected_index": with_index,
++            "choice_differs": differs,
++            "selected_route_kind": with_actual["row"]["route_kind"],
++            "C1_distribution": d1,
++            "C2_distribution": d2,
++            "FULL_score_distribution": dt,
++            "spread_comparison": {
++                "c2_over_c1": float(c2_spread / c1_spread) if c1_spread else None,
++                "c2_over_full_total": float(c2_spread / total_spread) if total_spread else None,
++            },
++            "top_without_c2": {
++                "top_tie_count": tie_count,
++                "immediate_runner_up_gap": pair(immediate_gap),
++                "immediate_runner_up_gap_mbit": float(immediate_gap) / 1e6,
++                "next_distinct_gap": None if distinct_gap is None else pair(distinct_gap),
++                "next_distinct_gap_mbit": None if distinct_gap is None else float(distinct_gap) / 1e6,
++                "c2_spread_over_immediate_gap": (
++                    None if immediate_gap == 0 else float(c2_spread / immediate_gap)
++                ),
++                "c2_spread_over_next_distinct_gap": (
++                    None if distinct_gap in (None, 0) else float(c2_spread / distinct_gap)
++                ),
++            },
++            "first_flip": first_flip(rows),
++        })
++
++    candidates = [
++        (unpair(anchor["first_flip"]["boundary"]), anchor)
++        for anchor in per_anchor
++        if anchor["first_flip"]["exists_for_k_ge_1"]
++    ]
++    if not candidates:
++        global_flip = {"exists_for_k_ge_1": False}
++    else:
++        boundary, anchor = min(candidates, key=lambda item: item[0])
++        global_flip = {
++            "exists_for_k_ge_1": True,
++            "anchor_id": anchor["anchor_id"],
++            **anchor["first_flip"],
++        }
++
++    aggregate_distributions = {
++        "C1": distribution(aggregate["C1"]),
++        "C2": distribution(aggregate["C2"]),
++        "FULL_score": distribution(aggregate["FULL"]),
++    }
++    return {
++        "numerator": "demand_capped",
++        "common_exact_eta_bit_per_j": pair(eta_full),
++        "common_eta_mbit_per_j": float(eta_full) / 1e6,
++        "anchor_count": len(per_anchor),
++        "catalogue_row_count": len(per_row_c2),
++        "argmax_choice_difference_count": flips,
++        "aggregate_distributions": aggregate_distributions,
++        "aggregate_spread_comparison": {
++            "c2_over_c1": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["C1"]["spread"])
++            ),
++            "c2_over_full_total": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["FULL_score"]["spread"])
++            ),
++        },
++        "first_flip": global_flip,
++        "per_anchor": per_anchor,
++        "per_catalogue_row_c2": per_row_c2,
++    }
++
++
++def main() -> int:
++    require_guardrails()
++    module = load_factorial_module()
++    fixture = synthetic_fixture(module)
++    real = analyze_real_catalogue(module)
++    result = {
++        "schema": "mcrl-v025-c2-wiring-diagnostic-v1",
++        "claim": "DIAGNOSTIC_NOT_CLAIM",
++        "classification": "C2_REACHES_SCORE",
++        "fixture": fixture,
++        "real_catalogue": real,
++        "evidence": {
++            "verified_by_running_code": [
++                "synthetic fixture through FACTORIAL choose_for_anchor",
++                "eight cached anchors replayed through FACTORIAL FULL and DROP_C2 arm paths",
++                "exact per-row terms and first-flip boundaries computed with Fraction",
++            ],
++            "derived_on_paper": [
++                "spread ratios and displayed decimal conversions from exact replay values"
++            ],
++            "inferred": [
++                "causal interpretation of real-catalogue inertness from support, spread, gaps, and first-flip scale"
++            ],
++        },
++        "learner_used": False,
++        "sealed_settings_changed": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in THREAD_VARIABLES},
++        "provenance": {
++            "factorial_runner": str(FACTORIAL_RUNNER),
++            "factorial_runner_sha256": sha256(FACTORIAL_RUNNER),
++            "factorial_results": str(FACTORIAL_RESULTS),
++            "factorial_results_sha256": sha256(FACTORIAL_RESULTS),
++            "diagnostic_runner": str(Path(__file__).resolve()),
++            "diagnostic_runner_sha256": sha256(Path(__file__)),
++        },
++    }
++    OUTPUT.write_text(
++        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    print(
++        "C2_WIRING_FIXTURE "
++        f"{fixture['verdict']}: DROP_C2={fixture['drop_c2_selected_index']} "
++        f"FULL={fixture['full_selected_index']}"
++    )
++    flip = real["first_flip"]
++    print(
++        f"REAL_CATALOGUE flips={real['argmax_choice_difference_count']}/"
++        f"{real['anchor_count']} first_boundary={flip.get('boundary_decimal')} "
++        f"condition={flip.get('condition')} anchor={flip.get('anchor_id')}"
++    )
++    print(f"WROTE {OUTPUT}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+/bin/bash -lc 'env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/c2-wiring/diagnose_c2_wiring.py' in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 4699ms:
+C2_WIRING_FIXTURE PASS: DROP_C2=1 FULL=2
+REAL_CATALOGUE flips=0/8 first_boundary=17.246731712956027 condition=k >= boundary anchor=V025_PROBE_R2/world/1:step/3
+WROTE /home/sat/mcrl-v025-c1c2suff-ws/.scratch/c2-wiring/results.json
+
+diff --git a/.scratch/c2-wiring/diagnose_c2_wiring.py b/.scratch/c2-wiring/diagnose_c2_wiring.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ae5144e2bb2f628eb982797cb04be2927c7d1cd
+--- /dev/null
++++ b/.scratch/c2-wiring/diagnose_c2_wiring.py
+@@ -0,0 +1,443 @@
++#!/usr/bin/env python3
++"""Bounded C2 wiring diagnostic against the exact FACTORIAL selector."""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import statistics
++import sys
++from typing import Iterable, Mapping
++
++
++FACTORIAL_RUNNER = Path(
++    "/home/sat/mcrl-v025-arch-ws/scripts/run_oracle_factorial.py"
++)
++FACTORIAL_ROOT = FACTORIAL_RUNNER.parents[1]
++FACTORIAL_RESULTS = FACTORIAL_ROOT / ".scratch/oracle-factorial/results.json"
++OUTPUT = Path(__file__).with_name("results.json")
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++)
++
++
++def load_factorial_module():
++    spec = importlib.util.spec_from_file_location("oracle_factorial", FACTORIAL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {FACTORIAL_RUNNER}")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def require_guardrails() -> None:
++    drift = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("diagnostic must run at nice level 15 or greater")
++
++
++def synthetic_fixture(module) -> dict:
++    """A source-shaped catalogue where a live C2 term changes the winner."""
++
++    def profile(index: int, candidate_id: str, numerator: int) -> dict:
++        return {
++            "index": index,
++            "candidate_id": candidate_id,
++            "size": 0 if index == 0 else 1,
++            "valid": True,
++            "served_count": 1,
++            "rate_target_attained_count": 1,
++            "capacity": pair(Fraction(numerator)),
++            "demand_capped": pair(Fraction(numerator)),
++            "energy": pair(Fraction(1)),
++            "additive_capacity": pair(Fraction(numerator)),
++            "additive_demand_capped": pair(Fraction(numerator)),
++            "additive_energy": pair(Fraction(1)),
++        }
++
++    source_anchor = {
++        "anchor_id": "SYNTHETIC_C2_WIRING",
++        "world_index": 0,
++        "step_index": 0,
++        "world_sha256": "synthetic",
++        "base_assignments": [[1, [100, 1]]],
++        "base_guard_served_count": 1,
++        "profiles": [
++            profile(0, "base", 10),
++            profile(1, "assoc", 11),
++            profile(2, "control", 12),
++        ],
++        "candidate_definitions": [
++            {"candidate_id": "base", "assignments": [[1, [100, 1]]], "mode_offsets_by_user": []},
++            {"candidate_id": "assoc", "assignments": [[1, [101, 1]]], "mode_offsets_by_user": []},
++            {"candidate_id": "control", "assignments": [[1, [100, 1]]], "mode_offsets_by_user": [[1, 1]]},
++        ],
++    }
++    shard = module.compact_anchor(source_anchor, 1)
++    eta = Fraction(1)
++    drop = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta)
++    full = module.choose_for_anchor(shard, "demand_capped", "FULL", eta)
++    drop_index = int(drop["row"]["index"])
++    full_index = int(full["row"]["index"])
++    passed = drop_index != full_index
++    if not passed:
++        raise AssertionError(
++            "FAIL: FULL and DROP_C2 agreed on the synthetic C2-only witness"
++        )
++    return {
++        "kind": "synthetic_three_row_source_shaped_exact_fraction",
++        "construction": (
++            "base row B=10,E=1; association row B=11,E=1; "
++            "mode-offset row B=12,E=1; all residuals zero; eta=1"
++        ),
++        "uses_factorial_compact_anchor": True,
++        "uses_factorial_choose_for_anchor": True,
++        "c1_present": True,
++        "eta": [eta.numerator, eta.denominator],
++        "drop_c2_selected_index": drop_index,
++        "full_selected_index": full_index,
++        "verdict": "PASS",
++    }
++
++
++def tie_key(row: Mapping[str, object]) -> tuple[int, int]:
++    index = int(row["index"])
++    return (0 if index == 0 else 1, index)
++
++
++def select_scaled(rows: list[dict], multiplier: Fraction) -> dict:
++    return min(
++        rows,
++        key=lambda row: (
++            -(row["without_c2_score"] + multiplier * row["c2_score"]),
++            tie_key(row),
++        ),
++    )
++
++
++def empirical_quantile(values: list[Fraction], numerator: int, denominator: int) -> Fraction:
++    """Nearest-rank empirical quantile, with q=0 returning the minimum."""
++
++    ordered = sorted(values)
++    if numerator == 0:
++        return ordered[0]
++    rank = (numerator * len(ordered) + denominator - 1) // denominator
++    return ordered[rank - 1]
++
++
++def distribution(values: list[Fraction]) -> dict:
++    if not values:
++        raise RuntimeError("cannot summarize an empty distribution")
++    exact_zero = sum(value == 0 for value in values)
++    minimum = min(values)
++    maximum = max(values)
++    mean = sum(values, Fraction()) / len(values)
++    floats = [float(value) / 1e6 for value in values]
++    return {
++        "count": len(values),
++        "exact_zero_count": exact_zero,
++        "exact_zero_fraction": pair(Fraction(exact_zero, len(values))),
++        "exact_zero_percentage": 100.0 * exact_zero / len(values),
++        "minimum": pair(minimum),
++        "p25_nearest_rank": pair(empirical_quantile(values, 1, 4)),
++        "median_nearest_rank": pair(empirical_quantile(values, 1, 2)),
++        "p75_nearest_rank": pair(empirical_quantile(values, 3, 4)),
++        "maximum": pair(maximum),
++        "mean": pair(mean),
++        "spread": pair(maximum - minimum),
++        "minimum_mbit": float(minimum) / 1e6,
++        "p25_mbit": float(empirical_quantile(values, 1, 4)) / 1e6,
++        "median_mbit": float(empirical_quantile(values, 1, 2)) / 1e6,
++        "p75_mbit": float(empirical_quantile(values, 3, 4)) / 1e6,
++        "maximum_mbit": float(maximum) / 1e6,
++        "mean_mbit": float(mean) / 1e6,
++        "population_stddev_mbit": statistics.pstdev(floats),
++        "spread_mbit": float(maximum - minimum) / 1e6,
++    }
++
++
++def first_flip(rows: list[dict]) -> dict:
++    current = select_scaled(rows, Fraction(1))
++    current_a = current["without_c2_score"]
++    current_b = current["c2_score"]
++    thresholds = []
++    for row in rows:
++        slope_gain = row["c2_score"] - current_b
++        if slope_gain <= 0:
++            continue
++        threshold = (current_a - row["without_c2_score"]) / slope_gain
++        if threshold >= 1:
++            thresholds.append(threshold)
++    if not thresholds:
++        return {"exists_for_k_ge_1": False}
++    boundary = min(thresholds)
++    at_boundary = select_scaled(rows, boundary)
++    scores_at_boundary = [
++        row["without_c2_score"] + boundary * row["c2_score"] for row in rows
++    ]
++    maximum = max(scores_at_boundary)
++    tied = [row for row, score in zip(rows, scores_at_boundary, strict=True) if score == maximum]
++    right_limit = min(tied, key=lambda row: (-row["c2_score"], tie_key(row)))
++    inclusive = int(at_boundary["index"]) != int(current["index"])
++    if int(right_limit["index"]) == int(current["index"]):
++        raise RuntimeError("computed boundary does not change the right-limit argmax")
++    return {
++        "exists_for_k_ge_1": True,
++        "boundary": pair(boundary),
++        "boundary_decimal": float(boundary),
++        "boundary_inclusive": inclusive,
++        "condition": "k >= boundary" if inclusive else "k > boundary",
++        "current_index": int(current["index"]),
++        "at_boundary_index": int(at_boundary["index"]),
++        "right_limit_index": int(right_limit["index"]),
++        "current_c2_term": pair(current_b),
++        "right_limit_c2_term": pair(right_limit["c2_score"]),
++    }
++
++
++def analyze_real_catalogue(module) -> dict:
++    source = json.loads(FACTORIAL_RESULTS.read_text(encoding="ascii"))
++    demand = source["numerators"]["demand_capped"]["selectors"]
++    eta_full = unpair(demand["FULL"]["optimization_ratio"])
++    eta_drop = unpair(demand["DROP_C2"]["optimization_ratio"])
++    if eta_full != eta_drop:
++        raise RuntimeError("FULL and DROP_C2 do not have a common exact final price")
++
++    manifests = source["anchor_shards"]
++    per_anchor = []
++    per_row_c2 = []
++    aggregate = {"C1": [], "C2": [], "FULL": []}
++    flips = 0
++    for manifest in manifests:
++        shard_path = FACTORIAL_ROOT / manifest["path"]
++        if sha256(shard_path) != manifest["sha256"]:
++            raise RuntimeError(f"anchor shard custody mismatch: {shard_path}")
++        shard = json.loads(shard_path.read_text(encoding="ascii"))
++        rows = []
++        for row in shard["rows"]:
++            terms = {}
++            for route in ("C1", "C2", "C3"):
++                delta_n = unpair(row["deltas"][route]["demand_capped"])
++                delta_e = unpair(row["deltas"][route]["energy"])
++                terms[route] = delta_n - eta_full * delta_e
++            base_score = (
++                unpair(shard["base"]["demand_capped"])
++                - eta_full * unpair(shard["base"]["energy"])
++            )
++            without = base_score + terms["C1"] + terms["C3"]
++            full = without + terms["C2"]
++            enriched = {
++                **row,
++                "base_score": base_score,
++                "c1_score": terms["C1"],
++                "c2_score": terms["C2"],
++                "c3_score": terms["C3"],
++                "without_c2_score": without,
++                "full_score": full,
++            }
++            rows.append(enriched)
++            aggregate["C1"].append(terms["C1"])
++            aggregate["C2"].append(terms["C2"])
++            aggregate["FULL"].append(full)
++            per_row_c2.append({
++                "anchor_id": shard["anchor_id"],
++                "candidate_index": int(row["index"]),
++                "route_kind": row["route_kind"],
++                "c2_score_term": pair(terms["C2"]),
++                "c2_score_term_mbit": float(terms["C2"]) / 1e6,
++            })
++
++        # Exercise the actual two declared arm paths at their common exact eta.
++        without_actual = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta_full)
++        with_actual = module.choose_for_anchor(shard, "demand_capped", "FULL", eta_full)
++        without_index = int(without_actual["row"]["index"])
++        with_index = int(with_actual["row"]["index"])
++        if without_index != int(select_scaled(rows, Fraction(0))["index"]):
++            raise RuntimeError("manual k=0 score disagrees with DROP_C2 arm")
++        if with_index != int(select_scaled(rows, Fraction(1))["index"]):
++            raise RuntimeError("manual k=1 score disagrees with FULL arm")
++        differs = without_index != with_index
++        flips += int(differs)
++
++        ranked_without = sorted(rows, key=lambda row: (-row["without_c2_score"], tie_key(row)))
++        top = ranked_without[0]["without_c2_score"]
++        second = ranked_without[1]["without_c2_score"]
++        next_distinct = next(
++            (row["without_c2_score"] for row in ranked_without if row["without_c2_score"] < top),
++            None,
++        )
++        tie_count = sum(row["without_c2_score"] == top for row in ranked_without)
++        c1_values = [row["c1_score"] for row in rows]
++        c2_values = [row["c2_score"] for row in rows]
++        full_values = [row["full_score"] for row in rows]
++        d1 = distribution(c1_values)
++        d2 = distribution(c2_values)
++        dt = distribution(full_values)
++        c2_spread = unpair(d2["spread"])
++        c1_spread = unpair(d1["spread"])
++        total_spread = unpair(dt["spread"])
++        immediate_gap = top - second
++        distinct_gap = None if next_distinct is None else top - next_distinct
++        per_anchor.append({
++            "anchor_id": shard["anchor_id"],
++            "eligible_rows": len(rows),
++            "route_kind_counts": dict(sorted(Counter(row["route_kind"] for row in rows).items())),
++            "without_c2_selected_index": without_index,
++            "with_c2_selected_index": with_index,
++            "choice_differs": differs,
++            "selected_route_kind": with_actual["row"]["route_kind"],
++            "C1_distribution": d1,
++            "C2_distribution": d2,
++            "FULL_score_distribution": dt,
++            "spread_comparison": {
++                "c2_over_c1": float(c2_spread / c1_spread) if c1_spread else None,
++                "c2_over_full_total": float(c2_spread / total_spread) if total_spread else None,
++            },
++            "top_without_c2": {
++                "top_tie_count": tie_count,
++                "immediate_runner_up_gap": pair(immediate_gap),
++                "immediate_runner_up_gap_mbit": float(immediate_gap) / 1e6,
++                "next_distinct_gap": None if distinct_gap is None else pair(distinct_gap),
++                "next_distinct_gap_mbit": None if distinct_gap is None else float(distinct_gap) / 1e6,
++                "c2_spread_over_immediate_gap": (
++                    None if immediate_gap == 0 else float(c2_spread / immediate_gap)
++                ),
++                "c2_spread_over_next_distinct_gap": (
++                    None if distinct_gap in (None, 0) else float(c2_spread / distinct_gap)
++                ),
++            },
++            "first_flip": first_flip(rows),
++        })
++
++    candidates = [
++        (unpair(anchor["first_flip"]["boundary"]), anchor)
++        for anchor in per_anchor
++        if anchor["first_flip"]["exists_for_k_ge_1"]
++    ]
++    if not candidates:
++        global_flip = {"exists_for_k_ge_1": False}
++    else:
++        boundary, anchor = min(candidates, key=lambda item: item[0])
++        global_flip = {
++            "exists_for_k_ge_1": True,
++            "anchor_id": anchor["anchor_id"],
++            **anchor["first_flip"],
++        }
++
++    aggregate_distributions = {
++        "C1": distribution(aggregate["C1"]),
++        "C2": distribution(aggregate["C2"]),
++        "FULL_score": distribution(aggregate["FULL"]),
++    }
++    return {
++        "numerator": "demand_capped",
++        "common_exact_eta_bit_per_j": pair(eta_full),
++        "common_eta_mbit_per_j": float(eta_full) / 1e6,
++        "anchor_count": len(per_anchor),
++        "catalogue_row_count": len(per_row_c2),
++        "argmax_choice_difference_count": flips,
++        "aggregate_distributions": aggregate_distributions,
++        "aggregate_spread_comparison": {
++            "c2_over_c1": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["C1"]["spread"])
++            ),
++            "c2_over_full_total": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["FULL_score"]["spread"])
++            ),
++        },
++        "first_flip": global_flip,
++        "per_anchor": per_anchor,
++        "per_catalogue_row_c2": per_row_c2,
++    }
++
++
++def main() -> int:
++    require_guardrails()
++    module = load_factorial_module()
++    fixture = synthetic_fixture(module)
++    real = analyze_real_catalogue(module)
++    result = {
++        "schema": "mcrl-v025-c2-wiring-diagnostic-v1",
++        "claim": "DIAGNOSTIC_NOT_CLAIM",
++        "classification": "C2_REACHES_SCORE",
++        "fixture": fixture,
++        "real_catalogue": real,
++        "evidence": {
++            "verified_by_running_code": [
++                "synthetic fixture through FACTORIAL choose_for_anchor",
++                "eight cached anchors replayed through FACTORIAL FULL and DROP_C2 arm paths",
++                "exact per-row terms and first-flip boundaries computed with Fraction",
++            ],
++            "derived_on_paper": [
++                "spread ratios and displayed decimal conversions from exact replay values"
++            ],
++            "inferred": [
++                "causal interpretation of real-catalogue inertness from support, spread, gaps, and first-flip scale"
++            ],
++        },
++        "learner_used": False,
++        "sealed_settings_changed": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in THREAD_VARIABLES},
++        "provenance": {
++            "factorial_runner": str(FACTORIAL_RUNNER),
++            "factorial_runner_sha256": sha256(FACTORIAL_RUNNER),
++            "factorial_results": str(FACTORIAL_RESULTS),
++            "factorial_results_sha256": sha256(FACTORIAL_RESULTS),
++            "diagnostic_runner": str(Path(__file__).resolve()),
++            "diagnostic_runner_sha256": sha256(Path(__file__)),
++        },
++    }
++    OUTPUT.write_text(
++        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    print(
++        "C2_WIRING_FIXTURE "
++        f"{fixture['verdict']}: DROP_C2={fixture['drop_c2_selected_index']} "
++        f"FULL={fixture['full_selected_index']}"
++    )
++    flip = real["first_flip"]
++    print(
++        f"REAL_CATALOGUE flips={real['argmax_choice_difference_count']}/"
++        f"{real['anchor_count']} first_boundary={flip.get('boundary_decimal')} "
++        f"condition={flip.get('condition')} anchor={flip.get('anchor_id')}"
++    )
++    print(f"WROTE {OUTPUT}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+/bin/bash -lc "sha256sum .scratch/c2-wiring/results.json .scratch/c2-wiring/diagnose_c2_wiring.py && jq -e '
+  .classification == \"C2_REACHES_SCORE\" and
+  .fixture.verdict == \"PASS\" and
+  .fixture.drop_c2_selected_index == 1 and
+  .fixture.full_selected_index == 2 and
+  .real_catalogue.anchor_count == 8 and
+  .real_catalogue.catalogue_row_count == 31133 and
+  .real_catalogue.argmax_choice_difference_count == 0 and
+  ([.real_catalogue.per_anchor[].selected_route_kind] | all(. == \"C1\")) and
+  ([.real_catalogue.per_catalogue_row_c2[] | select(.route_kind "'!= "C2" and .c2_score_term != [0,1])] | length == 0)
+'"' .scratch/c2-wiring/results.json" in /home/sat/mcrl-v025-c1c2suff-ws
+ succeeded in 0ms:
+efbfcde40dc4931a047998390812bb7ec679642b53c485b25b9cc3bffbec3d31  .scratch/c2-wiring/results.json
+a78fda602766b3c4a77de8d6cc6ab6bbfdacb89410b6bcb6c51f9a26fa8de81c  .scratch/c2-wiring/diagnose_c2_wiring.py
+true
+
+diff --git a/.scratch/c2-wiring/diagnose_c2_wiring.py b/.scratch/c2-wiring/diagnose_c2_wiring.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8ae5144e2bb2f628eb982797cb04be2927c7d1cd
+--- /dev/null
++++ b/.scratch/c2-wiring/diagnose_c2_wiring.py
+@@ -0,0 +1,443 @@
++#!/usr/bin/env python3
++"""Bounded C2 wiring diagnostic against the exact FACTORIAL selector."""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import platform
++import statistics
++import sys
++from typing import Iterable, Mapping
++
++
++FACTORIAL_RUNNER = Path(
++    "/home/sat/mcrl-v025-arch-ws/scripts/run_oracle_factorial.py"
++)
++FACTORIAL_ROOT = FACTORIAL_RUNNER.parents[1]
++FACTORIAL_RESULTS = FACTORIAL_ROOT / ".scratch/oracle-factorial/results.json"
++OUTPUT = Path(__file__).with_name("results.json")
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++)
++
++
++def load_factorial_module():
++    spec = importlib.util.spec_from_file_location("oracle_factorial", FACTORIAL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError(f"cannot load {FACTORIAL_RUNNER}")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        while chunk := stream.read(1024 * 1024):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def pair(value: Fraction) -> list[int]:
++    return [value.numerator, value.denominator]
++
++
++def unpair(value) -> Fraction:
++    return Fraction(int(value[0]), int(value[1]))
++
++
++def require_guardrails() -> None:
++    drift = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if drift:
++        raise RuntimeError(f"BLAS/thread environment must be exactly one: {drift}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("diagnostic must run at nice level 15 or greater")
++
++
++def synthetic_fixture(module) -> dict:
++    """A source-shaped catalogue where a live C2 term changes the winner."""
++
++    def profile(index: int, candidate_id: str, numerator: int) -> dict:
++        return {
++            "index": index,
++            "candidate_id": candidate_id,
++            "size": 0 if index == 0 else 1,
++            "valid": True,
++            "served_count": 1,
++            "rate_target_attained_count": 1,
++            "capacity": pair(Fraction(numerator)),
++            "demand_capped": pair(Fraction(numerator)),
++            "energy": pair(Fraction(1)),
++            "additive_capacity": pair(Fraction(numerator)),
++            "additive_demand_capped": pair(Fraction(numerator)),
++            "additive_energy": pair(Fraction(1)),
++        }
++
++    source_anchor = {
++        "anchor_id": "SYNTHETIC_C2_WIRING",
++        "world_index": 0,
++        "step_index": 0,
++        "world_sha256": "synthetic",
++        "base_assignments": [[1, [100, 1]]],
++        "base_guard_served_count": 1,
++        "profiles": [
++            profile(0, "base", 10),
++            profile(1, "assoc", 11),
++            profile(2, "control", 12),
++        ],
++        "candidate_definitions": [
++            {"candidate_id": "base", "assignments": [[1, [100, 1]]], "mode_offsets_by_user": []},
++            {"candidate_id": "assoc", "assignments": [[1, [101, 1]]], "mode_offsets_by_user": []},
++            {"candidate_id": "control", "assignments": [[1, [100, 1]]], "mode_offsets_by_user": [[1, 1]]},
++        ],
++    }
++    shard = module.compact_anchor(source_anchor, 1)
++    eta = Fraction(1)
++    drop = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta)
++    full = module.choose_for_anchor(shard, "demand_capped", "FULL", eta)
++    drop_index = int(drop["row"]["index"])
++    full_index = int(full["row"]["index"])
++    passed = drop_index != full_index
++    if not passed:
++        raise AssertionError(
++            "FAIL: FULL and DROP_C2 agreed on the synthetic C2-only witness"
++        )
++    return {
++        "kind": "synthetic_three_row_source_shaped_exact_fraction",
++        "construction": (
++            "base row B=10,E=1; association row B=11,E=1; "
++            "mode-offset row B=12,E=1; all residuals zero; eta=1"
++        ),
++        "uses_factorial_compact_anchor": True,
++        "uses_factorial_choose_for_anchor": True,
++        "c1_present": True,
++        "eta": [eta.numerator, eta.denominator],
++        "drop_c2_selected_index": drop_index,
++        "full_selected_index": full_index,
++        "verdict": "PASS",
++    }
++
++
++def tie_key(row: Mapping[str, object]) -> tuple[int, int]:
++    index = int(row["index"])
++    return (0 if index == 0 else 1, index)
++
++
++def select_scaled(rows: list[dict], multiplier: Fraction) -> dict:
++    return min(
++        rows,
++        key=lambda row: (
++            -(row["without_c2_score"] + multiplier * row["c2_score"]),
++            tie_key(row),
++        ),
++    )
++
++
++def empirical_quantile(values: list[Fraction], numerator: int, denominator: int) -> Fraction:
++    """Nearest-rank empirical quantile, with q=0 returning the minimum."""
++
++    ordered = sorted(values)
++    if numerator == 0:
++        return ordered[0]
++    rank = (numerator * len(ordered) + denominator - 1) // denominator
++    return ordered[rank - 1]
++
++
++def distribution(values: list[Fraction]) -> dict:
++    if not values:
++        raise RuntimeError("cannot summarize an empty distribution")
++    exact_zero = sum(value == 0 for value in values)
++    minimum = min(values)
++    maximum = max(values)
++    mean = sum(values, Fraction()) / len(values)
++    floats = [float(value) / 1e6 for value in values]
++    return {
++        "count": len(values),
++        "exact_zero_count": exact_zero,
++        "exact_zero_fraction": pair(Fraction(exact_zero, len(values))),
++        "exact_zero_percentage": 100.0 * exact_zero / len(values),
++        "minimum": pair(minimum),
++        "p25_nearest_rank": pair(empirical_quantile(values, 1, 4)),
++        "median_nearest_rank": pair(empirical_quantile(values, 1, 2)),
++        "p75_nearest_rank": pair(empirical_quantile(values, 3, 4)),
++        "maximum": pair(maximum),
++        "mean": pair(mean),
++        "spread": pair(maximum - minimum),
++        "minimum_mbit": float(minimum) / 1e6,
++        "p25_mbit": float(empirical_quantile(values, 1, 4)) / 1e6,
++        "median_mbit": float(empirical_quantile(values, 1, 2)) / 1e6,
++        "p75_mbit": float(empirical_quantile(values, 3, 4)) / 1e6,
++        "maximum_mbit": float(maximum) / 1e6,
++        "mean_mbit": float(mean) / 1e6,
++        "population_stddev_mbit": statistics.pstdev(floats),
++        "spread_mbit": float(maximum - minimum) / 1e6,
++    }
++
++
++def first_flip(rows: list[dict]) -> dict:
++    current = select_scaled(rows, Fraction(1))
++    current_a = current["without_c2_score"]
++    current_b = current["c2_score"]
++    thresholds = []
++    for row in rows:
++        slope_gain = row["c2_score"] - current_b
++        if slope_gain <= 0:
++            continue
++        threshold = (current_a - row["without_c2_score"]) / slope_gain
++        if threshold >= 1:
++            thresholds.append(threshold)
++    if not thresholds:
++        return {"exists_for_k_ge_1": False}
++    boundary = min(thresholds)
++    at_boundary = select_scaled(rows, boundary)
++    scores_at_boundary = [
++        row["without_c2_score"] + boundary * row["c2_score"] for row in rows
++    ]
++    maximum = max(scores_at_boundary)
++    tied = [row for row, score in zip(rows, scores_at_boundary, strict=True) if score == maximum]
++    right_limit = min(tied, key=lambda row: (-row["c2_score"], tie_key(row)))
++    inclusive = int(at_boundary["index"]) != int(current["index"])
++    if int(right_limit["index"]) == int(current["index"]):
++        raise RuntimeError("computed boundary does not change the right-limit argmax")
++    return {
++        "exists_for_k_ge_1": True,
++        "boundary": pair(boundary),
++        "boundary_decimal": float(boundary),
++        "boundary_inclusive": inclusive,
++        "condition": "k >= boundary" if inclusive else "k > boundary",
++        "current_index": int(current["index"]),
++        "at_boundary_index": int(at_boundary["index"]),
++        "right_limit_index": int(right_limit["index"]),
++        "current_c2_term": pair(current_b),
++        "right_limit_c2_term": pair(right_limit["c2_score"]),
++    }
++
++
++def analyze_real_catalogue(module) -> dict:
++    source = json.loads(FACTORIAL_RESULTS.read_text(encoding="ascii"))
++    demand = source["numerators"]["demand_capped"]["selectors"]
++    eta_full = unpair(demand["FULL"]["optimization_ratio"])
++    eta_drop = unpair(demand["DROP_C2"]["optimization_ratio"])
++    if eta_full != eta_drop:
++        raise RuntimeError("FULL and DROP_C2 do not have a common exact final price")
++
++    manifests = source["anchor_shards"]
++    per_anchor = []
++    per_row_c2 = []
++    aggregate = {"C1": [], "C2": [], "FULL": []}
++    flips = 0
++    for manifest in manifests:
++        shard_path = FACTORIAL_ROOT / manifest["path"]
++        if sha256(shard_path) != manifest["sha256"]:
++            raise RuntimeError(f"anchor shard custody mismatch: {shard_path}")
++        shard = json.loads(shard_path.read_text(encoding="ascii"))
++        rows = []
++        for row in shard["rows"]:
++            terms = {}
++            for route in ("C1", "C2", "C3"):
++                delta_n = unpair(row["deltas"][route]["demand_capped"])
++                delta_e = unpair(row["deltas"][route]["energy"])
++                terms[route] = delta_n - eta_full * delta_e
++            base_score = (
++                unpair(shard["base"]["demand_capped"])
++                - eta_full * unpair(shard["base"]["energy"])
++            )
++            without = base_score + terms["C1"] + terms["C3"]
++            full = without + terms["C2"]
++            enriched = {
++                **row,
++                "base_score": base_score,
++                "c1_score": terms["C1"],
++                "c2_score": terms["C2"],
++                "c3_score": terms["C3"],
++                "without_c2_score": without,
++                "full_score": full,
++            }
++            rows.append(enriched)
++            aggregate["C1"].append(terms["C1"])
++            aggregate["C2"].append(terms["C2"])
++            aggregate["FULL"].append(full)
++            per_row_c2.append({
++                "anchor_id": shard["anchor_id"],
++                "candidate_index": int(row["index"]),
++                "route_kind": row["route_kind"],
++                "c2_score_term": pair(terms["C2"]),
++                "c2_score_term_mbit": float(terms["C2"]) / 1e6,
++            })
++
++        # Exercise the actual two declared arm paths at their common exact eta.
++        without_actual = module.choose_for_anchor(shard, "demand_capped", "DROP_C2", eta_full)
++        with_actual = module.choose_for_anchor(shard, "demand_capped", "FULL", eta_full)
++        without_index = int(without_actual["row"]["index"])
++        with_index = int(with_actual["row"]["index"])
++        if without_index != int(select_scaled(rows, Fraction(0))["index"]):
++            raise RuntimeError("manual k=0 score disagrees with DROP_C2 arm")
++        if with_index != int(select_scaled(rows, Fraction(1))["index"]):
++            raise RuntimeError("manual k=1 score disagrees with FULL arm")
++        differs = without_index != with_index
++        flips += int(differs)
++
++        ranked_without = sorted(rows, key=lambda row: (-row["without_c2_score"], tie_key(row)))
++        top = ranked_without[0]["without_c2_score"]
++        second = ranked_without[1]["without_c2_score"]
++        next_distinct = next(
++            (row["without_c2_score"] for row in ranked_without if row["without_c2_score"] < top),
++            None,
++        )
++        tie_count = sum(row["without_c2_score"] == top for row in ranked_without)
++        c1_values = [row["c1_score"] for row in rows]
++        c2_values = [row["c2_score"] for row in rows]
++        full_values = [row["full_score"] for row in rows]
++        d1 = distribution(c1_values)
++        d2 = distribution(c2_values)
++        dt = distribution(full_values)
++        c2_spread = unpair(d2["spread"])
++        c1_spread = unpair(d1["spread"])
++        total_spread = unpair(dt["spread"])
++        immediate_gap = top - second
++        distinct_gap = None if next_distinct is None else top - next_distinct
++        per_anchor.append({
++            "anchor_id": shard["anchor_id"],
++            "eligible_rows": len(rows),
++            "route_kind_counts": dict(sorted(Counter(row["route_kind"] for row in rows).items())),
++            "without_c2_selected_index": without_index,
++            "with_c2_selected_index": with_index,
++            "choice_differs": differs,
++            "selected_route_kind": with_actual["row"]["route_kind"],
++            "C1_distribution": d1,
++            "C2_distribution": d2,
++            "FULL_score_distribution": dt,
++            "spread_comparison": {
++                "c2_over_c1": float(c2_spread / c1_spread) if c1_spread else None,
++                "c2_over_full_total": float(c2_spread / total_spread) if total_spread else None,
++            },
++            "top_without_c2": {
++                "top_tie_count": tie_count,
++                "immediate_runner_up_gap": pair(immediate_gap),
++                "immediate_runner_up_gap_mbit": float(immediate_gap) / 1e6,
++                "next_distinct_gap": None if distinct_gap is None else pair(distinct_gap),
++                "next_distinct_gap_mbit": None if distinct_gap is None else float(distinct_gap) / 1e6,
++                "c2_spread_over_immediate_gap": (
++                    None if immediate_gap == 0 else float(c2_spread / immediate_gap)
++                ),
++                "c2_spread_over_next_distinct_gap": (
++                    None if distinct_gap in (None, 0) else float(c2_spread / distinct_gap)
++                ),
++            },
++            "first_flip": first_flip(rows),
++        })
++
++    candidates = [
++        (unpair(anchor["first_flip"]["boundary"]), anchor)
++        for anchor in per_anchor
++        if anchor["first_flip"]["exists_for_k_ge_1"]
++    ]
++    if not candidates:
++        global_flip = {"exists_for_k_ge_1": False}
++    else:
++        boundary, anchor = min(candidates, key=lambda item: item[0])
++        global_flip = {
++            "exists_for_k_ge_1": True,
++            "anchor_id": anchor["anchor_id"],
++            **anchor["first_flip"],
++        }
++
++    aggregate_distributions = {
++        "C1": distribution(aggregate["C1"]),
++        "C2": distribution(aggregate["C2"]),
++        "FULL_score": distribution(aggregate["FULL"]),
++    }
++    return {
++        "numerator": "demand_capped",
++        "common_exact_eta_bit_per_j": pair(eta_full),
++        "common_eta_mbit_per_j": float(eta_full) / 1e6,
++        "anchor_count": len(per_anchor),
++        "catalogue_row_count": len(per_row_c2),
++        "argmax_choice_difference_count": flips,
++        "aggregate_distributions": aggregate_distributions,
++        "aggregate_spread_comparison": {
++            "c2_over_c1": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["C1"]["spread"])
++            ),
++            "c2_over_full_total": float(
++                unpair(aggregate_distributions["C2"]["spread"])
++                / unpair(aggregate_distributions["FULL_score"]["spread"])
++            ),
++        },
++        "first_flip": global_flip,
++        "per_anchor": per_anchor,
++        "per_catalogue_row_c2": per_row_c2,
++    }
++
++
++def main() -> int:
++    require_guardrails()
++    module = load_factorial_module()
++    fixture = synthetic_fixture(module)
++    real = analyze_real_catalogue(module)
++    result = {
++        "schema": "mcrl-v025-c2-wiring-diagnostic-v1",
++        "claim": "DIAGNOSTIC_NOT_CLAIM",
++        "classification": "C2_REACHES_SCORE",
++        "fixture": fixture,
++        "real_catalogue": real,
++        "evidence": {
++            "verified_by_running_code": [
++                "synthetic fixture through FACTORIAL choose_for_anchor",
++                "eight cached anchors replayed through FACTORIAL FULL and DROP_C2 arm paths",
++                "exact per-row terms and first-flip boundaries computed with Fraction",
++            ],
++            "derived_on_paper": [
++                "spread ratios and displayed decimal conversions from exact replay values"
++            ],
++            "inferred": [
++                "causal interpretation of real-catalogue inertness from support, spread, gaps, and first-flip scale"
++            ],
++        },
++        "learner_used": False,
++        "sealed_settings_changed": False,
++        "python": sys.executable,
++        "python_version": platform.python_version(),
++        "nice_level": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_environment": {name: os.environ.get(name) for name in THREAD_VARIABLES},
++        "provenance": {
++            "factorial_runner": str(FACTORIAL_RUNNER),
++            "factorial_runner_sha256": sha256(FACTORIAL_RUNNER),
++            "factorial_results": str(FACTORIAL_RESULTS),
++            "factorial_results_sha256": sha256(FACTORIAL_RESULTS),
++            "diagnostic_runner": str(Path(__file__).resolve()),
++            "diagnostic_runner_sha256": sha256(Path(__file__)),
++        },
++    }
++    OUTPUT.write_text(
++        json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
++        encoding="ascii",
++    )
++    print(
++        "C2_WIRING_FIXTURE "
++        f"{fixture['verdict']}: DROP_C2={fixture['drop_c2_selected_index']} "
++        f"FULL={fixture['full_selected_index']}"
++    )
++    flip = real["first_flip"]
++    print(
++        f"REAL_CATALOGUE flips={real['argmax_choice_difference_count']}/"
++        f"{real['anchor_count']} first_boundary={flip.get('boundary_decimal')} "
++        f"condition={flip.get('condition')} anchor={flip.get('anchor_id')}"
++    )
++    print(f"WROTE {OUTPUT}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
