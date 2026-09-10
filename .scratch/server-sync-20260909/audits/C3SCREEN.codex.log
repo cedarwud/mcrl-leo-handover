@@ -5423,3 +5423,2363 @@ index 2a3d9279073692b204dac4da170aaf9690d9bc3a..61c2ad1f56dd116c6d2a21e11063ae63
                  },
                  sort_keys=True,
 
+apply patch
+patch: completed
+/home/sat/mcrl-v025-retrain-ws/scripts/run_c3_screen.py
+diff --git a/scripts/run_c3_rule_evaluator.py b/scripts/run_c3_rule_evaluator.py
+index 2a3d9279073692b204dac4da170aaf9690d9bc3a..61c2ad1f56dd116c6d2a21e11063ae63089f85a8
+--- a/scripts/run_c3_rule_evaluator.py
++++ b/scripts/run_c3_rule_evaluator.py
+@@ -98,11 +98,18 @@
+             base, dict(assignment), kind=f"c3-panel-{args.variant.lower()}"
+         )
+         profile = evaluator.evaluate(config)
++        attained = profile.score.rate_target_attained
+         print(
+             json.dumps(
+                 {
+                     "bits": profile.bits,
+                     "joules": profile.joules,
++                    "served_count": sum(bool(value) for value in profile.score.served_phy.values()),
++                    "served_user_count": len(profile.score.served_phy),
++                    "rate_target_attained_count": (
++                        None if attained is None else sum(bool(value) for value in attained.values())
++                    ),
++                    "rate_target_user_count": None if attained is None else len(attained),
+                     "valid": config.configuration_id not in evaluator._invalid,
+                 },
+                 sort_keys=True,
+diff --git a/scripts/run_c3_screen.py b/scripts/run_c3_screen.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f8a7db07f04aef2dccf095223bb7565dd567702
+--- /dev/null
++++ b/scripts/run_c3_screen.py
+@@ -0,0 +1,754 @@
++#!/usr/bin/env python3
++"""Execute the pre-declared C3 source-contrast screen.
++
++DIAGNOSTIC_NOT_CLAIM. SCREEN_NOT_CONFIRMATORY.
++
++This is a thin, write-once driver around the panel instrument in c3_panel.py
++and the exact branch fixtures in run_c3_panel_smoke.py.  It intentionally does
++not change any learner hyperparameter, arm construction, proposal, catalogue,
++selection, provisioning-rule, or realisation implementation.
++"""
++
++from __future__ import annotations
++
++import argparse
++import csv
++from fractions import Fraction
++import gzip
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import sys
++import time
++
++import numpy as np
++
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / "scripts"))
++
++import run_c3_panel_smoke as smoke_harness  # noqa: E402
++import run_v025_pilot_c3 as pilot  # noqa: E402
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider  # noqa: E402
++from mcrl.physics_v025.tapes import (  # noqa: E402
++    DEVELOPMENT_WORLD_DOMAINS,
++    REFERENCE_CARRIERS,
++    build_world_tape,
++)
++from mcrl.stagec_v025.c3_panel import (  # noqa: E402
++    PANEL_ARM_ORDER,
++    PANEL_LEARNED_ARMS,
++    PANEL_SOURCE_MAP,
++    PanelTrainer,
++    PhysicalCacheKey,
++    PhysicalOutcomeCache,
++    degeneracy_report,
++    provisioning_rule,
++    select_then_realise,
++)
++from mcrl.stagec_v025.canonical import canonical_sha256  # noqa: E402
++from mcrl.stagec_v025.coalitions import write_coalition_shard  # noqa: E402
++from mcrl.stagec_v025.learner import (  # noqa: E402
++    AdamMLPHead,
++    AdamSetInteractionHead,
++    CoalitionBatch,
++    LEARNER_SEEDS,
++    LEGACY_TRAINER_LITERALS,
++    LEGACY_TRAINER_LITERALS_SHA256,
++    ROUTES,
++    build_pairwise_batches,
++    default_synthetic_neutral_sources,
++)
++from mcrl.stagec_v025.shards import write_source_shard  # noqa: E402
++
++
++LABELS = ("DIAGNOSTIC_NOT_CLAIM", "SCREEN_NOT_CONFIRMATORY")
++EPOCH_BUDGET = 9000
++CHECKPOINT_EVERY = 100
++EVALUATION_EPOCHS = (500, 1000, 2000, 4000, 9000)
++SEEDS = LEARNER_SEEDS[:2]
++RULES = ("SEALED", "MARGIN_Q")
++ANCHORS = (
++    (0, REFERENCE_CARRIERS[0]),
++    (1, REFERENCE_CARRIERS[1]),
++)
++
++# The requirement-facing contrasts, plus the otherwise implicit middle rung
++# DROP_Ci > ALL_NEUTRAL_CONTROL needed by FULL > any-two > control.
++CONTRASTS = (
++    *((f"FULL-minus-{arm}", "FULL", arm) for arm in ("DROP_C1", "DROP_C2", "DROP_C3")),
++    *((f"{arm}-minus-ALL_NEUTRAL_CONTROL", arm, "ALL_NEUTRAL_CONTROL") for arm in ("DROP_C1", "DROP_C2", "DROP_C3")),
++    *((f"{arm}-minus-ALL_NEUTRAL_CONTROL", arm, "ALL_NEUTRAL_CONTROL") for arm in ("ONLY_C1", "ONLY_C2", "ONLY_C3")),
++    *((f"{arm}-minus-BASELINE", arm, "BASELINE") for arm in PANEL_LEARNED_ARMS),
++)
++
++
++def objective(head: object, batch: object) -> float:
++    """Evaluate the exact sealed squared objective without updating state."""
++
++    if isinstance(head, AdamMLPHead):
++        reference, _, _ = head._forward(batch.reference_states)
++        candidate, _, _ = head._forward(batch.candidate_states)
++        residual = candidate - reference - batch.target_deltas
++        return float(head.loss_weight * np.mean(
++            residual * residual + head.gauge_beta * reference * reference
++        ))
++    if isinstance(head, AdamSetInteractionHead):
++        prediction, _, _ = head.network._forward(batch.invariant_states)
++        residual = prediction - batch.target_psi
++        return float(head.network.loss_weight * np.mean(residual * residual))
++    raise TypeError(f"unsupported head {type(head)!r}")
++
++
++def arm_head(trainer: PanelTrainer, arm: str, route: str) -> object:
++    model = trainer.models[arm]
++    return {"C1": model.q1, "C2": model.q2, "C3": model.psi}[route]
++
++
++def source_batches(trainer: PanelTrainer, validation_pairs, validation_c3):
++    definitions = default_synthetic_neutral_sources()
++    validation_informed = {
++        "C1": validation_pairs["C1"],
++        "C2": validation_pairs["C2"],
++        "C3": validation_c3,
++    }
++    validation_neutral = {
++        "C1": validation_pairs["C1"].neutral(definitions["C1"]),
++        "C2": validation_pairs["C2"].neutral(definitions["C2"]),
++        "C3": validation_c3.neutral(definitions["C3"]),
++    }
++    return validation_informed, validation_neutral
++
++
++def checkpoint_objectives(trainer, validation_informed, validation_neutral):
++    rows = []
++    for arm in PANEL_LEARNED_ARMS:
++        for route in ROUTES:
++            identity = PANEL_SOURCE_MAP[arm][route]
++            train_batch = trainer.informed[route] if identity == "informed" else trainer.neutral[route]
++            validation_batch = (
++                validation_informed[route] if identity == "informed" else validation_neutral[route]
++            )
++            head = arm_head(trainer, arm, route)
++            rows.append({
++                "arm": arm,
++                "route": route,
++                "source": identity,
++                "training_objective": objective(head, train_batch),
++                "validation_objective": objective(head, validation_batch),
++            })
++    return rows
++
++
++def save_checkpoint(directory: Path, trainer: PanelTrainer, objective_rows) -> dict[str, object]:
++    epoch = trainer.completed_source_epochs
++    payload = {
++        "labels": list(LABELS),
++        "schema": "mcrl-v025-c3-screen-checkpoint-v1",
++        "learner_seed": trainer.learner_seed,
++        "completed_source_epochs": epoch,
++        "checkpoint_every_source_epochs": CHECKPOINT_EVERY,
++        "epoch_budget": EPOCH_BUDGET,
++        "evaluation_epochs": list(EVALUATION_EPOCHS),
++        "legacy_trainer_literals": dict(LEGACY_TRAINER_LITERALS),
++        "legacy_trainer_literals_sha256": LEGACY_TRAINER_LITERALS_SHA256,
++        "initialization_sha256": trainer.initialization_sha256,
++        "source_map": {arm: dict(PANEL_SOURCE_MAP[arm]) for arm in PANEL_LEARNED_ARMS},
++        "head_updates": trainer.head_updates,
++        "objectives_after_update": objective_rows,
++        "arms": {arm: trainer.models[arm].payload() for arm in PANEL_LEARNED_ARMS},
++    }
++    encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("ascii")
++    path = directory / f"epoch-{epoch:06d}.json.gz"
++    if path.exists():
++        raise RuntimeError(f"refusing to overwrite checkpoint {path}")
++    with gzip.open(path, "wb", compresslevel=6, mtime=0) as handle:
++        handle.write(encoded)
++    return {
++        "epoch": epoch,
++        "path": str(path.relative_to(ROOT)),
++        "uncompressed_sha256": hashlib.sha256(encoded).hexdigest(),
++        "compressed_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
++        "compressed_bytes": path.stat().st_size,
++    }
++
++
++def build_sources(output: Path) -> dict[str, object]:
++    started = time.perf_counter()
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    cal = smoke_harness.calibration()
++    tape = build_world_tape(
++        domain=DEVELOPMENT_WORLD_DOMAINS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=5,
++        start_time_s=0.0,
++    )
++    exact_builds = []
++    primitive_builds = []
++    exact_seconds = []
++    assertions = {
++        "validity_survival_assertions": 0,
++        "production_target_label_assertions": 0,
++        "exact_outage_assertions": 0,
++        "rekey_context_path_assertions": 0,
++    }
++    for anchor_index, (step_index, carrier) in enumerate(ANCHORS):
++        capture = smoke_harness.EngineCapture(pilot.ENGINE)
++        exact = smoke_harness.exact_nonfallback_builder(capture)
++        anchor_started = time.perf_counter()
++        built = exact(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=cal,
++            step_index=step_index,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=True,
++            full_legal_actions=False,
++        )
++        exact_seconds.append(time.perf_counter() - anchor_started)
++        if capture.forecasts is None:
++            raise AssertionError("exact source branch did not capture forecasts")
++        for name, count in smoke_harness.assert_exact_targets(built, capture.forecasts, cal).items():
++            assertions[name] += count
++        if capture.phi_calls_with_rekey_context <= 0:
++            raise AssertionError("exact source branch omitted rekey context")
++        assertions["rekey_context_path_assertions"] += capture.phi_calls_with_rekey_context
++        exact_builds.append(built)
++        primitive_builds.append(pilot._build_anchor_rows(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=cal,
++            step_index=step_index,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=True,
++            full_legal_actions=False,
++        ))
++    differences = smoke_harness.surrogate_differences(exact_builds, primitive_builds)
++
++    train_source = write_source_shard(output / "training-source.jsonl", exact_builds[0]["rows"])
++    validation_source = write_source_shard(output / "validation-source.jsonl", exact_builds[1]["rows"])
++    train_coalition = write_coalition_shard(
++        output / "training-coalition.jsonl", (exact_builds[0]["coalition_row"],)
++    )
++    validation_coalition = write_coalition_shard(
++        output / "validation-coalition.jsonl", (exact_builds[1]["coalition_row"],)
++    )
++    return {
++        "tape": tape,
++        "setting": setting,
++        "run_setting": run_setting,
++        "calibration": cal,
++        "exact_builds": exact_builds,
++        "train_pairs": build_pairwise_batches((train_source,)),
++        "validation_pairs": build_pairwise_batches((validation_source,)),
++        "train_c3": CoalitionBatch.create((train_coalition,)),
++        "validation_c3": CoalitionBatch.create((validation_coalition,)),
++        "receipt": {
++            "labels": list(LABELS),
++            "world": tape.domain,
++            "source_tape_sha256": tape.digest,
++            "anchors": [
++                {"anchor_index": index, "step_index": row[0], "carrier": row[1], "role": "training+panel" if index == 0 else "held-out-validation"}
++                for index, row in enumerate(ANCHORS)
++            ],
++            "exact_row_build_seconds": exact_seconds,
++            "source_rows": [len(built["rows"]) for built in exact_builds],
++            "exact_assertions": assertions,
++            "surrogate_difference_witness_counts": differences,
++            "build_seconds": time.perf_counter() - started,
++        },
++    }
++
++
++def evaluate_panel(*, trainer, built, tape, setting, run_setting, calibration, epoch):
++    plan_started = time.perf_counter()
++    plans, plan_diagnostics = smoke_harness._arm_owned_plans(
++        trainer=trainer,
++        built=built,
++        tape=tape,
++        setting=setting,
++        run_setting=run_setting,
++        calibration=calibration,
++    )
++    plan_seconds = time.perf_counter() - plan_started
++    baseline_rows = plans[-1].catalogue
++    by_rule = {}
++    base = built["base"]
++    for rule_name in RULES:
++        rule = provisioning_rule(rule_name)
++        cache = PhysicalOutcomeCache[dict[str, float | int | None]]()
++        setup_started = time.perf_counter()
++        evaluator = smoke_harness.RuleEvaluator(rule, tape.domain, ANCHORS[0][1])
++        setup_seconds = time.perf_counter() - setup_started
++        realised_seconds = 0.0
++
++        def key_for(_arm, assignment):
++            return PhysicalCacheKey(
++                tape_sha256=evaluator.ready["tape_sha256"],
++                world_id=tape.domain,
++                decision_time_ns=0,
++                assignment=assignment,
++                physical_setting_sha256=canonical_sha256({"setting": "a-r0", "provisioning_rule": rule}),
++                run_setting_sha256=evaluator.ready["run_setting_sha256"],
++                evaluator_sha256=evaluator.ready["evaluator_sha256"],
++                field="realised",
++                boundary_indices=tuple(evaluator.ready["boundary_indices"]),
++                transition_sha256=canonical_sha256(built["incumbent"].assignments),
++                prefix_history_sha256=canonical_sha256({"world": tape.domain, "step": 0, "prefix": []}),
++            )
++
++        def realise(key):
++            nonlocal realised_seconds
++            began = time.perf_counter()
++            profile = evaluator.evaluate(key.assignment)
++            realised_seconds += time.perf_counter() - began
++            return {name: profile[name] for name in (
++                "bits", "joules", "served_count", "served_user_count",
++                "rate_target_attained_count", "rate_target_user_count",
++            )}
++
++        try:
++            tier_started = time.perf_counter()
++            tier = select_then_realise(plans, key_for=key_for, evaluate=realise, cache=cache)
++            tier_seconds = time.perf_counter() - tier_started
++            reference = evaluator.evaluate(base.assignments)
++        finally:
++            evaluator.close()
++        certificate = canonical_sha256({
++            "schema": "c3-smoke-head-independent-fixed-point-v1",
++            "rule": rule,
++            "seed": baseline_rows[0].assignment,
++            "ordered_unilateral_scores_hex": [row.nominal_score.hex() for row in baseline_rows],
++            "fixed_point": baseline_rows[0].assignment,
++        })
++        screen_anchor = {
++            "anchor_id": f"{tape.domain}|0|{ANCHORS[0][1]}|{rule}|seed={trainer.learner_seed}|epoch={epoch}",
++            "reference": {
++                "bits": reference["bits"],
++                "joules": reference["joules"],
++                "head_independent": True,
++                "fixed_point_certified": True,
++                "certificate_sha256": certificate,
++            },
++            "outcomes": tier["outcomes"],
++        }
++        by_rule[rule] = {
++            "labels": list(LABELS),
++            "epoch": epoch,
++            "selected": tier["selected"],
++            "outcomes": tier["outcomes"],
++            "seed_sha256": tier["seed_sha256"],
++            "catalogue_sha256": tier["catalogue_sha256"],
++            "union_realised_configurations": tier["union_realised_configurations"],
++            "selection_completed_before_cache_lookups": tier["selection_completed_before_cache_lookups"],
++            "selection_seconds": tier_seconds - realised_seconds,
++            "realisation_seconds": realised_seconds,
++            "setup_seconds": setup_seconds,
++            "source_tape_sha256": tape.digest,
++            "evaluation_tape_sha256": evaluator.ready["tape_sha256"],
++            "sealed_manifest_sha256": evaluator.ready["sealed_manifest_sha256"],
++            "reference": screen_anchor["reference"],
++            "degeneracy": degeneracy_report((screen_anchor,), CONTRASTS),
++        }
++    return {
++        "labels": list(LABELS),
++        "epoch": epoch,
++        "plan_build_seconds": plan_seconds,
++        "plan_diagnostics": plan_diagnostics,
++        "rules": by_rule,
++    }
++
++
++def train_seed(seed: int, source, output: Path) -> dict[str, object]:
++    seed_started = time.perf_counter()
++    checkpoint_directory = output / "checkpoints" / str(seed)
++    checkpoint_directory.mkdir(parents=True)
++    trainer = PanelTrainer(
++        learner_seed=seed,
++        q1_batch=source["train_pairs"]["C1"],
++        q2_batch=source["train_pairs"]["C2"],
++        c3_batch=source["train_c3"],
++        neutral_sources=default_synthetic_neutral_sources(),
++    )
++    validation_informed, validation_neutral = source_batches(
++        trainer, source["validation_pairs"], source["validation_c3"]
++    )
++    curves = []
++    checkpoints = []
++    evaluations = {}
++    training_seconds = 0.0
++    checkpoint_seconds = 0.0
++    for epoch in range(1, EPOCH_BUDGET + 1):
++        began = time.perf_counter()
++        trainer.train_epoch()
++        training_seconds += time.perf_counter() - began
++        if epoch % CHECKPOINT_EVERY == 0:
++            rows = checkpoint_objectives(trainer, validation_informed, validation_neutral)
++            for row in rows:
++                curves.append({"learner_seed": seed, "epoch": epoch, **row})
++            began = time.perf_counter()
++            checkpoints.append(save_checkpoint(checkpoint_directory, trainer, rows))
++            checkpoint_seconds += time.perf_counter() - began
++        if epoch in EVALUATION_EPOCHS:
++            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] seed={seed} evaluating epoch={epoch}", flush=True)
++            evaluations[str(epoch)] = evaluate_panel(
++                trainer=trainer,
++                built=source["exact_builds"][0],
++                tape=source["tape"],
++                setting=source["setting"],
++                run_setting=source["run_setting"],
++                calibration=source["calibration"],
++                epoch=epoch,
++            )
++    return {
++        "labels": list(LABELS),
++        "learner_seed": seed,
++        "initialization_sha256": trainer.initialization_sha256,
++        "deployment": trainer.deployment_receipt(),
++        "training_seconds": training_seconds,
++        "checkpoint_seconds": checkpoint_seconds,
++        "wall_seconds": time.perf_counter() - seed_started,
++        "curves": curves,
++        "checkpoints": checkpoints,
++        "evaluations": evaluations,
++    }
++
++
++def marginal(left, right) -> float:
++    return (left["bits"] / left["joules"]) / (right["bits"] / right["joules"]) - 1.0
++
++
++def fmt(value, digits=6):
++    if value is None:
++        return "NA"
++    return f"{value:.{digits}g}"
++
++
++def add_table(lines, headers, rows):
++    labelled_headers = ["label", *headers]
++    lines.append("| " + " | ".join(labelled_headers) + " |")
++    lines.append("|" + "|".join(["---"] * len(labelled_headers)) + "|")
++    for row in rows:
++        lines.append("| " + " | ".join(["DIAGNOSTIC_NOT_CLAIM / SCREEN_NOT_CONFIRMATORY", *map(str, row)]) + " |")
++
++
++def convergence_verdicts(seed_receipts):
++    # Pre-declared before looking at results: an exact 1900->2000 validation
++    # decrease on any seed/source curve invokes the owner's under-trained rule.
++    verdicts = {}
++    evidence = {}
++    for route in ROUTES:
++        deltas = []
++        for receipt in seed_receipts:
++            for source_identity in ("informed", "neutral"):
++                values = {}
++                for row in receipt["curves"]:
++                    if row["route"] == route and row["source"] == source_identity:
++                        values.setdefault(row["epoch"], row["validation_objective"])
++                deltas.append({
++                    "seed": receipt["learner_seed"],
++                    "source": source_identity,
++                    "v1900": values[1900],
++                    "v2000": values[2000],
++                    "delta": values[2000] - values[1900],
++                })
++        if any(row["delta"] < 0.0 for row in deltas):
++            verdict = "under-trained"
++        else:
++            # Exact sign reversals over the last ten pre-2000 checkpoint steps
++            # implement the stated oscillation case without an after-seeing tolerance.
++            oscillating = False
++            for receipt in seed_receipts:
++                for source_identity in ("informed", "neutral"):
++                    values = [
++                        row["validation_objective"] for row in receipt["curves"]
++                        if row["route"] == route and row["source"] == source_identity
++                        and 1000 <= row["epoch"] <= 2000
++                    ]
++                    signs = [math.copysign(1.0, b - a) for a, b in zip(values, values[1:]) if b != a]
++                    oscillating |= any(a != b for a, b in zip(signs, signs[1:]))
++            verdict = "learning rate too high" if oscillating else "none applies"
++        verdicts[route] = verdict
++        evidence[route] = deltas
++    return verdicts, evidence
++
++
++def report_text(receipt, output: Path) -> str:
++    seed_receipts = receipt["seeds"]
++    verdicts, convergence_evidence = convergence_verdicts(seed_receipts)
++    final_evaluations = [
++        (seed_receipt["learner_seed"], rule, seed_receipt["evaluations"]["9000"]["rules"][rule])
++        for seed_receipt in seed_receipts for rule in RULES
++    ]
++    separation = any(
++        evaluation["selected"][arm] != evaluation["selected"]["FULL"]
++        or evaluation["outcomes"][arm] != evaluation["outcomes"]["FULL"]
++        for _, _, evaluation in final_evaluations
++        for arm in PANEL_LEARNED_ARMS if arm != "FULL"
++    )
++    converged = all(value == "none applies" for value in verdicts.values())
++    first = (
++        f"Routes {'converged under the declared screen rule' if converged else 'did not all converge'}; "
++        f"the learned arms {'separated at least once' if separation else 'did not separate at all'} at epoch 9000."
++    )
++    lines = [
++        first,
++        "",
++        "# C3 source-contrast screen — 2026-09-10",
++        "",
++        "`DIAGNOSTIC_NOT_CLAIM`. `SCREEN_NOT_CONFIRMATORY`.",
++        "",
++        "This is the first execution of the C3 source-training contrast at screening scale. It is not evidence for or against any component's efficacy and is not the answer to the owner's confirmatory requirement. Two seedwise results are shown separately; no interval or distributional claim is made.",
++        "",
++        "## Soundness warning",
++        "",
++        "The inherited harness report was explicitly `INCOMPLETE`. This run preserves its known limitations: MARGIN_Q realisation uses the verified MARGIN_Q evaluator but proposal/catalogue construction is inherited from the SEALED-era builder; source and evaluator tape digests differ without an exogenous-equivalence proof; the reference certificate is the smoke's bounded self-attested head-independent certificate rather than the controller's authoritative full-neighbourhood certificate; and selection is first-improvement over a static bounded catalogue. These prevent efficacy interpretation.",
++        "",
++        "## Fixed configuration",
++        "",
++    ]
++    add_table(lines, ["item", "value"], [
++        ("panel", "8 learned factorial arms + external BASELINE = 9 slots"),
++        ("rules", "SEALED; MARGIN_Q"),
++        ("learner seeds", ", ".join(str(value) for value in SEEDS)),
++        ("anchors", "2 exact anchors: anchor 0 step 0/carrier 1 training+panel; anchor 1 step 1/carrier 2 held-out validation"),
++        ("source epochs", "9000; one deterministic full-batch update per route per epoch"),
++        ("checkpoints", "every 100 epochs (90 per seed)"),
++        ("full-panel evaluations", ", ".join(map(str, EVALUATION_EPOCHS)) + " only"),
++        ("reported contrast epoch", "9000"),
++        ("process ceiling", "4; observed driver topology was parent + one sequential evaluator child = 2"),
++        ("labels", "DIAGNOSTIC_NOT_CLAIM; SCREEN_NOT_CONFIRMATORY"),
++    ])
++    lines.extend([
++        "",
++        "The smoke inventory was the smallest one exercising its branches: two exact source anchors and one of those as the panel tier anchor. To supply a genuine held-out objective without adding anchors, anchor 0 was fixed as training and anchor 1 as validation before training. This is a screen-driver interpretation because the instrument report did not define a validation split.",
++        "",
++        "Architectures and optimiser literals were unchanged: C1 `1e-2`, `8/ReLU`; C2 `1e-3`, `100-50-50/tanh`; C3 `1e-3`, `64-64/ReLU`; Adam betas `0.9/0.999`, epsilon `1e-8`, zero weight decay.",
++        "",
++        "## Training and validation curves (primary deliverable)",
++        "",
++        "Objectives are evaluated after each saved update checkpoint. Full 100-epoch curves are in `curves.csv`; every checkpoint contains all retained heads and Adam state. Because route-local initialization and batches are matched, arms using the same route source have byte-identical route curves; the mapping table makes every arm explicit.",
++        "",
++    ])
++    add_table(lines, ["arm", "C1 curve", "C2 curve", "C3 curve"], [
++        (arm, PANEL_SOURCE_MAP[arm]["C1"], PANEL_SOURCE_MAP[arm]["C2"], PANEL_SOURCE_MAP[arm]["C3"])
++        for arm in PANEL_LEARNED_ARMS
++    ])
++    display_epochs = (100, 500, 1000, 1500, 1900, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000)
++    for route in ROUTES:
++        lines.extend(["", f"### {route}", ""])
++        rows = []
++        for seed_receipt in seed_receipts:
++            for source_identity in ("informed", "neutral"):
++                by_epoch = {
++                    row["epoch"]: row for row in seed_receipt["curves"]
++                    if row["route"] == route and row["source"] == source_identity
++                }
++                for epoch in display_epochs:
++                    row = by_epoch[epoch]
++                    rows.append((seed_receipt["learner_seed"], source_identity, epoch, fmt(row["training_objective"], 9), fmt(row["validation_objective"], 9)))
++        add_table(lines, ["seed", "source", "epoch", "training objective", "validation objective"], rows)
++    lines.extend(["", "## Pre-declared convergence verdict", ""])
++    verdict_rows = []
++    for route in ROUTES:
++        evidence = "; ".join(
++            f"seed {row['seed']} {row['source']} Δ={row['delta']:.9g}"
++            for row in convergence_evidence[route]
++        )
++        verdict_rows.append((route, verdicts[route], evidence))
++    add_table(lines, ["route", "verdict", "validation objective 2000 minus 1900"], verdict_rows)
++    lines.extend([
++        "",
++        "Operational reading fixed before outcomes were inspected: any exact decrease from 1900 to 2000 on a seed/source curve invokes `under-trained`; otherwise an exact direction reversal during 1000–2000 invokes `learning rate too high`; otherwise `none applies`. The `flat early and high` case is not asserted without a pre-declared numeric definition of “high.” Per the owner's rule, the remedy for `under-trained` is more epochs, not a learning-rate change.",
++        "",
++        "## Checkpoint trajectory (not candidate results)",
++        "",
++        "The following are the six direct source contrasts at all five pre-declared evaluation points. Epochs 500–4000 are trajectory only and were not selected or recommended.",
++        "",
++    ])
++    direct_names = {
++        "FULL-minus-DROP_C1", "FULL-minus-DROP_C2", "FULL-minus-DROP_C3",
++        "ONLY_C1-minus-ALL_NEUTRAL_CONTROL", "ONLY_C2-minus-ALL_NEUTRAL_CONTROL", "ONLY_C3-minus-ALL_NEUTRAL_CONTROL",
++    }
++    trajectory_rows = []
++    for seed_receipt in seed_receipts:
++        for epoch in EVALUATION_EPOCHS:
++            for rule in RULES:
++                outcomes = seed_receipt["evaluations"][str(epoch)]["rules"][rule]["outcomes"]
++                for name, left, right in CONTRASTS:
++                    if name in direct_names:
++                        trajectory_rows.append((seed_receipt["learner_seed"], rule, epoch, name, fmt(marginal(outcomes[left], outcomes[right]), 9)))
++    add_table(lines, ["seed", "rule", "epoch", "contrast", "relative pooled-EE marginal"], trajectory_rows)
++    lines.extend([
++        "",
++        "## Declared epoch-9000 contrast",
++        "",
++        "Each value is seedwise. Restricted rows retain only the anchors where both contrasted arms are at or above the certified reference; with one panel anchor, the restricted count is necessarily 0 or 1.",
++        "",
++    ])
++    contrast_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for name, _, _ in CONTRASTS:
++            screen = evaluation["degeneracy"]["contrasts"][name]
++            contrast_rows.append((
++                seed, rule, name,
++                fmt(screen["all_anchor"]["marginal_relative_pooled_ee"], 9),
++                screen["all_arms_at_or_above_reference"]["anchor_count"],
++                fmt(screen["all_arms_at_or_above_reference"]["marginal_relative_pooled_ee"], 9),
++            ))
++    add_table(lines, ["seed", "rule", "contrast", "all-anchor marginal", "restricted anchors", "restricted marginal"], contrast_rows)
++    lines.extend(["", "### Epoch-9000 arm outcomes", ""])
++    outcome_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["outcomes"][arm]
++            outcome_rows.append((seed, rule, arm, fmt(row["bits"], 10), fmt(row["joules"], 10), fmt(row["bits"] / row["joules"], 10)))
++    add_table(lines, ["seed", "rule", "arm", "bits", "joules", "pooled EE bits/J"], outcome_rows)
++    lines.extend([
++        "",
++        "## Degeneracy screen",
++        "",
++        "Below-reference is determined by the exact cross-product sign `arm_bits × reference_joules < reference_bits × arm_joules`; it is reporting-only and never filters the all-anchor result.",
++        "",
++    ])
++    degeneracy_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["degeneracy"]["per_arm"][arm]
++            degeneracy_rows.append((seed, rule, arm, row["below_reference_count"], row["anchor_count"], fmt(row["shortfall_min_bits_per_j"], 9), fmt(row["shortfall_max_bits_per_j"], 9)))
++    add_table(lines, ["seed", "rule", "arm", "below ref", "all anchors", "min shortfall bits/J", "max shortfall bits/J"], degeneracy_rows)
++    lines.extend([
++        "",
++        "## Served counts and rate-target attainment (separate)",
++        "",
++        "`served_PHY` counts users with positive realised decoding service; rate-target attainment counts users whose integrated bits attain the fixed target. They are not merged.",
++        "",
++    ])
++    service_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["outcomes"][arm]
++            service_rows.append((seed, rule, arm, f"{row['served_count']}/{row['served_user_count']}", f"{row['rate_target_attained_count']}/{row['rate_target_user_count']}"))
++    add_table(lines, ["seed", "rule", "arm", "served_PHY", "rate-target attained"], service_rows)
++    lines.extend(["", "## Did interventions separate from FULL?", ""])
++    separation_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_LEARNED_ARMS[1:]:
++            same_assignment = evaluation["selected"][arm] == evaluation["selected"]["FULL"]
++            same_outcome = evaluation["outcomes"][arm] == evaluation["outcomes"]["FULL"]
++            route_digests_same = all(
++                canonical_sha256(seed_receipt["deployment"]["source_map"][arm]) == canonical_sha256(seed_receipt["deployment"]["source_map"]["FULL"])
++                for seed_receipt in seed_receipts if seed_receipt["learner_seed"] == seed
++            )
++            separation_rows.append((seed, rule, arm, same_assignment, same_outcome, route_digests_same))
++    add_table(lines, ["seed", "rule", "arm", "same selected assignment", "same realised outcome", "same source intervention"], separation_rows)
++    lines.extend([
++        "",
++        "`same source intervention` is expected to be false for every non-FULL learned arm; it checks the declared source map. Exact checkpoint payloads allow route-weight identity to be audited independently.",
++        "",
++        "## Wall time and measured computational cost",
++        "",
++    ])
++    cost_rows = []
++    for seed_receipt in seed_receipts:
++        plan = sum(row["plan_build_seconds"] for row in seed_receipt["evaluations"].values())
++        selection = sum(
++            rule_row["selection_seconds"]
++            for row in seed_receipt["evaluations"].values() for rule_row in row["rules"].values()
++        )
++        realisation = sum(
++            rule_row["realisation_seconds"]
++            for row in seed_receipt["evaluations"].values() for rule_row in row["rules"].values()
++        )
++        cost_rows.append((seed_receipt["learner_seed"], fmt(seed_receipt["training_seconds"], 9), fmt(seed_receipt["checkpoint_seconds"], 9), fmt(plan, 9), fmt(selection, 9), fmt(realisation, 9), fmt(seed_receipt["wall_seconds"], 9)))
++    add_table(lines, ["seed", "training s", "checkpoint I/O s", "plan build s", "selection s", "realisation s", "wall s"], cost_rows)
++    lines.extend([
++        "",
++        f"End-to-end wall time was {receipt['wall_seconds']:.9g} s ({receipt['wall_seconds']/3600:.6g} h). No cloud or monetary meter was attached, so monetary cost is not available; the measured local computational cost is the elapsed wall time above, with at most two live processes and one evaluator child at a time.",
++        "",
++        "## Reproduction",
++        "",
++        "Exact command:",
++        "",
++        "```bash",
++        f"PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python scripts/run_c3_screen.py --output {output.relative_to(ROOT)} --report C3-SCREEN-2026-09-10.md",
++        "```",
++        "",
++        "The write-once artifact contains `receipt.json`, `curves.csv`, `checkpoint-index.json`, exact source shards, and 90 compressed checkpoints per seed. Earlier evaluation points remain trajectory only; the contrast outcome is epoch 9000.",
++        "",
++    ])
++    return "\n".join(lines)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--report", type=Path, required=True)
++    args = parser.parse_args()
++    output = args.output if args.output.is_absolute() else ROOT / args.output
++    report = args.report if args.report.is_absolute() else ROOT / args.report
++    if output.exists() or report.exists():
++        raise RuntimeError("screen output and report are write-once and must not already exist")
++    output.mkdir(parents=True)
++    wall_started = time.perf_counter()
++    source = build_sources(output)
++    print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] exact sources ready", flush=True)
++    seeds = [train_seed(seed, source, output) for seed in SEEDS]
++    receipt = {
++        "labels": list(LABELS),
++        "screen_not_confirmatory": True,
++        "diagnostic_not_claim": True,
++        "worker_process_limit": 4,
++        "worker_processes_used_peak": 2,
++        "source": source["receipt"],
++        "configuration": {
++            "epochs": EPOCH_BUDGET,
++            "checkpoint_every": CHECKPOINT_EVERY,
++            "evaluation_epochs": list(EVALUATION_EPOCHS),
++            "reported_epoch": 9000,
++            "seeds": list(SEEDS),
++            "rules": list(RULES),
++            "arms": list(PANEL_ARM_ORDER),
++            "contrasts": [list(row) for row in CONTRASTS],
++            "convergence_rule_implementation": {
++                "under_trained": "any exact validation objective decrease from epoch 1900 to 2000 for route seed/source",
++                "learning_rate_too_high": "if not under-trained, any exact checkpoint-direction reversal during epochs 1000 through 2000",
++                "flat_early_and_high": "not asserted without a pre-declared numeric definition of high",
++            },
++        },
++        "seeds": seeds,
++    }
++    receipt["wall_seconds"] = time.perf_counter() - wall_started
++    curves_path = output / "curves.csv"
++    with curves_path.open("w", newline="", encoding="ascii") as handle:
++        fieldnames = ["label", "learner_seed", "epoch", "arm", "route", "source", "training_objective", "validation_objective"]
++        writer = csv.DictWriter(handle, fieldnames=fieldnames)
++        writer.writeheader()
++        for seed_receipt in seeds:
++            for row in seed_receipt["curves"]:
++                writer.writerow({"label": "DIAGNOSTIC_NOT_CLAIM / SCREEN_NOT_CONFIRMATORY", **row})
++    checkpoint_index = {
++        "labels": list(LABELS),
++        "seeds": {str(row["learner_seed"]): row["checkpoints"] for row in seeds},
++    }
++    (output / "checkpoint-index.json").write_text(json.dumps(checkpoint_index, indent=2, sort_keys=True) + "\n", encoding="ascii")
++    # Avoid duplicating thousands of curve rows and checkpoint indexes in the
++    # main receipt; their authenticated files are the canonical copies.
++    compact = json.loads(json.dumps(receipt))
++    for row in compact["seeds"]:
++        row["curves"] = {"path": str(curves_path.relative_to(ROOT)), "rows_for_seed": len(row["curves"])}
++        row["checkpoints"] = {"path": str((output / "checkpoint-index.json").relative_to(ROOT)), "count": len(row["checkpoints"])}
++    (output / "receipt.json").write_text(json.dumps(compact, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="ascii")
++    report.write_text(report_text(receipt, output) + "\n", encoding="utf-8")
++    print(report.read_text(encoding="utf-8"), end="")
++
++
++if __name__ == "__main__":
++    main()
+
+diff --git a/scripts/run_c3_rule_evaluator.py b/scripts/run_c3_rule_evaluator.py
+index 2a3d9279073692b204dac4da170aaf9690d9bc3a..61c2ad1f56dd116c6d2a21e11063ae63089f85a8
+--- a/scripts/run_c3_rule_evaluator.py
++++ b/scripts/run_c3_rule_evaluator.py
+@@ -98,11 +98,18 @@
+             base, dict(assignment), kind=f"c3-panel-{args.variant.lower()}"
+         )
+         profile = evaluator.evaluate(config)
++        attained = profile.score.rate_target_attained
+         print(
+             json.dumps(
+                 {
+                     "bits": profile.bits,
+                     "joules": profile.joules,
++                    "served_count": sum(bool(value) for value in profile.score.served_phy.values()),
++                    "served_user_count": len(profile.score.served_phy),
++                    "rate_target_attained_count": (
++                        None if attained is None else sum(bool(value) for value in attained.values())
++                    ),
++                    "rate_target_user_count": None if attained is None else len(attained),
+                     "valid": config.configuration_id not in evaluator._invalid,
+                 },
+                 sort_keys=True,
+diff --git a/scripts/run_c3_screen.py b/scripts/run_c3_screen.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f8a7db07f04aef2dccf095223bb7565dd567702
+--- /dev/null
++++ b/scripts/run_c3_screen.py
+@@ -0,0 +1,754 @@
++#!/usr/bin/env python3
++"""Execute the pre-declared C3 source-contrast screen.
++
++DIAGNOSTIC_NOT_CLAIM. SCREEN_NOT_CONFIRMATORY.
++
++This is a thin, write-once driver around the panel instrument in c3_panel.py
++and the exact branch fixtures in run_c3_panel_smoke.py.  It intentionally does
++not change any learner hyperparameter, arm construction, proposal, catalogue,
++selection, provisioning-rule, or realisation implementation.
++"""
++
++from __future__ import annotations
++
++import argparse
++import csv
++from fractions import Fraction
++import gzip
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import sys
++import time
++
++import numpy as np
++
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / "scripts"))
++
++import run_c3_panel_smoke as smoke_harness  # noqa: E402
++import run_v025_pilot_c3 as pilot  # noqa: E402
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider  # noqa: E402
++from mcrl.physics_v025.tapes import (  # noqa: E402
++    DEVELOPMENT_WORLD_DOMAINS,
++    REFERENCE_CARRIERS,
++    build_world_tape,
++)
++from mcrl.stagec_v025.c3_panel import (  # noqa: E402
++    PANEL_ARM_ORDER,
++    PANEL_LEARNED_ARMS,
++    PANEL_SOURCE_MAP,
++    PanelTrainer,
++    PhysicalCacheKey,
++    PhysicalOutcomeCache,
++    degeneracy_report,
++    provisioning_rule,
++    select_then_realise,
++)
++from mcrl.stagec_v025.canonical import canonical_sha256  # noqa: E402
++from mcrl.stagec_v025.coalitions import write_coalition_shard  # noqa: E402
++from mcrl.stagec_v025.learner import (  # noqa: E402
++    AdamMLPHead,
++    AdamSetInteractionHead,
++    CoalitionBatch,
++    LEARNER_SEEDS,
++    LEGACY_TRAINER_LITERALS,
++    LEGACY_TRAINER_LITERALS_SHA256,
++    ROUTES,
++    build_pairwise_batches,
++    default_synthetic_neutral_sources,
++)
++from mcrl.stagec_v025.shards import write_source_shard  # noqa: E402
++
++
++LABELS = ("DIAGNOSTIC_NOT_CLAIM", "SCREEN_NOT_CONFIRMATORY")
++EPOCH_BUDGET = 9000
++CHECKPOINT_EVERY = 100
++EVALUATION_EPOCHS = (500, 1000, 2000, 4000, 9000)
++SEEDS = LEARNER_SEEDS[:2]
++RULES = ("SEALED", "MARGIN_Q")
++ANCHORS = (
++    (0, REFERENCE_CARRIERS[0]),
++    (1, REFERENCE_CARRIERS[1]),
++)
++
++# The requirement-facing contrasts, plus the otherwise implicit middle rung
++# DROP_Ci > ALL_NEUTRAL_CONTROL needed by FULL > any-two > control.
++CONTRASTS = (
++    *((f"FULL-minus-{arm}", "FULL", arm) for arm in ("DROP_C1", "DROP_C2", "DROP_C3")),
++    *((f"{arm}-minus-ALL_NEUTRAL_CONTROL", arm, "ALL_NEUTRAL_CONTROL") for arm in ("DROP_C1", "DROP_C2", "DROP_C3")),
++    *((f"{arm}-minus-ALL_NEUTRAL_CONTROL", arm, "ALL_NEUTRAL_CONTROL") for arm in ("ONLY_C1", "ONLY_C2", "ONLY_C3")),
++    *((f"{arm}-minus-BASELINE", arm, "BASELINE") for arm in PANEL_LEARNED_ARMS),
++)
++
++
++def objective(head: object, batch: object) -> float:
++    """Evaluate the exact sealed squared objective without updating state."""
++
++    if isinstance(head, AdamMLPHead):
++        reference, _, _ = head._forward(batch.reference_states)
++        candidate, _, _ = head._forward(batch.candidate_states)
++        residual = candidate - reference - batch.target_deltas
++        return float(head.loss_weight * np.mean(
++            residual * residual + head.gauge_beta * reference * reference
++        ))
++    if isinstance(head, AdamSetInteractionHead):
++        prediction, _, _ = head.network._forward(batch.invariant_states)
++        residual = prediction - batch.target_psi
++        return float(head.network.loss_weight * np.mean(residual * residual))
++    raise TypeError(f"unsupported head {type(head)!r}")
++
++
++def arm_head(trainer: PanelTrainer, arm: str, route: str) -> object:
++    model = trainer.models[arm]
++    return {"C1": model.q1, "C2": model.q2, "C3": model.psi}[route]
++
++
++def source_batches(trainer: PanelTrainer, validation_pairs, validation_c3):
++    definitions = default_synthetic_neutral_sources()
++    validation_informed = {
++        "C1": validation_pairs["C1"],
++        "C2": validation_pairs["C2"],
++        "C3": validation_c3,
++    }
++    validation_neutral = {
++        "C1": validation_pairs["C1"].neutral(definitions["C1"]),
++        "C2": validation_pairs["C2"].neutral(definitions["C2"]),
++        "C3": validation_c3.neutral(definitions["C3"]),
++    }
++    return validation_informed, validation_neutral
++
++
++def checkpoint_objectives(trainer, validation_informed, validation_neutral):
++    rows = []
++    for arm in PANEL_LEARNED_ARMS:
++        for route in ROUTES:
++            identity = PANEL_SOURCE_MAP[arm][route]
++            train_batch = trainer.informed[route] if identity == "informed" else trainer.neutral[route]
++            validation_batch = (
++                validation_informed[route] if identity == "informed" else validation_neutral[route]
++            )
++            head = arm_head(trainer, arm, route)
++            rows.append({
++                "arm": arm,
++                "route": route,
++                "source": identity,
++                "training_objective": objective(head, train_batch),
++                "validation_objective": objective(head, validation_batch),
++            })
++    return rows
++
++
++def save_checkpoint(directory: Path, trainer: PanelTrainer, objective_rows) -> dict[str, object]:
++    epoch = trainer.completed_source_epochs
++    payload = {
++        "labels": list(LABELS),
++        "schema": "mcrl-v025-c3-screen-checkpoint-v1",
++        "learner_seed": trainer.learner_seed,
++        "completed_source_epochs": epoch,
++        "checkpoint_every_source_epochs": CHECKPOINT_EVERY,
++        "epoch_budget": EPOCH_BUDGET,
++        "evaluation_epochs": list(EVALUATION_EPOCHS),
++        "legacy_trainer_literals": dict(LEGACY_TRAINER_LITERALS),
++        "legacy_trainer_literals_sha256": LEGACY_TRAINER_LITERALS_SHA256,
++        "initialization_sha256": trainer.initialization_sha256,
++        "source_map": {arm: dict(PANEL_SOURCE_MAP[arm]) for arm in PANEL_LEARNED_ARMS},
++        "head_updates": trainer.head_updates,
++        "objectives_after_update": objective_rows,
++        "arms": {arm: trainer.models[arm].payload() for arm in PANEL_LEARNED_ARMS},
++    }
++    encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("ascii")
++    path = directory / f"epoch-{epoch:06d}.json.gz"
++    if path.exists():
++        raise RuntimeError(f"refusing to overwrite checkpoint {path}")
++    with gzip.open(path, "wb", compresslevel=6, mtime=0) as handle:
++        handle.write(encoded)
++    return {
++        "epoch": epoch,
++        "path": str(path.relative_to(ROOT)),
++        "uncompressed_sha256": hashlib.sha256(encoded).hexdigest(),
++        "compressed_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
++        "compressed_bytes": path.stat().st_size,
++    }
++
++
++def build_sources(output: Path) -> dict[str, object]:
++    started = time.perf_counter()
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    cal = smoke_harness.calibration()
++    tape = build_world_tape(
++        domain=DEVELOPMENT_WORLD_DOMAINS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=5,
++        start_time_s=0.0,
++    )
++    exact_builds = []
++    primitive_builds = []
++    exact_seconds = []
++    assertions = {
++        "validity_survival_assertions": 0,
++        "production_target_label_assertions": 0,
++        "exact_outage_assertions": 0,
++        "rekey_context_path_assertions": 0,
++    }
++    for anchor_index, (step_index, carrier) in enumerate(ANCHORS):
++        capture = smoke_harness.EngineCapture(pilot.ENGINE)
++        exact = smoke_harness.exact_nonfallback_builder(capture)
++        anchor_started = time.perf_counter()
++        built = exact(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=cal,
++            step_index=step_index,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=True,
++            full_legal_actions=False,
++        )
++        exact_seconds.append(time.perf_counter() - anchor_started)
++        if capture.forecasts is None:
++            raise AssertionError("exact source branch did not capture forecasts")
++        for name, count in smoke_harness.assert_exact_targets(built, capture.forecasts, cal).items():
++            assertions[name] += count
++        if capture.phi_calls_with_rekey_context <= 0:
++            raise AssertionError("exact source branch omitted rekey context")
++        assertions["rekey_context_path_assertions"] += capture.phi_calls_with_rekey_context
++        exact_builds.append(built)
++        primitive_builds.append(pilot._build_anchor_rows(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=cal,
++            step_index=step_index,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=True,
++            full_legal_actions=False,
++        ))
++    differences = smoke_harness.surrogate_differences(exact_builds, primitive_builds)
++
++    train_source = write_source_shard(output / "training-source.jsonl", exact_builds[0]["rows"])
++    validation_source = write_source_shard(output / "validation-source.jsonl", exact_builds[1]["rows"])
++    train_coalition = write_coalition_shard(
++        output / "training-coalition.jsonl", (exact_builds[0]["coalition_row"],)
++    )
++    validation_coalition = write_coalition_shard(
++        output / "validation-coalition.jsonl", (exact_builds[1]["coalition_row"],)
++    )
++    return {
++        "tape": tape,
++        "setting": setting,
++        "run_setting": run_setting,
++        "calibration": cal,
++        "exact_builds": exact_builds,
++        "train_pairs": build_pairwise_batches((train_source,)),
++        "validation_pairs": build_pairwise_batches((validation_source,)),
++        "train_c3": CoalitionBatch.create((train_coalition,)),
++        "validation_c3": CoalitionBatch.create((validation_coalition,)),
++        "receipt": {
++            "labels": list(LABELS),
++            "world": tape.domain,
++            "source_tape_sha256": tape.digest,
++            "anchors": [
++                {"anchor_index": index, "step_index": row[0], "carrier": row[1], "role": "training+panel" if index == 0 else "held-out-validation"}
++                for index, row in enumerate(ANCHORS)
++            ],
++            "exact_row_build_seconds": exact_seconds,
++            "source_rows": [len(built["rows"]) for built in exact_builds],
++            "exact_assertions": assertions,
++            "surrogate_difference_witness_counts": differences,
++            "build_seconds": time.perf_counter() - started,
++        },
++    }
++
++
++def evaluate_panel(*, trainer, built, tape, setting, run_setting, calibration, epoch):
++    plan_started = time.perf_counter()
++    plans, plan_diagnostics = smoke_harness._arm_owned_plans(
++        trainer=trainer,
++        built=built,
++        tape=tape,
++        setting=setting,
++        run_setting=run_setting,
++        calibration=calibration,
++    )
++    plan_seconds = time.perf_counter() - plan_started
++    baseline_rows = plans[-1].catalogue
++    by_rule = {}
++    base = built["base"]
++    for rule_name in RULES:
++        rule = provisioning_rule(rule_name)
++        cache = PhysicalOutcomeCache[dict[str, float | int | None]]()
++        setup_started = time.perf_counter()
++        evaluator = smoke_harness.RuleEvaluator(rule, tape.domain, ANCHORS[0][1])
++        setup_seconds = time.perf_counter() - setup_started
++        realised_seconds = 0.0
++
++        def key_for(_arm, assignment):
++            return PhysicalCacheKey(
++                tape_sha256=evaluator.ready["tape_sha256"],
++                world_id=tape.domain,
++                decision_time_ns=0,
++                assignment=assignment,
++                physical_setting_sha256=canonical_sha256({"setting": "a-r0", "provisioning_rule": rule}),
++                run_setting_sha256=evaluator.ready["run_setting_sha256"],
++                evaluator_sha256=evaluator.ready["evaluator_sha256"],
++                field="realised",
++                boundary_indices=tuple(evaluator.ready["boundary_indices"]),
++                transition_sha256=canonical_sha256(built["incumbent"].assignments),
++                prefix_history_sha256=canonical_sha256({"world": tape.domain, "step": 0, "prefix": []}),
++            )
++
++        def realise(key):
++            nonlocal realised_seconds
++            began = time.perf_counter()
++            profile = evaluator.evaluate(key.assignment)
++            realised_seconds += time.perf_counter() - began
++            return {name: profile[name] for name in (
++                "bits", "joules", "served_count", "served_user_count",
++                "rate_target_attained_count", "rate_target_user_count",
++            )}
++
++        try:
++            tier_started = time.perf_counter()
++            tier = select_then_realise(plans, key_for=key_for, evaluate=realise, cache=cache)
++            tier_seconds = time.perf_counter() - tier_started
++            reference = evaluator.evaluate(base.assignments)
++        finally:
++            evaluator.close()
++        certificate = canonical_sha256({
++            "schema": "c3-smoke-head-independent-fixed-point-v1",
++            "rule": rule,
++            "seed": baseline_rows[0].assignment,
++            "ordered_unilateral_scores_hex": [row.nominal_score.hex() for row in baseline_rows],
++            "fixed_point": baseline_rows[0].assignment,
++        })
++        screen_anchor = {
++            "anchor_id": f"{tape.domain}|0|{ANCHORS[0][1]}|{rule}|seed={trainer.learner_seed}|epoch={epoch}",
++            "reference": {
++                "bits": reference["bits"],
++                "joules": reference["joules"],
++                "head_independent": True,
++                "fixed_point_certified": True,
++                "certificate_sha256": certificate,
++            },
++            "outcomes": tier["outcomes"],
++        }
++        by_rule[rule] = {
++            "labels": list(LABELS),
++            "epoch": epoch,
++            "selected": tier["selected"],
++            "outcomes": tier["outcomes"],
++            "seed_sha256": tier["seed_sha256"],
++            "catalogue_sha256": tier["catalogue_sha256"],
++            "union_realised_configurations": tier["union_realised_configurations"],
++            "selection_completed_before_cache_lookups": tier["selection_completed_before_cache_lookups"],
++            "selection_seconds": tier_seconds - realised_seconds,
++            "realisation_seconds": realised_seconds,
++            "setup_seconds": setup_seconds,
++            "source_tape_sha256": tape.digest,
++            "evaluation_tape_sha256": evaluator.ready["tape_sha256"],
++            "sealed_manifest_sha256": evaluator.ready["sealed_manifest_sha256"],
++            "reference": screen_anchor["reference"],
++            "degeneracy": degeneracy_report((screen_anchor,), CONTRASTS),
++        }
++    return {
++        "labels": list(LABELS),
++        "epoch": epoch,
++        "plan_build_seconds": plan_seconds,
++        "plan_diagnostics": plan_diagnostics,
++        "rules": by_rule,
++    }
++
++
++def train_seed(seed: int, source, output: Path) -> dict[str, object]:
++    seed_started = time.perf_counter()
++    checkpoint_directory = output / "checkpoints" / str(seed)
++    checkpoint_directory.mkdir(parents=True)
++    trainer = PanelTrainer(
++        learner_seed=seed,
++        q1_batch=source["train_pairs"]["C1"],
++        q2_batch=source["train_pairs"]["C2"],
++        c3_batch=source["train_c3"],
++        neutral_sources=default_synthetic_neutral_sources(),
++    )
++    validation_informed, validation_neutral = source_batches(
++        trainer, source["validation_pairs"], source["validation_c3"]
++    )
++    curves = []
++    checkpoints = []
++    evaluations = {}
++    training_seconds = 0.0
++    checkpoint_seconds = 0.0
++    for epoch in range(1, EPOCH_BUDGET + 1):
++        began = time.perf_counter()
++        trainer.train_epoch()
++        training_seconds += time.perf_counter() - began
++        if epoch % CHECKPOINT_EVERY == 0:
++            rows = checkpoint_objectives(trainer, validation_informed, validation_neutral)
++            for row in rows:
++                curves.append({"learner_seed": seed, "epoch": epoch, **row})
++            began = time.perf_counter()
++            checkpoints.append(save_checkpoint(checkpoint_directory, trainer, rows))
++            checkpoint_seconds += time.perf_counter() - began
++        if epoch in EVALUATION_EPOCHS:
++            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] seed={seed} evaluating epoch={epoch}", flush=True)
++            evaluations[str(epoch)] = evaluate_panel(
++                trainer=trainer,
++                built=source["exact_builds"][0],
++                tape=source["tape"],
++                setting=source["setting"],
++                run_setting=source["run_setting"],
++                calibration=source["calibration"],
++                epoch=epoch,
++            )
++    return {
++        "labels": list(LABELS),
++        "learner_seed": seed,
++        "initialization_sha256": trainer.initialization_sha256,
++        "deployment": trainer.deployment_receipt(),
++        "training_seconds": training_seconds,
++        "checkpoint_seconds": checkpoint_seconds,
++        "wall_seconds": time.perf_counter() - seed_started,
++        "curves": curves,
++        "checkpoints": checkpoints,
++        "evaluations": evaluations,
++    }
++
++
++def marginal(left, right) -> float:
++    return (left["bits"] / left["joules"]) / (right["bits"] / right["joules"]) - 1.0
++
++
++def fmt(value, digits=6):
++    if value is None:
++        return "NA"
++    return f"{value:.{digits}g}"
++
++
++def add_table(lines, headers, rows):
++    labelled_headers = ["label", *headers]
++    lines.append("| " + " | ".join(labelled_headers) + " |")
++    lines.append("|" + "|".join(["---"] * len(labelled_headers)) + "|")
++    for row in rows:
++        lines.append("| " + " | ".join(["DIAGNOSTIC_NOT_CLAIM / SCREEN_NOT_CONFIRMATORY", *map(str, row)]) + " |")
++
++
++def convergence_verdicts(seed_receipts):
++    # Pre-declared before looking at results: an exact 1900->2000 validation
++    # decrease on any seed/source curve invokes the owner's under-trained rule.
++    verdicts = {}
++    evidence = {}
++    for route in ROUTES:
++        deltas = []
++        for receipt in seed_receipts:
++            for source_identity in ("informed", "neutral"):
++                values = {}
++                for row in receipt["curves"]:
++                    if row["route"] == route and row["source"] == source_identity:
++                        values.setdefault(row["epoch"], row["validation_objective"])
++                deltas.append({
++                    "seed": receipt["learner_seed"],
++                    "source": source_identity,
++                    "v1900": values[1900],
++                    "v2000": values[2000],
++                    "delta": values[2000] - values[1900],
++                })
++        if any(row["delta"] < 0.0 for row in deltas):
++            verdict = "under-trained"
++        else:
++            # Exact sign reversals over the last ten pre-2000 checkpoint steps
++            # implement the stated oscillation case without an after-seeing tolerance.
++            oscillating = False
++            for receipt in seed_receipts:
++                for source_identity in ("informed", "neutral"):
++                    values = [
++                        row["validation_objective"] for row in receipt["curves"]
++                        if row["route"] == route and row["source"] == source_identity
++                        and 1000 <= row["epoch"] <= 2000
++                    ]
++                    signs = [math.copysign(1.0, b - a) for a, b in zip(values, values[1:]) if b != a]
++                    oscillating |= any(a != b for a, b in zip(signs, signs[1:]))
++            verdict = "learning rate too high" if oscillating else "none applies"
++        verdicts[route] = verdict
++        evidence[route] = deltas
++    return verdicts, evidence
++
++
++def report_text(receipt, output: Path) -> str:
++    seed_receipts = receipt["seeds"]
++    verdicts, convergence_evidence = convergence_verdicts(seed_receipts)
++    final_evaluations = [
++        (seed_receipt["learner_seed"], rule, seed_receipt["evaluations"]["9000"]["rules"][rule])
++        for seed_receipt in seed_receipts for rule in RULES
++    ]
++    separation = any(
++        evaluation["selected"][arm] != evaluation["selected"]["FULL"]
++        or evaluation["outcomes"][arm] != evaluation["outcomes"]["FULL"]
++        for _, _, evaluation in final_evaluations
++        for arm in PANEL_LEARNED_ARMS if arm != "FULL"
++    )
++    converged = all(value == "none applies" for value in verdicts.values())
++    first = (
++        f"Routes {'converged under the declared screen rule' if converged else 'did not all converge'}; "
++        f"the learned arms {'separated at least once' if separation else 'did not separate at all'} at epoch 9000."
++    )
++    lines = [
++        first,
++        "",
++        "# C3 source-contrast screen — 2026-09-10",
++        "",
++        "`DIAGNOSTIC_NOT_CLAIM`. `SCREEN_NOT_CONFIRMATORY`.",
++        "",
++        "This is the first execution of the C3 source-training contrast at screening scale. It is not evidence for or against any component's efficacy and is not the answer to the owner's confirmatory requirement. Two seedwise results are shown separately; no interval or distributional claim is made.",
++        "",
++        "## Soundness warning",
++        "",
++        "The inherited harness report was explicitly `INCOMPLETE`. This run preserves its known limitations: MARGIN_Q realisation uses the verified MARGIN_Q evaluator but proposal/catalogue construction is inherited from the SEALED-era builder; source and evaluator tape digests differ without an exogenous-equivalence proof; the reference certificate is the smoke's bounded self-attested head-independent certificate rather than the controller's authoritative full-neighbourhood certificate; and selection is first-improvement over a static bounded catalogue. These prevent efficacy interpretation.",
++        "",
++        "## Fixed configuration",
++        "",
++    ]
++    add_table(lines, ["item", "value"], [
++        ("panel", "8 learned factorial arms + external BASELINE = 9 slots"),
++        ("rules", "SEALED; MARGIN_Q"),
++        ("learner seeds", ", ".join(str(value) for value in SEEDS)),
++        ("anchors", "2 exact anchors: anchor 0 step 0/carrier 1 training+panel; anchor 1 step 1/carrier 2 held-out validation"),
++        ("source epochs", "9000; one deterministic full-batch update per route per epoch"),
++        ("checkpoints", "every 100 epochs (90 per seed)"),
++        ("full-panel evaluations", ", ".join(map(str, EVALUATION_EPOCHS)) + " only"),
++        ("reported contrast epoch", "9000"),
++        ("process ceiling", "4; observed driver topology was parent + one sequential evaluator child = 2"),
++        ("labels", "DIAGNOSTIC_NOT_CLAIM; SCREEN_NOT_CONFIRMATORY"),
++    ])
++    lines.extend([
++        "",
++        "The smoke inventory was the smallest one exercising its branches: two exact source anchors and one of those as the panel tier anchor. To supply a genuine held-out objective without adding anchors, anchor 0 was fixed as training and anchor 1 as validation before training. This is a screen-driver interpretation because the instrument report did not define a validation split.",
++        "",
++        "Architectures and optimiser literals were unchanged: C1 `1e-2`, `8/ReLU`; C2 `1e-3`, `100-50-50/tanh`; C3 `1e-3`, `64-64/ReLU`; Adam betas `0.9/0.999`, epsilon `1e-8`, zero weight decay.",
++        "",
++        "## Training and validation curves (primary deliverable)",
++        "",
++        "Objectives are evaluated after each saved update checkpoint. Full 100-epoch curves are in `curves.csv`; every checkpoint contains all retained heads and Adam state. Because route-local initialization and batches are matched, arms using the same route source have byte-identical route curves; the mapping table makes every arm explicit.",
++        "",
++    ])
++    add_table(lines, ["arm", "C1 curve", "C2 curve", "C3 curve"], [
++        (arm, PANEL_SOURCE_MAP[arm]["C1"], PANEL_SOURCE_MAP[arm]["C2"], PANEL_SOURCE_MAP[arm]["C3"])
++        for arm in PANEL_LEARNED_ARMS
++    ])
++    display_epochs = (100, 500, 1000, 1500, 1900, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000)
++    for route in ROUTES:
++        lines.extend(["", f"### {route}", ""])
++        rows = []
++        for seed_receipt in seed_receipts:
++            for source_identity in ("informed", "neutral"):
++                by_epoch = {
++                    row["epoch"]: row for row in seed_receipt["curves"]
++                    if row["route"] == route and row["source"] == source_identity
++                }
++                for epoch in display_epochs:
++                    row = by_epoch[epoch]
++                    rows.append((seed_receipt["learner_seed"], source_identity, epoch, fmt(row["training_objective"], 9), fmt(row["validation_objective"], 9)))
++        add_table(lines, ["seed", "source", "epoch", "training objective", "validation objective"], rows)
++    lines.extend(["", "## Pre-declared convergence verdict", ""])
++    verdict_rows = []
++    for route in ROUTES:
++        evidence = "; ".join(
++            f"seed {row['seed']} {row['source']} Δ={row['delta']:.9g}"
++            for row in convergence_evidence[route]
++        )
++        verdict_rows.append((route, verdicts[route], evidence))
++    add_table(lines, ["route", "verdict", "validation objective 2000 minus 1900"], verdict_rows)
++    lines.extend([
++        "",
++        "Operational reading fixed before outcomes were inspected: any exact decrease from 1900 to 2000 on a seed/source curve invokes `under-trained`; otherwise an exact direction reversal during 1000–2000 invokes `learning rate too high`; otherwise `none applies`. The `flat early and high` case is not asserted without a pre-declared numeric definition of “high.” Per the owner's rule, the remedy for `under-trained` is more epochs, not a learning-rate change.",
++        "",
++        "## Checkpoint trajectory (not candidate results)",
++        "",
++        "The following are the six direct source contrasts at all five pre-declared evaluation points. Epochs 500–4000 are trajectory only and were not selected or recommended.",
++        "",
++    ])
++    direct_names = {
++        "FULL-minus-DROP_C1", "FULL-minus-DROP_C2", "FULL-minus-DROP_C3",
++        "ONLY_C1-minus-ALL_NEUTRAL_CONTROL", "ONLY_C2-minus-ALL_NEUTRAL_CONTROL", "ONLY_C3-minus-ALL_NEUTRAL_CONTROL",
++    }
++    trajectory_rows = []
++    for seed_receipt in seed_receipts:
++        for epoch in EVALUATION_EPOCHS:
++            for rule in RULES:
++                outcomes = seed_receipt["evaluations"][str(epoch)]["rules"][rule]["outcomes"]
++                for name, left, right in CONTRASTS:
++                    if name in direct_names:
++                        trajectory_rows.append((seed_receipt["learner_seed"], rule, epoch, name, fmt(marginal(outcomes[left], outcomes[right]), 9)))
++    add_table(lines, ["seed", "rule", "epoch", "contrast", "relative pooled-EE marginal"], trajectory_rows)
++    lines.extend([
++        "",
++        "## Declared epoch-9000 contrast",
++        "",
++        "Each value is seedwise. Restricted rows retain only the anchors where both contrasted arms are at or above the certified reference; with one panel anchor, the restricted count is necessarily 0 or 1.",
++        "",
++    ])
++    contrast_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for name, _, _ in CONTRASTS:
++            screen = evaluation["degeneracy"]["contrasts"][name]
++            contrast_rows.append((
++                seed, rule, name,
++                fmt(screen["all_anchor"]["marginal_relative_pooled_ee"], 9),
++                screen["all_arms_at_or_above_reference"]["anchor_count"],
++                fmt(screen["all_arms_at_or_above_reference"]["marginal_relative_pooled_ee"], 9),
++            ))
++    add_table(lines, ["seed", "rule", "contrast", "all-anchor marginal", "restricted anchors", "restricted marginal"], contrast_rows)
++    lines.extend(["", "### Epoch-9000 arm outcomes", ""])
++    outcome_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["outcomes"][arm]
++            outcome_rows.append((seed, rule, arm, fmt(row["bits"], 10), fmt(row["joules"], 10), fmt(row["bits"] / row["joules"], 10)))
++    add_table(lines, ["seed", "rule", "arm", "bits", "joules", "pooled EE bits/J"], outcome_rows)
++    lines.extend([
++        "",
++        "## Degeneracy screen",
++        "",
++        "Below-reference is determined by the exact cross-product sign `arm_bits × reference_joules < reference_bits × arm_joules`; it is reporting-only and never filters the all-anchor result.",
++        "",
++    ])
++    degeneracy_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["degeneracy"]["per_arm"][arm]
++            degeneracy_rows.append((seed, rule, arm, row["below_reference_count"], row["anchor_count"], fmt(row["shortfall_min_bits_per_j"], 9), fmt(row["shortfall_max_bits_per_j"], 9)))
++    add_table(lines, ["seed", "rule", "arm", "below ref", "all anchors", "min shortfall bits/J", "max shortfall bits/J"], degeneracy_rows)
++    lines.extend([
++        "",
++        "## Served counts and rate-target attainment (separate)",
++        "",
++        "`served_PHY` counts users with positive realised decoding service; rate-target attainment counts users whose integrated bits attain the fixed target. They are not merged.",
++        "",
++    ])
++    service_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["outcomes"][arm]
++            service_rows.append((seed, rule, arm, f"{row['served_count']}/{row['served_user_count']}", f"{row['rate_target_attained_count']}/{row['rate_target_user_count']}"))
++    add_table(lines, ["seed", "rule", "arm", "served_PHY", "rate-target attained"], service_rows)
++    lines.extend(["", "## Did interventions separate from FULL?", ""])
++    separation_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_LEARNED_ARMS[1:]:
++            same_assignment = evaluation["selected"][arm] == evaluation["selected"]["FULL"]
++            same_outcome = evaluation["outcomes"][arm] == evaluation["outcomes"]["FULL"]
++            route_digests_same = all(
++                canonical_sha256(seed_receipt["deployment"]["source_map"][arm]) == canonical_sha256(seed_receipt["deployment"]["source_map"]["FULL"])
++                for seed_receipt in seed_receipts if seed_receipt["learner_seed"] == seed
++            )
++            separation_rows.append((seed, rule, arm, same_assignment, same_outcome, route_digests_same))
++    add_table(lines, ["seed", "rule", "arm", "same selected assignment", "same realised outcome", "same source intervention"], separation_rows)
++    lines.extend([
++        "",
++        "`same source intervention` is expected to be false for every non-FULL learned arm; it checks the declared source map. Exact checkpoint payloads allow route-weight identity to be audited independently.",
++        "",
++        "## Wall time and measured computational cost",
++        "",
++    ])
++    cost_rows = []
++    for seed_receipt in seed_receipts:
++        plan = sum(row["plan_build_seconds"] for row in seed_receipt["evaluations"].values())
++        selection = sum(
++            rule_row["selection_seconds"]
++            for row in seed_receipt["evaluations"].values() for rule_row in row["rules"].values()
++        )
++        realisation = sum(
++            rule_row["realisation_seconds"]
++            for row in seed_receipt["evaluations"].values() for rule_row in row["rules"].values()
++        )
++        cost_rows.append((seed_receipt["learner_seed"], fmt(seed_receipt["training_seconds"], 9), fmt(seed_receipt["checkpoint_seconds"], 9), fmt(plan, 9), fmt(selection, 9), fmt(realisation, 9), fmt(seed_receipt["wall_seconds"], 9)))
++    add_table(lines, ["seed", "training s", "checkpoint I/O s", "plan build s", "selection s", "realisation s", "wall s"], cost_rows)
++    lines.extend([
++        "",
++        f"End-to-end wall time was {receipt['wall_seconds']:.9g} s ({receipt['wall_seconds']/3600:.6g} h). No cloud or monetary meter was attached, so monetary cost is not available; the measured local computational cost is the elapsed wall time above, with at most two live processes and one evaluator child at a time.",
++        "",
++        "## Reproduction",
++        "",
++        "Exact command:",
++        "",
++        "```bash",
++        f"PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python scripts/run_c3_screen.py --output {output.relative_to(ROOT)} --report C3-SCREEN-2026-09-10.md",
++        "```",
++        "",
++        "The write-once artifact contains `receipt.json`, `curves.csv`, `checkpoint-index.json`, exact source shards, and 90 compressed checkpoints per seed. Earlier evaluation points remain trajectory only; the contrast outcome is epoch 9000.",
++        "",
++    ])
++    return "\n".join(lines)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--report", type=Path, required=True)
++    args = parser.parse_args()
++    output = args.output if args.output.is_absolute() else ROOT / args.output
++    report = args.report if args.report.is_absolute() else ROOT / args.report
++    if output.exists() or report.exists():
++        raise RuntimeError("screen output and report are write-once and must not already exist")
++    output.mkdir(parents=True)
++    wall_started = time.perf_counter()
++    source = build_sources(output)
++    print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] exact sources ready", flush=True)
++    seeds = [train_seed(seed, source, output) for seed in SEEDS]
++    receipt = {
++        "labels": list(LABELS),
++        "screen_not_confirmatory": True,
++        "diagnostic_not_claim": True,
++        "worker_process_limit": 4,
++        "worker_processes_used_peak": 2,
++        "source": source["receipt"],
++        "configuration": {
++            "epochs": EPOCH_BUDGET,
++            "checkpoint_every": CHECKPOINT_EVERY,
++            "evaluation_epochs": list(EVALUATION_EPOCHS),
++            "reported_epoch": 9000,
++            "seeds": list(SEEDS),
++            "rules": list(RULES),
++            "arms": list(PANEL_ARM_ORDER),
++            "contrasts": [list(row) for row in CONTRASTS],
++            "convergence_rule_implementation": {
++                "under_trained": "any exact validation objective decrease from epoch 1900 to 2000 for route seed/source",
++                "learning_rate_too_high": "if not under-trained, any exact checkpoint-direction reversal during epochs 1000 through 2000",
++                "flat_early_and_high": "not asserted without a pre-declared numeric definition of high",
++            },
++        },
++        "seeds": seeds,
++    }
++    receipt["wall_seconds"] = time.perf_counter() - wall_started
++    curves_path = output / "curves.csv"
++    with curves_path.open("w", newline="", encoding="ascii") as handle:
++        fieldnames = ["label", "learner_seed", "epoch", "arm", "route", "source", "training_objective", "validation_objective"]
++        writer = csv.DictWriter(handle, fieldnames=fieldnames)
++        writer.writeheader()
++        for seed_receipt in seeds:
++            for row in seed_receipt["curves"]:
++                writer.writerow({"label": "DIAGNOSTIC_NOT_CLAIM / SCREEN_NOT_CONFIRMATORY", **row})
++    checkpoint_index = {
++        "labels": list(LABELS),
++        "seeds": {str(row["learner_seed"]): row["checkpoints"] for row in seeds},
++    }
++    (output / "checkpoint-index.json").write_text(json.dumps(checkpoint_index, indent=2, sort_keys=True) + "\n", encoding="ascii")
++    # Avoid duplicating thousands of curve rows and checkpoint indexes in the
++    # main receipt; their authenticated files are the canonical copies.
++    compact = json.loads(json.dumps(receipt))
++    for row in compact["seeds"]:
++        row["curves"] = {"path": str(curves_path.relative_to(ROOT)), "rows_for_seed": len(row["curves"])}
++        row["checkpoints"] = {"path": str((output / "checkpoint-index.json").relative_to(ROOT)), "count": len(row["checkpoints"])}
++    (output / "receipt.json").write_text(json.dumps(compact, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="ascii")
++    report.write_text(report_text(receipt, output) + "\n", encoding="utf-8")
++    print(report.read_text(encoding="utf-8"), end="")
++
++
++if __name__ == "__main__":
++    main()
+
+exec
+/bin/bash -lc 'PYTHONPATH=src /home/sat/mcrl-leo-handover/.venv/bin/python -m py_compile scripts/run_c3_screen.py scripts/run_c3_rule_evaluator.py && PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -m pytest tests/stagec_v025/test_c3_panel_harness.py -q' in /home/sat/mcrl-v025-retrain-ws
+ succeeded in 504ms:
+.........                                                                [100%]
+
+diff --git a/scripts/run_c3_rule_evaluator.py b/scripts/run_c3_rule_evaluator.py
+index 2a3d9279073692b204dac4da170aaf9690d9bc3a..61c2ad1f56dd116c6d2a21e11063ae63089f85a8
+--- a/scripts/run_c3_rule_evaluator.py
++++ b/scripts/run_c3_rule_evaluator.py
+@@ -98,11 +98,18 @@
+             base, dict(assignment), kind=f"c3-panel-{args.variant.lower()}"
+         )
+         profile = evaluator.evaluate(config)
++        attained = profile.score.rate_target_attained
+         print(
+             json.dumps(
+                 {
+                     "bits": profile.bits,
+                     "joules": profile.joules,
++                    "served_count": sum(bool(value) for value in profile.score.served_phy.values()),
++                    "served_user_count": len(profile.score.served_phy),
++                    "rate_target_attained_count": (
++                        None if attained is None else sum(bool(value) for value in attained.values())
++                    ),
++                    "rate_target_user_count": None if attained is None else len(attained),
+                     "valid": config.configuration_id not in evaluator._invalid,
+                 },
+                 sort_keys=True,
+diff --git a/scripts/run_c3_screen.py b/scripts/run_c3_screen.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f8a7db07f04aef2dccf095223bb7565dd567702
+--- /dev/null
++++ b/scripts/run_c3_screen.py
+@@ -0,0 +1,754 @@
++#!/usr/bin/env python3
++"""Execute the pre-declared C3 source-contrast screen.
++
++DIAGNOSTIC_NOT_CLAIM. SCREEN_NOT_CONFIRMATORY.
++
++This is a thin, write-once driver around the panel instrument in c3_panel.py
++and the exact branch fixtures in run_c3_panel_smoke.py.  It intentionally does
++not change any learner hyperparameter, arm construction, proposal, catalogue,
++selection, provisioning-rule, or realisation implementation.
++"""
++
++from __future__ import annotations
++
++import argparse
++import csv
++from fractions import Fraction
++import gzip
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import sys
++import time
++
++import numpy as np
++
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT / "scripts"))
++
++import run_c3_panel_smoke as smoke_harness  # noqa: E402
++import run_v025_pilot_c3 as pilot  # noqa: E402
++from mcrl.physics_v025.provider_legacy import LegacyWorldProvider  # noqa: E402
++from mcrl.physics_v025.tapes import (  # noqa: E402
++    DEVELOPMENT_WORLD_DOMAINS,
++    REFERENCE_CARRIERS,
++    build_world_tape,
++)
++from mcrl.stagec_v025.c3_panel import (  # noqa: E402
++    PANEL_ARM_ORDER,
++    PANEL_LEARNED_ARMS,
++    PANEL_SOURCE_MAP,
++    PanelTrainer,
++    PhysicalCacheKey,
++    PhysicalOutcomeCache,
++    degeneracy_report,
++    provisioning_rule,
++    select_then_realise,
++)
++from mcrl.stagec_v025.canonical import canonical_sha256  # noqa: E402
++from mcrl.stagec_v025.coalitions import write_coalition_shard  # noqa: E402
++from mcrl.stagec_v025.learner import (  # noqa: E402
++    AdamMLPHead,
++    AdamSetInteractionHead,
++    CoalitionBatch,
++    LEARNER_SEEDS,
++    LEGACY_TRAINER_LITERALS,
++    LEGACY_TRAINER_LITERALS_SHA256,
++    ROUTES,
++    build_pairwise_batches,
++    default_synthetic_neutral_sources,
++)
++from mcrl.stagec_v025.shards import write_source_shard  # noqa: E402
++
++
++LABELS = ("DIAGNOSTIC_NOT_CLAIM", "SCREEN_NOT_CONFIRMATORY")
++EPOCH_BUDGET = 9000
++CHECKPOINT_EVERY = 100
++EVALUATION_EPOCHS = (500, 1000, 2000, 4000, 9000)
++SEEDS = LEARNER_SEEDS[:2]
++RULES = ("SEALED", "MARGIN_Q")
++ANCHORS = (
++    (0, REFERENCE_CARRIERS[0]),
++    (1, REFERENCE_CARRIERS[1]),
++)
++
++# The requirement-facing contrasts, plus the otherwise implicit middle rung
++# DROP_Ci > ALL_NEUTRAL_CONTROL needed by FULL > any-two > control.
++CONTRASTS = (
++    *((f"FULL-minus-{arm}", "FULL", arm) for arm in ("DROP_C1", "DROP_C2", "DROP_C3")),
++    *((f"{arm}-minus-ALL_NEUTRAL_CONTROL", arm, "ALL_NEUTRAL_CONTROL") for arm in ("DROP_C1", "DROP_C2", "DROP_C3")),
++    *((f"{arm}-minus-ALL_NEUTRAL_CONTROL", arm, "ALL_NEUTRAL_CONTROL") for arm in ("ONLY_C1", "ONLY_C2", "ONLY_C3")),
++    *((f"{arm}-minus-BASELINE", arm, "BASELINE") for arm in PANEL_LEARNED_ARMS),
++)
++
++
++def objective(head: object, batch: object) -> float:
++    """Evaluate the exact sealed squared objective without updating state."""
++
++    if isinstance(head, AdamMLPHead):
++        reference, _, _ = head._forward(batch.reference_states)
++        candidate, _, _ = head._forward(batch.candidate_states)
++        residual = candidate - reference - batch.target_deltas
++        return float(head.loss_weight * np.mean(
++            residual * residual + head.gauge_beta * reference * reference
++        ))
++    if isinstance(head, AdamSetInteractionHead):
++        prediction, _, _ = head.network._forward(batch.invariant_states)
++        residual = prediction - batch.target_psi
++        return float(head.network.loss_weight * np.mean(residual * residual))
++    raise TypeError(f"unsupported head {type(head)!r}")
++
++
++def arm_head(trainer: PanelTrainer, arm: str, route: str) -> object:
++    model = trainer.models[arm]
++    return {"C1": model.q1, "C2": model.q2, "C3": model.psi}[route]
++
++
++def source_batches(trainer: PanelTrainer, validation_pairs, validation_c3):
++    definitions = default_synthetic_neutral_sources()
++    validation_informed = {
++        "C1": validation_pairs["C1"],
++        "C2": validation_pairs["C2"],
++        "C3": validation_c3,
++    }
++    validation_neutral = {
++        "C1": validation_pairs["C1"].neutral(definitions["C1"]),
++        "C2": validation_pairs["C2"].neutral(definitions["C2"]),
++        "C3": validation_c3.neutral(definitions["C3"]),
++    }
++    return validation_informed, validation_neutral
++
++
++def checkpoint_objectives(trainer, validation_informed, validation_neutral):
++    rows = []
++    for arm in PANEL_LEARNED_ARMS:
++        for route in ROUTES:
++            identity = PANEL_SOURCE_MAP[arm][route]
++            train_batch = trainer.informed[route] if identity == "informed" else trainer.neutral[route]
++            validation_batch = (
++                validation_informed[route] if identity == "informed" else validation_neutral[route]
++            )
++            head = arm_head(trainer, arm, route)
++            rows.append({
++                "arm": arm,
++                "route": route,
++                "source": identity,
++                "training_objective": objective(head, train_batch),
++                "validation_objective": objective(head, validation_batch),
++            })
++    return rows
++
++
++def save_checkpoint(directory: Path, trainer: PanelTrainer, objective_rows) -> dict[str, object]:
++    epoch = trainer.completed_source_epochs
++    payload = {
++        "labels": list(LABELS),
++        "schema": "mcrl-v025-c3-screen-checkpoint-v1",
++        "learner_seed": trainer.learner_seed,
++        "completed_source_epochs": epoch,
++        "checkpoint_every_source_epochs": CHECKPOINT_EVERY,
++        "epoch_budget": EPOCH_BUDGET,
++        "evaluation_epochs": list(EVALUATION_EPOCHS),
++        "legacy_trainer_literals": dict(LEGACY_TRAINER_LITERALS),
++        "legacy_trainer_literals_sha256": LEGACY_TRAINER_LITERALS_SHA256,
++        "initialization_sha256": trainer.initialization_sha256,
++        "source_map": {arm: dict(PANEL_SOURCE_MAP[arm]) for arm in PANEL_LEARNED_ARMS},
++        "head_updates": trainer.head_updates,
++        "objectives_after_update": objective_rows,
++        "arms": {arm: trainer.models[arm].payload() for arm in PANEL_LEARNED_ARMS},
++    }
++    encoded = (json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("ascii")
++    path = directory / f"epoch-{epoch:06d}.json.gz"
++    if path.exists():
++        raise RuntimeError(f"refusing to overwrite checkpoint {path}")
++    with gzip.open(path, "wb", compresslevel=6, mtime=0) as handle:
++        handle.write(encoded)
++    return {
++        "epoch": epoch,
++        "path": str(path.relative_to(ROOT)),
++        "uncompressed_sha256": hashlib.sha256(encoded).hexdigest(),
++        "compressed_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
++        "compressed_bytes": path.stat().st_size,
++    }
++
++
++def build_sources(output: Path) -> dict[str, object]:
++    started = time.perf_counter()
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    cal = smoke_harness.calibration()
++    tape = build_world_tape(
++        domain=DEVELOPMENT_WORLD_DOMAINS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=5,
++        start_time_s=0.0,
++    )
++    exact_builds = []
++    primitive_builds = []
++    exact_seconds = []
++    assertions = {
++        "validity_survival_assertions": 0,
++        "production_target_label_assertions": 0,
++        "exact_outage_assertions": 0,
++        "rekey_context_path_assertions": 0,
++    }
++    for anchor_index, (step_index, carrier) in enumerate(ANCHORS):
++        capture = smoke_harness.EngineCapture(pilot.ENGINE)
++        exact = smoke_harness.exact_nonfallback_builder(capture)
++        anchor_started = time.perf_counter()
++        built = exact(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=cal,
++            step_index=step_index,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=True,
++            full_legal_actions=False,
++        )
++        exact_seconds.append(time.perf_counter() - anchor_started)
++        if capture.forecasts is None:
++            raise AssertionError("exact source branch did not capture forecasts")
++        for name, count in smoke_harness.assert_exact_targets(built, capture.forecasts, cal).items():
++            assertions[name] += count
++        if capture.phi_calls_with_rekey_context <= 0:
++            raise AssertionError("exact source branch omitted rekey context")
++        assertions["rekey_context_path_assertions"] += capture.phi_calls_with_rekey_context
++        exact_builds.append(built)
++        primitive_builds.append(pilot._build_anchor_rows(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=cal,
++            step_index=step_index,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=True,
++            full_legal_actions=False,
++        ))
++    differences = smoke_harness.surrogate_differences(exact_builds, primitive_builds)
++
++    train_source = write_source_shard(output / "training-source.jsonl", exact_builds[0]["rows"])
++    validation_source = write_source_shard(output / "validation-source.jsonl", exact_builds[1]["rows"])
++    train_coalition = write_coalition_shard(
++        output / "training-coalition.jsonl", (exact_builds[0]["coalition_row"],)
++    )
++    validation_coalition = write_coalition_shard(
++        output / "validation-coalition.jsonl", (exact_builds[1]["coalition_row"],)
++    )
++    return {
++        "tape": tape,
++        "setting": setting,
++        "run_setting": run_setting,
++        "calibration": cal,
++        "exact_builds": exact_builds,
++        "train_pairs": build_pairwise_batches((train_source,)),
++        "validation_pairs": build_pairwise_batches((validation_source,)),
++        "train_c3": CoalitionBatch.create((train_coalition,)),
++        "validation_c3": CoalitionBatch.create((validation_coalition,)),
++        "receipt": {
++            "labels": list(LABELS),
++            "world": tape.domain,
++            "source_tape_sha256": tape.digest,
++            "anchors": [
++                {"anchor_index": index, "step_index": row[0], "carrier": row[1], "role": "training+panel" if index == 0 else "held-out-validation"}
++                for index, row in enumerate(ANCHORS)
++            ],
++            "exact_row_build_seconds": exact_seconds,
++            "source_rows": [len(built["rows"]) for built in exact_builds],
++            "exact_assertions": assertions,
++            "surrogate_difference_witness_counts": differences,
++            "build_seconds": time.perf_counter() - started,
++        },
++    }
++
++
++def evaluate_panel(*, trainer, built, tape, setting, run_setting, calibration, epoch):
++    plan_started = time.perf_counter()
++    plans, plan_diagnostics = smoke_harness._arm_owned_plans(
++        trainer=trainer,
++        built=built,
++        tape=tape,
++        setting=setting,
++        run_setting=run_setting,
++        calibration=calibration,
++    )
++    plan_seconds = time.perf_counter() - plan_started
++    baseline_rows = plans[-1].catalogue
++    by_rule = {}
++    base = built["base"]
++    for rule_name in RULES:
++        rule = provisioning_rule(rule_name)
++        cache = PhysicalOutcomeCache[dict[str, float | int | None]]()
++        setup_started = time.perf_counter()
++        evaluator = smoke_harness.RuleEvaluator(rule, tape.domain, ANCHORS[0][1])
++        setup_seconds = time.perf_counter() - setup_started
++        realised_seconds = 0.0
++
++        def key_for(_arm, assignment):
++            return PhysicalCacheKey(
++                tape_sha256=evaluator.ready["tape_sha256"],
++                world_id=tape.domain,
++                decision_time_ns=0,
++                assignment=assignment,
++                physical_setting_sha256=canonical_sha256({"setting": "a-r0", "provisioning_rule": rule}),
++                run_setting_sha256=evaluator.ready["run_setting_sha256"],
++                evaluator_sha256=evaluator.ready["evaluator_sha256"],
++                field="realised",
++                boundary_indices=tuple(evaluator.ready["boundary_indices"]),
++                transition_sha256=canonical_sha256(built["incumbent"].assignments),
++                prefix_history_sha256=canonical_sha256({"world": tape.domain, "step": 0, "prefix": []}),
++            )
++
++        def realise(key):
++            nonlocal realised_seconds
++            began = time.perf_counter()
++            profile = evaluator.evaluate(key.assignment)
++            realised_seconds += time.perf_counter() - began
++            return {name: profile[name] for name in (
++                "bits", "joules", "served_count", "served_user_count",
++                "rate_target_attained_count", "rate_target_user_count",
++            )}
++
++        try:
++            tier_started = time.perf_counter()
++            tier = select_then_realise(plans, key_for=key_for, evaluate=realise, cache=cache)
++            tier_seconds = time.perf_counter() - tier_started
++            reference = evaluator.evaluate(base.assignments)
++        finally:
++            evaluator.close()
++        certificate = canonical_sha256({
++            "schema": "c3-smoke-head-independent-fixed-point-v1",
++            "rule": rule,
++            "seed": baseline_rows[0].assignment,
++            "ordered_unilateral_scores_hex": [row.nominal_score.hex() for row in baseline_rows],
++            "fixed_point": baseline_rows[0].assignment,
++        })
++        screen_anchor = {
++            "anchor_id": f"{tape.domain}|0|{ANCHORS[0][1]}|{rule}|seed={trainer.learner_seed}|epoch={epoch}",
++            "reference": {
++                "bits": reference["bits"],
++                "joules": reference["joules"],
++                "head_independent": True,
++                "fixed_point_certified": True,
++                "certificate_sha256": certificate,
++            },
++            "outcomes": tier["outcomes"],
++        }
++        by_rule[rule] = {
++            "labels": list(LABELS),
++            "epoch": epoch,
++            "selected": tier["selected"],
++            "outcomes": tier["outcomes"],
++            "seed_sha256": tier["seed_sha256"],
++            "catalogue_sha256": tier["catalogue_sha256"],
++            "union_realised_configurations": tier["union_realised_configurations"],
++            "selection_completed_before_cache_lookups": tier["selection_completed_before_cache_lookups"],
++            "selection_seconds": tier_seconds - realised_seconds,
++            "realisation_seconds": realised_seconds,
++            "setup_seconds": setup_seconds,
++            "source_tape_sha256": tape.digest,
++            "evaluation_tape_sha256": evaluator.ready["tape_sha256"],
++            "sealed_manifest_sha256": evaluator.ready["sealed_manifest_sha256"],
++            "reference": screen_anchor["reference"],
++            "degeneracy": degeneracy_report((screen_anchor,), CONTRASTS),
++        }
++    return {
++        "labels": list(LABELS),
++        "epoch": epoch,
++        "plan_build_seconds": plan_seconds,
++        "plan_diagnostics": plan_diagnostics,
++        "rules": by_rule,
++    }
++
++
++def train_seed(seed: int, source, output: Path) -> dict[str, object]:
++    seed_started = time.perf_counter()
++    checkpoint_directory = output / "checkpoints" / str(seed)
++    checkpoint_directory.mkdir(parents=True)
++    trainer = PanelTrainer(
++        learner_seed=seed,
++        q1_batch=source["train_pairs"]["C1"],
++        q2_batch=source["train_pairs"]["C2"],
++        c3_batch=source["train_c3"],
++        neutral_sources=default_synthetic_neutral_sources(),
++    )
++    validation_informed, validation_neutral = source_batches(
++        trainer, source["validation_pairs"], source["validation_c3"]
++    )
++    curves = []
++    checkpoints = []
++    evaluations = {}
++    training_seconds = 0.0
++    checkpoint_seconds = 0.0
++    for epoch in range(1, EPOCH_BUDGET + 1):
++        began = time.perf_counter()
++        trainer.train_epoch()
++        training_seconds += time.perf_counter() - began
++        if epoch % CHECKPOINT_EVERY == 0:
++            rows = checkpoint_objectives(trainer, validation_informed, validation_neutral)
++            for row in rows:
++                curves.append({"learner_seed": seed, "epoch": epoch, **row})
++            began = time.perf_counter()
++            checkpoints.append(save_checkpoint(checkpoint_directory, trainer, rows))
++            checkpoint_seconds += time.perf_counter() - began
++        if epoch in EVALUATION_EPOCHS:
++            print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] seed={seed} evaluating epoch={epoch}", flush=True)
++            evaluations[str(epoch)] = evaluate_panel(
++                trainer=trainer,
++                built=source["exact_builds"][0],
++                tape=source["tape"],
++                setting=source["setting"],
++                run_setting=source["run_setting"],
++                calibration=source["calibration"],
++                epoch=epoch,
++            )
++    return {
++        "labels": list(LABELS),
++        "learner_seed": seed,
++        "initialization_sha256": trainer.initialization_sha256,
++        "deployment": trainer.deployment_receipt(),
++        "training_seconds": training_seconds,
++        "checkpoint_seconds": checkpoint_seconds,
++        "wall_seconds": time.perf_counter() - seed_started,
++        "curves": curves,
++        "checkpoints": checkpoints,
++        "evaluations": evaluations,
++    }
++
++
++def marginal(left, right) -> float:
++    return (left["bits"] / left["joules"]) / (right["bits"] / right["joules"]) - 1.0
++
++
++def fmt(value, digits=6):
++    if value is None:
++        return "NA"
++    return f"{value:.{digits}g}"
++
++
++def add_table(lines, headers, rows):
++    labelled_headers = ["label", *headers]
++    lines.append("| " + " | ".join(labelled_headers) + " |")
++    lines.append("|" + "|".join(["---"] * len(labelled_headers)) + "|")
++    for row in rows:
++        lines.append("| " + " | ".join(["DIAGNOSTIC_NOT_CLAIM / SCREEN_NOT_CONFIRMATORY", *map(str, row)]) + " |")
++
++
++def convergence_verdicts(seed_receipts):
++    # Pre-declared before looking at results: an exact 1900->2000 validation
++    # decrease on any seed/source curve invokes the owner's under-trained rule.
++    verdicts = {}
++    evidence = {}
++    for route in ROUTES:
++        deltas = []
++        for receipt in seed_receipts:
++            for source_identity in ("informed", "neutral"):
++                values = {}
++                for row in receipt["curves"]:
++                    if row["route"] == route and row["source"] == source_identity:
++                        values.setdefault(row["epoch"], row["validation_objective"])
++                deltas.append({
++                    "seed": receipt["learner_seed"],
++                    "source": source_identity,
++                    "v1900": values[1900],
++                    "v2000": values[2000],
++                    "delta": values[2000] - values[1900],
++                })
++        if any(row["delta"] < 0.0 for row in deltas):
++            verdict = "under-trained"
++        else:
++            # Exact sign reversals over the last ten pre-2000 checkpoint steps
++            # implement the stated oscillation case without an after-seeing tolerance.
++            oscillating = False
++            for receipt in seed_receipts:
++                for source_identity in ("informed", "neutral"):
++                    values = [
++                        row["validation_objective"] for row in receipt["curves"]
++                        if row["route"] == route and row["source"] == source_identity
++                        and 1000 <= row["epoch"] <= 2000
++                    ]
++                    signs = [math.copysign(1.0, b - a) for a, b in zip(values, values[1:]) if b != a]
++                    oscillating |= any(a != b for a, b in zip(signs, signs[1:]))
++            verdict = "learning rate too high" if oscillating else "none applies"
++        verdicts[route] = verdict
++        evidence[route] = deltas
++    return verdicts, evidence
++
++
++def report_text(receipt, output: Path) -> str:
++    seed_receipts = receipt["seeds"]
++    verdicts, convergence_evidence = convergence_verdicts(seed_receipts)
++    final_evaluations = [
++        (seed_receipt["learner_seed"], rule, seed_receipt["evaluations"]["9000"]["rules"][rule])
++        for seed_receipt in seed_receipts for rule in RULES
++    ]
++    separation = any(
++        evaluation["selected"][arm] != evaluation["selected"]["FULL"]
++        or evaluation["outcomes"][arm] != evaluation["outcomes"]["FULL"]
++        for _, _, evaluation in final_evaluations
++        for arm in PANEL_LEARNED_ARMS if arm != "FULL"
++    )
++    converged = all(value == "none applies" for value in verdicts.values())
++    first = (
++        f"Routes {'converged under the declared screen rule' if converged else 'did not all converge'}; "
++        f"the learned arms {'separated at least once' if separation else 'did not separate at all'} at epoch 9000."
++    )
++    lines = [
++        first,
++        "",
++        "# C3 source-contrast screen — 2026-09-10",
++        "",
++        "`DIAGNOSTIC_NOT_CLAIM`. `SCREEN_NOT_CONFIRMATORY`.",
++        "",
++        "This is the first execution of the C3 source-training contrast at screening scale. It is not evidence for or against any component's efficacy and is not the answer to the owner's confirmatory requirement. Two seedwise results are shown separately; no interval or distributional claim is made.",
++        "",
++        "## Soundness warning",
++        "",
++        "The inherited harness report was explicitly `INCOMPLETE`. This run preserves its known limitations: MARGIN_Q realisation uses the verified MARGIN_Q evaluator but proposal/catalogue construction is inherited from the SEALED-era builder; source and evaluator tape digests differ without an exogenous-equivalence proof; the reference certificate is the smoke's bounded self-attested head-independent certificate rather than the controller's authoritative full-neighbourhood certificate; and selection is first-improvement over a static bounded catalogue. These prevent efficacy interpretation.",
++        "",
++        "## Fixed configuration",
++        "",
++    ]
++    add_table(lines, ["item", "value"], [
++        ("panel", "8 learned factorial arms + external BASELINE = 9 slots"),
++        ("rules", "SEALED; MARGIN_Q"),
++        ("learner seeds", ", ".join(str(value) for value in SEEDS)),
++        ("anchors", "2 exact anchors: anchor 0 step 0/carrier 1 training+panel; anchor 1 step 1/carrier 2 held-out validation"),
++        ("source epochs", "9000; one deterministic full-batch update per route per epoch"),
++        ("checkpoints", "every 100 epochs (90 per seed)"),
++        ("full-panel evaluations", ", ".join(map(str, EVALUATION_EPOCHS)) + " only"),
++        ("reported contrast epoch", "9000"),
++        ("process ceiling", "4; observed driver topology was parent + one sequential evaluator child = 2"),
++        ("labels", "DIAGNOSTIC_NOT_CLAIM; SCREEN_NOT_CONFIRMATORY"),
++    ])
++    lines.extend([
++        "",
++        "The smoke inventory was the smallest one exercising its branches: two exact source anchors and one of those as the panel tier anchor. To supply a genuine held-out objective without adding anchors, anchor 0 was fixed as training and anchor 1 as validation before training. This is a screen-driver interpretation because the instrument report did not define a validation split.",
++        "",
++        "Architectures and optimiser literals were unchanged: C1 `1e-2`, `8/ReLU`; C2 `1e-3`, `100-50-50/tanh`; C3 `1e-3`, `64-64/ReLU`; Adam betas `0.9/0.999`, epsilon `1e-8`, zero weight decay.",
++        "",
++        "## Training and validation curves (primary deliverable)",
++        "",
++        "Objectives are evaluated after each saved update checkpoint. Full 100-epoch curves are in `curves.csv`; every checkpoint contains all retained heads and Adam state. Because route-local initialization and batches are matched, arms using the same route source have byte-identical route curves; the mapping table makes every arm explicit.",
++        "",
++    ])
++    add_table(lines, ["arm", "C1 curve", "C2 curve", "C3 curve"], [
++        (arm, PANEL_SOURCE_MAP[arm]["C1"], PANEL_SOURCE_MAP[arm]["C2"], PANEL_SOURCE_MAP[arm]["C3"])
++        for arm in PANEL_LEARNED_ARMS
++    ])
++    display_epochs = (100, 500, 1000, 1500, 1900, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000)
++    for route in ROUTES:
++        lines.extend(["", f"### {route}", ""])
++        rows = []
++        for seed_receipt in seed_receipts:
++            for source_identity in ("informed", "neutral"):
++                by_epoch = {
++                    row["epoch"]: row for row in seed_receipt["curves"]
++                    if row["route"] == route and row["source"] == source_identity
++                }
++                for epoch in display_epochs:
++                    row = by_epoch[epoch]
++                    rows.append((seed_receipt["learner_seed"], source_identity, epoch, fmt(row["training_objective"], 9), fmt(row["validation_objective"], 9)))
++        add_table(lines, ["seed", "source", "epoch", "training objective", "validation objective"], rows)
++    lines.extend(["", "## Pre-declared convergence verdict", ""])
++    verdict_rows = []
++    for route in ROUTES:
++        evidence = "; ".join(
++            f"seed {row['seed']} {row['source']} Δ={row['delta']:.9g}"
++            for row in convergence_evidence[route]
++        )
++        verdict_rows.append((route, verdicts[route], evidence))
++    add_table(lines, ["route", "verdict", "validation objective 2000 minus 1900"], verdict_rows)
++    lines.extend([
++        "",
++        "Operational reading fixed before outcomes were inspected: any exact decrease from 1900 to 2000 on a seed/source curve invokes `under-trained`; otherwise an exact direction reversal during 1000–2000 invokes `learning rate too high`; otherwise `none applies`. The `flat early and high` case is not asserted without a pre-declared numeric definition of “high.” Per the owner's rule, the remedy for `under-trained` is more epochs, not a learning-rate change.",
++        "",
++        "## Checkpoint trajectory (not candidate results)",
++        "",
++        "The following are the six direct source contrasts at all five pre-declared evaluation points. Epochs 500–4000 are trajectory only and were not selected or recommended.",
++        "",
++    ])
++    direct_names = {
++        "FULL-minus-DROP_C1", "FULL-minus-DROP_C2", "FULL-minus-DROP_C3",
++        "ONLY_C1-minus-ALL_NEUTRAL_CONTROL", "ONLY_C2-minus-ALL_NEUTRAL_CONTROL", "ONLY_C3-minus-ALL_NEUTRAL_CONTROL",
++    }
++    trajectory_rows = []
++    for seed_receipt in seed_receipts:
++        for epoch in EVALUATION_EPOCHS:
++            for rule in RULES:
++                outcomes = seed_receipt["evaluations"][str(epoch)]["rules"][rule]["outcomes"]
++                for name, left, right in CONTRASTS:
++                    if name in direct_names:
++                        trajectory_rows.append((seed_receipt["learner_seed"], rule, epoch, name, fmt(marginal(outcomes[left], outcomes[right]), 9)))
++    add_table(lines, ["seed", "rule", "epoch", "contrast", "relative pooled-EE marginal"], trajectory_rows)
++    lines.extend([
++        "",
++        "## Declared epoch-9000 contrast",
++        "",
++        "Each value is seedwise. Restricted rows retain only the anchors where both contrasted arms are at or above the certified reference; with one panel anchor, the restricted count is necessarily 0 or 1.",
++        "",
++    ])
++    contrast_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for name, _, _ in CONTRASTS:
++            screen = evaluation["degeneracy"]["contrasts"][name]
++            contrast_rows.append((
++                seed, rule, name,
++                fmt(screen["all_anchor"]["marginal_relative_pooled_ee"], 9),
++                screen["all_arms_at_or_above_reference"]["anchor_count"],
++                fmt(screen["all_arms_at_or_above_reference"]["marginal_relative_pooled_ee"], 9),
++            ))
++    add_table(lines, ["seed", "rule", "contrast", "all-anchor marginal", "restricted anchors", "restricted marginal"], contrast_rows)
++    lines.extend(["", "### Epoch-9000 arm outcomes", ""])
++    outcome_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["outcomes"][arm]
++            outcome_rows.append((seed, rule, arm, fmt(row["bits"], 10), fmt(row["joules"], 10), fmt(row["bits"] / row["joules"], 10)))
++    add_table(lines, ["seed", "rule", "arm", "bits", "joules", "pooled EE bits/J"], outcome_rows)
++    lines.extend([
++        "",
++        "## Degeneracy screen",
++        "",
++        "Below-reference is determined by the exact cross-product sign `arm_bits × reference_joules < reference_bits × arm_joules`; it is reporting-only and never filters the all-anchor result.",
++        "",
++    ])
++    degeneracy_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["degeneracy"]["per_arm"][arm]
++            degeneracy_rows.append((seed, rule, arm, row["below_reference_count"], row["anchor_count"], fmt(row["shortfall_min_bits_per_j"], 9), fmt(row["shortfall_max_bits_per_j"], 9)))
++    add_table(lines, ["seed", "rule", "arm", "below ref", "all anchors", "min shortfall bits/J", "max shortfall bits/J"], degeneracy_rows)
++    lines.extend([
++        "",
++        "## Served counts and rate-target attainment (separate)",
++        "",
++        "`served_PHY` counts users with positive realised decoding service; rate-target attainment counts users whose integrated bits attain the fixed target. They are not merged.",
++        "",
++    ])
++    service_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_ARM_ORDER:
++            row = evaluation["outcomes"][arm]
++            service_rows.append((seed, rule, arm, f"{row['served_count']}/{row['served_user_count']}", f"{row['rate_target_attained_count']}/{row['rate_target_user_count']}"))
++    add_table(lines, ["seed", "rule", "arm", "served_PHY", "rate-target attained"], service_rows)
++    lines.extend(["", "## Did interventions separate from FULL?", ""])
++    separation_rows = []
++    for seed, rule, evaluation in final_evaluations:
++        for arm in PANEL_LEARNED_ARMS[1:]:
++            same_assignment = evaluation["selected"][arm] == evaluation["selected"]["FULL"]
++            same_outcome = evaluation["outcomes"][arm] == evaluation["outcomes"]["FULL"]
++            route_digests_same = all(
++                canonical_sha256(seed_receipt["deployment"]["source_map"][arm]) == canonical_sha256(seed_receipt["deployment"]["source_map"]["FULL"])
++                for seed_receipt in seed_receipts if seed_receipt["learner_seed"] == seed
++            )
++            separation_rows.append((seed, rule, arm, same_assignment, same_outcome, route_digests_same))
++    add_table(lines, ["seed", "rule", "arm", "same selected assignment", "same realised outcome", "same source intervention"], separation_rows)
++    lines.extend([
++        "",
++        "`same source intervention` is expected to be false for every non-FULL learned arm; it checks the declared source map. Exact checkpoint payloads allow route-weight identity to be audited independently.",
++        "",
++        "## Wall time and measured computational cost",
++        "",
++    ])
++    cost_rows = []
++    for seed_receipt in seed_receipts:
++        plan = sum(row["plan_build_seconds"] for row in seed_receipt["evaluations"].values())
++        selection = sum(
++            rule_row["selection_seconds"]
++            for row in seed_receipt["evaluations"].values() for rule_row in row["rules"].values()
++        )
++        realisation = sum(
++            rule_row["realisation_seconds"]
++            for row in seed_receipt["evaluations"].values() for rule_row in row["rules"].values()
++        )
++        cost_rows.append((seed_receipt["learner_seed"], fmt(seed_receipt["training_seconds"], 9), fmt(seed_receipt["checkpoint_seconds"], 9), fmt(plan, 9), fmt(selection, 9), fmt(realisation, 9), fmt(seed_receipt["wall_seconds"], 9)))
++    add_table(lines, ["seed", "training s", "checkpoint I/O s", "plan build s", "selection s", "realisation s", "wall s"], cost_rows)
++    lines.extend([
++        "",
++        f"End-to-end wall time was {receipt['wall_seconds']:.9g} s ({receipt['wall_seconds']/3600:.6g} h). No cloud or monetary meter was attached, so monetary cost is not available; the measured local computational cost is the elapsed wall time above, with at most two live processes and one evaluator child at a time.",
++        "",
++        "## Reproduction",
++        "",
++        "Exact command:",
++        "",
++        "```bash",
++        f"PYTHONPATH=src OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python scripts/run_c3_screen.py --output {output.relative_to(ROOT)} --report C3-SCREEN-2026-09-10.md",
++        "```",
++        "",
++        "The write-once artifact contains `receipt.json`, `curves.csv`, `checkpoint-index.json`, exact source shards, and 90 compressed checkpoints per seed. Earlier evaluation points remain trajectory only; the contrast outcome is epoch 9000.",
++        "",
++    ])
++    return "\n".join(lines)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--report", type=Path, required=True)
++    args = parser.parse_args()
++    output = args.output if args.output.is_absolute() else ROOT / args.output
++    report = args.report if args.report.is_absolute() else ROOT / args.report
++    if output.exists() or report.exists():
++        raise RuntimeError("screen output and report are write-once and must not already exist")
++    output.mkdir(parents=True)
++    wall_started = time.perf_counter()
++    source = build_sources(output)
++    print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}] exact sources ready", flush=True)
++    seeds = [train_seed(seed, source, output) for seed in SEEDS]
++    receipt = {
++        "labels": list(LABELS),
++        "screen_not_confirmatory": True,
++        "diagnostic_not_claim": True,
++        "worker_process_limit": 4,
++        "worker_processes_used_peak": 2,
++        "source": source["receipt"],
++        "configuration": {
++            "epochs": EPOCH_BUDGET,
++            "checkpoint_every": CHECKPOINT_EVERY,
++            "evaluation_epochs": list(EVALUATION_EPOCHS),
++            "reported_epoch": 9000,
++            "seeds": list(SEEDS),
++            "rules": list(RULES),
++            "arms": list(PANEL_ARM_ORDER),
++            "contrasts": [list(row) for row in CONTRASTS],
++            "convergence_rule_implementation": {
++                "under_trained": "any exact validation objective decrease from epoch 1900 to 2000 for route seed/source",
++                "learning_rate_too_high": "if not under-trained, any exact checkpoint-direction reversal during epochs 1000 through 2000",
++                "flat_early_and_high": "not asserted without a pre-declared numeric definition of high",
++            },
++        },
++        "seeds": seeds,
++    }
++    receipt["wall_seconds"] = time.perf_counter() - wall_started
++    curves_path = output / "curves.csv"
++    with curves_path.open("w", newline="", encoding="ascii") as handle:
++        fieldnames = ["label", "learner_seed", "epoch", "arm", "route", "source", "training_objective", "validation_objective"]
++        writer = csv.DictWriter(handle, fieldnames=fieldnames)
++        writer.writeheader()
++        for seed_receipt in seeds:
++            for row in seed_receipt["curves"]:
++                writer.writerow({"label": "DIAGNOSTIC_NOT_CLAIM / SCREEN_NOT_CONFIRMATORY", **row})
++    checkpoint_index = {
++        "labels": list(LABELS),
++        "seeds": {str(row["learner_seed"]): row["checkpoints"] for row in seeds},
++    }
++    (output / "checkpoint-index.json").write_text(json.dumps(checkpoint_index, indent=2, sort_keys=True) + "\n", encoding="ascii")
++    # Avoid duplicating thousands of curve rows and checkpoint indexes in the
++    # main receipt; their authenticated files are the canonical copies.
++    compact = json.loads(json.dumps(receipt))
++    for row in compact["seeds"]:
++        row["curves"] = {"path": str(curves_path.relative_to(ROOT)), "rows_for_seed": len(row["curves"])}
++        row["checkpoints"] = {"path": str((output / "checkpoint-index.json").relative_to(ROOT)), "count": len(row["checkpoints"])}
++    (output / "receipt.json").write_text(json.dumps(compact, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="ascii")
++    report.write_text(report_text(receipt, output) + "\n", encoding="utf-8")
++    print(report.read_text(encoding="utf-8"), end="")
++
++
++if __name__ == "__main__":
++    main()
+

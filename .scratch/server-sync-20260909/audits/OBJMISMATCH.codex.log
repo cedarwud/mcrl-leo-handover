@@ -6630,3 +6630,15 @@ for k in (0,17,255):
  if full[k] is None or any(x[k] is None for x in pairs): print('invalid',k);continue
  b=sum(x[k][0] for x in pairs);j=sum(x[k][1] for x in pairs);print(k,b-full[k][0],j-full[k][1])
 PY" in /home/sat/mcrl-v025-harness-ws
+codex
+The exact interval decomposition passed bit-for-bit on a real committed endpoint (bits and joules both identical), and it also reduced single-configuration wall time. I’m now testing it on a full native 256-row chunk; the result will decide whether the reproducible implementation uses 47 exact adjacent-interval contributions or the monolithic 48-boundary call.
+ succeeded in 406674ms:
+n 256
+full_s 159.4564351750014
+pairs_s 246.18324312201003
+0 -1.52587890625e-05 4.547473508864641e-13
+17 -1.52587890625e-05 -4.547473508864641e-13
+255 0.0 9.094947017729282e-13
+
+codex
+The 256-row test measured 159.46 s for the monolithic 48-boundary route. Adjacent-interval recombination was close but not bit-identical for batched rows, so I will not use it for strict decisions. The implementation will use the sealed monolithic path, parallelize only independent anchors (maximum four), and checkpoint the completed scan before the much costlier convergence follow-up.
