@@ -196,3 +196,42 @@ source-substitution claim is made from it.
 `215.626778` versus `100.000000`. **That is a different comparison.** It shows `FULL` separates
 from neutral on a fixture built to separate them; it says nothing about whether **neutral
 separates from knockout**. The two must not be conflated.
+
+---
+
+# AMENDMENT 3 — the training panel is declared now. 2026-09-10 13:05 UTC.
+
+**Fixed before any anchor of it has been scored, and before the coalition shards exist.**
+
+## The panel
+
+**The first 20 anchors of the exact-path corpus in its own declared generation order**, at
+`/home/sat/mcrl-v025-datepool-ws/artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/`.
+
+- **A prefix of a fixed order, not a selection.** The corpus is generated in a pre-declared
+  order; taking its first 20 means the panel cannot be chosen for what it contains.
+- **20, because that is the size of the existing anytime panel**, so the acceleration axis has
+  a like-sized precedent, and because the pre-declaration calls for a signal, not a claim panel.
+- If fewer than 20 exist when everything else is ready, **use what exists, state the count, and
+  do not wait for a rounder number.**
+
+## What this bounds
+
+`EXACTGEN2` was at anchor index 017 at 13:03, moving at roughly **7.6 min/anchor** (anchor 006
+at 11:39, anchor 015 at 12:47, anchor 017 at 13:03). **The first run therefore does not wait
+for the 6-hour corpus budget to expire.** `COALBUILD` needs joint evaluations for this prefix
+only, not for all 180 anchors.
+
+## What is still unknown, stated as unknown
+
+The joint-evaluation cost per anchor **does not exist yet**. `COALBUILD` was dispatched at
+12:46 and at 13:03 had written its build and analysis code but no coalition shard. **Until it
+reports measured seconds per anchor, the start time of the first training run is not
+predictable, and I will not estimate it.**
+
+## Not changed by this amendment
+
+The reference (`ALL_NEUTRAL_CONTROL`), the numerator (declared full-buffer, no cap), the arms
+(the sealed five), the epochs (500, cadence 100), the continuation rule (convergence, not
+direction), the knockout separation requirement of amendment 2, and the dual-axis scoring of
+amendment 1 all stand unchanged.
