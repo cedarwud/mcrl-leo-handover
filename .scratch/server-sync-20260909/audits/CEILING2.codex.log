@@ -2856,3 +2856,1691 @@ def best_improvement(runner, calibration, tape, step_index, base, incumbent, run
     options, census = runner._legal_options(tape, step_index)
     rekeys = runner._rekeyed_users(tape, step_index)
 
+exec
+/bin/bash -lc 'rg -n "''^(def|class) |JOINT|OCCUPANT|CHECKPOINT|load|catalog|first_improvement|best_improvement|joint" /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py | sed -n '"'1,260p'" in /home/sat/mcrl-v025-ceiling2-ws
+ succeeded in 0ms:
+47:CHECKPOINTS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.08, 45.0, 60.0)
+49:JOINT_BATCH_SIZE = 32
+50:OCCUPANT_SUBSET_MAX_SIZE = 4
+51:OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+52:JOINT_CANDIDATE_CAP = 4_096
+71:def sha256(path: Path) -> str:
+79:def canonical_digest(payload: Mapping[str, object]) -> str:
+80:    unsigned = dict(payload)
+87:def atomic_write(payload: dict) -> None:
+88:    payload["receipt_sha256"] = canonical_digest(payload)
+92:        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
+98:def peak_rss_bytes() -> int:
+102:def assert_rss() -> int:
+109:def assert_runtime() -> None:
+119:def load_pilot():
+125:    if spec is None or spec.loader is None:
+129:    spec.loader.exec_module(module)
+133:def load_calibration(pilot):
+134:    payload = json.loads(CALIBRATION_PATH.read_text(encoding="ascii"))
+136:        numerator, denominator = payload[name]
+144:        users=int(payload["users"]),
+148:def frozen_panel() -> list[dict[str, object]]:
+155:        row = json.loads(result_path.read_text(encoding="utf-8"))
+185:def source_base_metric(panel_row: Mapping[str, object]) -> tuple[dict, dict]:
+189:        header = json.loads(next(handle))
+191:            row = json.loads(line)
+208:def exact_float(value: float) -> Fraction:
+214:def served(profile) -> int:
+218:def objective(runner, calibration, incumbent, config, profile, rekeys) -> Fraction:
+225:def candidate(runner, base, current, user: int, identity, kind: str):
+231:def new_selection_evaluator(
+248:class SearchRun:
+255:def first_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+354:def best_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+433:def interference_contributors(tape, step_index: int, current, victim: int) -> tuple[int, ...]:
+459:def build_joint_candidates(runner, tape, step_index: int, base, unilateral, best_alternatives):
+483:        for size in range(2, min(OCCUPANT_SUBSET_MAX_SIZE, len(occupants)) + 1):
+485:                if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+495:            if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+497:        if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+528:    if len(ordered) > JOINT_CANDIDATE_CAP:
+529:        raise RuntimeError(f"joint catalogue {len(ordered)} exceeds {JOINT_CANDIDATE_CAP}")
+533:def joint_optimum(runner, calibration, tape, step_index, base, incumbent, run_setting, first):
+538:    candidates, aliases, families = build_joint_candidates(
+542:    for offset in range(0, len(candidates), JOINT_BATCH_SIZE):
+543:        evaluator.evaluate_many(candidates[offset:offset + JOINT_BATCH_SIZE])
+564:        "catalogue_unique": len(candidates),
+565:        "catalogue_aliases": sum(len(value) for value in aliases.values()),
+567:        "joint_boundary_evaluations": evaluator.counter.boundary_evaluations - before,
+575:def config_at(run: SearchRun, seconds: float):
+584:def metric(profile) -> dict[str, object]:
+601:def committed_metrics(runner, tape, step_index, incumbent, run_setting, configs):
+619:def context_mapping(rows) -> dict[int, tuple[int, int] | None]:
+626:def verify_source_base(runner, profile, incumbent, context: Mapping[str, object], source: Mapping[str, object]) -> dict[str, object]:
+664:def pool(rows: Sequence[Mapping[str, object]], name: str) -> dict[str, object]:
+676:def summarize(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+678:        f"U_FIRST_AT_{seconds:g}" for seconds in CHECKPOINTS
+705:def main() -> int:
+708:    pilot = load_pilot()
+710:    calibration = load_calibration(pilot)
+726:    payload = {
+737:        "calibration": calibration.payload(),
+738:        "selection_information_class": "exact realised boundary-0 joint physics; no future-boundary information; system F = B - eta_ref*E",
+740:        "committed_estimand": "pooled sum(full-buffer decoded bits)/sum(modelled partial-payload DC joules) over 48 realised boundaries",
+747:        "joint_catalogue": {
+749:            "occupant_subset_total_cap": OCCUPANT_SUBSET_TOTAL_CAP,
+750:            "joint_candidate_cap": JOINT_CANDIDATE_CAP,
+762:        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
+765:        payload["anchors"] = previous.get("anchors", [])
+766:    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
+784:        first = first_improvement(
+787:        best = best_improvement(
+790:        joint, joint_receipt = joint_optimum(
+797:            "J_FROM_FIRST": joint,
+801:            for seconds in CHECKPOINTS
+814:            "first_improvement": first.receipt,
+815:            "best_improvement": best.receipt,
+816:            "joint_selection": joint_receipt,
+821:        payload["anchors"].append(row)
+822:        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
+823:        payload["summary"] = summarize(payload["anchors"])
+824:        payload["peak_rss_bytes"] = assert_rss()
+825:        atomic_write(payload)
+827:            f"anchor {position}/{len(panel)} completed peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB "
+832:                "joint_n": joint_receipt["catalogue_unique"],
+837:    payload["status"] = "COMPLETE"
+838:    payload["summary"] = summarize(payload["anchors"])
+839:    payload["peak_rss_bytes"] = assert_rss()
+840:    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
+841:    atomic_write(payload)
+842:    print(f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final ({payload['peak_rss_bytes']} bytes)", flush=True)
+843:    print(json.dumps(payload["summary"], sort_keys=True), flush=True)
+
+exec
+/bin/bash -lc "sed -n '200,620p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py && sed -n '620,860p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py" in /home/sat/mcrl-v025-ceiling2-ws
+ succeeded in 0ms:
+                break
+    if context is None or base is None:
+        raise RuntimeError("physics shard omitted anchor context or default profile")
+    if header["global_anchor_index"] != panel_row["global_anchor_index"]:
+        raise RuntimeError("physics header anchor mismatch")
+    return context, base
+
+
+def exact_float(value: float) -> Fraction:
+    if not math.isfinite(value):
+        raise RuntimeError("non-finite exact coefficient")
+    return Fraction.from_float(float(value))
+
+
+def served(profile) -> int:
+    return sum(bool(value) for value in profile.score.served_phy.values())
+
+
+def objective(runner, calibration, incumbent, config, profile, rekeys) -> Fraction:
+    # Match the standing anytime and coordination oracle: exact system
+    # objective F = B - eta_ref E.  Phi belongs to the source-label
+    # decomposition, not to either quoted ceiling's fixed-point construction.
+    return runner._objective(profile, calibration)
+
+
+def candidate(runner, base, current, user: int, identity, kind: str):
+    mapping = dict(current.mapping)
+    mapping[user] = identity
+    return runner._configuration(base, mapping, kind=kind)
+
+
+def new_selection_evaluator(
+    runner, tape, step_index, incumbent, run_setting, *, field="realised"
+):
+    return runner.StepEvaluator(
+        tape,
+        runner._setting("a-r0"),
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
+        field=field,
+        counter=runner.EvaluationCounter(),
+        run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+
+
+@dataclass
+class SearchRun:
+    selected: object
+    moves: list[tuple[float, object]]
+    receipt: dict[str, object]
+    best_alternatives: dict[int, tuple[int, int]]
+
+
+def first_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)  # F2: validated a0 exists before coordinator time.
+    guard = served(base_profile)
+    started = time.perf_counter()
+    options, census = runner._legal_options(tape, step_index)
+    rekeys = runner._rekeyed_users(tape, step_index)
+    current = base
+    moves: list[tuple[float, object]] = [(0.0, base)]
+    passes_with_moves = comparisons = submissions = 0
+    while True:
+        pass_started = time.perf_counter() - started
+        moves_this_pass = 0
+        terminal_counts = {
+            "legal_unilateral_alternatives_evaluated": 0,
+            "physically_invalid_alternatives": 0,
+            "service_guard_rejected_alternatives": 0,
+            "strictly_improving_alternatives": 0,
+        }
+        for user in sorted(options):
+            current_profile = evaluator.evaluate(current)
+            current_value = objective(
+                runner, calibration, incumbent, current, current_profile, rekeys
+            )
+            identities = [row for row in options[user] if row != current.mapping[user]]
+            accepted = None
+            for offset in range(0, len(identities), UNILATERAL_BATCH_SIZE):
+                batch = tuple(candidate(
+                    runner, base, current, user, identity,
+                    "panelceil-first-improvement",
+                ) for identity in identities[offset:offset + UNILATERAL_BATCH_SIZE])
+                evaluator.evaluate_many(batch)
+                submissions += len(batch)
+                terminal_counts["legal_unilateral_alternatives_evaluated"] += len(batch)
+                for row in batch:
+                    comparisons += 1
+                    profile = evaluator._evaluated.get(row.configuration_id)
+                    if profile is None:
+                        terminal_counts["physically_invalid_alternatives"] += 1
+                        continue
+                    if served(profile) < guard:
+                        terminal_counts["service_guard_rejected_alternatives"] += 1
+                        continue
+                    value = objective(runner, calibration, incumbent, row, profile, rekeys)
+                    if value > current_value:
+                        terminal_counts["strictly_improving_alternatives"] += 1
+                        accepted = row
+                        break
+                if accepted is not None:
+                    current = accepted
+                    moves_this_pass += 1
+                    moves.append((time.perf_counter() - started, current))
+                    break
+        pass_finished = time.perf_counter() - started
+        if moves_this_pass == 0:
+            if terminal_counts["strictly_improving_alternatives"] != 0:
+                raise RuntimeError("zero-move certificate contains an improvement")
+            break
+        passes_with_moves += 1
+
+    best_alternatives = {}
+    for user in sorted(options):
+        rows = []
+        for identity in options[user]:
+            if identity == current.mapping[user]:
+                continue
+            row = candidate(runner, base, current, user, identity, "panelceil-terminal-alternate")
+            profile = evaluator._evaluated.get(row.configuration_id)
+            if profile is not None:
+                rows.append((
+                    objective(runner, calibration, incumbent, row, profile, rekeys),
+                    row.configuration_id,
+                    identity,
+                ))
+        if rows:
+            best_alternatives[user] = min(rows, key=lambda item: (-item[0], item[1]))[2]
+    return SearchRun(current, moves, {
+        "algorithm": "deterministic cyclic first-improvement",
+        "candidate_order": "ascending user ID; each user's declared legal-option order",
+        "microbatch_size": UNILATERAL_BATCH_SIZE,
+        "baseline_served_guard": guard,
+        "legal_option_census": census,
+        "accepted_moves": len(moves) - 1,
+        "passes_with_moves": passes_with_moves,
+        "total_passes_including_certificate": passes_with_moves + 1,
+        "candidate_comparisons_through_certificate": comparisons,
+        "physically_submitted_candidates_through_certificate": submissions,
+        "last_improvement_seconds": moves[-1][0],
+        "finding_seconds": pass_started,
+        "terminal_certificate_seconds": pass_finished - pass_started,
+        "total_including_certificate_seconds": pass_finished,
+        "termination_certificate": {
+            "complete": True,
+            "statement": "Every legal unilateral alternative was evaluated at the final iterate and none strictly improves guarded F.",
+            **terminal_counts,
+        },
+    }, best_alternatives)
+
+
+def best_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)
+    guard = served(base_profile)
+    started = time.perf_counter()
+    options, census = runner._legal_options(tape, step_index)
+    rekeys = runner._rekeyed_users(tape, step_index)
+    current = base
+    moves: list[tuple[float, object]] = [(0.0, base)]
+    passes_with_moves = comparisons = 0
+    while True:
+        pass_started = time.perf_counter() - started
+        moves_this_pass = 0
+        terminal_counts = {
+            "legal_unilateral_alternatives_evaluated": 0,
+            "physically_invalid_alternatives": 0,
+            "service_guard_rejected_alternatives": 0,
+            "strictly_improving_alternatives": 0,
+        }
+        for user in sorted(options):
+            current_profile = evaluator.evaluate(current)
+            current_value = objective(
+                runner, calibration, incumbent, current, current_profile, rekeys
+            )
+            candidates = tuple(candidate(
+                runner, base, current, user, identity,
+                "panelceil-best-improvement",
+            ) for identity in options[user] if identity != current.mapping[user])
+            for offset in range(0, len(candidates), UNILATERAL_BATCH_SIZE):
+                evaluator.evaluate_many(
+                    candidates[offset:offset + UNILATERAL_BATCH_SIZE]
+                )
+            terminal_counts["legal_unilateral_alternatives_evaluated"] += len(candidates)
+            improving = []
+            for row in candidates:
+                comparisons += 1
+                profile = evaluator._evaluated.get(row.configuration_id)
+                if profile is None:
+                    terminal_counts["physically_invalid_alternatives"] += 1
+                    continue
+                if served(profile) < guard:
+                    terminal_counts["service_guard_rejected_alternatives"] += 1
+                    continue
+                value = objective(runner, calibration, incumbent, row, profile, rekeys)
+                if value > current_value:
+                    terminal_counts["strictly_improving_alternatives"] += 1
+                    improving.append((value, row.configuration_id, row))
+            if improving:
+                current = min(improving, key=lambda item: (-item[0], item[1]))[2]
+                moves_this_pass += 1
+                moves.append((time.perf_counter() - started, current))
+        pass_finished = time.perf_counter() - started
+        if moves_this_pass == 0:
+            if terminal_counts["strictly_improving_alternatives"] != 0:
+                raise RuntimeError("zero-move best-improvement certificate contains an improvement")
+            break
+        passes_with_moves += 1
+    return SearchRun(current, moves, {
+        "algorithm": "deterministic cyclic best-improvement",
+        "candidate_order": "ascending user ID; declared legal options in ordered microbatches of 16; exact best response per user; stable configuration-ID tie-break",
+        "microbatch_size": UNILATERAL_BATCH_SIZE,
+        "baseline_served_guard": guard,
+        "legal_option_census": census,
+        "accepted_moves": len(moves) - 1,
+        "passes_with_moves": passes_with_moves,
+        "total_passes_including_certificate": passes_with_moves + 1,
+        "candidate_comparisons_through_certificate": comparisons,
+        "last_improvement_seconds": moves[-1][0],
+        "finding_seconds": pass_started,
+        "terminal_certificate_seconds": pass_finished - pass_started,
+        "total_including_certificate_seconds": pass_finished,
+        "termination_certificate": {
+            "complete": True,
+            "statement": "Every legal unilateral alternative was evaluated at the final iterate and none strictly improves guarded F.",
+            **terminal_counts,
+        },
+    }, {})
+
+
+def interference_contributors(tape, step_index: int, current, victim: int) -> tuple[int, ...]:
+    mapping = current.mapping
+    victim_beam = mapping[victim]
+    if victim_beam is None:
+        return ()
+    occupancy = Counter(identity for identity in mapping.values() if identity is not None)
+    arrays = tape.steps[step_index].arrays
+    if arrays is None:
+        raise RuntimeError("exact panel requires primitive arrays")
+    victim_row = arrays._row_index().get((victim, victim_beam))
+    aggressor_of = arrays._aggressor_index()
+    if victim_row is None:
+        return ()
+    scores = []
+    for user, beam in sorted(mapping.items()):
+        if user == victim or beam is None or beam == victim_beam:
+            continue
+        column = aggressor_of.get(beam)
+        if column is None:
+            continue
+        score = arrays._cross_at_index(0, victim_row, column)[0] / occupancy[beam]
+        if score > 0.0:
+            scores.append((score, user))
+    return tuple(user for _, user in sorted(scores, key=lambda item: (-item[0], item[1])))
+
+
+def build_joint_candidates(runner, tape, step_index: int, base, unilateral, best_alternatives):
+    options, _ = runner._legal_options(tape, step_index)
+    current = unilateral.mapping
+    by_beam = {
+        beam: tuple(user for user, identity in sorted(current.items()) if identity == beam)
+        for beam in sorted({identity for identity in current.values() if identity is not None})
+    }
+    aliases: dict[tuple, list[dict[str, object]]] = {}
+    configs = {}
+    families = Counter()
+    def add(mapping, family: str, coalition: Sequence[int], detail: str) -> None:
+        changed = tuple(user for user in sorted(current) if mapping[user] != current[user])
+        if len(changed) < 2:
+            return
+        assignments = tuple(sorted(mapping.items()))
+        aliases.setdefault(assignments, []).append({
+            "family": family, "coalition_users": list(sorted(coalition)),
+            "changed_users": list(changed), "detail": detail,
+        })
+        if assignments not in configs:
+            configs[assignments] = runner._configuration(base, mapping, kind=family)
+            families[family] += 1
+    occupant_rows = 0
+    for beam, occupants in by_beam.items():
+        for size in range(2, min(OCCUPANT_SUBSET_MAX_SIZE, len(occupants)) + 1):
+            for coalition in itertools.combinations(occupants, size):
+                if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+                    break
+                if any(user not in best_alternatives for user in coalition):
+                    continue
+                mapping = dict(current)
+                for user in coalition:
+                    mapping[user] = best_alternatives[user]
+                add(mapping, "beam-occupant-subset", coalition,
+                    f"origin={beam[0]}:{beam[1]};size={size}")
+                occupant_rows += 1
+            if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+                break
+        if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+            break
+    for victim in sorted(current):
+        if victim not in best_alternatives:
+            continue
+        contributors = interference_contributors(tape, step_index, unilateral, victim)
+        for count in (2, 3):
+            if len(contributors) < count:
+                continue
+            coalition = (victim, *contributors[:count])
+            if any(user not in best_alternatives for user in coalition):
+                continue
+            mapping = dict(current)
+            for user in coalition:
+                mapping[user] = best_alternatives[user]
+            add(mapping, f"victim-plus-top-{count}-contributors", coalition,
+                f"victim={victim};contributors={','.join(map(str, contributors[:count]))}")
+    for beam, occupants in by_beam.items():
+        if len(occupants) < 2:
+            continue
+        common = set(options[occupants[0]])
+        for user in occupants[1:]:
+            common.intersection_update(options[user])
+        common.discard(beam)
+        for destination in sorted(common):
+            mapping = dict(current)
+            for user in occupants:
+                mapping[user] = destination
+            add(mapping, "complete-beam-evacuation", occupants,
+                f"origin={beam[0]}:{beam[1]};destination={destination[0]}:{destination[1]}")
+    ordered = tuple(configs[key] for key in sorted(configs))
+    if len(ordered) > JOINT_CANDIDATE_CAP:
+        raise RuntimeError(f"joint catalogue {len(ordered)} exceeds {JOINT_CANDIDATE_CAP}")
+    return ordered, aliases, dict(sorted(families.items()))
+
+
+def joint_optimum(runner, calibration, tape, step_index, base, incumbent, run_setting, first):
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)
+    seed_profile = evaluator.evaluate(first.selected)
+    guard = served(base_profile)
+    candidates, aliases, families = build_joint_candidates(
+        runner, tape, step_index, base, first.selected, first.best_alternatives
+    )
+    before = evaluator.counter.boundary_evaluations
+    for offset in range(0, len(candidates), JOINT_BATCH_SIZE):
+        evaluator.evaluate_many(candidates[offset:offset + JOINT_BATCH_SIZE])
+    best = first.selected
+    best_profile = seed_profile
+    rekeys = runner._rekeyed_users(tape, step_index)
+    qualifying = 0
+    for row in candidates:
+        profile = evaluator._evaluated.get(row.configuration_id)
+        if profile is None or served(profile) < guard:
+            continue
+        value = objective(runner, calibration, incumbent, row, profile, rekeys)
+        best_value = objective(runner, calibration, incumbent, best, best_profile, rekeys)
+        if value > objective(runner, calibration, incumbent, first.selected, seed_profile, rekeys):
+            qualifying += 1
+        if value > best_value or (
+            value == best_value and best is not first.selected
+            and row.configuration_id < best.configuration_id
+        ):
+            best, best_profile = row, profile
+    changed = [user for user in sorted(first.selected.mapping)
+               if first.selected.mapping[user] != best.mapping[user]]
+    return best, {
+        "catalogue_unique": len(candidates),
+        "catalogue_aliases": sum(len(value) for value in aliases.values()),
+        "family_unique_counts": families,
+        "joint_boundary_evaluations": evaluator.counter.boundary_evaluations - before,
+        "qualifying_strict_objective_improvements": qualifying,
+        "strict_selection_objective_improvement": best.assignments != first.selected.assignments,
+        "selected_coalition_size": len(changed),
+        "selected_coalition_users": changed,
+    }
+
+
+def config_at(run: SearchRun, seconds: float):
+    selected = run.moves[0][1]
+    for accepted, config in run.moves[1:]:
+        if accepted > seconds:
+            break
+        selected = config
+    return selected
+
+
+def metric(profile) -> dict[str, object]:
+    attained = profile.score.rate_target_attained
+    if attained is None:
+        raise RuntimeError("committed profile omitted rate-target attainment")
+    return {
+        "configuration_id": profile.config.configuration_id,
+        "assignments": [[user, None if identity is None else list(identity)]
+                        for user, identity in profile.config.assignments],
+        "bits": float(profile.bits),
+        "joules": float(profile.joules),
+        "ee_bit_per_j": float(profile.bits) / float(profile.joules),
+        "served_count": served(profile),
+        "rate_target_attained_count": sum(bool(value) for value in attained.values()),
+        "user_count": len(attained),
+    }
+
+
+def committed_metrics(runner, tape, step_index, incumbent, run_setting, configs):
+    evaluator = runner.StepEvaluator(
+        tape, runner._setting("a-r0"), step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
+        field="realised", counter=runner.EvaluationCounter(),
+        run_setting=run_setting, boundary_indices=tuple(range(48)),
+    )
+    result = {}
+    for name, config in configs.items():
+        evaluator.evaluate_many((config,))
+        profile = evaluator._evaluated.get(config.configuration_id)
+        if profile is None:
+            raise RuntimeError(f"invalid committed config for {name}")
+        result[name] = metric(profile)
+    return result
+
+
+def context_mapping(rows) -> dict[int, tuple[int, int] | None]:
+    return {
+    return {
+        int(user): (None if identity is None else (int(identity[0]), int(identity[1])))
+        for user, identity in rows
+    }
+
+
+def verify_source_base(runner, profile, incumbent, context: Mapping[str, object], source: Mapping[str, object]) -> dict[str, object]:
+    if profile.config.configuration_id != context["default_configuration_id"]:
+        raise RuntimeError("reconstructed base configuration differs from exact corpus")
+    if dict(profile.config.mapping) != context_mapping(context["default_mapping"]):
+        raise RuntimeError("reconstructed base mapping differs from exact corpus")
+    if dict(incumbent.mapping) != context_mapping(context["incumbent_mapping"]):
+        raise RuntimeError("reconstructed incumbent mapping differs from exact corpus")
+    source_bits = float.fromhex(str(source["whole_network_bits_hex"]))
+    source_joules = float.fromhex(str(source["whole_network_joules_hex"]))
+    source_served = sum(bool(row["served_phy"]) for row in source["per_user"])
+    return {
+        "configuration_id_exact_match": True,
+        "default_mapping_exact_match": True,
+        "incumbent_mapping_exact_match": True,
+        "served_count_exact_match": served(profile) == source_served,
+        "singleton_served_count": served(profile),
+        "corpus_dense_batch_served_count": source_served,
+        "bits_close_rel_1e_10": math.isclose(
+            float(profile.bits), source_bits, rel_tol=1e-10, abs_tol=1e-5
+        ),
+        "joules_close_rel_1e_10": math.isclose(
+            float(profile.joules), source_joules, rel_tol=1e-10, abs_tol=1e-10
+        ),
+        "bits": float(profile.bits) - source_bits,
+        "joules": float(profile.joules) - source_joules,
+        "ee_bit_per_j": (
+            float(profile.bits) / float(profile.joules) - source_bits / source_joules
+        ),
+        "explanation": (
+            "The corpus recorded this configuration inside its complete dense action batch; "
+            "the oracle harness evaluates it as a singleton. Configuration ID plus the "
+            "complete default and incumbent mappings are required to match; metric and PHY "
+            "service-threshold differences are retained rather than silently treated as "
+            "provenance failure."
+        ),
+    }
+
+
+def pool(rows: Sequence[Mapping[str, object]], name: str) -> dict[str, object]:
+    metrics = [row["committed"][name] for row in rows]
+    bits = math.fsum(float(row["bits"]) for row in metrics)
+    joules = math.fsum(float(row["joules"]) for row in metrics)
+    return {
+        "bits": bits, "joules": joules, "ee_bit_per_j": bits / joules,
+        "served_count": sum(int(row["served_count"]) for row in metrics),
+        "rate_target_attained_count": sum(int(row["rate_target_attained_count"]) for row in metrics),
+        "user_count": sum(int(row["user_count"]) for row in metrics),
+    }
+
+
+def summarize(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    names = ("BASE", "U_FIRST", "U_BEST", "J_FROM_FIRST", *(
+        f"U_FIRST_AT_{seconds:g}" for seconds in CHECKPOINTS
+    ))
+    pooled = {name: pool(rows, name) for name in names}
+    coordination = []
+    for row in rows:
+        u = row["committed"]["U_FIRST"]["ee_bit_per_j"]
+        j = row["committed"]["J_FROM_FIRST"]["ee_bit_per_j"]
+        coordination.append({
+            "global_anchor_index": row["global_anchor_index"],
+            "relative_ee_gain": j / u - 1.0,
+        })
+    return {
+        "pooled": pooled,
+        "coordination_ceiling_relative_to_first": (
+            pooled["J_FROM_FIRST"]["ee_bit_per_j"] / pooled["U_FIRST"]["ee_bit_per_j"] - 1.0
+        ),
+        "coordination_per_anchor": coordination,
+        "coordination_non_positive_anchor_count": sum(row["relative_ee_gain"] <= 0 for row in coordination),
+        "traversal_order_gap_first_over_best": (
+            pooled["U_FIRST"]["ee_bit_per_j"] / pooled["U_BEST"]["ee_bit_per_j"] - 1.0
+        ),
+        "acceleration_headroom_convergence_over_10s": (
+            pooled["U_FIRST"]["ee_bit_per_j"] / pooled["U_FIRST_AT_10"]["ee_bit_per_j"] - 1.0
+        ),
+    }
+
+
+def main() -> int:
+    assert_runtime()
+    panel = frozen_panel()
+    pilot = load_pilot()
+    runner = pilot.ENGINE
+    calibration = load_calibration(pilot)
+    run_setting = runner.run_setting_for("a-r0")
+    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+    from mcrl.physics_v025.tapes import build_world_tape
+    print("panel " + json.dumps([
+        f"{row['world_id']}|step={row['step_index']}|carrier={row['carrier']}"
+        for row in panel
+    ]), flush=True)
+    print(f"peak RSS {peak_rss_bytes() / 2**30:.3f} GiB before tape", flush=True)
+    tape_started = time.perf_counter()
+    tape = build_world_tape(
+        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
+        steps=33, start_time_s=0.0,
+    )
+    tape_wall = time.perf_counter() - tape_started
+    print(f"peak RSS {assert_rss() / 2**30:.3f} GiB after tape", flush=True)
+    payload = {
+        "schema": "mcrl-v025-training-panel-ceilings-v1",
+        "status": "RUNNING",
+        "claim_status": "EXACT_ORACLE_DIAGNOSTIC_NOT_LEARNED_ACHIEVEMENT",
+        "panel_frozen_at_start": panel,
+        "panel_count": len(panel),
+        "panel_prefix_rule": "completed global indices 0..11 present at task start in declared order",
+        "world_tape": {
+            "domain": tape.domain, "seed": tape.seed,
+            "digest": tape.digest, "construction_seconds": tape_wall,
+        },
+        "calibration": calibration.payload(),
+        "selection_information_class": "exact realised boundary-0 joint physics; no future-boundary information; system F = B - eta_ref*E",
+        "selection_estimand": "strict guarded improvement in exact F at realised boundary 0",
+        "committed_estimand": "pooled sum(full-buffer decoded bits)/sum(modelled partial-payload DC joules) over 48 realised boundaries",
+        "numerator": "declared saturated full-buffer successfully decoded forward-downlink information bits; no demand cap",
+        "fixed_point_orders": {
+            "first": "ascending users; declared legal options; first strict improvement in ordered microbatches of 16",
+            "best": "ascending users; declared legal-option order in microbatches of 16; exact best strict response per user; stable configuration-ID tie-break",
+        },
+        "timing_contract": "a0 constructed and validated before timer; timer includes legal-option construction and exact search; one process; only moves whose evaluation completed by checkpoint are credited",
+        "joint_catalogue": {
+            "construction": "reseeded from U_FIRST: within-beam occupant subsets size 2..4, victim plus top-2/top-3 physical nominal interferers, complete-beam evacuations",
+            "occupant_subset_total_cap": OCCUPANT_SUBSET_TOTAL_CAP,
+            "joint_candidate_cap": JOINT_CANDIDATE_CAP,
+            "exhausted": True,
+        },
+        "process_count": 1,
+        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
+        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
+        "python": sys.executable,
+        "pilot_sha256": sha256(PILOT_PATH),
+        "engine_sha256": sha256(SOURCE_ROOT / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"),
+        "anchors": [],
+    }
+    if OUTPUT.exists():
+        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
+        if previous.get("panel_frozen_at_start") != panel:
+            raise RuntimeError("resume panel differs from frozen panel")
+        payload["anchors"] = previous.get("anchors", [])
+    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
+    for position, panel_row in enumerate(panel, 1):
+        index = int(panel_row["global_anchor_index"])
+        if index in completed:
+            print(f"anchor {position}/{len(panel)} resume-complete peak RSS {assert_rss()/2**30:.3f} GiB", flush=True)
+            continue
+        step_index = int(panel_row["step_index"])
+        carrier = str(panel_row["carrier"])
+        base = runner._base_configuration(tape, step_index, carrier)
+        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
+        context, corpus_base = source_base_metric(panel_row)
+        check_evaluator = new_selection_evaluator(
+            runner, tape, step_index, incumbent, run_setting, field="nominal"
+        )
+        source_base_delta = verify_source_base(
+            runner, check_evaluator.evaluate(base), incumbent, context, corpus_base
+        )
+        anchor_started = time.perf_counter()
+        first = first_improvement(
+            runner, calibration, tape, step_index, base, incumbent, run_setting
+        )
+        best = best_improvement(
+            runner, calibration, tape, step_index, base, incumbent, run_setting
+        )
+        joint, joint_receipt = joint_optimum(
+            runner, calibration, tape, step_index, base, incumbent, run_setting, first
+        )
+        configs = {
+            "BASE": base,
+            "U_FIRST": first.selected,
+            "U_BEST": best.selected,
+            "J_FROM_FIRST": joint,
+        }
+        configs.update({
+            f"U_FIRST_AT_{seconds:g}": config_at(first, seconds)
+            for seconds in CHECKPOINTS
+        })
+        committed = committed_metrics(
+            runner, tape, step_index, incumbent, run_setting, configs
+        )
+        row = {
+            "global_anchor_index": index,
+            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
+            "world_id": panel_row["world_id"],
+            "step_index": step_index,
+            "carrier": carrier,
+            "source_base_configuration_and_incumbent_mappings_verified": True,
+            "source_base_singleton_minus_corpus_dense_batch": source_base_delta,
+            "first_improvement": first.receipt,
+            "best_improvement": best.receipt,
+            "joint_selection": joint_receipt,
+            "committed": committed,
+            "anchor_wall_seconds": time.perf_counter() - anchor_started,
+            "peak_rss_bytes": assert_rss(),
+        }
+        payload["anchors"].append(row)
+        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
+        payload["summary"] = summarize(payload["anchors"])
+        payload["peak_rss_bytes"] = assert_rss()
+        atomic_write(payload)
+        print(
+            f"anchor {position}/{len(panel)} completed peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB "
+            + json.dumps({
+                "global": index, "step": step_index, "carrier": carrier,
+                "first_s": round(first.receipt["total_including_certificate_seconds"], 3),
+                "best_s": round(best.receipt["total_including_certificate_seconds"], 3),
+                "joint_n": joint_receipt["catalogue_unique"],
+                "wall_s": round(row["anchor_wall_seconds"], 3),
+            }, sort_keys=True),
+            flush=True,
+        )
+    payload["status"] = "COMPLETE"
+    payload["summary"] = summarize(payload["anchors"])
+    payload["peak_rss_bytes"] = assert_rss()
+    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
+    atomic_write(payload)
+    print(f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final ({payload['peak_rss_bytes']} bytes)", flush=True)
+    print(json.dumps(payload["summary"], sort_keys=True), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+codex
+The primary scripts confirm the failure mode: the original ceiling runner mixed scalar `evaluate` calls into selection, while the clean-path runner fixes only the first-improvement arm. I’m now adapting the clean evaluator path to cover best-improvement, the timed incumbent, and a coalition-support sweep, with every comparison sharing one dense boundary-0 evaluator per selection and endpoints batched separately.
+exec
+/bin/bash -lc "rg -n \"def _catalogue_with_census|_catalogue_with_census\\(\" /home/sat/mcrl-v025-* /home/sat/mcrl-records 2>/dev/null | head -100" in /home/sat/mcrl-v025-ceiling2-ws
+ succeeded in 6493ms:
+3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-c1c2suff-ws/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-c1c2suff-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-curve-ws/scripts/run_v025_pilot_c3.py:502:        catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-curve-ws/scripts/run_v025_pilot_c3.py:740:        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-curve-ws/scripts/run_v025_pilot_c3.py:1627:                standard_catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-curve-ws/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-curve-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-dates-ws/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-dates-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-harness-ws/sealed/fixtures/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-harness-ws/scripts/run_v025_pilot_c3.py:502:        catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-harness-ws/scripts/run_v025_pilot_c3.py:740:        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-harness-ws/scripts/run_v025_pilot_c3.py:1627:                standard_catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-harness-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-pilot-ws/scripts/run_v025_pilot_c3.py:502:        catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-pilot-ws/scripts/run_v025_pilot_c3.py:740:        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-pilot-ws/scripts/run_v025_pilot_c3.py:1627:                standard_catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-pilot-ws/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-pilot-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-probe-ws-acmfix-BROKEN-stale-runner/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-oracle-ws/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-oracle-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-rank-ws/scripts/run_v025_pilot_c3.py:502:        catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-rank-ws/scripts/run_v025_pilot_c3.py:740:        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-rank-ws/scripts/run_v025_pilot_c3.py:1627:                standard_catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-rank-ws/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-rank-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-c1c2suff-ws/MATCHED-ANCHOR-TIER-2026-09-10.md:15:3. Separately, `_catalogue_with_census(tape, step, base, ...)` accepts the seed configuration. In its bounded branch, it copies `base.mapping` to create unilateral alternatives; computes exact nominal unilateral surplus relative to that base to identify the top users; assembles complete proposals and pairwise moves; and constructs evacuations from beams occupied in that base. Changing the seed can change all these candidate sets. [run_v025_matrix_probe.py:543](/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:543), [run_v025_matrix_probe.py:578](/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:578), [run_v025_matrix_probe.py:593](/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:593), [run_v025_matrix_probe.py:624](/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:624).
+/home/sat/mcrl-v025-sensitivity-ws/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-sensitivity-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-coverage-ws/src-copy/scripts/run_v025_pilot_c3.py:502:        catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-coverage-ws/src-copy/scripts/run_v025_pilot_c3.py:740:        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-coverage-ws/src-copy/scripts/run_v025_pilot_c3.py:1627:                standard_catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-coverage-ws/COALITION-COVERAGE-2026-09-09.md:46:catalogue, _ = ENGINE._catalogue_with_census(...)
+/home/sat/mcrl-v025-ladder-ws/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-ladder-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-scale-ws/interaction_scale_diagnostic.py:520:            catalogue, _census = pilot.ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-headroom-ws/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-headroom-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-mutants-ws/scripts/run_v025_pilot_c3.py:502:        catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-mutants-ws/scripts/run_v025_pilot_c3.py:740:        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-mutants-ws/scripts/run_v025_pilot_c3.py:1627:                standard_catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-mutants-ws/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-mutants-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-probe-ws-widened/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-probe-ws-widened/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-probe-ws-acm2/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-probe-ws-acm2/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-stage4-snapshot-20260908/tests/physics_v025/test_stage3_parity_uncertainty.py:201:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-harness-ws/harness/selector_latency.py:315:    catalogue, census = pilot.ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-probe-ws/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-probe-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-stage4d-snapshot-20260909/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-stage4d-snapshot-20260909/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-strategic-fable-ws/ADJUDICATION-fable-2026-09-10.md:102:- **At deployment the heads act around their own proposal.** `run_c3_panel_smoke.py:330-410`: the proposal is the per-user argmax of the learned Q1+Q2; the catalogue is built around that seed (`_catalogue_with_census(tape, 0, seed, …)`); every row is scored relative to the seed (`_score(model, built, seed, row, …)`). The seed is `+400%` from the carrier (`smoke.json` `FULL - BASELINE = 4.017`); at the fixed point the corrected rule serves `2,000/2,000`.
+/home/sat/mcrl-v025-floor-ws/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-floor-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-stage4c-snapshot-20260908/tests/physics_v025/test_stage3_parity_uncertainty.py:201:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-stage4b-snapshot-20260908/tests/physics_v025/test_stage3_parity_uncertainty.py:201:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-offlinesuni-ws/tests/physics_v025/test_stage4d_gate.py:462:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-offlinesuni-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:507:        catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:762:        catalogue, _catalogue_census = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1649:                standard_catalogue, _ = ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-retrain-ws/scripts/run_c3_panel_smoke.py:352:        repair_catalogue, _repair_census = pilot.ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-retrain-ws/scripts/run_c3_panel_smoke.py:403:        catalogue, census = pilot.ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-retrain-ws/scripts/run_c3_panel_smoke.py:439:    catalogue, census = pilot.ENGINE._catalogue_with_census(
+/home/sat/mcrl-v025-retrain-ws/tests/physics_v025/test_stage4d_gate.py:444:    catalog, census = runner._catalogue_with_census(bad_tape, 0, base)
+/home/sat/mcrl-v025-retrain-ws/tests/physics_v025/test_stage3_parity_uncertainty.py:202:    _catalogue, census = runner._catalogue_with_census(bad_tape, 0, base)
+
+exec
+/bin/bash -lc "rg -n \"def _catalogue_with_census\" /home/sat/mcrl-v025-c1c2suff-ws -g '*.py' -l && sed -n '500,700p' /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-ceiling2-ws
+ exited 1 in 0ms:
+exec
+/bin/bash -lc "sed -n '500,690p' /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py && rg -n \"catalogue_with_census\" /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-ceiling2-ws
+ succeeded in 0ms:
+        first = step.boundaries[0]
+        by_key = {(row.user_id, row.identity): row for row in first.candidates}
+        noise = noise_power_w(500_000_000.0)
+        for user, identities in options.items():
+            rows = []
+            for identity in identities:
+                candidate = by_key[(user, identity)]
+                sinr = BEAM_RF_CAP_W * candidate.nominal_gain / noise
+                margin = 10.0 * math.log10(max(sinr, np.finfo(float).tiny)) - SINR_MIN_DB
+                rows.append((margin, identity))
+            ordered = sorted(rows, key=lambda item: (-item[0], item[1]))
+            ranked[user] = tuple(identity for _margin, identity in ordered[:SHORTLIST_OPTIONS_PER_USER])
+            excluded_margins.extend(margin for margin, _identity in ordered[SHORTLIST_OPTIONS_PER_USER:])
+    kept = sum(len(rows) for rows in ranked.values())
+    total = sum(len(rows) for rows in options.values())
+    return ranked, {
+        **census,
+        "selection_shortlist_per_user": SHORTLIST_OPTIONS_PER_USER,
+        "selection_shortlist_count": kept,
+        "legal_options_outside_selection_shortlist": total - kept,
+        "best_excluded_nominal_margin_db": (
+            None if not excluded_margins else max(excluded_margins)
+        ),
+        "shortlist_superset_miss_count": census["candidate_shortlist_miss_count"],
+    }
+
+
+def _configuration(
+    base: Configuration,
+    mapping: Mapping[int, tuple[int, int] | None],
+    *,
+    kind: str,
+) -> Configuration:
+    assignments = tuple(sorted(mapping.items()))
+    base_map = base.mapping
+    changed = sum(base_map[user] != identity for user, identity in assignments)
+    encoded = ";".join(
+        f"{user}:NULL" if identity is None else f"{user}:{identity[0]}:{identity[1]}"
+        for user, identity in assignments
+    )
+    return Configuration(f"CFG:{encoded}", assignments, changed, kind)
+
+
+def _catalogue_with_census(
+    tape: ExogenousWorldTape,
+    step_index: int,
+    base: Configuration,
+    *,
+    setting: PhysicsSetting | None = None,
+    calibration: CalibrationValues | None = None,
+    counter: EvaluationCounter | None = None,
+    run_setting: SealedRunSetting | None = None,
+) -> tuple[tuple[Configuration, ...], dict[str, object]]:
+    users = tuple(sorted(user.user_id for user in tape.user_layout))
+    active_run = run_setting_for("a-r0") if run_setting is None else run_setting
+    all_options, raw_census = _legal_options(tape, step_index)
+    product_size = math.prod(
+        len(all_options[user]) if all_options[user] else 1 for user in users
+    )
+    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+        options, census = all_options, raw_census
+    else:
+        options, census = _selection_shortlist(
+            tape, step_index, run_setting=active_run
+        )
+    factors = tuple(options[user] if options[user] else (None,) for user in users)
+    rows: list[Configuration] = [base]
+    base_map = base.mapping
+    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+        for product in itertools.product(*factors):
+            mapping = dict(zip(users, product, strict=True))
+            if mapping == base_map:
+                continue
+            rows.append(_configuration(base, mapping, kind="complete-cartesian"))
+        mode = "complete-cartesian"
+    else:
+        # (i) every legal unilateral move; an option-less user keeps the
+        # explicit null action and never collapses the other users' catalogue.
+        unilaterals: dict[int, list[Configuration]] = {user: [] for user in users}
+        for user in users:
+            for identity in options[user]:
+                if identity == base_map[user]:
+                    continue
+                mapping = dict(base_map)
+                mapping[user] = identity
+                row = _configuration(base, mapping, kind="unilateral")
+                rows.append(row)
+                unilaterals[user].append(row)
+
+        # Rank users by the best exact nonlinear nominal single-user surplus
+        # at the decision instant.  The one-boundary result is held over the
+        # step only for this causal selection-time ranking.
+        rank_setting = _setting("a-r0") if setting is None else setting
+        nominal = StepEvaluator(
+            tape,
+            rank_setting,
+            step_index,
+            transition_from=base,
+            field="nominal",
+            counter=counter,
+            run_setting=active_run,
+            boundary_indices=(0,),
+        )
+        rank_rows = [base] + [row for values in unilaterals.values() for row in values]
+        nominal.evaluate_many(rank_rows)
+        nominal_base = nominal.evaluate(base)
+        eta = Fraction() if calibration is None else calibration.eta_ref
+        kappa = Fraction(1) if calibration is None else calibration.kappa_bits_per_user_step
+        best_surplus = {}
+        for user in users:
+            values = []
+            for row in unilaterals[user]:
+                profile = nominal.evaluate(row)
+                core = Fraction(str(profile.bits - nominal_base.bits)) - eta * Fraction(
+                    str(profile.joules - nominal_base.joules)
+                )
+                core += kappa * _phi_for(base, row)
+                values.append(core)
+            best_surplus[user] = max(values, default=Fraction(-10**30))
+        ranked_users = sorted(
+            users,
+            key=lambda user: (-best_surplus[user], user),
+        )[:PAIRWISE_TOP_K_USERS]
+
+        # (ii) S0 top-two proposals assembled as complete deployable profiles.
+        for proposal_rank in range(TOP_PROPOSALS):
+            mapping = dict(base_map)
+            for user in users:
+                if len(unilaterals[user]) > proposal_rank:
+                    mapping[user] = unilaterals[user][proposal_rank].mapping[user]
+            if mapping != base_map:
+                rows.append(_configuration(base, mapping, kind="s0-top-two"))
+
+        # (iii) pairwise moves among top K, over each user's top two options.
+        for first, second in itertools.combinations(ranked_users, 2):
+            for first_row in unilaterals[first][:TOP_PROPOSALS]:
+                for second_row in unilaterals[second][:TOP_PROPOSALS]:
+                    mapping = dict(base_map)
+                    mapping[first] = first_row.mapping[first]
+                    mapping[second] = second_row.mapping[second]
+                    rows.append(_configuration(base, mapping, kind="pairwise-top10-top2"))
+
+        # (iv) one evacuation set per active beam, every incumbent user moved
+        # to its best live legal alternative (or explicit null if none).
+        for beam in sorted({identity for identity in base_map.values() if identity is not None}):
+            mapping = dict(base_map)
+            affected = [user for user in users if base_map[user] == beam]
+            for user in affected:
+                mapping[user] = next(
+                    (identity for identity in options[user] if identity != beam),
+                    None,
+                )
+            if mapping != base_map:
+                rows.append(_configuration(base, mapping, kind="beam-evacuation"))
+        mode = "bounded-union-v2"
+
+    unique = {row.assignments: row for row in rows}
+    ordered = (base,) + tuple(
+        sorted(
+            (row for assignments, row in unique.items() if assignments != base.assignments),
+            key=lambda row: row.configuration_id,
+        )
+    )
+    if mode != "complete-cartesian" and len(ordered) > CATALOGUE_CAP:
+        raise ProbeError(f"bounded catalogue exceeded sealed cap {CATALOGUE_CAP}")
+    return ordered, {
+        **census,
+        "complete_cartesian_size": product_size,
+        "catalogue_mode": mode,
+        "null_action_users": sum(not options[user] for user in users),
+        "bounded_catalogue_count": len(ordered),
+        "top10_users_by_exact_nominal_unilateral_surplus": ranked_users if mode != "complete-cartesian" else [],
+    }
+
+
+def _catalogue(tape: ExogenousWorldTape, step_index: int, base: Configuration) -> tuple[Configuration, ...]:
+    return _catalogue_with_census(tape, step_index, base)[0]
+
+
+def _energy_fields(
+    shared,
+    setting: PhysicsSetting,
+    *,
+    circuit_power_per_active_chain_w: float = 0.338,
+) -> tuple[dict[str, float], float, float]:
+    idle = SENSITIVITY_IDLE_POWER_W if setting.standby == "f" else PRIMARY_IDLE_POWER_W
+    boundary = []
+    for item in shared.integrated:
+        receipt = schedule_energy(
+            shared.inventory,
+            ((slot.fraction, dict(slot.beam_rf_w)) for slot in item.radiation.slots),
+543:def _catalogue_with_census(
+676:    return _catalogue_with_census(tape, step_index, base)[0]
+1087:            catalog, _census = _catalogue_with_census(
+2591:    catalog, catalogue_census = _catalogue_with_census(
+3854:        _rows, census = _catalogue_with_census(tape, 0, base)
+
+exec
+/bin/bash -lc "rg -n \"class StepEvaluator|def evaluate_many|def evaluate\\(\" /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | head -40 && sed -n '2420,2640p' /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-ceiling2-ws
+ succeeded in 0ms:
+763:class StepEvaluator:
+793:    def evaluate_many(self, configs: Sequence[Configuration]) -> None:
+903:    def evaluate(self, config: Configuration) -> EvaluatedProfile:
+4742:    def evaluate(setting_id: str, values: Mapping[str, object]) -> tuple[dict[str, object], bool]:
+                "availability_served",
+                "availability_opportunities",
+                "handover_events",
+                "handover_opportunities",
+                "phi_cost_numerator",
+                "phi_cost_denominator",
+            )
+        }
+        for name, value in additive.items():
+            if float(value).hex() != float(expected["qos_additive"][name]).hex():
+                raise ProbeError(
+                    f"canonical rows disagree with additive QoS field {arm_name}.{name}"
+                )
+        derived = {
+            "availability": additive["availability_served"] / additive["availability_opportunities"],
+            "decoding_availability": math.fsum(float(row["decoding_availability"]) for row in arms) / len(arms),
+            "partial_service_availability": math.fsum(float(row["partial_service_availability"]) for row in arms) / len(arms),
+            "useful_availability": math.fsum(float(row["useful_availability"]) for row in arms) / len(arms),
+            "phi_priced_handover_cost_per_user_step": additive["phi_cost_numerator"] / additive["phi_cost_denominator"],
+            "handover_rate_per_user_decision": additive["handover_events"] / additive["handover_opportunities"],
+        }
+        for name, value in derived.items():
+            if float(value).hex() != float(expected[name]).hex():
+                raise ProbeError(
+                    f"canonical rows disagree with derived QoS field {arm_name}.{name}"
+                )
+        rekeys = sum(int(row["handovers"]["cell_rekey"]) for row in arms)
+        eligible = sum(
+            int(row["rekey_eligible_user_boundaries"]) for row in selected
+        )
+        corrected_rekey = {
+            "rekeys": rekeys,
+            "eligible_user_boundaries": eligible,
+            "rate": corrected_boundary_rekey_rate(
+                rekeys=rekeys,
+                eligible_boundaries=eligible,
+            ),
+            "numerator_source": "physical event ledger",
+        }
+        if corrected_rekey != expected["corrected_boundary_conditional_rekey"]:
+            raise ProbeError(
+                f"canonical rows disagree with corrected rekey rate for {arm_name}"
+            )
+        distribution_fields = {
+            "decision_time_tail_s": {
+                "p50": float(np.quantile([row["decision_time_s"] for row in arms], 0.5)),
+                "p95": float(np.quantile([row["decision_time_s"] for row in arms], 0.95)),
+                "max": max(float(row["decision_time_s"]) for row in arms),
+            },
+            "rate_tail": {
+                key: float(
+                    np.quantile([row["rate_tail"][key] for row in arms], 0.5)
+                )
+                for key in ("p05_bps", "p50_bps", "p95_bps")
+            },
+            "required_power_w_max_distribution": {
+                "min": min(float(row["required_power_w_max"]) for row in arms),
+                "p50": float(
+                    np.quantile(
+                        [row["required_power_w_max"] for row in arms], 0.5
+                    )
+                ),
+                "max": max(float(row["required_power_w_max"]) for row in arms),
+            },
+        }
+        for field, values in distribution_fields.items():
+            if any(
+                float(value).hex() != float(expected[field][name]).hex()
+                for name, value in values.items()
+            ):
+                raise ProbeError(
+                    f"canonical rows disagree with distribution field {arm_name}.{field}"
+                )
+        expected_modes = {
+            mode: sum(int(row["acm_mode_counts"].get(mode, 0)) for row in arms)
+            for mode in sorted({mode for row in arms for mode in row["acm_mode_counts"]})
+        }
+        if expected_modes != expected["acm_mode_counts"]:
+            raise ProbeError(f"canonical rows disagree with ACM modes for {arm_name}")
+        expected_certificates = {
+            status: sum(row["certificate_status"] == status for row in arms)
+            for status in ("FIXED", "CONVERGED", "CONVERGED_SLOW", "INVALID")
+        }
+        if expected_certificates != expected["certificate_distribution"]:
+            raise ProbeError(f"canonical rows disagree with certificates for {arm_name}")
+        rf_total = sum(int(row["rf_transmission_observations"]) for row in arms)
+        rf_share = sum(int(row["rf_cap_hits"]) for row in arms) / max(1, rf_total)
+        if float(rf_share).hex() != float(expected["rf_cap_share"]).hex():
+            raise ProbeError(f"canonical rows disagree with RF-cap share for {arm_name}")
+        for row in selected:
+            payload = row["arm_payload"]
+            if row["prior_current_identities"] != payload["prior_current_identities"]:
+                raise ProbeError("canonical identity ledger disagrees with arm payload")
+            if row["bits_hex"] != float(payload["bits"]).hex() or row["joules_hex"] != float(payload["joules"]).hex():
+                raise ProbeError("canonical endpoint hex disagrees with arm payload")
+        if digest_payload(arms) != expected["arm_payloads_sha256"]:
+            raise ProbeError(
+                f"canonical rows disagree with complete payload aggregate for {arm_name}"
+            )
+
+
+def _usable_energy_range_step(
+    *,
+    selected: EvaluatedProfile,
+    base: Configuration,
+    base_profile: EvaluatedProfile,
+    evaluated: Mapping[str, EvaluatedProfile],
+) -> dict[str, object]:
+    """Reporting-only successor range diagnostic; it applies no gate."""
+
+    base_map = dict(base.assignments)
+    by_beam: dict[str, float] = {}
+    for beam in sorted({identity for identity in base_map.values() if identity is not None}):
+        alternatives = [
+            row
+            for row in evaluated.values()
+            if all(row.score.served_phy.values())
+            and any(
+                base_map[user] == beam and identity != beam
+                for user, identity in row.config.assignments
+            )
+        ]
+        best_change = max(
+            (base_profile.joules - row.joules for row in alternatives),
+            default=0.0,
+        )
+        by_beam[f"{beam[0]}:{beam[1]}"] = float(best_change)
+    return {
+        "selected_acm_mode_counts": dict(sorted(selected.acm_mode_counts.items())),
+        "se_plateau_user_steps": selected.se_plateau_user_steps,
+        "user_step_observations": selected.user_step_observations,
+        "rf_cap_hits": selected.rf_cap_hits,
+        "rf_transmission_observations": selected.rf_transmission_observations,
+        "se_plateau_user_step_share": (
+            0.0
+            if selected.user_step_observations == 0
+            else selected.se_plateau_user_steps / selected.user_step_observations
+        ),
+        "rf_cap_transmission_share": (
+            0.0
+            if selected.rf_transmission_observations == 0
+            else selected.rf_cap_hits / selected.rf_transmission_observations
+        ),
+        "best_feasible_reassignment_dc_energy_change_j_by_beam": by_beam,
+        "thresholds_applied": False,
+    }
+
+
+def execute_step(
+    *,
+    tape: ExogenousWorldTape,
+    setting: PhysicsSetting,
+    step_index: int,
+    carrier: str,
+    calibration: CalibrationValues,
+    counter: EvaluationCounter,
+    incumbent: Configuration | None = None,
+    c2_horizon_offsets: int = 3,
+    run_setting: SealedRunSetting | None = None,
+) -> dict[str, object]:
+    anchor_started = time.perf_counter()
+    decision_started = anchor_started
+    deadline_at = decision_started + DECISION_DEADLINE_S
+    phase: dict[str, float] = {}
+    counter_start = counter.boundary_evaluations
+    active_run = run_setting_for(setting.label) if run_setting is None else run_setting
+    base = _base_configuration(tape, step_index, carrier)
+    incumbent = base if incumbent is None else incumbent
+    cell_rekeys = _rekeyed_users(tape, step_index)
+
+    started = time.perf_counter()
+    catalog, catalogue_census = _catalogue_with_census(
+        tape,
+        step_index,
+        base,
+        setting=setting,
+        calibration=calibration,
+        counter=counter,
+        run_setting=active_run,
+    )
+    if catalogue_census["catalogue_mode"] != "complete-cartesian" and len(catalog) > CATALOGUE_CAP:
+        raise ProbeError(
+            f"selection shortlist row-count gate failed: {len(catalog)} > {CATALOGUE_CAP}"
+        )
+    phase["catalogue"] = time.perf_counter() - started
+    phase["catalogue_row_count"] = len(catalog)
+
+    started = time.perf_counter()
+    selection_evaluator = StepEvaluator(
+        tape,
+        setting,
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=cell_rekeys,
+        field="nominal",
+        counter=counter,
+        run_setting=active_run,
+        boundary_indices=(0,),
+    )
+    selection_evaluator.evaluate_many(catalog)
+    catalog = tuple(
+        row
+        for row in catalog
+        if row.configuration_id not in selection_evaluator._invalid
+    )
+    if base.configuration_id not in selection_evaluator._evaluated:
+        raise ProbeError("BASE has an invalid selection-time power certificate")
+    stage1_profiles = {
+        row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
+    }
+    factors = _selection_factor_scores(
+        base=base,
+        incumbent=incumbent,
+        catalog=catalog,
+        evaluated=stage1_profiles,
+        calibration=calibration,
+        cell_rekeyed_users=cell_rekeys,
+    )
+    base_selection = stage1_profiles[base.configuration_id]
+    base_served = sum(base_selection.score.served_phy.values())
+    service_guarded = tuple(
+
+exec
+/bin/bash -lc "sed -n '720,930p' /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py && rg -n \"PAIRWISE_TOP_K_USERS|TOP_PROPOSALS|CATALOGUE_CAP|SHORTLIST_OPTIONS_PER_USER|COMPLETE_CATALOGUE_LIMIT\" /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | head -50" in /home/sat/mcrl-v025-ceiling2-ws
+ succeeded in 0ms:
+    cell_rekeyed_users: Iterable[int] = (),
+):
+    """Build the one authoritative ledger from physical assignment identities."""
+
+    before_map = before.mapping
+    rekeyed = frozenset(cell_rekeyed_users)
+    return tuple(
+        classify_physical_transition(
+            user_id=user,
+            before=before_map[user],
+            after=identity,
+            cell_rekey=user in rekeyed,
+            was_previously_served=before_map[user] is not None,
+        )
+        for user, identity in after.assignments
+    )
+
+
+def _interruption_events(
+    before: Configuration,
+    after: Configuration,
+    decision_time_s: float,
+    *,
+    cell_rekeyed_users: Iterable[int] = (),
+) -> tuple[InterruptionEvent, ...]:
+    """Translate that ledger to H/SH useful-time removals at the decision instant."""
+
+    mapping = {
+        "beam_change": "same_satellite_beam_change",
+        "satellite_change": "satellite_change",
+        "cell_rekey": "same_satellite_beam_change",
+        "initial_entry": "initial_entry",
+        "reentry": "reentry",
+    }
+    return tuple(
+        InterruptionEvent(event.user_id, decision_time_s, mapping[event.kind])
+        for event in _physical_events(
+            before, after, cell_rekeyed_users=cell_rekeyed_users
+        )
+        if event.kind in mapping
+    )
+
+
+class StepEvaluator:
+    """Architecture/configuration cache; treatment cells only rescore it."""
+
+    def __init__(
+        self,
+        tape: ExogenousWorldTape,
+        setting: PhysicsSetting,
+        step_index: int,
+        *,
+        transition_from: Configuration,
+        cell_rekeyed_users: Iterable[int] = (),
+        field: str = "realised",
+        counter: EvaluationCounter | None = None,
+        run_setting: SealedRunSetting | None = None,
+        boundary_indices: tuple[int, ...] = tuple(range(48)),
+    ) -> None:
+        self.tape = tape
+        self.setting = setting
+        self.step_index = step_index
+        self.transition_from = transition_from
+        self.cell_rekeyed_users = tuple(cell_rekeyed_users)
+        self.field = field
+        self.counter = counter
+        self.run_setting = run_setting_for(setting.label) if run_setting is None else run_setting
+        self.boundary_indices = boundary_indices
+        self._shared: dict[str, object] = {}
+        self._evaluated: dict[str, EvaluatedProfile] = {}
+        self._invalid: set[str] = set()
+        self.physical_evaluations = 0
+
+    def evaluate_many(self, configs: Sequence[Configuration]) -> None:
+        """Populate the cache through the dense real-world ``a-r0`` path."""
+
+        missing = [row for row in configs if row.configuration_id not in self._evaluated]
+        step = self.tape.steps[self.step_index]
+        if not missing or step.arrays is None or self.setting.label != "a-r0":
+            for config in missing:
+                self.evaluate(config)
+            return
+        arrays = step.arrays
+        row_of = arrays._row_index()
+        users = tuple(int(value) for value in arrays.users)
+        selected = np.full((len(missing), len(users)), -1, dtype=np.int64)
+        absent = np.zeros(len(missing), dtype=np.bool_)
+        for config_index, config in enumerate(missing):
+            mapping = config.mapping
+            for user_column, user in enumerate(users):
+                identity = mapping[user]
+                if identity is not None:
+                    row = row_of.get((user, identity))
+                    if row is None:
+                        absent[config_index] = True
+                    else:
+                        selected[config_index, user_column] = row
+        result = evaluate_ar_tdm_catalogue(
+            arrays,
+            selected,
+            field=self.field,
+            rate_target_bps=self.run_setting.rate_target_bps,
+            circuit_power_per_active_chain_w=self.run_setting.circuit_power_per_active_chain_w,
+            boundary_indices=self.boundary_indices,
+        )
+        mode_names = ("NO_MODE",) + tuple(row.name for row in ACM_MODES)
+        for index, config in enumerate(missing):
+            if absent[index] or not bool(result.valid[index]):
+                self._invalid.add(config.configuration_id)
+                continue
+            per_user_bits = {
+                user: float(result.bits[index, column])
+                for column, user in enumerate(users)
+            }
+            decoding = {
+                user: float(result.decoding_time_s[index, column])
+                for column, user in enumerate(users)
+            }
+            served = {user: decoding[user] > 0.0 for user in users}
+            feasible = {
+                user: bool(result.feasible[index, column])
+                for column, user in enumerate(users)
+            }
+            attained = {
+                user: bool(result.attained[index, column])
+                for column, user in enumerate(users)
+            }
+            score = CellScore(
+                self.setting,
+                per_user_bits,
+                float(result.joules[index]),
+                decoding,
+                dict(decoding),
+                served,
+                attained,
+                feasible,
+                None,
+                self.run_setting.rate_target_bps,
+                True,
+                float(result.residual_w[index]),
+            )
+            components = {
+                "pa_j": float(result.pa_j[index]),
+                "circuit_j": float(result.circuit_j[index]),
+                "standby_j": 0.0,
+                "baseband_j": float(result.baseband_j[index]),
+                "bus_j": 0.0,
+            }
+            counts = {
+                name: int(result.mode_counts[index, column])
+                for column, name in enumerate(mode_names)
+                if result.mode_counts[index, column]
+            }
+            profile = EvaluatedProfile(
+                config,
+                score,
+                components,
+                (
+                    0.0
+                    if self.run_setting.circuit_power_per_active_chain_w == 0.0
+                    else components["circuit_j"] / self.run_setting.circuit_power_per_active_chain_w
+                ),
+                components["baseband_j"] / 0.200,
+                counts,
+                int(result.plateau_users[index]),
+                len(users),
+                int(result.cap_hits[index]),
+                int(result.transmissions[index]),
+                None,
+                {0: "INVALID", 1: "CONVERGED", 2: "CONVERGED_SLOW"}[
+                    int(result.certificate_status[index])
+                ],
+                int(result.certificate_iterations[index]),
+                float(result.max_rf_power_w[index]),
+                float(result.min_decoding_margin_db[index]),
+                float(result.mean_acm_se_bit_s_hz[index]),
+            )
+            self._evaluated[config.configuration_id] = profile
+        evaluations = len(missing) * len(self.boundary_indices)
+        self.physical_evaluations += evaluations
+        if self.counter is not None:
+            self.counter.boundary_evaluations += evaluations
+
+    def evaluate(self, config: Configuration) -> EvaluatedProfile:
+        if config.configuration_id in self._evaluated:
+            return self._evaluated[config.configuration_id]
+        geometry = self.tape.geometry_for(step_index=self.step_index, assignments=config.mapping)
+        shared = build_shared_tape(
+            self.setting.architecture,
+            geometry,
+            self.tape.inventory,
+            field=self.field,  # type: ignore[arg-type]
+            roster=tuple(user.user_id for user in self.tape.user_layout),
+            config=RadiationConfig(rate_target_bps=self.run_setting.rate_target_bps),
+            circuit_power_per_active_chain_w=self.run_setting.circuit_power_per_active_chain_w,
+        )
+        event_ledger = _interruption_events(
+            self.transition_from,
+            config,
+            shared.integrated[0].time_s,
+            cell_rekeyed_users=self.cell_rekeyed_users,
+        )
+        score = score_setting(
+            shared,
+            self.setting,
+            discontinuities=discontinuities_from_event_ledger(
+                shared, event_ledger
+            ),
+            interruptions=event_ledger,
+        )
+        if not score.valid:
+154:TOP_PROPOSALS = 2
+155:SHORTLIST_OPTIONS_PER_USER = 8
+158:COMPLETE_CATALOGUE_LIMIT = 4_096
+159:PAIRWISE_TOP_K_USERS = 10
+160:CATALOGUE_CAP = 1_500
+197:        "complete_cartesian_limit": COMPLETE_CATALOGUE_LIMIT,
+203:            "top_k_users_by_nominal_unilateral_surplus": PAIRWISE_TOP_K_USERS,
+204:            "top_legal_options_per_user": TOP_PROPOSALS,
+208:        "cap": CATALOGUE_CAP,
+497:            ranked[user] = tuple(identity for _margin, identity in ordered[:SHORTLIST_OPTIONS_PER_USER])
+498:            excluded_margins.extend(margin for margin, _identity in ordered[SHORTLIST_OPTIONS_PER_USER:])
+511:            ranked[user] = tuple(identity for _margin, identity in ordered[:SHORTLIST_OPTIONS_PER_USER])
+512:            excluded_margins.extend(margin for margin, _identity in ordered[SHORTLIST_OPTIONS_PER_USER:])
+517:        "selection_shortlist_per_user": SHORTLIST_OPTIONS_PER_USER,
+559:    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+568:    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+622:        )[:PAIRWISE_TOP_K_USERS]
+625:        for proposal_rank in range(TOP_PROPOSALS):
+635:            for first_row in unilaterals[first][:TOP_PROPOSALS]:
+636:                for second_row in unilaterals[second][:TOP_PROPOSALS]:
+663:    if mode != "complete-cartesian" and len(ordered) > CATALOGUE_CAP:
+664:        raise ProbeError(f"bounded catalogue exceeded sealed cap {CATALOGUE_CAP}")
+2029:        )[:TOP_PROPOSALS]
+2600:    if catalogue_census["catalogue_mode"] != "complete-cartesian" and len(catalog) > CATALOGUE_CAP:
+2602:            f"selection shortlist row-count gate failed: {len(catalog)} > {CATALOGUE_CAP}"
+
+exec
+/bin/bash -lc "jq '[.anchors[] as "'$a | $a.committed.J_FROM_FIRST.assignments as $j | $a.committed.U_FIRST.assignments as $u | [range(0; ($j|length)) | select($j[.][1] != $u[.][1])] | length] | group_by(.) | map({size: .[0], count: length})'"' /home/sat/mcrl-v025-beam-ws/.scratch/beamsweep/width-1.66.json && jq '[.anchors[].joint_selection | {n:.catalogue_unique,families:.family_unique_counts,size:.selected_coalition_size,improved:.strict_selection_objective_improvement}]' /home/sat/mcrl-v025-beam-ws/.scratch/beamsweep/width-1.66.json" in /home/sat/mcrl-v025-ceiling2-ws
+ succeeded in 0ms:
+[
+  {
+    "size": 0,
+    "count": 8
+  },
+  {
+    "size": 2,
+    "count": 1
+  },
+  {
+    "size": 4,
+    "count": 3
+  }
+]
+[
+  {
+    "n": 1103,
+    "families": {
+      "beam-occupant-subset": 188,
+      "complete-beam-evacuation": 718,
+      "victim-plus-top-2-contributors": 98,
+      "victim-plus-top-3-contributors": 99
+    },
+    "size": 4,
+    "improved": true
+  },
+  {
+    "n": 1103,
+    "families": {
+      "beam-occupant-subset": 188,
+      "complete-beam-evacuation": 718,
+      "victim-plus-top-2-contributors": 98,
+      "victim-plus-top-3-contributors": 99
+    },
+    "size": 4,
+    "improved": true
+  },
+  {
+    "n": 331,
+    "families": {
+      "beam-occupant-subset": 10,
+      "complete-beam-evacuation": 143,
+      "victim-plus-top-2-contributors": 88,
+      "victim-plus-top-3-contributors": 90
+    },
+    "size": 0,
+    "improved": false
+  },
+  {
+    "n": 1158,
+    "families": {
+      "beam-occupant-subset": 143,
+      "complete-beam-evacuation": 817,
+      "victim-plus-top-2-contributors": 99,
+      "victim-plus-top-3-contributors": 99
+    },
+    "size": 0,
+    "improved": false
+  },
+  {
+    "n": 1104,
+    "families": {
+      "beam-occupant-subset": 188,
+      "complete-beam-evacuation": 717,
+      "victim-plus-top-2-contributors": 99,
+      "victim-plus-top-3-contributors": 100
+    },
+    "size": 0,
+    "improved": false
+  },
+  {
+    "n": 315,
+    "families": {
+      "beam-occupant-subset": 15,
+      "complete-beam-evacuation": 118,
+      "victim-plus-top-2-contributors": 86,
+      "victim-plus-top-3-contributors": 96
+    },
+    "size": 0,
+    "improved": false
+  },
+  {
+    "n": 1159,
+    "families": {
+      "beam-occupant-subset": 143,
+      "complete-beam-evacuation": 819,
+      "victim-plus-top-2-contributors": 99,
+      "victim-plus-top-3-contributors": 98
+    },
+    "size": 0,
+    "improved": false
+  },
+  {
+    "n": 322,
+    "families": {
+      "beam-occupant-subset": 17,
+      "complete-beam-evacuation": 120,
+      "victim-plus-top-2-contributors": 90,
+      "victim-plus-top-3-contributors": 95
+    },
+    "size": 2,
+    "improved": true
+  },
+  {
+    "n": 386,
+    "families": {
+      "beam-occupant-subset": 21,
+      "complete-beam-evacuation": 190,
+      "victim-plus-top-2-contributors": 87,
+      "victim-plus-top-3-contributors": 88
+    },
+    "size": 0,
+    "improved": false
+  },
+  {
+    "n": 1150,
+    "families": {
+      "beam-occupant-subset": 143,
+      "complete-beam-evacuation": 812,
+      "victim-plus-top-2-contributors": 98,
+      "victim-plus-top-3-contributors": 97
+    },
+    "size": 0,
+    "improved": false
+  },
+  {
+    "n": 372,
+    "families": {
+      "beam-occupant-subset": 87,
+      "complete-beam-evacuation": 107,
+      "victim-plus-top-2-contributors": 87,
+      "victim-plus-top-3-contributors": 91
+    },
+    "size": 4,
+    "improved": true
+  },
+  {
+    "n": 361,
+    "families": {
+      "beam-occupant-subset": 24,
+      "complete-beam-evacuation": 173,
+      "victim-plus-top-2-contributors": 80,
+      "victim-plus-top-3-contributors": 84
+    },
+    "size": 0,
+    "improved": false
+  }
+]
+
+exec
+/bin/bash -lc 'mkdir -p .scratch/ceiling2 && git status --short' in /home/sat/mcrl-v025-ceiling2-ws
+ succeeded in 0ms:
+apply patch
+patch: completed
+/home/sat/mcrl-v025-ceiling2-ws/.scratch/ceiling2/spec.md
+diff --git a/.scratch/ceiling2/spec.md b/.scratch/ceiling2/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5601cb19b222a93cf1a8ab26ddbfc84d001d8190
+--- /dev/null
++++ b/.scratch/ceiling2/spec.md
+@@ -0,0 +1,8 @@
++# CEILING2 execution criterion
++
++The investigation is complete only if the requested report exists and its
++run-backed receipt (a) reproduces the four six-decimal clean-path parity values,
++(b) asserts zero scalar `StepEvaluator.evaluate` calls, (c) contains complete
++12-anchor results at 1.66° and 2.40° for all requested ceilings and support
++levels, and (d) records peak RSS below 5 GB, one Python process, pinned numerical
++threads, per-anchor progress, row caps/exhaustion, timing, and host load.
+
+diff --git a/.scratch/ceiling2/spec.md b/.scratch/ceiling2/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5601cb19b222a93cf1a8ab26ddbfc84d001d8190
+--- /dev/null
++++ b/.scratch/ceiling2/spec.md
+@@ -0,0 +1,8 @@
++# CEILING2 execution criterion
++
++The investigation is complete only if the requested report exists and its
++run-backed receipt (a) reproduces the four six-decimal clean-path parity values,
++(b) asserts zero scalar `StepEvaluator.evaluate` calls, (c) contains complete
++12-anchor results at 1.66° and 2.40° for all requested ceilings and support
++levels, and (d) records peak RSS below 5 GB, one Python process, pinned numerical
++threads, per-anchor progress, row caps/exhaustion, timing, and host load.
+
