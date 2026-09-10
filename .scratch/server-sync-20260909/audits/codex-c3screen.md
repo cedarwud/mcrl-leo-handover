@@ -15,7 +15,11 @@ Contract §C3 is the source-training contrast: for each of three learned routes,
 - **Existing sealed learning rates and architectures, unchanged**: the first route at 1.0e-2 with one hidden layer of 8 and ReLU; the second at 1.0e-3 with 100-50-50 and tanh; the third at 1.0e-3 with 64-64 and ReLU; Adam with the sealed betas and epsilon; one deterministic full-batch update per route per source epoch. **Do not tune any of these.** If a route fails to train, report that as the finding.
 - **Two learner seeds**, the smallest number that exposes seed sensitivity at all.
 - **The smallest anchor set that exercises every branch**, chosen by the harness's own smoke configuration. State it.
-- **Two thousand source epochs, checkpointed every 100.** This budget was declared by the controller before this task was dispatched and before any result existed, and it is not yours to change. It is chosen because a previous pilot reached that count, so the machinery is known to get there, and because that pilot's behaviour moved across the range — from −2.4 % at 200 through −1.6 % at 1000 to +15.6 % at 2000 — so the interval is where the curve is informative. **Report the contrast at epoch 2000 and show all twenty checkpoints beside it.**
+- **Nine thousand source epochs, checkpointed every 100; full panel evaluation at a declared subset only.** This budget was fixed by the controller before dispatch and before any result existed, and it is not yours to change.
+  - **Save** a checkpoint every 100 source epochs. Serialising weights is nearly free, so save often.
+  - **Evaluate** the full panel at exactly these points and no others: **500, 1000, 2000, 4000, 9000**. Panel evaluation over arms, anchors and 48 boundaries is the expensive operation, so its count is what the budget controls — not the number of training epochs.
+  - **Report the contrast at 9000.** The four earlier evaluations are trajectory, not candidate results. Do not report any of them as the outcome, and do not recommend one.
+  - If cost forces an early stop, stop at whichever declared evaluation point you reached, state that the reason was **cost** and give the measured figures that made it so. A cost-driven stop is legitimate; a stop chosen because a particular point looked favourable is not, and the distinction must be visible in the report.
 
 # What to report
 
