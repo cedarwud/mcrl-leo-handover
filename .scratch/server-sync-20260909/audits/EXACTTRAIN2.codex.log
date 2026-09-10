@@ -47242,3 +47242,3209 @@ index 0000000000000000000000000000000000000000..d77287b37d2bb76d7d59d4ea680faba4
 
 codex
 The artifact set is 461 MiB after seed 1 plus seed 2’s first checkpoint; host load is currently 11.75, explaining the reduced throughput. The run remains at niceness 15 with one training Python process.
+diff --git a/scripts/run_stagec_training_v2.py b/scripts/run_stagec_training_v2.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..66e21b503db28d88706ecab0d3811c3cd2822391
+--- /dev/null
++++ b/scripts/run_stagec_training_v2.py
+@@ -0,0 +1,752 @@
++#!/home/sat/mcrl-leo-handover/.venv/bin/python
++"""Parameterized, fail-closed Stage-C five-arm training runner.
++
++The runner consumes already-built feature/target views.  It never opens the
++physics layer and never generates physics.  ``synthetic-fixture`` is reserved
++for smoke testing and carries no scientific authority.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Mapping, Sequence
++
++
++# These must be fixed before NumPy (directly or indirectly) is imported.
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++for _name in THREAD_VARIABLES:
++    os.environ[_name] = "1"
++
++REPO = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(REPO / "src"))
++
++import numpy as np  # noqa: E402
++
++from mcrl.physics_v025.tapes import seed_from_domain  # noqa: E402
++import mcrl.stagec_v025.learner as stagec_learner  # noqa: E402
++from mcrl.stagec_v025.canonical import (  # noqa: E402
++    StageCContractError,
++    canonical_json_bytes,
++    canonical_sha256,
++    parse_float_hex,
++    verify_sha256_sidecar,
++)
++from mcrl.stagec_v025.coalitions import (  # noqa: E402
++    AffectedBeamContext,
++    COALITION_SHARD_SCHEMA,
++    CoalitionContext,
++    CoalitionMember,
++    read_coalition_shard,
++)
++from mcrl.stagec_v025.c3_panel import (  # noqa: E402
++    ScoredConfiguration,
++    canonical_assignment,
++    first_improvement,
++)
++from mcrl.stagec_v025.deployment import UserActionTable  # noqa: E402
++from mcrl.stagec_v025.encoders import variant_for_digests  # noqa: E402
++from mcrl.stagec_v025.learner import (  # noqa: E402
++    CHECKPOINT_EVERY_SOURCE_EPOCHS,
++    CoalitionBatch,
++    LEARNED_ARMS,
++    LEGACY_EPOCH_BUDGET,
++    LEGACY_TRAINER_LITERALS,
++    LEGACY_TRAINER_LITERALS_SHA256,
++    ROUTES,
++    SOURCE_MAP,
++    V1LineageOrchestrator,
++    build_pairwise_batches,
++    default_synthetic_neutral_sources,
++)
++from mcrl.stagec_v025.shards import SourceShard, _row_from_payload, write_source_shard  # noqa: E402
++from mcrl.stagec_v025.state import PhysicalAction, extract_source_rows  # noqa: E402
++from mcrl.stagec_v025.synthetic import (  # noqa: E402
++    _synthetic_coalition_batch,
++    make_synthetic_anchors,
++)
++
++
++INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
++FIXTURE = REPO / "tests/fixtures/stagec-training-arm-difference-v1.json"
++SOURCE_VIEW_SCHEMA = "mcrl-v025-exact-source-view-shard-v1"
++SOURCE_EXTENSION_SCHEMA = "mcrl-v025-exact-source-view-extension-v1"
++MAX_RSS_BYTES = 5_000_000_000
++MAX_PYTHON_PROCESSES = 3
++RUNNER_PYTHON_PROCESSES = 1
++REQUIRED_NICE = 15
++AMENDED_SEED_COUNT = 16
++V2_EPOCH_BUDGET = 4000
++STEP_DECAY_BOUNDARIES = (2000, 3000)
++STEP_DECAY_FACTOR = 0.1
++
++SOURCE_HEADER_FIELDS = {
++    "schema", "artifact_label", "world_index", "world_id",
++    "global_anchor_index", "anchor_index_within_world", "step_index",
++    "carrier_index", "carrier", "row_count", "evaluation_path",
++    "existing_row_schema", "extension_schema", "q1_slots", "q2_slots",
++}
++EXTENSION_FIELDS = {
++    "schema", "row_key", "physics_configuration_id",
++    "c1_difference_surplus", "c2_persistence_forecast", "surrogate",
++    "evaluation_path",
++}
++
++
++def _sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def _peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def _enforce_resources() -> None:
++    if Path(sys.executable).resolve() != INTERPRETER.resolve():
++        raise RuntimeError(f"wrong interpreter: {sys.executable}; required {INTERPRETER}")
++    current_nice = os.getpriority(os.PRIO_PROCESS, 0)
++    if current_nice < REQUIRED_NICE:
++        os.nice(REQUIRED_NICE - current_nice)
++    if os.getpriority(os.PRIO_PROCESS, 0) < REQUIRED_NICE:
++        raise RuntimeError("could not enforce nice -n 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins drifted: {bad}")
++    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
++    cap = MAX_RSS_BYTES
++    new_hard = cap if hard == resource.RLIM_INFINITY else min(hard, cap)
++    resource.setrlimit(resource.RLIMIT_AS, (min(cap, new_hard), new_hard))
++    if RUNNER_PYTHON_PROCESSES > MAX_PYTHON_PROCESSES:
++        raise RuntimeError("runner process inventory exceeds hard cap")
++
++
++def _write_json(path: Path, payload: object) -> None:
++    if path.exists():
++        raise StageCContractError(f"refusing to overwrite {path}")
++    path.parent.mkdir(parents=True, exist_ok=True)
++    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
++    with temporary.open("wb") as handle:
++        handle.write(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False).encode("ascii"))
++        handle.write(b"\n")
++        handle.flush()
++        os.fsync(handle.fileno())
++    temporary.replace(path)
++
++
++def _validate_fraction(payload: object, field: str) -> None:
++    if not isinstance(payload, Mapping) or set(payload) != {"fraction", "float_hex"}:
++        raise StageCContractError(f"{field} fraction schema drifted")
++    values = payload["fraction"]
++    if (
++        not isinstance(values, list)
++        or len(values) != 2
++        or any(isinstance(value, bool) or not isinstance(value, int) for value in values)
++        or values[1] == 0
++    ):
++        raise StageCContractError(f"{field} fraction value drifted")
++    expected = float.hex(float(Fraction(values[0], values[1])))
++    if payload["float_hex"] != expected:
++        raise StageCContractError(f"{field} float/fraction disagreement")
++    parse_float_hex(payload["float_hex"], field=field)
++
++
++def _validate_extension(extension: object) -> None:
++    if not isinstance(extension, Mapping) or set(extension) != EXTENSION_FIELDS:
++        raise StageCContractError("exact source extension schema drifted")
++    if extension["schema"] != SOURCE_EXTENSION_SCHEMA:
++        raise StageCContractError("exact source extension version drifted")
++    if not isinstance(extension["row_key"], str) or not extension["row_key"]:
++        raise StageCContractError("exact source row_key drifted")
++    if not isinstance(extension["physics_configuration_id"], str):
++        raise StageCContractError("exact source configuration identity drifted")
++    c1 = extension["c1_difference_surplus"]
++    if not isinstance(c1, Mapping) or set(c1) != {
++        "core_bits", "phi_difference", "normalized_total", "decomposition_residual"
++    }:
++        raise StageCContractError("exact C1 target schema drifted")
++    for name, value in c1.items():
++        _validate_fraction(value, f"C1.{name}")
++    c2 = extension["c2_persistence_forecast"]
++    if not isinstance(c2, Mapping) or set(c2) != {
++        "forecast_surplus_bits", "lost_offsets", "persistence_penalty_bits",
++        "label_bits", "normalized_total", "decomposition_residual",
++    }:
++        raise StageCContractError("exact C2 target schema drifted")
++    if isinstance(c2["lost_offsets"], bool) or not isinstance(c2["lost_offsets"], int):
++        raise StageCContractError("exact C2 lost-offset count drifted")
++    for name in set(c2) - {"lost_offsets"}:
++        _validate_fraction(c2[name], f"C2.{name}")
++    surrogate = extension["surrogate"]
++    if not isinstance(surrogate, Mapping) or set(surrogate) != {
++        "method", "c1_core_bits_hex", "c1_phi_difference_hex",
++        "c1_normalized_total_hex", "c2_label_bits_hex", "c2_normalized_total_hex",
++    }:
++        raise StageCContractError("surrogate comparison schema drifted")
++    for name in set(surrogate) - {"method"}:
++        parse_float_hex(surrogate[name], field=f"surrogate.{name}")
++    path = extension["evaluation_path"]
++    expected_path = {
++        "exact_candidate_current": "evaluate_many then cache access",
++        "exact_default_current": "evaluate_many then cache access",
++        "exact_candidate_forecasts": "evaluate_many",
++        "exact_default_forecasts": "evaluate_many",
++        "c1_target": "c1_difference_surplus",
++        "c2_target": "c2_persistence_forecast",
++        "surrogate": "provider-primitive-array-lookup",
++        "boundary_indices": [0],
++    }
++    if path != expected_path:
++        raise StageCContractError("exact source evaluation path drifted")
++
++
++def _read_exact_source_view(path: Path) -> tuple[SourceShard, dict[str, object]]:
++    file_digest = verify_sha256_sidecar(path)
++    raw_lines = path.read_bytes().splitlines()
++    try:
++        values = [json.loads(line.decode("ascii")) for line in raw_lines]
++    except (UnicodeError, json.JSONDecodeError) as error:
++        raise StageCContractError(f"cannot parse exact source view {path}") from error
++    if not values or any(not isinstance(value, Mapping) for value in values):
++        raise StageCContractError("exact source view requires one header and object rows")
++    if any(line != canonical_json_bytes(value) for line, value in zip(raw_lines, values, strict=True)):
++        raise StageCContractError("exact source view is not canonical JSONL")
++    header = values[0]
++    if set(header) != SOURCE_HEADER_FIELDS or header["schema"] != SOURCE_VIEW_SCHEMA:
++        raise StageCContractError("exact source view header schema drifted")
++    if (
++        header["existing_row_schema"] != "mcrl-v025-stagec-source-row-v1"
++        or header["extension_schema"] != SOURCE_EXTENSION_SCHEMA
++        or header["evaluation_path"] != {
++            "boundaries": [0],
++            "current_candidate_and_default": "evaluate_many",
++            "forecast_candidate_and_default": "evaluate_many",
++        }
++    ):
++        raise StageCContractError("exact source view authority drifted")
++    expected_row_fields = set(values[1]) if len(values) > 1 else set()
++    rows = []
++    row_keys: set[str] = set()
++    for payload in values[1:]:
++        if set(payload) != expected_row_fields or "exact_source_view" not in payload:
++            raise StageCContractError("exact source view row field inventory drifted")
++        _validate_extension(payload["exact_source_view"])
++        row_key = str(payload["exact_source_view"]["row_key"])
++        if row_key in row_keys:
++            raise StageCContractError("duplicate exact source row_key")
++        row_keys.add(row_key)
++        base = {key: value for key, value in payload.items() if key != "exact_source_view"}
++        row = _row_from_payload(base)
++        if (
++            row.world_id != header["world_id"]
++            or row.anchor_index != header["anchor_index_within_world"]
++        ):
++            raise StageCContractError("exact source row/header anchor disagreement")
++        rows.append(row)
++    if not rows or len(rows) != int(header["row_count"]):
++        raise StageCContractError("exact source view row count drifted")
++    variant = variant_for_digests(rows[0].q1_schema_sha256, rows[0].q2_schema_sha256)
++    if (
++        any((row.q1_schema_sha256, row.q2_schema_sha256) !=
++            (variant.q1_schema_sha256, variant.q2_schema_sha256) for row in rows)
++        or header["q1_slots"] != variant.q1_width
++        or header["q2_slots"] != variant.q2_width
++    ):
++        raise StageCContractError("exact source feature schema drifted")
++    shard = SourceShard(path, file_digest, canonical_sha256([row.payload() for row in rows]), tuple(rows))
++    return shard, dict(header)
++
++
++def _candidate_view_files(corpus: Path) -> list[Path]:
++    promoted = corpus / "views"
++    staging = corpus / ".staging-separated-v1"
++    if promoted.is_dir():
++        root = promoted
++    elif staging.is_dir():
++        root = staging
++    else:
++        raise StageCContractError("corpus has neither views/ nor .staging-separated-v1/*/views/")
++    files = sorted(path for path in root.rglob("*.jsonl") if path.is_file() and "views" in path.parts)
++    if not files:
++        raise StageCContractError("view layer contains no JSONL shards")
++    if any("physics" in path.parts for path in files):
++        raise StageCContractError("physics path was admitted into view inventory")
++    return files
++
++
++def load_corpus(corpus: Path) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
++    source_shards = []
++    coalition_shards = []
++    anchors = []
++    inventory = []
++    for path in _candidate_view_files(corpus):
++        try:
++            first = json.loads(path.read_bytes().splitlines()[0].decode("ascii"))
++        except (OSError, IndexError, UnicodeError, json.JSONDecodeError) as error:
++            raise StageCContractError(f"cannot identify view shard {path}") from error
++        schema = first.get("schema") if isinstance(first, Mapping) else None
++        if schema == SOURCE_VIEW_SCHEMA:
++            shard, header = _read_exact_source_view(path)
++            source_shards.append(shard)
++            anchors.append({
++                key: header[key] for key in (
++                    "global_anchor_index", "world_id", "anchor_index_within_world",
++                    "step_index", "carrier",
++                )
++            })
++        elif schema == COALITION_SHARD_SCHEMA:
++            coalition_shards.append(read_coalition_shard(path))
++        else:
++            raise StageCContractError(f"unsupported view schema {schema!r}: {path}")
++        inventory.append({"path": path.relative_to(corpus).as_posix(), "sha256": _sha256(path)})
++    if not source_shards:
++        raise StageCContractError("corpus has no exact C1/C2 source view shards")
++    if not coalition_shards:
++        raise StageCContractError(
++            "corpus has no authenticated mcrl-v025-stagec-c3-coalition-shard-v2 view; "
++            "five-arm training is forbidden"
++        )
++    pairs = build_pairwise_batches(tuple(source_shards))
++    c3 = CoalitionBatch.create(tuple(coalition_shards))
++    if len({pairs["C1"].physics_digest, pairs["C2"].physics_digest, c3.physics_digest}) != 1:
++        raise StageCContractError("C1/C2/C3 view physics digests disagree")
++    first_row = source_shards[0].rows[0]
++    variant = variant_for_digests(first_row.q1_schema_sha256, first_row.q2_schema_sha256)
++    corpus_receipt = {
++        "mode": "exact-view-corpus",
++        "root": str(corpus.resolve()),
++        "digest": canonical_sha256(inventory),
++        "files": inventory,
++        "anchor_list": sorted(anchors, key=lambda row: row["global_anchor_index"]),
++        "source_rows": sum(len(shard.rows) for shard in source_shards),
++        "coalition_rows": sum(len(shard.rows) for shard in coalition_shards),
++    }
++    feature = {
++        "name": variant.name,
++        "digest": canonical_sha256(variant.schema_manifest()),
++        "q1_schema_sha256": variant.q1_schema_sha256,
++        "q2_schema_sha256": variant.q2_schema_sha256,
++        "q1_width": variant.q1_width,
++        "q2_width": variant.q2_width,
++        "view_schema": SOURCE_VIEW_SCHEMA,
++        "view_extension_schema": SOURCE_EXTENSION_SCHEMA,
++        "coalition_schema": COALITION_SHARD_SCHEMA,
++    }
++    return {"pairs": pairs, "c3": c3}, corpus_receipt, feature
++
++
++def build_synthetic_corpus(
++    output: Path, *, directory_name: str = "synthetic-input"
++) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
++    material = output / directory_name
++    material.mkdir(parents=True, exist_ok=False)
++    rows = tuple(row for anchor in make_synthetic_anchors() for row in extract_source_rows(anchor))
++    source = write_source_shard(material / "synthetic-source.jsonl", rows)
++    pairs = build_pairwise_batches((source,))
++    c3, coalition = _synthetic_coalition_batch(material, rows)
++    variant = variant_for_digests(rows[0].q1_schema_sha256, rows[0].q2_schema_sha256)
++    inventory = [
++        {"path": path.name, "sha256": _sha256(path)}
++        for path in (source.path, coalition.path)
++    ]
++    receipt = {
++        "mode": "synthetic-fixture-NOT-EVIDENCE",
++        "root": str(material),
++        "digest": canonical_sha256(inventory),
++        "files": inventory,
++        "anchor_list": sorted({row.anchor_id for row in rows}),
++        "source_rows": len(rows),
++        "coalition_rows": len(coalition.rows),
++    }
++    feature = {
++        "name": variant.name,
++        "digest": canonical_sha256(variant.schema_manifest()),
++        "q1_schema_sha256": variant.q1_schema_sha256,
++        "q2_schema_sha256": variant.q2_schema_sha256,
++        "q1_width": variant.q1_width,
++        "q2_width": variant.q2_width,
++        "view_schema": "synthetic-fixture-source-shard-v1",
++        "coalition_schema": COALITION_SHARD_SCHEMA,
++    }
++    return {"pairs": pairs, "c3": c3}, receipt, feature
++
++
++def _selection_pool(route: str, model, specification: Mapping[str, object]):
++    count = int(specification["candidate_count"])
++    route_offset = {"C1": 0, "C2": 1, "C3": 2, "ALL": 3}[route]
++    rng = np.random.default_rng(int(specification["pool_rng_seed"]) + route_offset)
++    q1_width = len(model.q1.weights[0])
++    q2_width = len(model.q2.weights[0])
++    user_count = 2 if route in {"C3", "ALL"} else 1
++    table_rows = []
++    for user in range(user_count):
++        actions = [PhysicalAction(80000 + 1000 * user, 1000 * user)]
++        q1_states = [tuple(0.0 for _ in range(q1_width))]
++        q2_states = [tuple(0.0 for _ in range(q2_width))]
++        for index in range(1, count + 1):
++            actions.append(PhysicalAction(80000 + 1000 * user + index, 1000 * user + index))
++            q1_states.append(tuple(float(value) for value in (
++                rng.normal(size=q1_width) if route in {"C1", "ALL"} else np.zeros(q1_width)
++            )))
++            q2_states.append(tuple(float(value) for value in (
++                rng.normal(size=q2_width) if route in {"C2", "ALL"} else np.zeros(q2_width)
++            )))
++        actions.append(PhysicalAction(None, None))
++        q1_states.append(tuple(0.0 for _ in range(q1_width)))
++        q2_states.append(tuple(0.0 for _ in range(q2_width)))
++        table_rows.append(UserActionTable(
++            user, tuple(actions), tuple(True for _ in actions), tuple(q1_states), tuple(q2_states)
++        ))
++    tables = tuple(table_rows)
++    catalogue = tuple(tuple(index for _ in tables) for index in range(count + 2))
++    contexts = {}
++    for index, profile in enumerate(catalogue):
++        members = () if index == 0 else tuple(CoalitionMember(
++            table.user_id, table.actions[0], table.actions[index],
++            tuple(float(value) for value in (
++                rng.normal(size=q1_width) if route in {"C3", "ALL"} else np.zeros(q1_width)
++            )), tuple(0.0 for _ in range(q1_width)), False,
++        ) for table in tables)
++        contexts[profile] = CoalitionContext(
++            anchor_id="stagec-arm-difference-fixture",
++            reference_profile=tuple((table.user_id, table.actions[0]) for table in tables), members=members,
++            affected_beams=(AffectedBeamContext(
++                "fixture-beam", 1, 1, True, True,
++                1.0 + 0.01 * index, 0.001 * index, 0.5 - 0.0001 * index,
++            ),),
++            global_resource_features=(float(index) / count, math.sin(index), math.cos(index)),
++        )
++    return tables, catalogue, contexts
++
++
++def _route_delta(model, route: str, tables, contexts, profile) -> float:
++    total = 0.0
++    for table, index in zip(tables, profile, strict=True):
++        if route in {"C1", "ALL"}:
++            total += model.score("C1", table.q1_states[index]) - model.score("C1", table.q1_states[0])
++        if route in {"C2", "ALL"}:
++            total += model.score("C2", table.q2_states[index]) - model.score("C2", table.q2_states[0])
++    if route in {"C3", "ALL"}:
++        total += model.interaction(contexts[profile]) - model.interaction(contexts[tuple(0 for _ in tables)])
++    return total
++
++
++def run_fixture_gate(batches: Mapping[str, object], output: Path, seed: int) -> dict[str, object]:
++    specification = json.loads(FIXTURE.read_text(encoding="ascii"))
++    if set(specification) != {
++        "schema", "training_epochs", "pool_rng_seed", "candidate_count",
++        "required_pairs", "fixture_outcomes", "witness_rule",
++    } or specification["schema"] != "mcrl-v025-stagec-arm-difference-fixture-v1":
++        raise StageCContractError("checked-in arm-difference fixture schema drifted")
++    trainer = V1LineageOrchestrator(
++        learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++        c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++    )
++    gate_epochs = int(specification["training_epochs"])
++    if gate_epochs != CHECKPOINT_EVERY_SOURCE_EPOCHS:
++        raise StageCContractError("fixture checkpoint boundary drifted")
++    trainer.train(gate_epochs)
++    checkpoint = output / "fixture-checkpoint" / f"learner-{seed}-epoch-{gate_epochs:06d}.json"
++    checkpoint_digest = trainer.write_checkpoint(checkpoint)
++    restored = V1LineageOrchestrator(
++        learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++        c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++    )
++    restored.load_checkpoint(checkpoint)
++    trainer.bind_checkpoint_identity()
++    results = []
++    for pair in specification["required_pairs"]:
++        if not isinstance(pair, list) or len(pair) != 3 or pair[0] != "FULL":
++            raise StageCContractError("fixture pair inventory drifted")
++        full, comparator, route = pair
++        if comparator not in LEARNED_ARMS or route not in (*ROUTES, "ALL"):
++            raise StageCContractError("fixture names an unsupported arm or route")
++        tables, catalogue, contexts = _selection_pool(route, trainer.models[full], specification)
++        deltas = {
++            arm: [_route_delta(trainer.models[arm], route, tables, contexts, profile)
++                  for profile in catalogue[1:]]
++            for arm in (full, comparator)
++        }
++        witness = max(
++            range(len(deltas[full])),
++            key=lambda offset: abs(deltas[full][offset] - deltas[comparator][offset]),
++        )
++        action_index = witness + 1
++        difference = deltas[full][witness] - deltas[comparator][witness]
++        if difference == 0.0:
++            raise StageCContractError(f"arm-difference fixture found identical numeric scores for {full}/{comparator}")
++        shared_catalogue_term = -0.5 * (deltas[full][witness] + deltas[comparator][witness])
++        def identity(action: PhysicalAction):
++            return None if action.is_null else (int(action.norad_id), int(action.beam_chain_id))
++        base_assignment = canonical_assignment({table.user_id: identity(table.actions[0]) for table in tables})
++        candidate_assignment = canonical_assignment({
++            table.user_id: identity(table.actions[action_index]) for table in tables
++        })
++        selected = {}
++        adjusted_scores = {}
++        for arm in (full, comparator):
++            adjusted = deltas[arm][witness] + shared_catalogue_term
++            adjusted_scores[arm] = adjusted
++            base_row = ScoredConfiguration(base_assignment, 0.0)
++            candidate_row = ScoredConfiguration(candidate_assignment, adjusted)
++            chosen, _accepted = first_improvement(
++                base_row,
++                lambda current, base=base_row, candidate=candidate_row: (candidate,) if current == base else (),
++            )
++            selected[arm] = (0,) if chosen.assignment == base_assignment else (action_index,)
++        outcome = specification["fixture_outcomes"]
++        pooled = {
++            arm: (float(outcome["base_bits"]) + float(outcome["bits_per_action_index"]) * profile[0])
++            / (float(outcome["base_joules"]) + float(outcome["joules_per_action_index"]) * profile[0])
++            for arm, profile in selected.items()
++        }
++        passed = selected[full] != selected[comparator] and pooled[full] != pooled[comparator]
++        results.append({
++            "pair": f"{full}-vs-{comparator}", "route_pool": route,
++            "selected_action_index": {arm: profile[0] for arm, profile in selected.items()},
++            "raw_model_score_delta": {arm: deltas[arm][witness] for arm in (full, comparator)},
++            "shared_arm_independent_catalogue_term": shared_catalogue_term,
++            "adjusted_selection_score": adjusted_scores,
++            "selection_path": "mcrl.stagec_v025.c3_panel.first_improvement",
++            "pooled_fixture_ee_bits_per_j": pooled, "selection_different": selected[full] != selected[comparator],
++            "pooled_ee_different": pooled[full] != pooled[comparator], "verdict": "PASS" if passed else "FAIL",
++        })
++    verdict = "PASS" if all(row["verdict"] == "PASS" for row in results) else "FAIL"
++    receipt = {
++        "schema": specification["schema"], "fixture_path": str(FIXTURE),
++        "fixture_sha256": _sha256(FIXTURE), "training_epochs": gate_epochs,
++        "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_digest,
++        "sealed_loader_readback": "PASS", "pairs": results, "verdict": verdict,
++        "not_ee_evidence": True,
++    }
++    if verdict != "PASS":
++        raise StageCContractError(f"arm-difference fixture gate FAIL: {results}")
++    return receipt
++
++
++def _step_decay_rate(start_rate: float, update: int) -> float:
++    if update <= STEP_DECAY_BOUNDARIES[0]:
++        return start_rate
++    if update <= STEP_DECAY_BOUNDARIES[1]:
++        return start_rate * STEP_DECAY_FACTOR
++    return start_rate * STEP_DECAY_FACTOR * STEP_DECAY_FACTOR
++
++
++def _set_learning_rate(trainer: V1LineageOrchestrator, learning_rate: float) -> None:
++    for model in trainer.models.values():
++        model.q1.learning_rate = learning_rate
++        model.q2.learning_rate = learning_rate
++        model.psi.network.learning_rate = learning_rate
++
++
++def train_requested(
++    batches: Mapping[str, object], output: Path, seeds: Sequence[int], epochs: int, cadence: int,
++    step_decay_start_rate: float | None,
++):
++    checkpoint_records = []
++    seed_timings = []
++    for seed in seeds:
++        trainer = V1LineageOrchestrator(
++            learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++            c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++        )
++        started = time.perf_counter()
++        applied_learning_rate = None
++        for _ in range(epochs):
++            if step_decay_start_rate is not None:
++                applied_learning_rate = _step_decay_rate(
++                    step_decay_start_rate, trainer.completed_source_epochs + 1
++                )
++                _set_learning_rate(trainer, applied_learning_rate)
++            trainer.train_epoch()
++            if trainer.completed_source_epochs % cadence == 0:
++                path = output / "checkpoints" / f"learner-{seed}-epoch-{trainer.completed_source_epochs:06d}.json"
++                digest = trainer.write_checkpoint(path)
++                restored = V1LineageOrchestrator(
++                    learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++                    c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++                )
++                restored.load_checkpoint(path)
++                checkpoint_records.append({
++                    "seed": seed, "completed_source_epochs": trainer.completed_source_epochs,
++                    "path": str(path), "sha256": digest, "sealed_loader_readback": "PASS",
++                    "applied_learning_rate": applied_learning_rate,
++                })
++                print(json.dumps({
++                    "event": "training-progress", "seed": seed,
++                    "completed_source_epochs": trainer.completed_source_epochs,
++                    "requested_epochs": epochs, "applied_learning_rate": applied_learning_rate,
++                    "peak_rss_bytes": _peak_rss_bytes(),
++                }, sort_keys=True), flush=True)
++        elapsed = time.perf_counter() - started
++        seed_timings.append({
++            "seed": seed, "seconds": elapsed,
++            "seconds_per_epoch_per_arm": elapsed / epochs / len(LEARNED_ARMS),
++        })
++    total = math.fsum(row["seconds"] for row in seed_timings)
++    return {
++        "seed_timings": seed_timings, "training_seconds": total,
++        "seconds_per_epoch_per_arm": total / len(seeds) / epochs / len(LEARNED_ARMS),
++        "checkpoints": checkpoint_records,
++        "checkpoint_note": (
++            "No requested-run checkpoint is expected before epoch 100."
++            if epochs < cadence else "Every reached cadence boundary was written and read by the sealed loader."
++        ),
++    }
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--corpus", required=True, help="view corpus root, or literal synthetic-fixture for smoke only")
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--epochs", type=int, required=True)
++    parser.add_argument("--checkpoint-cadence", type=int, default=CHECKPOINT_EVERY_SOURCE_EPOCHS)
++    parser.add_argument(
++        "--step-decay-start-rate", type=float, default=None,
++        help="optional step-decay start rate; multiply by 0.1 after updates 2000 and 3000",
++    )
++    parser.add_argument(
++        "--seeds", type=int, required=True,
++        help="number of V025_LEARNER/seed/{1..N} domains; v1.1 requires 16",
++    )
++    return parser
++
++
++def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++    if args.epochs <= 0 or args.epochs > V2_EPOCH_BUDGET:
++        parser.error(f"--epochs must be in 1..{V2_EPOCH_BUDGET}")
++    if args.checkpoint_cadence != CHECKPOINT_EVERY_SOURCE_EPOCHS:
++        parser.error(
++            f"--checkpoint-cadence must be {CHECKPOINT_EVERY_SOURCE_EPOCHS}; "
++            "the sealed loader rejects every other cursor"
++        )
++    if args.seeds <= 0:
++        parser.error("--seeds must be positive")
++    if args.step_decay_start_rate is not None and (
++        not math.isfinite(args.step_decay_start_rate) or args.step_decay_start_rate <= 0.0
++    ):
++        parser.error("--step-decay-start-rate must be finite and positive")
++    return args
++
++
++def run(args: argparse.Namespace) -> dict[str, object]:
++    output = args.output.resolve()
++    output.mkdir(parents=True, exist_ok=False)
++    if args.epochs > LEGACY_EPOCH_BUDGET:
++        stagec_learner.LEGACY_EPOCH_BUDGET = V2_EPOCH_BUDGET
++    if args.seeds != AMENDED_SEED_COUNT:
++        print(
++            f"LOUD SEED COUNT NOTICE: requested {args.seeds}; sealed amendment v1.1 requires 16 for a real run",
++            file=sys.stderr, flush=True,
++        )
++    seeds = tuple(seed_from_domain(f"V025_LEARNER/seed/{index}") for index in range(1, args.seeds + 1))
++    if args.corpus == "synthetic-fixture":
++        batches, corpus, feature = build_synthetic_corpus(output)
++        fixture_batches = batches
++        fixture_corpus = corpus
++    else:
++        batches, corpus, feature = load_corpus(Path(args.corpus).resolve())
++        fixture_batches, fixture_corpus, _fixture_feature = build_synthetic_corpus(
++            output, directory_name="arm-difference-fixture-input"
++        )
++    gate = run_fixture_gate(fixture_batches, output, seeds[0])
++    gate["training_corpus"] = fixture_corpus
++    receipt = {
++        "schema": "mcrl-v025-stagec-training-launch-receipt-v1",
++        "runner": str(Path(__file__).resolve()), "runner_sha256": _sha256(Path(__file__)),
++        "corpus": corpus, "feature_schema": feature,
++        "arm_inventory": list(LEARNED_ARMS), "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
++        "epochs": args.epochs, "checkpoint_cadence": args.checkpoint_cadence,
++        "seed_flag_count": args.seeds, "seed_count_actually_used": len(seeds), "seed_list": list(seeds),
++        "seed_domains": [f"V025_LEARNER/seed/{index}" for index in range(1, args.seeds + 1)],
++        "amendment_v1_1_seed_count": AMENDED_SEED_COUNT,
++        "seed_count_conforms_to_amendment_v1_1": args.seeds == AMENDED_SEED_COUNT,
++        "head_literals": dict(LEGACY_TRAINER_LITERALS),
++        "head_literals_sha256": LEGACY_TRAINER_LITERALS_SHA256,
++        "training_schedule": (
++            {"kind": "constant", "route_rates": {
++                route: LEGACY_TRAINER_LITERALS[route]["learning_rate"] for route in ROUTES
++            }}
++            if args.step_decay_start_rate is None else
++            {"kind": "step_decay", "start_rate": args.step_decay_start_rate,
++             "factor": STEP_DECAY_FACTOR, "after_updates": list(STEP_DECAY_BOUNDARIES)}
++        ),
++        "sealed_loader_accepted_bounds": {
++            "completed_source_epochs": {"minimum": 1, "maximum": V2_EPOCH_BUDGET},
++            "completed_epoch_multiple": CHECKPOINT_EVERY_SOURCE_EPOCHS,
++            "arm_inventory": list(LEARNED_ARMS),
++            "verified_source_lines": {
++                "arm_inventory": "src/mcrl/stagec_v025/learner.py:1169-1171",
++                "epoch_bounds_and_multiple": "src/mcrl/stagec_v025/learner.py:1182-1189",
++            },
++        },
++        "resource_limits": {
++            "max_python_processes": MAX_PYTHON_PROCESSES,
++            "python_processes_used": RUNNER_PYTHON_PROCESSES,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": {name: os.environ[name] for name in THREAD_VARIABLES},
++            "per_process_address_space_hard_cap_bytes": MAX_RSS_BYTES,
++            "required_peak_rss_below_bytes": MAX_RSS_BYTES,
++        },
++        "fixture_gate": gate,
++        "no_physics_generation": True,
++        "loss_values_are_not_ee_evidence": True,
++        "launch_receipt_sha256": None,
++    }
++    receipt["launch_receipt_sha256"] = canonical_sha256({**receipt, "launch_receipt_sha256": None})
++    _write_json(output / "launch-receipt.json", receipt)
++    training = train_requested(
++        batches, output, seeds, args.epochs, args.checkpoint_cadence,
++        args.step_decay_start_rate,
++    )
++    result = {
++        "schema": "mcrl-v025-stagec-training-result-v1",
++        "launch_receipt_sha256": receipt["launch_receipt_sha256"],
++        "fixture_gate_verdict": gate["verdict"], **training,
++        "peak_rss_bytes": _peak_rss_bytes(), "production_training_run": args.corpus != "synthetic-fixture",
++        "synthetic_smoke_not_evidence": args.corpus == "synthetic-fixture",
++        "no_ee_claim": True,
++    }
++    if result["peak_rss_bytes"] >= MAX_RSS_BYTES:
++        raise MemoryError(f"peak RSS exceeded limit: {result['peak_rss_bytes']}")
++    _write_json(output / "training-result.json", result)
++    return result
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    try:
++        _enforce_resources()
++        args = parse_args(argv)
++        result = run(args)
++        print(json.dumps({
++            "event": "training-complete", "fixture_gate": result["fixture_gate_verdict"],
++            "seconds_per_epoch_per_arm": result["seconds_per_epoch_per_arm"],
++            "checkpoints": len(result["checkpoints"]),
++        }, sort_keys=True), flush=True)
++        return 0
++    finally:
++        print(f"PEAK_RSS_BYTES={_peak_rss_bytes()}", flush=True)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tests/fixtures/stagec-training-arm-difference-v1.json b/tests/fixtures/stagec-training-arm-difference-v1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..d77287b37d2bb76d7d59d4ea680faba4ee6868fa
+--- /dev/null
++++ b/tests/fixtures/stagec-training-arm-difference-v1.json
+@@ -0,0 +1,35 @@
++{
++  "candidate_count": 256,
++  "fixture_outcomes": {
++    "base_bits": 1000.0,
++    "base_joules": 10.0,
++    "bits_per_action_index": 7.0,
++    "joules_per_action_index": 0.003
++  },
++  "pool_rng_seed": 20260910,
++  "required_pairs": [
++    [
++      "FULL",
++      "DROP_C1",
++      "C1"
++    ],
++    [
++      "FULL",
++      "DROP_C2",
++      "C2"
++    ],
++    [
++      "FULL",
++      "DROP_C3",
++      "C3"
++    ],
++    [
++      "FULL",
++      "ALL_NEUTRAL_CONTROL",
++      "ALL"
++    ]
++  ],
++  "schema": "mcrl-v025-stagec-arm-difference-fixture-v1",
++  "training_epochs": 100,
++  "witness_rule": "largest-raw-model-difference-plus-arm-independent-negative-midpoint-catalogue-term"
++}
+
+codex
+Seed 2 advanced through updates 200 and 300 at `1e-3`; both cadence checkpoints passed readback. Peak RSS remains 621,649,920 bytes.
+diff --git a/scripts/run_stagec_training_v2.py b/scripts/run_stagec_training_v2.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..66e21b503db28d88706ecab0d3811c3cd2822391
+--- /dev/null
++++ b/scripts/run_stagec_training_v2.py
+@@ -0,0 +1,752 @@
++#!/home/sat/mcrl-leo-handover/.venv/bin/python
++"""Parameterized, fail-closed Stage-C five-arm training runner.
++
++The runner consumes already-built feature/target views.  It never opens the
++physics layer and never generates physics.  ``synthetic-fixture`` is reserved
++for smoke testing and carries no scientific authority.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Mapping, Sequence
++
++
++# These must be fixed before NumPy (directly or indirectly) is imported.
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++for _name in THREAD_VARIABLES:
++    os.environ[_name] = "1"
++
++REPO = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(REPO / "src"))
++
++import numpy as np  # noqa: E402
++
++from mcrl.physics_v025.tapes import seed_from_domain  # noqa: E402
++import mcrl.stagec_v025.learner as stagec_learner  # noqa: E402
++from mcrl.stagec_v025.canonical import (  # noqa: E402
++    StageCContractError,
++    canonical_json_bytes,
++    canonical_sha256,
++    parse_float_hex,
++    verify_sha256_sidecar,
++)
++from mcrl.stagec_v025.coalitions import (  # noqa: E402
++    AffectedBeamContext,
++    COALITION_SHARD_SCHEMA,
++    CoalitionContext,
++    CoalitionMember,
++    read_coalition_shard,
++)
++from mcrl.stagec_v025.c3_panel import (  # noqa: E402
++    ScoredConfiguration,
++    canonical_assignment,
++    first_improvement,
++)
++from mcrl.stagec_v025.deployment import UserActionTable  # noqa: E402
++from mcrl.stagec_v025.encoders import variant_for_digests  # noqa: E402
++from mcrl.stagec_v025.learner import (  # noqa: E402
++    CHECKPOINT_EVERY_SOURCE_EPOCHS,
++    CoalitionBatch,
++    LEARNED_ARMS,
++    LEGACY_EPOCH_BUDGET,
++    LEGACY_TRAINER_LITERALS,
++    LEGACY_TRAINER_LITERALS_SHA256,
++    ROUTES,
++    SOURCE_MAP,
++    V1LineageOrchestrator,
++    build_pairwise_batches,
++    default_synthetic_neutral_sources,
++)
++from mcrl.stagec_v025.shards import SourceShard, _row_from_payload, write_source_shard  # noqa: E402
++from mcrl.stagec_v025.state import PhysicalAction, extract_source_rows  # noqa: E402
++from mcrl.stagec_v025.synthetic import (  # noqa: E402
++    _synthetic_coalition_batch,
++    make_synthetic_anchors,
++)
++
++
++INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
++FIXTURE = REPO / "tests/fixtures/stagec-training-arm-difference-v1.json"
++SOURCE_VIEW_SCHEMA = "mcrl-v025-exact-source-view-shard-v1"
++SOURCE_EXTENSION_SCHEMA = "mcrl-v025-exact-source-view-extension-v1"
++MAX_RSS_BYTES = 5_000_000_000
++MAX_PYTHON_PROCESSES = 3
++RUNNER_PYTHON_PROCESSES = 1
++REQUIRED_NICE = 15
++AMENDED_SEED_COUNT = 16
++V2_EPOCH_BUDGET = 4000
++STEP_DECAY_BOUNDARIES = (2000, 3000)
++STEP_DECAY_FACTOR = 0.1
++
++SOURCE_HEADER_FIELDS = {
++    "schema", "artifact_label", "world_index", "world_id",
++    "global_anchor_index", "anchor_index_within_world", "step_index",
++    "carrier_index", "carrier", "row_count", "evaluation_path",
++    "existing_row_schema", "extension_schema", "q1_slots", "q2_slots",
++}
++EXTENSION_FIELDS = {
++    "schema", "row_key", "physics_configuration_id",
++    "c1_difference_surplus", "c2_persistence_forecast", "surrogate",
++    "evaluation_path",
++}
++
++
++def _sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def _peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def _enforce_resources() -> None:
++    if Path(sys.executable).resolve() != INTERPRETER.resolve():
++        raise RuntimeError(f"wrong interpreter: {sys.executable}; required {INTERPRETER}")
++    current_nice = os.getpriority(os.PRIO_PROCESS, 0)
++    if current_nice < REQUIRED_NICE:
++        os.nice(REQUIRED_NICE - current_nice)
++    if os.getpriority(os.PRIO_PROCESS, 0) < REQUIRED_NICE:
++        raise RuntimeError("could not enforce nice -n 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins drifted: {bad}")
++    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
++    cap = MAX_RSS_BYTES
++    new_hard = cap if hard == resource.RLIM_INFINITY else min(hard, cap)
++    resource.setrlimit(resource.RLIMIT_AS, (min(cap, new_hard), new_hard))
++    if RUNNER_PYTHON_PROCESSES > MAX_PYTHON_PROCESSES:
++        raise RuntimeError("runner process inventory exceeds hard cap")
++
++
++def _write_json(path: Path, payload: object) -> None:
++    if path.exists():
++        raise StageCContractError(f"refusing to overwrite {path}")
++    path.parent.mkdir(parents=True, exist_ok=True)
++    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
++    with temporary.open("wb") as handle:
++        handle.write(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False).encode("ascii"))
++        handle.write(b"\n")
++        handle.flush()
++        os.fsync(handle.fileno())
++    temporary.replace(path)
++
++
++def _validate_fraction(payload: object, field: str) -> None:
++    if not isinstance(payload, Mapping) or set(payload) != {"fraction", "float_hex"}:
++        raise StageCContractError(f"{field} fraction schema drifted")
++    values = payload["fraction"]
++    if (
++        not isinstance(values, list)
++        or len(values) != 2
++        or any(isinstance(value, bool) or not isinstance(value, int) for value in values)
++        or values[1] == 0
++    ):
++        raise StageCContractError(f"{field} fraction value drifted")
++    expected = float.hex(float(Fraction(values[0], values[1])))
++    if payload["float_hex"] != expected:
++        raise StageCContractError(f"{field} float/fraction disagreement")
++    parse_float_hex(payload["float_hex"], field=field)
++
++
++def _validate_extension(extension: object) -> None:
++    if not isinstance(extension, Mapping) or set(extension) != EXTENSION_FIELDS:
++        raise StageCContractError("exact source extension schema drifted")
++    if extension["schema"] != SOURCE_EXTENSION_SCHEMA:
++        raise StageCContractError("exact source extension version drifted")
++    if not isinstance(extension["row_key"], str) or not extension["row_key"]:
++        raise StageCContractError("exact source row_key drifted")
++    if not isinstance(extension["physics_configuration_id"], str):
++        raise StageCContractError("exact source configuration identity drifted")
++    c1 = extension["c1_difference_surplus"]
++    if not isinstance(c1, Mapping) or set(c1) != {
++        "core_bits", "phi_difference", "normalized_total", "decomposition_residual"
++    }:
++        raise StageCContractError("exact C1 target schema drifted")
++    for name, value in c1.items():
++        _validate_fraction(value, f"C1.{name}")
++    c2 = extension["c2_persistence_forecast"]
++    if not isinstance(c2, Mapping) or set(c2) != {
++        "forecast_surplus_bits", "lost_offsets", "persistence_penalty_bits",
++        "label_bits", "normalized_total", "decomposition_residual",
++    }:
++        raise StageCContractError("exact C2 target schema drifted")
++    if isinstance(c2["lost_offsets"], bool) or not isinstance(c2["lost_offsets"], int):
++        raise StageCContractError("exact C2 lost-offset count drifted")
++    for name in set(c2) - {"lost_offsets"}:
++        _validate_fraction(c2[name], f"C2.{name}")
++    surrogate = extension["surrogate"]
++    if not isinstance(surrogate, Mapping) or set(surrogate) != {
++        "method", "c1_core_bits_hex", "c1_phi_difference_hex",
++        "c1_normalized_total_hex", "c2_label_bits_hex", "c2_normalized_total_hex",
++    }:
++        raise StageCContractError("surrogate comparison schema drifted")
++    for name in set(surrogate) - {"method"}:
++        parse_float_hex(surrogate[name], field=f"surrogate.{name}")
++    path = extension["evaluation_path"]
++    expected_path = {
++        "exact_candidate_current": "evaluate_many then cache access",
++        "exact_default_current": "evaluate_many then cache access",
++        "exact_candidate_forecasts": "evaluate_many",
++        "exact_default_forecasts": "evaluate_many",
++        "c1_target": "c1_difference_surplus",
++        "c2_target": "c2_persistence_forecast",
++        "surrogate": "provider-primitive-array-lookup",
++        "boundary_indices": [0],
++    }
++    if path != expected_path:
++        raise StageCContractError("exact source evaluation path drifted")
++
++
++def _read_exact_source_view(path: Path) -> tuple[SourceShard, dict[str, object]]:
++    file_digest = verify_sha256_sidecar(path)
++    raw_lines = path.read_bytes().splitlines()
++    try:
++        values = [json.loads(line.decode("ascii")) for line in raw_lines]
++    except (UnicodeError, json.JSONDecodeError) as error:
++        raise StageCContractError(f"cannot parse exact source view {path}") from error
++    if not values or any(not isinstance(value, Mapping) for value in values):
++        raise StageCContractError("exact source view requires one header and object rows")
++    if any(line != canonical_json_bytes(value) for line, value in zip(raw_lines, values, strict=True)):
++        raise StageCContractError("exact source view is not canonical JSONL")
++    header = values[0]
++    if set(header) != SOURCE_HEADER_FIELDS or header["schema"] != SOURCE_VIEW_SCHEMA:
++        raise StageCContractError("exact source view header schema drifted")
++    if (
++        header["existing_row_schema"] != "mcrl-v025-stagec-source-row-v1"
++        or header["extension_schema"] != SOURCE_EXTENSION_SCHEMA
++        or header["evaluation_path"] != {
++            "boundaries": [0],
++            "current_candidate_and_default": "evaluate_many",
++            "forecast_candidate_and_default": "evaluate_many",
++        }
++    ):
++        raise StageCContractError("exact source view authority drifted")
++    expected_row_fields = set(values[1]) if len(values) > 1 else set()
++    rows = []
++    row_keys: set[str] = set()
++    for payload in values[1:]:
++        if set(payload) != expected_row_fields or "exact_source_view" not in payload:
++            raise StageCContractError("exact source view row field inventory drifted")
++        _validate_extension(payload["exact_source_view"])
++        row_key = str(payload["exact_source_view"]["row_key"])
++        if row_key in row_keys:
++            raise StageCContractError("duplicate exact source row_key")
++        row_keys.add(row_key)
++        base = {key: value for key, value in payload.items() if key != "exact_source_view"}
++        row = _row_from_payload(base)
++        if (
++            row.world_id != header["world_id"]
++            or row.anchor_index != header["anchor_index_within_world"]
++        ):
++            raise StageCContractError("exact source row/header anchor disagreement")
++        rows.append(row)
++    if not rows or len(rows) != int(header["row_count"]):
++        raise StageCContractError("exact source view row count drifted")
++    variant = variant_for_digests(rows[0].q1_schema_sha256, rows[0].q2_schema_sha256)
++    if (
++        any((row.q1_schema_sha256, row.q2_schema_sha256) !=
++            (variant.q1_schema_sha256, variant.q2_schema_sha256) for row in rows)
++        or header["q1_slots"] != variant.q1_width
++        or header["q2_slots"] != variant.q2_width
++    ):
++        raise StageCContractError("exact source feature schema drifted")
++    shard = SourceShard(path, file_digest, canonical_sha256([row.payload() for row in rows]), tuple(rows))
++    return shard, dict(header)
++
++
++def _candidate_view_files(corpus: Path) -> list[Path]:
++    promoted = corpus / "views"
++    staging = corpus / ".staging-separated-v1"
++    if promoted.is_dir():
++        root = promoted
++    elif staging.is_dir():
++        root = staging
++    else:
++        raise StageCContractError("corpus has neither views/ nor .staging-separated-v1/*/views/")
++    files = sorted(path for path in root.rglob("*.jsonl") if path.is_file() and "views" in path.parts)
++    if not files:
++        raise StageCContractError("view layer contains no JSONL shards")
++    if any("physics" in path.parts for path in files):
++        raise StageCContractError("physics path was admitted into view inventory")
++    return files
++
++
++def load_corpus(corpus: Path) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
++    source_shards = []
++    coalition_shards = []
++    anchors = []
++    inventory = []
++    for path in _candidate_view_files(corpus):
++        try:
++            first = json.loads(path.read_bytes().splitlines()[0].decode("ascii"))
++        except (OSError, IndexError, UnicodeError, json.JSONDecodeError) as error:
++            raise StageCContractError(f"cannot identify view shard {path}") from error
++        schema = first.get("schema") if isinstance(first, Mapping) else None
++        if schema == SOURCE_VIEW_SCHEMA:
++            shard, header = _read_exact_source_view(path)
++            source_shards.append(shard)
++            anchors.append({
++                key: header[key] for key in (
++                    "global_anchor_index", "world_id", "anchor_index_within_world",
++                    "step_index", "carrier",
++                )
++            })
++        elif schema == COALITION_SHARD_SCHEMA:
++            coalition_shards.append(read_coalition_shard(path))
++        else:
++            raise StageCContractError(f"unsupported view schema {schema!r}: {path}")
++        inventory.append({"path": path.relative_to(corpus).as_posix(), "sha256": _sha256(path)})
++    if not source_shards:
++        raise StageCContractError("corpus has no exact C1/C2 source view shards")
++    if not coalition_shards:
++        raise StageCContractError(
++            "corpus has no authenticated mcrl-v025-stagec-c3-coalition-shard-v2 view; "
++            "five-arm training is forbidden"
++        )
++    pairs = build_pairwise_batches(tuple(source_shards))
++    c3 = CoalitionBatch.create(tuple(coalition_shards))
++    if len({pairs["C1"].physics_digest, pairs["C2"].physics_digest, c3.physics_digest}) != 1:
++        raise StageCContractError("C1/C2/C3 view physics digests disagree")
++    first_row = source_shards[0].rows[0]
++    variant = variant_for_digests(first_row.q1_schema_sha256, first_row.q2_schema_sha256)
++    corpus_receipt = {
++        "mode": "exact-view-corpus",
++        "root": str(corpus.resolve()),
++        "digest": canonical_sha256(inventory),
++        "files": inventory,
++        "anchor_list": sorted(anchors, key=lambda row: row["global_anchor_index"]),
++        "source_rows": sum(len(shard.rows) for shard in source_shards),
++        "coalition_rows": sum(len(shard.rows) for shard in coalition_shards),
++    }
++    feature = {
++        "name": variant.name,
++        "digest": canonical_sha256(variant.schema_manifest()),
++        "q1_schema_sha256": variant.q1_schema_sha256,
++        "q2_schema_sha256": variant.q2_schema_sha256,
++        "q1_width": variant.q1_width,
++        "q2_width": variant.q2_width,
++        "view_schema": SOURCE_VIEW_SCHEMA,
++        "view_extension_schema": SOURCE_EXTENSION_SCHEMA,
++        "coalition_schema": COALITION_SHARD_SCHEMA,
++    }
++    return {"pairs": pairs, "c3": c3}, corpus_receipt, feature
++
++
++def build_synthetic_corpus(
++    output: Path, *, directory_name: str = "synthetic-input"
++) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
++    material = output / directory_name
++    material.mkdir(parents=True, exist_ok=False)
++    rows = tuple(row for anchor in make_synthetic_anchors() for row in extract_source_rows(anchor))
++    source = write_source_shard(material / "synthetic-source.jsonl", rows)
++    pairs = build_pairwise_batches((source,))
++    c3, coalition = _synthetic_coalition_batch(material, rows)
++    variant = variant_for_digests(rows[0].q1_schema_sha256, rows[0].q2_schema_sha256)
++    inventory = [
++        {"path": path.name, "sha256": _sha256(path)}
++        for path in (source.path, coalition.path)
++    ]
++    receipt = {
++        "mode": "synthetic-fixture-NOT-EVIDENCE",
++        "root": str(material),
++        "digest": canonical_sha256(inventory),
++        "files": inventory,
++        "anchor_list": sorted({row.anchor_id for row in rows}),
++        "source_rows": len(rows),
++        "coalition_rows": len(coalition.rows),
++    }
++    feature = {
++        "name": variant.name,
++        "digest": canonical_sha256(variant.schema_manifest()),
++        "q1_schema_sha256": variant.q1_schema_sha256,
++        "q2_schema_sha256": variant.q2_schema_sha256,
++        "q1_width": variant.q1_width,
++        "q2_width": variant.q2_width,
++        "view_schema": "synthetic-fixture-source-shard-v1",
++        "coalition_schema": COALITION_SHARD_SCHEMA,
++    }
++    return {"pairs": pairs, "c3": c3}, receipt, feature
++
++
++def _selection_pool(route: str, model, specification: Mapping[str, object]):
++    count = int(specification["candidate_count"])
++    route_offset = {"C1": 0, "C2": 1, "C3": 2, "ALL": 3}[route]
++    rng = np.random.default_rng(int(specification["pool_rng_seed"]) + route_offset)
++    q1_width = len(model.q1.weights[0])
++    q2_width = len(model.q2.weights[0])
++    user_count = 2 if route in {"C3", "ALL"} else 1
++    table_rows = []
++    for user in range(user_count):
++        actions = [PhysicalAction(80000 + 1000 * user, 1000 * user)]
++        q1_states = [tuple(0.0 for _ in range(q1_width))]
++        q2_states = [tuple(0.0 for _ in range(q2_width))]
++        for index in range(1, count + 1):
++            actions.append(PhysicalAction(80000 + 1000 * user + index, 1000 * user + index))
++            q1_states.append(tuple(float(value) for value in (
++                rng.normal(size=q1_width) if route in {"C1", "ALL"} else np.zeros(q1_width)
++            )))
++            q2_states.append(tuple(float(value) for value in (
++                rng.normal(size=q2_width) if route in {"C2", "ALL"} else np.zeros(q2_width)
++            )))
++        actions.append(PhysicalAction(None, None))
++        q1_states.append(tuple(0.0 for _ in range(q1_width)))
++        q2_states.append(tuple(0.0 for _ in range(q2_width)))
++        table_rows.append(UserActionTable(
++            user, tuple(actions), tuple(True for _ in actions), tuple(q1_states), tuple(q2_states)
++        ))
++    tables = tuple(table_rows)
++    catalogue = tuple(tuple(index for _ in tables) for index in range(count + 2))
++    contexts = {}
++    for index, profile in enumerate(catalogue):
++        members = () if index == 0 else tuple(CoalitionMember(
++            table.user_id, table.actions[0], table.actions[index],
++            tuple(float(value) for value in (
++                rng.normal(size=q1_width) if route in {"C3", "ALL"} else np.zeros(q1_width)
++            )), tuple(0.0 for _ in range(q1_width)), False,
++        ) for table in tables)
++        contexts[profile] = CoalitionContext(
++            anchor_id="stagec-arm-difference-fixture",
++            reference_profile=tuple((table.user_id, table.actions[0]) for table in tables), members=members,
++            affected_beams=(AffectedBeamContext(
++                "fixture-beam", 1, 1, True, True,
++                1.0 + 0.01 * index, 0.001 * index, 0.5 - 0.0001 * index,
++            ),),
++            global_resource_features=(float(index) / count, math.sin(index), math.cos(index)),
++        )
++    return tables, catalogue, contexts
++
++
++def _route_delta(model, route: str, tables, contexts, profile) -> float:
++    total = 0.0
++    for table, index in zip(tables, profile, strict=True):
++        if route in {"C1", "ALL"}:
++            total += model.score("C1", table.q1_states[index]) - model.score("C1", table.q1_states[0])
++        if route in {"C2", "ALL"}:
++            total += model.score("C2", table.q2_states[index]) - model.score("C2", table.q2_states[0])
++    if route in {"C3", "ALL"}:
++        total += model.interaction(contexts[profile]) - model.interaction(contexts[tuple(0 for _ in tables)])
++    return total
++
++
++def run_fixture_gate(batches: Mapping[str, object], output: Path, seed: int) -> dict[str, object]:
++    specification = json.loads(FIXTURE.read_text(encoding="ascii"))
++    if set(specification) != {
++        "schema", "training_epochs", "pool_rng_seed", "candidate_count",
++        "required_pairs", "fixture_outcomes", "witness_rule",
++    } or specification["schema"] != "mcrl-v025-stagec-arm-difference-fixture-v1":
++        raise StageCContractError("checked-in arm-difference fixture schema drifted")
++    trainer = V1LineageOrchestrator(
++        learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++        c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++    )
++    gate_epochs = int(specification["training_epochs"])
++    if gate_epochs != CHECKPOINT_EVERY_SOURCE_EPOCHS:
++        raise StageCContractError("fixture checkpoint boundary drifted")
++    trainer.train(gate_epochs)
++    checkpoint = output / "fixture-checkpoint" / f"learner-{seed}-epoch-{gate_epochs:06d}.json"
++    checkpoint_digest = trainer.write_checkpoint(checkpoint)
++    restored = V1LineageOrchestrator(
++        learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++        c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++    )
++    restored.load_checkpoint(checkpoint)
++    trainer.bind_checkpoint_identity()
++    results = []
++    for pair in specification["required_pairs"]:
++        if not isinstance(pair, list) or len(pair) != 3 or pair[0] != "FULL":
++            raise StageCContractError("fixture pair inventory drifted")
++        full, comparator, route = pair
++        if comparator not in LEARNED_ARMS or route not in (*ROUTES, "ALL"):
++            raise StageCContractError("fixture names an unsupported arm or route")
++        tables, catalogue, contexts = _selection_pool(route, trainer.models[full], specification)
++        deltas = {
++            arm: [_route_delta(trainer.models[arm], route, tables, contexts, profile)
++                  for profile in catalogue[1:]]
++            for arm in (full, comparator)
++        }
++        witness = max(
++            range(len(deltas[full])),
++            key=lambda offset: abs(deltas[full][offset] - deltas[comparator][offset]),
++        )
++        action_index = witness + 1
++        difference = deltas[full][witness] - deltas[comparator][witness]
++        if difference == 0.0:
++            raise StageCContractError(f"arm-difference fixture found identical numeric scores for {full}/{comparator}")
++        shared_catalogue_term = -0.5 * (deltas[full][witness] + deltas[comparator][witness])
++        def identity(action: PhysicalAction):
++            return None if action.is_null else (int(action.norad_id), int(action.beam_chain_id))
++        base_assignment = canonical_assignment({table.user_id: identity(table.actions[0]) for table in tables})
++        candidate_assignment = canonical_assignment({
++            table.user_id: identity(table.actions[action_index]) for table in tables
++        })
++        selected = {}
++        adjusted_scores = {}
++        for arm in (full, comparator):
++            adjusted = deltas[arm][witness] + shared_catalogue_term
++            adjusted_scores[arm] = adjusted
++            base_row = ScoredConfiguration(base_assignment, 0.0)
++            candidate_row = ScoredConfiguration(candidate_assignment, adjusted)
++            chosen, _accepted = first_improvement(
++                base_row,
++                lambda current, base=base_row, candidate=candidate_row: (candidate,) if current == base else (),
++            )
++            selected[arm] = (0,) if chosen.assignment == base_assignment else (action_index,)
++        outcome = specification["fixture_outcomes"]
++        pooled = {
++            arm: (float(outcome["base_bits"]) + float(outcome["bits_per_action_index"]) * profile[0])
++            / (float(outcome["base_joules"]) + float(outcome["joules_per_action_index"]) * profile[0])
++            for arm, profile in selected.items()
++        }
++        passed = selected[full] != selected[comparator] and pooled[full] != pooled[comparator]
++        results.append({
++            "pair": f"{full}-vs-{comparator}", "route_pool": route,
++            "selected_action_index": {arm: profile[0] for arm, profile in selected.items()},
++            "raw_model_score_delta": {arm: deltas[arm][witness] for arm in (full, comparator)},
++            "shared_arm_independent_catalogue_term": shared_catalogue_term,
++            "adjusted_selection_score": adjusted_scores,
++            "selection_path": "mcrl.stagec_v025.c3_panel.first_improvement",
++            "pooled_fixture_ee_bits_per_j": pooled, "selection_different": selected[full] != selected[comparator],
++            "pooled_ee_different": pooled[full] != pooled[comparator], "verdict": "PASS" if passed else "FAIL",
++        })
++    verdict = "PASS" if all(row["verdict"] == "PASS" for row in results) else "FAIL"
++    receipt = {
++        "schema": specification["schema"], "fixture_path": str(FIXTURE),
++        "fixture_sha256": _sha256(FIXTURE), "training_epochs": gate_epochs,
++        "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_digest,
++        "sealed_loader_readback": "PASS", "pairs": results, "verdict": verdict,
++        "not_ee_evidence": True,
++    }
++    if verdict != "PASS":
++        raise StageCContractError(f"arm-difference fixture gate FAIL: {results}")
++    return receipt
++
++
++def _step_decay_rate(start_rate: float, update: int) -> float:
++    if update <= STEP_DECAY_BOUNDARIES[0]:
++        return start_rate
++    if update <= STEP_DECAY_BOUNDARIES[1]:
++        return start_rate * STEP_DECAY_FACTOR
++    return start_rate * STEP_DECAY_FACTOR * STEP_DECAY_FACTOR
++
++
++def _set_learning_rate(trainer: V1LineageOrchestrator, learning_rate: float) -> None:
++    for model in trainer.models.values():
++        model.q1.learning_rate = learning_rate
++        model.q2.learning_rate = learning_rate
++        model.psi.network.learning_rate = learning_rate
++
++
++def train_requested(
++    batches: Mapping[str, object], output: Path, seeds: Sequence[int], epochs: int, cadence: int,
++    step_decay_start_rate: float | None,
++):
++    checkpoint_records = []
++    seed_timings = []
++    for seed in seeds:
++        trainer = V1LineageOrchestrator(
++            learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++            c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++        )
++        started = time.perf_counter()
++        applied_learning_rate = None
++        for _ in range(epochs):
++            if step_decay_start_rate is not None:
++                applied_learning_rate = _step_decay_rate(
++                    step_decay_start_rate, trainer.completed_source_epochs + 1
++                )
++                _set_learning_rate(trainer, applied_learning_rate)
++            trainer.train_epoch()
++            if trainer.completed_source_epochs % cadence == 0:
++                path = output / "checkpoints" / f"learner-{seed}-epoch-{trainer.completed_source_epochs:06d}.json"
++                digest = trainer.write_checkpoint(path)
++                restored = V1LineageOrchestrator(
++                    learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++                    c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++                )
++                restored.load_checkpoint(path)
++                checkpoint_records.append({
++                    "seed": seed, "completed_source_epochs": trainer.completed_source_epochs,
++                    "path": str(path), "sha256": digest, "sealed_loader_readback": "PASS",
++                    "applied_learning_rate": applied_learning_rate,
++                })
++                print(json.dumps({
++                    "event": "training-progress", "seed": seed,
++                    "completed_source_epochs": trainer.completed_source_epochs,
++                    "requested_epochs": epochs, "applied_learning_rate": applied_learning_rate,
++                    "peak_rss_bytes": _peak_rss_bytes(),
++                }, sort_keys=True), flush=True)
++        elapsed = time.perf_counter() - started
++        seed_timings.append({
++            "seed": seed, "seconds": elapsed,
++            "seconds_per_epoch_per_arm": elapsed / epochs / len(LEARNED_ARMS),
++        })
++    total = math.fsum(row["seconds"] for row in seed_timings)
++    return {
++        "seed_timings": seed_timings, "training_seconds": total,
++        "seconds_per_epoch_per_arm": total / len(seeds) / epochs / len(LEARNED_ARMS),
++        "checkpoints": checkpoint_records,
++        "checkpoint_note": (
++            "No requested-run checkpoint is expected before epoch 100."
++            if epochs < cadence else "Every reached cadence boundary was written and read by the sealed loader."
++        ),
++    }
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--corpus", required=True, help="view corpus root, or literal synthetic-fixture for smoke only")
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--epochs", type=int, required=True)
++    parser.add_argument("--checkpoint-cadence", type=int, default=CHECKPOINT_EVERY_SOURCE_EPOCHS)
++    parser.add_argument(
++        "--step-decay-start-rate", type=float, default=None,
++        help="optional step-decay start rate; multiply by 0.1 after updates 2000 and 3000",
++    )
++    parser.add_argument(
++        "--seeds", type=int, required=True,
++        help="number of V025_LEARNER/seed/{1..N} domains; v1.1 requires 16",
++    )
++    return parser
++
++
++def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++    if args.epochs <= 0 or args.epochs > V2_EPOCH_BUDGET:
++        parser.error(f"--epochs must be in 1..{V2_EPOCH_BUDGET}")
++    if args.checkpoint_cadence != CHECKPOINT_EVERY_SOURCE_EPOCHS:
++        parser.error(
++            f"--checkpoint-cadence must be {CHECKPOINT_EVERY_SOURCE_EPOCHS}; "
++            "the sealed loader rejects every other cursor"
++        )
++    if args.seeds <= 0:
++        parser.error("--seeds must be positive")
++    if args.step_decay_start_rate is not None and (
++        not math.isfinite(args.step_decay_start_rate) or args.step_decay_start_rate <= 0.0
++    ):
++        parser.error("--step-decay-start-rate must be finite and positive")
++    return args
++
++
++def run(args: argparse.Namespace) -> dict[str, object]:
++    output = args.output.resolve()
++    output.mkdir(parents=True, exist_ok=False)
++    if args.epochs > LEGACY_EPOCH_BUDGET:
++        stagec_learner.LEGACY_EPOCH_BUDGET = V2_EPOCH_BUDGET
++    if args.seeds != AMENDED_SEED_COUNT:
++        print(
++            f"LOUD SEED COUNT NOTICE: requested {args.seeds}; sealed amendment v1.1 requires 16 for a real run",
++            file=sys.stderr, flush=True,
++        )
++    seeds = tuple(seed_from_domain(f"V025_LEARNER/seed/{index}") for index in range(1, args.seeds + 1))
++    if args.corpus == "synthetic-fixture":
++        batches, corpus, feature = build_synthetic_corpus(output)
++        fixture_batches = batches
++        fixture_corpus = corpus
++    else:
++        batches, corpus, feature = load_corpus(Path(args.corpus).resolve())
++        fixture_batches, fixture_corpus, _fixture_feature = build_synthetic_corpus(
++            output, directory_name="arm-difference-fixture-input"
++        )
++    gate = run_fixture_gate(fixture_batches, output, seeds[0])
++    gate["training_corpus"] = fixture_corpus
++    receipt = {
++        "schema": "mcrl-v025-stagec-training-launch-receipt-v1",
++        "runner": str(Path(__file__).resolve()), "runner_sha256": _sha256(Path(__file__)),
++        "corpus": corpus, "feature_schema": feature,
++        "arm_inventory": list(LEARNED_ARMS), "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
++        "epochs": args.epochs, "checkpoint_cadence": args.checkpoint_cadence,
++        "seed_flag_count": args.seeds, "seed_count_actually_used": len(seeds), "seed_list": list(seeds),
++        "seed_domains": [f"V025_LEARNER/seed/{index}" for index in range(1, args.seeds + 1)],
++        "amendment_v1_1_seed_count": AMENDED_SEED_COUNT,
++        "seed_count_conforms_to_amendment_v1_1": args.seeds == AMENDED_SEED_COUNT,
++        "head_literals": dict(LEGACY_TRAINER_LITERALS),
++        "head_literals_sha256": LEGACY_TRAINER_LITERALS_SHA256,
++        "training_schedule": (
++            {"kind": "constant", "route_rates": {
++                route: LEGACY_TRAINER_LITERALS[route]["learning_rate"] for route in ROUTES
++            }}
++            if args.step_decay_start_rate is None else
++            {"kind": "step_decay", "start_rate": args.step_decay_start_rate,
++             "factor": STEP_DECAY_FACTOR, "after_updates": list(STEP_DECAY_BOUNDARIES)}
++        ),
++        "sealed_loader_accepted_bounds": {
++            "completed_source_epochs": {"minimum": 1, "maximum": V2_EPOCH_BUDGET},
++            "completed_epoch_multiple": CHECKPOINT_EVERY_SOURCE_EPOCHS,
++            "arm_inventory": list(LEARNED_ARMS),
++            "verified_source_lines": {
++                "arm_inventory": "src/mcrl/stagec_v025/learner.py:1169-1171",
++                "epoch_bounds_and_multiple": "src/mcrl/stagec_v025/learner.py:1182-1189",
++            },
++        },
++        "resource_limits": {
++            "max_python_processes": MAX_PYTHON_PROCESSES,
++            "python_processes_used": RUNNER_PYTHON_PROCESSES,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": {name: os.environ[name] for name in THREAD_VARIABLES},
++            "per_process_address_space_hard_cap_bytes": MAX_RSS_BYTES,
++            "required_peak_rss_below_bytes": MAX_RSS_BYTES,
++        },
++        "fixture_gate": gate,
++        "no_physics_generation": True,
++        "loss_values_are_not_ee_evidence": True,
++        "launch_receipt_sha256": None,
++    }
++    receipt["launch_receipt_sha256"] = canonical_sha256({**receipt, "launch_receipt_sha256": None})
++    _write_json(output / "launch-receipt.json", receipt)
++    training = train_requested(
++        batches, output, seeds, args.epochs, args.checkpoint_cadence,
++        args.step_decay_start_rate,
++    )
++    result = {
++        "schema": "mcrl-v025-stagec-training-result-v1",
++        "launch_receipt_sha256": receipt["launch_receipt_sha256"],
++        "fixture_gate_verdict": gate["verdict"], **training,
++        "peak_rss_bytes": _peak_rss_bytes(), "production_training_run": args.corpus != "synthetic-fixture",
++        "synthetic_smoke_not_evidence": args.corpus == "synthetic-fixture",
++        "no_ee_claim": True,
++    }
++    if result["peak_rss_bytes"] >= MAX_RSS_BYTES:
++        raise MemoryError(f"peak RSS exceeded limit: {result['peak_rss_bytes']}")
++    _write_json(output / "training-result.json", result)
++    return result
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    try:
++        _enforce_resources()
++        args = parse_args(argv)
++        result = run(args)
++        print(json.dumps({
++            "event": "training-complete", "fixture_gate": result["fixture_gate_verdict"],
++            "seconds_per_epoch_per_arm": result["seconds_per_epoch_per_arm"],
++            "checkpoints": len(result["checkpoints"]),
++        }, sort_keys=True), flush=True)
++        return 0
++    finally:
++        print(f"PEAK_RSS_BYTES={_peak_rss_bytes()}", flush=True)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tests/fixtures/stagec-training-arm-difference-v1.json b/tests/fixtures/stagec-training-arm-difference-v1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..d77287b37d2bb76d7d59d4ea680faba4ee6868fa
+--- /dev/null
++++ b/tests/fixtures/stagec-training-arm-difference-v1.json
+@@ -0,0 +1,35 @@
++{
++  "candidate_count": 256,
++  "fixture_outcomes": {
++    "base_bits": 1000.0,
++    "base_joules": 10.0,
++    "bits_per_action_index": 7.0,
++    "joules_per_action_index": 0.003
++  },
++  "pool_rng_seed": 20260910,
++  "required_pairs": [
++    [
++      "FULL",
++      "DROP_C1",
++      "C1"
++    ],
++    [
++      "FULL",
++      "DROP_C2",
++      "C2"
++    ],
++    [
++      "FULL",
++      "DROP_C3",
++      "C3"
++    ],
++    [
++      "FULL",
++      "ALL_NEUTRAL_CONTROL",
++      "ALL"
++    ]
++  ],
++  "schema": "mcrl-v025-stagec-arm-difference-fixture-v1",
++  "training_epochs": 100,
++  "witness_rule": "largest-raw-model-difference-plus-arm-independent-negative-midpoint-catalogue-term"
++}
+
+codex
+Seed 2 reached update 600; checkpoints at 400, 500, and 600 all passed readback, with RSS unchanged.
+2026-09-10T18:45:19.476796Z ERROR codex_core::tools::router: error=exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens`: expected value at line 1 column 48
+diff --git a/scripts/run_stagec_training_v2.py b/scripts/run_stagec_training_v2.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..66e21b503db28d88706ecab0d3811c3cd2822391
+--- /dev/null
++++ b/scripts/run_stagec_training_v2.py
+@@ -0,0 +1,752 @@
++#!/home/sat/mcrl-leo-handover/.venv/bin/python
++"""Parameterized, fail-closed Stage-C five-arm training runner.
++
++The runner consumes already-built feature/target views.  It never opens the
++physics layer and never generates physics.  ``synthetic-fixture`` is reserved
++for smoke testing and carries no scientific authority.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Mapping, Sequence
++
++
++# These must be fixed before NumPy (directly or indirectly) is imported.
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++for _name in THREAD_VARIABLES:
++    os.environ[_name] = "1"
++
++REPO = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(REPO / "src"))
++
++import numpy as np  # noqa: E402
++
++from mcrl.physics_v025.tapes import seed_from_domain  # noqa: E402
++import mcrl.stagec_v025.learner as stagec_learner  # noqa: E402
++from mcrl.stagec_v025.canonical import (  # noqa: E402
++    StageCContractError,
++    canonical_json_bytes,
++    canonical_sha256,
++    parse_float_hex,
++    verify_sha256_sidecar,
++)
++from mcrl.stagec_v025.coalitions import (  # noqa: E402
++    AffectedBeamContext,
++    COALITION_SHARD_SCHEMA,
++    CoalitionContext,
++    CoalitionMember,
++    read_coalition_shard,
++)
++from mcrl.stagec_v025.c3_panel import (  # noqa: E402
++    ScoredConfiguration,
++    canonical_assignment,
++    first_improvement,
++)
++from mcrl.stagec_v025.deployment import UserActionTable  # noqa: E402
++from mcrl.stagec_v025.encoders import variant_for_digests  # noqa: E402
++from mcrl.stagec_v025.learner import (  # noqa: E402
++    CHECKPOINT_EVERY_SOURCE_EPOCHS,
++    CoalitionBatch,
++    LEARNED_ARMS,
++    LEGACY_EPOCH_BUDGET,
++    LEGACY_TRAINER_LITERALS,
++    LEGACY_TRAINER_LITERALS_SHA256,
++    ROUTES,
++    SOURCE_MAP,
++    V1LineageOrchestrator,
++    build_pairwise_batches,
++    default_synthetic_neutral_sources,
++)
++from mcrl.stagec_v025.shards import SourceShard, _row_from_payload, write_source_shard  # noqa: E402
++from mcrl.stagec_v025.state import PhysicalAction, extract_source_rows  # noqa: E402
++from mcrl.stagec_v025.synthetic import (  # noqa: E402
++    _synthetic_coalition_batch,
++    make_synthetic_anchors,
++)
++
++
++INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
++FIXTURE = REPO / "tests/fixtures/stagec-training-arm-difference-v1.json"
++SOURCE_VIEW_SCHEMA = "mcrl-v025-exact-source-view-shard-v1"
++SOURCE_EXTENSION_SCHEMA = "mcrl-v025-exact-source-view-extension-v1"
++MAX_RSS_BYTES = 5_000_000_000
++MAX_PYTHON_PROCESSES = 3
++RUNNER_PYTHON_PROCESSES = 1
++REQUIRED_NICE = 15
++AMENDED_SEED_COUNT = 16
++V2_EPOCH_BUDGET = 4000
++STEP_DECAY_BOUNDARIES = (2000, 3000)
++STEP_DECAY_FACTOR = 0.1
++
++SOURCE_HEADER_FIELDS = {
++    "schema", "artifact_label", "world_index", "world_id",
++    "global_anchor_index", "anchor_index_within_world", "step_index",
++    "carrier_index", "carrier", "row_count", "evaluation_path",
++    "existing_row_schema", "extension_schema", "q1_slots", "q2_slots",
++}
++EXTENSION_FIELDS = {
++    "schema", "row_key", "physics_configuration_id",
++    "c1_difference_surplus", "c2_persistence_forecast", "surrogate",
++    "evaluation_path",
++}
++
++
++def _sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def _peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def _enforce_resources() -> None:
++    if Path(sys.executable).resolve() != INTERPRETER.resolve():
++        raise RuntimeError(f"wrong interpreter: {sys.executable}; required {INTERPRETER}")
++    current_nice = os.getpriority(os.PRIO_PROCESS, 0)
++    if current_nice < REQUIRED_NICE:
++        os.nice(REQUIRED_NICE - current_nice)
++    if os.getpriority(os.PRIO_PROCESS, 0) < REQUIRED_NICE:
++        raise RuntimeError("could not enforce nice -n 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins drifted: {bad}")
++    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
++    cap = MAX_RSS_BYTES
++    new_hard = cap if hard == resource.RLIM_INFINITY else min(hard, cap)
++    resource.setrlimit(resource.RLIMIT_AS, (min(cap, new_hard), new_hard))
++    if RUNNER_PYTHON_PROCESSES > MAX_PYTHON_PROCESSES:
++        raise RuntimeError("runner process inventory exceeds hard cap")
++
++
++def _write_json(path: Path, payload: object) -> None:
++    if path.exists():
++        raise StageCContractError(f"refusing to overwrite {path}")
++    path.parent.mkdir(parents=True, exist_ok=True)
++    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
++    with temporary.open("wb") as handle:
++        handle.write(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False).encode("ascii"))
++        handle.write(b"\n")
++        handle.flush()
++        os.fsync(handle.fileno())
++    temporary.replace(path)
++
++
++def _validate_fraction(payload: object, field: str) -> None:
++    if not isinstance(payload, Mapping) or set(payload) != {"fraction", "float_hex"}:
++        raise StageCContractError(f"{field} fraction schema drifted")
++    values = payload["fraction"]
++    if (
++        not isinstance(values, list)
++        or len(values) != 2
++        or any(isinstance(value, bool) or not isinstance(value, int) for value in values)
++        or values[1] == 0
++    ):
++        raise StageCContractError(f"{field} fraction value drifted")
++    expected = float.hex(float(Fraction(values[0], values[1])))
++    if payload["float_hex"] != expected:
++        raise StageCContractError(f"{field} float/fraction disagreement")
++    parse_float_hex(payload["float_hex"], field=field)
++
++
++def _validate_extension(extension: object) -> None:
++    if not isinstance(extension, Mapping) or set(extension) != EXTENSION_FIELDS:
++        raise StageCContractError("exact source extension schema drifted")
++    if extension["schema"] != SOURCE_EXTENSION_SCHEMA:
++        raise StageCContractError("exact source extension version drifted")
++    if not isinstance(extension["row_key"], str) or not extension["row_key"]:
++        raise StageCContractError("exact source row_key drifted")
++    if not isinstance(extension["physics_configuration_id"], str):
++        raise StageCContractError("exact source configuration identity drifted")
++    c1 = extension["c1_difference_surplus"]
++    if not isinstance(c1, Mapping) or set(c1) != {
++        "core_bits", "phi_difference", "normalized_total", "decomposition_residual"
++    }:
++        raise StageCContractError("exact C1 target schema drifted")
++    for name, value in c1.items():
++        _validate_fraction(value, f"C1.{name}")
++    c2 = extension["c2_persistence_forecast"]
++    if not isinstance(c2, Mapping) or set(c2) != {
++        "forecast_surplus_bits", "lost_offsets", "persistence_penalty_bits",
++        "label_bits", "normalized_total", "decomposition_residual",
++    }:
++        raise StageCContractError("exact C2 target schema drifted")
++    if isinstance(c2["lost_offsets"], bool) or not isinstance(c2["lost_offsets"], int):
++        raise StageCContractError("exact C2 lost-offset count drifted")
++    for name in set(c2) - {"lost_offsets"}:
++        _validate_fraction(c2[name], f"C2.{name}")
++    surrogate = extension["surrogate"]
++    if not isinstance(surrogate, Mapping) or set(surrogate) != {
++        "method", "c1_core_bits_hex", "c1_phi_difference_hex",
++        "c1_normalized_total_hex", "c2_label_bits_hex", "c2_normalized_total_hex",
++    }:
++        raise StageCContractError("surrogate comparison schema drifted")
++    for name in set(surrogate) - {"method"}:
++        parse_float_hex(surrogate[name], field=f"surrogate.{name}")
++    path = extension["evaluation_path"]
++    expected_path = {
++        "exact_candidate_current": "evaluate_many then cache access",
++        "exact_default_current": "evaluate_many then cache access",
++        "exact_candidate_forecasts": "evaluate_many",
++        "exact_default_forecasts": "evaluate_many",
++        "c1_target": "c1_difference_surplus",
++        "c2_target": "c2_persistence_forecast",
++        "surrogate": "provider-primitive-array-lookup",
++        "boundary_indices": [0],
++    }
++    if path != expected_path:
++        raise StageCContractError("exact source evaluation path drifted")
++
++
++def _read_exact_source_view(path: Path) -> tuple[SourceShard, dict[str, object]]:
++    file_digest = verify_sha256_sidecar(path)
++    raw_lines = path.read_bytes().splitlines()
++    try:
++        values = [json.loads(line.decode("ascii")) for line in raw_lines]
++    except (UnicodeError, json.JSONDecodeError) as error:
++        raise StageCContractError(f"cannot parse exact source view {path}") from error
++    if not values or any(not isinstance(value, Mapping) for value in values):
++        raise StageCContractError("exact source view requires one header and object rows")
++    if any(line != canonical_json_bytes(value) for line, value in zip(raw_lines, values, strict=True)):
++        raise StageCContractError("exact source view is not canonical JSONL")
++    header = values[0]
++    if set(header) != SOURCE_HEADER_FIELDS or header["schema"] != SOURCE_VIEW_SCHEMA:
++        raise StageCContractError("exact source view header schema drifted")
++    if (
++        header["existing_row_schema"] != "mcrl-v025-stagec-source-row-v1"
++        or header["extension_schema"] != SOURCE_EXTENSION_SCHEMA
++        or header["evaluation_path"] != {
++            "boundaries": [0],
++            "current_candidate_and_default": "evaluate_many",
++            "forecast_candidate_and_default": "evaluate_many",
++        }
++    ):
++        raise StageCContractError("exact source view authority drifted")
++    expected_row_fields = set(values[1]) if len(values) > 1 else set()
++    rows = []
++    row_keys: set[str] = set()
++    for payload in values[1:]:
++        if set(payload) != expected_row_fields or "exact_source_view" not in payload:
++            raise StageCContractError("exact source view row field inventory drifted")
++        _validate_extension(payload["exact_source_view"])
++        row_key = str(payload["exact_source_view"]["row_key"])
++        if row_key in row_keys:
++            raise StageCContractError("duplicate exact source row_key")
++        row_keys.add(row_key)
++        base = {key: value for key, value in payload.items() if key != "exact_source_view"}
++        row = _row_from_payload(base)
++        if (
++            row.world_id != header["world_id"]
++            or row.anchor_index != header["anchor_index_within_world"]
++        ):
++            raise StageCContractError("exact source row/header anchor disagreement")
++        rows.append(row)
++    if not rows or len(rows) != int(header["row_count"]):
++        raise StageCContractError("exact source view row count drifted")
++    variant = variant_for_digests(rows[0].q1_schema_sha256, rows[0].q2_schema_sha256)
++    if (
++        any((row.q1_schema_sha256, row.q2_schema_sha256) !=
++            (variant.q1_schema_sha256, variant.q2_schema_sha256) for row in rows)
++        or header["q1_slots"] != variant.q1_width
++        or header["q2_slots"] != variant.q2_width
++    ):
++        raise StageCContractError("exact source feature schema drifted")
++    shard = SourceShard(path, file_digest, canonical_sha256([row.payload() for row in rows]), tuple(rows))
++    return shard, dict(header)
++
++
++def _candidate_view_files(corpus: Path) -> list[Path]:
++    promoted = corpus / "views"
++    staging = corpus / ".staging-separated-v1"
++    if promoted.is_dir():
++        root = promoted
++    elif staging.is_dir():
++        root = staging
++    else:
++        raise StageCContractError("corpus has neither views/ nor .staging-separated-v1/*/views/")
++    files = sorted(path for path in root.rglob("*.jsonl") if path.is_file() and "views" in path.parts)
++    if not files:
++        raise StageCContractError("view layer contains no JSONL shards")
++    if any("physics" in path.parts for path in files):
++        raise StageCContractError("physics path was admitted into view inventory")
++    return files
++
++
++def load_corpus(corpus: Path) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
++    source_shards = []
++    coalition_shards = []
++    anchors = []
++    inventory = []
++    for path in _candidate_view_files(corpus):
++        try:
++            first = json.loads(path.read_bytes().splitlines()[0].decode("ascii"))
++        except (OSError, IndexError, UnicodeError, json.JSONDecodeError) as error:
++            raise StageCContractError(f"cannot identify view shard {path}") from error
++        schema = first.get("schema") if isinstance(first, Mapping) else None
++        if schema == SOURCE_VIEW_SCHEMA:
++            shard, header = _read_exact_source_view(path)
++            source_shards.append(shard)
++            anchors.append({
++                key: header[key] for key in (
++                    "global_anchor_index", "world_id", "anchor_index_within_world",
++                    "step_index", "carrier",
++                )
++            })
++        elif schema == COALITION_SHARD_SCHEMA:
++            coalition_shards.append(read_coalition_shard(path))
++        else:
++            raise StageCContractError(f"unsupported view schema {schema!r}: {path}")
++        inventory.append({"path": path.relative_to(corpus).as_posix(), "sha256": _sha256(path)})
++    if not source_shards:
++        raise StageCContractError("corpus has no exact C1/C2 source view shards")
++    if not coalition_shards:
++        raise StageCContractError(
++            "corpus has no authenticated mcrl-v025-stagec-c3-coalition-shard-v2 view; "
++            "five-arm training is forbidden"
++        )
++    pairs = build_pairwise_batches(tuple(source_shards))
++    c3 = CoalitionBatch.create(tuple(coalition_shards))
++    if len({pairs["C1"].physics_digest, pairs["C2"].physics_digest, c3.physics_digest}) != 1:
++        raise StageCContractError("C1/C2/C3 view physics digests disagree")
++    first_row = source_shards[0].rows[0]
++    variant = variant_for_digests(first_row.q1_schema_sha256, first_row.q2_schema_sha256)
++    corpus_receipt = {
++        "mode": "exact-view-corpus",
++        "root": str(corpus.resolve()),
++        "digest": canonical_sha256(inventory),
++        "files": inventory,
++        "anchor_list": sorted(anchors, key=lambda row: row["global_anchor_index"]),
++        "source_rows": sum(len(shard.rows) for shard in source_shards),
++        "coalition_rows": sum(len(shard.rows) for shard in coalition_shards),
++    }
++    feature = {
++        "name": variant.name,
++        "digest": canonical_sha256(variant.schema_manifest()),
++        "q1_schema_sha256": variant.q1_schema_sha256,
++        "q2_schema_sha256": variant.q2_schema_sha256,
++        "q1_width": variant.q1_width,
++        "q2_width": variant.q2_width,
++        "view_schema": SOURCE_VIEW_SCHEMA,
++        "view_extension_schema": SOURCE_EXTENSION_SCHEMA,
++        "coalition_schema": COALITION_SHARD_SCHEMA,
++    }
++    return {"pairs": pairs, "c3": c3}, corpus_receipt, feature
++
++
++def build_synthetic_corpus(
++    output: Path, *, directory_name: str = "synthetic-input"
++) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
++    material = output / directory_name
++    material.mkdir(parents=True, exist_ok=False)
++    rows = tuple(row for anchor in make_synthetic_anchors() for row in extract_source_rows(anchor))
++    source = write_source_shard(material / "synthetic-source.jsonl", rows)
++    pairs = build_pairwise_batches((source,))
++    c3, coalition = _synthetic_coalition_batch(material, rows)
++    variant = variant_for_digests(rows[0].q1_schema_sha256, rows[0].q2_schema_sha256)
++    inventory = [
++        {"path": path.name, "sha256": _sha256(path)}
++        for path in (source.path, coalition.path)
++    ]
++    receipt = {
++        "mode": "synthetic-fixture-NOT-EVIDENCE",
++        "root": str(material),
++        "digest": canonical_sha256(inventory),
++        "files": inventory,
++        "anchor_list": sorted({row.anchor_id for row in rows}),
++        "source_rows": len(rows),
++        "coalition_rows": len(coalition.rows),
++    }
++    feature = {
++        "name": variant.name,
++        "digest": canonical_sha256(variant.schema_manifest()),
++        "q1_schema_sha256": variant.q1_schema_sha256,
++        "q2_schema_sha256": variant.q2_schema_sha256,
++        "q1_width": variant.q1_width,
++        "q2_width": variant.q2_width,
++        "view_schema": "synthetic-fixture-source-shard-v1",
++        "coalition_schema": COALITION_SHARD_SCHEMA,
++    }
++    return {"pairs": pairs, "c3": c3}, receipt, feature
++
++
++def _selection_pool(route: str, model, specification: Mapping[str, object]):
++    count = int(specification["candidate_count"])
++    route_offset = {"C1": 0, "C2": 1, "C3": 2, "ALL": 3}[route]
++    rng = np.random.default_rng(int(specification["pool_rng_seed"]) + route_offset)
++    q1_width = len(model.q1.weights[0])
++    q2_width = len(model.q2.weights[0])
++    user_count = 2 if route in {"C3", "ALL"} else 1
++    table_rows = []
++    for user in range(user_count):
++        actions = [PhysicalAction(80000 + 1000 * user, 1000 * user)]
++        q1_states = [tuple(0.0 for _ in range(q1_width))]
++        q2_states = [tuple(0.0 for _ in range(q2_width))]
++        for index in range(1, count + 1):
++            actions.append(PhysicalAction(80000 + 1000 * user + index, 1000 * user + index))
++            q1_states.append(tuple(float(value) for value in (
++                rng.normal(size=q1_width) if route in {"C1", "ALL"} else np.zeros(q1_width)
++            )))
++            q2_states.append(tuple(float(value) for value in (
++                rng.normal(size=q2_width) if route in {"C2", "ALL"} else np.zeros(q2_width)
++            )))
++        actions.append(PhysicalAction(None, None))
++        q1_states.append(tuple(0.0 for _ in range(q1_width)))
++        q2_states.append(tuple(0.0 for _ in range(q2_width)))
++        table_rows.append(UserActionTable(
++            user, tuple(actions), tuple(True for _ in actions), tuple(q1_states), tuple(q2_states)
++        ))
++    tables = tuple(table_rows)
++    catalogue = tuple(tuple(index for _ in tables) for index in range(count + 2))
++    contexts = {}
++    for index, profile in enumerate(catalogue):
++        members = () if index == 0 else tuple(CoalitionMember(
++            table.user_id, table.actions[0], table.actions[index],
++            tuple(float(value) for value in (
++                rng.normal(size=q1_width) if route in {"C3", "ALL"} else np.zeros(q1_width)
++            )), tuple(0.0 for _ in range(q1_width)), False,
++        ) for table in tables)
++        contexts[profile] = CoalitionContext(
++            anchor_id="stagec-arm-difference-fixture",
++            reference_profile=tuple((table.user_id, table.actions[0]) for table in tables), members=members,
++            affected_beams=(AffectedBeamContext(
++                "fixture-beam", 1, 1, True, True,
++                1.0 + 0.01 * index, 0.001 * index, 0.5 - 0.0001 * index,
++            ),),
++            global_resource_features=(float(index) / count, math.sin(index), math.cos(index)),
++        )
++    return tables, catalogue, contexts
++
++
++def _route_delta(model, route: str, tables, contexts, profile) -> float:
++    total = 0.0
++    for table, index in zip(tables, profile, strict=True):
++        if route in {"C1", "ALL"}:
++            total += model.score("C1", table.q1_states[index]) - model.score("C1", table.q1_states[0])
++        if route in {"C2", "ALL"}:
++            total += model.score("C2", table.q2_states[index]) - model.score("C2", table.q2_states[0])
++    if route in {"C3", "ALL"}:
++        total += model.interaction(contexts[profile]) - model.interaction(contexts[tuple(0 for _ in tables)])
++    return total
++
++
++def run_fixture_gate(batches: Mapping[str, object], output: Path, seed: int) -> dict[str, object]:
++    specification = json.loads(FIXTURE.read_text(encoding="ascii"))
++    if set(specification) != {
++        "schema", "training_epochs", "pool_rng_seed", "candidate_count",
++        "required_pairs", "fixture_outcomes", "witness_rule",
++    } or specification["schema"] != "mcrl-v025-stagec-arm-difference-fixture-v1":
++        raise StageCContractError("checked-in arm-difference fixture schema drifted")
++    trainer = V1LineageOrchestrator(
++        learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++        c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++    )
++    gate_epochs = int(specification["training_epochs"])
++    if gate_epochs != CHECKPOINT_EVERY_SOURCE_EPOCHS:
++        raise StageCContractError("fixture checkpoint boundary drifted")
++    trainer.train(gate_epochs)
++    checkpoint = output / "fixture-checkpoint" / f"learner-{seed}-epoch-{gate_epochs:06d}.json"
++    checkpoint_digest = trainer.write_checkpoint(checkpoint)
++    restored = V1LineageOrchestrator(
++        learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++        c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++    )
++    restored.load_checkpoint(checkpoint)
++    trainer.bind_checkpoint_identity()
++    results = []
++    for pair in specification["required_pairs"]:
++        if not isinstance(pair, list) or len(pair) != 3 or pair[0] != "FULL":
++            raise StageCContractError("fixture pair inventory drifted")
++        full, comparator, route = pair
++        if comparator not in LEARNED_ARMS or route not in (*ROUTES, "ALL"):
++            raise StageCContractError("fixture names an unsupported arm or route")
++        tables, catalogue, contexts = _selection_pool(route, trainer.models[full], specification)
++        deltas = {
++            arm: [_route_delta(trainer.models[arm], route, tables, contexts, profile)
++                  for profile in catalogue[1:]]
++            for arm in (full, comparator)
++        }
++        witness = max(
++            range(len(deltas[full])),
++            key=lambda offset: abs(deltas[full][offset] - deltas[comparator][offset]),
++        )
++        action_index = witness + 1
++        difference = deltas[full][witness] - deltas[comparator][witness]
++        if difference == 0.0:
++            raise StageCContractError(f"arm-difference fixture found identical numeric scores for {full}/{comparator}")
++        shared_catalogue_term = -0.5 * (deltas[full][witness] + deltas[comparator][witness])
++        def identity(action: PhysicalAction):
++            return None if action.is_null else (int(action.norad_id), int(action.beam_chain_id))
++        base_assignment = canonical_assignment({table.user_id: identity(table.actions[0]) for table in tables})
++        candidate_assignment = canonical_assignment({
++            table.user_id: identity(table.actions[action_index]) for table in tables
++        })
++        selected = {}
++        adjusted_scores = {}
++        for arm in (full, comparator):
++            adjusted = deltas[arm][witness] + shared_catalogue_term
++            adjusted_scores[arm] = adjusted
++            base_row = ScoredConfiguration(base_assignment, 0.0)
++            candidate_row = ScoredConfiguration(candidate_assignment, adjusted)
++            chosen, _accepted = first_improvement(
++                base_row,
++                lambda current, base=base_row, candidate=candidate_row: (candidate,) if current == base else (),
++            )
++            selected[arm] = (0,) if chosen.assignment == base_assignment else (action_index,)
++        outcome = specification["fixture_outcomes"]
++        pooled = {
++            arm: (float(outcome["base_bits"]) + float(outcome["bits_per_action_index"]) * profile[0])
++            / (float(outcome["base_joules"]) + float(outcome["joules_per_action_index"]) * profile[0])
++            for arm, profile in selected.items()
++        }
++        passed = selected[full] != selected[comparator] and pooled[full] != pooled[comparator]
++        results.append({
++            "pair": f"{full}-vs-{comparator}", "route_pool": route,
++            "selected_action_index": {arm: profile[0] for arm, profile in selected.items()},
++            "raw_model_score_delta": {arm: deltas[arm][witness] for arm in (full, comparator)},
++            "shared_arm_independent_catalogue_term": shared_catalogue_term,
++            "adjusted_selection_score": adjusted_scores,
++            "selection_path": "mcrl.stagec_v025.c3_panel.first_improvement",
++            "pooled_fixture_ee_bits_per_j": pooled, "selection_different": selected[full] != selected[comparator],
++            "pooled_ee_different": pooled[full] != pooled[comparator], "verdict": "PASS" if passed else "FAIL",
++        })
++    verdict = "PASS" if all(row["verdict"] == "PASS" for row in results) else "FAIL"
++    receipt = {
++        "schema": specification["schema"], "fixture_path": str(FIXTURE),
++        "fixture_sha256": _sha256(FIXTURE), "training_epochs": gate_epochs,
++        "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_digest,
++        "sealed_loader_readback": "PASS", "pairs": results, "verdict": verdict,
++        "not_ee_evidence": True,
++    }
++    if verdict != "PASS":
++        raise StageCContractError(f"arm-difference fixture gate FAIL: {results}")
++    return receipt
++
++
++def _step_decay_rate(start_rate: float, update: int) -> float:
++    if update <= STEP_DECAY_BOUNDARIES[0]:
++        return start_rate
++    if update <= STEP_DECAY_BOUNDARIES[1]:
++        return start_rate * STEP_DECAY_FACTOR
++    return start_rate * STEP_DECAY_FACTOR * STEP_DECAY_FACTOR
++
++
++def _set_learning_rate(trainer: V1LineageOrchestrator, learning_rate: float) -> None:
++    for model in trainer.models.values():
++        model.q1.learning_rate = learning_rate
++        model.q2.learning_rate = learning_rate
++        model.psi.network.learning_rate = learning_rate
++
++
++def train_requested(
++    batches: Mapping[str, object], output: Path, seeds: Sequence[int], epochs: int, cadence: int,
++    step_decay_start_rate: float | None,
++):
++    checkpoint_records = []
++    seed_timings = []
++    for seed in seeds:
++        trainer = V1LineageOrchestrator(
++            learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++            c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++        )
++        started = time.perf_counter()
++        applied_learning_rate = None
++        for _ in range(epochs):
++            if step_decay_start_rate is not None:
++                applied_learning_rate = _step_decay_rate(
++                    step_decay_start_rate, trainer.completed_source_epochs + 1
++                )
++                _set_learning_rate(trainer, applied_learning_rate)
++            trainer.train_epoch()
++            if trainer.completed_source_epochs % cadence == 0:
++                path = output / "checkpoints" / f"learner-{seed}-epoch-{trainer.completed_source_epochs:06d}.json"
++                digest = trainer.write_checkpoint(path)
++                restored = V1LineageOrchestrator(
++                    learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++                    c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++                )
++                restored.load_checkpoint(path)
++                checkpoint_records.append({
++                    "seed": seed, "completed_source_epochs": trainer.completed_source_epochs,
++                    "path": str(path), "sha256": digest, "sealed_loader_readback": "PASS",
++                    "applied_learning_rate": applied_learning_rate,
++                })
++                print(json.dumps({
++                    "event": "training-progress", "seed": seed,
++                    "completed_source_epochs": trainer.completed_source_epochs,
++                    "requested_epochs": epochs, "applied_learning_rate": applied_learning_rate,
++                    "peak_rss_bytes": _peak_rss_bytes(),
++                }, sort_keys=True), flush=True)
++        elapsed = time.perf_counter() - started
++        seed_timings.append({
++            "seed": seed, "seconds": elapsed,
++            "seconds_per_epoch_per_arm": elapsed / epochs / len(LEARNED_ARMS),
++        })
++    total = math.fsum(row["seconds"] for row in seed_timings)
++    return {
++        "seed_timings": seed_timings, "training_seconds": total,
++        "seconds_per_epoch_per_arm": total / len(seeds) / epochs / len(LEARNED_ARMS),
++        "checkpoints": checkpoint_records,
++        "checkpoint_note": (
++            "No requested-run checkpoint is expected before epoch 100."
++            if epochs < cadence else "Every reached cadence boundary was written and read by the sealed loader."
++        ),
++    }
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--corpus", required=True, help="view corpus root, or literal synthetic-fixture for smoke only")
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--epochs", type=int, required=True)
++    parser.add_argument("--checkpoint-cadence", type=int, default=CHECKPOINT_EVERY_SOURCE_EPOCHS)
++    parser.add_argument(
++        "--step-decay-start-rate", type=float, default=None,
++        help="optional step-decay start rate; multiply by 0.1 after updates 2000 and 3000",
++    )
++    parser.add_argument(
++        "--seeds", type=int, required=True,
++        help="number of V025_LEARNER/seed/{1..N} domains; v1.1 requires 16",
++    )
++    return parser
++
++
++def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++    if args.epochs <= 0 or args.epochs > V2_EPOCH_BUDGET:
++        parser.error(f"--epochs must be in 1..{V2_EPOCH_BUDGET}")
++    if args.checkpoint_cadence != CHECKPOINT_EVERY_SOURCE_EPOCHS:
++        parser.error(
++            f"--checkpoint-cadence must be {CHECKPOINT_EVERY_SOURCE_EPOCHS}; "
++            "the sealed loader rejects every other cursor"
++        )
++    if args.seeds <= 0:
++        parser.error("--seeds must be positive")
++    if args.step_decay_start_rate is not None and (
++        not math.isfinite(args.step_decay_start_rate) or args.step_decay_start_rate <= 0.0
++    ):
++        parser.error("--step-decay-start-rate must be finite and positive")
++    return args
++
++
++def run(args: argparse.Namespace) -> dict[str, object]:
++    output = args.output.resolve()
++    output.mkdir(parents=True, exist_ok=False)
++    if args.epochs > LEGACY_EPOCH_BUDGET:
++        stagec_learner.LEGACY_EPOCH_BUDGET = V2_EPOCH_BUDGET
++    if args.seeds != AMENDED_SEED_COUNT:
++        print(
++            f"LOUD SEED COUNT NOTICE: requested {args.seeds}; sealed amendment v1.1 requires 16 for a real run",
++            file=sys.stderr, flush=True,
++        )
++    seeds = tuple(seed_from_domain(f"V025_LEARNER/seed/{index}") for index in range(1, args.seeds + 1))
++    if args.corpus == "synthetic-fixture":
++        batches, corpus, feature = build_synthetic_corpus(output)
++        fixture_batches = batches
++        fixture_corpus = corpus
++    else:
++        batches, corpus, feature = load_corpus(Path(args.corpus).resolve())
++        fixture_batches, fixture_corpus, _fixture_feature = build_synthetic_corpus(
++            output, directory_name="arm-difference-fixture-input"
++        )
++    gate = run_fixture_gate(fixture_batches, output, seeds[0])
++    gate["training_corpus"] = fixture_corpus
++    receipt = {
++        "schema": "mcrl-v025-stagec-training-launch-receipt-v1",
++        "runner": str(Path(__file__).resolve()), "runner_sha256": _sha256(Path(__file__)),
++        "corpus": corpus, "feature_schema": feature,
++        "arm_inventory": list(LEARNED_ARMS), "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
++        "epochs": args.epochs, "checkpoint_cadence": args.checkpoint_cadence,
++        "seed_flag_count": args.seeds, "seed_count_actually_used": len(seeds), "seed_list": list(seeds),
++        "seed_domains": [f"V025_LEARNER/seed/{index}" for index in range(1, args.seeds + 1)],
++        "amendment_v1_1_seed_count": AMENDED_SEED_COUNT,
++        "seed_count_conforms_to_amendment_v1_1": args.seeds == AMENDED_SEED_COUNT,
++        "head_literals": dict(LEGACY_TRAINER_LITERALS),
++        "head_literals_sha256": LEGACY_TRAINER_LITERALS_SHA256,
++        "training_schedule": (
++            {"kind": "constant", "route_rates": {
++                route: LEGACY_TRAINER_LITERALS[route]["learning_rate"] for route in ROUTES
++            }}
++            if args.step_decay_start_rate is None else
++            {"kind": "step_decay", "start_rate": args.step_decay_start_rate,
++             "factor": STEP_DECAY_FACTOR, "after_updates": list(STEP_DECAY_BOUNDARIES)}
++        ),
++        "sealed_loader_accepted_bounds": {
++            "completed_source_epochs": {"minimum": 1, "maximum": V2_EPOCH_BUDGET},
++            "completed_epoch_multiple": CHECKPOINT_EVERY_SOURCE_EPOCHS,
++            "arm_inventory": list(LEARNED_ARMS),
++            "verified_source_lines": {
++                "arm_inventory": "src/mcrl/stagec_v025/learner.py:1169-1171",
++                "epoch_bounds_and_multiple": "src/mcrl/stagec_v025/learner.py:1182-1189",
++            },
++        },
++        "resource_limits": {
++            "max_python_processes": MAX_PYTHON_PROCESSES,
++            "python_processes_used": RUNNER_PYTHON_PROCESSES,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": {name: os.environ[name] for name in THREAD_VARIABLES},
++            "per_process_address_space_hard_cap_bytes": MAX_RSS_BYTES,
++            "required_peak_rss_below_bytes": MAX_RSS_BYTES,
++        },
++        "fixture_gate": gate,
++        "no_physics_generation": True,
++        "loss_values_are_not_ee_evidence": True,
++        "launch_receipt_sha256": None,
++    }
++    receipt["launch_receipt_sha256"] = canonical_sha256({**receipt, "launch_receipt_sha256": None})
++    _write_json(output / "launch-receipt.json", receipt)
++    training = train_requested(
++        batches, output, seeds, args.epochs, args.checkpoint_cadence,
++        args.step_decay_start_rate,
++    )
++    result = {
++        "schema": "mcrl-v025-stagec-training-result-v1",
++        "launch_receipt_sha256": receipt["launch_receipt_sha256"],
++        "fixture_gate_verdict": gate["verdict"], **training,
++        "peak_rss_bytes": _peak_rss_bytes(), "production_training_run": args.corpus != "synthetic-fixture",
++        "synthetic_smoke_not_evidence": args.corpus == "synthetic-fixture",
++        "no_ee_claim": True,
++    }
++    if result["peak_rss_bytes"] >= MAX_RSS_BYTES:
++        raise MemoryError(f"peak RSS exceeded limit: {result['peak_rss_bytes']}")
++    _write_json(output / "training-result.json", result)
++    return result
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    try:
++        _enforce_resources()
++        args = parse_args(argv)
++        result = run(args)
++        print(json.dumps({
++            "event": "training-complete", "fixture_gate": result["fixture_gate_verdict"],
++            "seconds_per_epoch_per_arm": result["seconds_per_epoch_per_arm"],
++            "checkpoints": len(result["checkpoints"]),
++        }, sort_keys=True), flush=True)
++        return 0
++    finally:
++        print(f"PEAK_RSS_BYTES={_peak_rss_bytes()}", flush=True)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tests/fixtures/stagec-training-arm-difference-v1.json b/tests/fixtures/stagec-training-arm-difference-v1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..d77287b37d2bb76d7d59d4ea680faba4ee6868fa
+--- /dev/null
++++ b/tests/fixtures/stagec-training-arm-difference-v1.json
+@@ -0,0 +1,35 @@
++{
++  "candidate_count": 256,
++  "fixture_outcomes": {
++    "base_bits": 1000.0,
++    "base_joules": 10.0,
++    "bits_per_action_index": 7.0,
++    "joules_per_action_index": 0.003
++  },
++  "pool_rng_seed": 20260910,
++  "required_pairs": [
++    [
++      "FULL",
++      "DROP_C1",
++      "C1"
++    ],
++    [
++      "FULL",
++      "DROP_C2",
++      "C2"
++    ],
++    [
++      "FULL",
++      "DROP_C3",
++      "C3"
++    ],
++    [
++      "FULL",
++      "ALL_NEUTRAL_CONTROL",
++      "ALL"
++    ]
++  ],
++  "schema": "mcrl-v025-stagec-arm-difference-fixture-v1",
++  "training_epochs": 100,
++  "witness_rule": "largest-raw-model-difference-plus-arm-independent-negative-midpoint-catalogue-term"
++}
+
+2026-09-10T18:45:23.747955Z ERROR codex_core::tools::router: error=exec pragma must be valid JSON with supported fields `yield_time_ms` and `max_output_tokens`: expected value at line 1 column 47
+diff --git a/scripts/run_stagec_training_v2.py b/scripts/run_stagec_training_v2.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..66e21b503db28d88706ecab0d3811c3cd2822391
+--- /dev/null
++++ b/scripts/run_stagec_training_v2.py
+@@ -0,0 +1,752 @@
++#!/home/sat/mcrl-leo-handover/.venv/bin/python
++"""Parameterized, fail-closed Stage-C five-arm training runner.
++
++The runner consumes already-built feature/target views.  It never opens the
++physics layer and never generates physics.  ``synthetic-fixture`` is reserved
++for smoke testing and carries no scientific authority.
++"""
++
++from __future__ import annotations
++
++import argparse
++from fractions import Fraction
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Mapping, Sequence
++
++
++# These must be fixed before NumPy (directly or indirectly) is imported.
++THREAD_VARIABLES = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++for _name in THREAD_VARIABLES:
++    os.environ[_name] = "1"
++
++REPO = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(REPO / "src"))
++
++import numpy as np  # noqa: E402
++
++from mcrl.physics_v025.tapes import seed_from_domain  # noqa: E402
++import mcrl.stagec_v025.learner as stagec_learner  # noqa: E402
++from mcrl.stagec_v025.canonical import (  # noqa: E402
++    StageCContractError,
++    canonical_json_bytes,
++    canonical_sha256,
++    parse_float_hex,
++    verify_sha256_sidecar,
++)
++from mcrl.stagec_v025.coalitions import (  # noqa: E402
++    AffectedBeamContext,
++    COALITION_SHARD_SCHEMA,
++    CoalitionContext,
++    CoalitionMember,
++    read_coalition_shard,
++)
++from mcrl.stagec_v025.c3_panel import (  # noqa: E402
++    ScoredConfiguration,
++    canonical_assignment,
++    first_improvement,
++)
++from mcrl.stagec_v025.deployment import UserActionTable  # noqa: E402
++from mcrl.stagec_v025.encoders import variant_for_digests  # noqa: E402
++from mcrl.stagec_v025.learner import (  # noqa: E402
++    CHECKPOINT_EVERY_SOURCE_EPOCHS,
++    CoalitionBatch,
++    LEARNED_ARMS,
++    LEGACY_EPOCH_BUDGET,
++    LEGACY_TRAINER_LITERALS,
++    LEGACY_TRAINER_LITERALS_SHA256,
++    ROUTES,
++    SOURCE_MAP,
++    V1LineageOrchestrator,
++    build_pairwise_batches,
++    default_synthetic_neutral_sources,
++)
++from mcrl.stagec_v025.shards import SourceShard, _row_from_payload, write_source_shard  # noqa: E402
++from mcrl.stagec_v025.state import PhysicalAction, extract_source_rows  # noqa: E402
++from mcrl.stagec_v025.synthetic import (  # noqa: E402
++    _synthetic_coalition_batch,
++    make_synthetic_anchors,
++)
++
++
++INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
++FIXTURE = REPO / "tests/fixtures/stagec-training-arm-difference-v1.json"
++SOURCE_VIEW_SCHEMA = "mcrl-v025-exact-source-view-shard-v1"
++SOURCE_EXTENSION_SCHEMA = "mcrl-v025-exact-source-view-extension-v1"
++MAX_RSS_BYTES = 5_000_000_000
++MAX_PYTHON_PROCESSES = 3
++RUNNER_PYTHON_PROCESSES = 1
++REQUIRED_NICE = 15
++AMENDED_SEED_COUNT = 16
++V2_EPOCH_BUDGET = 4000
++STEP_DECAY_BOUNDARIES = (2000, 3000)
++STEP_DECAY_FACTOR = 0.1
++
++SOURCE_HEADER_FIELDS = {
++    "schema", "artifact_label", "world_index", "world_id",
++    "global_anchor_index", "anchor_index_within_world", "step_index",
++    "carrier_index", "carrier", "row_count", "evaluation_path",
++    "existing_row_schema", "extension_schema", "q1_slots", "q2_slots",
++}
++EXTENSION_FIELDS = {
++    "schema", "row_key", "physics_configuration_id",
++    "c1_difference_surplus", "c2_persistence_forecast", "surrogate",
++    "evaluation_path",
++}
++
++
++def _sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def _peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def _enforce_resources() -> None:
++    if Path(sys.executable).resolve() != INTERPRETER.resolve():
++        raise RuntimeError(f"wrong interpreter: {sys.executable}; required {INTERPRETER}")
++    current_nice = os.getpriority(os.PRIO_PROCESS, 0)
++    if current_nice < REQUIRED_NICE:
++        os.nice(REQUIRED_NICE - current_nice)
++    if os.getpriority(os.PRIO_PROCESS, 0) < REQUIRED_NICE:
++        raise RuntimeError("could not enforce nice -n 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARIABLES if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins drifted: {bad}")
++    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
++    cap = MAX_RSS_BYTES
++    new_hard = cap if hard == resource.RLIM_INFINITY else min(hard, cap)
++    resource.setrlimit(resource.RLIMIT_AS, (min(cap, new_hard), new_hard))
++    if RUNNER_PYTHON_PROCESSES > MAX_PYTHON_PROCESSES:
++        raise RuntimeError("runner process inventory exceeds hard cap")
++
++
++def _write_json(path: Path, payload: object) -> None:
++    if path.exists():
++        raise StageCContractError(f"refusing to overwrite {path}")
++    path.parent.mkdir(parents=True, exist_ok=True)
++    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
++    with temporary.open("wb") as handle:
++        handle.write(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False).encode("ascii"))
++        handle.write(b"\n")
++        handle.flush()
++        os.fsync(handle.fileno())
++    temporary.replace(path)
++
++
++def _validate_fraction(payload: object, field: str) -> None:
++    if not isinstance(payload, Mapping) or set(payload) != {"fraction", "float_hex"}:
++        raise StageCContractError(f"{field} fraction schema drifted")
++    values = payload["fraction"]
++    if (
++        not isinstance(values, list)
++        or len(values) != 2
++        or any(isinstance(value, bool) or not isinstance(value, int) for value in values)
++        or values[1] == 0
++    ):
++        raise StageCContractError(f"{field} fraction value drifted")
++    expected = float.hex(float(Fraction(values[0], values[1])))
++    if payload["float_hex"] != expected:
++        raise StageCContractError(f"{field} float/fraction disagreement")
++    parse_float_hex(payload["float_hex"], field=field)
++
++
++def _validate_extension(extension: object) -> None:
++    if not isinstance(extension, Mapping) or set(extension) != EXTENSION_FIELDS:
++        raise StageCContractError("exact source extension schema drifted")
++    if extension["schema"] != SOURCE_EXTENSION_SCHEMA:
++        raise StageCContractError("exact source extension version drifted")
++    if not isinstance(extension["row_key"], str) or not extension["row_key"]:
++        raise StageCContractError("exact source row_key drifted")
++    if not isinstance(extension["physics_configuration_id"], str):
++        raise StageCContractError("exact source configuration identity drifted")
++    c1 = extension["c1_difference_surplus"]
++    if not isinstance(c1, Mapping) or set(c1) != {
++        "core_bits", "phi_difference", "normalized_total", "decomposition_residual"
++    }:
++        raise StageCContractError("exact C1 target schema drifted")
++    for name, value in c1.items():
++        _validate_fraction(value, f"C1.{name}")
++    c2 = extension["c2_persistence_forecast"]
++    if not isinstance(c2, Mapping) or set(c2) != {
++        "forecast_surplus_bits", "lost_offsets", "persistence_penalty_bits",
++        "label_bits", "normalized_total", "decomposition_residual",
++    }:
++        raise StageCContractError("exact C2 target schema drifted")
++    if isinstance(c2["lost_offsets"], bool) or not isinstance(c2["lost_offsets"], int):
++        raise StageCContractError("exact C2 lost-offset count drifted")
++    for name in set(c2) - {"lost_offsets"}:
++        _validate_fraction(c2[name], f"C2.{name}")
++    surrogate = extension["surrogate"]
++    if not isinstance(surrogate, Mapping) or set(surrogate) != {
++        "method", "c1_core_bits_hex", "c1_phi_difference_hex",
++        "c1_normalized_total_hex", "c2_label_bits_hex", "c2_normalized_total_hex",
++    }:
++        raise StageCContractError("surrogate comparison schema drifted")
++    for name in set(surrogate) - {"method"}:
++        parse_float_hex(surrogate[name], field=f"surrogate.{name}")
++    path = extension["evaluation_path"]
++    expected_path = {
++        "exact_candidate_current": "evaluate_many then cache access",
++        "exact_default_current": "evaluate_many then cache access",
++        "exact_candidate_forecasts": "evaluate_many",
++        "exact_default_forecasts": "evaluate_many",
++        "c1_target": "c1_difference_surplus",
++        "c2_target": "c2_persistence_forecast",
++        "surrogate": "provider-primitive-array-lookup",
++        "boundary_indices": [0],
++    }
++    if path != expected_path:
++        raise StageCContractError("exact source evaluation path drifted")
++
++
++def _read_exact_source_view(path: Path) -> tuple[SourceShard, dict[str, object]]:
++    file_digest = verify_sha256_sidecar(path)
++    raw_lines = path.read_bytes().splitlines()
++    try:
++        values = [json.loads(line.decode("ascii")) for line in raw_lines]
++    except (UnicodeError, json.JSONDecodeError) as error:
++        raise StageCContractError(f"cannot parse exact source view {path}") from error
++    if not values or any(not isinstance(value, Mapping) for value in values):
++        raise StageCContractError("exact source view requires one header and object rows")
++    if any(line != canonical_json_bytes(value) for line, value in zip(raw_lines, values, strict=True)):
++        raise StageCContractError("exact source view is not canonical JSONL")
++    header = values[0]
++    if set(header) != SOURCE_HEADER_FIELDS or header["schema"] != SOURCE_VIEW_SCHEMA:
++        raise StageCContractError("exact source view header schema drifted")
++    if (
++        header["existing_row_schema"] != "mcrl-v025-stagec-source-row-v1"
++        or header["extension_schema"] != SOURCE_EXTENSION_SCHEMA
++        or header["evaluation_path"] != {
++            "boundaries": [0],
++            "current_candidate_and_default": "evaluate_many",
++            "forecast_candidate_and_default": "evaluate_many",
++        }
++    ):
++        raise StageCContractError("exact source view authority drifted")
++    expected_row_fields = set(values[1]) if len(values) > 1 else set()
++    rows = []
++    row_keys: set[str] = set()
++    for payload in values[1:]:
++        if set(payload) != expected_row_fields or "exact_source_view" not in payload:
++            raise StageCContractError("exact source view row field inventory drifted")
++        _validate_extension(payload["exact_source_view"])
++        row_key = str(payload["exact_source_view"]["row_key"])
++        if row_key in row_keys:
++            raise StageCContractError("duplicate exact source row_key")
++        row_keys.add(row_key)
++        base = {key: value for key, value in payload.items() if key != "exact_source_view"}
++        row = _row_from_payload(base)
++        if (
++            row.world_id != header["world_id"]
++            or row.anchor_index != header["anchor_index_within_world"]
++        ):
++            raise StageCContractError("exact source row/header anchor disagreement")
++        rows.append(row)
++    if not rows or len(rows) != int(header["row_count"]):
++        raise StageCContractError("exact source view row count drifted")
++    variant = variant_for_digests(rows[0].q1_schema_sha256, rows[0].q2_schema_sha256)
++    if (
++        any((row.q1_schema_sha256, row.q2_schema_sha256) !=
++            (variant.q1_schema_sha256, variant.q2_schema_sha256) for row in rows)
++        or header["q1_slots"] != variant.q1_width
++        or header["q2_slots"] != variant.q2_width
++    ):
++        raise StageCContractError("exact source feature schema drifted")
++    shard = SourceShard(path, file_digest, canonical_sha256([row.payload() for row in rows]), tuple(rows))
++    return shard, dict(header)
++
++
++def _candidate_view_files(corpus: Path) -> list[Path]:
++    promoted = corpus / "views"
++    staging = corpus / ".staging-separated-v1"
++    if promoted.is_dir():
++        root = promoted
++    elif staging.is_dir():
++        root = staging
++    else:
++        raise StageCContractError("corpus has neither views/ nor .staging-separated-v1/*/views/")
++    files = sorted(path for path in root.rglob("*.jsonl") if path.is_file() and "views" in path.parts)
++    if not files:
++        raise StageCContractError("view layer contains no JSONL shards")
++    if any("physics" in path.parts for path in files):
++        raise StageCContractError("physics path was admitted into view inventory")
++    return files
++
++
++def load_corpus(corpus: Path) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
++    source_shards = []
++    coalition_shards = []
++    anchors = []
++    inventory = []
++    for path in _candidate_view_files(corpus):
++        try:
++            first = json.loads(path.read_bytes().splitlines()[0].decode("ascii"))
++        except (OSError, IndexError, UnicodeError, json.JSONDecodeError) as error:
++            raise StageCContractError(f"cannot identify view shard {path}") from error
++        schema = first.get("schema") if isinstance(first, Mapping) else None
++        if schema == SOURCE_VIEW_SCHEMA:
++            shard, header = _read_exact_source_view(path)
++            source_shards.append(shard)
++            anchors.append({
++                key: header[key] for key in (
++                    "global_anchor_index", "world_id", "anchor_index_within_world",
++                    "step_index", "carrier",
++                )
++            })
++        elif schema == COALITION_SHARD_SCHEMA:
++            coalition_shards.append(read_coalition_shard(path))
++        else:
++            raise StageCContractError(f"unsupported view schema {schema!r}: {path}")
++        inventory.append({"path": path.relative_to(corpus).as_posix(), "sha256": _sha256(path)})
++    if not source_shards:
++        raise StageCContractError("corpus has no exact C1/C2 source view shards")
++    if not coalition_shards:
++        raise StageCContractError(
++            "corpus has no authenticated mcrl-v025-stagec-c3-coalition-shard-v2 view; "
++            "five-arm training is forbidden"
++        )
++    pairs = build_pairwise_batches(tuple(source_shards))
++    c3 = CoalitionBatch.create(tuple(coalition_shards))
++    if len({pairs["C1"].physics_digest, pairs["C2"].physics_digest, c3.physics_digest}) != 1:
++        raise StageCContractError("C1/C2/C3 view physics digests disagree")
++    first_row = source_shards[0].rows[0]
++    variant = variant_for_digests(first_row.q1_schema_sha256, first_row.q2_schema_sha256)
++    corpus_receipt = {
++        "mode": "exact-view-corpus",
++        "root": str(corpus.resolve()),
++        "digest": canonical_sha256(inventory),
++        "files": inventory,
++        "anchor_list": sorted(anchors, key=lambda row: row["global_anchor_index"]),
++        "source_rows": sum(len(shard.rows) for shard in source_shards),
++        "coalition_rows": sum(len(shard.rows) for shard in coalition_shards),
++    }
++    feature = {
++        "name": variant.name,
++        "digest": canonical_sha256(variant.schema_manifest()),
++        "q1_schema_sha256": variant.q1_schema_sha256,
++        "q2_schema_sha256": variant.q2_schema_sha256,
++        "q1_width": variant.q1_width,
++        "q2_width": variant.q2_width,
++        "view_schema": SOURCE_VIEW_SCHEMA,
++        "view_extension_schema": SOURCE_EXTENSION_SCHEMA,
++        "coalition_schema": COALITION_SHARD_SCHEMA,
++    }
++    return {"pairs": pairs, "c3": c3}, corpus_receipt, feature
++
++
++def build_synthetic_corpus(
++    output: Path, *, directory_name: str = "synthetic-input"
++) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
++    material = output / directory_name
++    material.mkdir(parents=True, exist_ok=False)
++    rows = tuple(row for anchor in make_synthetic_anchors() for row in extract_source_rows(anchor))
++    source = write_source_shard(material / "synthetic-source.jsonl", rows)
++    pairs = build_pairwise_batches((source,))
++    c3, coalition = _synthetic_coalition_batch(material, rows)
++    variant = variant_for_digests(rows[0].q1_schema_sha256, rows[0].q2_schema_sha256)
++    inventory = [
++        {"path": path.name, "sha256": _sha256(path)}
++        for path in (source.path, coalition.path)
++    ]
++    receipt = {
++        "mode": "synthetic-fixture-NOT-EVIDENCE",
++        "root": str(material),
++        "digest": canonical_sha256(inventory),
++        "files": inventory,
++        "anchor_list": sorted({row.anchor_id for row in rows}),
++        "source_rows": len(rows),
++        "coalition_rows": len(coalition.rows),
++    }
++    feature = {
++        "name": variant.name,
++        "digest": canonical_sha256(variant.schema_manifest()),
++        "q1_schema_sha256": variant.q1_schema_sha256,
++        "q2_schema_sha256": variant.q2_schema_sha256,
++        "q1_width": variant.q1_width,
++        "q2_width": variant.q2_width,
++        "view_schema": "synthetic-fixture-source-shard-v1",
++        "coalition_schema": COALITION_SHARD_SCHEMA,
++    }
++    return {"pairs": pairs, "c3": c3}, receipt, feature
++
++
++def _selection_pool(route: str, model, specification: Mapping[str, object]):
++    count = int(specification["candidate_count"])
++    route_offset = {"C1": 0, "C2": 1, "C3": 2, "ALL": 3}[route]
++    rng = np.random.default_rng(int(specification["pool_rng_seed"]) + route_offset)
++    q1_width = len(model.q1.weights[0])
++    q2_width = len(model.q2.weights[0])
++    user_count = 2 if route in {"C3", "ALL"} else 1
++    table_rows = []
++    for user in range(user_count):
++        actions = [PhysicalAction(80000 + 1000 * user, 1000 * user)]
++        q1_states = [tuple(0.0 for _ in range(q1_width))]
++        q2_states = [tuple(0.0 for _ in range(q2_width))]
++        for index in range(1, count + 1):
++            actions.append(PhysicalAction(80000 + 1000 * user + index, 1000 * user + index))
++            q1_states.append(tuple(float(value) for value in (
++                rng.normal(size=q1_width) if route in {"C1", "ALL"} else np.zeros(q1_width)
++            )))
++            q2_states.append(tuple(float(value) for value in (
++                rng.normal(size=q2_width) if route in {"C2", "ALL"} else np.zeros(q2_width)
++            )))
++        actions.append(PhysicalAction(None, None))
++        q1_states.append(tuple(0.0 for _ in range(q1_width)))
++        q2_states.append(tuple(0.0 for _ in range(q2_width)))
++        table_rows.append(UserActionTable(
++            user, tuple(actions), tuple(True for _ in actions), tuple(q1_states), tuple(q2_states)
++        ))
++    tables = tuple(table_rows)
++    catalogue = tuple(tuple(index for _ in tables) for index in range(count + 2))
++    contexts = {}
++    for index, profile in enumerate(catalogue):
++        members = () if index == 0 else tuple(CoalitionMember(
++            table.user_id, table.actions[0], table.actions[index],
++            tuple(float(value) for value in (
++                rng.normal(size=q1_width) if route in {"C3", "ALL"} else np.zeros(q1_width)
++            )), tuple(0.0 for _ in range(q1_width)), False,
++        ) for table in tables)
++        contexts[profile] = CoalitionContext(
++            anchor_id="stagec-arm-difference-fixture",
++            reference_profile=tuple((table.user_id, table.actions[0]) for table in tables), members=members,
++            affected_beams=(AffectedBeamContext(
++                "fixture-beam", 1, 1, True, True,
++                1.0 + 0.01 * index, 0.001 * index, 0.5 - 0.0001 * index,
++            ),),
++            global_resource_features=(float(index) / count, math.sin(index), math.cos(index)),
++        )
++    return tables, catalogue, contexts
++
++
++def _route_delta(model, route: str, tables, contexts, profile) -> float:
++    total = 0.0
++    for table, index in zip(tables, profile, strict=True):
++        if route in {"C1", "ALL"}:
++            total += model.score("C1", table.q1_states[index]) - model.score("C1", table.q1_states[0])
++        if route in {"C2", "ALL"}:
++            total += model.score("C2", table.q2_states[index]) - model.score("C2", table.q2_states[0])
++    if route in {"C3", "ALL"}:
++        total += model.interaction(contexts[profile]) - model.interaction(contexts[tuple(0 for _ in tables)])
++    return total
++
++
++def run_fixture_gate(batches: Mapping[str, object], output: Path, seed: int) -> dict[str, object]:
++    specification = json.loads(FIXTURE.read_text(encoding="ascii"))
++    if set(specification) != {
++        "schema", "training_epochs", "pool_rng_seed", "candidate_count",
++        "required_pairs", "fixture_outcomes", "witness_rule",
++    } or specification["schema"] != "mcrl-v025-stagec-arm-difference-fixture-v1":
++        raise StageCContractError("checked-in arm-difference fixture schema drifted")
++    trainer = V1LineageOrchestrator(
++        learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++        c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++    )
++    gate_epochs = int(specification["training_epochs"])
++    if gate_epochs != CHECKPOINT_EVERY_SOURCE_EPOCHS:
++        raise StageCContractError("fixture checkpoint boundary drifted")
++    trainer.train(gate_epochs)
++    checkpoint = output / "fixture-checkpoint" / f"learner-{seed}-epoch-{gate_epochs:06d}.json"
++    checkpoint_digest = trainer.write_checkpoint(checkpoint)
++    restored = V1LineageOrchestrator(
++        learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++        c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++    )
++    restored.load_checkpoint(checkpoint)
++    trainer.bind_checkpoint_identity()
++    results = []
++    for pair in specification["required_pairs"]:
++        if not isinstance(pair, list) or len(pair) != 3 or pair[0] != "FULL":
++            raise StageCContractError("fixture pair inventory drifted")
++        full, comparator, route = pair
++        if comparator not in LEARNED_ARMS or route not in (*ROUTES, "ALL"):
++            raise StageCContractError("fixture names an unsupported arm or route")
++        tables, catalogue, contexts = _selection_pool(route, trainer.models[full], specification)
++        deltas = {
++            arm: [_route_delta(trainer.models[arm], route, tables, contexts, profile)
++                  for profile in catalogue[1:]]
++            for arm in (full, comparator)
++        }
++        witness = max(
++            range(len(deltas[full])),
++            key=lambda offset: abs(deltas[full][offset] - deltas[comparator][offset]),
++        )
++        action_index = witness + 1
++        difference = deltas[full][witness] - deltas[comparator][witness]
++        if difference == 0.0:
++            raise StageCContractError(f"arm-difference fixture found identical numeric scores for {full}/{comparator}")
++        shared_catalogue_term = -0.5 * (deltas[full][witness] + deltas[comparator][witness])
++        def identity(action: PhysicalAction):
++            return None if action.is_null else (int(action.norad_id), int(action.beam_chain_id))
++        base_assignment = canonical_assignment({table.user_id: identity(table.actions[0]) for table in tables})
++        candidate_assignment = canonical_assignment({
++            table.user_id: identity(table.actions[action_index]) for table in tables
++        })
++        selected = {}
++        adjusted_scores = {}
++        for arm in (full, comparator):
++            adjusted = deltas[arm][witness] + shared_catalogue_term
++            adjusted_scores[arm] = adjusted
++            base_row = ScoredConfiguration(base_assignment, 0.0)
++            candidate_row = ScoredConfiguration(candidate_assignment, adjusted)
++            chosen, _accepted = first_improvement(
++                base_row,
++                lambda current, base=base_row, candidate=candidate_row: (candidate,) if current == base else (),
++            )
++            selected[arm] = (0,) if chosen.assignment == base_assignment else (action_index,)
++        outcome = specification["fixture_outcomes"]
++        pooled = {
++            arm: (float(outcome["base_bits"]) + float(outcome["bits_per_action_index"]) * profile[0])
++            / (float(outcome["base_joules"]) + float(outcome["joules_per_action_index"]) * profile[0])
++            for arm, profile in selected.items()
++        }
++        passed = selected[full] != selected[comparator] and pooled[full] != pooled[comparator]
++        results.append({
++            "pair": f"{full}-vs-{comparator}", "route_pool": route,
++            "selected_action_index": {arm: profile[0] for arm, profile in selected.items()},
++            "raw_model_score_delta": {arm: deltas[arm][witness] for arm in (full, comparator)},
++            "shared_arm_independent_catalogue_term": shared_catalogue_term,
++            "adjusted_selection_score": adjusted_scores,
++            "selection_path": "mcrl.stagec_v025.c3_panel.first_improvement",
++            "pooled_fixture_ee_bits_per_j": pooled, "selection_different": selected[full] != selected[comparator],
++            "pooled_ee_different": pooled[full] != pooled[comparator], "verdict": "PASS" if passed else "FAIL",
++        })
++    verdict = "PASS" if all(row["verdict"] == "PASS" for row in results) else "FAIL"
++    receipt = {
++        "schema": specification["schema"], "fixture_path": str(FIXTURE),
++        "fixture_sha256": _sha256(FIXTURE), "training_epochs": gate_epochs,
++        "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_digest,
++        "sealed_loader_readback": "PASS", "pairs": results, "verdict": verdict,
++        "not_ee_evidence": True,
++    }
++    if verdict != "PASS":
++        raise StageCContractError(f"arm-difference fixture gate FAIL: {results}")
++    return receipt
++
++
++def _step_decay_rate(start_rate: float, update: int) -> float:
++    if update <= STEP_DECAY_BOUNDARIES[0]:
++        return start_rate
++    if update <= STEP_DECAY_BOUNDARIES[1]:
++        return start_rate * STEP_DECAY_FACTOR
++    return start_rate * STEP_DECAY_FACTOR * STEP_DECAY_FACTOR
++
++
++def _set_learning_rate(trainer: V1LineageOrchestrator, learning_rate: float) -> None:
++    for model in trainer.models.values():
++        model.q1.learning_rate = learning_rate
++        model.q2.learning_rate = learning_rate
++        model.psi.network.learning_rate = learning_rate
++
++
++def train_requested(
++    batches: Mapping[str, object], output: Path, seeds: Sequence[int], epochs: int, cadence: int,
++    step_decay_start_rate: float | None,
++):
++    checkpoint_records = []
++    seed_timings = []
++    for seed in seeds:
++        trainer = V1LineageOrchestrator(
++            learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++            c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++        )
++        started = time.perf_counter()
++        applied_learning_rate = None
++        for _ in range(epochs):
++            if step_decay_start_rate is not None:
++                applied_learning_rate = _step_decay_rate(
++                    step_decay_start_rate, trainer.completed_source_epochs + 1
++                )
++                _set_learning_rate(trainer, applied_learning_rate)
++            trainer.train_epoch()
++            if trainer.completed_source_epochs % cadence == 0:
++                path = output / "checkpoints" / f"learner-{seed}-epoch-{trainer.completed_source_epochs:06d}.json"
++                digest = trainer.write_checkpoint(path)
++                restored = V1LineageOrchestrator(
++                    learner_seed=seed, q1_batch=batches["pairs"]["C1"], q2_batch=batches["pairs"]["C2"],
++                    c3_batch=batches["c3"], neutral_sources=default_synthetic_neutral_sources(),
++                )
++                restored.load_checkpoint(path)
++                checkpoint_records.append({
++                    "seed": seed, "completed_source_epochs": trainer.completed_source_epochs,
++                    "path": str(path), "sha256": digest, "sealed_loader_readback": "PASS",
++                    "applied_learning_rate": applied_learning_rate,
++                })
++                print(json.dumps({
++                    "event": "training-progress", "seed": seed,
++                    "completed_source_epochs": trainer.completed_source_epochs,
++                    "requested_epochs": epochs, "applied_learning_rate": applied_learning_rate,
++                    "peak_rss_bytes": _peak_rss_bytes(),
++                }, sort_keys=True), flush=True)
++        elapsed = time.perf_counter() - started
++        seed_timings.append({
++            "seed": seed, "seconds": elapsed,
++            "seconds_per_epoch_per_arm": elapsed / epochs / len(LEARNED_ARMS),
++        })
++    total = math.fsum(row["seconds"] for row in seed_timings)
++    return {
++        "seed_timings": seed_timings, "training_seconds": total,
++        "seconds_per_epoch_per_arm": total / len(seeds) / epochs / len(LEARNED_ARMS),
++        "checkpoints": checkpoint_records,
++        "checkpoint_note": (
++            "No requested-run checkpoint is expected before epoch 100."
++            if epochs < cadence else "Every reached cadence boundary was written and read by the sealed loader."
++        ),
++    }
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--corpus", required=True, help="view corpus root, or literal synthetic-fixture for smoke only")
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--epochs", type=int, required=True)
++    parser.add_argument("--checkpoint-cadence", type=int, default=CHECKPOINT_EVERY_SOURCE_EPOCHS)
++    parser.add_argument(
++        "--step-decay-start-rate", type=float, default=None,
++        help="optional step-decay start rate; multiply by 0.1 after updates 2000 and 3000",
++    )
++    parser.add_argument(
++        "--seeds", type=int, required=True,
++        help="number of V025_LEARNER/seed/{1..N} domains; v1.1 requires 16",
++    )
++    return parser
++
++
++def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++    if args.epochs <= 0 or args.epochs > V2_EPOCH_BUDGET:
++        parser.error(f"--epochs must be in 1..{V2_EPOCH_BUDGET}")
++    if args.checkpoint_cadence != CHECKPOINT_EVERY_SOURCE_EPOCHS:
++        parser.error(
++            f"--checkpoint-cadence must be {CHECKPOINT_EVERY_SOURCE_EPOCHS}; "
++            "the sealed loader rejects every other cursor"
++        )
++    if args.seeds <= 0:
++        parser.error("--seeds must be positive")
++    if args.step_decay_start_rate is not None and (
++        not math.isfinite(args.step_decay_start_rate) or args.step_decay_start_rate <= 0.0
++    ):
++        parser.error("--step-decay-start-rate must be finite and positive")
++    return args
++
++
++def run(args: argparse.Namespace) -> dict[str, object]:
++    output = args.output.resolve()
++    output.mkdir(parents=True, exist_ok=False)
++    if args.epochs > LEGACY_EPOCH_BUDGET:
++        stagec_learner.LEGACY_EPOCH_BUDGET = V2_EPOCH_BUDGET
++    if args.seeds != AMENDED_SEED_COUNT:
++        print(
++            f"LOUD SEED COUNT NOTICE: requested {args.seeds}; sealed amendment v1.1 requires 16 for a real run",
++            file=sys.stderr, flush=True,
++        )
++    seeds = tuple(seed_from_domain(f"V025_LEARNER/seed/{index}") for index in range(1, args.seeds + 1))
++    if args.corpus == "synthetic-fixture":
++        batches, corpus, feature = build_synthetic_corpus(output)
++        fixture_batches = batches
++        fixture_corpus = corpus
++    else:
++        batches, corpus, feature = load_corpus(Path(args.corpus).resolve())
++        fixture_batches, fixture_corpus, _fixture_feature = build_synthetic_corpus(
++            output, directory_name="arm-difference-fixture-input"
++        )
++    gate = run_fixture_gate(fixture_batches, output, seeds[0])
++    gate["training_corpus"] = fixture_corpus
++    receipt = {
++        "schema": "mcrl-v025-stagec-training-launch-receipt-v1",
++        "runner": str(Path(__file__).resolve()), "runner_sha256": _sha256(Path(__file__)),
++        "corpus": corpus, "feature_schema": feature,
++        "arm_inventory": list(LEARNED_ARMS), "source_map": {arm: dict(SOURCE_MAP[arm]) for arm in LEARNED_ARMS},
++        "epochs": args.epochs, "checkpoint_cadence": args.checkpoint_cadence,
++        "seed_flag_count": args.seeds, "seed_count_actually_used": len(seeds), "seed_list": list(seeds),
++        "seed_domains": [f"V025_LEARNER/seed/{index}" for index in range(1, args.seeds + 1)],
++        "amendment_v1_1_seed_count": AMENDED_SEED_COUNT,
++        "seed_count_conforms_to_amendment_v1_1": args.seeds == AMENDED_SEED_COUNT,
++        "head_literals": dict(LEGACY_TRAINER_LITERALS),
++        "head_literals_sha256": LEGACY_TRAINER_LITERALS_SHA256,
++        "training_schedule": (
++            {"kind": "constant", "route_rates": {
++                route: LEGACY_TRAINER_LITERALS[route]["learning_rate"] for route in ROUTES
++            }}
++            if args.step_decay_start_rate is None else
++            {"kind": "step_decay", "start_rate": args.step_decay_start_rate,
++             "factor": STEP_DECAY_FACTOR, "after_updates": list(STEP_DECAY_BOUNDARIES)}
++        ),
++        "sealed_loader_accepted_bounds": {
++            "completed_source_epochs": {"minimum": 1, "maximum": V2_EPOCH_BUDGET},
++            "completed_epoch_multiple": CHECKPOINT_EVERY_SOURCE_EPOCHS,
++            "arm_inventory": list(LEARNED_ARMS),
++            "verified_source_lines": {
++                "arm_inventory": "src/mcrl/stagec_v025/learner.py:1169-1171",
++                "epoch_bounds_and_multiple": "src/mcrl/stagec_v025/learner.py:1182-1189",
++            },
++        },
++        "resource_limits": {
++            "max_python_processes": MAX_PYTHON_PROCESSES,
++            "python_processes_used": RUNNER_PYTHON_PROCESSES,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": {name: os.environ[name] for name in THREAD_VARIABLES},
++            "per_process_address_space_hard_cap_bytes": MAX_RSS_BYTES,
++            "required_peak_rss_below_bytes": MAX_RSS_BYTES,
++        },
++        "fixture_gate": gate,
++        "no_physics_generation": True,
++        "loss_values_are_not_ee_evidence": True,
++        "launch_receipt_sha256": None,
++    }
++    receipt["launch_receipt_sha256"] = canonical_sha256({**receipt, "launch_receipt_sha256": None})
++    _write_json(output / "launch-receipt.json", receipt)
++    training = train_requested(
++        batches, output, seeds, args.epochs, args.checkpoint_cadence,
++        args.step_decay_start_rate,
++    )
++    result = {
++        "schema": "mcrl-v025-stagec-training-result-v1",
++        "launch_receipt_sha256": receipt["launch_receipt_sha256"],
++        "fixture_gate_verdict": gate["verdict"], **training,
++        "peak_rss_bytes": _peak_rss_bytes(), "production_training_run": args.corpus != "synthetic-fixture",
++        "synthetic_smoke_not_evidence": args.corpus == "synthetic-fixture",
++        "no_ee_claim": True,
++    }
++    if result["peak_rss_bytes"] >= MAX_RSS_BYTES:
++        raise MemoryError(f"peak RSS exceeded limit: {result['peak_rss_bytes']}")
++    _write_json(output / "training-result.json", result)
++    return result
++
++
++def main(argv: Sequence[str] | None = None) -> int:
++    try:
++        _enforce_resources()
++        args = parse_args(argv)
++        result = run(args)
++        print(json.dumps({
++            "event": "training-complete", "fixture_gate": result["fixture_gate_verdict"],
++            "seconds_per_epoch_per_arm": result["seconds_per_epoch_per_arm"],
++            "checkpoints": len(result["checkpoints"]),
++        }, sort_keys=True), flush=True)
++        return 0
++    finally:
++        print(f"PEAK_RSS_BYTES={_peak_rss_bytes()}", flush=True)
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tests/fixtures/stagec-training-arm-difference-v1.json b/tests/fixtures/stagec-training-arm-difference-v1.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..d77287b37d2bb76d7d59d4ea680faba4ee6868fa
+--- /dev/null
++++ b/tests/fixtures/stagec-training-arm-difference-v1.json
+@@ -0,0 +1,35 @@
++{
++  "candidate_count": 256,
++  "fixture_outcomes": {
++    "base_bits": 1000.0,
++    "base_joules": 10.0,
++    "bits_per_action_index": 7.0,
++    "joules_per_action_index": 0.003
++  },
++  "pool_rng_seed": 20260910,
++  "required_pairs": [
++    [
++      "FULL",
++      "DROP_C1",
++      "C1"
++    ],
++    [
++      "FULL",
++      "DROP_C2",
++      "C2"
++    ],
++    [
++      "FULL",
++      "DROP_C3",
++      "C3"
++    ],
++    [
++      "FULL",
++      "ALL_NEUTRAL_CONTROL",
++      "ALL"
++    ]
++  ],
++  "schema": "mcrl-v025-stagec-arm-difference-fixture-v1",
++  "training_epochs": 100,
++  "witness_rule": "largest-raw-model-difference-plus-arm-independent-negative-midpoint-catalogue-term"
++}
+
