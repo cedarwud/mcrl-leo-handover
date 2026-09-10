@@ -10706,3 +10706,4218 @@ index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e1855
 +rank-correlation, and argmax-disagreement measurements, without changing the
 +pilot runner bytes or any sealed input.
 
+exec
+/bin/bash -lc "df -h /home/sat/mcrl-v025-datepool-ws /tmp; du -sh /home/sat/mcrl-v025-c1c2suff-ws/artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM; find /home/sat/mcrl-v025-c1c2suff-ws/artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM/rows -type f -name '*source*' -printf '%s\\n' | awk '{s+="'$1;n++} END{print n,s,s/1024/1024}'"'" in /home/sat/mcrl-v025-datepool-ws
+ succeeded in 0ms:
+Filesystem                         Size  Used Avail Use% Mounted on
+/dev/mapper/ubuntu--vg-ubuntu--lv  3.6T  1.7T  1.8T  49% /home/sat/mcrl-v025-datepool-ws
+tmpfs                               46G   29G   18G  62% /tmp
+1.1G	/home/sat/mcrl-v025-c1c2suff-ws/artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM
+360 539859770 514.85
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7adb802f46eeb7ca5f7cc25802b8671d4a0a1fa
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,287 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS}
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+codex
+I caught a process-accounting issue before generation: the first calibration used four worker interpreters plus a Python coordinator, which exceeds the literal four-Python-process cap even though only four were doing physics. I’m invalidating that rate and rerunning compliantly with the coordinator itself doing one anchor alongside three child workers—four Python processes total. The Part 2 launch will use the same accounting discipline.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-datepool-ws/.scratch/exact-source-build/calibrate.py
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+exec
+/bin/bash -lc 'env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 BLIS_NUM_THREADS=1 PYTHONPATH=/home/sat/mcrl-v025-c1c2suff-ws/src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/exact-source-build/calibrate.py' in /home/sat/mcrl-v025-datepool-ws
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+codex
+The compliant rerun is in progress: one anchor in the coordinator and three in child processes, exactly four Python interpreters total. The earlier JSON will be replaced, so only the compliant measurement will feed the manifest and report.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+codex
+The coordinator’s anchor includes the coalition and warm-repeat probes before it collects child results, so stdout is intentionally quiet at this stage. The subprocesses are not writing the final calibration JSON independently.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+codex
+The coalition probe remains the long pole, as expected. No worker has failed, and the runner remains read-only; the process-count correction does not alter any physics or source settings.
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
+ succeeded in 306527ms:
+{"completed_anchor": [0, 0, 0], "measurements": [{"path": "primitive", "coalition": false, "wall_s": 1.12, "physics": 48}, {"path": "exact", "coalition": false, "wall_s": 84.597, "physics": 3576}, {"path": "primitive", "coalition": true, "wall_s": 5.315, "physics": 938}, {"path": "exact", "coalition": true, "wall_s": 84.596, "physics": 4580}, {"path": "exact", "coalition": false, "wall_s": 73.401, "physics": 3576}]}
+{"completed_anchor": [0, 0, 1], "measurements": [{"path": "primitive", "coalition": false, "wall_s": 1.109, "physics": 48}, {"path": "exact", "coalition": false, "wall_s": 109.269, "physics": 3576}]}
+{"completed_anchor": [0, 0, 2], "measurements": [{"path": "primitive", "coalition": false, "wall_s": 1.051, "physics": 48}, {"path": "exact", "coalition": false, "wall_s": 93.552, "physics": 3492}]}
+{"completed_anchor": [1, 0, 0], "measurements": [{"path": "primitive", "coalition": false, "wall_s": 1.257, "physics": 48}, {"path": "exact", "coalition": false, "wall_s": 106.384, "physics": 3556}]}
+{"PART_1_RESULT": {"anchors": 4, "configuration": {"fresh_evaluators": true, "full_legal_actions": false, "include_coalition": false, "one_carrier_per_anchor": true, "selection_and_forecast_boundaries": [0], "tape_build_excluded": true}, "exact_mean_s_per_anchor": 98.45064761899994, "primitive_mean_s_per_anchor": 1.1343828347453382, "projected_180_anchors_4_processes_s": 4430.279142854997, "projected_90_anchors_4_processes_s": 2215.1395714274986, "ratio_exact_over_primitive": 86.78785027728446}}
+/home/sat/mcrl-v025-datepool-ws/.scratch/exact-source-build/calibration-results.json
+
+diff --git a/.scratch/exact-source-build/calibrate.py b/.scratch/exact-source-build/calibrate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..04365ae5e2176444b8a26998b674e7a04b5380e9
+--- /dev/null
++++ b/.scratch/exact-source-build/calibrate.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Reconcile exact versus primitive source-row build timings.
++
++DIAGNOSTIC_NOT_CLAIM.  The pilot fallback is changed only on the imported
++module object.  No source or sealed artefact is written.
++"""
++
++from __future__ import annotations
++
++import concurrent.futures
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import statistics
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-datepool-ws")
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
++RUNNER = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
++CALIBRATION = (
++    SOURCE_ROOT
++    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
++    / "PILOT_NOT_CLAIM-calibration.json"
++)
++OUT = WORKSPACE / ".scratch/exact-source-build/calibration-results.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS",
++    "OPENBLAS_NUM_THREADS",
++    "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS",
++    "VECLIB_MAXIMUM_THREADS",
++    "BLIS_NUM_THREADS",
++)
++ANCHORS = (
++    (0, 0, 0),
++    (0, 0, 1),
++    (0, 0, 2),
++    (1, 0, 0),
++)
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"BLAS thread pins are not all one: {bad}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("process niceness is below 15")
++
++
++def load_pilot():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    name = f"exact_source_calibration_pilot_{os.getpid()}"
++    spec = importlib.util.spec_from_file_location(name, RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load pilot runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_calibration(pilot):
++    payload = json.loads(CALIBRATION.read_text())
++
++    def fraction(name: str) -> Fraction:
++        numerator, denominator = payload[name]
++        return Fraction(numerator, denominator)
++
++    return pilot.PilotCalibration(
++        eta_ref=fraction("eta_ref"),
++        lambda_bits_per_j=fraction("lambda_bits_per_j"),
++        kappa_bits_per_user_step=fraction("kappa_bits_per_user_step"),
++        bits_ref=fraction("bits_ref"),
++        joules_ref=fraction("joules_ref"),
++        users=int(payload["users"]),
++    )
++
++
++def timed_build(pilot, *, tape, setting, run_setting, calibration, step, carrier,
++                anchor_index, path: str, include_coalition: bool) -> dict[str, object]:
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("fallback source value was not true before timing")
++    if path == "exact":
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = False
++        builder = pilot._build_anchor_rows
++    elif path == "primitive":
++        builder = pilot._build_anchor_rows
++    else:
++        raise ValueError(path)
++    started = time.perf_counter()
++    try:
++        built = builder(
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step_index=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            include_coalition=include_coalition,
++            full_legal_actions=False,
++        )
++    finally:
++        pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK = True
++    wall = time.perf_counter() - started
++    return {
++        "path": path,
++        "include_coalition": include_coalition,
++        "wall_s": wall,
++        "source_rows": len(built["rows"]),
++        "coalition_rows": int(built["coalition_row"] is not None),
++        "physics_boundary_evaluations": int(built["physics_calls"]),
++        "current_physical_evaluations": int(built["current_evaluator"].physical_evaluations),
++        "catalogue_count": int(built["catalogue_count"]),
++    }
++
++
++def worker(specification: tuple[int, int, int]) -> dict[str, object]:
++    assert_runtime()
++    runner_before = sha256(RUNNER)
++    pilot = load_pilot()
++    if pilot.PILOT_PRIMITIVE_SOURCE_FALLBACK is not True:
++        raise AssertionError("sealed fallback source value is not true")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    world_index, step, carrier_index = specification
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[world_index],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=4,
++        start_time_s=0.0,
++    )
++    tape_wall = time.perf_counter() - tape_started
++    setting = pilot.ENGINE._setting("a-r0")
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    calibration = load_calibration(pilot)
++    carrier = pilot.ENGINE.REFERENCE_CARRIERS[carrier_index]
++    anchor_index = step * len(pilot.ENGINE.REFERENCE_CARRIERS) + carrier_index
++    measurements = []
++    for path in ("primitive", "exact"):
++        row = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path=path,
++            include_coalition=False,
++        )
++        row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++        measurements.append(row)
++    if specification == ANCHORS[0]:
++        for path in ("primitive", "exact"):
++            row = timed_build(
++                pilot,
++                tape=tape,
++                setting=setting,
++                run_setting=run_setting,
++                calibration=calibration,
++                step=step,
++                carrier=carrier,
++                anchor_index=anchor_index,
++                path=path,
++                include_coalition=True,
++            )
++            row["cache_condition"] = "fresh-evaluators; warm-import-and-tape"
++            measurements.append(row)
++        repeat = timed_build(
++            pilot,
++            tape=tape,
++            setting=setting,
++            run_setting=run_setting,
++            calibration=calibration,
++            step=step,
++            carrier=carrier,
++            anchor_index=anchor_index,
++            path="exact",
++            include_coalition=False,
++        )
++        repeat["cache_condition"] = "repeat-exact; warm-import-tape-and-OS"
++        measurements.append(repeat)
++    runner_after = sha256(RUNNER)
++    if runner_after != runner_before:
++        raise AssertionError("pilot runner bytes changed")
++    return {
++        "world_index": world_index,
++        "world": tape.domain,
++        "step": step,
++        "carrier_index": carrier_index,
++        "carrier": carrier,
++        "anchor_index_within_world": anchor_index,
++        "tape_steps": len(tape.steps),
++        "tape_build_wall_s_excluded": tape_wall,
++        "selection_boundary_indices": list(pilot.ENGINE.SELECTION_BOUNDARY_INDICES),
++        "runner_sha256_before": runner_before,
++        "runner_sha256_after": runner_after,
++        "measurements": measurements,
++    }
++
++
++def main() -> int:
++    assert_runtime()
++    started = time.perf_counter()
++    rows = []
++    # The coordinator is itself a Python process.  It computes one anchor while
++    # three children compute the others, keeping the literal process total at 4.
++    with concurrent.futures.ProcessPoolExecutor(max_workers=3) as executor:
++        futures = {executor.submit(worker, item): item for item in ANCHORS[1:]}
++        own = worker(ANCHORS[0])
++        rows.append(own)
++        short = [
++            {
++                "path": value["path"],
++                "coalition": value["include_coalition"],
++                "wall_s": round(float(value["wall_s"]), 3),
++                "physics": value["physics_boundary_evaluations"],
++            }
++            for value in own["measurements"]
++        ]
++        print(json.dumps({"completed_anchor": ANCHORS[0], "measurements": short}), flush=True)
++        for future in concurrent.futures.as_completed(futures):
++            item = futures[future]
++            row = future.result()
++            rows.append(row)
++            short = [
++                {
++                    "path": value["path"],
++                    "coalition": value["include_coalition"],
++                    "wall_s": round(float(value["wall_s"]), 3),
++                    "physics": value["physics_boundary_evaluations"],
++                }
++                for value in row["measurements"]
++            ]
++            print(json.dumps({"completed_anchor": item, "measurements": short}), flush=True)
++    rows.sort(key=lambda row: (row["world_index"], row["step"], row["carrier_index"]))
++    baseline = [
++        value
++        for row in rows
++        for value in row["measurements"]
++        if not value["include_coalition"]
++        and value["cache_condition"] == "fresh-evaluators; warm-import-and-tape"
++    ]
++    exact = [row for row in baseline if row["path"] == "exact"]
++    primitive = [row for row in baseline if row["path"] == "primitive"]
++    exact_mean = statistics.fmean(float(row["wall_s"]) for row in exact)
++    primitive_mean = statistics.fmean(float(row["wall_s"]) for row in primitive)
++    payload = {
++        "schema": "v025-exact-source-calibration-v1",
++        "label": "DIAGNOSTIC_NOT_CLAIM",
++        "interpreter": sys.executable,
++        "max_processes": 4,
++        "nice": os.getpriority(os.PRIO_PROCESS, 0),
++        "blas_threads": {name: os.environ[name] for name in THREAD_VARS},
++        "anchor_specifications": [list(row) for row in ANCHORS],
++        "results": rows,
++        "reconciled": {
++            "configuration": {
++                "include_coalition": False,
++                "full_legal_actions": False,
++                "one_carrier_per_anchor": True,
++                "selection_and_forecast_boundaries": [0],
++                "tape_build_excluded": True,
++                "fresh_evaluators": True,
++            },
++            "anchors": len(exact),
++            "exact_mean_s_per_anchor": exact_mean,
++            "primitive_mean_s_per_anchor": primitive_mean,
++            "ratio_exact_over_primitive": exact_mean / primitive_mean,
++            "projected_90_anchors_4_processes_s": exact_mean * 90 / 4,
++            "projected_180_anchors_4_processes_s": exact_mean * 180 / 4,
++        },
++        "wall_s": time.perf_counter() - started,
++    }
++    OUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUT.with_suffix(".json.tmp")
++    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n")
++    temporary.replace(OUT)
++    print(json.dumps({"PART_1_RESULT": payload["reconciled"]}, sort_keys=True), flush=True)
++    print(OUT, flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/exact-source-build/spec.md b/.scratch/exact-source-build/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a23ee9161b84476122debf71d9e185563ad3847
+--- /dev/null
++++ b/.scratch/exact-source-build/spec.md
+@@ -0,0 +1,9 @@
++# Exact source build completion criterion
++
++The task is complete when a four-anchor, both-path calibration reconciles the
++published timing discrepancy; the Part 1 reconciliation is printed before any
++generation begins; and the new exact-path artefact contains a clean prefix of
++the predeclared 180-anchor order, per-anchor checkpoints, an independently
++verified manifest, and the required C1 gauge, decomposition, correlation,
++rank-correlation, and argmax-disagreement measurements, without changing the
++pilot runner bytes or any sealed input.
+
