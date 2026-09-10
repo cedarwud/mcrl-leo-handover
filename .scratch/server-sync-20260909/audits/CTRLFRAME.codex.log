@@ -1,0 +1,2263 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-witness-ws
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: ultra
+reasoning summaries: none
+session id: 01a0896c-e53e-7751-99f3-66826a935a24
+--------
+user
+You are reviewing the design of a measurement **while it runs**, so that a wrong framing is caught before its result is acted on. Workspace: the current directory, `/home/sat/mcrl-v025-witness-ws`. Read-only elsewhere. Never modify anything sealed.
+
+`DIAGNOSTIC_NOT_CLAIM`. Design review. **At most 2 concurrent processes** if you run anything.
+
+# What is being measured, and why
+
+The project's efficiency objective is pooled bits over pooled joules. The power amplifier is about **94.8 %** of consumed power and its draw is set by the **power and mode control law**. Today's measurements found the association layer's total room to be about **one per cent** above a certified local optimum, while repairing **one defect** in the control law moved pooled efficiency by about **+53 %**.
+
+A job now running measures the control law's own room: **hold the user assignment fixed at what the pipeline commits, and choose per-beam power and mode to maximise pooled efficiency** subject to the unchanged cap, service guard and rate target, with interference coupling honoured. Its prompt is `/home/sat/mcrl-v023-codex-audits/parallel-20260909/codex-controlceiling.md`; read it.
+
+The project's owner has said plainly that a one per cent improvement is not a meaningful result, so this measurement is about to inform a possible change of research direction — pointing three learned components at power and mode decisions rather than at association decisions.
+
+# What I want from you
+
+**Is this measurement well posed, and will its answer mean what the project will take it to mean?**
+
+1. **Is "hold the assignment fixed, optimise power and mode" the right isolation?** The two layers interact: a better power policy may make a different assignment optimal, so the sum of the two separately measured ceilings may not be the joint ceiling. Does that make the decomposition misleading, and if so how should it be stated?
+2. **Is the objective well posed at fixed assignment?** Pooled efficiency is a ratio of sums. Maximising it over per-beam powers with an unchanged rate target and service guard — is that a well-defined problem here, is it convex or otherwise tractable, and what pathologies should the runner expect? In particular, can it be improved by *serving fewer users*, and does the guard actually prevent that?
+3. **What would make the answer misleading?** Consider at least: a large gap that exists only because the optimiser exploits information no deployable policy could have; a gap concentrated entirely in the anchors where the cap binds; and a gap that vanishes once the same fading realisation is applied to both policies.
+4. **If the gap is large, does it follow that learned components should be pointed at the control law?** State what else would have to be true. In particular, whether the improved settings need joint cross-beam information — because if a better *local* rule suffices, the finding is a control-law redesign and not a case for learning at all.
+5. **Anything else.** Especially anything that would let this measurement produce an encouraging number that does not survive contact with deployment.
+
+# Output
+
+Write `CONTROL-CEILING-FRAMING-2026-09-10.md` and print it in full. **Lead with one line: whether the measurement is well posed, and if not, the single change that would fix it.** Be blunt; the project has spent a day discovering that four of its comparisons were mispaired, misimplemented or measured against the wrong reference.
+codex
+I’ll read the runner’s prompt and the local evidence, then write a framing review that separates conditional headroom from deployable gain. I’ll keep the review read-only except for the requested report and use no more than two concurrent processes.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '*CONTROL*' -g '*control*' -g '*guard*' -g '*ceiling*' -g '*README*' -g '*2026-09-10*' -g '*20260910*' -g '*domain*' -g '*audit*' ." in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-witness-ws
+./astra-adjudication-audit-bundle.zip
+./LADDER-INDEPENDENT-2026-09-10.md
+./README.md
+./scripts/README.md
+./scripts/ceiling_and_segments.py
+./analysis/mechanism2_guarded_stdout.json
+./analysis/mechanism2_guarded.json
+./analysis/mechanism2_guarded.py
+./archive/multi-catfish-pre-v03-2026-08-31/docs/CONTROLLER-CRITERION-CATFISH-GO-NOGO-2026-08-23.md
+./src/mcrl/runtime/ee_axis_v05_c2_controlled_tape.py
+./archive/multi-catfish-pre-v03-2026-08-31/docs/CONTROLLER-PROMPT-H-AND-PREREG-2026-08-22.md
+./src/mcrl/physics_v025/parity/README.md
+./artifacts/fable-51-c2-cleanroom-20260902-r1/audit/c1c3-health-audit.md
+./artifacts/fable-51-c2-cleanroom-20260902-r1/oracle/README.md
+./artifacts/multi-catfish-v06-c2-k1-live-smoke-20260902-r2/README.md
+./artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-DISPOSITION-2026-09-01.md
+./tests/test_w99_ee_axis_v05_c2_controlled_screen.py
+./tests/test_w97_ee_axis_v05_c2_controlled_tape.py
+./tests/test_w100_v05_c2_controlled_support_failure_seal.py
+./docs/MULTI-CATFISH-MCRL-V03-OPUS-MAX-SOURCE-CONTROL-REVIEW-2026-08-31.md
+./docs/CONTROLLER-RULINGS-W26-2026-08-23.md
+./docs/CONTROLLER-RULINGS-H-AND-PREREG-2026-08-22.md
+./docs/CONTROLLER-RULINGS-W23-2026-08-23.md
+./docs/CONTROLLER-RULINGS-W19-2026-08-23.md
+./docs/CONTROLLER-BRIEF-W18-2026-08-22.md
+./docs/CONTROLLER-QUESTIONS-2026-08-22.md
+./docs/CONTROLLER-RULINGS-W28-2026-08-23.md
+./docs/CONTROLLER-RULINGS-W17-2026-08-22.md
+./docs/CONTROLLER-RULINGS-W25-2026-08-23.md
+./docs/CONTROLLER-RULINGS-W20-2026-08-23.md
+./docs/CONTROLLER-RULINGS-W21-2026-08-23.md
+./docs/CONTROLLER-FINDINGS-W17-2026-08-22.md
+./docs/CONTROLLER-RULINGS-DT-2026-08-22.md
+./docs/CONTROLLER-SIGNOFF-PREREG-2026-08-23.md
+./docs/CONTROLLER-RULINGS-2026-08-22.md
+./docs/CONTROLLER-RULINGS-B4-2026-08-23.md
+./docs/CONTROLLER-RULINGS-GPT-CLOSURE-2026-08-24.md
+./docs/CONTROLLER-RULINGS-W22-2026-08-23.md
+./docs/CONTROLLER-RULINGS-W24-2026-08-23.md
+./docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-EXPANSION-PREREG-2026-09-01.md
+./tests/test_w33_r7_500_control_plane.py
+./docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-DISPOSITION-2026-09-01.md
+./tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py
+./docs/CONTROLLER-BRIEF-TRAINING-SERVER-2026-08-23.md
+./tests/test_w99_v05_c2_controlled_source.py
+./docs/CONTROLLER-RULINGS-MODQN-RUNTIME-CORRECTION-2026-08-25.md
+./docs/CONTROLLER-RULINGS-W27-2026-08-23.md
+./docs/CONTROLLER-BRIEF-BEFORE-FREEZE-2026-08-23.md
+./artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-OPUS-MAX-SOURCE-CONTROL-REVIEW-2026-08-31.md
+./artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/c2-v03-resume-merged-history-v5-provenance-u10-2ep-20260829/c2-option-chronology-audits.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/c2-v03-resume-merged-history-u10-2ep-20260829/c2-option-chronology-audits.json
+./artifacts/multi-catfish-v018-web-agent-package-20260904-r1/source-map/README.md
+./artifacts/multi-catfish-v03-web-agent-package-20260831-r2/evidence/c1/README.md
+./artifacts/multi-catfish-v018-web-agent-package-20260904-r1/evidence/README.md
+./artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+./artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+./artifacts/multi-catfish-v016-c3-origin-gate-20260903-r1/server-run-r1/controller.complete
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-figure-drafts/2026-08-27/README.md
+./artifacts/multi-catfish-v016-c3-origin-gate-20260903-r1/server-run-r1/source-panel/controller.complete
+./artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_v05_c2_controlled_tape.py
+./artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/server-run-r3/controller.complete
+./artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/scripts/README.md
+./artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/scripts/ceiling_and_segments.py
+./artifacts/multi-catfish-v015-c3-reference-gate-20260903-r1/server-run-r3/source-panel/controller.complete
+./artifacts/multi-catfish-v018-relational-zr-20260904-r2/server-run-r2/analytic-panel-r2/controller.complete
+./artifacts/multi-catfish-v03-web-agent-package-20260831/docs/MULTI-CATFISH-MCRL-V03-OPUS-MAX-SOURCE-CONTROL-REVIEW-2026-08-31.md
+./artifacts/multi-catfish-v014-learnability-20260903-r1/server-run/source-panel/controller.complete
+./artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+./artifacts/multi-catfish-v03-web-agent-package-20260831/evidence/c1/README.md
+./artifacts/multi-catfish-v019-relational-q3-learner-20260904-r1/server-run/learner-gate-v019.controller.log
+./artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-DISPOSITION-2026-09-01.md
+./artifacts/multi-catfish-v06-c2-k1-live-smoke-20260901-r1/README.md
+./artifacts/multi-catfish-v05-c2-controlled-tape-mechanics-20260901-r4/run_v05_c2_controlled_tape-r4.py
+./artifacts/multi-catfish-v05-c2-controlled-tape-mechanics-20260901-r4/ee_axis_v05_c2_controlled_tape-r4.py
+./artifacts/multi-catfish-v017-c3-softkl-gate-20260903-r1/server-run-r1/controller.complete
+./artifacts/multi-catfish-v019-relational-q3-learner-20260904-r1/server-run/source-panel-v019.controller.log
+./artifacts/multi-catfish-v017-c3-softkl-gate-20260903-r1/server-run-r1/source-panel/controller.complete
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/schedules/c2-2026091002.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/schedules/c2-2026091001.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/schedules/c2-2026091005.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/schedules/c2-2026091006.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/schedules/c2-2026091003.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/schedules/c2-2026091004.json
+./artifacts/multi-catfish-v023-successor-gate-chatgpt-review-20260906-r1/five-arm/FIVE-ARM-EVALUATION-README.md
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/opening-2026091004.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/temporal-2026091006.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/temporal-2026091004.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/temporal-2026091003.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/opening-2026091002.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/temporal-2026091002.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/temporal-2026091001.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/opening-2026091006.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/temporal-2026091005.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/opening-2026091003.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/opening-2026091001.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/opening-2026091005.json
+./artifacts/multi-catfish-c3-astra-pro-review-20260905-r1/evidence/01-fable-c3-source-audit.md
+./artifacts/multi-catfish-v013-zr-c3-fresh-confirmation-20260903-r1/server-run/controller.complete
+./artifacts/smc-er-c1-authority-20260828/c1-posthoc-source-head-gradient-audit-v1.json
+./artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/docs/MULTI-CATFISH-MCRL-V05-C2-CONTROLLED-TAPE-DISPOSITION-2026-09-01.md
+./artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/fable-cleanroom-lane/FABLE-LANE-README.md
+./artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/fable-cleanroom-lane/audit/c1c3-health-audit.md
+./artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/fable-cleanroom-lane/oracle/README.md
+./artifacts/smc-er-c1-authority-20260828/README.md
+./artifacts/multi-catfish-v018-r4-equivalence-20260904-r1/server-run-r2/controller.complete
+
+exec
+/bin/bash -lc 'cat /home/sat/mcrl-v023-codex-audits/parallel-20260909/codex-controlceiling.md' in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+Workspace: the current directory, `/home/sat/mcrl-v025-arch-ws`. Read-only access to sibling `mcrl-v025-*-ws` is fine. Interpreter `/home/sat/mcrl-leo-handover/.venv/bin/python`, `PYTHONPATH=src`, `nice -n 15`. Never modify `/home/sat/mcrl-leo-handover` or its virtual environment.
+
+**Process limit: at most 4 concurrent worker processes.** Shared machine; two jobs today drove it to load 64 and 70 with a gigabyte of memory left.
+
+`DIAGNOSTIC_NOT_CLAIM`. No learner, no training run, no policy run. **No sealed constant, threshold, sign, seed, horizon, price, service guard, acceptance rule or declared control law is changed or replaced.** Any alternative policy is evaluated on a clearly separated copy and labelled as a diagnostic.
+
+# The question, and why it has never been asked
+
+The power amplifier accounts for about **94.8 %** of consumed power, and its draw is set by the **power and mode control law**, not by which user attaches to which beam.
+
+Today the project measured the association layer's entire room: two local optima of the association search differ by about eight per cent, and an exhaustive bounded joint search sits about **one per cent** above the certified fixed point. Separately, repairing **one defect** in the control law moved pooled efficiency from 28.47 to 43.71 Mbit/J — about **+53 %**.
+
+So a single defect in the control law cost more than the whole association layer can win. **Nobody has ever measured how far the control law itself is from the best achievable.** That is this task.
+
+# The measurement
+
+**Hold the assignment fixed. Vary only the power and mode policy.** This is the exact mirror of a companion job now measuring the association ceiling with the control law held fixed.
+
+On at least eight real anchors, under **both** provisioning rules, for the configuration the current pipeline actually commits:
+
+**C1 — the declared law's outcome.** Pooled efficiency, served counts and rate-target attainment as the sealed law produces them. This is the reference.
+
+**C2 — the best achievable power and mode assignment for that same fixed user assignment.** Choose per-beam radiated power and transmission mode to maximise pooled efficiency subject to the unchanged per-beam cap, the unchanged service guard and the unchanged rate target, with the interference coupling honoured exactly. State your method and its optimality status precisely: exhaustive over the discrete mode table with an inner power solve, a bounded search, or a relaxation with a bound. **If you cannot certify optimality, say so and label the result a best-known value rather than a ceiling.**
+
+**C3 — the gap.** How far the declared law sits below the best you found, per anchor and pooled, under both rules.
+
+**C4 — where the gap lives.** Decompose it: is it concentrated in beams where the cap binds, at low occupancy, at high occupancy, at particular elevations or off-axis angles? A gap that is diffuse and a gap that sits in one identifiable regime imply very different remedies.
+
+**C5 — is the better policy implementable?** For the improved settings you find, state what information they require. If they can be computed from the pre-decision state of one beam and its neighbours, the remedy is a better local rule. **If they require joint knowledge across beams, that is precisely where a learned coordinating component would have work to do**, and you should say so with the evidence rather than as an aspiration.
+
+# Rules
+
+- **If the declared law is already close to the best achievable, say so in the first line.** That is the outcome that would close this direction, and it must not be softened. It would mean the efficiency of this system is bounded by its physics rather than by its policies, which is itself a finding.
+- Do not tune the declared law. Evaluate it as it stands and compare.
+- Report both provisioning rules; a gap that exists only under the defective one is not evidence about the corrected system.
+- Every number reproducible from a script left here with exact commands.
+- Say plainly what you did not reach, and never present a non-certified search result as a ceiling.
+
+Write `CONTROL-LAW-CEILING-2026-09-10.md` in the workspace root and print it in full as your final message. Lead with one line: how far the declared control law sits below the best achievable at fixed assignment, under each provisioning rule, and whether that best is certified or merely best-known.
+
+codex
+The prompt already overstates what the measurement could establish: a small gap at fixed assignment would not show that physics bounds the system, and a need for cross-beam information would not by itself justify learning. I’m using the research skill to check the objective, service guard and information assumptions against the implementation.
+exec
+/bin/bash -lc 'for p in /AGENTS.md /home/AGENTS.md /home/sat/AGENTS.md /home/sat/mcrl-v025-witness-ws/AGENTS.md; do if [ -f "$p" ]; then cat "$p"; fi; done
+cat /home/sat/.codex/skills/research/SKILL.md
+rg --files -g '"'AGENTS.md' -g '*2026-09-09*' -g '*2026-09-10*' -g '*ceiling*' -g '*provision*' -g '*fixed*' -g '*pair*' /home/sat/mcrl-v025-arch-ws /home/sat/mcrl-v025-witness-ws/analysis | head -100" in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+---
+name: research
+description: Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. Use when the user wants a topic researched, docs or API facts gathered, or reading legwork delegated to a background agent.
+---
+
+<!-- project-skills-adapter:start -->
+Follow this skill subject to user and higher-priority project instructions.
+Set one checkable completion criterion. Inspect bundled helpers only after an
+execution error.
+
+Without a configured, authorized tracker, use `.scratch/<feature>/spec.md`,
+`.scratch/<feature>/issues/`, or `.scratch/<effort>/map.md` as applicable.
+External messages, installs, commits, pushes, branch changes, destructive
+actions, and out-of-scope writes still require authority.
+
+Read the extended
+[runtime contract](../select-project-skill/references/runtime.md) only for a
+cross-skill transition, implementation/review orchestration, handoff
+consumption, or a host-specific prerequisite. Verify the criterion before
+claiming success; missing requirements are `blocked`, not simulated success.
+
+Only when the request explicitly authorizes a controlled Project Skills
+sampling run, read the [feedback instructions](../select-project-skill/references/feedback.md)
+and record its terminal event. Ordinary work does not record events.
+<!-- project-skills-adapter:end -->
+
+Spin up a **background agent** to do the research, so you keep working while it reads.
+
+Its job:
+
+1. Investigate the question against **primary sources** — official docs, source code, specs, first-party APIs — not a secondary write-up of them. Follow every claim back to the source that owns it.
+2. Write the findings to a single Markdown file, citing each claim's source.
+3. Save it where the repo already keeps such notes; match the existing convention, and if there is none, put it somewhere sensible and say where.
+/home/sat/mcrl-v025-witness-ws/analysis/mechanism1_fixedrf_stdout.json
+/home/sat/mcrl-v025-witness-ws/analysis/mechanism1_fixedrf.json
+/home/sat/mcrl-v025-witness-ws/analysis/mechanism1_fixedrf.py
+/home/sat/mcrl-v025-arch-ws/COALITION-CORPUS-2026-09-09.md
+/home/sat/mcrl-v025-arch-ws/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-arch-ws/src/mcrl/algorithms/ee_axis_pairwise.py
+/home/sat/mcrl-v025-arch-ws/src/mcrl/runtime/ee_axis_temporal_pairs.py
+/home/sat/mcrl-v025-arch-ws/src/mcrl/runtime/ee_axis_v014_q2_pairs.py
+/home/sat/mcrl-v025-arch-ws/src/mcrl/runtime/ee_axis_v014_q3_pairs.py
+/home/sat/mcrl-v025-arch-ws/src/mcrl/runtime/ee_axis_opening_pairs.py
+/home/sat/mcrl-v025-arch-ws/V025-PILOT-MIN-REPORT-2026-09-09.md
+/home/sat/mcrl-v025-arch-ws/COALITION-CORPUS-2026-09-09.md.sha256
+/home/sat/mcrl-v025-arch-ws/scripts/ceiling_and_segments.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/tests/test_w37_ee_axis_pairwise_trainer.py
+/home/sat/mcrl-v025-arch-ws/tests/test_w37_ee_axis_pairwise_trainer.py
+/home/sat/mcrl-v025-arch-ws/tests/test_w42_ee_axis_opening_pairs.py
+/home/sat/mcrl-v025-arch-ws/tests/test_w48_ee_axis_temporal_pairs.py
+/home/sat/mcrl-v025-arch-ws/tests/test_w52_c2_real_temporal_pair_smoke.py
+/home/sat/mcrl-v025-arch-ws/tests/test_w150_ee_axis_v014_q3_pairs.py
+/home/sat/mcrl-v025-arch-ws/tests/test_w149_ee_axis_v014_q2_pairs.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/algorithms/ee_axis_pairwise.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/implementation/src/ee_axis_pairwise.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_temporal_pairs.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_opening_pairs.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/scripts/ceiling_and_segments.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/tests/test_w37_ee_axis_pairwise_trainer.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/implementation/src/ee_axis_pairwise.py
+/home/sat/mcrl-v025-arch-ws/ARCH-ALTERNATIVES-2026-09-09.md
+/home/sat/mcrl-v025-arch-ws/EPOCH-TREND-2026-09-09.md
+/home/sat/mcrl-v025-arch-ws/PREFIX-ABLATION-2026-09-10.md
+/home/sat/mcrl-v025-arch-ws/V025-PILOT-MIN-REPORT-2026-09-09.md.sha256
+/home/sat/mcrl-v025-arch-ws/V025-PILOT-TRACK-DECLARATION-2026-09-09.md
+/home/sat/mcrl-v025-arch-ws/CONVEXITY-ADVERSARIAL-2026-09-10.md
+/home/sat/mcrl-v025-arch-ws/OCCUPANCY-CONVEXITY-2026-09-10.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/source/algorithms/ee_axis_pairwise.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/source/algorithms/ee_axis_pairwise.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-arch-ws/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/source/algorithms/ee_axis_pairwise.py
+/home/sat/mcrl-v025-arch-ws/artifacts/multi-catfish-c3-astra-pro-review-20260905-r1/source/ee_axis_pairwise.py
+
+exec
+/bin/bash -lc "rg --files -g '*.md' -g '*.py' -g '*.json' . | rg '(2026-09-10|2026-09-09|control|ladder|mechanism|provision|witness|ceiling|authority|fixedpoint)' | head -160
+rg -n '94\\.8|43\\.71|28\\.47|53 %|53%|provision|service.guard|served_count' LADDER-INDEPENDENT-2026-09-10.md README.md analysis src/mcrl/physics_v025 | head -180
+ls -lt /home/sat/mcrl-v025-arch-ws/analysis | head -45
+ls -lt | head -45" in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+./LADDER-INDEPENDENT-2026-09-10.md
+./witness/mechanism1-src20.json
+./witness/provenance.json
+./witness/mechanism1-low-sep1.0-ya25.json
+./witness/calibration-manifest.json
+./witness/selected-witnesses.json
+./witness/mechanism1-selected.json
+./witness/mechanism1-low-sep1.0-ya30-margin.json
+./witness/write_report.py
+./witness/verify_evidence.py
+./witness/mechanism1-y38.json
+./witness/mechanism1-y33.json
+./witness/mechanism1-y37.json
+./witness/mechanism1-y30.json
+./witness/mechanism1-src80.json
+./witness/mechanism1.py
+./witness/engine_harness.py
+./witness/mechanism1-y40.json
+./witness/mechanism1-low-sep1.0-ya30.json
+./witness/mechanism1-y34.json
+./witness/mechanism1-y35.json
+./witness/mechanism1-y20.json
+./witness/run_witnesses.py
+./witness/mechanism1-src60.json
+./witness/mechanism1-low-sep1.0-ya25-margin.json
+./witness/mechanism1-report-fragment.md
+./witness/mechanism1-src40.json
+./witness/mechanism1-y36.json
+./scripts/ceiling_and_segments.py
+./src/mcrl/runtime/ee_axis_v05_c2_controlled_tape.py
+./src/mcrl/runtime/ee_axis_v06_c2_k1_state_authority.py
+./src/mcrl/runtime/ee_axis_e1_ladder.py
+./tests/test_w99_ee_axis_v05_c2_controlled_screen.py
+./tests/test_w97_ee_axis_v05_c2_controlled_tape.py
+./tests/test_w100_v05_c2_controlled_support_failure_seal.py
+./tests/test_w64_e1_validation_ladder_driver.py
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-r7-preliminary-authority-20260830-r4/master.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-intermediate-authority-20260828/3000-lr0p01.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-intermediate-authority-20260828/3000-lr0p001.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-intermediate-authority-20260828/1500-lr0p01.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-intermediate-authority-20260828/1500-lr0p001.json
+./tests/test_w33_r7_500_control_plane.py
+./tests/test_w105_v06_c2_k1_state_authority.py
+./tests/test_w98_v05_c2_controlled_tape_mechanics_verifier.py
+./tests/test_w62_ee_axis_e1_ladder.py
+./tests/test_w99_v05_c2_controlled_source.py
+./ladder/arith.py
+./ladder/cap_sensitivity.py
+./ladder/margin_line.py
+./ladder/real_panel.py
+./ladder/variant_ar.py
+./ladder/real_panel.json
+./ladder/variant_batch.py
+./ladder/make_variant_batch.py
+./ladder/universality.py
+./ladder/occupancy_sweep.py
+./ladder/panel.py
+./ladder/cfd_sweep.py
+./analysis/mechanism1_fixedrf_stdout.json
+./analysis/mechanism1_fixedrf.json
+./analysis/psi_witness_stdout.json
+./analysis/mechanism1_fixedrf.py
+./analysis/psi_witness_raw.json
+./analysis/verify_new_witnesses.py
+./analysis/mechanism2_guarded.json
+./analysis/psi_witness.py
+./analysis/mechanism2_guarded.py
+./analysis/mechanism2_guarded_stdout.json
+./PSI-WITNESS-REPORT-2026-09-09.md
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-intermediate-authority-20260830/1500-lr0p01.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-intermediate-authority-20260830/1500-lr0p001.json
+./artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/cluster-neutral-opening-do.json
+./artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/receipt.json
+./artifacts/multi-catfish-v03-c1-cluster-control-smoke-20260831/informed-opening-do.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-r7-preliminary-authority-20260830-r3/master.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-r7-preliminary-authority-20260830-r1/master.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-r7-preliminary-authority-20260830-r2/master.json
+./artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_v05_c2_controlled_tape.py
+./artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_v06_c2_k1_state_authority.py
+./artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_e1_ladder.py
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json
+./artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/scripts/ceiling_and_segments.py
+./docs/decisions/ADR-005-separate-r5-run-authority-from-r6-authoring.md
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v02-pilot100-authority-20260829/lr0p001.json
+./archive/multi-catfish-pre-v03-2026-08-31/artifacts/multi-catfish-v03a-r7-preliminary-authority-20260831-r5/master.json
+./artifacts/multi-catfish-v03-e1-masked-meanmax-fallback-20260901-r1/authority.json
+./artifacts/multi-catfish-v04-c3-learnability-20260901-r2/authority.json
+./artifacts/multi-catfish-v03-e1-masked-meanmax-fallback-20260901-r1/authority-seal.json
+./artifacts/multi-catfish-v04-c3-learnability-20260901-r2/authority-seal.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/ladder-generation-details.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/source-data/ladder-index.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/ladder-authority/result-seal.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/prepare.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/ladder-authority/run/status.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/ladder-authority/authority.json
+./artifacts/multi-catfish-v03-e1-instrument-validity-20260901/ladder-authority/result.json
+./artifacts/smc-er-c1-authority-20260828/c1-posthoc-source-head-gradient-audit-v1.json
+./artifacts/multi-catfish-v03-e1-action-shared-supplement-20260901/e1-action-shared-preoutcome-authority-seal-20260901.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/neutral/main-update-receipts.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/neutral/c3-h1-shadow-receipts.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/neutral/episode-logs.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/neutral/specialist-replay-receipts.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/c1-postgate-efficacy-microscreen-raw.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/c1-postgate-efficacy-microscreen-result.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/independent-verification.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-11.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-07.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-00.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-08.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-07.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-00.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-06.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-06.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-02.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-11.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-04.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-08.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-01.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-11.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-09.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-05.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-10.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-05.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-08.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-01.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/informed/main-update-receipts.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-00.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/informed/c3-h1-shadow-receipts.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-03.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-03.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/informed/episode-logs.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-05.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-postgate-efficacy-screen-20260828-v1/informed/specialist-replay-receipts.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-06.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-08.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-04.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-03.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-02.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-03.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-02.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-06.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-07.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/main-anchor-09.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-11.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-09.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092101-anchor-04.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-02.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-05.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092103-anchor-09.json
+./artifacts/multi-catfish-v05-c2-controlled-source-20260901-r2/shards/q13-2026092102-anchor-04.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-source-gate-a-canonical-tle-20260828-v3/c1-source-gate-a-result.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-source-gate-a-canonical-tle-20260828-v3/receipt.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-source-gate-a-canonical-tle-20260828-v3/verification-v2.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-source-gate-a-canonical-tle-20260828-v3/verification.json
+./artifacts/smc-er-c1-authority-20260828/README.md
+./artifacts/multi-catfish-v03-e1-action-shared-supplement-20260901/source-data/ladder-generation-details.json
+./artifacts/multi-catfish-v03-e1-action-shared-supplement-20260901/source-data/ladder-index.json
+./artifacts/multi-catfish-v03-e1-action-shared-supplement-20260901/e1-action-shared-preoutcome-authority-20260901.json
+./artifacts/smc-er-c1-authority-20260828/smc-er-c1-exp-corpus-canonical-tle-20260828-v3/verification.json
+LADDER-INDEPENDENT-2026-09-10.md:4:constant, threshold, sign, seed, horizon, price, service guard or acceptance rule
+LADDER-INDEPENDENT-2026-09-10.md:15:mismatch between two lines — power is provisioned so that the *nominal* SINR
+LADDER-INDEPENDENT-2026-09-10.md:26:The de-rating is applied at selection and never compensated at provisioning, so
+LADDER-INDEPENDENT-2026-09-10.md:30:total margin the provisioning rule leaves at occupancy 1 is
+LADDER-INDEPENDENT-2026-09-10.md:46:   provisioning. `IMPLEMENTATION_MARGIN_DB = 1.7 dB` is already folded into every
+LADDER-INDEPENDENT-2026-09-10.md:158:### 3. Power provisioning relative to the selected mode's threshold
+LADDER-INDEPENDENT-2026-09-10.md:187:There is no design margin. The provisioning rule is "hit the threshold, to
+LADDER-INDEPENDENT-2026-09-10.md:190:### 4. The fading / quantile factor between provisioning and decoding
+LADDER-INDEPENDENT-2026-09-10.md:196:| **nominal** (provisioning target) | `power · g_nominal / (N + I_nominal)` | `architectures.py:462-463`; `batch.py:398-402` |
+LADDER-INDEPENDENT-2026-09-10.md:215:the provisioning target, and it is not what the decoder sees (the decoder sees the
+LADDER-INDEPENDENT-2026-09-10.md:280:1. `nom_dB == Gam_dB` in every row: the provisioning rule leaves no margin.
+LADDER-INDEPENDENT-2026-09-10.md:351:| **4.** provisioning leaving no margin | provision to `Γ_r(n)/q` instead of `Γ_r(n)` | 127,406 | 80,201 | 38.63 % |
+LADDER-INDEPENDENT-2026-09-10.md:362:| occupancy | base | cap → 10⁹ W | de-rating removed | `Γ/q` provisioning | cap + `Γ/q` | cap + no de-rating |
+LADDER-INDEPENDENT-2026-09-10.md:399:de-rating were provisioned for.
+LADDER-INDEPENDENT-2026-09-10.md:405:depth, so a fully provisioned link there always has a mode and only power
+LADDER-INDEPENDENT-2026-09-10.md:428:| `Γ_r(n)/q` provisioning | 5.724546 × 10¹¹ | ×2.439 |
+LADDER-INDEPENDENT-2026-09-10.md:434:**2.44** in credited throughput on this panel once it is properly provisioned
+LADDER-INDEPENDENT-2026-09-10.md:462:## D4 — The minimal physically defensible alternative provisioning rule
+LADDER-INDEPENDENT-2026-09-10.md:485:  and the beam is provisioned to actually deliver `r*`;
+LADDER-INDEPENDENT-2026-09-10.md:495:The provisioned power scales by exactly `1/q` at every occupancy — a uniform
+LADDER-INDEPENDENT-2026-09-10.md:538:1.65 W cap left in place, `Γ_r(n)/q` provisioning is a large gain at low occupancy
+LADDER-INDEPENDENT-2026-09-10.md:621:provisioning. I read it as a link-budget conservatism that was wired into one
+analysis/render_requested_report.py:134:The decisive answer is yes: the corrected engine produces Psi_A > 0 under the unchanged service guard. The positive terms are delivered-bit and/or physical-energy interactions, not a change to the user roster or a reimplementation of the score.
+analysis/render_requested_report.py:210:- `witness/verify_evidence.py`: PASS for the existing swap/cap/occupancy receipts, exact identities, service guard, cap persistence, and mode-threshold decoding.
+analysis/psi_witness.py:252:            "served_count": sum(served_guard.values()),
+analysis/psi_witness.py:388:    five RF beams active and make the service guard non-vacuous.
+analysis/render_requested_report_stdout.md:10:The decisive answer is yes: the corrected engine produces Psi_A > 0 under the unchanged service guard. The positive terms are delivered-bit and/or physical-energy interactions, not a change to the user roster or a reimplementation of the score.
+analysis/render_requested_report_stdout.md:130:- `witness/verify_evidence.py`: PASS for the existing swap/cap/occupancy receipts, exact identities, service guard, cap persistence, and mode-threshold decoding.
+analysis/psi_witness_stdout.json:529:      "served_count": 1,
+analysis/psi_witness_stdout.json:687:      "served_count": 2,
+analysis/psi_witness_stdout.json:845:      "served_count": 3,
+analysis/psi_witness_stdout.json:1003:      "served_count": 1,
+analysis/psi_witness_stdout.json:1187:      "served_count": 2,
+analysis/psi_witness_stdout.json:1427:      "served_count": 2,
+analysis/psi_witness_stdout.json:1667:      "served_count": 4,
+analysis/psi_witness_stdout.json:1869:      "served_count": 2,
+analysis/psi_witness_stdout.json:2143:      "served_count": 2,
+analysis/psi_witness_stdout.json:2417:      "served_count": 2,
+analysis/psi_witness_stdout.json:2805:      "served_count": 2,
+analysis/psi_witness_stdout.json:3079:      "served_count": 2,
+analysis/psi_witness_stdout.json:3455:      "served_count": 4,
+analysis/psi_witness_stdout.json:3753:      "served_count": 4,
+analysis/psi_witness_stdout.json:4051:      "served_count": 6,
+analysis/psi_witness_stdout.json:4349:      "served_count": 4,
+analysis/psi_witness_raw.json:529:      "served_count": 1,
+analysis/psi_witness_raw.json:687:      "served_count": 2,
+analysis/psi_witness_raw.json:845:      "served_count": 3,
+analysis/psi_witness_raw.json:1003:      "served_count": 1,
+analysis/psi_witness_raw.json:1187:      "served_count": 2,
+analysis/psi_witness_raw.json:1427:      "served_count": 2,
+analysis/psi_witness_raw.json:1667:      "served_count": 4,
+analysis/psi_witness_raw.json:1869:      "served_count": 2,
+analysis/psi_witness_raw.json:2143:      "served_count": 2,
+analysis/psi_witness_raw.json:2417:      "served_count": 2,
+analysis/psi_witness_raw.json:2805:      "served_count": 2,
+analysis/psi_witness_raw.json:3079:      "served_count": 2,
+analysis/psi_witness_raw.json:3455:      "served_count": 4,
+analysis/psi_witness_raw.json:3753:      "served_count": 4,
+analysis/psi_witness_raw.json:4051:      "served_count": 6,
+analysis/psi_witness_raw.json:4349:      "served_count": 4,
+ls: cannot access '/home/sat/mcrl-v025-arch-ws/analysis': No such file or directory
+total 7644
+-rw-rw-r--  1 sat sat   32364 Sep  9 17:44 LADDER-INDEPENDENT-2026-09-10.md
+drwxrwxr-x  3 sat sat    4096 Sep  9 17:40 ladder
+drwxrwxr-x  3 sat sat    4096 Sep  9 10:03 analysis
+-rw-rw-r--  1 sat sat   18503 Sep  9 09:34 PSI-WITNESS-REPORT-2026-09-09.md
+drwxrwxr-x  3 sat sat    4096 Sep  9 09:32 witness
+-rw-rw-r--  1 sat sat    5099 Sep  9 05:54 GIT-EXCLUDED-LARGE-FILES-2026-09-07.tsv
+-rw-rw-r--  1 sat sat    7179 Sep  9 05:54 README.md
+drwxrwxr-x  3 sat sat    4096 Sep  9 05:54 archive
+drwxrwxr-x 86 sat sat   16384 Sep  9 05:54 artifacts
+-rw-rw-r--  1 sat sat   27701 Sep  9 05:54 astra-adjudication-audit-bundle.zip
+-rw-rw-r--  1 sat sat 2724687 Sep  9 05:54 chapter4-0826.pptx
+-rw-rw-r--  1 sat sat 4421142 Sep  9 05:54 chapter5-0826.pptx
+-rw-rw-r--  1 sat sat   31483 Sep  9 05:54 deep-research-report.md
+drwxrwxr-x  3 sat sat   12288 Sep  9 05:54 docs
+-rw-rw-r--  1 sat sat   42603 Sep  9 05:54 gpt-dr.md
+-rw-rw-r--  1 sat sat   17603 Sep  9 05:54 gpt.md
+-rw-rw-r--  1 sat sat  396582 Sep  9 05:54 gpt.pdf
+-rw-rw-r--  1 sat sat     612 Sep  9 05:54 pyproject.toml
+-rw-rw-r--  1 sat sat      83 Sep  9 05:54 replay-world-2026121706.log
+drwxrwxr-x  2 sat sat    4096 Sep  9 05:54 scripts
+drwxrwxr-x  3 sat sat    4096 Sep  9 05:54 src
+drwxrwxr-x  3 sat sat   20480 Sep  9 05:54 tests
+
+exec
+/bin/bash -lc "ls -lt /home/sat/mcrl-v025-arch-ws | head -55
+rg -n 'service.guard|provision|fading|committed|guard|control' /home/sat/mcrl-v025-arch-ws/CONVEXITY-ADVERSARIAL-2026-09-10.md | head -75
+rg --files src/mcrl/physics_v025
+rg --files /home/sat/mcrl-v025-arch-ws | rg '(control.ceiling|control_ceiling|controlceiling|CONTROL-LAW|CONTROL-CEILING|power_mode|power-mode)'" in /home/sat/mcrl-v025-witness-ws
+ exited 1 in 0ms:
+total 7728
+-rw-rw-r--  1 sat sat   14426 Sep  9 22:45 PREFIX-ABLATION-2026-09-10.md
+drwxrwxr-x  3 sat sat    4096 Sep  9 22:45 scripts
+-rw-rw-r--  1 sat sat   18472 Sep  9 17:54 CONVEXITY-ADVERSARIAL-2026-09-10.md
+-rw-rw-r--  1 sat sat   17868 Sep  9 17:31 OCCUPANCY-CONVEXITY-2026-09-10.md
+-rw-rw-r--  1 sat sat    8784 Sep  9 16:27 ARCH-ALTERNATIVES-2026-09-09.md
+drwxrwxr-x 95 sat sat   16384 Sep  9 16:22 artifacts
+-rw-rw-r--  1 sat sat      97 Sep  9 15:24 COALITION-CORPUS-2026-09-09.md.sha256
+-rw-rw-r--  1 sat sat    6878 Sep  9 15:23 COALITION-CORPUS-2026-09-09.md
+-rw-rw-r--  1 sat sat    5878 Sep  9 11:42 EPOCH-TREND-2026-09-09.md
+drwxrwxr-x  5 sat sat   20480 Sep  9 11:16 tests
+-rw-rw-r--  1 sat sat   16952 Sep  9 09:14 V025-PILOT-MIN-REPORT-2026-09-09.md
+-rw-rw-r--  1 sat sat     102 Sep  9 09:04 V025-PILOT-MIN-REPORT-2026-09-09.md.sha256
+-rw-rw-r--  1 sat sat    3623 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
+-rw-rw-r--  1 sat sat   13496 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md
+-rw-rw-r--  1 sat sat    2387 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
+-rw-rw-r--  1 sat sat    5090 Sep  9 02:24 V025-STAGES-6-8-CONTRACT-v0-2026-09-08.md
+-r--r--r--  1 sat sat    2318 Sep  9 02:24 V025-PILOT-TRACK-DECLARATION-2026-09-09.md
+drwxrwxr-x  3 sat sat    4096 Sep  8 13:54 src
+-rw-rw-r--  1 sat sat  396582 Sep  8 13:54 gpt.pdf
+-rw-rw-r--  1 sat sat     612 Sep  8 13:54 pyproject.toml
+-rw-rw-r--  1 sat sat      83 Sep  8 13:54 replay-world-2026121706.log
+-rw-rw-r--  1 sat sat   42603 Sep  8 13:54 gpt-dr.md
+-rw-rw-r--  1 sat sat   17603 Sep  8 13:54 gpt.md
+drwxrwxr-x  3 sat sat   12288 Sep  8 13:54 docs
+-rw-rw-r--  1 sat sat 4421142 Sep  8 13:54 chapter5-0826.pptx
+-rw-rw-r--  1 sat sat   31483 Sep  8 13:54 deep-research-report.md
+-rw-rw-r--  1 sat sat 2724687 Sep  8 13:54 chapter4-0826.pptx
+-rw-rw-r--  1 sat sat   27701 Sep  8 13:54 astra-adjudication-audit-bundle.zip
+drwxrwxr-x  3 sat sat    4096 Sep  8 13:54 archive
+-rw-rw-r--  1 sat sat    5099 Sep  8 13:54 GIT-EXCLUDED-LARGE-FILES-2026-09-07.tsv
+-rw-rw-r--  1 sat sat    7179 Sep  8 13:54 README.md
+3:`DIAGNOSTIC_NOT_CLAIM` — adversarial review, 2026-09-10. No training or policy run. No production constant, threshold, sign, seed, horizon, price, service guard, acceptance rule, or original report was changed. All counterfactuals are separate diagnostic calculations. MARGIN remains a constructed diagnostic provisioner, not a second sealed production implementation.
+34:The physical comparison clusters users at each layout's cell centers, so it authenticates plausible interference damage, not a global association optimum for one fixed population. The exact pair sweep is likewise a controlled input sensitivity. Neither justifies a universal direction of spreading. In these tests interference favors **fewer beams**: production TDM already removes simultaneous within-beam interference, while extra cochannel beams add interference. I failed to produce the proposed reversal toward singleton spreading. The exact four-beam optimum breaks; interior occupancy still exists in the controlled example.
+96:A useful operational check is to freeze the reference `3+7+7+7` partition across the grid and evaluate it through production capped radiation. For SEALED, all 24 still attain the target at all nine cells, and the worst EE loss relative to adapting is **0.942783%**. For MARGIN, the worst corner is different: at 1.66°/1000 km, 21 users fall to 39.298333 Mbit/s, only 3 attain target, and EE is 3.538329% below the adaptive solution. Geometry therefore supplies a real feasibility warning in adverse conditions. This grid does not establish a useful general occupancy-control signal beyond cap management and small integer/fixed-cost effects.
+100:The report evaluates SEALED at nominal gain and MARGIN at its selected q10 fade. I instead integrated both provisioners' unchanged powers over the same production Rician × lognormal-shadow × scintillation distribution at 30°, using deterministic quadrature and production ACM decoding breakpoints. Original design-point eligibility was retained. This is an expected-rate diagnostic, not a new admission rule or an all-user reliability guarantee.
+102:With fixed costs and expected ACM capacity credited, the N=24 optima become **`8+8+8`, 74.694681 Mbit/J for SEALED**, and **`4+5+5+5+5`, 75.085541 Mbit/J for MARGIN**. Crediting only expected delivered traffic up to each user's contract instead gives `8+8+8` under both, at **70.303038** and **57.351734 Mbit/J**. The identical original partition is therefore not preserved when both rules face the same fading distribution.
+113:for script in a15_numerator_discriminator a2_interference a34_feasibility_placement a6_geometry a7_common_fading; do
+124:The original result establishes a reproducible finite-partition optimum in a homogeneous, freely repartitionable, interference-free diagnostic under one sealed provisioner and one constructed margin rule, with a chosen numerator and target-feasibility constraint. Some interior per-beam occupancies persist after correcting the numerator, removing fixed costs, and adding the tested interference. It does not establish occupancy 7 or four beams as a robust recommendation, a strictly interior beam-count optimum under contracted-rate credit, an ACM-specific mechanism, convexity of the production cost curve, or an optimal assignment for fixed physical users and payload inventory. The geometry evidence mainly reflects cap feasibility and small partition/fixed-cost effects; the model gives every reassigned user the same prescribed gain without demonstrating realizable assignments to fixed beam centers. A paper can honestly present this as a conditional diagnostic observation requiring realistic fixed-user geometry and a declared traffic/service objective, but cannot promote it to an identified, geometry-driven physical law or validated operational control principle.
+src/mcrl/physics_v025/architectures.py
+src/mcrl/physics_v025/matrix.py
+src/mcrl/physics_v025/energy.py
+src/mcrl/physics_v025/acm.py
+src/mcrl/physics_v025/state_v025.py
+src/mcrl/physics_v025/provider_legacy.py
+src/mcrl/physics_v025/endpoint.py
+src/mcrl/physics_v025/__init__.py
+src/mcrl/physics_v025/resolution.py
+src/mcrl/physics_v025/constants_v025.py
+src/mcrl/physics_v025/calibration.py
+src/mcrl/physics_v025/integration.py
+src/mcrl/physics_v025/targets.py
+src/mcrl/physics_v025/channel.py
+src/mcrl/physics_v025/tapes.py
+src/mcrl/physics_v025/adapter.py
+src/mcrl/physics_v025/batch.py
+src/mcrl/physics_v025/parity/README.md
+src/mcrl/physics_v025/parity/__init__.py
+
+web search: 
+web search: site.ee.stanford.edu Yates framework uplink power control cellular radio systems 1995 pdf ...
+exec
+/bin/bash -lc "rg -n --glob '*.py' --glob '*.md' --glob '"'!artifacts/**'"' --glob '"'!archive/**'"' 'service_guard|served_guard|baseline.served|served.*baseline|q10|coupling.*fading|fading.*coupling|28\\.47|43\\.71|94\\.8' src scripts ladder LADDER-INDEPENDENT-2026-09-10.md /home/sat/mcrl-v025-arch-ws/scripts" in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-arch-ws/scripts/generate_mechanism_coalition_corpus.py:681:        f"- `occupancy-activation`: {summary['family_histogram_unique_rows'].get(OCCUPANCY_ACTIVATION, 0)} trainable rows across {summary['occupancy_activation_anchors_trainable']} anchors, by changed-user size {summary['family_size_histogram'].get(OCCUPANCY_ACTIVATION, {})}. Every seed beam starts at occupancy exactly 1 and two legal arrivals take it to occupancy 3. The exact activation core is retained as a pair; where a legal outside action exists, a three-change context probe adds a third changed user so the learner directly sees third-order variation around the same activation. The first activating occupancy is recomputed from `q10(elevation) * Gamma(n)` using the full Rician×shadow distribution and the engine tables at the weakest actual link elevation among incumbents and selected arrivals. The numerical rule is deterministic: 192-point Gauss–Hermite integration of the Rician×shadow CDF followed by a 60-step bisection root solve, authenticated at the 10-degree value `q10 = 0.42923539`; the lowest threshold remains `0.7174947935658479`. Its exact-Psi sign/distribution ledger is {summary['family_psi_normalized_distributions'].get(OCCUPANCY_ACTIVATION, {})}.",
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:31:from mcrl.stagec_v025.mechanism_corpus import engine_table_q10
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:97:    divisor = 1.0 if rule == "SEALED" else engine_table_q10(elevation_deg)
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:311:    q10 = engine_table_q10(REFERENCE_ELEVATION_DEG)
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:383:        "No MARGIN provisioner or fading-quantile constant exists under `physics_v025`. The task-defined MARGIN calculation therefore uses the project's nearest authenticated fading quantile: elevation-specific q10 from [mechanism_corpus.py:47](src/mcrl/stagec_v025/mechanism_corpus.py#L47) and [mechanism_corpus.py:95](src/mcrl/stagec_v025/mechanism_corpus.py#L95). It is the 10th percentile of the production Rician-times-lognormal-shadow-times-deterministic-scintillation multiplier, evaluated by 192-point Gauss-Hermite quadrature and 60 bisections ([mechanism_corpus.py:53](src/mcrl/stagec_v025/mechanism_corpus.py#L53), [mechanism_corpus.py:78](src/mcrl/stagec_v025/mechanism_corpus.py#L78)). "
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:384:        f"At 30 deg, `q10={q10:.12f}`. MARGIN uses `p_req=Gamma*N_noise/(g_nom*q10)`, so a q10 fade lands on the same mode threshold. SEALED uses divisor 1."
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:399:    add("### MARGIN — threshold divided by elevation-specific fading q10 (diagnostic)")
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:410:        "For partition occupancies `(n1,...,nk)`, delivered rate is `sum_b B*eta_mode(nb)` and power is `sum_b(P_PA(p_req(nb))+0.338)+0.200` W. SEALED delivery is evaluated at its nominal design point; MARGIN delivery is evaluated at the q10 fade for which it was provisioned, so each uses the target mode's production ACM capacity. All beams are packed on one active satellite, because no per-satellite beam ceiling is declared and this is the energy-minimizing placement. Infeasible occupancies (uncapped RF above 1.65 W or no ACM mode) are excluded because all N users must be served. EE is delivered bit/s divided by watts, i.e. bit/J."
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:422:        "The grid spans boresight, half-radius, and the 1.66 deg beam edge, with 500/750/1000 km slants; elevation is held at 30 deg so this isolates the two requested axes and keeps q10 fixed. These are analytic link inputs, not assertions that every angle/range pair is one orbital state. Each cell below repeats the N=24 optimization; the script also repeats every N=1..24 cell when producing the change counts."
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:440:        f"The interior optimum survives. At N=24, SEALED remains `{partition_text(sealed_zero_n24.partition)}` and MARGIN remains `{partition_text(margin_zero_n24.partition)}` after fixed costs are removed; neither becomes one beam or 24 singleton beams. The zero-fixed-cost partitions are identical between SEALED and MARGIN because MARGIN multiplies every feasible RF requirement by the same 1/q10 at fixed elevation, and the square-root PA law therefore multiplies every beam's supply by the same `1/sqrt(q10)`. The discriminator says the interior is driven by discrete mode/capacity thresholds plus the PA law; fixed costs shift the selected mix at other N but do not create the interior."
+/home/sat/mcrl-v025-arch-ws/scripts/run_occupancy_convexity.py:451:    add("The program prints this report. It imports the production ACM, antenna/noise, nominal-path, PA-supply, and authenticated q10 functions; exhaustive integer partition enumeration is local diagnostic logic. No sealed artifact is modified.")
+/home/sat/mcrl-v025-arch-ws/scripts/run_prefix_ablation.py:997:        "service_guard": "all arms and A4 rounds use selection-time BASELINE served count",
+src/mcrl/runtime/ee_axis_zero_marginal_c3.py:300:    baseline_served: object,
+src/mcrl/runtime/ee_axis_zero_marginal_c3.py:321:        baseline_served, candidate_served, field="served_vector"
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1030:    service_guard_sha256: str
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1072:            "service_guard_sha256",
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1074:                self.service_guard_sha256,
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1075:                field="selection.service_guard_sha256",
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1091:            "service_guard_sha256": self.service_guard_sha256,
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1109:                "service_guard_sha256",
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:1126:            service_guard_sha256=payload["service_guard_sha256"],  # type: ignore[arg-type]
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:2093:    service_guard_sha256: str,
+src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:2132:            service_guard_sha256=service_guard_sha256,
+
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+files=[('/home/sat/mcrl-v025-witness-ws/src/mcrl/physics_v025/batch.py',340,485),('/home/sat/mcrl-v025-witness-ws/src/mcrl/physics_v025/channel.py',1,200),('/home/sat/mcrl-v025-arch-ws/scripts/run_prefix_ablation.py',950,1020),('/home/sat/mcrl-v025-witness-ws/LADDER-INDEPENDENT-2026-09-10.md',158,250),('/home/sat/mcrl-v025-arch-ws/CONVEXITY-ADVERSARIAL-2026-09-10.md',95,110)]
+for f,a,b in files:
+ print('\\nFILE',f)
+ for i,s in enumerate(Path(f).read_text().splitlines(),1):
+  if a<=i<=b: print(f'{i}: {s}')
+PY" in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+
+FILE /home/sat/mcrl-v025-witness-ws/src/mcrl/physics_v025/batch.py
+340:                         break
+341:                 slow = np.zeros(count, dtype=np.bool_)
+342:                 unfinished = ~(done | invalid)
+343:                 if np.any(unfinished) and len(recent_changes) == 1_000:
+344:                     history = np.stack(recent_changes, axis=0)
+345:                     monotone = np.all(
+346:                         history[1:] <= history[:-1] + np.finfo(float).eps,
+347:                         axis=0,
+348:                     )
+349:                     slow = unfinished & (np.max(history, axis=0) < 1.0e-6) & monotone
+350:                     done |= slow
+351:                 invalid |= ~done
+352:                 slot_status = np.where(invalid, 0, np.where(slow, 2, 1)).astype(np.int8)
+353:                 destination = slice(low, high)
+354:                 certificate_status[destination] = np.where(
+355:                     (certificate_status[destination] == 0) | (slot_status == 0),
+356:                     0,
+357:                     np.maximum(certificate_status[destination], slot_status),
+358:                 )
+359:                 certificate_iterations[destination] += iteration
+360:                 residual_max[low:high] = np.maximum(residual_max[low:high], residual)
+361:                 valid_result[low:high] &= ~invalid
+362:                 # Preserve the pre-stage-4c full-path endpoint exactly: both
+363:                 # scalar and batch paths take one final fixed-point update
+364:                 # before the target-clearance nudge.  Status classification
+365:                 # still uses the bounded loop above.
+366:                 final = np.minimum(
+367:                     BEAM_RF_CAP_W,
+368:                     targets
+369:                     * (
+370:                         noise
+371:                         + np.matmul(coupling, power[..., None])[..., 0]
+372:                     )
+373:                     / direct_nominal,
+374:                 )
+375:                 final = np.where(active, final, 0.0)
+376:                 final[forced] = BEAM_RF_CAP_W
+377:                 power = np.minimum(
+378:                     BEAM_RF_CAP_W,
+379:                     np.nextafter(final * (1.0 + 2.0e-9), np.inf),
+380:                 )
+381:                 power = np.where(active, power, 0.0)
+382:                 power[forced] = BEAM_RF_CAP_W
+383:                 realised_interference = np.matmul(
+384:                     field_cross * active_pair, power[..., None]
+385:                 )[..., 0]
+386:                 sinr = np.where(
+387:                     active,
+388:                     power * direct_field / (noise + realised_interference),
+389:                     0.0,
+390:                 )
+391:                 safe_sinr = np.maximum(sinr, np.finfo(float).tiny)
+392:                 max_rf_power_w[low:high] = np.maximum(
+393:                     max_rf_power_w[low:high], np.max(power, axis=1)
+394:                 )
+395:                 nominal_interference = np.matmul(
+396:                     nominal_cross * active_pair, power[..., None]
+397:                 )[..., 0]
+398:                 nominal_sinr = np.where(
+399:                     active,
+400:                     power * direct_nominal / (noise + nominal_interference),
+401:                     0.0,
+402:                 )
+403:                 predicted_sinr = nominal_sinr * quantile
+404:                 eligible_tx_modes = (
+405:                     predicted_sinr[:, :, None] >= thresholds[None, None, :]
+406:                 )
+407:                 mode_index = np.argmax(
+408:                     np.where(
+409:                         eligible_tx_modes,
+410:                         efficiencies[None, None, :],
+411:                         -1.0,
+412:                     ),
+413:                     axis=2,
+414:                 )
+415:                 has_tx_mode = np.any(eligible_tx_modes, axis=2)
+416:                 transmitted_threshold = thresholds[mode_index]
+417:                 served = active & has_tx_mode & (sinr >= transmitted_threshold)
+418:                 chosen_efficiency = efficiencies[mode_index]
+419:                 slot_rate = np.where(served, chosen_efficiency * BEAM_BANDWIDTH_HZ, 0.0)
+420:                 active_margin = np.where(
+421:                     active & has_tx_mode,
+422:                     10.0 * np.log10(safe_sinr)
+423:                     - 10.0 * np.log10(transmitted_threshold),
+424:                     np.where(active, -math.inf, np.inf),
+425:                 )
+426:                 min_decoding_margin_db[low:high] = np.minimum(
+427:                     min_decoding_margin_db[low:high],
+428:                     np.min(active_margin, axis=1),
+429:                 )
+430:                 acm_se_sum[low:high] += np.sum(
+431:                     np.where(active & served, chosen_efficiency, 0.0), axis=1
+432:                 )
+433:                 acm_se_count[low:high] += np.sum(active, axis=1)
+434:                 boundary_rate += fraction * slot_rate
+435:                 boundary_decode |= served
+436:                 nominal_sinr = np.where(
+437:                     active,
+438:                     power
+439:                     * direct_nominal
+440:                     / (
+441:                         noise
+442:                         + np.matmul(coupling, power[..., None])[..., 0]
+443:                     ),
+444:                     0.0,
+445:                 )
+446:                 boundary_feasible |= active & ~forced & (nominal_sinr >= targets)
+447:                 flat_config, flat_user = np.nonzero(active)
+448:                 flat_modes = np.where(
+449:                     served[flat_config, flat_user],
+450:                     mode_index[flat_config, flat_user] + 1,
+451:                     0,
+452:                 )
+453:                 np.add.at(mode_counts[low:high], (flat_config, flat_modes), 1)
+454:                 flat_tx_modes = np.where(
+455:                     has_tx_mode[flat_config, flat_user],
+456:                     mode_index[flat_config, flat_user] + 1,
+457:                     0,
+458:                 )
+459:                 np.add.at(
+460:                     transmitted_mode_counts[low:high],
+461:                     (flat_config, flat_tx_modes),
+462:                     1,
+463:                 )
+464:                 flat_target_modes = target_mode_index[
+465:                     occupancy[flat_config, flat_user]
+466:                 ]
+467:                 np.add.at(
+468:                     target_mode_counts[low:high],
+469:                     (flat_config, flat_target_modes),
+470:                     1,
+471:                 )
+472:                 realised_decode_successes[low:high] += np.sum(served, axis=1)
+473:                 realised_decode_failures[low:high] += np.sum(
+474:                     active & ~served, axis=1
+475:                 )
+476:                 seen[low:high] |= active
+477:                 top_mode_index = int(np.argmax(efficiencies))
+478:                 plateau[low:high] &= ~active | (mode_index == top_mode_index)
+479:                 transmissions[low:high] += np.sum(active, axis=1)
+480:                 cap_hits[low:high] += np.sum(
+481:                     active & (power >= BEAM_RF_CAP_W - 1.0e-9), axis=1
+482:                 )
+483:                 pa_w = np.sum(
+484:                     np.where(
+485:                         active & (power > 0.0),
+
+FILE /home/sat/mcrl-v025-witness-ws/src/mcrl/physics_v025/channel.py
+1: """V0.25 channel and antenna scalar helpers.
+2: 
+3: The helpers are pure and vectorised where useful.  Random draws require an
+4: explicit generator so candidate ordering or counterfactual evaluation cannot
+5: silently acquire a private RNG stream.
+6: """
+7: 
+8: from __future__ import annotations
+9: 
+10: from functools import lru_cache
+11: import hashlib
+12: import math
+13: 
+14: import numpy as np
+15: 
+16: from mcrl.errors import MCRLContractError
+17: from mcrl.runtime.bessel import _miller_array, bessel_j_array, bessel_j_miller
+18: 
+19: from .constants_v025 import (
+20:     BOLTZMANN_J_PER_K,
+21:     CARRIER_FREQUENCY_HZ,
+22:     RICIAN_K_FACTOR_DB,
+23:     RX_ENVELOPE_A_DBI,
+24:     RX_ENVELOPE_B,
+25:     RX_GAIN_FLOOR_DBI,
+26:     RX_GAIN_MAX_DBI,
+27:     RX_S465_THETA_MIN_DEG,
+28:     SPEED_OF_LIGHT_M_S,
+29:     SYSTEM_TEMPERATURE_K,
+30:     SCINTILLATION_ELEVATION_DEG,
+31:     SCINTILLATION_LOSS_DB,
+32:     SHADOW_SIGMA_DB,
+33:     SHADOW_SIGMA_ELEVATION_DEG,
+34:     MINIMUM_ELEVATION_DEG,
+35:     TX_FULL_HPBW_DEG,
+36:     TX_G0_LINEAR,
+37: )
+38: 
+39: _BESSEL_MU_COEFFICIENT = 2.07123
+40: _MU_ZERO = 1.0e-10
+41: FADING_QUANTILE_DRAWS = 200_000
+42: FADING_QUANTILE_ELEVATION_BIN_DEG = 0.5
+43: FADING_QUANTILE_DERIVATION_DOMAIN = "V025_FADING_PRODUCT_QUANTILE/v1"
+44: 
+45: 
+46: def noise_power_w(bandwidth_hz: float) -> float:
+47:     """Return ``k*T_sys*bandwidth`` in watts."""
+48: 
+49:     if not math.isfinite(bandwidth_hz) or bandwidth_hz <= 0.0:
+50:         raise ValueError("bandwidth_hz must be finite and positive")
+51:     return BOLTZMANN_J_PER_K * SYSTEM_TEMPERATURE_K * bandwidth_hz
+52: 
+53: 
+54: def free_space_path_gain(slant_km: np.ndarray | float) -> np.ndarray:
+55:     """Linear free-space gain; doubling distance gives exactly one quarter."""
+56: 
+57:     distance = np.asarray(slant_km, dtype=np.float64)
+58:     if not np.all(np.isfinite(distance)) or np.any(distance <= 0.0):
+59:         raise MCRLContractError("slant range must be finite and positive")
+60:     wavelength = SPEED_OF_LIGHT_M_S / CARRIER_FREQUENCY_HZ
+61:     return (wavelength / (4.0 * math.pi * distance * 1000.0)) ** 2
+62: 
+63: 
+64: def db_loss_gain(loss_db: np.ndarray | float) -> np.ndarray:
+65:     """Convert a nonnegative dB loss to its linear power multiplier."""
+66: 
+67:     loss = np.asarray(loss_db, dtype=np.float64)
+68:     if not np.all(np.isfinite(loss)) or np.any(loss < 0.0):
+69:         raise MCRLContractError("loss_db must be finite and nonnegative")
+70:     return 10.0 ** (-loss / 10.0)
+71: 
+72: 
+73: def scintillation_loss_db(elevation_deg: np.ndarray | float) -> np.ndarray:
+74:     """Retained 20-GHz deterministic table, linearly interpolated and clamped."""
+75: 
+76:     elevation = np.asarray(elevation_deg, dtype=np.float64)
+77:     if not np.all(np.isfinite(elevation)) or np.any((elevation < -90.0) | (elevation > 90.0)):
+78:         raise MCRLContractError("elevation must be finite and in [-90,90] degrees")
+79:     return np.interp(
+80:         np.clip(elevation, SCINTILLATION_ELEVATION_DEG[0], SCINTILLATION_ELEVATION_DEG[-1]),
+81:         SCINTILLATION_ELEVATION_DEG,
+82:         SCINTILLATION_LOSS_DB,
+83:     )
+84: 
+85: 
+86: def shadow_sigma_db(elevation_deg: np.ndarray | float) -> np.ndarray:
+87:     """Retained Ka-LOS zero-mean-dB shadow sigma table."""
+88: 
+89:     elevation = np.asarray(elevation_deg, dtype=np.float64)
+90:     if not np.all(np.isfinite(elevation)) or np.any((elevation < -90.0) | (elevation > 90.0)):
+91:         raise MCRLContractError("elevation must be finite and in [-90,90] degrees")
+92:     return np.interp(
+93:         np.clip(elevation, SHADOW_SIGMA_ELEVATION_DEG[0], SHADOW_SIGMA_ELEVATION_DEG[-1]),
+94:         SHADOW_SIGMA_ELEVATION_DEG,
+95:         SHADOW_SIGMA_DB,
+96:     )
+97: 
+98: 
+99: def transmit_gain_linear(theta_deg: np.ndarray | float) -> np.ndarray:
+100:     """HOBS ideal aperture pattern, with full-HPBW converted once."""
+101: 
+102:     theta = np.asarray(theta_deg, dtype=np.float64)
+103:     if not np.all(np.isfinite(theta)):
+104:         raise MCRLContractError("off-axis angles must be finite")
+105:     half_power = math.radians(TX_FULL_HPBW_DEG / 2.0)
+106:     mu = _BESSEL_MU_COEFFICIENT * np.sin(np.radians(theta)) / math.sin(half_power)
+107:     flat = np.atleast_1d(mu).ravel()
+108:     on_axis = np.abs(flat) < _MU_ZERO
+109:     safe = np.where(on_axis, 1.0, flat)
+110:     # The historical ascending series is already measurably inaccurate at
+111:     # mu=34.  Route the new engine to stable Miller recursion from mu>=20;
+112:     # keep the vectorised series only in its well-conditioned main-lobe range.
+113:     stable = np.abs(safe) >= 20.0
+114:     j1 = np.empty_like(safe)
+115:     j3 = np.empty_like(safe)
+116:     if np.any(~stable):
+117:         series_rows = bessel_j_array((1, 3), safe[~stable])
+118:         j1[~stable] = series_rows[0]
+119:         j3[~stable] = series_rows[1]
+120:     if np.any(stable):
+121:         stable_values = safe[stable]
+122:         stable_rows = _miller_array((1, 3), np.abs(stable_values))
+123:         signs = np.where(stable_values < 0.0, -1.0, 1.0)
+124:         j1[stable] = stable_rows[0] * signs
+125:         j3[stable] = stable_rows[1] * signs
+126:     bracket = j1 / (2.0 * safe) + 36.0 * j3 / safe**3
+127:     result = TX_G0_LINEAR * bracket**2
+128:     result[on_axis] = TX_G0_LINEAR
+129:     return result.reshape(theta.shape)
+130: 
+131: 
+132: def receive_gain_dbi(separation_deg: np.ndarray | float) -> np.ndarray:
+133:     """S.465-6 envelope with the declared near-axis approximation.
+134: 
+135:     For this terminal ``D/lambda < 50`` and the applicable lower boundary is
+136:     2.043298703 degrees.  S.465-6 supplies ``32 - 25 log10(theta)`` from that
+137:     boundary to 48 degrees and the -10 dBi continuation thereafter.  Below
+138:     the boundary V0.25 deliberately extends the same analytic envelope up to
+139:     the independently sourced 35 dBi terminal peak.  That last branch is an
+140:     engineering approximation, not a prescription of S.465-6.
+141:     """
+142: 
+143:     separation = np.asarray(separation_deg, dtype=np.float64)
+144:     if not np.all(np.isfinite(separation)) or np.any(separation < 0.0):
+145:         raise MCRLContractError("receive separations must be finite and nonnegative")
+146:     with np.errstate(divide="ignore"):
+147:         near_axis_approximation = RX_ENVELOPE_A_DBI - RX_ENVELOPE_B * np.log10(
+148:             np.maximum(separation, 1.0e-12)
+149:         )
+150:         s465_envelope = RX_ENVELOPE_A_DBI - RX_ENVELOPE_B * np.log10(
+151:             np.maximum(separation, RX_S465_THETA_MIN_DEG)
+152:         )
+153:     result = np.where(
+154:         separation < RX_S465_THETA_MIN_DEG,
+155:         near_axis_approximation,
+156:         s465_envelope,
+157:     )
+158:     return np.clip(result, RX_GAIN_FLOOR_DBI, RX_GAIN_MAX_DBI)
+159: 
+160: 
+161: def receive_gain_linear(separation_deg: np.ndarray | float) -> np.ndarray:
+162:     return 10.0 ** (receive_gain_dbi(separation_deg) / 10.0)
+163: 
+164: 
+165: def interference_receive_gain_linear(
+166:     separation_deg: np.ndarray | float,
+167:     *,
+168:     same_satellite: np.ndarray | bool,
+169: ) -> np.ndarray:
+170:     """Receive gain used in the interference sum, including boresight override."""
+171: 
+172:     separation = np.asarray(separation_deg, dtype=np.float64)
+173:     same = np.asarray(same_satellite, dtype=np.bool_)
+174:     try:
+175:         separation, same = np.broadcast_arrays(separation, same)
+176:     except ValueError as error:
+177:         raise MCRLContractError("separation and satellite-identity masks do not broadcast") from error
+178:     envelope = receive_gain_linear(separation)
+179:     peak = 10.0 ** (RX_GAIN_MAX_DBI / 10.0)
+180:     return np.where(same, peak, envelope)
+181: 
+182: 
+183: def rician_power_gain(
+184:     rng: np.random.Generator,
+185:     size: tuple[int, ...],
+186:     *,
+187:     k_factor_db: float = RICIAN_K_FACTOR_DB,
+188: ) -> np.ndarray:
+189:     """Unit-mean Rician power gain."""
+190: 
+191:     if not isinstance(rng, np.random.Generator):
+192:         raise TypeError("rng must be an explicit numpy Generator")
+193:     if not math.isfinite(k_factor_db):
+194:         raise ValueError("k_factor_db must be finite")
+195:     k_linear = 10.0 ** (k_factor_db / 10.0)
+196:     los = math.sqrt(k_linear / (k_linear + 1.0))
+197:     sigma = math.sqrt(1.0 / (2.0 * (k_linear + 1.0)))
+198:     real = los + sigma * rng.standard_normal(size)
+199:     imaginary = sigma * rng.standard_normal(size)
+200:     return real**2 + imaginary**2
+
+FILE /home/sat/mcrl-v025-arch-ws/scripts/run_prefix_ablation.py
+950:                             "A4_terminated": row["a4"]["terminated_by_no_improvement"],
+951:                         },
+952:                         sort_keys=True,
+953:                     ),
+954:                     flush=True,
+955:                 )
+956:         finally:
+957:             if pool is not None:
+958:                 pool.close()
+959:                 pool.join()
+960: 
+961:     result = {
+962:         "schema": "mcrl-v025-prefix-ablation-v1",
+963:         "claim_ceiling": CLAIM_CEILING,
+964:         "provisioning_rule": provisioning_rule,
+965:         "provisioning_definition": (
+966:             "Gamma_margin(e,n)=Gamma(n)/q_0.10(e)"
+967:             if provisioning_rule == "margin"
+968:             else "sealed Gamma(n)"
+969:         ),
+970:         "source_commit": _git("rev-parse", "HEAD"),
+971:         "source_tree": _git("rev-parse", "HEAD^{tree}"),
+972:         "reference_source_commit": subprocess.check_output(
+973:             ["git", "rev-parse", "HEAD"], cwd=REFERENCE_REPO, text=True
+974:         ).strip(),
+975:         "reference_source_tree": subprocess.check_output(
+976:             ["git", "rev-parse", "HEAD^{tree}"], cwd=REFERENCE_REPO, text=True
+977:         ).strip(),
+978:         "reference_source_root": str(REFERENCE_REPO),
+979:         "runner_sha256": file_sha256(Path(__file__).resolve()),
+980:         "probe_source_sha256": file_sha256(PROBE_PATH),
+981:         "margin_batch_source_sha256": file_sha256(MARGIN_PATH),
+982:         "python": sys.executable,
+983:         "python_version": platform.python_version(),
+984:         "platform": platform.platform(),
+985:         "process_limit": 3,
+986:         "processes_used": 1 if synthetic else 1 + SELECTION_WORKERS,
+987:         "thread_environment": {
+988:             name: os.environ.get(name)
+989:             for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+990:         },
+991:         "test_split_opened": False,
+992:         "learner_used": False,
+993:         "policy_run_used": False,
+994:         "training_run_used": False,
+995:         "selection_objective": "exact binary64 F = B - eta_ref*E at realised boundary 0, held for 30.08 s",
+996:         "committed_endpoint": "corrected causal ACM, realised 48-boundary endpoint",
+997:         "service_guard": "all arms and A4 rounds use selection-time BASELINE served count",
+998:         "catalogue_contract": {
+999:             "occupant_subset_max_size": OCCUPANT_SUBSET_MAX_SIZE,
+1000:             "occupant_subset_generation_cap": OCCUPANT_SUBSET_TOTAL_CAP,
+1001:             "joint_candidate_cap": JOINT_CANDIDATE_CAP,
+1002:             "a4_declared_iteration_cap": A4_ITERATION_CAP,
+1003:             "fallbacks": {
+1004:                 "ORACLE_FROM_UNI": "UNILATERAL",
+1005:                 "ORACLE_FROM_BASE": "BASELINE",
+1006:                 "ORACLE_FROM_BASE_ITERATED": "current round seed",
+1007:             },
+1008:         },
+1009:         "worlds": worlds_out,
+1010:         "anchors": anchors,
+1011:         "summary": summarize(anchors),
+1012:         "wall_seconds": time.perf_counter() - started,
+1013:         "synthetic_self_test": synthetic,
+1014:     }
+1015:     unsigned = json.dumps(result, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("ascii")
+1016:     result["receipt_sha256"] = hashlib.sha256(unsigned).hexdigest()
+1017:     output.write_text(
+1018:         json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n",
+1019:         encoding="ascii",
+1020:     )
+
+FILE /home/sat/mcrl-v025-witness-ws/LADDER-INDEPENDENT-2026-09-10.md
+158: ### 3. Power provisioning relative to the selected mode's threshold
+159: 
+160: Capped standard-interference fixed point, initialised at zero, targeting the
+161: threshold **exactly**:
+162: 
+163: `architectures.py:392`
+164: ```python
+165: updated = np.minimum(caps, targets * (noise + coupling @ power) / direct)
+166: ```
+167: then one final update and a single relative nudge into the feasible half-space:
+168: 
+169: `architectures.py:430-433`
+170: ```python
+171: power = np.minimum(caps, targets * (noise + coupling @ power) / direct)
+172: power[forced] = caps[forced]
+173: power = np.minimum(caps, np.nextafter(power * (1.0 + 2.0e-9), np.inf))
+174: power[forced] = caps[forced]
+175: ```
+176: Dense twin: `batch.py:311-314` (loop), `batch.py:366-380` (final + nudge).
+177: 
+178: `direct` here is the **nominal** gain (`architectures.py:783`,
+179: `batch.py:260` `direct_nominal = arrays.nominal_gain[...]`) — i.e. the
+180: no-fade channel. So, when the cap does not bind,
+181: 
+182: > **nominal SINR = Γ_r(n) × (1 + 2×10⁻⁹) exactly.**
+183: 
+184: Measured total margin over the bottom rung at occupancy 1
+185: (`ladder/margin_line.py`): `10·log10(Γ_r(1)·(1+2e-9)/τ_min)` = **9.1621 × 10⁻⁹ dB**
+186: (8.6859 × 10⁻⁹ dB from the nudge, 4.76 × 10⁻¹⁰ dB from the `SINR_MIN` rounding).
+187: There is no design margin. The provisioning rule is "hit the threshold, to
+188: nine significant figures."
+189: 
+190: ### 4. The fading / quantile factor between provisioning and decoding
+191: 
+192: There are **three** distinct SINRs, and the quantile sits between the first two:
+193: 
+194: | | expression | citation |
+195: |---|---|---|
+196: | **nominal** (provisioning target) | `power · g_nominal / (N + I_nominal)` | `architectures.py:462-463`; `batch.py:398-402` |
+197: | **predicted** (mode **selection**) | `nominal × q` | `architectures.py:475-480` → `acm.py:83`; `batch.py:403` |
+198: | **realised** (mode **decoding**) | `power · g_realised / (N + I_realised)` | `architectures.py:481-483`; `batch.py:386-390` |
+199: 
+200: `q = fading_product_quantile(elevation_deg, α)` (`channel.py:303-307`) is the
+201: α-quantile of a 200,000-draw Rician × log-normal-shadow × scintillation product
+202: (`channel.py:279-300`, `FADING_QUANTILE_DRAWS = 200_000` at `channel.py:41`),
+203: cached on 0.5° elevation bins (`channel.py:259-265`). The operating α is 0.10
+204: everywhere in this workspace (`witness/engine_harness.py:70`,
+205: `analysis/psi_witness.py:123`, `tests/physics_v025/test_stage4h_amendments.py:104`,
+206: `matrix.py` run settings).
+207: 
+208: Measured over all 161 sealed 0.5° bins in [10°, 90°] (`ladder/universality.py`):
+209: 
+210: - max `q` = **0.774949** (−1.1073 dB) at 90.0°
+211: - min `q` = **0.328885** (−4.8296 dB) at 80.0°
+212: - bins with `q ≥ 1`: **0 of 161**
+213: 
+214: The quantile is applied **only** to the selection SINR. It is never fed back into
+215: the provisioning target, and it is not what the decoder sees (the decoder sees the
+216: actual keyed fading). So the net effect of `q` is a pure, uncompensated demotion
+217: down the ladder.
+218: 
+219: Decoding then credits the *transmitted* mode's SE only if the realised SINR clears
+220: that mode's threshold (`acm.py:93-98`; `batch.py:417-419`), and credits 0 otherwise
+221: (`acm.py:97`).
+222: 
+223: ### 5. What the per-beam power cap does when the required power exceeds it
+224: 
+225: `BEAM_RF_CAP_W = 1.65` (`constants_v025.py:34`). The cap is a `np.minimum` on the
+226: fixed-point iterate (`architectures.py:392, 430, 432`; `batch.py:311-314, 366-380`).
+227: When it binds, the power is clamped, the nominal SINR falls **below** `Γ_r(n)`, and
+228: the configuration is marked rate-target-infeasible
+229: (`architectures.py:751-763` `_target_feasibility`; `batch.py:446`,
+230: `cap_hits` at `batch.py:480-482`). **It does not zero the transmission** — a lower
+231: mode may still be selected and decoded.
+232: 
+233: Critically, the cap can only *reduce* the nominal SINR below `Γ_r(n)`. At
+234: occupancy 1 the selection already fails when the nominal SINR equals `Γ_r(1)`
+235: exactly, so cap-binding at occupancy 1 is strictly redundant.
+236: 
+237: ### 6. The arithmetic at occupancies 1, 2, 3 and beyond
+238: 
+239: Selection at occupancy `n` yields a mode iff
+240: 
+241: ```
+242: Γ_r(n) · (1 + 2e-9) · q  ≥  τ_min = 10^(−0.1441812460)
+243: ⇔  −10·log10(q)  ≤  headroom(n) + 9.1621e-9 dB
+244: ```
+245: 
+246: i.e. **the fade depth in dB must not exceed the headroom column of the Γ_r table.**
+247: With the α = 0.10 fade depth spanning 1.1073–4.8296 dB:
+248: 
+249: | `n_b` | headroom (dB) | fade depth needed to survive | elevation bins (of 161) with a transmitted mode |
+250: |---|---|---|---|
+
+FILE /home/sat/mcrl-v025-arch-ws/CONVEXITY-ADVERSARIAL-2026-09-10.md
+95: 
+96: A useful operational check is to freeze the reference `3+7+7+7` partition across the grid and evaluate it through production capped radiation. For SEALED, all 24 still attain the target at all nine cells, and the worst EE loss relative to adapting is **0.942783%**. For MARGIN, the worst corner is different: at 1.66°/1000 km, 21 users fall to 39.298333 Mbit/s, only 3 attain target, and EE is 3.538329% below the adaptive solution. Geometry therefore supplies a real feasibility warning in adverse conditions. This grid does not establish a useful general occupancy-control signal beyond cap management and small integer/fixed-cost effects.
+97: 
+98: **A7. Additional attack: unequal design points conceal channel performance — `WEAKENS_IT`.**
+99: 
+100: The report evaluates SEALED at nominal gain and MARGIN at its selected q10 fade. I instead integrated both provisioners' unchanged powers over the same production Rician × lognormal-shadow × scintillation distribution at 30°, using deterministic quadrature and production ACM decoding breakpoints. Original design-point eligibility was retained. This is an expected-rate diagnostic, not a new admission rule or an all-user reliability guarantee.
+101: 
+102: With fixed costs and expected ACM capacity credited, the N=24 optima become **`8+8+8`, 74.694681 Mbit/J for SEALED**, and **`4+5+5+5+5`, 75.085541 Mbit/J for MARGIN**. Crediting only expected delivered traffic up to each user's contract instead gives `8+8+8` under both, at **70.303038** and **57.351734 Mbit/J**. The identical original partition is therefore not preserved when both rules face the same fading distribution.
+103: 
+104: At their selected-mode thresholds, per-user target attainment is approximately **43.2% SEALED** versus **89.9% MARGIN**, not guaranteed target service. The latter uses the project's authenticated q10, whose CDF under the integrated engine distribution is 0.100967. Changing quadrature order from 128 to 192 changes every evaluated CDF by less than `9.2e-11`; probability normalization and contracted-credit upper bounds were checked. This does not destroy interior optima, but prevents interpreting the design-point ratios as expected operational efficiency or service reliability.
+105: 
+106: **Reproduction and audit trail.**
+107: 
+108: The independent scripts, JSON measurements, detailed attack notes, and this renderer are in [.scratch/convexity-adversarial](/home/sat/mcrl-v025-arch-ws/.scratch/convexity-adversarial). The decisive production distinctions are [mode selection and service floor](/home/sat/mcrl-v025-arch-ws/src/mcrl/physics_v025/acm.py:47), [coupling masks](/home/sat/mcrl-v025-arch-ws/src/mcrl/physics_v025/architectures.py:295), [cap and no-mode treatment](/home/sat/mcrl-v025-arch-ws/src/mcrl/physics_v025/architectures.py:620), [complete service versus target attainment](/home/sat/mcrl-v025-arch-ws/src/mcrl/physics_v025/resolution.py:140), and [PA and satellite accounting](/home/sat/mcrl-v025-arch-ws/src/mcrl/physics_v025/energy.py:33). The renderer checks production-module SHA-256 values against those captured during independent recomputation and verifies that the original report still matches its rerun.
+109: 
+110: From the workspace root, rerun all measurements and regenerate this report with:
+
+codex
+The source distinguishes selecting a mode, decoding it and meeting the rate target; the report must keep those separate. An earlier audit also found that common fading and the choice of credited throughput changed the apparent optimum. I’m checking those same failure modes here before treating any large ratio gain as useful headroom.
+exec
+/bin/bash -lc "python3 - <<'PY'
+from pathlib import Path
+root=Path('/home/sat/mcrl-v025-arch-ws')
+for d in [root/'.scratch',root/'scripts',Path('/home/sat/mcrl-v023-codex-audits/parallel-20260909')]:
+ print('\\nDIRECTORY',d)
+ if d.exists():
+  for p in sorted(d.iterdir()):
+   if d.name"'!='"'scripts' or any(x in p.name for x in ['prefix','control','ceiling','fixed','margin','association']): print(p.name)
+for f,a,b in [(root/'src/mcrl/physics_v025/acm.py',1,150),(root/'src/mcrl/physics_v025/energy.py',1,150),(root/'src/mcrl/physics_v025/resolution.py',120,220),(root/'scripts/run_prefix_ablation.py',1,160)]:
+ print('\\nFILE',f)
+ for i,s in enumerate(f.read_text().splitlines(),1):
+  if a<=i<=b: print(f'{i}: {s}')
+PY" in /home/sat/mcrl-v025-witness-ws
+ succeeded in 0ms:
+
+DIRECTORY /home/sat/mcrl-v025-arch-ws/.scratch
+PREREG-REJECTED-2026-08-25-R2-SYSTEM-PYTHON.json
+c2-v03
+c2-v03a-fast500
+c2-v03a-trend
+c3-v04
+catfish-cross-model-audit
+catfish-design-data
+catfish-factorial
+catfish-geometry
+catfish-literature
+catfish-opus-review
+catfish-oracle-gate
+catfish-pivotality-probe
+catfish-stage0
+catfish-waiting-gate
+chinese-word-r1-symbols-20260905-r1
+chinese-word-v023-lcsrs-20260905-r2
+coalgen-smoke-output-5
+coalition-corpus-smoke
+conversation-watch
+convexity-adversarial
+corrected-postrun
+crossgain-repair
+ee-axis-redesign
+epoch-trend
+hobs-theta3db-audit.md
+joint-c3-v011
+mechanism-corpus-smoke
+mone-v010
+multi-catfish-flow-audit-20260906
+multi-catfish-v014-learner
+multi-catfish-v015-c3-learned-context
+multi-catfish-v015-c3-pivotal-residual
+multi-catfish-v015-c3-reference-gate
+multi-catfish-v016-c3-origin-gate
+multi-catfish-v017-c3-softkl-gate
+multi-catfish-v018-relational-zr
+multi-catfish-v019-relational-zr-normalized
+multi-catfish-v020-c3-candidate-screen
+multi-catfish-v020-c3-source-audit
+multi-catfish-v021-expected-zr
+multi-catfish-v022-c3-coalition-residual
+multi-catfish-v023-100e-screen-preoutcome
+multi-catfish-v023-100e-screen-preoutcome-v2
+multi-catfish-v023-ablation-prep
+multi-catfish-v023-baseline-adapter
+multi-catfish-v023-c1c2-live-artifact-audit
+multi-catfish-v023-c1c2-neutral-adapters
+multi-catfish-v023-c1c2-neutral-materialization
+multi-catfish-v023-c1c2-predecision-capture
+multi-catfish-v023-c1c2-provider-factory-v3
+multi-catfish-v023-c1c2-successor
+multi-catfish-v023-c1c2-successor-launch
+multi-catfish-v023-c1c2-successor-physical-evaluation
+multi-catfish-v023-c1c2-successor-stagec-launch
+multi-catfish-v023-c1c2-target-generation
+multi-catfish-v023-c1c2-target-generation-launch
+multi-catfish-v023-c3-candidate-ca
+multi-catfish-v023-c3-candidate-cc
+multi-catfish-v023-c3-chatgpt-review-package-20260908
+multi-catfish-v023-c3-contingency
+multi-catfish-v023-c3-contingency-f1
+multi-catfish-v023-c3-contingency-f2
+multi-catfish-v023-c3-contingency-f3
+multi-catfish-v023-c3-existence-e1
+multi-catfish-v023-c3-observability
+multi-catfish-v023-c3-outside-opinions-20260908
+multi-catfish-v023-c3-probe-oracle-marginals
+multi-catfish-v023-c3-probe-results-20260908
+multi-catfish-v023-c3-probe-s0
+multi-catfish-v023-c3-source-schedule
+multi-catfish-v023-c3s-chatgpt-package-20260908
+multi-catfish-v023-c3s-confirmatory
+multi-catfish-v023-c3s-screen
+multi-catfish-v023-c3s-variants
+multi-catfish-v023-c3s-variants-chatgpt-package-20260908
+multi-catfish-v023-ch5-figure-pipeline
+multi-catfish-v023-controller-handoff-20260907
+multi-catfish-v023-current-c3view-provider
+multi-catfish-v023-d40-current-loader
+multi-catfish-v023-e2e-vertical-slice
+multi-catfish-v023-engineering-lane
+multi-catfish-v023-episode-screen
+multi-catfish-v023-five-arm-evaluation
+multi-catfish-v023-five-arm-learner-orchestrator
+multi-catfish-v023-five-arm-real-adapter
+multi-catfish-v023-five-arm-training-runner
+multi-catfish-v023-heterogeneous-trainer
+multi-catfish-v023-physical
+multi-catfish-v023-post-r7-provider-factory
+multi-catfish-v023-postgate
+multi-catfish-v023-provider-orchestrator-bridge
+multi-catfish-v023-r5-defect-relaunch
+multi-catfish-v023-r6-composition-accelerator
+multi-catfish-v023-r6-composition-diagnostic
+multi-catfish-v023-r6-composition-middle-queue
+multi-catfish-v023-r6-composition-tail-queue
+multi-catfish-v023-r6-fast-screen
+multi-catfish-v023-r6-fit-binding-fix
+multi-catfish-v023-r7-balanced-successor
+multi-catfish-v023-r7-domain-repair
+multi-catfish-v023-r7-domain-repair-diagnostic
+multi-catfish-v023-r7-domain-repair-r2
+multi-catfish-v023-r7-domain-repair-r3
+multi-catfish-v023-r7-domain-repair-r4
+multi-catfish-v023-r7-domain-repair-r4-fixtures
+multi-catfish-v023-r7-final-verifier-inventory
+multi-catfish-v023-r7-launch-ready
+multi-catfish-v023-real-one-world-plumbing
+multi-catfish-v023-server-pipeline
+multi-catfish-v023-target-batch-adapter
+multi-catfish-v023-training-readiness
+multi-catfish-v023-two-route-rehearsal
+multi-catfish-v023-two-route-source-training-runner
+multi-catfish-v024-regime-b-chatgpt-package-20260908
+multi-catfish-v024-regime-b-design
+multi-catfish-v025-physics-successor
+multi-catfish-v3-dev-pilot-20260828
+occupancy-convexity
+p6-server-reliability
+pnfe-v09
+prefix-ablation-20260910
+reviews
+run-corrected-p6-main-20260825.sh
+smc-er-short-ep
+tle-frozen-20260820-authority-v1
+zero-energy-c3-v012
+zero-energy-c3-v013
+zero-energy-c3-v013-verifier
+
+DIRECTORY /home/sat/mcrl-v025-arch-ws/scripts
+ceiling_and_segments.py
+render_prefix_ablation_report.py
+run_prefix_ablation.py
+
+DIRECTORY /home/sat/mcrl-v023-codex-audits/parallel-20260909
+ABLATION-SURVIVAL-2026-09-10.md
+ABLSURV-DONE
+ABLSURV.codex.log
+ABLSURV.session
+ACM-AUDIT-DONE
+ACM-CAUSALITY-AUDIT-2026-09-09.md
+ADJUDICATION-V16-PREREGISTRATION-CODEX-GPT6-ASTRA-2026-09-09.md
+ANYTIME-2026-09-10.md
+ANYTIME-DONE
+ANYTIME.codex.log
+ANYTIME.session
+ARCH-ALTERNATIVES-2026-09-09.md
+ARCH-CODEX-2026-09-09.md
+ARCH-DONE
+ARCH.codex.log
+ARMS-ASTRA-2026-09-10.md
+ARMS-FABLE-2026-09-10.md
+ARMSASTRA-DONE
+ARMSASTRA.codex.log
+ARMSASTRA.session
+ARMSFABLE-DONE
+ARMSFABLE.log
+ASTRA-MARGIN-DONE
+ASTRA-MARGIN-REVIEW-2026-09-09.md
+ASTRA-MARGIN.codex.log
+ASTRA-V16-DONE
+BEAMMARGIN-DONE
+BEAMMARGIN.codex.log
+BEAMMARGIN.session
+BEAMWIDTH-CODEX-2026-09-09.md
+BEAMWIDTH-DONE
+BEAMWIDTH-MARGIN-2026-09-10.md
+BEAMWIDTH-READING-2026-09-09.md
+BEAMWIDTH.codex.log
+C1-RESOURCE-CONTEXT-2026-09-10.md
+C1C2-AUDIT-2026-09-09.md
+C1C2-CODEX-2026-09-09.md
+C1C2-DONE
+C1C2-SUFFICIENCY-2026-09-09.md
+C1C2.codex.log
+C1C2FIX-CODEX-2026-09-10.md
+C1C2FIX-DONE
+C1C2FIX.codex.log
+C1C2FIX.session
+C1C2SUFF-CODEX-2026-09-09.md
+C1C2SUFF-DONE
+C1C2SUFF.codex.log
+C1CONTEXT-DONE
+C1CONTEXT.codex.log
+C1CONTEXT.session
+C3-PANEL-HARNESS-2026-09-10.md.part
+CEILING30-CODEX-2026-09-10.md
+CEILING30-DONE
+CEILING30-MARGIN-2026-09-10.md
+CEILING30.codex.log
+CEILING30.session
+CEILMARGIN-DONE
+CEILMARGIN.codex.log
+CEILMARGIN.session
+CERT-PROFILE-2026-09-09.md
+CERTPROFILE-CODEX-2026-09-09.md
+CERTPROFILE-DONE
+CERTPROFILE.codex.log
+CH5-PIPELINE-DONE
+CIRCUIT-SENSITIVITY-2026-09-09.md
+COALGEN-CODEX-2026-09-09.md
+COALGEN.codex.log
+COALITION-CORPUS-2026-09-09.md
+COALITION-COVERAGE-2026-09-09.md
+CONSTANT-PROVENANCE-2026-09-09.md
+CONTROL-CEILING-FRAMING-2026-09-10.md.part
+CONTROL-LAW-CEILING-2026-09-10.md.part
+CONVEX-ADVERSARIAL-2026-09-10.md
+CONVEX-CODEX-2026-09-10.md
+CONVEX-DONE
+CONVEX.codex.log
+CONVEX.session
+CONVEXADV-DONE
+CONVEXADV.codex.log
+CONVEXADV.session
+COST-REHEARSAL-DONE
+COST-REPROJECTION-AND-MAP-V2-2026-09-09.md
+COVERAGE-CODEX-2026-09-09.md
+COVERAGE-DONE
+COVERAGE.codex.log
+CROSSGAIN-CODEX-2026-09-09.md
+CROSSGAIN-DONE
+CROSSGAIN-REPAIR-2026-09-09.md
+CROSSGAIN.codex.log
+CTRLCEIL.codex.log
+CTRLFRAME.codex.log
+CURVE-CODEX-2026-09-09.md
+CURVE-DONE
+CURVE.codex.log
+DATE-VARIANCE-2026-09-09.md
+DATEPOOL-ADJUDICATION-2026-09-09.md
+DATEPOOL-CODEX-2026-09-09.md
+DATEPOOL-DONE
+DATEPOOL.codex.log
+DATES-CODEX-2026-09-09.md
+DATES-DONE
+DATES.codex.log
+DEADLINE-FIX-FINAL-2026-09-09.md
+DEADLINE-FIX-REPORT-2026-09-09.md
+DEADLINE-MEASURED-2026-09-09.md
+DEADLINE-MEASURED-FAILED
+DECK-DONE
+DEFECT-REGISTER-DONE
+DESIGN-AUDIT-2026-09-09.md
+DESIGN-CODEX-2026-09-09.md
+DESIGN-DONE
+DESIGN.codex.log
+ENCODER-SEAM-2026-09-10.md
+ENCODERSEAM-DONE
+ENCODERSEAM.log
+END-TO-END-PIPELINE-MAP-v2-2026-09-09.md
+EPOCH-TREND-2026-09-09.md
+EPOCHTREND-CODEX-2026-09-09.md
+EPOCHTREND-DONE
+EPOCHTREND.codex.log
+ESTIMATOR-CLAUDE-2026-09-10.md
+ESTIMATOR-CODEX-2026-09-10.md
+ESTIMATOR-DONE
+ESTIMATOR.codex.log
+ESTIMATOR.session
+ESTIMATORCLAUDE-DONE
+ESTIMATORCLAUDE.log
+EVAL-HARNESS-2026-09-10.md
+EXACT-ROW-PATH-COST-2026-09-10.md
+EXACTPATH-DONE
+EXACTPATH.codex.log
+EXACTPATH.session
+FINAL-BEAMWIDTH-CURVE-2026-09-10.md
+FINALCURVE-DONE
+FINALCURVE.codex.log
+FINALCURVE.session
+FLOOR-CODEX-2026-09-10.md
+FLOOR-DONE
+FLOOR.codex.log
+FLOOR.session
+HARNESS-AUDIT-2026-09-09.md
+HARNESS-CODEX-2026-09-09.md
+HARNESS-DONE
+HARNESS.codex.log
+HARNESS.log
+HEADROOM-CEILING-2026-09-09.md
+HEADROOM-DONE
+HEADROOM-FINAL-2026-09-09.md
+LABEL-BUDGET-CURVE-2026-09-09.md
+LADDER-CLAUDE-2026-09-10.md
+LADDER-CODEX-2026-09-10.md
+LADDER-DONE
+LADDER.codex.log
+LADDER.session
+LADDERCLAUDE-DONE
+LADDERCLAUDE.log
+LIT-CLAIM-2026-09-10.md
+LIT-PHYSICS-2026-09-10.md
+LITCLAIM-DONE
+LITCLAIM.codex.log
+LITCLAIM.session
+LITPHYSICS-DONE
+LITPHYSICS.log
+LOAD-SWEEP-2026-09-10.md
+LOADSWEEP-DONE
+LOADSWEEP.codex.log
+LOADSWEEP.session
+MAP-V2-DONE
+MATCHED-ANCHOR-TIER-2026-09-10.md
+MULTISTART-CEILING-2026-09-10.md.part
+MULTISTART.codex.log
+MUTANT-WITNESS-2026-09-09.md
+MUTANTS-CODEX-2026-09-09.md
+MUTANTS-DONE
+MUTANTS.codex.log
+OFFLINESUNI-CODEX-2026-09-09.md
+OFFLINESUNI-DONE
+OFFLINESUNI.codex.log
+ORACLE-CEILING-2026-09-09.md
+ORACLE-CODEX-2026-09-09.md
+ORACLE-DONE
+ORACLE.codex.log
+PANEL.codex.log
+PAPER-A-DONE
+PAPER-B-DONE
+PARAM-COMPARISON-2026-09-10.md
+PARAM-DONE
+PARAM.codex.log
+PARAM.session
+PER-USER-METRIC-2026-09-10.md
+PILOT-DONE
+PILOT-MIN-DONE
+PILOT-MIN-FINAL-2026-09-09.md
+PREFIX-ABLATION-2026-09-10.md
+PREFIX-DONE
+PREFIX.codex.log
+PREFIX.session
+PREVALENCE-CENSUS-2026-09-09.md
+PREVALENCE-CODEX-2026-09-09.md
+PREVALENCE-DONE
+PREVALENCE.codex.log
+PROBE-ACM2-FINAL-2026-09-09.md
+PROBE-ACMFIX-FINAL-2026-09-09.md
+PROBE-FINAL-2026-09-09.md
+PROBE-WIDENED-CODEX-2026-09-09.md
+PROBE-WIDENED-FINAL-2026-09-09.md
+PROBE-WIDENED-REPORT-2026-09-09.md
+PROBE-WIDENED.codex.log
+PROVADV-DONE
+PROVADV.codex.log
+PROVADV.session
+PROVENANCE-CODEX-2026-09-09.md
+PROVENANCE-DONE
+PROVENANCE.codex.log
+PROVISIONING-ADVERSARIAL-2026-09-10.md
+PSI-WITNESS-2026-09-09.md
+PSI-WITNESS-CODEX-2026-09-09.md
+PSI-WITNESS-FINAL-2026-09-09.md
+PSI-WITNESS-REPORT-2026-09-09.md
+PSI-WITNESS.codex.log
+Q10-ACTIVATION-WINDOW-2026-09-09.md
+Q10-CHECK-DONE
+RANK-CODEX-2026-09-09.md
+RANK-FAILED
+RANK.codex.log
+REPLAY-CODEX-2026-09-10.md
+REPLAY-DONE
+REPLAY.codex.log
+REPROJ-MAP-DONE
+RESEED-DONE
+RESEED.codex.log
+RESEED.session
+RESEEDED-SPAN-2026-09-10.md
+RETRAIN-CODEX-2026-09-09.md
+RETRAIN-DONE
+RETRAIN-RESULT-2026-09-09.md
+RETRAIN.codex.log
+RULE-COORDINATOR-2026-09-09.md
+RULECOORD-CODEX-2026-09-09.md
+RULECOORD-DONE
+RULECOORD.codex.log
+SEAL-INTEGRITY-2026-09-09.md
+SEAL-INTEGRITY-DONE
+SELECTOR-CODEX-2026-09-09.md
+SELECTOR-DIAGNOSIS-2026-09-09.md
+SELECTOR-DONE
+SELECTOR.codex.log
+SENSITIVITY-CODEX-2026-09-09.md
+SENSITIVITY-DONE
+SENSITIVITY.codex.log
+SIZE-PRIOR-2026-09-10.md
+SIZEPRIOR-DONE
+SIZEPRIOR.codex.log
+SIZEPRIOR.session
+STRATASTRA-DONE
+STRATASTRA.codex.log
+STRATASTRA.session
+STRATEGIC-ASTRA-2026-09-10.md
+STRATEGIC-FABLE-2026-09-10.md
+STRATFABLE-DONE
+STRATFABLE.log
+STRICT-CLEARANCE-CURVE-2026-09-10.md
+STRICTCURVE-DONE
+STRICTCURVE.codex.log
+STRICTCURVE.session
+SUNI-ADJUDICATION-2026-09-09.md
+SUNI-CODEX-2026-09-09.md
+SUNI-DONE
+SUNI.codex.log
+TARGET-DESIGN-2026-09-10.md
+TARGETDESIGN-DONE
+TARGETDESIGN.log
+TIER-DONE
+TIER.codex.log
+TIER.session
+V025-CONTROLLER-DECISIONS-PROBE-NEIGHBOURHOOD-2026-09-09.md
+V025-DEFECT-REGISTER-2026-09-09.md
+V025-INTERACTION-EXISTENCE-PROBE-2026-09-09.md
+V025-PILOT-MIN-REPORT-2026-09-09.md
+V025-STAGEC-COST-REHEARSAL-2026-09-09.md
+WSEE-DONE
+WSEE.codex.log
+WSEE.session
+acm-audit.log
+acm2.log
+astra-v16-preregistration-review.md
+astra-v16.log
+audit-panel-b.md
+audit-panel.md
+ch5-pipeline-final.md
+ch5-pipeline.log
+chain.log
+chain_after_panel.sh
+claude-acm-causality-audit.md
+claude-acm2.md
+claude-ch5-figure-pipeline.md
+claude-cost-reprojection-and-map-v2.md
+claude-deadline.md
+claude-deck-only.md
+claude-defect-register.md
+claude-encoderharness.md
+claude-estimator.md
+claude-harness.md
+claude-headroom.md
+claude-interaction-existence-probe.md
+claude-ladder.md
+claude-litphysics.md
+claude-paper-lane-figures-v2.md
+claude-paper-lane-figures.md
+claude-paper-lane-text-v2.md
+claude-paper-lane-text.md
+claude-pilot-min.md
+claude-pipeline-map-v2.md
+claude-probe-acmfix.md
+claude-seal-integrity.md
+claude-stagec-cost-rehearsal.md
+claude-target.md
+claude-widened.md
+claude-witness.md
+codex-ablation-survival.md
+codex-anytime.md
+codex-arch.md
+codex-astra-margin.md
+codex-beammargin.md
+codex-beamwidth.md
+codex-c1c2.md
+codex-c1c2fix.md
+codex-c1c2suff.md
+codex-c1context.md
+codex-c3screen.md
+codex-ceiling30.md
+codex-ceilingmargin.md
+codex-certprofile.md
+codex-coalgen.md
+codex-controlceiling.md
+codex-convex.md
+codex-convexadv.md
+codex-coverage.md
+codex-crossgain.md
+codex-ctrlframing.md
+codex-curve.md
+codex-datepool.md
+codex-dates.md
+codex-design.md
+codex-epoch-trend.md
+codex-estimator.md
+codex-exactpath.md
+codex-finalcurve.md
+codex-floor.md
+codex-harness.md
+codex-ladderfloor.md
+codex-litclaim.md
+codex-loadsweep.md
+codex-multistart.md
+codex-mutants.md
+codex-offlinesuni.md
+codex-oracle.md
+codex-panelharness.md
+codex-parametrisation.md
+codex-prefix.md
+codex-prevalence.md
+codex-provenance.md
+codex-provisioning-adv.md
+codex-replay.md
+codex-reseed.md
+codex-retrain.md
+codex-rulecoord.md
+codex-selector.md
+codex-sensitivity.md
+codex-sizeprior.md
+codex-sol-v025-pilot-c3.md
+codex-strictcurve.md
+codex-suni.md
+codex-tier.md
+codex-widened.md
+codex-witness.md
+codex-wsee.md
+consult-arms-b.md
+consult-arms.md
+cost-rehearsal.log
+deadline-measure.log
+deadline.log
+deck-final.md
+deck.log
+defect-register.log
+headroom.log
+map-v2.log
+memguard.sh
+paper-lane-A-final.md
+paper-lane-A.log
+paper-lane-B-final.md
+paper-lane-B.log
+pilot-min.log
+pilot.log
+pilot_cutover.sh
+probe-acmfix.log
+probe.log
+queue_coalgen.sh
+queue_mutants.sh
+reproj-map.log
+run_acm2.sh
+run_acm_audit.sh
+run_after_reset.sh
+run_ch5_pipeline.sh
+run_claude_job.sh
+run_claude_job2.sh
+run_claude_resumable.sh
+run_codex_job.sh
+run_cost_rehearsal.sh
+run_deadline.sh
+run_deck_now.sh
+run_defect_register.sh
+run_fable_job.sh
+run_headroom.sh
+run_paper_lane.sh
+run_paper_lane_v2.sh
+run_parallel_0909.sh
+run_pilot.sh
+run_pilot_codex.sh
+run_probe.sh
+run_probe_acmfix.sh
+run_probe_retry.sh
+run_reproj_map.sh
+run_resumable.sh
+run_widened.sh
+run_witness.sh
+seal-integrity.log
+strategic.md
+widened.log
+witness.log
+
+FILE /home/sat/mcrl-v025-arch-ws/src/mcrl/physics_v025/acm.py
+1: """V0.25 DVB-S2 ACM selection and the separately named U diagnostic."""
+2: 
+3: from __future__ import annotations
+4: 
+5: from dataclasses import dataclass
+6: import math
+7: from typing import Protocol
+8: 
+9: from mcrl.errors import MCRLContractError
+10: 
+11: from .constants_v025 import (
+12:     ACM_TABLE,
+13:     IMPLEMENTATION_MARGIN_DB,
+14:     ROLL_OFF,
+15:     SHANNON_MIN,
+16:     SINR_MIN,
+17: )
+18: 
+19: 
+20: @dataclass(frozen=True)
+21: class ACMMode:
+22:     name: str
+23:     efficiency_bit_per_symbol: float
+24:     ideal_esn0_db: float
+25:     spectral_efficiency_bit_per_s_hz: float
+26:     threshold_db: float
+27:     threshold_linear: float
+28: 
+29: 
+30: def _mode(row: tuple[str, float, float]) -> ACMMode:
+31:     name, efficiency, ideal = row
+32:     spectral_efficiency = efficiency / (1.0 + ROLL_OFF)
+33:     threshold_db = ideal + IMPLEMENTATION_MARGIN_DB - 10.0 * math.log10(1.0 + ROLL_OFF)
+34:     return ACMMode(
+35:         name,
+36:         efficiency,
+37:         ideal,
+38:         spectral_efficiency,
+39:         threshold_db,
+40:         10.0 ** (threshold_db / 10.0),
+41:     )
+42: 
+43: 
+44: ACM_MODES = tuple(_mode(row) for row in ACM_TABLE)
+45: 
+46: 
+47: def served_phy(sinr_linear: float, *, allocated: bool = True) -> bool:
+48:     """The service endpoint: allocated and at or above the lowest threshold."""
+49: 
+50:     if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+51:         raise MCRLContractError("SINR must be finite and nonnegative")
+52:     return bool(allocated and sinr_linear >= SINR_MIN)
+53: 
+54: 
+55: def select_mode(sinr_linear: float) -> ACMMode | None:
+56:     """Select the eligible mode with greatest efficiency, not table position."""
+57: 
+58:     if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+59:         raise MCRLContractError("SINR must be finite and nonnegative")
+60:     eligible = [mode for mode in ACM_MODES if sinr_linear >= mode.threshold_linear]
+61:     return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
+62: 
+63: 
+64: def select_mode_margin_off(sinr_linear: float) -> ACMMode | None:
+65:     """Greatest-efficiency ACM mode with only the common 1.7-dB margin removed."""
+66: 
+67:     if not math.isfinite(sinr_linear) or sinr_linear < 0.0:
+68:         raise MCRLContractError("SINR must be finite and nonnegative")
+69:     eligible = [
+70:         mode
+71:         for mode in ACM_MODES
+72:         if sinr_linear >= 10.0 ** ((mode.threshold_db - IMPLEMENTATION_MARGIN_DB) / 10.0)
+73:     ]
+74:     return max(eligible, key=lambda mode: mode.efficiency_bit_per_symbol) if eligible else None
+75: 
+76: 
+77: def rate_target_mode(
+78:     rate_target_bps: float,
+79:     full_bandwidth_hz: float,
+80:     occupancy: int,
+81: ) -> ACMMode | None:
+82:     """Return the lowest-threshold frozen ACM mode that meets ``r*``.
+83: 
+84:     For TDM, ``full_bandwidth_hz / occupancy`` is effective airtime
+85:     bandwidth.  For FDM it is the physical sub-band bandwidth.  Both therefore
+86:     implement the sealed ``Gamma_r(n_b)`` definition with one helper.
+87:     """
+88: 
+89:     if not math.isfinite(rate_target_bps) or rate_target_bps <= 0.0:
+90:         raise MCRLContractError("rate target must be finite and positive")
+91:     if not math.isfinite(full_bandwidth_hz) or full_bandwidth_hz <= 0.0:
+92:         raise MCRLContractError("full bandwidth must be finite and positive")
+93:     if type(occupancy) is not int or occupancy < 1:
+94:         raise MCRLContractError("occupancy must be a positive exact integer")
+95:     required_se = rate_target_bps * occupancy / full_bandwidth_hz
+96:     eligible = [
+97:         mode
+98:         for mode in ACM_MODES
+99:         if mode.spectral_efficiency_bit_per_s_hz >= required_se
+100:     ]
+101:     return min(eligible, key=lambda mode: mode.threshold_linear) if eligible else None
+102: 
+103: 
+104: def rate_target_sinr(
+105:     rate_target_bps: float,
+106:     full_bandwidth_hz: float,
+107:     occupancy: int,
+108: ) -> float | None:
+109:     """Return ``Gamma_r(n_b)`` or ``None`` when the ACM table cannot meet it."""
+110: 
+111:     mode = rate_target_mode(rate_target_bps, full_bandwidth_hz, occupancy)
+112:     if mode is None:
+113:         return None
+114:     # The separately frozen PHY service floor is rounded at its declared dB
+115:     # precision and is a few parts in 1e10 above the derived first-mode value.
+116:     # A controller target must clear both gates to avoid reporting a nominally
+117:     # selected QPSK 1/4 mode as unserved.
+118:     return max(mode.threshold_linear, SINR_MIN)
+119: 
+120: 
+121: class RateModel(Protocol):
+122:     name: str
+123: 
+124:     def rate_bps(self, sinr_linear: float, bandwidth_hz: float) -> float: ...
+125: 
+126:     def served(self, sinr_linear: float, *, allocated: bool = True) -> bool: ...
+127: 
+128: 
+129: @dataclass(frozen=True)
+130: class ACMRate:
+131:     """Capped, margin-bearing DVB-S2 ACM model."""
+132: 
+133:     name: str = "ACM"
+134: 
+135:     def rate_bps(self, sinr_linear: float, bandwidth_hz: float) -> float:
+136:         if not math.isfinite(bandwidth_hz) or bandwidth_hz <= 0.0:
+137:             raise MCRLContractError("bandwidth must be finite and positive")
+138:         if not served_phy(sinr_linear):
+139:             return 0.0
+140:         mode = select_mode(sinr_linear)
+141:         return 0.0 if mode is None else bandwidth_hz * mode.spectral_efficiency_bit_per_s_hz
+142: 
+143:     def served(self, sinr_linear: float, *, allocated: bool = True) -> bool:
+144:         return served_phy(sinr_linear, allocated=allocated)
+145: 
+146: 
+147: @dataclass(frozen=True)
+148: class UncappedShannonDiagnosticRate:
+149:     """Treatment U: uncapped Shannon rate with the common margin removed.
+150: 
+
+FILE /home/sat/mcrl-v025-arch-ws/src/mcrl/physics_v025/energy.py
+1: """Partial-payload energy accounting for the V0.25 engine."""
+2: 
+3: from __future__ import annotations
+4: 
+5: from dataclasses import dataclass
+6: import math
+7: from typing import Iterable, Mapping
+8: 
+9: from mcrl.errors import MCRLContractError
+10: 
+11: from .architectures import BeamIdentity
+12: from .constants_v025 import (
+13:     BASEBAND_POWER_PER_ACTIVE_SATELLITE_W,
+14:     BEAM_RF_CAP_W,
+15:     CIRCUIT_POWER_PER_CHAIN_W,
+16:     PA_MAX_EFFICIENCY,
+17:     PA_SATURATION_POWER_W,
+18:     P_BUS_W,
+19:     STANDBY_FRACTION,
+20: )
+21: 
+22: 
+23: def pa_efficiency(rf_power_w: float) -> float:
+24:     """Square-root PA efficiency; zero RF has zero efficiency."""
+25: 
+26:     if not math.isfinite(rf_power_w) or rf_power_w < 0.0:
+27:         raise MCRLContractError("RF power must be finite and nonnegative")
+28:     if rf_power_w == 0.0:
+29:         return 0.0
+30:     return min(PA_MAX_EFFICIENCY, PA_MAX_EFFICIENCY * math.sqrt(rf_power_w / PA_SATURATION_POWER_W))
+31: 
+32: 
+33: def pa_supply_power_w(rf_power_w: float) -> float:
+34:     """``sqrt(p*p_sat)/eta_max`` for positive RF, exactly zero at zero."""
+35: 
+36:     if not math.isfinite(rf_power_w) or rf_power_w < 0.0:
+37:         raise MCRLContractError("RF power must be finite and nonnegative")
+38:     return 0.0 if rf_power_w == 0.0 else math.sqrt(rf_power_w * PA_SATURATION_POWER_W) / PA_MAX_EFFICIENCY
+39: 
+40: 
+41: PRIMARY_IDLE_POWER_W = 0.0
+42: SENSITIVITY_IDLE_POWER_W = STANDBY_FRACTION * pa_supply_power_w(BEAM_RF_CAP_W)
+43: 
+44: 
+45: @dataclass(frozen=True)
+46: class HardwareInventory:
+47:     """Physical beam-chain identities fixed before actions and horizons."""
+48: 
+49:     chains: tuple[BeamIdentity, ...]
+50: 
+51:     def __post_init__(self) -> None:
+52:         if len(set(self.chains)) != len(self.chains):
+53:             raise MCRLContractError("hardware inventory contains duplicate identities")
+54:         if tuple(sorted(self.chains)) != self.chains:
+55:             raise MCRLContractError("hardware inventory must use frozen sorted identity order")
+56:         if any(len(identity) != 2 for identity in self.chains):
+57:             raise MCRLContractError("inventory identities must be (NORAD, beam-chain)")
+58: 
+59:     @classmethod
+60:     def fixed(cls, identities: Iterable[BeamIdentity]) -> "HardwareInventory":
+61:         return cls(tuple(sorted((int(norad), int(chain)) for norad, chain in identities)))
+62: 
+63: 
+64: @dataclass(frozen=True)
+65: class EnergyInterval:
+66:     duration_s: float
+67:     beam_rf_w: Mapping[BeamIdentity, float]
+68: 
+69: 
+70: @dataclass(frozen=True)
+71: class EnergyReceipt:
+72:     joules: float
+73:     pa_j: float
+74:     circuit_j: float
+75:     standby_j: float
+76:     baseband_j: float
+77:     bus_j: float
+78: 
+79:     def verify(self) -> None:
+80:         components = (self.pa_j, self.circuit_j, self.standby_j, self.baseband_j, self.bus_j)
+81:         if any(not math.isfinite(value) or value < 0.0 for value in components):
+82:             raise MCRLContractError("energy components must be finite and nonnegative")
+83:         if not math.isclose(math.fsum(components), self.joules, rel_tol=0.0, abs_tol=1.0e-12):
+84:             raise MCRLContractError("energy receipt components do not sum to joules")
+85: 
+86: 
+87: def interval_energy(
+88:     inventory: HardwareInventory,
+89:     interval: EnergyInterval,
+90:     *,
+91:     idle_power_w: float = PRIMARY_IDLE_POWER_W,
+92:     bus_power_w: float = P_BUS_W,
+93:     circuit_power_per_active_chain_w: float = CIRCUIT_POWER_PER_CHAIN_W,
+94: ) -> EnergyReceipt:
+95:     """Evaluate the declared physical-inventory formula for one interval."""
+96: 
+97:     if not math.isfinite(interval.duration_s) or interval.duration_s < 0.0:
+98:         raise MCRLContractError("interval duration must be finite and nonnegative")
+99:     if not math.isfinite(idle_power_w) or idle_power_w < 0.0:
+100:         raise MCRLContractError("idle power must be finite and nonnegative")
+101:     if not math.isfinite(circuit_power_per_active_chain_w) or circuit_power_per_active_chain_w < 0.0:
+102:         raise MCRLContractError("active-chain circuit power must be finite and nonnegative")
+103:     if bus_power_w != 0.0:
+104:         raise MCRLContractError("V0.25 stage-1 endpoint declares P_bus=0 exclusion")
+105:     inventory_set = set(inventory.chains)
+106:     supplied = set(interval.beam_rf_w)
+107:     if not supplied <= inventory_set:
+108:         raise MCRLContractError("radiation names a chain outside the fixed inventory")
+109:     if any(not math.isfinite(value) or value < 0.0 for value in interval.beam_rf_w.values()):
+110:         raise MCRLContractError("beam RF values must be finite and nonnegative")
+111:     duration = interval.duration_s
+112:     pa_j = circuit_j = standby_j = 0.0
+113:     active_satellites: set[int] = set()
+114:     active_by_satellite: dict[int, int] = {}
+115:     for identity, raw_rf in interval.beam_rf_w.items():
+116:         rf = float(raw_rf)
+117:         if rf > 0.0:
+118:             active_satellites.add(identity[0])
+119:             active_by_satellite[identity[0]] = active_by_satellite.get(identity[0], 0) + 1
+120:             pa_j += max(idle_power_w, pa_supply_power_w(rf)) * duration
+121:             circuit_j += circuit_power_per_active_chain_w * duration
+122:     if idle_power_w > 0.0:
+123:         # Sensitivity-only physical census: every represented satellite owns
+124:         # 12 RF chains, independent of the number of realisable earth cells.
+125:         represented_satellites = {identity[0] for identity in inventory.chains}
+126:         if any(active_by_satellite.get(satellite, 0) > 12 for satellite in represented_satellites):
+127:             raise MCRLContractError("active beams exceed the declared 12-chain satellite census")
+128:         idle_chains = sum(
+129:             12 - active_by_satellite.get(satellite, 0)
+130:             for satellite in represented_satellites
+131:         )
+132:         standby_j = idle_chains * idle_power_w * duration
+133:     baseband_j = len(active_satellites) * BASEBAND_POWER_PER_ACTIVE_SATELLITE_W * duration
+134:     receipt = EnergyReceipt(
+135:         math.fsum((pa_j, circuit_j, standby_j, baseband_j)),
+136:         pa_j,
+137:         circuit_j,
+138:         standby_j,
+139:         baseband_j,
+140:         0.0,
+141:     )
+142:     receipt.verify()
+143:     return receipt
+144: 
+145: 
+146: def schedule_energy(
+147:     inventory: HardwareInventory,
+148:     slots: Iterable[tuple[float, Mapping[BeamIdentity, float]]],
+149:     *,
+150:     duration_s: float,
+
+FILE /home/sat/mcrl-v025-arch-ws/src/mcrl/physics_v025/resolution.py
+120:     for slot in radiation.slots:
+121:         for transmission in slot.transmissions:
+122:             allocated_fraction[transmission.user_id] += slot.fraction
+123:             served = rate_model.served(transmission.sinr, allocated=True)
+124:             if served:
+125:                 served_fraction[transmission.user_id] += slot.fraction
+126:                 rates[transmission.user_id] += slot.fraction * rate_model.rate_bps(
+127:                     transmission.sinr, transmission.bandwidth_hz
+128:                 )
+129:             # No branch edits radiation: an unsuccessful attempt continues to
+130:             # interfere and consume exactly the energy already scheduled.
+131:     energy = schedule_energy(
+132:         inventory,
+133:         (
+134:             (slot.fraction, dict(slot.beam_rf_w))
+135:             for slot in radiation.slots
+136:         ),
+137:         duration_s=duration_s,
+138:         idle_power_w=idle_power_w,
+139:     )
+140:     bits = {user: rate * duration_s for user, rate in rates.items()}
+141:     complete = {
+142:         user: allocated_fraction[user] > 0.0
+143:         and math.isclose(served_fraction[user], allocated_fraction[user], rel_tol=0.0, abs_tol=1.0e-15)
+144:         for user in rates
+145:     }
+146:     return ResolutionResult(
+147:         radiation,
+148:         rates,
+149:         bits,
+150:         served_fraction,
+151:         complete,
+152:         radiation.rate_target_attained,
+153:         radiation.per_user_rate_target_feasible,
+154:         energy,
+155:     )
+156: 
+157: 
+158: __all__ = ["ResolutionResult", "resolve_configuration"]
+
+FILE /home/sat/mcrl-v025-arch-ws/scripts/run_prefix_ablation.py
+1: #!/usr/bin/env python3
+2: """Prefix ablation for the bounded V0.25 set-level oracle.
+3: 
+4: DIAGNOSTIC_NOT_CLAIM.  This runner performs no training or policy execution.
+5: It reuses the declared oracle's objective, exact tie-break, catalogue families,
+6: and fixed caps, changing only the configuration around which the catalogue is
+7: constructed for the two ablation arms.
+8: """
+9: 
+10: from __future__ import annotations
+11: 
+12: import argparse
+13: from collections import Counter
+14: from dataclasses import dataclass
+15: from fractions import Fraction
+16: import hashlib
+17: import importlib.util
+18: import itertools
+19: import json
+20: import math
+21: import multiprocessing as mp
+22: import os
+23: from pathlib import Path
+24: import platform
+25: import statistics
+26: import subprocess
+27: import sys
+28: import time
+29: from typing import Mapping, Sequence
+30: 
+31: 
+32: REPO = Path(__file__).resolve().parents[1]
+33: SCRATCH = REPO / ".scratch/prefix-ablation-20260910"
+34: REFERENCE_REPO = Path("/home/sat/mcrl-v025-ladder-ws")
+35: REFERENCE_SRC = REFERENCE_REPO / "src"
+36: PROBE_PATH = REFERENCE_REPO / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+37: MARGIN_PATH = SCRATCH / "cleared_margin_batch.py"
+38: ETA_REF = Fraction("19720681.00172232")
+39: WORLD_COUNT = 2
+40: ANCHORS_PER_WORLD = 4
+41: SELECTION_WORKERS = 2
+42: OCCUPANT_SUBSET_MAX_SIZE = 4
+43: OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+44: JOINT_CANDIDATE_CAP = 4_096
+45: A4_ITERATION_CAP = 16
+46: CLAIM_CEILING = "DIAGNOSTIC_NOT_CLAIM"
+47: ARMS = (
+48:     "BASELINE",
+49:     "UNILATERAL",
+50:     "ORACLE_FROM_UNI",
+51:     "ORACLE_FROM_BASE",
+52:     "ORACLE_FROM_BASE_ITERATED",
+53: )
+54: 
+55: # The command still runs from this workspace with PYTHONPATH=src as required.
+56: # The exact read-only stage-4h implementation named by the task is placed first
+57: # only inside this diagnostic process; hashes and its git identity are recorded.
+58: sys.path.insert(0, str(REFERENCE_SRC))
+59: 
+60: 
+61: def _load_module(name: str, path: Path):
+62:     spec = importlib.util.spec_from_file_location(name, path)
+63:     if spec is None or spec.loader is None:
+64:         raise RuntimeError(f"cannot load {path}")
+65:     module = importlib.util.module_from_spec(spec)
+66:     sys.modules[name] = module
+67:     spec.loader.exec_module(module)
+68:     return module
+69: 
+70: 
+71: probe = _load_module("prefix_ablation_v025_probe", PROBE_PATH)
+72: 
+73: 
+74: def exact_float(value: float) -> Fraction:
+75:     if not math.isfinite(value):
+76:         raise RuntimeError("non-finite physical coefficient")
+77:     return Fraction.from_float(float(value))
+78: 
+79: 
+80: def objective(profile) -> Fraction:
+81:     return exact_float(profile.bits) - ETA_REF * exact_float(profile.joules)
+82: 
+83: 
+84: def served(profile) -> int:
+85:     if isinstance(profile, SelectionMetric):
+86:         return profile.served_count
+87:     return sum(bool(value) for value in profile.score.served_phy.values())
+88: 
+89: 
+90: def attained(profile) -> int:
+91:     return sum(
+92:         bool(value) for value in (profile.score.rate_target_attained or {}).values()
+93:     )
+94: 
+95: 
+96: def ratio(bits: float, joules: float) -> float:
+97:     if not math.isfinite(bits) or not math.isfinite(joules) or joules <= 0.0:
+98:         raise RuntimeError("invalid EE components")
+99:     return bits / joules
+100: 
+101: 
+102: def relative(numerator: float, denominator: float) -> float | None:
+103:     return None if denominator == 0.0 else numerator / denominator - 1.0
+104: 
+105: 
+106: def _configuration(base, mapping: Mapping[int, tuple[int, int] | None], kind: str):
+107:     return probe._configuration(base, dict(mapping), kind=kind)
+108: 
+109: 
+110: @dataclass(frozen=True)
+111: class SelectionMetric:
+112:     config: object
+113:     bits: float
+114:     joules: float
+115:     served_count: int
+116: 
+117: 
+118: @dataclass(frozen=True)
+119: class CoordinateResult:
+120:     selected: object
+121:     moves: tuple[dict[str, object], ...]
+122:     passes: int
+123:     terminal_candidates: tuple[object, ...]
+124:     best_alternatives: Mapping[int, tuple[int, int]]
+125:     candidate_comparisons: int
+126: 
+127: 
+128: _WORKER_TAPE = None
+129: 
+130: 
+131: def _selection_worker(task):
+132:     step_index, base, configs = task
+133:     evaluator = probe.StepEvaluator(
+134:         _WORKER_TAPE,
+135:         probe._setting("a-r0"),
+136:         step_index,
+137:         transition_from=base,
+138:         field="realised",
+139:         run_setting=probe.run_setting_for("a-r0"),
+140:         boundary_indices=(0,),
+141:         fading_quantile_alpha=0.10,
+142:     )
+143:     evaluator.evaluate_many(configs)
+144:     rows = []
+145:     for config in configs:
+146:         profile = evaluator._evaluated.get(config.configuration_id)
+147:         if profile is not None:
+148:             rows.append(SelectionMetric(config, profile.bits, profile.joules, served(profile)))
+149:     return rows, tuple(evaluator._invalid), evaluator.physical_evaluations
+150: 
+151: 
+152: class ParallelSelectionEvaluator:
+153:     """Persistent fork workers over one tape; cache is local to one arm."""
+154: 
+155:     def __init__(self, tape, step_index: int, base, pool) -> None:
+156:         self.tape = tape
+157:         self.step_index = step_index
+158:         self.base = base
+159:         self.pool = pool
+160:         self._evaluated: dict[str, SelectionMetric] = {}
+
