@@ -17631,3 +17631,944 @@ index 0000000000000000000000000000000000000000..a4710798ad0b4a3633d260daed160fc1
 +- **Derived on paper:** 90.981% of U1, 81.573% of J1; exact unrounded C3-S gains from receipt fractions; 109/120 S0 joint selections; the 34.549 s old wrapper remainder and phase shares; 4,552/22 = 206.9 adjacent multi-user rows per anchor.
 +- **Inferred:** cache-preserving batching is the likely highest-leverage implementation change. No V0.25 EE or per-anchor latency result is inferred or estimated.
 
+codex
+The report is drafted. Its core operational conclusion is deliberately conservative: V0.25 has no valid set-decoder latency number yet because the existing catalogue builder discards the nominal evaluator/cache, while the dormant S0 helpers either switch to scalar full-48 semantics or mix scalar and dense results. The report names the adapter and instrumentation that must exist before timing.
+exec
+/bin/bash -lc "sha256sum SET-LEVEL-DECODER-REVIVAL-2026-09-10.md
+sed -n '235,292p' SET-LEVEL-DECODER-REVIVAL-2026-09-10.md
+git status --short -- SET-LEVEL-DECODER-REVIVAL-2026-09-10.md .scratch/set-level-decoder-revival" in /home/sat/mcrl-v025-selector-ws
+ succeeded in 0ms:
+41601718677f98e5fc36ecf12be407f8d042e6eb1b11b743d77a5566b825bab0  SET-LEVEL-DECODER-REVIVAL-2026-09-10.md
+**Therefore no defensible V0.25 S0 seconds-per-anchor number exists in the opened artefacts. It would be fabrication to add a nominal-evaluation average to `12.014 s`.** What must be built first is a small `V025DenseS0Adapter` that:
+
+1. accepts the already repaired/authenticated `a0` and the sealed bounded catalogue;
+2. constructs one fresh nominal `StepEvaluator(boundary_indices=(0,))`;
+3. batches BASE and all selection candidates under one dense semantic identity, or safely returns/reuses `_catalogue_with_census`'s evaluator and singleton outcomes;
+4. exact-evaluates only the still-missing multi-user rows, then computes exact `F(a)-F(a0)+C2(a)`/`C1+C2+Psi`, the service guard, and stable tie;
+5. instruments base preparation, singleton-ranking/catalogue, added multi-user evaluation, score/guard/argmax, snapshot/integrity, timeout/fallback, and peak RSS separately;
+6. uses fresh dense full-48 realised evaluation only after selection for endpoint scoring.
+
+**VERIFIED adjacent bound, not an estimate.** The 22-anchor C3 coalition build evaluated 4,552 multi-user rows—mean 206.9 per anchor—in one fresh dense boundary-0 batch per anchor. That joint call cost `0.865742–20.973042 s`, mean `4.614247 s`; the timer excludes tape construction, catalogue/singleton work, context, serialization, and verification. It shows that added set evaluation is material and highly variable. Because its panel and timer differ from FULL20, it must not be added to today's median or called the expected S0 cost.
+
+**INFERRED engineering target.** Cache reuse/batching is the decisive seam: the current catalogue already pays to evaluate BASE and the singleton neighbourhood. A port that throws those outcomes away recreates precisely the repeated nominal-physics cost that dominates the current path. Whether a correct integrated S0 can meet V0.25's 10 s coordinator budget can only be answered by timing the adapter under the declared worker count and cancellation path.
+
+## Part 4 — smallest V0.25 experiment worth running later
+
+### `V025-S0-REVIVAL-FULL20-R0`
+
+This is a proposed development diagnostic, not authority to execute it.
+
+**Question.** On the smallest existing four-world development panel, does an exact set-level chooser over the already sealed V0.25 catalogue improve realised full-buffer EE over the proposal it is meant to coordinate, without reducing service?
+
+**Prerequisites to build/freeze.** The `V025DenseS0Adapter` above; an authenticated Q1 schema-v2-compatible Q1 plus current-Q2 checkpoint; a frozen `eta_ref`; a receipt schema binding evaluator semantics/cache identity, catalogue digest, provisioning digest, checkpoint digest, and tie/service rules. If no compatible Q1-v2 checkpoint exists at freeze time, the experiment is blocked; old checkpoints must not be shape-adapted ad hoc.
+
+**Panel.** Exactly the 20 development anchors already used by the latency receipt: `V025_PROBE_R2/world/{1..4}`, steps `0..4`, with the receipt's nearest-eligible base assignments. One frozen learner lineage is enough for this structural screen. Do not use or inspect any of the 48 evaluation-only claim dates.
+
+**Matched arms.** From each identical predecision snapshot:
+
+- `A0`: repaired masked `argmax(Q1+Q2)` complete proposal;
+- `S0-V025`: exact contract S0 over the sealed bounded catalogue, using dense boundary-0 nominal `C1+C2+Psi` (equivalently exact immediate `F-F(a0)` plus C2), BASE-relative nominal service guard, and stable configuration-ID tie.
+
+This reference is `A0`, not external `BASELINE`, S_UNI, a unilateral fixed point, or a DROP arm. S_UNI may be reported later but is unnecessary to answer the first revival question.
+
+**Outcome scoring.** Evaluate `A0` and `S0-V025` from the same snapshot with a fresh realised dense full-48 batch. Pool exact sums across all 20 anchors:
+
+- primary: `sum(full-buffer decodable bits) / sum(system joules)` and relative S0-versus-A0 change;
+- service guard: pooled served/opportunities, with S0 no lower than A0 by more than the inherited `0.001` margin;
+- descriptive: per-world direction, chosen-row kind/changed-set size, action difference rate, and deadline fallback count.
+
+This is matched-anchor headroom, not a closed-loop efficacy claim. If it is positive, the next experiment would be a separately frozen short closed-loop screen; if it is not, no set-level learner should be trained on the strength of the V0.23 result.
+
+**Prospective decision rule.** Pursue a closed-loop port only if pooled realised EE is strictly above A0 and the service guard passes. Report all four world directions without adding a post-hoc direction-vote requirement. A positive result remains development evidence while evaluator authority is globally UNDETERMINED.
+
+**Computational cost specification, not a time estimate.** Per anchor: one existing repaired-Q1/Q2 proposal; one sealed catalogue build with singleton nominal outcomes retained; one added dense boundary-0 batch for the multi-user rows; exact score/guard/tie; and one realised dense full-48 batch containing the two selected profiles. Across 20 anchors that is 20 catalogue builds, 20 added multi-user batches, and 40 committed-profile endpoint evaluations. The adjacent 22-anchor inventory suggests about 207 multi-user rows per anchor, but the run must record the actual FULL20 count rather than assume it. No C3 training is required. Execute only under `nice -n 15`, all BLAS thread variables set to 1, one Python process (never more than two), enforced peak RSS below 4 GB, and without overlapping or disturbing the live jobs.
+
+**Latency readout.** Run once without suppressing the real 10 s cancellation/fallback; charge only post-validated-`a0` coordinator time per contract, but also report presentation-to-commit for comparability with today's receipt. The result must include fallback B/E/service. This single 20-anchor run then answers both questions the existing artefacts cannot: realised structural headroom on V0.25 and actual per-anchor cost of the correct integrated set decoder.
+
+## Final classification
+
+- **Verified by artefact/code:** both V0.23 numerical results and their BASE references; S0's realised-membership catalogue leak; C3-S's repaired nominal isolation; full-buffer numerators; panels and missing physical dates; no decoder learner; absent confirmatory result; old and current timing decompositions; V0.25 evaluator disagreement and cache defect; incomplete runtime prerequisites.
+- **Derived on paper:** 90.981% of U1, 81.573% of J1; exact unrounded C3-S gains from receipt fractions; 109/120 S0 joint selections; the 34.549 s old wrapper remainder and phase shares; 4,552/22 = 206.9 adjacent multi-user rows per anchor.
+- **Inferred:** cache-preserving batching is the likely highest-leverage implementation change. No V0.25 EE or per-anchor latency result is inferred or estimated.
+?? SET-LEVEL-DECODER-REVIVAL-2026-09-10.md
+
+diff --git a/.scratch/set-level-decoder-revival/v023-inventory.md b/.scratch/set-level-decoder-revival/v023-inventory.md
+deleted file mode 100644
+index 3028530a55113fa5a09519711d09d3f68a40bcad..0000000000000000000000000000000000000000
+--- a/.scratch/set-level-decoder-revival/v023-inventory.md
++++ /dev/null
+@@ -1,138 +0,0 @@
+-# V0.23 S0 / C3-S primary-artifact inventory
+-
+-Completion criterion: identify the run-producing source and result bundles for S0 and the C3-S v1 closed-loop screen, authenticate the principal files, and answer the decision-object, information, estimand, reference, panel, and learner questions from source. This criterion is met below. No evaluation-only claim dates were opened, and no Python process was started.
+-
+-## Bottom line
+-
+-- **Verified:** both requested development artefact families still exist. The S0 result authenticates `+1.812631%` **against its matched-anchor learned `BASE`**, with identical pooled service. The C3-S terminal receipt authenticates `FULL +2.883167%` and `LITE +2.921776%` **against the common frozen learned `BASE`**, again with identical pooled service. Neither number is against a unilateral fixed point or FULL2.
+-- **Important qualification, verified from code:** the S0 full decoder's *score calculation* is nominal-only, but its saved candidate rows were imported from the E1 realised tape. In particular, E1 formed evacuation origin membership from a realised-fading BASE profile. Thus `S0 +1.812631% used only deployable information` is too strong if candidate-set formation is part of the decoder. The S0-U arm avoids that particular realised-membership dependency; the closed-loop C3-S implementation repaired it by rebuilding evacuation membership from a detached fade-free BASE nominal evaluation.
+-- **Derived:** `1.812631 / 1.992311 = 90.981%`, so “about 91% of the ceiling” is true only relative to the U1 ceiling. Relative to J1 it is `81.573%`.
+-- **Verified missing:** a C3-S FULL2 confirmatory package exists as engineering code and a draft/world plan, but no sealed plan, launch authority, physical episode output, or terminal result exists. It was not run.
+-
+-## Artefacts and digests
+-
+-### S0
+-
+-The produced bundle is `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/` and contains the merged result/table, twelve unit results, and twelve short completion logs. The run-producing source survives under `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/`.
+-
+-Principal SHA-256 values, recomputed read-only with `sha256sum`:
+-
+-| Artefact | SHA-256 |
+-|---|---|
+-| `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-result.json` | `ba496e936c5c884d8541c3312c142ac4b83cbaec0d173cba8be34fc4faa31c5b` |
+-| `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md` | `a9635c2f20477aa642e24c004660f182adc5463c7cf6d6413707528d0435445b` |
+-| `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py` | `0c86303b8d9bcf324b05a06e01491172a52c767de98302a7eda9c08b16ba6aeb` |
+-| `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py` | `19447de8f1f03d0c40dcc0ef9862a5cce0c0f9f3381a19350d9521f052a803fe` |
+-
+-The two code hashes are embedded in the merged S0 result. The result also embeds the twelve unit-result hashes and the E1 terminal/tape hashes. There is no separate S0 launch-authority/preflight bundle or result `.sha256` sidecar; the merged JSON itself is the surviving digest-bearing record.
+-
+-The human result is byte-identical at [probe-s0-table.md:3](/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md:3) and the workspace report copy [PROBE-S0-2026-09-08.md:3](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3-probe-results-20260908/PROBE-S0-2026-09-08.md:3). BASE, U1, J1 and S0 figures are at [probe-s0-table.md:5](/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md:5); the report explicitly says realised tape rows supplied every arm score at [probe-s0-table.md:23](/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md:23).
+-
+-### C3-S v1 screen
+-
+-The authoritative run-producing tree is `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/`. It contains the frozen contract/config, preflight/evidence/world-census manifests, twelve unit launch authorities plus merge authority, policy and runner code, tests, twelve unit receipts, and the terminal receipt.
+-
+-Principal SHA-256 values, recomputed read-only:
+-
+-| Artefact | SHA-256 |
+-|---|---|
+-| `c3s_policy.py` (run-producing tree) | `f50aa3047870c096978ee09175eb55b660798e57af6929ff596119ad3dd0801b` |
+-| `run_v023_c3s_screen.py` (run-producing tree) | `4f62e7608b114b2c4b256d25671be7fc33cdac7e1797734978262992fc678da2` |
+-| `V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md` | `1b19e0f4c6c5f1591e3ca670da368fea0e785ec70fc51af5a9fe9edfdbfc7a7f` |
+-| `C3S-PREFLIGHT-MANIFEST.json` | `ee114c8d8363e7b1ae1461766db7ef0e43f92b0302cfeb298c590db1f1b5e597` |
+-| `C3S-EVIDENCE-MANIFEST.json` | `37939bd81bdb2f23289af04402900655331758101e74f5f9456c247e70a3e2b5` |
+-| `C3S-WORLD-CENSUS.json` | `c993ebdf3505b9a169726f2a03bf1f69fa6bb587140f2d001d650602003dea6e` |
+-| `C3S-LAUNCH-AUTHORITY-MERGE.json` | `14b5ef7112e14f2144d2c172208e12c6faa4bc946ad9a37d121ac83bc2a8618c` |
+-| `runs/c3s-20260908-r1/terminal/terminal-receipt.json` | `a66b481303a28c31b49f127e302d304ac1ef34de5eb526dd2e3949bb5196ea69` |
+-
+-The result record identifies the server worktree/output and terminal digest at [C3S-V1-RESULT-RECORD-2026-09-08.md:6](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:6). Its pooled table confirms FULL `+2.883%`, LITE `+2.922%`, and 35,971/36,000 served for all arms at [C3S-V1-RESULT-RECORD-2026-09-08.md:12](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:12). The terminal receipt contains the unrounded exact fractions; recomputing from those fractions gives `+2.883167480521%` and `+2.921776320795%`.
+-
+-Provenance warning: the V0.25 selector workspace copies of `c3s_policy.py` and `run_v023_c3s_screen.py` hash to `b5f1e788c2ce7c3ca6d7edb72c2be5136a4199ad6fecebd8ef804de217716c57` and `425225c5552383241e347f5e4609715a378ae335acd53a566d9ba51ee2f7230e`, respectively. They are not the source bytes bound by the run receipt. The terminal receipt in that workspace is nevertheless byte-identical (`a66b4813...`). Inventory or porting should therefore use the `/home/sat/mcrl-v023-c3s-run/` source as the historical authority.
+-
+-### Confirmatory tree: engineering only, no result
+-
+-`/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/` exists and holds runner/adapter/preflight builders, tests, a 9,000-world plan, and drafts. Its implementation report says no training, physical episode, TEST access, or outcome computation occurred at [CONFIRMATORY-V2-IMPLEMENTATION-REPORT-2026-09-08.md:11](/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/CONFIRMATORY-V2-IMPLEMENTATION-REPORT-2026-09-08.md:11). The placeholder says the sealed plan is intentionally absent at [SEALED-C3S-FULL2-CONFIRMATORY-PLAN.md.PLACEHOLDER:1](/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/SEALED-C3S-FULL2-CONFIRMATORY-PLAN.md.PLACEHOLDER:1), and the README says the package does not grant launch authority at [README.md:1](/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/README.md:1). No confirmatory `terminal-receipt.json`, result JSON, or unit receipt was found in any `multi-catfish-v023-c3s-confirmatory` tree.
+-
+-## S0 decision inventory
+-
+-### Decision object and candidate formation
+-
+-**Verified.** At each of 120 authenticated E1 predecision anchors, the decoder chooses one complete 100-user action vector. `S0` chooses over:
+-
+-1. one BASE vector, the masked first-index argmax of frozen float32 `Q1+Q2`;
+-2. every legal, non-NOOP, physically non-equivalent single-user edit, with all other users fixed to BASE; and
+-3. every saved “evacuate one whole BASE-served origin beam to one commonly legal non-origin physical destination” vector.
+-
+-`S0-U` permits only (1)+(2); `S0-J` permits only (1)+(3). The S0 runner constructs rows from the E1 tape at [run_probe_s0.py:398](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:398) and applies the three allowed-kind sets at [run_probe_s0.py:543](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:543). E1's exhaustive unilateral rule and full-origin evacuation rule are declared at [run_v023_c3_existence_e1.py:259](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:259), with evacuation enumeration implemented at [run_v023_c3_existence_e1.py:826](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:826).
+-
+-Eligible candidates must have nominal served count at least nominal BASE's served count. The exact objective is `nominal_bits - eta_ref * nominal_energy`; ties choose lexicographically smallest profile ID [run_probe_s0.py:157](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:157). All vectors are evaluated independently through nominal physics, rather than composing unilateral effects [run_probe_s0.py:526](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:526).
+-
+-### Information class
+-
+-**Verified, and the historical “deployable-only” label needs qualification.** Nominal scoring disables fading and evaluates unit Rician gain / zero-dB shadowing [run_probe_s0.py:375](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:375). The runner authenticates current causal state, action masks, and physical action keys, takes a current-anchor OPS-3 snapshot, explicitly does not project the future, and replays BASE between anchors [run_probe_s0.py:505](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:505). Q1+Q2 supplies the BASE proposal; the alternatives themselves are deterministic legality/physical-key enumerations rather than Q-ranked proposals.
+-
+-However, the probe does **not** rebuild its catalog from only those live inputs. `_candidate_rows` imports `unilateral_candidates` and `joint_witness_catalog` from the E1 tape, including realised metrics in the same row objects [run_probe_s0.py:398](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:398). The selector function reads only the `nominal` field, so realised metrics do not enter its score. But E1 created the joint catalog after a keyed-fading BASE evaluation [run_v023_c3_existence_e1.py:1848](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:1848), and the catalog builder defines origin membership from that BASE profile's realised `served`, `serving_satellite`, and `serving_cell` values [run_v023_c3_existence_e1.py:843](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:843). The S0 process also loads realised tape rows and oracle winner maps for scoring/control arms [run_probe_s0.py:474](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:474).
+-
+-Therefore:
+-
+-- selection objective: deployable nominal data only;
+-- unilateral candidate formation: deployable current masks/physical keys plus BASE proposal;
+-- full/joint candidate formation in the saved S0 probe: **not strictly deployable**, because realised BASE service/association determined evacuation membership upstream;
+-- scoring: intentionally nondeployable realised E1 tape endpoints, after selection;
+-- extra static input: `eta_ref`, the development-panel E1 BASE EE. This is frozen offline calibration rather than a live future/realised signal, but it is an input beyond “physics, prior state, Q1+Q2 proposals.”
+-
+-The merged artifact records that S0 selected a joint row on 109/120 anchors and a unilateral row on 11/120 (derived by counting `anchors[].selected.S0.kind`), so the joint-catalog provenance is material to the quoted S0 arm, not merely dormant.
+-
+-### Estimand, numerator, and reference
+-
+-**Verified.** This is a matched-anchor, one-step counterfactual diagnostic, not a closed-loop policy estimand. Every candidate is evaluated at the same E1 predecision state; BASE is then committed to advance the original trajectory [E1 contract:100](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md:100). The merged estimand is the ratio of summed realised selected-profile bits to summed realised selected-profile system energy over all 120 anchors, with service as summed served users / 12,000. The physical numerator is `interval_s * sum(link_rate_bps)` and the denominator is network/system energy [run_v023_c3_existence_e1.py:751](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:751); E1 declares `B = Δt ΣR_u`, `E = Δt P_system` at [E1 contract:110](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md:110). This is the full-buffer/rate-integral numerator: no delivered-demand cap appears in the accounting.
+-
+-The reference is the learned Q1+Q2 `BASE` at those anchors. The merged code verifies exact equality to E1's pooled BASE before computing every `percent_vs_base` [run_probe_s0.py:706](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:706). It is not a unilateral fixed point. U1 and J1 are separate realised-information oracle comparators/ceilings.
+-
+-### Panel and learner
+-
+-**Verified.** Four TRAIN world seeds from domains `C3_EXISTENCE_E1/world/{1..4}`: `861587764845384088`, `3943897440191533562`, `5747196377242098234`, `4004348767321774260`; crossed with frozen lineages `2026092101`, `2026092102`, `2026092103`; ten canonical step anchors `0..9`; 12 units, 120 anchors, 100 users/anchor. The panel declaration is at [run_v023_c3_existence_e1.py:259](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:259), and the merge requires exactly 120 unique anchors [run_probe_s0.py:706](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:706).
+-
+-The physical episode-start dates are **not serialized** in the S0 result, E1 terminal receipt, or E1 tapes; only the TRAIN split, world-domain/seed, lineage, and step index are recorded. `2026092101..03` are lineage identifiers, not evidence of three ephemeris dates. The report/run date is 2026-09-08.
+-
+-No S0 learner exists and no updates occur. Frozen learned Q1/Q2 heads are involved in producing BASE, so this is “no decoder learner,” not “no learned component anywhere.” The unit output explicitly marks `learner_used=False` [run_probe_s0.py:593](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:593).
+-
+-## C3-S v1 closed-loop decision inventory
+-
+-### Decision object and candidate formation
+-
+-**Verified.** Each FULL or LITE decision returns one atomic complete 100-user action vector. Both form a fresh BASE proposal from frozen float32 masked `Q1+Q2` on that arm's own current state. FULL enumerates BASE + every legal physically distinct unilateral edit + every complete origin-beam evacuation to each commonly legal destination. LITE replaces the exhaustive unilateral part with the first Q1+Q2-ranked physically different alternative per user, but keeps every full-origin evacuation. The frozen contract states the full catalog at [C3-S contract:31](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:31) and the LITE pruning at [C3-S contract:177](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:177). The run-producing policy implements LITE ranking at [c3s_policy.py:338](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:338), deterministic evacuation enumeration at [c3s_policy.py:302](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:302), and the combined catalog/exhaustive nominal pass at [c3s_policy.py:619](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:619).
+-
+-The choice rule is the same exact S0 objective/service guard/tie order [c3s_policy.py:224](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:224). The screen commits that selected vector and advances that arm's own observation [run_v023_c3s_screen.py:601](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:601); it is therefore genuinely closed-loop rather than replaying BASE anchors.
+-
+-### Information class
+-
+-**Verified deployable at the decision boundary, with named extra/static inputs.** The contract permits current predecision/native state, committed association/occupancy/tracking state, current and necessary historical geometry, legal masks/physical keys, Q1+Q2 proposals/model projections, and nominal fade-free physics; it forbids current realised fading/scores, oracle winners, future state, other-arm trajectory, and running screen EE [C3-S contract:21](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:21).
+-
+-The implementation snapshots current geometry, candidates, masks, frozen Q1+Q2 proposal, committed segments/association, pending age and tracking state; sets `fading_enabled=False`; and uses a detached evaluator whose draw returns unit Rician / zero-dB shadowing [c3s_policy.py:385](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:385). It reconstructs evacuation membership from BASE's **nominal/native** service result [c3s_policy.py:619](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:619). The policy rejects reachable live `StepEnvironment`, RNG, or keyed-fading capabilities [c3s_policy.py:121](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:121) and checks that selection did not mutate the environment/RNG [c3s_policy.py:734](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:734).
+-
+-Inputs beyond the abbreviated controller description are: current legal masks and slot physical keys; current geometry plus limited historical geometry needed for warm-start tracking; committed segment/association/pending-age state; frozen Q1 and Q2 parameters; static physical/topology/grid configuration; and fixed `eta_ref = E1 TRAIN BASE EE`. The only non-live/offline-calibrated quantity is `eta_ref`; no realised or future endpoint is available to the selector. Realised keyed fading and committed outcome are used only after atomic commit by the scorer.
+-
+-### Estimand, numerator, and reference
+-
+-**Verified.** The screen estimates each fixed policy's closed-loop pooled EE across twelve 30-step episodes, permitting each arm's trajectory/state/proposals to drift after a matched initial state. Each committed step records `bits = interval_s * sum(last_outcome.link_rate_bps)` and `energy = interval_s * last_outcome.system_power_w` [run_v023_c3s_screen.py:581](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:581); the merge forms the ratio of exact sums and pooled served fraction [run_v023_c3s_screen.py:757](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:757). The contract explicitly says there is no added finite-demand cap [C3-S contract:83](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:83). This is the declared full-buffer numerator.
+-
+-The reference is the matched frozen learned `BASE` arm (same three repriced Q1/Q2 lineages/checkpoints), not U1, a unilateral fixed point, or FULL2. The runner creates fresh matched BASE/FULL/LITE environments and verifies identical initial state [run_v023_c3s_screen.py:677](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:677). The exact SUPPORT rule compares each coordinator arm directly with pooled BASE EE and BASE service-minus-0.001 [run_v023_c3s_screen.py:821](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:821).
+-
+-### Panel and learner
+-
+-**Verified.** Four fresh derived TRAIN world seeds: `8464287092499831892`, `7305539127129390835`, `7691130988233444596`, `5887834234954284271`; crossed with lineages `2026092101`, `2026092102`, `2026092103`; arms BASE/FULL/LITE; 30 committed steps `0..29`, 100 users, 12 world-lineage units, 36 episodes total, 1,080 committed steps, and 36,000 opportunities per arm. Code-derived seeds and panel bindings are at [run_v023_c3s_screen.py:161](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:161) and [run_v023_c3s_screen.py:218](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:218); the three-arm amendment is at [C3-S contract:191](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:191).
+-
+-As with S0, physical episode-start dates are not serialized in the terminal/unit receipts. The run record dates execution on 2026-09-08; the only per-unit identifiers are world seed and frozen lineage. The receipt confirms positive EE in all four worlds and all three lineages, and the result record prints those descriptive contrasts at [C3S-V1-RESULT-RECORD-2026-09-08.md:19](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:19).
+-
+-No coordinator learner or training/update occurred. Frozen learned Q1/Q2 heads produce the proposal at every decision; the set-level decoder itself is deterministic/exact enumeration plus nominal physical evaluation and exact rational comparison. The receipt's claim ceiling and no-learner/no-TEST status are recorded at [C3S-V1-RESULT-RECORD-2026-09-08.md:3](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:3).
+-
+-## Verified historical timing distinction
+-
+-The v1 result record's `49.4 s` is LITE's **mean complete selector-call wall time** under 12-way contention; median was `43.1 s` [C3S-V1-RESULT-RECORD-2026-09-08.md:22](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:22). The same receipt separately reports LITE internal phase means of about `1.9 s` Q inference, `0.012 s` enumeration, and `12.9 s` nominal evaluation, with mean catalog 917 and mean 901 unique evaluations [C3S-V1-RESULT-RECORD-2026-09-08.md:29](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:29). Thus “49 s” and “nominal evaluation 12.9 s” are different timers; any V0.25 latency comparison must not conflate them.
+-
+-## Evidence classification summary
+-
+-- **Verified by opened artefacts/code:** existence and hashes; both numerical results and their BASE references; full/LITE decision sets; realised-membership leakage in the S0 full/joint catalog; closed-loop nominal rebuild and information isolation; full-buffer numerator; worlds/lineages/steps; no decoder learner; no confirmatory run.
+-- **Derived on paper/from exact receipt fractions:** unrounded `+2.883167480521%`, `+2.921776320795%`; S0 recovers 90.981% of U1 but 81.573% of J1; S0's 109 joint/11 unilateral selected-kind counts.
+-- **Inferred:** none of the key event/result assertions. The only limited inference is that absent serialized episode-start dates cannot be reported without replaying the sampler; they are therefore recorded here as missing rather than guessed.
+diff --git a/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md b/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a4710798ad0b4a3633d260daed160fc15db4a1af
+--- /dev/null
++++ b/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md
+@@ -0,0 +1,285 @@
++**The S0 and C3-S v1 artefacts exist and confirm S0 `+1.812631%` and C3-S FULL `+2.883167%` against their learned Q1+Q2 `BASE` references—not unilateral fixed points—but S0's joint-catalogue construction was not strictly deployable-only; the smallest V0.25 settling experiment is a no-new-learner, 20-anchor `V025_PROBE_R2` matched S0-versus-repaired-Q1+Q2-`a0` screen using the sealed bounded catalogue, one internally consistent dense boundary-0 selection path, and realised dense full-48 full-buffer pooled EE.**
++
++# Set-level decoder revival — artefact inventory and V0.25 design
++
++Date: 2026-09-10  
++Status: **DESIGN-PHASE INVENTORY; NOT A CLAIM; DO NOT RUN**
++
++## Evidence convention and scope
++
++- **VERIFIED** means opened artefact, receipt, or source code.
++- **DERIVED** means arithmetic or a direct consequence of verified fields/code.
++- **INFERRED** means the record does not directly establish the point.
++- I used development material only. I did not open the 48 evaluation-only claim dates.
++- I did not execute Python or a simulation. All V0.23 access was read-only; `/home/sat/mcrl-leo-handover` and its virtual environment were untouched.
++- Loss values are not used anywhere as evidence about EE.
++
++## Executive finding
++
++**VERIFIED.** Both historical results survive in result-bearing bundles. S0 reports `+1.812631%` versus its matched-anchor learned `BASE`, with the same `11,975/12,000` service count. C3-S v1 reports FULL `+2.883167480521%` and LITE `+2.921776320795%` versus the common frozen learned `BASE`, with all three arms at `35,971/36,000` served. Neither reference is a unilateral fixed point. The C3-S result is a real closed-loop TRAIN development screen; the earlier S0 result is a matched-anchor counterfactual replay.
++
++**VERIFIED correction to the controller shorthand.** S0's score used nominal fade-free physics, but its joint candidates came from E1 tapes whose evacuation groups were formed from a realised-fading BASE profile. The `+1.812631%` S0 arm therefore cannot be described strictly as “using only deployable information” when candidate formation is included. This is material: S0 selected joint rows on 109/120 anchors. C3-S v1 repaired the boundary by rebuilding the evacuation catalogue from a detached fade-free nominal BASE evaluation.
++
++**VERIFIED missing result.** A C3-S FULL2 confirmatory engineering tree exists, but it explicitly has no sealed plan, launch authority, physical run, unit receipts, or terminal result. The confirmatory experiment was not run.
++
++**DERIVED.** `1.812631 / 1.992311 = 90.981%`; “about 91% of the ceiling” is correct only against U1. Against J1, `1.812631 / 2.222094 = 81.573%`.
++
++## Part 1 — V0.23 artefact inventory
++
++### 1.1 What exists and its digests
++
++#### S0 probe
++
++**VERIFIED.** The produced bundle is `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/`; it has the merged JSON, human table, 12 unit results, and 12 completion logs. The run-producing source survives under `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/`. The copied human report also survives at [PROBE-S0-2026-09-08.md](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3-probe-results-20260908/PROBE-S0-2026-09-08.md:1).
++
++| Artefact | SHA-256 |
++|---|---|
++| `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-result.json` | `ba496e936c5c884d8541c3312c142ac4b83cbaec0d173cba8be34fc4faa31c5b` |
++| `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md` | `a9635c2f20477aa642e24c004660f182adc5463c7cf6d6413707528d0435445b` |
++| run-producing `run_probe_s0.py` | `0c86303b8d9bcf324b05a06e01491172a52c767de98302a7eda9c08b16ba6aeb` |
++| run-producing E1 `run_v023_c3_existence_e1.py` | `19447de8f1f03d0c40dcc0ef9862a5cce0c0f9f3381a19350d9521f052a803fe` |
++
++The merged result embeds the 12 unit-result hashes, the E1 terminal/tape hashes, and these producer-code hashes. There is no separate S0 launch-authority/preflight bundle and no result sidecar; the digest-bearing merged result is the surviving record. The underlying E1 terminal binding is SHA-256 `0bc54fad23c8cdac2ce789c49ee37880f4df6e32110576c7a800443df0e7c4a6`.
++
++#### C3-S v1 closed-loop screen
++
++**VERIFIED.** The authoritative run-producing checkout is `/home/sat/mcrl-v023-c3s-run`, with the screen beneath `.scratch/multi-catfish-v023-c3s-screen/`. It contains the frozen contract/config, evidence and preflight manifests, world census, 12 unit launch authorities, merge authority, source/tests, 12 unit receipts with sidecars, and the terminal receipt.
++
++| Artefact | SHA-256 |
++|---|---|
++| run-producing `c3s_policy.py` | `f50aa3047870c096978ee09175eb55b660798e57af6929ff596119ad3dd0801b` |
++| run-producing `run_v023_c3s_screen.py` | `4f62e7608b114b2c4b256d25671be7fc33cdac7e1797734978262992fc678da2` |
++| `V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md` | `1b19e0f4c6c5f1591e3ca670da368fea0e785ec70fc51af5a9fe9edfdbfc7a7f` |
++| `C3S-PREFLIGHT-MANIFEST.json` | `ee114c8d8363e7b1ae1461766db7ef0e43f92b0302cfeb298c590db1f1b5e597` |
++| `C3S-EVIDENCE-MANIFEST.json` | `37939bd81bdb2f23289af04402900655331758101e74f5f9456c247e70a3e2b5` |
++| `C3S-WORLD-CENSUS.json` | `c993ebdf3505b9a169726f2a03bf1f69fa6bb587140f2d001d650602003dea6e` |
++| `C3S-LAUNCH-AUTHORITY-MERGE.json` | `14b5ef7112e14f2144d2c172208e12c6faa4bc946ad9a37d121ac83bc2a8618c` |
++| `runs/c3s-20260908-r1/terminal/terminal-receipt.json` | `a66b481303a28c31b49f127e302d304ac1ef34de5eb526dd2e3949bb5196ea69` |
++| workspace result record | `e8a4c03294e2405ba1b1c99e8ac3f7c51eed74793c706dacd0cc3a1a93146d40` |
++
++The human result is [C3S-V1-RESULT-RECORD-2026-09-08.md](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:1). The V0.25 selector workspace's copies of `c3s_policy.py` and `run_v023_c3s_screen.py` have different hashes (`b5f1e788...` and `425225c5...`) and are not the bytes bound by the terminal receipt. Historical interpretation and any port must start from the server checkout above, not those copies. The terminal receipt itself is byte-identical in both trees.
++
++#### Confirmatory tree
++
++**VERIFIED.** `/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/` contains adapter/runner/preflight code, tests, drafts, and a 9,000-world plan. Principal surviving files include:
++
++| Artefact | SHA-256 |
++|---|---|
++| `CONFIRMATORY-V2-IMPLEMENTATION-REPORT-2026-09-08.md` | `b89819160c56770018944211565057c52896ff0d853a50523bfa7d5ce9dcf6ca` |
++| `C3S-CONFIRM-WORLD-PLAN-9000.json` | `b007b3b0035f3b05b8ea428c6af6c7c28f4f09350ba7cbdd44c6b1335411561a` |
++
++The implementation report says no training, physical episode, TEST access, or outcome computation occurred. `SEALED-C3S-FULL2-CONFIRMATORY-PLAN.md.PLACEHOLDER` says the sealed plan is intentionally absent. No confirmatory terminal receipt, result JSON, or unit receipt was found.
++
++### 1.2 S0 probe: exact decision and estimand
++
++#### Decision object and candidate set
++
++**VERIFIED.** At each authenticated E1 predecision anchor, S0 chooses one complete 100-user action vector from:
++
++1. `BASE`: frozen float32 masked first-index `argmax(Q1+Q2)`;
++2. every mask-legal, non-NOOP, physically distinct one-user edit with all other users fixed to BASE; and
++3. every “evacuate all BASE-served users of one origin beam to one commonly legal non-origin destination” vector saved by E1.
++
++S0-U allows only BASE plus (2); S0-J allows only BASE plus (3). A candidate is eligible only if its nominal served count is at least nominal BASE's. S0 then maximises the exact-rational nominal score `B_nominal - eta_ref * E_nominal`; ties use the lexicographically smallest fixed profile ID. Each full vector is physically evaluated; the decoder does not add unilateral effects.
++
++#### Information class
++
++**VERIFIED.** The score computation disables fading (unit Rician gain, zero-dB shadowing), uses the current authenticated state/geometry/masks/physical keys and prior committed state, makes no future projection, and obtains BASE from frozen Q1+Q2. `eta_ref` is an additional static input: the offline E1 TRAIN BASE EE. The alternatives are legality/physical enumerations, not a learned C3 proposal.
++
++**VERIFIED exception.** The S0 runner imports candidate rows from the E1 realised tape. The selector reads their newly recomputed `nominal` fields, not their realised metrics, but E1 formed joint origin membership after a keyed-fading BASE evaluation and used that realised BASE profile's `served`, `serving_satellite`, and `serving_cell`. Thus:
++
++- nominal scoring: deployable information;
++- unilateral candidate formation: deployable current masks/physical keys and BASE;
++- full/joint candidate formation in this probe: **contains realised-fading-derived membership and is not strictly deployable**;
++- outcome scoring: deliberately realised E1 tape metrics, after selection, and therefore not a decision input.
++
++S0 selected 109 joint and 11 unilateral rows, so this is not a dormant-path caveat. C3-S v1's fresh nominal catalogue is the artefact that verifies the corrected deployable boundary.
++
++#### Estimand, numerator, and reference
++
++**VERIFIED.** S0 is a matched-anchor one-step counterfactual diagnostic. All candidates are evaluated at the same predecision snapshot, and BASE—not S0—is committed between the ten anchors. The pooled estimand is
++
++`sum(realised selected-profile bits) / sum(realised selected-profile system energy)`
++
++over 120 anchors, with pooled served users over 12,000 opportunities. Per anchor, `B = interval_s * sum(link_rate_bps)` and `E = interval_s * system_power_w`. There is no demand/delivery cap: this is the same **full-buffer decodable-throughput numerator** now declared by V0.25. The physical integration is not the same implementation: V0.23 uses its current-interval endpoint convention, while V0.25's committed authority in use is dense full-48 integration.
++
++The reference is matched-anchor learned Q1+Q2 `BASE`; it is not U1, J1, an iterated unilateral fixed point, or MODQN BASELINE. The merged code first verifies exact equality to E1's pooled BASE and then computes `percent_vs_base`.
++
++| Arm | Pooled EE (bit/J) | Versus BASE | Served |
++|---|---:|---:|---:|
++| BASE | 124,075,740.547231 | — | 11,975/12,000 |
++| U1 realised oracle | 126,547,715.769454 | +1.992311% | 11,974/12,000 |
++| J1 realised oracle | 126,832,819.836554 | +2.222094% | 11,972/12,000 |
++| S0 | 126,324,776.402952 | **+1.812631%** | **11,975/12,000** |
++| S0-U | 125,965,446.280702 | +1.523026% | 11,975/12,000 |
++| S0-J | 126,263,243.469835 | +1.763038% | 11,975/12,000 |
++
++#### Panel and learner
++
++**VERIFIED.** TRAIN domains `C3_EXISTENCE_E1/world/{1..4}` yield seeds `861587764845384088`, `3943897440191533562`, `5747196377242098234`, and `4004348767321774260`. They are crossed with frozen Q1/Q2 lineages `2026092101`, `2026092102`, and `2026092103`, at steps `0..9`: 12 units, 120 anchors, 100 users/anchor. The physical episode-start dates are not serialized in the S0 result, E1 terminal receipt, or tapes. The lineage numbers are identifiers, not date evidence. The report/run date is 2026-09-08.
++
++No S0 learner or update exists. Frozen learned Q1/Q2 heads produce BASE, so “no learner” means no **set-decoder learner**, not no learned component anywhere.
++
++### 1.3 C3-S v1: exact decision and estimand
++
++#### Decision object and candidate set
++
++**VERIFIED.** Each FULL/LITE call returns one atomic complete 100-user vector from that arm's own current closed-loop state.
++
++- FULL: fresh Q1+Q2 BASE + every legal physically distinct unilateral edit + every complete nominal-BASE origin-beam evacuation to each commonly legal non-origin destination.
++- LITE: fresh Q1+Q2 BASE + each user's first Q1+Q2-ranked physically different alternative + the same complete evacuation set.
++
++The service guard, `B_nominal - eta_ref E_nominal` objective, exact comparison, and deterministic tie order match S0. The selected vector is committed and each arm advances its own state, making this a closed-loop policy screen rather than a BASE-trajectory replay.
++
++#### Information class
++
++**VERIFIED deployable at the decision boundary.** The detached snapshot contains current geometry, legal masks/physical keys, static physical/topology/grid configuration, current and limited historical geometry for tracking, committed segments/association/pending age, frozen Q1/Q2 parameters/proposals, and fixed offline `eta_ref`. The nominal evaluator disables fading. C3-S reconstructs origin membership from nominal BASE service, rejects access to the live environment/RNG/keyed-fading capability, and fingerprints state before and after selection. Current or future realised fading, realised candidate scores, oracle winners, other-arm state, and running screen EE are unavailable to the chooser.
++
++Inputs beyond the abbreviated “nominal physics, prior state, Q1+Q2 proposals” description are therefore current legal masks and physical keys; static physics/topology/grid configuration; limited historical geometry and tracking/pending-age state; frozen Q1/Q2 parameters; and the offline TRAIN calibration `eta_ref`. None is a postdecision outcome. Realised fading is used only by the environment after the atomic commit for scoring.
++
++#### Estimand, numerator, and reference
++
++**VERIFIED.** This is closed-loop pooled EE across twelve matched units, with each arm taking 30 committed decisions. Every step records `bits = interval_s * sum(committed link_rate_bps)` and `energy = interval_s * committed system_power_w`; merge forms the ratio of exact sums. There is no finite-demand cap, so it is the declared full-buffer numerator. As above, V0.25 preserves the traffic estimand but changes the physics/integration implementation.
++
++The reference is the common frozen learned Q1+Q2 `BASE` arm from identical initial states, not U1, S_UNI, a unilateral fixed point, or FULL2.
++
++| Arm | Pooled EE (bit/J) | Versus BASE | Served |
++|---|---:|---:|---:|
++| BASE | 117,419,389.19 | — | 35,971/36,000 |
++| FULL | 120,804,786.83 | **+2.883167%** | **35,971/36,000** |
++| LITE | 120,850,121.10 | **+2.921776%** | **35,971/36,000** |
++
++**VERIFIED.** FULL and LITE are positive in all four world summaries and all three lineage summaries; service is identical in every pooled comparison. These are descriptive breakdowns within a TRAIN development screen, not confirmation.
++
++#### Panel and learner
++
++**VERIFIED.** Four fresh TRAIN domains `C3S_SCREEN/world/{1..4}` yield seeds `8464287092499831892`, `7305539127129390835`, `7691130988233444596`, and `5887834234954284271`. They are crossed with lineages `2026092101..03`; BASE/FULL/LITE each run 30 steps on their own trajectories. That is 12 matched world-lineage units, 36 episodes, 1,080 committed arm-steps, 100 users, and 36,000 opportunities per arm. Physical episode-start dates are not serialized; the recorded execution date is 2026-09-08.
++
++No coordinator learner or training/update occurred. The set decoder is deterministic enumeration, nominal physical evaluation, service filtering, and exact/rule-based argmax. Frozen learned Q1/Q2 heads remain upstream proposal inputs.
++
++## Part 2 — what transfers to V0.25
++
++The statuses below distinguish reusable decision logic from historical bytes or evidence.
++
++| Component | Status | Required V0.25 treatment |
++|---|---|---|
++| Complete-profile decision object, nominal service guard, deterministic tie | **Transfers with a named adaptation** | Keep atomic complete-profile selection and BASE-relative nominal service guard; express profiles in V0.25 `PhysicalAction`/configuration IDs and use its stable tie order. |
++| V0.23 FULL/LITE catalogues | **Does not transfer** | Replace all-unilateral/evacuation enumeration with V0.25's sealed bounded catalogue: repaired `a0`, declared shortlist unilaterals/S0 proposals, top-user pairs, beam evacuations, null handling, and 1,500 cap. This is a different search support, so V0.23 percentages do not state its ceiling. |
++| Nominal, fade-free information principle | **Transfers with a named adaptation** | Use only V0.25 current causal geometry, masks, prior profile/history, corrected nominal provisioning, and Q1/Q2 outputs. Rebuild every candidate online from nominal state; never import realised-profile membership as S0 did. |
++| Prior-state fields | **Transfers with a named adaptation** | Map V0.23 segments/previous association/pending age to V0.25's authenticated incumbent, transition/rekey history, and `Phi` inputs. The serialized state is not byte-compatible. |
++| `B - eta_ref E` choice score | **Does not transfer as the contract score** | V0.25 defines `F(a)=B(a)-eta_ref E(a)-Phi(a)` and contract S0 maximises the complete `C1+C2+Psi`, equivalently exact immediate `F(a)-F(a0)` plus C2. A faithful V0.23 raw-score port could be a separately named diagnostic, not V0.25 S0. |
++| Q1+Q2 proposal role | **Transfers with a named adaptation** | Use `construct_reference_proposal`/reference repair and a frozen checkpoint matching repaired Q1 schema v2 (15 serialized, 14 effective dimensions) and current Q2. V0.23 checkpoints do not transfer. The opened Q1-v2 report contains no learner or checkpoint result, so a compatible frozen checkpoint is a prerequisite, not an existing verified asset. |
++| Set-decoder learner | **Transfers unchanged: none** | S0 needs no C3 learner. A later learned S3 would be a new set-conditioned residual learner trained on V0.25 exact C3 rows; no V0.23 learner exists to port. |
++| Physics engine | **Does not transfer** | Do not copy the V0.23 OPS-3 current-slot evaluator. Use V0.25's angle/rate/TPC/TDM/ACM engine, v1.9 corrected provisioning (power from nominal gains; quantile only in wanted-link reception/mode/service), V0.25 energy accounting, and current prior-state costs. |
++| Full-buffer traffic estimand | **Transfers with a named adaptation** | Preserve uncapped decodable bits divided by system joules. For endpoints, use V0.25 realised full-48 integration, not the V0.23 held current-rate convention. |
++| V0.23 evaluator calls/cache | **Does not transfer** | Build a V0.25 adapter around one fresh, internally consistent dense `evaluate_many` surface. BASE and all compared selection candidates must share field, boundary policy, batch semantics, and cache identity. |
++| V0.23 closed-loop harness | **Does not transfer** | Use the V0.25 evaluation/receipt path, 10 s coordinator timer, cancellation, prevalidated `a0` fallback, and include fallback bits/joules/service in the endpoint. A diagnostic that disables the timer must say so and cannot establish deployment latency. |
++| V0.23 panels/worlds/checkpoints | **Does not transfer** | Use V0.25 development anchors and V0.25-compatible checkpoint(s). Do not reuse V0.23 percentages as V0.25 estimates and do not open the 48 evaluation-only dates. |
++| Sealed five-arm learned inventory | **Transfers unchanged as the learned experiment** | `FULL`, `DROP_C1`, `DROP_C2`, `DROP_C3`, and `ALL_NEUTRAL_CONTROL` remain the five matched learned arms; BASELINE remains external. S0 is already a named supportive comparator and must not silently replace an additive head or alter those arm definitions. |
++
++### V0.25 physics/evaluator authority
++
++**VERIFIED.** [EVALPATH-2026-09-10.md](/home/sat/mcrl-v025-probe-ws/EVALPATH-2026-09-10.md:1), SHA-256 `14ec73203266ff9901c4c8a6e2e385de5bd41ac67ffebec10faca2be5aff633c`, leaves global path authority **UNDETERMINED**:
++
++- scalar `StepEvaluator.evaluate` ignores `boundary_indices`, materialises all 48 boundaries, and performs full-trajectory integration;
++- dense `evaluate_many` honours boundary subsets and holds boundary 0 for 30.08 s when configured with `(0,)`;
++- deployed selection operationally uses dense boundary-0;
++- committed reporting operationally uses fresh dense full-48;
++- the cache key omits field/path/boundary semantics, so a scalar-cached BASE can contaminate later dense comparisons.
++
++The dormant `_s0_select` uses scalar `evaluate` and therefore is not a V0.25 implementation of the intended boundary-0 selector. The pilot `_exact_s0_boundary0` is also not reusable: its BASE can remain scalar-cached while candidates are dense and it ranks raw bits rather than the contract score. Existing mixed-path S0 rows are invalid inputs to a revival decision.
++
++**Design consequence.** A development S0 probe can be internally valid before global authority is settled only if it explicitly scopes itself to the operational dense surfaces: one fresh dense boundary-0 batch/cache for every selection comparison, and one fresh dense full-48 batch for realised endpoints. It remains diagnostic, not claim-grade, while global authority is UNDETERMINED.
++
++### Corrected provisioning, exact-path corpus, and Q1 schema
++
++- **VERIFIED:** [PROVISIONING-DECISION-2026-09-10.md](/home/sat/mcrl-v025-arch-ws/PROVISIONING-DECISION-2026-09-10.md:1), SHA-256 `cb4b8447cf18011c3263bb7f99b4f2a08ab4ffa6df2af1e32e96dfa7fa88a209`, retains v1.9: executed/predicted transmit power comes from nominal gains; the quantile affects only wanted-link reception used for transmitted mode/predicted service. This engine contract, not V0.23 nominal physics, governs S0.
++- **VERIFIED:** [EXACT-ROW-PATH-COST-2026-09-10.md](/home/sat/mcrl-v025-c1c2suff-ws/EXACT-ROW-PATH-COST-2026-09-10.md:1), SHA-256 `5556ec4b869f134fdea704d1f7e7e2abf508c0954a0ad246bcd35ba5b6f724a8`, shows the exact source-row path exists but is expensive and is a corpus builder, not a deployable selector.
++- **VERIFIED:** [C3-COALITION-BUILD-2026-09-10.md](/home/sat/mcrl-v025-coalgen-ws/C3-COALITION-BUILD-2026-09-10.md:1), SHA-256 `fb16bdde37f28413c2a2cf74d4ddd8287c1603400e2fdefb1b29d668654f4268`, contains 4,552 exact multi-user rows for 22 development anchors. It validates the V0.25 coalition label path on that subset; it is neither a complete 180-anchor C3 corpus nor a runtime outcome cache for FULL20.
++- **VERIFIED:** [Q1-SCHEMA-V2-2026-09-10.md](/home/sat/mcrl-v025-design-ws/Q1-SCHEMA-V2-2026-09-10.md:1), SHA-256 `a265839dbf4122d05da28113848200823a8b469e555919d2f8ee24284bcf5fae`, repairs off-axis angle, adds elevation, removes two redundant indicators, and records schema SHA-256 `66ed4a3f...`. It explicitly contains no learner, loss, policy, or EE result. Historical Q1 checkpoints are schema-incompatible.
++
++## Part 3 — latency and the cost of a V0.25 set decoder
++
++### What dominated V0.23
++
++**VERIFIED.** The historical “49 s” is LITE's **mean complete selector-call wall time**, `49.4308 s`, under 12-way contention; its median is `43.1 s`, p95 `57.2 s`, and maximum `254 s`. FULL's mean/median are `66.8/56.3 s`. The receipt separately reports, for LITE:
++
++| Component | Mean per decision |
++|---|---:|
++| Q inference | 1.9165 s |
++| catalogue enumeration | 0.0117 s |
++| nominal candidate evaluation | 12.9269 s |
++| complete inner decoder (`wall_seconds`) | 14.8818 s |
++| complete selector call | 49.4308 s |
++
++**DERIVED.** `49.4308 - 14.8818 = 34.5490 s`, or about 69.9% of total time, was outside the inner decoder. Code shows the outer `select_actions` fingerprints the live environment/RNG before and after, recursively snapshots/detaches state, verifies the frozen snapshot, and repeats structural hashes. Therefore the historical 49-second blocker was **not dominated by catalogue construction alone**. Inside the actual decoder kernel, nominal catalogue evaluation was dominant (`12.9269/14.8818 = 86.9%`). Enumeration and exact argmax were negligible.
++
++The receipt's process-lifetime high-water mark is `4,193,984 KiB` for FULL and `4,174,888 KiB` for LITE, explicitly not isolated per arm because FULL ran first. The old screen is therefore also too close to or above the present 4 GB interpretation to rerun as-is.
++
++### Relationship to today's V0.25 path
++
++**VERIFIED.** [SELECTOR-LATENCY-2026-09-10.md](/home/sat/mcrl-v025-harness-ws/SELECTOR-LATENCY-2026-09-10.md:1), SHA-256 `7154501eeaa5dfaa9578db44032196184593fcd289a66890e1f790a01327633b`, measured the five learned arms on 20 development anchors:
++
++- end-to-end median `12.014 s`, mean `13.977 s`, maximum `24.079 s`;
++- `_catalogue_with_census` median `8.299 s`, mean `9.779 s`, maximum `19.184 s`;
++- 965–1,008 catalogue rows, median 991.5;
++- peak RSS `1,490.422 MiB`;
++- the checkpoint used for the C3 timing seam was synthetic/untrained because the available checkpoint had input 117 while the deployed context has input 240. This is latency evidence only.
++
++The shared hot operation is exact nominal physics over many candidate profiles, especially singleton ranking during catalogue construction. The totals are not directly comparable: V0.23's 49.4 s includes a large historical audit wrapper and ran under 12-way contention; V0.25's 12.014 s is a different one-worker five-arm path and does not exact-score the whole set catalogue.
++
++### Per-anchor V0.25 S0 cost: not yet measurable from an existing path
++
++**VERIFIED from code.** `_catalogue_with_census` privately creates a boundary-0 dense evaluator, evaluates BASE plus unilateral candidates for ranking, and discards that evaluator/cache on return. A correct exact S0 then needs nominal outcomes for every multi-user catalogue row. Calling the dormant scalar `_s0_select` would both redo work and switch semantics; calling the existing pilot helper risks a mixed scalar/dense BASE. Neither yields a valid timing.
++
++**Therefore no defensible V0.25 S0 seconds-per-anchor number exists in the opened artefacts. It would be fabrication to add a nominal-evaluation average to `12.014 s`.** What must be built first is a small `V025DenseS0Adapter` that:
++
++1. accepts the already repaired/authenticated `a0` and the sealed bounded catalogue;
++2. constructs one fresh nominal `StepEvaluator(boundary_indices=(0,))`;
++3. batches BASE and all selection candidates under one dense semantic identity, or safely returns/reuses `_catalogue_with_census`'s evaluator and singleton outcomes;
++4. exact-evaluates only the still-missing multi-user rows, then computes exact `F(a)-F(a0)+C2(a)`/`C1+C2+Psi`, the service guard, and stable tie;
++5. instruments base preparation, singleton-ranking/catalogue, added multi-user evaluation, score/guard/argmax, snapshot/integrity, timeout/fallback, and peak RSS separately;
++6. uses fresh dense full-48 realised evaluation only after selection for endpoint scoring.
++
++**VERIFIED adjacent bound, not an estimate.** The 22-anchor C3 coalition build evaluated 4,552 multi-user rows—mean 206.9 per anchor—in one fresh dense boundary-0 batch per anchor. That joint call cost `0.865742–20.973042 s`, mean `4.614247 s`; the timer excludes tape construction, catalogue/singleton work, context, serialization, and verification. It shows that added set evaluation is material and highly variable. Because its panel and timer differ from FULL20, it must not be added to today's median or called the expected S0 cost.
++
++**INFERRED engineering target.** Cache reuse/batching is the decisive seam: the current catalogue already pays to evaluate BASE and the singleton neighbourhood. A port that throws those outcomes away recreates precisely the repeated nominal-physics cost that dominates the current path. Whether a correct integrated S0 can meet V0.25's 10 s coordinator budget can only be answered by timing the adapter under the declared worker count and cancellation path.
++
++## Part 4 — smallest V0.25 experiment worth running later
++
++### `V025-S0-REVIVAL-FULL20-R0`
++
++This is a proposed development diagnostic, not authority to execute it.
++
++**Question.** On the smallest existing four-world development panel, does an exact set-level chooser over the already sealed V0.25 catalogue improve realised full-buffer EE over the proposal it is meant to coordinate, without reducing service?
++
++**Prerequisites to build/freeze.** The `V025DenseS0Adapter` above; an authenticated Q1 schema-v2-compatible Q1 plus current-Q2 checkpoint; a frozen `eta_ref`; a receipt schema binding evaluator semantics/cache identity, catalogue digest, provisioning digest, checkpoint digest, and tie/service rules. If no compatible Q1-v2 checkpoint exists at freeze time, the experiment is blocked; old checkpoints must not be shape-adapted ad hoc.
++
++**Panel.** Exactly the 20 development anchors already used by the latency receipt: `V025_PROBE_R2/world/{1..4}`, steps `0..4`, with the receipt's nearest-eligible base assignments. One frozen learner lineage is enough for this structural screen. Do not use or inspect any of the 48 evaluation-only claim dates.
++
++**Matched arms.** From each identical predecision snapshot:
++
++- `A0`: repaired masked `argmax(Q1+Q2)` complete proposal;
++- `S0-V025`: exact contract S0 over the sealed bounded catalogue, using dense boundary-0 nominal `C1+C2+Psi` (equivalently exact immediate `F-F(a0)` plus C2), BASE-relative nominal service guard, and stable configuration-ID tie.
++
++This reference is `A0`, not external `BASELINE`, S_UNI, a unilateral fixed point, or a DROP arm. S_UNI may be reported later but is unnecessary to answer the first revival question.
++
++**Outcome scoring.** Evaluate `A0` and `S0-V025` from the same snapshot with a fresh realised dense full-48 batch. Pool exact sums across all 20 anchors:
++
++- primary: `sum(full-buffer decodable bits) / sum(system joules)` and relative S0-versus-A0 change;
++- service guard: pooled served/opportunities, with S0 no lower than A0 by more than the inherited `0.001` margin;
++- descriptive: per-world direction, chosen-row kind/changed-set size, action difference rate, and deadline fallback count.
++
++This is matched-anchor headroom, not a closed-loop efficacy claim. If it is positive, the next experiment would be a separately frozen short closed-loop screen; if it is not, no set-level learner should be trained on the strength of the V0.23 result.
++
++**Prospective decision rule.** Pursue a closed-loop port only if pooled realised EE is strictly above A0 and the service guard passes. Report all four world directions without adding a post-hoc direction-vote requirement. A positive result remains development evidence while evaluator authority is globally UNDETERMINED.
++
++**Computational cost specification, not a time estimate.** Per anchor: one existing repaired-Q1/Q2 proposal; one sealed catalogue build with singleton nominal outcomes retained; one added dense boundary-0 batch for the multi-user rows; exact score/guard/tie; and one realised dense full-48 batch containing the two selected profiles. Across 20 anchors that is 20 catalogue builds, 20 added multi-user batches, and 40 committed-profile endpoint evaluations. The adjacent 22-anchor inventory suggests about 207 multi-user rows per anchor, but the run must record the actual FULL20 count rather than assume it. No C3 training is required. Execute only under `nice -n 15`, all BLAS thread variables set to 1, one Python process (never more than two), enforced peak RSS below 4 GB, and without overlapping or disturbing the live jobs.
++
++**Latency readout.** Run once without suppressing the real 10 s cancellation/fallback; charge only post-validated-`a0` coordinator time per contract, but also report presentation-to-commit for comparability with today's receipt. The result must include fallback B/E/service. This single 20-anchor run then answers both questions the existing artefacts cannot: realised structural headroom on V0.25 and actual per-anchor cost of the correct integrated set decoder.
++
++## Final classification
++
++- **Verified by artefact/code:** both V0.23 numerical results and their BASE references; S0's realised-membership catalogue leak; C3-S's repaired nominal isolation; full-buffer numerators; panels and missing physical dates; no decoder learner; absent confirmatory result; old and current timing decompositions; V0.25 evaluator disagreement and cache defect; incomplete runtime prerequisites.
++- **Derived on paper:** 90.981% of U1, 81.573% of J1; exact unrounded C3-S gains from receipt fractions; 109/120 S0 joint selections; the 34.549 s old wrapper remainder and phase shares; 4,552/22 = 206.9 adjacent multi-user rows per anchor.
++- **Inferred:** cache-preserving batching is the likely highest-leverage implementation change. No V0.25 EE or per-anchor latency result is inferred or estimated.
+
+codex
+Completed [SET-LEVEL-DECODER-REVIVAL-2026-09-10.md](/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md).
+
+Key finding from the primary-source trace: both results are confirmed against learned Q1+Q2 `BASE`, but the S0 probe’s joint catalogue was partly formed from realised-fading BASE membership. C3-S repaired that deployability defect.
+
+No simulation or Python process was run, and all V0.23 artefacts remained read-only.
+diff --git a/.scratch/set-level-decoder-revival/v023-inventory.md b/.scratch/set-level-decoder-revival/v023-inventory.md
+deleted file mode 100644
+index 3028530a55113fa5a09519711d09d3f68a40bcad..0000000000000000000000000000000000000000
+--- a/.scratch/set-level-decoder-revival/v023-inventory.md
++++ /dev/null
+@@ -1,138 +0,0 @@
+-# V0.23 S0 / C3-S primary-artifact inventory
+-
+-Completion criterion: identify the run-producing source and result bundles for S0 and the C3-S v1 closed-loop screen, authenticate the principal files, and answer the decision-object, information, estimand, reference, panel, and learner questions from source. This criterion is met below. No evaluation-only claim dates were opened, and no Python process was started.
+-
+-## Bottom line
+-
+-- **Verified:** both requested development artefact families still exist. The S0 result authenticates `+1.812631%` **against its matched-anchor learned `BASE`**, with identical pooled service. The C3-S terminal receipt authenticates `FULL +2.883167%` and `LITE +2.921776%` **against the common frozen learned `BASE`**, again with identical pooled service. Neither number is against a unilateral fixed point or FULL2.
+-- **Important qualification, verified from code:** the S0 full decoder's *score calculation* is nominal-only, but its saved candidate rows were imported from the E1 realised tape. In particular, E1 formed evacuation origin membership from a realised-fading BASE profile. Thus `S0 +1.812631% used only deployable information` is too strong if candidate-set formation is part of the decoder. The S0-U arm avoids that particular realised-membership dependency; the closed-loop C3-S implementation repaired it by rebuilding evacuation membership from a detached fade-free BASE nominal evaluation.
+-- **Derived:** `1.812631 / 1.992311 = 90.981%`, so “about 91% of the ceiling” is true only relative to the U1 ceiling. Relative to J1 it is `81.573%`.
+-- **Verified missing:** a C3-S FULL2 confirmatory package exists as engineering code and a draft/world plan, but no sealed plan, launch authority, physical episode output, or terminal result exists. It was not run.
+-
+-## Artefacts and digests
+-
+-### S0
+-
+-The produced bundle is `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/` and contains the merged result/table, twelve unit results, and twelve short completion logs. The run-producing source survives under `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/`.
+-
+-Principal SHA-256 values, recomputed read-only with `sha256sum`:
+-
+-| Artefact | SHA-256 |
+-|---|---|
+-| `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-result.json` | `ba496e936c5c884d8541c3312c142ac4b83cbaec0d173cba8be34fc4faa31c5b` |
+-| `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md` | `a9635c2f20477aa642e24c004660f182adc5463c7cf6d6413707528d0435445b` |
+-| `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py` | `0c86303b8d9bcf324b05a06e01491172a52c767de98302a7eda9c08b16ba6aeb` |
+-| `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py` | `19447de8f1f03d0c40dcc0ef9862a5cce0c0f9f3381a19350d9521f052a803fe` |
+-
+-The two code hashes are embedded in the merged S0 result. The result also embeds the twelve unit-result hashes and the E1 terminal/tape hashes. There is no separate S0 launch-authority/preflight bundle or result `.sha256` sidecar; the merged JSON itself is the surviving digest-bearing record.
+-
+-The human result is byte-identical at [probe-s0-table.md:3](/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md:3) and the workspace report copy [PROBE-S0-2026-09-08.md:3](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3-probe-results-20260908/PROBE-S0-2026-09-08.md:3). BASE, U1, J1 and S0 figures are at [probe-s0-table.md:5](/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md:5); the report explicitly says realised tape rows supplied every arm score at [probe-s0-table.md:23](/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md:23).
+-
+-### C3-S v1 screen
+-
+-The authoritative run-producing tree is `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/`. It contains the frozen contract/config, preflight/evidence/world-census manifests, twelve unit launch authorities plus merge authority, policy and runner code, tests, twelve unit receipts, and the terminal receipt.
+-
+-Principal SHA-256 values, recomputed read-only:
+-
+-| Artefact | SHA-256 |
+-|---|---|
+-| `c3s_policy.py` (run-producing tree) | `f50aa3047870c096978ee09175eb55b660798e57af6929ff596119ad3dd0801b` |
+-| `run_v023_c3s_screen.py` (run-producing tree) | `4f62e7608b114b2c4b256d25671be7fc33cdac7e1797734978262992fc678da2` |
+-| `V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md` | `1b19e0f4c6c5f1591e3ca670da368fea0e785ec70fc51af5a9fe9edfdbfc7a7f` |
+-| `C3S-PREFLIGHT-MANIFEST.json` | `ee114c8d8363e7b1ae1461766db7ef0e43f92b0302cfeb298c590db1f1b5e597` |
+-| `C3S-EVIDENCE-MANIFEST.json` | `37939bd81bdb2f23289af04402900655331758101e74f5f9456c247e70a3e2b5` |
+-| `C3S-WORLD-CENSUS.json` | `c993ebdf3505b9a169726f2a03bf1f69fa6bb587140f2d001d650602003dea6e` |
+-| `C3S-LAUNCH-AUTHORITY-MERGE.json` | `14b5ef7112e14f2144d2c172208e12c6faa4bc946ad9a37d121ac83bc2a8618c` |
+-| `runs/c3s-20260908-r1/terminal/terminal-receipt.json` | `a66b481303a28c31b49f127e302d304ac1ef34de5eb526dd2e3949bb5196ea69` |
+-
+-The result record identifies the server worktree/output and terminal digest at [C3S-V1-RESULT-RECORD-2026-09-08.md:6](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:6). Its pooled table confirms FULL `+2.883%`, LITE `+2.922%`, and 35,971/36,000 served for all arms at [C3S-V1-RESULT-RECORD-2026-09-08.md:12](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:12). The terminal receipt contains the unrounded exact fractions; recomputing from those fractions gives `+2.883167480521%` and `+2.921776320795%`.
+-
+-Provenance warning: the V0.25 selector workspace copies of `c3s_policy.py` and `run_v023_c3s_screen.py` hash to `b5f1e788c2ce7c3ca6d7edb72c2be5136a4199ad6fecebd8ef804de217716c57` and `425225c5552383241e347f5e4609715a378ae335acd53a566d9ba51ee2f7230e`, respectively. They are not the source bytes bound by the run receipt. The terminal receipt in that workspace is nevertheless byte-identical (`a66b4813...`). Inventory or porting should therefore use the `/home/sat/mcrl-v023-c3s-run/` source as the historical authority.
+-
+-### Confirmatory tree: engineering only, no result
+-
+-`/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/` exists and holds runner/adapter/preflight builders, tests, a 9,000-world plan, and drafts. Its implementation report says no training, physical episode, TEST access, or outcome computation occurred at [CONFIRMATORY-V2-IMPLEMENTATION-REPORT-2026-09-08.md:11](/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/CONFIRMATORY-V2-IMPLEMENTATION-REPORT-2026-09-08.md:11). The placeholder says the sealed plan is intentionally absent at [SEALED-C3S-FULL2-CONFIRMATORY-PLAN.md.PLACEHOLDER:1](/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/SEALED-C3S-FULL2-CONFIRMATORY-PLAN.md.PLACEHOLDER:1), and the README says the package does not grant launch authority at [README.md:1](/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/README.md:1). No confirmatory `terminal-receipt.json`, result JSON, or unit receipt was found in any `multi-catfish-v023-c3s-confirmatory` tree.
+-
+-## S0 decision inventory
+-
+-### Decision object and candidate formation
+-
+-**Verified.** At each of 120 authenticated E1 predecision anchors, the decoder chooses one complete 100-user action vector. `S0` chooses over:
+-
+-1. one BASE vector, the masked first-index argmax of frozen float32 `Q1+Q2`;
+-2. every legal, non-NOOP, physically non-equivalent single-user edit, with all other users fixed to BASE; and
+-3. every saved “evacuate one whole BASE-served origin beam to one commonly legal non-origin physical destination” vector.
+-
+-`S0-U` permits only (1)+(2); `S0-J` permits only (1)+(3). The S0 runner constructs rows from the E1 tape at [run_probe_s0.py:398](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:398) and applies the three allowed-kind sets at [run_probe_s0.py:543](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:543). E1's exhaustive unilateral rule and full-origin evacuation rule are declared at [run_v023_c3_existence_e1.py:259](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:259), with evacuation enumeration implemented at [run_v023_c3_existence_e1.py:826](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:826).
+-
+-Eligible candidates must have nominal served count at least nominal BASE's served count. The exact objective is `nominal_bits - eta_ref * nominal_energy`; ties choose lexicographically smallest profile ID [run_probe_s0.py:157](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:157). All vectors are evaluated independently through nominal physics, rather than composing unilateral effects [run_probe_s0.py:526](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:526).
+-
+-### Information class
+-
+-**Verified, and the historical “deployable-only” label needs qualification.** Nominal scoring disables fading and evaluates unit Rician gain / zero-dB shadowing [run_probe_s0.py:375](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:375). The runner authenticates current causal state, action masks, and physical action keys, takes a current-anchor OPS-3 snapshot, explicitly does not project the future, and replays BASE between anchors [run_probe_s0.py:505](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:505). Q1+Q2 supplies the BASE proposal; the alternatives themselves are deterministic legality/physical-key enumerations rather than Q-ranked proposals.
+-
+-However, the probe does **not** rebuild its catalog from only those live inputs. `_candidate_rows` imports `unilateral_candidates` and `joint_witness_catalog` from the E1 tape, including realised metrics in the same row objects [run_probe_s0.py:398](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:398). The selector function reads only the `nominal` field, so realised metrics do not enter its score. But E1 created the joint catalog after a keyed-fading BASE evaluation [run_v023_c3_existence_e1.py:1848](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:1848), and the catalog builder defines origin membership from that BASE profile's realised `served`, `serving_satellite`, and `serving_cell` values [run_v023_c3_existence_e1.py:843](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:843). The S0 process also loads realised tape rows and oracle winner maps for scoring/control arms [run_probe_s0.py:474](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:474).
+-
+-Therefore:
+-
+-- selection objective: deployable nominal data only;
+-- unilateral candidate formation: deployable current masks/physical keys plus BASE proposal;
+-- full/joint candidate formation in the saved S0 probe: **not strictly deployable**, because realised BASE service/association determined evacuation membership upstream;
+-- scoring: intentionally nondeployable realised E1 tape endpoints, after selection;
+-- extra static input: `eta_ref`, the development-panel E1 BASE EE. This is frozen offline calibration rather than a live future/realised signal, but it is an input beyond “physics, prior state, Q1+Q2 proposals.”
+-
+-The merged artifact records that S0 selected a joint row on 109/120 anchors and a unilateral row on 11/120 (derived by counting `anchors[].selected.S0.kind`), so the joint-catalog provenance is material to the quoted S0 arm, not merely dormant.
+-
+-### Estimand, numerator, and reference
+-
+-**Verified.** This is a matched-anchor, one-step counterfactual diagnostic, not a closed-loop policy estimand. Every candidate is evaluated at the same E1 predecision state; BASE is then committed to advance the original trajectory [E1 contract:100](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md:100). The merged estimand is the ratio of summed realised selected-profile bits to summed realised selected-profile system energy over all 120 anchors, with service as summed served users / 12,000. The physical numerator is `interval_s * sum(link_rate_bps)` and the denominator is network/system energy [run_v023_c3_existence_e1.py:751](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:751); E1 declares `B = Δt ΣR_u`, `E = Δt P_system` at [E1 contract:110](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md:110). This is the full-buffer/rate-integral numerator: no delivered-demand cap appears in the accounting.
+-
+-The reference is the learned Q1+Q2 `BASE` at those anchors. The merged code verifies exact equality to E1's pooled BASE before computing every `percent_vs_base` [run_probe_s0.py:706](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:706). It is not a unilateral fixed point. U1 and J1 are separate realised-information oracle comparators/ceilings.
+-
+-### Panel and learner
+-
+-**Verified.** Four TRAIN world seeds from domains `C3_EXISTENCE_E1/world/{1..4}`: `861587764845384088`, `3943897440191533562`, `5747196377242098234`, `4004348767321774260`; crossed with frozen lineages `2026092101`, `2026092102`, `2026092103`; ten canonical step anchors `0..9`; 12 units, 120 anchors, 100 users/anchor. The panel declaration is at [run_v023_c3_existence_e1.py:259](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-existence-e1/run_v023_c3_existence_e1.py:259), and the merge requires exactly 120 unique anchors [run_probe_s0.py:706](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:706).
+-
+-The physical episode-start dates are **not serialized** in the S0 result, E1 terminal receipt, or E1 tapes; only the TRAIN split, world-domain/seed, lineage, and step index are recorded. `2026092101..03` are lineage identifiers, not evidence of three ephemeris dates. The report/run date is 2026-09-08.
+-
+-No S0 learner exists and no updates occur. Frozen learned Q1/Q2 heads are involved in producing BASE, so this is “no decoder learner,” not “no learned component anywhere.” The unit output explicitly marks `learner_used=False` [run_probe_s0.py:593](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/run_probe_s0.py:593).
+-
+-## C3-S v1 closed-loop decision inventory
+-
+-### Decision object and candidate formation
+-
+-**Verified.** Each FULL or LITE decision returns one atomic complete 100-user action vector. Both form a fresh BASE proposal from frozen float32 masked `Q1+Q2` on that arm's own current state. FULL enumerates BASE + every legal physically distinct unilateral edit + every complete origin-beam evacuation to each commonly legal destination. LITE replaces the exhaustive unilateral part with the first Q1+Q2-ranked physically different alternative per user, but keeps every full-origin evacuation. The frozen contract states the full catalog at [C3-S contract:31](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:31) and the LITE pruning at [C3-S contract:177](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:177). The run-producing policy implements LITE ranking at [c3s_policy.py:338](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:338), deterministic evacuation enumeration at [c3s_policy.py:302](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:302), and the combined catalog/exhaustive nominal pass at [c3s_policy.py:619](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:619).
+-
+-The choice rule is the same exact S0 objective/service guard/tie order [c3s_policy.py:224](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:224). The screen commits that selected vector and advances that arm's own observation [run_v023_c3s_screen.py:601](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:601); it is therefore genuinely closed-loop rather than replaying BASE anchors.
+-
+-### Information class
+-
+-**Verified deployable at the decision boundary, with named extra/static inputs.** The contract permits current predecision/native state, committed association/occupancy/tracking state, current and necessary historical geometry, legal masks/physical keys, Q1+Q2 proposals/model projections, and nominal fade-free physics; it forbids current realised fading/scores, oracle winners, future state, other-arm trajectory, and running screen EE [C3-S contract:21](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:21).
+-
+-The implementation snapshots current geometry, candidates, masks, frozen Q1+Q2 proposal, committed segments/association, pending age and tracking state; sets `fading_enabled=False`; and uses a detached evaluator whose draw returns unit Rician / zero-dB shadowing [c3s_policy.py:385](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:385). It reconstructs evacuation membership from BASE's **nominal/native** service result [c3s_policy.py:619](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:619). The policy rejects reachable live `StepEnvironment`, RNG, or keyed-fading capabilities [c3s_policy.py:121](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:121) and checks that selection did not mutate the environment/RNG [c3s_policy.py:734](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/c3s_policy.py:734).
+-
+-Inputs beyond the abbreviated controller description are: current legal masks and slot physical keys; current geometry plus limited historical geometry needed for warm-start tracking; committed segment/association/pending-age state; frozen Q1 and Q2 parameters; static physical/topology/grid configuration; and fixed `eta_ref = E1 TRAIN BASE EE`. The only non-live/offline-calibrated quantity is `eta_ref`; no realised or future endpoint is available to the selector. Realised keyed fading and committed outcome are used only after atomic commit by the scorer.
+-
+-### Estimand, numerator, and reference
+-
+-**Verified.** The screen estimates each fixed policy's closed-loop pooled EE across twelve 30-step episodes, permitting each arm's trajectory/state/proposals to drift after a matched initial state. Each committed step records `bits = interval_s * sum(last_outcome.link_rate_bps)` and `energy = interval_s * last_outcome.system_power_w` [run_v023_c3s_screen.py:581](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:581); the merge forms the ratio of exact sums and pooled served fraction [run_v023_c3s_screen.py:757](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:757). The contract explicitly says there is no added finite-demand cap [C3-S contract:83](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:83). This is the declared full-buffer numerator.
+-
+-The reference is the matched frozen learned `BASE` arm (same three repriced Q1/Q2 lineages/checkpoints), not U1, a unilateral fixed point, or FULL2. The runner creates fresh matched BASE/FULL/LITE environments and verifies identical initial state [run_v023_c3s_screen.py:677](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:677). The exact SUPPORT rule compares each coordinator arm directly with pooled BASE EE and BASE service-minus-0.001 [run_v023_c3s_screen.py:821](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:821).
+-
+-### Panel and learner
+-
+-**Verified.** Four fresh derived TRAIN world seeds: `8464287092499831892`, `7305539127129390835`, `7691130988233444596`, `5887834234954284271`; crossed with lineages `2026092101`, `2026092102`, `2026092103`; arms BASE/FULL/LITE; 30 committed steps `0..29`, 100 users, 12 world-lineage units, 36 episodes total, 1,080 committed steps, and 36,000 opportunities per arm. Code-derived seeds and panel bindings are at [run_v023_c3s_screen.py:161](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:161) and [run_v023_c3s_screen.py:218](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:218); the three-arm amendment is at [C3-S contract:191](/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3s-screen/V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md:191).
+-
+-As with S0, physical episode-start dates are not serialized in the terminal/unit receipts. The run record dates execution on 2026-09-08; the only per-unit identifiers are world seed and frozen lineage. The receipt confirms positive EE in all four worlds and all three lineages, and the result record prints those descriptive contrasts at [C3S-V1-RESULT-RECORD-2026-09-08.md:19](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:19).
+-
+-No coordinator learner or training/update occurred. Frozen learned Q1/Q2 heads produce the proposal at every decision; the set-level decoder itself is deterministic/exact enumeration plus nominal physical evaluation and exact rational comparison. The receipt's claim ceiling and no-learner/no-TEST status are recorded at [C3S-V1-RESULT-RECORD-2026-09-08.md:3](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:3).
+-
+-## Verified historical timing distinction
+-
+-The v1 result record's `49.4 s` is LITE's **mean complete selector-call wall time** under 12-way contention; median was `43.1 s` [C3S-V1-RESULT-RECORD-2026-09-08.md:22](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:22). The same receipt separately reports LITE internal phase means of about `1.9 s` Q inference, `0.012 s` enumeration, and `12.9 s` nominal evaluation, with mean catalog 917 and mean 901 unique evaluations [C3S-V1-RESULT-RECORD-2026-09-08.md:29](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:29). Thus “49 s” and “nominal evaluation 12.9 s” are different timers; any V0.25 latency comparison must not conflate them.
+-
+-## Evidence classification summary
+-
+-- **Verified by opened artefacts/code:** existence and hashes; both numerical results and their BASE references; full/LITE decision sets; realised-membership leakage in the S0 full/joint catalog; closed-loop nominal rebuild and information isolation; full-buffer numerator; worlds/lineages/steps; no decoder learner; no confirmatory run.
+-- **Derived on paper/from exact receipt fractions:** unrounded `+2.883167480521%`, `+2.921776320795%`; S0 recovers 90.981% of U1 but 81.573% of J1; S0's 109 joint/11 unilateral selected-kind counts.
+-- **Inferred:** none of the key event/result assertions. The only limited inference is that absent serialized episode-start dates cannot be reported without replaying the sampler; they are therefore recorded here as missing rather than guessed.
+diff --git a/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md b/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a4710798ad0b4a3633d260daed160fc15db4a1af
+--- /dev/null
++++ b/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md
+@@ -0,0 +1,285 @@
++**The S0 and C3-S v1 artefacts exist and confirm S0 `+1.812631%` and C3-S FULL `+2.883167%` against their learned Q1+Q2 `BASE` references—not unilateral fixed points—but S0's joint-catalogue construction was not strictly deployable-only; the smallest V0.25 settling experiment is a no-new-learner, 20-anchor `V025_PROBE_R2` matched S0-versus-repaired-Q1+Q2-`a0` screen using the sealed bounded catalogue, one internally consistent dense boundary-0 selection path, and realised dense full-48 full-buffer pooled EE.**
++
++# Set-level decoder revival — artefact inventory and V0.25 design
++
++Date: 2026-09-10  
++Status: **DESIGN-PHASE INVENTORY; NOT A CLAIM; DO NOT RUN**
++
++## Evidence convention and scope
++
++- **VERIFIED** means opened artefact, receipt, or source code.
++- **DERIVED** means arithmetic or a direct consequence of verified fields/code.
++- **INFERRED** means the record does not directly establish the point.
++- I used development material only. I did not open the 48 evaluation-only claim dates.
++- I did not execute Python or a simulation. All V0.23 access was read-only; `/home/sat/mcrl-leo-handover` and its virtual environment were untouched.
++- Loss values are not used anywhere as evidence about EE.
++
++## Executive finding
++
++**VERIFIED.** Both historical results survive in result-bearing bundles. S0 reports `+1.812631%` versus its matched-anchor learned `BASE`, with the same `11,975/12,000` service count. C3-S v1 reports FULL `+2.883167480521%` and LITE `+2.921776320795%` versus the common frozen learned `BASE`, with all three arms at `35,971/36,000` served. Neither reference is a unilateral fixed point. The C3-S result is a real closed-loop TRAIN development screen; the earlier S0 result is a matched-anchor counterfactual replay.
++
++**VERIFIED correction to the controller shorthand.** S0's score used nominal fade-free physics, but its joint candidates came from E1 tapes whose evacuation groups were formed from a realised-fading BASE profile. The `+1.812631%` S0 arm therefore cannot be described strictly as “using only deployable information” when candidate formation is included. This is material: S0 selected joint rows on 109/120 anchors. C3-S v1 repaired the boundary by rebuilding the evacuation catalogue from a detached fade-free nominal BASE evaluation.
++
++**VERIFIED missing result.** A C3-S FULL2 confirmatory engineering tree exists, but it explicitly has no sealed plan, launch authority, physical run, unit receipts, or terminal result. The confirmatory experiment was not run.
++
++**DERIVED.** `1.812631 / 1.992311 = 90.981%`; “about 91% of the ceiling” is correct only against U1. Against J1, `1.812631 / 2.222094 = 81.573%`.
++
++## Part 1 — V0.23 artefact inventory
++
++### 1.1 What exists and its digests
++
++#### S0 probe
++
++**VERIFIED.** The produced bundle is `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/`; it has the merged JSON, human table, 12 unit results, and 12 completion logs. The run-producing source survives under `/home/sat/mcrl-v023-c3s-run/.scratch/multi-catfish-v023-c3-probe-s0/`. The copied human report also survives at [PROBE-S0-2026-09-08.md](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3-probe-results-20260908/PROBE-S0-2026-09-08.md:1).
++
++| Artefact | SHA-256 |
++|---|---|
++| `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-result.json` | `ba496e936c5c884d8541c3312c142ac4b83cbaec0d173cba8be34fc4faa31c5b` |
++| `/home/sat/mcrl-v023-c3-probe-s0-20260908-r1/probe-s0-table.md` | `a9635c2f20477aa642e24c004660f182adc5463c7cf6d6413707528d0435445b` |
++| run-producing `run_probe_s0.py` | `0c86303b8d9bcf324b05a06e01491172a52c767de98302a7eda9c08b16ba6aeb` |
++| run-producing E1 `run_v023_c3_existence_e1.py` | `19447de8f1f03d0c40dcc0ef9862a5cce0c0f9f3381a19350d9521f052a803fe` |
++
++The merged result embeds the 12 unit-result hashes, the E1 terminal/tape hashes, and these producer-code hashes. There is no separate S0 launch-authority/preflight bundle and no result sidecar; the digest-bearing merged result is the surviving record. The underlying E1 terminal binding is SHA-256 `0bc54fad23c8cdac2ce789c49ee37880f4df6e32110576c7a800443df0e7c4a6`.
++
++#### C3-S v1 closed-loop screen
++
++**VERIFIED.** The authoritative run-producing checkout is `/home/sat/mcrl-v023-c3s-run`, with the screen beneath `.scratch/multi-catfish-v023-c3s-screen/`. It contains the frozen contract/config, evidence and preflight manifests, world census, 12 unit launch authorities, merge authority, source/tests, 12 unit receipts with sidecars, and the terminal receipt.
++
++| Artefact | SHA-256 |
++|---|---|
++| run-producing `c3s_policy.py` | `f50aa3047870c096978ee09175eb55b660798e57af6929ff596119ad3dd0801b` |
++| run-producing `run_v023_c3s_screen.py` | `4f62e7608b114b2c4b256d25671be7fc33cdac7e1797734978262992fc678da2` |
++| `V023-C3S-SET-LEVEL-COORDINATOR-KILL-SCREEN-CONTRACT-2026-09-08.md` | `1b19e0f4c6c5f1591e3ca670da368fea0e785ec70fc51af5a9fe9edfdbfc7a7f` |
++| `C3S-PREFLIGHT-MANIFEST.json` | `ee114c8d8363e7b1ae1461766db7ef0e43f92b0302cfeb298c590db1f1b5e597` |
++| `C3S-EVIDENCE-MANIFEST.json` | `37939bd81bdb2f23289af04402900655331758101e74f5f9456c247e70a3e2b5` |
++| `C3S-WORLD-CENSUS.json` | `c993ebdf3505b9a169726f2a03bf1f69fa6bb587140f2d001d650602003dea6e` |
++| `C3S-LAUNCH-AUTHORITY-MERGE.json` | `14b5ef7112e14f2144d2c172208e12c6faa4bc946ad9a37d121ac83bc2a8618c` |
++| `runs/c3s-20260908-r1/terminal/terminal-receipt.json` | `a66b481303a28c31b49f127e302d304ac1ef34de5eb526dd2e3949bb5196ea69` |
++| workspace result record | `e8a4c03294e2405ba1b1c99e8ac3f7c51eed74793c706dacd0cc3a1a93146d40` |
++
++The human result is [C3S-V1-RESULT-RECORD-2026-09-08.md](/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/C3S-V1-RESULT-RECORD-2026-09-08.md:1). The V0.25 selector workspace's copies of `c3s_policy.py` and `run_v023_c3s_screen.py` have different hashes (`b5f1e788...` and `425225c5...`) and are not the bytes bound by the terminal receipt. Historical interpretation and any port must start from the server checkout above, not those copies. The terminal receipt itself is byte-identical in both trees.
++
++#### Confirmatory tree
++
++**VERIFIED.** `/home/sat/mcrl-v023-codex-ws-c3s-confirm/.scratch/multi-catfish-v023-c3s-confirmatory/` contains adapter/runner/preflight code, tests, drafts, and a 9,000-world plan. Principal surviving files include:
++
++| Artefact | SHA-256 |
++|---|---|
++| `CONFIRMATORY-V2-IMPLEMENTATION-REPORT-2026-09-08.md` | `b89819160c56770018944211565057c52896ff0d853a50523bfa7d5ce9dcf6ca` |
++| `C3S-CONFIRM-WORLD-PLAN-9000.json` | `b007b3b0035f3b05b8ea428c6af6c7c28f4f09350ba7cbdd44c6b1335411561a` |
++
++The implementation report says no training, physical episode, TEST access, or outcome computation occurred. `SEALED-C3S-FULL2-CONFIRMATORY-PLAN.md.PLACEHOLDER` says the sealed plan is intentionally absent. No confirmatory terminal receipt, result JSON, or unit receipt was found.
++
++### 1.2 S0 probe: exact decision and estimand
++
++#### Decision object and candidate set
++
++**VERIFIED.** At each authenticated E1 predecision anchor, S0 chooses one complete 100-user action vector from:
++
++1. `BASE`: frozen float32 masked first-index `argmax(Q1+Q2)`;
++2. every mask-legal, non-NOOP, physically distinct one-user edit with all other users fixed to BASE; and
++3. every “evacuate all BASE-served users of one origin beam to one commonly legal non-origin destination” vector saved by E1.
++
++S0-U allows only BASE plus (2); S0-J allows only BASE plus (3). A candidate is eligible only if its nominal served count is at least nominal BASE's. S0 then maximises the exact-rational nominal score `B_nominal - eta_ref * E_nominal`; ties use the lexicographically smallest fixed profile ID. Each full vector is physically evaluated; the decoder does not add unilateral effects.
++
++#### Information class
++
++**VERIFIED.** The score computation disables fading (unit Rician gain, zero-dB shadowing), uses the current authenticated state/geometry/masks/physical keys and prior committed state, makes no future projection, and obtains BASE from frozen Q1+Q2. `eta_ref` is an additional static input: the offline E1 TRAIN BASE EE. The alternatives are legality/physical enumerations, not a learned C3 proposal.
++
++**VERIFIED exception.** The S0 runner imports candidate rows from the E1 realised tape. The selector reads their newly recomputed `nominal` fields, not their realised metrics, but E1 formed joint origin membership after a keyed-fading BASE evaluation and used that realised BASE profile's `served`, `serving_satellite`, and `serving_cell`. Thus:
++
++- nominal scoring: deployable information;
++- unilateral candidate formation: deployable current masks/physical keys and BASE;
++- full/joint candidate formation in this probe: **contains realised-fading-derived membership and is not strictly deployable**;
++- outcome scoring: deliberately realised E1 tape metrics, after selection, and therefore not a decision input.
++
++S0 selected 109 joint and 11 unilateral rows, so this is not a dormant-path caveat. C3-S v1's fresh nominal catalogue is the artefact that verifies the corrected deployable boundary.
++
++#### Estimand, numerator, and reference
++
++**VERIFIED.** S0 is a matched-anchor one-step counterfactual diagnostic. All candidates are evaluated at the same predecision snapshot, and BASE—not S0—is committed between the ten anchors. The pooled estimand is
++
++`sum(realised selected-profile bits) / sum(realised selected-profile system energy)`
++
++over 120 anchors, with pooled served users over 12,000 opportunities. Per anchor, `B = interval_s * sum(link_rate_bps)` and `E = interval_s * system_power_w`. There is no demand/delivery cap: this is the same **full-buffer decodable-throughput numerator** now declared by V0.25. The physical integration is not the same implementation: V0.23 uses its current-interval endpoint convention, while V0.25's committed authority in use is dense full-48 integration.
++
++The reference is matched-anchor learned Q1+Q2 `BASE`; it is not U1, J1, an iterated unilateral fixed point, or MODQN BASELINE. The merged code first verifies exact equality to E1's pooled BASE and then computes `percent_vs_base`.
++
++| Arm | Pooled EE (bit/J) | Versus BASE | Served |
++|---|---:|---:|---:|
++| BASE | 124,075,740.547231 | — | 11,975/12,000 |
++| U1 realised oracle | 126,547,715.769454 | +1.992311% | 11,974/12,000 |
++| J1 realised oracle | 126,832,819.836554 | +2.222094% | 11,972/12,000 |
++| S0 | 126,324,776.402952 | **+1.812631%** | **11,975/12,000** |
++| S0-U | 125,965,446.280702 | +1.523026% | 11,975/12,000 |
++| S0-J | 126,263,243.469835 | +1.763038% | 11,975/12,000 |
++
++#### Panel and learner
++
++**VERIFIED.** TRAIN domains `C3_EXISTENCE_E1/world/{1..4}` yield seeds `861587764845384088`, `3943897440191533562`, `5747196377242098234`, and `4004348767321774260`. They are crossed with frozen Q1/Q2 lineages `2026092101`, `2026092102`, and `2026092103`, at steps `0..9`: 12 units, 120 anchors, 100 users/anchor. The physical episode-start dates are not serialized in the S0 result, E1 terminal receipt, or tapes. The lineage numbers are identifiers, not date evidence. The report/run date is 2026-09-08.
++
++No S0 learner or update exists. Frozen learned Q1/Q2 heads produce BASE, so “no learner” means no **set-decoder learner**, not no learned component anywhere.
++
++### 1.3 C3-S v1: exact decision and estimand
++
++#### Decision object and candidate set
++
++**VERIFIED.** Each FULL/LITE call returns one atomic complete 100-user vector from that arm's own current closed-loop state.
++
++- FULL: fresh Q1+Q2 BASE + every legal physically distinct unilateral edit + every complete nominal-BASE origin-beam evacuation to each commonly legal non-origin destination.
++- LITE: fresh Q1+Q2 BASE + each user's first Q1+Q2-ranked physically different alternative + the same complete evacuation set.
++
++The service guard, `B_nominal - eta_ref E_nominal` objective, exact comparison, and deterministic tie order match S0. The selected vector is committed and each arm advances its own state, making this a closed-loop policy screen rather than a BASE-trajectory replay.
++
++#### Information class
++
++**VERIFIED deployable at the decision boundary.** The detached snapshot contains current geometry, legal masks/physical keys, static physical/topology/grid configuration, current and limited historical geometry for tracking, committed segments/association/pending age, frozen Q1/Q2 parameters/proposals, and fixed offline `eta_ref`. The nominal evaluator disables fading. C3-S reconstructs origin membership from nominal BASE service, rejects access to the live environment/RNG/keyed-fading capability, and fingerprints state before and after selection. Current or future realised fading, realised candidate scores, oracle winners, other-arm state, and running screen EE are unavailable to the chooser.
++
++Inputs beyond the abbreviated “nominal physics, prior state, Q1+Q2 proposals” description are therefore current legal masks and physical keys; static physics/topology/grid configuration; limited historical geometry and tracking/pending-age state; frozen Q1/Q2 parameters; and the offline TRAIN calibration `eta_ref`. None is a postdecision outcome. Realised fading is used only by the environment after the atomic commit for scoring.
++
++#### Estimand, numerator, and reference
++
++**VERIFIED.** This is closed-loop pooled EE across twelve matched units, with each arm taking 30 committed decisions. Every step records `bits = interval_s * sum(committed link_rate_bps)` and `energy = interval_s * committed system_power_w`; merge forms the ratio of exact sums. There is no finite-demand cap, so it is the declared full-buffer numerator. As above, V0.25 preserves the traffic estimand but changes the physics/integration implementation.
++
++The reference is the common frozen learned Q1+Q2 `BASE` arm from identical initial states, not U1, S_UNI, a unilateral fixed point, or FULL2.
++
++| Arm | Pooled EE (bit/J) | Versus BASE | Served |
++|---|---:|---:|---:|
++| BASE | 117,419,389.19 | — | 35,971/36,000 |
++| FULL | 120,804,786.83 | **+2.883167%** | **35,971/36,000** |
++| LITE | 120,850,121.10 | **+2.921776%** | **35,971/36,000** |
++
++**VERIFIED.** FULL and LITE are positive in all four world summaries and all three lineage summaries; service is identical in every pooled comparison. These are descriptive breakdowns within a TRAIN development screen, not confirmation.
++
++#### Panel and learner
++
++**VERIFIED.** Four fresh TRAIN domains `C3S_SCREEN/world/{1..4}` yield seeds `8464287092499831892`, `7305539127129390835`, `7691130988233444596`, and `5887834234954284271`. They are crossed with lineages `2026092101..03`; BASE/FULL/LITE each run 30 steps on their own trajectories. That is 12 matched world-lineage units, 36 episodes, 1,080 committed arm-steps, 100 users, and 36,000 opportunities per arm. Physical episode-start dates are not serialized; the recorded execution date is 2026-09-08.
++
++No coordinator learner or training/update occurred. The set decoder is deterministic enumeration, nominal physical evaluation, service filtering, and exact/rule-based argmax. Frozen learned Q1/Q2 heads remain upstream proposal inputs.
++
++## Part 2 — what transfers to V0.25
++
++The statuses below distinguish reusable decision logic from historical bytes or evidence.
++
++| Component | Status | Required V0.25 treatment |
++|---|---|---|
++| Complete-profile decision object, nominal service guard, deterministic tie | **Transfers with a named adaptation** | Keep atomic complete-profile selection and BASE-relative nominal service guard; express profiles in V0.25 `PhysicalAction`/configuration IDs and use its stable tie order. |
++| V0.23 FULL/LITE catalogues | **Does not transfer** | Replace all-unilateral/evacuation enumeration with V0.25's sealed bounded catalogue: repaired `a0`, declared shortlist unilaterals/S0 proposals, top-user pairs, beam evacuations, null handling, and 1,500 cap. This is a different search support, so V0.23 percentages do not state its ceiling. |
++| Nominal, fade-free information principle | **Transfers with a named adaptation** | Use only V0.25 current causal geometry, masks, prior profile/history, corrected nominal provisioning, and Q1/Q2 outputs. Rebuild every candidate online from nominal state; never import realised-profile membership as S0 did. |
++| Prior-state fields | **Transfers with a named adaptation** | Map V0.23 segments/previous association/pending age to V0.25's authenticated incumbent, transition/rekey history, and `Phi` inputs. The serialized state is not byte-compatible. |
++| `B - eta_ref E` choice score | **Does not transfer as the contract score** | V0.25 defines `F(a)=B(a)-eta_ref E(a)-Phi(a)` and contract S0 maximises the complete `C1+C2+Psi`, equivalently exact immediate `F(a)-F(a0)` plus C2. A faithful V0.23 raw-score port could be a separately named diagnostic, not V0.25 S0. |
++| Q1+Q2 proposal role | **Transfers with a named adaptation** | Use `construct_reference_proposal`/reference repair and a frozen checkpoint matching repaired Q1 schema v2 (15 serialized, 14 effective dimensions) and current Q2. V0.23 checkpoints do not transfer. The opened Q1-v2 report contains no learner or checkpoint result, so a compatible frozen checkpoint is a prerequisite, not an existing verified asset. |
++| Set-decoder learner | **Transfers unchanged: none** | S0 needs no C3 learner. A later learned S3 would be a new set-conditioned residual learner trained on V0.25 exact C3 rows; no V0.23 learner exists to port. |
++| Physics engine | **Does not transfer** | Do not copy the V0.23 OPS-3 current-slot evaluator. Use V0.25's angle/rate/TPC/TDM/ACM engine, v1.9 corrected provisioning (power from nominal gains; quantile only in wanted-link reception/mode/service), V0.25 energy accounting, and current prior-state costs. |
++| Full-buffer traffic estimand | **Transfers with a named adaptation** | Preserve uncapped decodable bits divided by system joules. For endpoints, use V0.25 realised full-48 integration, not the V0.23 held current-rate convention. |
++| V0.23 evaluator calls/cache | **Does not transfer** | Build a V0.25 adapter around one fresh, internally consistent dense `evaluate_many` surface. BASE and all compared selection candidates must share field, boundary policy, batch semantics, and cache identity. |
++| V0.23 closed-loop harness | **Does not transfer** | Use the V0.25 evaluation/receipt path, 10 s coordinator timer, cancellation, prevalidated `a0` fallback, and include fallback bits/joules/service in the endpoint. A diagnostic that disables the timer must say so and cannot establish deployment latency. |
++| V0.23 panels/worlds/checkpoints | **Does not transfer** | Use V0.25 development anchors and V0.25-compatible checkpoint(s). Do not reuse V0.23 percentages as V0.25 estimates and do not open the 48 evaluation-only dates. |
++| Sealed five-arm learned inventory | **Transfers unchanged as the learned experiment** | `FULL`, `DROP_C1`, `DROP_C2`, `DROP_C3`, and `ALL_NEUTRAL_CONTROL` remain the five matched learned arms; BASELINE remains external. S0 is already a named supportive comparator and must not silently replace an additive head or alter those arm definitions. |
++
++### V0.25 physics/evaluator authority
++
++**VERIFIED.** [EVALPATH-2026-09-10.md](/home/sat/mcrl-v025-probe-ws/EVALPATH-2026-09-10.md:1), SHA-256 `14ec73203266ff9901c4c8a6e2e385de5bd41ac67ffebec10faca2be5aff633c`, leaves global path authority **UNDETERMINED**:
++
++- scalar `StepEvaluator.evaluate` ignores `boundary_indices`, materialises all 48 boundaries, and performs full-trajectory integration;
++- dense `evaluate_many` honours boundary subsets and holds boundary 0 for 30.08 s when configured with `(0,)`;
++- deployed selection operationally uses dense boundary-0;
++- committed reporting operationally uses fresh dense full-48;
++- the cache key omits field/path/boundary semantics, so a scalar-cached BASE can contaminate later dense comparisons.
++
++The dormant `_s0_select` uses scalar `evaluate` and therefore is not a V0.25 implementation of the intended boundary-0 selector. The pilot `_exact_s0_boundary0` is also not reusable: its BASE can remain scalar-cached while candidates are dense and it ranks raw bits rather than the contract score. Existing mixed-path S0 rows are invalid inputs to a revival decision.
++
++**Design consequence.** A development S0 probe can be internally valid before global authority is settled only if it explicitly scopes itself to the operational dense surfaces: one fresh dense boundary-0 batch/cache for every selection comparison, and one fresh dense full-48 batch for realised endpoints. It remains diagnostic, not claim-grade, while global authority is UNDETERMINED.
++
++### Corrected provisioning, exact-path corpus, and Q1 schema
++
++- **VERIFIED:** [PROVISIONING-DECISION-2026-09-10.md](/home/sat/mcrl-v025-arch-ws/PROVISIONING-DECISION-2026-09-10.md:1), SHA-256 `cb4b8447cf18011c3263bb7f99b4f2a08ab4ffa6df2af1e32e96dfa7fa88a209`, retains v1.9: executed/predicted transmit power comes from nominal gains; the quantile affects only wanted-link reception used for transmitted mode/predicted service. This engine contract, not V0.23 nominal physics, governs S0.
++- **VERIFIED:** [EXACT-ROW-PATH-COST-2026-09-10.md](/home/sat/mcrl-v025-c1c2suff-ws/EXACT-ROW-PATH-COST-2026-09-10.md:1), SHA-256 `5556ec4b869f134fdea704d1f7e7e2abf508c0954a0ad246bcd35ba5b6f724a8`, shows the exact source-row path exists but is expensive and is a corpus builder, not a deployable selector.
++- **VERIFIED:** [C3-COALITION-BUILD-2026-09-10.md](/home/sat/mcrl-v025-coalgen-ws/C3-COALITION-BUILD-2026-09-10.md:1), SHA-256 `fb16bdde37f28413c2a2cf74d4ddd8287c1603400e2fdefb1b29d668654f4268`, contains 4,552 exact multi-user rows for 22 development anchors. It validates the V0.25 coalition label path on that subset; it is neither a complete 180-anchor C3 corpus nor a runtime outcome cache for FULL20.
++- **VERIFIED:** [Q1-SCHEMA-V2-2026-09-10.md](/home/sat/mcrl-v025-design-ws/Q1-SCHEMA-V2-2026-09-10.md:1), SHA-256 `a265839dbf4122d05da28113848200823a8b469e555919d2f8ee24284bcf5fae`, repairs off-axis angle, adds elevation, removes two redundant indicators, and records schema SHA-256 `66ed4a3f...`. It explicitly contains no learner, loss, policy, or EE result. Historical Q1 checkpoints are schema-incompatible.
++
++## Part 3 — latency and the cost of a V0.25 set decoder
++
++### What dominated V0.23
++
++**VERIFIED.** The historical “49 s” is LITE's **mean complete selector-call wall time**, `49.4308 s`, under 12-way contention; its median is `43.1 s`, p95 `57.2 s`, and maximum `254 s`. FULL's mean/median are `66.8/56.3 s`. The receipt separately reports, for LITE:
++
++| Component | Mean per decision |
++|---|---:|
++| Q inference | 1.9165 s |
++| catalogue enumeration | 0.0117 s |
++| nominal candidate evaluation | 12.9269 s |
++| complete inner decoder (`wall_seconds`) | 14.8818 s |
++| complete selector call | 49.4308 s |
++
++**DERIVED.** `49.4308 - 14.8818 = 34.5490 s`, or about 69.9% of total time, was outside the inner decoder. Code shows the outer `select_actions` fingerprints the live environment/RNG before and after, recursively snapshots/detaches state, verifies the frozen snapshot, and repeats structural hashes. Therefore the historical 49-second blocker was **not dominated by catalogue construction alone**. Inside the actual decoder kernel, nominal catalogue evaluation was dominant (`12.9269/14.8818 = 86.9%`). Enumeration and exact argmax were negligible.
++
++The receipt's process-lifetime high-water mark is `4,193,984 KiB` for FULL and `4,174,888 KiB` for LITE, explicitly not isolated per arm because FULL ran first. The old screen is therefore also too close to or above the present 4 GB interpretation to rerun as-is.
++
++### Relationship to today's V0.25 path
++
++**VERIFIED.** [SELECTOR-LATENCY-2026-09-10.md](/home/sat/mcrl-v025-harness-ws/SELECTOR-LATENCY-2026-09-10.md:1), SHA-256 `7154501eeaa5dfaa9578db44032196184593fcd289a66890e1f790a01327633b`, measured the five learned arms on 20 development anchors:
++
++- end-to-end median `12.014 s`, mean `13.977 s`, maximum `24.079 s`;
++- `_catalogue_with_census` median `8.299 s`, mean `9.779 s`, maximum `19.184 s`;
++- 965–1,008 catalogue rows, median 991.5;
++- peak RSS `1,490.422 MiB`;
++- the checkpoint used for the C3 timing seam was synthetic/untrained because the available checkpoint had input 117 while the deployed context has input 240. This is latency evidence only.
++
++The shared hot operation is exact nominal physics over many candidate profiles, especially singleton ranking during catalogue construction. The totals are not directly comparable: V0.23's 49.4 s includes a large historical audit wrapper and ran under 12-way contention; V0.25's 12.014 s is a different one-worker five-arm path and does not exact-score the whole set catalogue.
++
++### Per-anchor V0.25 S0 cost: not yet measurable from an existing path
++
++**VERIFIED from code.** `_catalogue_with_census` privately creates a boundary-0 dense evaluator, evaluates BASE plus unilateral candidates for ranking, and discards that evaluator/cache on return. A correct exact S0 then needs nominal outcomes for every multi-user catalogue row. Calling the dormant scalar `_s0_select` would both redo work and switch semantics; calling the existing pilot helper risks a mixed scalar/dense BASE. Neither yields a valid timing.
++
++**Therefore no defensible V0.25 S0 seconds-per-anchor number exists in the opened artefacts. It would be fabrication to add a nominal-evaluation average to `12.014 s`.** What must be built first is a small `V025DenseS0Adapter` that:
++
++1. accepts the already repaired/authenticated `a0` and the sealed bounded catalogue;
++2. constructs one fresh nominal `StepEvaluator(boundary_indices=(0,))`;
++3. batches BASE and all selection candidates under one dense semantic identity, or safely returns/reuses `_catalogue_with_census`'s evaluator and singleton outcomes;
++4. exact-evaluates only the still-missing multi-user rows, then computes exact `F(a)-F(a0)+C2(a)`/`C1+C2+Psi`, the service guard, and stable tie;
++5. instruments base preparation, singleton-ranking/catalogue, added multi-user evaluation, score/guard/argmax, snapshot/integrity, timeout/fallback, and peak RSS separately;
++6. uses fresh dense full-48 realised evaluation only after selection for endpoint scoring.
++
++**VERIFIED adjacent bound, not an estimate.** The 22-anchor C3 coalition build evaluated 4,552 multi-user rows—mean 206.9 per anchor—in one fresh dense boundary-0 batch per anchor. That joint call cost `0.865742–20.973042 s`, mean `4.614247 s`; the timer excludes tape construction, catalogue/singleton work, context, serialization, and verification. It shows that added set evaluation is material and highly variable. Because its panel and timer differ from FULL20, it must not be added to today's median or called the expected S0 cost.
++
++**INFERRED engineering target.** Cache reuse/batching is the decisive seam: the current catalogue already pays to evaluate BASE and the singleton neighbourhood. A port that throws those outcomes away recreates precisely the repeated nominal-physics cost that dominates the current path. Whether a correct integrated S0 can meet V0.25's 10 s coordinator budget can only be answered by timing the adapter under the declared worker count and cancellation path.
++
++## Part 4 — smallest V0.25 experiment worth running later
++
++### `V025-S0-REVIVAL-FULL20-R0`
++
++This is a proposed development diagnostic, not authority to execute it.
++
++**Question.** On the smallest existing four-world development panel, does an exact set-level chooser over the already sealed V0.25 catalogue improve realised full-buffer EE over the proposal it is meant to coordinate, without reducing service?
++
++**Prerequisites to build/freeze.** The `V025DenseS0Adapter` above; an authenticated Q1 schema-v2-compatible Q1 plus current-Q2 checkpoint; a frozen `eta_ref`; a receipt schema binding evaluator semantics/cache identity, catalogue digest, provisioning digest, checkpoint digest, and tie/service rules. If no compatible Q1-v2 checkpoint exists at freeze time, the experiment is blocked; old checkpoints must not be shape-adapted ad hoc.
++
++**Panel.** Exactly the 20 development anchors already used by the latency receipt: `V025_PROBE_R2/world/{1..4}`, steps `0..4`, with the receipt's nearest-eligible base assignments. One frozen learner lineage is enough for this structural screen. Do not use or inspect any of the 48 evaluation-only claim dates.
++
++**Matched arms.** From each identical predecision snapshot:
++
++- `A0`: repaired masked `argmax(Q1+Q2)` complete proposal;
++- `S0-V025`: exact contract S0 over the sealed bounded catalogue, using dense boundary-0 nominal `C1+C2+Psi` (equivalently exact immediate `F-F(a0)` plus C2), BASE-relative nominal service guard, and stable configuration-ID tie.
++
++This reference is `A0`, not external `BASELINE`, S_UNI, a unilateral fixed point, or a DROP arm. S_UNI may be reported later but is unnecessary to answer the first revival question.
++
++**Outcome scoring.** Evaluate `A0` and `S0-V025` from the same snapshot with a fresh realised dense full-48 batch. Pool exact sums across all 20 anchors:
++
++- primary: `sum(full-buffer decodable bits) / sum(system joules)` and relative S0-versus-A0 change;
++- service guard: pooled served/opportunities, with S0 no lower than A0 by more than the inherited `0.001` margin;
++- descriptive: per-world direction, chosen-row kind/changed-set size, action difference rate, and deadline fallback count.
++
++This is matched-anchor headroom, not a closed-loop efficacy claim. If it is positive, the next experiment would be a separately frozen short closed-loop screen; if it is not, no set-level learner should be trained on the strength of the V0.23 result.
++
++**Prospective decision rule.** Pursue a closed-loop port only if pooled realised EE is strictly above A0 and the service guard passes. Report all four world directions without adding a post-hoc direction-vote requirement. A positive result remains development evidence while evaluator authority is globally UNDETERMINED.
++
++**Computational cost specification, not a time estimate.** Per anchor: one existing repaired-Q1/Q2 proposal; one sealed catalogue build with singleton nominal outcomes retained; one added dense boundary-0 batch for the multi-user rows; exact score/guard/tie; and one realised dense full-48 batch containing the two selected profiles. Across 20 anchors that is 20 catalogue builds, 20 added multi-user batches, and 40 committed-profile endpoint evaluations. The adjacent 22-anchor inventory suggests about 207 multi-user rows per anchor, but the run must record the actual FULL20 count rather than assume it. No C3 training is required. Execute only under `nice -n 15`, all BLAS thread variables set to 1, one Python process (never more than two), enforced peak RSS below 4 GB, and without overlapping or disturbing the live jobs.
++
++**Latency readout.** Run once without suppressing the real 10 s cancellation/fallback; charge only post-validated-`a0` coordinator time per contract, but also report presentation-to-commit for comparability with today's receipt. The result must include fallback B/E/service. This single 20-anchor run then answers both questions the existing artefacts cannot: realised structural headroom on V0.25 and actual per-anchor cost of the correct integrated set decoder.
++
++## Final classification
++
++- **Verified by artefact/code:** both V0.23 numerical results and their BASE references; S0's realised-membership catalogue leak; C3-S's repaired nominal isolation; full-buffer numerators; panels and missing physical dates; no decoder learner; absent confirmatory result; old and current timing decompositions; V0.25 evaluator disagreement and cache defect; incomplete runtime prerequisites.
++- **Derived on paper:** 90.981% of U1, 81.573% of J1; exact unrounded C3-S gains from receipt fractions; 109/120 S0 joint selections; the 34.549 s old wrapper remainder and phase shares; 4,552/22 = 206.9 adjacent multi-user rows per anchor.
++- **Inferred:** cache-preserving batching is the likely highest-leverage implementation change. No V0.25 EE or per-anchor latency result is inferred or estimated.
+
+tokens used
+353,219
