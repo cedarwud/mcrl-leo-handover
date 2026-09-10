@@ -1,0 +1,3197 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-horizon-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08bee-1943-72c0-98ef-fdba94bbe2d6
+--------
+user
+# HORIZON — which lever fixes the under-run optimisation: more steps, or minibatching?
+
+Workspace `/home/sat/mcrl-v025-horizon-ws`. Interpreter
+`/home/sat/mcrl-leo-handover/.venv/bin/python` only. **Never modify**
+`/home/sat/mcrl-leo-handover` or its `.venv`. **Optimisation-validity diagnostic. Computes no
+EE and selects nothing on EE.**
+
+**Resource limits, strictly enforced — the machine is at load 22 on 20 cores.**
+**Hard cap: ONE python process, `nice -n 19`, all BLAS threads = 1, peak RSS under 3 GB.**
+**Two 16-seed trainings are live and must not be slowed.** Print peak RSS and a
+`step k/N` progress line. If load exceeds 30, pause and say so in the report rather than
+pushing through.
+
+## What is already established, and is your input, not your question
+
+`LR-CONVERGENCE-SWEEP-2026-09-10.md` (`/home/sat/mcrl-v025-c1c2-ws`) found, under a rule fixed
+in `.scratch/lr-convergence-sweep/spec.md` **before** it ran and while computing **no EE**:
+
+- **21 of 21** route x learning-rate cells fail that rule at 500 epochs;
+- **none** of `1e-2` (C1), `1e-3` (C2), `1e-3` (C3) is admissible;
+- the runner performs **one deterministic full-batch Adam update per epoch**;
+- C3 loss still moves **6.89-8.96%** between step 400 and step 500.
+
+**Do not re-litigate that finding and do not re-select a learning rate.** Reuse its rule and
+its harness (`.scratch/lr-convergence-sweep/run_sweep.py`, spec, and results) verbatim.
+
+## The question
+
+`500 epochs` is `500 gradient steps` on ~36,360 rows. Two levers could reach admissibility, and
+they differ by more than an order of magnitude in cost. **Establish which is needed before
+23 CPU-hours are committed to the wrong one.**
+
+- **Lever A — more full-batch steps.** Same procedure, longer run.
+- **Lever B — minibatching.** Currently one update per pass over the whole corpus. Minibatches
+  of a stated size would give many updates per pass. **This is a training-procedure change, not
+  a hyperparameter**, and your report must say so in those words.
+
+## What to run
+
+**One route and one seed. Not a grid.** Choose **C3** — it is the worst case in LRSWEEP
+(largest residual motion at 500) and the route whose deadness is the live question. Use the
+same sealed pilot seed `V025_LEARNER/seed/1` (`6407676579069309528`), the same LOAO folds, the
+same sealed architecture and optimizer literals, and the route's current literal `1e-3`.
+
+**Arm A.** Full-batch, cadence 100, to a cap of **4,000 steps**. Apply LRSWEEP's rule at each
+cadence point. Report the **first step at which it is satisfied**, or `NONE`.
+
+**Arm B.** Minibatched, cadence expressed in **updates** so the two arms are comparable on the
+x-axis, same 4,000-update cap. State the batch size, the shuffling rule and its seed, and
+whether the sampler is with or without replacement. Apply the identical rule. Report the first
+admissible update count, or `NONE`.
+
+**Arm C, if and only if A and B both reach `NONE` inside the cap.** Report what the residual
+motion looks like at the cap and whether it is decaying, flat, or oscillating. A flat or
+oscillating residual at 4,000 updates is a different diagnosis from a slowly decaying one, and
+is the more important result if you find it.
+
+## Report
+
+- Wall seconds per 100 updates for each arm, so the cost of each lever is on record.
+- **The extrapolated cost of a full 16-seed 5-arm production run under each lever**, stated as
+  a range with its assumptions, not a point estimate.
+- Held-out level R2, within-group ordering and top-1 at each cadence point for both arms —
+  **as convergence diagnostics only. These are never evidence about EE.**
+- Whether Arm B's advantage, if any, survives at equal **wall time** rather than equal update
+  count. That is the comparison that decides the schedule.
+
+## Rules
+
+- Separate **verified by running code**, **derived on paper**, **inferred**.
+- **Compute no EE quantity.** If you find yourself wanting one, stop and say why.
+- Do not change the learning rate, the architecture, or any sealed literal. The only things
+  that vary are step count and batch construction.
+- Development material only. **Do not read the 48 evaluation-only claim dates.**
+- Report `NONE` plainly if neither lever reaches admissibility. **That outcome is the most
+  consequential one available here and must not be softened** — it would mean the present
+  learner cannot be certified as converged at any practical horizon, and that the correct
+  reading of tonight's two runs is "the optimisation was under-run".
+
+Write to `/home/sat/mcrl-v025-horizon-ws/HORIZON-LEVER-2026-09-10.md`, first line one bolded
+sentence giving the first admissible step for each arm (or `NONE`), the wall cost of each, and
+which lever the evidence supports.
+codex
+I’m using the `diagnosing-bugs` skill because this is a controlled optimisation-validity diagnosis. I’ll first inspect the workspace instructions and the sealed sweep harness/spec/results, then build the two-arm runner locally without touching the handover workspace or computing any EE quantity.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '"'!**/.git/**'"' /home/sat/mcrl-v025-horizon-ws /home/sat/mcrl-v025-c1c2-ws 2>/dev/null | head -50 && sed -n '1,240p' /home/sat/.codex/skills/diagnosing-bugs/SKILL.md" in /home/sat/mcrl-v025-horizon-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-horizon-ws
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/AGENTS.md
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/AGENTS.md
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v03-web-agent-package-20260831/AGENTS.md
+/home/sat/mcrl-v025-c1c2-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/AGENTS.md
+---
+name: diagnosing-bugs
+description: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", or reports something broken/throwing/failing/slow.
+---
+
+<!-- project-skills-adapter:start -->
+Follow this skill subject to user and higher-priority project instructions.
+Set one checkable completion criterion. Inspect bundled helpers only after an
+execution error.
+
+Without a configured, authorized tracker, use `.scratch/<feature>/spec.md`,
+`.scratch/<feature>/issues/`, or `.scratch/<effort>/map.md` as applicable.
+External messages, installs, commits, pushes, branch changes, destructive
+actions, and out-of-scope writes still require authority.
+
+Read the extended
+[runtime contract](../select-project-skill/references/runtime.md) only for a
+cross-skill transition, implementation/review orchestration, handoff
+consumption, or a host-specific prerequisite. Verify the criterion before
+claiming success; missing requirements are `blocked`, not simulated success.
+
+Only when the request explicitly authorizes a controlled Project Skills
+sampling run, read the [feedback instructions](../select-project-skill/references/feedback.md)
+and record its terminal event. Ordinary work does not record events.
+<!-- project-skills-adapter:end -->
+
+# Diagnosing Bugs
+
+A discipline for hard bugs. Skip phases only when explicitly justified.
+
+When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
+
+## Redact
+
+This skill has you show commands, outputs and captured artifacts. **Redact every secret first** — write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
+
+If the redacted output is not enough to diagnose the bug, say so and ask the user.
+
+## Phase 1 — Build a feedback loop
+
+**This is the skill.** Everything else is mechanical. If you have a **tight** pass/fail signal for the bug — one that goes red on _this_ bug — you will find the cause; bisection, hypothesis-testing, and instrumentation all just consume it. If you don't have one, no amount of staring at code will save you.
+
+Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give up.**
+
+### Ways to construct one — try them in roughly this order
+
+1. **Failing test** at whatever seam reaches the bug — unit, integration, e2e.
+2. **Curl / HTTP script** against a running dev server.
+3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.
+4. **Headless browser script** (Playwright / Puppeteer) — drives the UI, asserts on DOM/console/network.
+5. **Replay a captured trace.** Save a real network request / payload / event log to disk; replay it through the code path in isolation.
+6. **Throwaway harness.** Spin up a minimal subset of the system (one service, mocked deps) that exercises the bug code path with a single function call.
+7. **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
+8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check, repeat" so you can `git bisect run` it.
+9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.
+10. **HITL bash script.** Last resort. If a human must click, drive _them_ with `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
+
+Build the right feedback loop, and the bug is 90% fixed.
+
+### Tighten the loop
+
+Treat the loop as a product. Once you have _a_ loop, **tighten** it:
+
+- Can I make it faster? (Cache setup, skip unrelated init, narrow the test scope.)
+- Can I make the signal sharper? (Assert on the specific symptom, not "didn't crash".)
+- Can I make it more deterministic? (Pin time, seed RNG, isolate filesystem, freeze network.)
+
+A 30-second flaky loop is barely better than no loop; a 2-second deterministic one is tight — a debugging superpower.
+
+### Non-deterministic bugs
+
+The goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100×, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not — keep raising the rate until it's debuggable.
+
+### When you genuinely cannot build a loop
+
+Stop and say so explicitly. List what you tried. Ask the user for: (a) access to whatever environment reproduces it, (b) a redacted captured artifact (HAR file, log dump, core dump, screen recording with timestamps), or (c) permission to add temporary production instrumentation. Do **not** proceed to hypothesise without a loop.
+
+### Completion criterion — a tight loop that goes red
+
+Phase 1 is done when the loop is **tight** and **red-capable**: you can name **one command** — a script path, a test invocation, a curl — that you have **already run at least once** (show the invocation and its output, redacted), and that is:
+
+- [ ] **Red-capable** — it drives the actual bug code path and asserts the **user's exact symptom**, so it can go red on this bug and green once fixed. Not "runs without erroring" — it must be able to _catch this specific bug_.
+- [ ] **Deterministic** — same verdict every run (flaky bugs: a pinned, high reproduction rate, per above).
+- [ ] **Fast** — seconds, not minutes.
+- [ ] **Agent-runnable** — you can run it unattended; a human in the loop only via `scripts/hitl-loop.template.sh`.
+
+If you catch yourself reading code to build a theory before this command exists, **stop — jumping straight to a hypothesis is the exact failure this skill prevents.** No red-capable command, no Phase 2.
+
+## Phase 2 — Reproduce + minimise
+
+Run the loop. Watch it go red — the bug appears.
+
+Confirm:
+
+- [ ] The loop produces the failure mode the **user** described — not a different failure that happens to be nearby. Wrong bug = wrong fix.
+- [ ] The failure is reproducible across multiple runs (or, for non-deterministic bugs, reproducible at a high enough rate to debug against).
+- [ ] You have captured the exact symptom (error message, wrong output, slow timing) so later phases can verify the fix actually addresses it.
+
+### Minimise
+
+Once it's red, shrink the repro to the **smallest scenario that still goes red**. Cut inputs, callers, config, data, and steps **one at a time**, re-running the loop after each cut — keep only what's load-bearing for the failure.
+
+Why bother: a minimal repro shrinks the hypothesis space in Phase 3 (fewer moving parts left to suspect) and becomes the clean regression test in Phase 5.
+
+Done when **every remaining element is load-bearing** — removing any one of them makes the loop go green.
+
+Do not proceed until you have reproduced **and** minimised.
+
+## Phase 3 — Hypothesise
+
+Generate **3–5 ranked hypotheses** before testing any of them. Single-hypothesis generation anchors on the first plausible idea.
+
+Each hypothesis must be **falsifiable**: state the prediction it makes.
+
+> Format: "If <X> is the cause, then <changing Y> will make the bug disappear / <changing Z> will make it worse."
+
+If you cannot state the prediction, the hypothesis is a vibe — discard or sharpen it.
+
+**Show the ranked list to the user before testing.** They often have domain knowledge that re-ranks instantly ("we just deployed a change to #3"), or know hypotheses they've already ruled out. Cheap checkpoint, big time saver. Don't block on it — proceed with your ranking if the user is AFK.
+
+## Phase 4 — Instrument
+
+Each probe must map to a specific prediction from Phase 3. **Change one variable at a time.**
+
+Tool preference:
+
+1. **Debugger / REPL inspection** if the env supports it. One breakpoint beats ten logs.
+2. **Targeted logs** at the boundaries that distinguish hypotheses.
+3. Never "log everything and grep".
+
+**Tag every debug log** with a unique prefix, e.g. `[DEBUG-a4f2]`. Cleanup at the end becomes a single grep. Untagged logs survive; tagged logs die.
+
+**Perf branch.** For performance regressions, logs are usually wrong. Instead: establish a baseline measurement (timing harness, `performance.now()`, profiler, query plan), then bisect. Measure first, fix second.
+
+## Phase 5 — Fix + regression test
+
+Write the regression test **before the fix** — but only if there is a **correct seam** for it.
+
+A correct seam is one where the test exercises the **real bug pattern** as it occurs at the call site. If the only available seam is too shallow (single-caller test when the bug needs multiple callers, unit test that can't replicate the chain that triggered the bug), a regression test there gives false confidence.
+
+**If no correct seam exists, that itself is the finding.** Note it. The codebase architecture is preventing the bug from being locked down. Flag this for the next phase.
+
+If a correct seam exists:
+
+1. Turn the minimised repro into a failing test at that seam.
+2. Watch it fail.
+3. Apply the fix.
+4. Watch it pass.
+5. Re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
+
+## Phase 6 — Cleanup + post-mortem
+
+Required before declaring done:
+
+- [ ] Original repro no longer reproduces (re-run the Phase 1 loop)
+- [ ] Regression test passes (or absence of seam is documented)
+- [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
+- [ ] Throwaway prototypes deleted (or moved to a clearly-marked debug location)
+- [ ] The hypothesis that turned out correct is stated in the commit / PR message — so the next debugger learns
+
+**Then ask: what would have prevented this bug?** If the answer involves architectural change (no good test seam, tangled callers, hidden coupling) hand off to the `/improve-codebase-architecture` skill with the specifics. Make the recommendation **after** the fix is in, not before — you have more information now than when you started.
+
+codex
+The diagnostic’s checkable completion criterion is: one deterministic command must run both C3 arms to 4,000 updates under the resource caps, reproduce the sealed convergence rule at every 100-update cadence, and emit enough raw metrics/timings to independently verify the first admissible point and equal-wall-time comparison. I’m now tracing the original harness and its data boundaries, especially to ensure evaluation-only dates remain unread.
+exec
+/bin/bash -lc "set -eu
+cat /proc/loadavg
+find . -maxdepth 3 -type f -print | sort | head -200
+git status --short
+sed -n '1,260p' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/spec.md
+sed -n '1,320p' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py
+sed -n '1,260p' /home/sat/mcrl-v025-c1c2-ws/LR-CONVERGENCE-SWEEP-2026-09-10.md" in /home/sat/mcrl-v025-horizon-ws
+ succeeded in 0ms:
+11.65 18.93 16.57 11/1330 3
+./.git/HEAD
+./.git/config
+./.git/description
+./.git/hooks/applypatch-msg.sample
+./.git/hooks/commit-msg.sample
+./.git/hooks/fsmonitor-watchman.sample
+./.git/hooks/post-update.sample
+./.git/hooks/pre-applypatch.sample
+./.git/hooks/pre-commit.sample
+./.git/hooks/pre-merge-commit.sample
+./.git/hooks/pre-push.sample
+./.git/hooks/pre-rebase.sample
+./.git/hooks/pre-receive.sample
+./.git/hooks/prepare-commit-msg.sample
+./.git/hooks/push-to-checkout.sample
+./.git/hooks/sendemail-validate.sample
+./.git/hooks/update.sample
+./.git/info/exclude
+# LRSWEEP frozen analysis rule — 2026-09-10
+
+`DIAGNOSTIC_NOT_CLAIM`. This file was written before any sweep fit ran.
+
+- Routes and learning rates: C1, C2, C3 crossed with
+  `{1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1}`.
+- Architecture, activation, Adam betas/epsilon, weight decay, route loss and
+  gauge weights are the literals in `src/mcrl/stagec_v025/learner.py`. Only
+  `learning_rate` is passed as an overridden literal to `AdamMLPHead.create`.
+- One first sealed pilot learner seed is used, as in the primary C1REAL and
+  C2REAL leave-one-anchor-out (LOAO) measurements.
+- Checkpoints: initial state (diagnostic only) and epochs 100, 200, 300, 400,
+  500. Reported checkpoints are 100–500.
+- Objective stabilization tolerance: absolute 400→500 change no greater than
+  1% of `max(abs(objective_at_400), 1e-12)`.
+- Held-out stabilization tolerances: absolute 400→500 changes no greater than
+  0.01 for level R², 0.005 for within-group ordering, and 0.005 for top-1.
+- A cell is admissible on convergence grounds exactly when it is finite through
+  epoch 500 and all four stabilization checks pass. Quality does not select or
+  break ties among admissible rates.
+- “Last material improvement” is the destination epoch of the last adjacent
+  checkpoint interval, including 0→100, whose objective decrease exceeds its
+  relative tolerance or whose predictive-metric increase exceeds that metric's
+  absolute tolerance. `none` means no such sampled interval.
+- Divergence means a non-finite objective or parameter. The earliest update
+  epoch is recorded.
+- Parameter L2 norm includes trainable weights and biases, excludes Adam
+  moments, and is summarized across LOAO fold models.
+- C1 input: the same 37-anchor coherent prefix of the repaired Q1 v2 exact-row
+  panel used by C1REALV2.
+- C2 input: the same 20-anchor exact-row panel used by C2REAL. Q1 v2 has no Q2
+  schema and its public projection copies `q2_state` byte-for-byte, so this is
+  explicitly Q2 schema v1.
+- C3 input: the twelve completed two-world anchors (steps 0–5) present before
+  this file was written in the live C3REAL exact-row directory, restricted by
+  filename rather than a later-changing glob; C3 uses its available v2 route
+  state. The live directory is read only.
+- Predictive metrics use the C1REAL definitions. For C3, one anchor is one
+  candidate group and the declared hard zeros for empty/singleton coalitions
+  are retained in evaluation while only size>=2 rows train the head.
+- Loss is a convergence diagnostic only and is never evidence about EE. No EE
+  quantity, production training, policy run, or acceptance test is computed.
+#!/usr/bin/env python3
+"""Convergence-only learning-rate sweep over the three sealed Stage-C heads."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import hashlib
+import json
+import math
+import os
+from pathlib import Path
+import resource
+import sys
+import time
+from types import SimpleNamespace
+from typing import Iterable
+
+
+RSS_LIMIT_BYTES = 5 * 1024**3
+resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
+
+import numpy as np
+
+from mcrl.physics_v025.tapes import seed_from_domain
+from mcrl.stagec_v025.learner import AdamMLPHead, LEGACY_TRAINER_LITERALS
+
+
+ROOT = Path(__file__).resolve().parents[2]
+OUT = ROOT / ".scratch/lr-convergence-sweep"
+EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
+THREAD_ENV = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
+)
+LRS = (1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1)
+CHECKPOINTS = (0, 100, 200, 300, 400, 500)
+PAIR_LIMIT = 4096
+SEED = seed_from_domain("V025_LEARNER/seed/1")
+SCHEMA_V2 = "mcrl-v025-stagec-q1-action-v2"
+SCHEMA_V2_SHA256 = "66ed4a3f9222ac7f20f4334ffab92f6164d2dad203cbac7f7d4e1728ae4ad654"
+STABILITY_TOLERANCES = {
+    "objective_relative": 0.01,
+    "r2_absolute": 0.01,
+    "pairwise_ordering_absolute": 0.005,
+    "top1_accuracy_absolute": 0.005,
+}
+
+C1_INPUTS = (
+    ROOT / ".scratch/c1-declared-v2/world-1.jsonl",
+    ROOT / ".scratch/c1-declared-v2/world-2.jsonl",
+)
+C2_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
+C2_INPUTS = (
+    C2_ROOT / ".scratch/c2-declared/world-1.jsonl",
+    C2_ROOT / ".scratch/c2-declared/world-2.jsonl",
+)
+C3_ROWS = Path("/home/sat/mcrl-v025-coalgen-ws/.scratch/c3-declared/rows")
+C3_NAMES = tuple(
+    f"world-{world}-step-{step:02d}.npz"
+    for world in (1, 2) for step in range(6)
+)
+C3_INPUTS = tuple(C3_ROWS / name for name in C3_NAMES)
+
+
+@dataclass(frozen=True)
+class PairData:
+    route: str
+    x: np.ndarray
+    y: np.ndarray
+    reference: np.ndarray
+    anchor: np.ndarray
+    group: np.ndarray
+    input_files: tuple[Path, ...]
+    schema: str
+    schema_sha256: str
+
+
+@dataclass(frozen=True)
+class C3Anchor:
+    path: Path
+    truth: np.ndarray
+    size: np.ndarray
+    train_indices: np.ndarray
+    x: np.ndarray
+
+
+@dataclass(frozen=True)
+class C3Data:
+    anchors: tuple[C3Anchor, ...]
+    schema: str
+    schema_sha256: str
+
+
+def verify_runtime() -> None:
+    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
+        raise RuntimeError(f"wrong interpreter: {sys.executable}")
+    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
+    if wrong:
+        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
+    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
+        raise RuntimeError("process niceness is below 15")
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def atomic_json(path: Path, payload: object) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def load_c1() -> PairData:
+    rows = []
+    for path in C1_INPUTS:
+        with path.open(encoding="utf-8") as stream:
+            for line in stream:
+                record = json.loads(line)
+                if record["kind"] == "metadata":
+                    if record["q1_schema"] != SCHEMA_V2 or record["q1_schema_sha256"] != SCHEMA_V2_SHA256:
+                        raise RuntimeError("C1 repaired schema mismatch")
+                    continue
+                maximum = 17 if record["world_id"].endswith("/1") else 18
+                if int(record["anchor_index"]) > maximum:
+                    continue
+                for row in record["rows"]:
+                    rows.append((
+                        row["q1"], row["declared"], row["reference"],
+                        record["anchor_id"], row["user_id"],
+                    ))
+    return make_pair_data("C1", rows, C1_INPUTS, SCHEMA_V2, SCHEMA_V2_SHA256)
+
+
+def load_c2() -> PairData:
+    rows = []
+    for path in C2_INPUTS:
+        with path.open(encoding="utf-8") as stream:
+            for line in stream:
+                record = json.loads(line)
+                if record["kind"] == "metadata":
+                    continue
+                for row in record["rows"]:
+                    rows.append((
+                        row["q2"], row["declared"], row["reference"],
+                        record["anchor_id"], row["user_id"],
+                    ))
+    return make_pair_data(
+        "C2", rows, C2_INPUTS,
+        "mcrl-v025-stagec-q2-action-v1",
+        "a891dd9831d76bccd981cef054ff204fa1d49c3cf6e5f3265015f16f1057019c",
+    )
+
+
+def make_pair_data(
+    route: str,
+    rows: list[tuple[object, object, object, object, object]],
+    paths: tuple[Path, ...],
+    schema: str,
+    schema_sha256: str,
+) -> PairData:
+    anchors = sorted({str(row[3]) for row in rows})
+    groups = sorted({f"{row[3]}|user/{row[4]}" for row in rows})
+    anchor_code = {value: index for index, value in enumerate(anchors)}
+    group_code = {value: index for index, value in enumerate(groups)}
+    return PairData(
+        route=route,
+        x=np.asarray([row[0] for row in rows], dtype=np.float64),
+        y=np.asarray([row[1] for row in rows], dtype=np.float64),
+        reference=np.asarray([row[2] for row in rows], dtype=bool),
+        anchor=np.asarray([anchor_code[str(row[3])] for row in rows], dtype=np.int16),
+        group=np.asarray([group_code[f"{row[3]}|user/{row[4]}"] for row in rows], dtype=np.int32),
+        input_files=paths,
+        schema=schema,
+        schema_sha256=schema_sha256,
+    )
+
+
+def load_c3() -> C3Data:
+    missing = [str(path) for path in C3_INPUTS if not path.is_file()]
+    if missing:
+        raise RuntimeError(f"frozen C3 inputs missing: {missing}")
+    anchors = []
+    for path in C3_INPUTS:
+        with np.load(path, allow_pickle=False) as payload:
+            truth = np.asarray(payload["target"], dtype=np.float64)
+            size = np.asarray(payload["size"], dtype=np.int16)
+            indices = np.asarray(payload["coalition_indices"], dtype=np.int32)
+            x = np.asarray(payload["x_v2"], dtype=np.float64)
+        if x.shape[0] != indices.size or not np.array_equal(indices, np.flatnonzero(size >= 2)):
+            raise RuntimeError(f"C3 train support mismatch: {path}")
+        if not np.isfinite(truth).all() or not np.isfinite(x).all():
+            raise RuntimeError(f"non-finite C3 input: {path}")
+        anchors.append(C3Anchor(path, truth, size, indices, x))
+    dimensions = {anchor.x.shape[1] for anchor in anchors}
+    if len(dimensions) != 1:
+        raise RuntimeError("C3 input dimensions disagree")
+    return C3Data(tuple(anchors), SCHEMA_V2, SCHEMA_V2_SHA256)
+
+
+def pair_batch(data: PairData, train: np.ndarray) -> SimpleNamespace:
+    ref_by_group = {int(data.group[i]): int(i) for i in np.flatnonzero(train & data.reference)}
+    candidates = np.flatnonzero(train & ~data.reference)
+    references = np.asarray([ref_by_group[int(data.group[i])] for i in candidates], dtype=np.int64)
+    if candidates.size > PAIR_LIMIT:
+        chosen = np.linspace(0, candidates.size - 1, PAIR_LIMIT, dtype=np.int64)
+        candidates = candidates[chosen]
+        references = references[chosen]
+    return SimpleNamespace(
+        reference_states=data.x[references],
+        candidate_states=data.x[candidates],
+        target_deltas=data.y[candidates] - data.y[references],
+    )
+
+
+def parameters_finite(head: AdamMLPHead) -> bool:
+    return all(np.isfinite(value).all() for value in (*head.weights, *head.biases))
+
+
+def parameter_norm(head: AdamMLPHead) -> float:
+    total = sum(float(np.square(value).sum()) for value in (*head.weights, *head.biases))
+    return math.sqrt(total)
+
+
+def pair_objective(head: AdamMLPHead, batch: SimpleNamespace) -> float:
+    reference = head._forward(batch.reference_states)[0]
+    candidate = head._forward(batch.candidate_states)[0]
+    residual = candidate - reference - batch.target_deltas
+    return float(head.loss_weight * np.mean(residual * residual + head.gauge_beta * reference * reference))
+
+
+def metric(prediction: np.ndarray, truth: np.ndarray, group: np.ndarray) -> dict[str, float | int]:
+    rss = float(np.square(truth - prediction).sum())
+    tss = float(np.square(truth - truth.mean()).sum())
+    credit = 0.0
+    pairs = 0
+    top1_hits = 0
+    group_count = 0
+    for group_id in np.unique(group):
+        indices = np.flatnonzero(group == group_id)
+        if indices.size < 2:
+            continue
+        target = truth[indices]
+        score = prediction[indices]
+        left, right = np.triu_indices(indices.size, 1)
+        target_delta = target[left] - target[right]
+        score_delta = score[left] - score[right]
+        keep = np.abs(target_delta) > 1e-12
+        target_delta = target_delta[keep]
+        score_delta = score_delta[keep]
+        pairs += int(target_delta.size)
+        credit += float(np.sum(np.sign(target_delta) == np.sign(score_delta)))
+        credit += 0.5 * float(np.sum(np.abs(score_delta) <= 1e-15))
+        selected = int(np.argmax(score))
+        top1_hits += int(target[selected] >= target.max() - 1e-12)
+        group_count += 1
+    return {
+        "r2": float(1.0 - rss / tss) if tss else math.nan,
+        "pairwise_ordering": float(credit / pairs) if pairs else math.nan,
+        "top1_accuracy": float(top1_hits / group_count) if group_count else math.nan,
+        "rows": int(truth.size),
+        "pairs": pairs,
+        "groups": group_count,
+    }
+
+
+def run_pair(data: PairData, lr: float, maximum_epoch: int = 500, maximum_folds: int | None = None) -> dict[str, object]:
+    folds = list(np.unique(data.anchor))
+    if maximum_folds is not None:
+        folds = folds[:maximum_folds]
+    checkpoints = tuple(value for value in CHECKPOINTS if value <= maximum_epoch)
+    predictions = {epoch: np.full(data.y.shape, np.nan) for epoch in checkpoints}
+    objectives = {epoch: [] for epoch in checkpoints}
+    norms = {epoch: [] for epoch in checkpoints}
+    divergence_rows = []
+    literal = dict(LEGACY_TRAINER_LITERALS[data.route])
+    literal["learning_rate"] = lr
+    started = time.perf_counter()
+    for fold_number, value in enumerate(folds, start=1):
+        test = data.anchor == value
+        train = ~test
+        batch = pair_batch(data, train)
+        head = AdamMLPHead.create(data.x.shape[1], literal, np.random.default_rng(SEED))
+        for epoch in range(maximum_epoch + 1):
+            if epoch in checkpoints:
+                loss = pair_objective(head, batch)
+                if not math.isfinite(loss) or not parameters_finite(head):
+                    divergence_rows.append({"fold": int(value), "epoch": epoch, "phase": "checkpoint"})
+                    break
+                objectives[epoch].append((loss, int(batch.target_deltas.size)))
+                norms[epoch].append(parameter_norm(head))
+                predictions[epoch][test] = head._forward(data.x[test])[0]
+            if epoch == maximum_epoch:
+                break
+            with np.errstate(all="ignore"):
+                loss_before_update = head.update(batch)
+            if not math.isfinite(loss_before_update) or not parameters_finite(head):
+                divergence_rows.append({"fold": int(value), "epoch": epoch + 1, "phase": "update"})
+                break
+        print(json.dumps({
+            "event": "fold", "route": data.route, "lr": lr,
+            "fold": fold_number, "folds": len(folds),
+            "diverged": bool(divergence_rows and divergence_rows[-1]["fold"] == int(value)),
+        }), flush=True)
+    usable = np.isin(data.anchor, np.asarray(folds))
+    trajectory = {}
+    for epoch in checkpoints:
+        finite_predictions = bool(np.isfinite(predictions[epoch][usable]).all())
+        if len(objectives[epoch]) == len(folds) and finite_predictions:
+            weighted_loss = sum(value * count for value, count in objectives[epoch]) / sum(count for _, count in objectives[epoch])
+            trajectory[str(epoch)] = {
+                "training_objective": float(weighted_loss),
+                "held_out": metric(predictions[epoch][usable], data.y[usable], data.group[usable]),
+                "parameter_l2": summarize(norms[epoch]),
+            }
+**C1: no grid learning rate is admissible by epoch 500 and current `1e-2` is not; C2: no grid learning rate is admissible and current `1e-3` is not; C3: no grid learning rate is admissible and current `1e-3` is not—the declared 500-epoch horizon is inadequate for all three sealed architectures under the predeclared convergence rule.**
+
+`DIAGNOSTIC_NOT_CLAIM`
+
+## Answer
+
+[RUN] All 21 declared route–learning-rate cells were run and all remained
+finite through 500 epochs. None passed the convergence rule fixed before the
+sweep: stability from epoch 400 to 500 of the training objective, held-out
+level R², held-out within-group ordering, and held-out top-1. There is therefore
+no learning-rate selection to make. In particular, none of the three current
+literals is admissible.
+
+[INFERRED] Under the fixed selection rule, the finding is that 500 epochs is
+the wrong horizon for each of these architectures on these panels. This does
+not imply that every rate would fail at a longer horizon, and the run does not
+pick the rate with the best predictive result at epoch 500.
+
+**Loss values below are convergence diagnostics only and are never evidence
+about EE. No EE quantity was computed, so no EE result could influence this
+finding.** No production training, policy run, or acceptance test was run.
+
+## Rule fixed before running
+
+[DERIVED] For objective `L`, objective stability means
+`abs(L500-L400) / max(abs(L400), 1e-12) <= 0.01`. Predictive stability means
+absolute 400-to-500 changes no larger than `0.01` for level R² and `0.005` for
+each of ordering and top-1. A cell is admissible exactly when it stays finite
+through 500 and all four checks pass. This formula, the grid, and the data
+boundaries were written before the full process started in
+`.scratch/lr-convergence-sweep/spec.md`.
+
+“Last material improvement” is the destination epoch of the last adjacent
+sampled interval, including 0→100, in which loss decreased by more than 1%
+relative or the named held-out metric increased by more than its absolute
+tolerance. `—` means no sampled interval did so. “Stable L/R/O/T” reports the
+four 400→500 tests in order: loss, R², ordering, top-1. A material decline also
+fails stability even though it is not an improvement.
+
+## Schemas and panels
+
+[RUN] C1 used the repaired `mcrl-v025-stagec-q1-action-v2`, digest
+`66ed4a3f9222ac7f20f4334ffab92f6164d2dad203cbac7f7d4e1728ae4ad654`,
+on the same coherent 37-anchor prefix as C1REALV2: 36,360 rows and 3,700
+`(anchor,user)` groups.
+
+[RUN] C2 used `mcrl-v025-stagec-q2-action-v1`, digest
+`a891dd9831d76bccd981cef054ff204fa1d49c3cf6e5f3265015f16f1057019c`,
+on the same 20 anchors as C2REAL: 19,647 rows and 2,000 groups. A repaired Q2
+schema is not reachable: Q1 v2 changes only `q1_state`, while C2 consumes the
+22-slot `q2_state`; the public Q1-v2 projection has already verified that this
+field is copied exactly. Thus C2 is explicitly the requested v1 fallback, not
+a silently relabelled v2 result.
+
+[RUN] C3 used the available repaired-v2 joint route state on the twelve
+completed two-world exact anchors (steps 0–5) frozen before this sweep: 11,947
+catalogue rows, of which 2,541 size≥2 rows train the head. The size counts are
+`{0: 12, 1: 9,394, 2: 2,331, 3: 93, 4: 47, 5: 40, 6: 1, 7: 2, 8: 3,
+100: 24}`. Hence 78.63% of evaluation rows are singletons and 21.27% are
+trainable nontrivial coalitions. Direct inspection of all twelve frozen NPZ
+inputs found exact zero Psi on all 9,394 singleton rows. The one completed
+per-process generator receipt available at validation time (world 1, step 0)
+reported maximum decomposition residual `8.882e-15`; the remaining live
+generator ranges had not yet emitted their process-level receipts, so no
+all-anchor decomposition claim is made here.
+
+[DERIVED] C3 singleton targets must be zero because
+`Psi_{i} = Delta F({i}) - d_i`, while `d_i` is that same unilateral increment.
+The full-support C3 R² values are therefore strongly aided by structurally easy
+zeros; they should not be read as evidence of a well-fitted interaction head.
+
+All LOAO fits used the first sealed pilot seed
+`V025_LEARNER/seed/1` (`6407676579069309528`), the literal sealed architectures
+and optimizer fields, and one deterministic full-batch Adam update per epoch.
+Only the learning-rate field passed to `AdamMLPHead.create` changed. C1/C2 used
+the same deterministic 4,096-pair cap as C1REAL/C2REAL. C3 aggregated all
+training-anchor gradients into one full-batch update per epoch and hard-set
+empty/singleton predictions to zero.
+
+[RUN] The common-initialization parameter L2 norms were `4.4561` (C1),
+`19.9039` (C2), and `16.0125` (C3). The epoch-500 tables give fold means and
+ranges against those baselines, making near-initial, growing, and large-scale
+fits distinguishable.
+
+## C1 — repaired Q1 v2, sealed `(8)` ReLU head
+
+Each epoch cell is `training loss / held-out R² / ordering / top-1`.
+
+| lr | epoch 100 | epoch 200 | epoch 300 | epoch 400 | epoch 500 |
+|---:|---:|---:|---:|---:|---:|
+| 1e-4 | 6.0124 / −0.1648 / 0.5423 / 0.0989 | 5.9434 / −0.1538 / 0.5421 / 0.0673 | 5.8795 / −0.1457 / 0.5441 / 0.0508 | 5.8234 / −0.1403 / 0.5480 / 0.0495 | 5.7715 / −0.1370 / 0.5458 / 0.0419 |
+| 3e-4 | 5.8794 / −0.1452 / 0.5441 / 0.0522 | 5.7171 / −0.1379 / 0.5482 / 0.0446 | 5.5161 / −0.1636 / 0.5919 / 0.0697 | 5.4037 / −0.1630 / 0.5976 / 0.0708 | 5.3161 / −0.1545 / 0.5853 / 0.0605 |
+| 1e-3 | 5.4835 / −0.1695 / 0.5958 / 0.0686 | 5.2154 / −0.1424 / 0.5659 / 0.0481 | 5.0650 / −0.1129 / 0.5555 / 0.0557 | 4.9519 / −0.0908 / 0.5544 / 0.0789 | 4.8698 / −0.0753 / 0.5617 / 0.0938 |
+| 3e-3 | 5.0904 / −0.1252 / 0.5516 / 0.0457 | 4.8155 / −0.0640 / 0.5628 / 0.0911 | 4.6122 / −0.0024 / 0.5808 / 0.1097 | 4.4301 / 0.0364 / 0.5963 / 0.1384 | 4.2377 / 0.0548 / 0.6072 / 0.1324 |
+| **1e-2 current** | 4.5801 / 0.0478 / 0.6070 / 0.1022 | 3.9440 / 0.0907 / 0.6491 / 0.1630 | 3.3798 / 0.1093 / 0.7084 / 0.2419 | 3.1655 / 0.0986 / 0.7267 / 0.3114 | 3.0999 / 0.0917 / 0.7299 / 0.3254 |
+| 3e-2 | 3.7772 / 0.0946 / 0.6704 / 0.1876 | 3.1885 / 0.1022 / 0.7315 / 0.2935 | 3.0781 / 0.0837 / 0.7380 / 0.3208 | 3.0114 / 0.0694 / 0.7403 / 0.3268 | 2.9746 / 0.0722 / 0.7421 / 0.3246 |
+| 1e-1 | 3.4583 / 0.1041 / 0.7161 / 0.2843 | 3.1398 / 0.0983 / 0.7373 / 0.3059 | 3.0596 / 0.0678 / 0.7389 / 0.2973 | 3.0495 / 0.0555 / 0.7361 / 0.2941 | 3.0019 / 0.0558 / 0.7358 / 0.2919 |
+
+The LOAO constant floor is R² `−0.0058`, ordering `0.5000`, top-1 `0.1716`.
+
+| lr | nonfinite epoch | stable L/R/O/T | last material improvement L/R/O/T | parameter L2 at 500, mean [min, max] | admissible |
+|---:|---:|:---:|:---:|---:|:---:|
+| 1e-4 | — | yes/yes/yes/no | 300/200/—/— | 4.4576 [4.4283, 4.4728] | no |
+| 3e-4 | — | no/yes/no/no | 500/100/400/300 | 4.5799 [4.5451, 4.6157] | no |
+| 1e-3 | — | no/no/no/no | 500/500/500/500 | 5.2805 [5.1832, 5.3586] | no |
+| 3e-3 | — | no/no/no/no | 500/500/500/400 | 8.1707 [7.7255, 8.7963] | no |
+| **1e-2 current** | — | no/yes/yes/no | 500/300/400/500 | 16.0695 [15.0698, 17.1275] | **no** |
+| 3e-2 | — | no/yes/yes/yes | 500/100/300/400 | 21.0886 [17.0585, 23.4924] | no |
+| 1e-1 | — | no/yes/yes/yes | 500/100/200/200 | 28.1890 [23.8523, 34.6379] | no |
+
+[RUN] At `3e-2` and `1e-1`, all three held-out metrics stabilized, but the
+training loss still changed by 1.22% and 1.56%, respectively. They therefore
+cannot be selected under the joint rule. The current `1e-2` loss changed by
+2.07%, while top-1 also moved by 0.0141.
+
+## C2 — Q2 v1 fallback, sealed `(100,50,50)` tanh head
+
+Each epoch cell is `training loss / held-out R² / ordering / top-1`.
+
+| lr | epoch 100 | epoch 200 | epoch 300 | epoch 400 | epoch 500 |
+|---:|---:|---:|---:|---:|---:|
+| 1e-4 | 6.4363 / −0.3464 / 0.6669 / 0.3445 | 5.8161 / −0.4187 / 0.6901 / 0.3285 | 5.3829 / −0.4559 / 0.6822 / 0.3245 | 5.1699 / −0.4756 / 0.6722 / 0.3230 | 5.0511 / −0.4783 / 0.6708 / 0.3230 |
+| 3e-4 | 5.4740 / −0.4664 / 0.6878 / 0.3260 | 4.9991 / −0.4808 / 0.6706 / 0.3210 | 4.7885 / −0.5211 / 0.6596 / 0.3035 | 4.6388 / −0.5654 / 0.6551 / 0.3035 | 4.5197 / −0.5992 / 0.6482 / 0.2865 |
+| **1e-3 current** | 4.8438 / −0.5149 / 0.6626 / 0.3095 | 4.4555 / −0.6033 / 0.6425 / 0.2765 | 4.1148 / −0.7244 / 0.6050 / 0.2325 | 3.8168 / −0.9543 / 0.6052 / 0.2520 | 3.5775 / −1.5946 / 0.5986 / 0.2680 |
+| 3e-3 | 4.4282 / −0.6192 / 0.6352 / 0.2705 | 3.8499 / −1.0217 / 0.6131 / 0.2580 | 3.5153 / −2.4105 / 0.5889 / 0.2645 | 3.2413 / −5.6137 / 0.5656 / 0.2430 | 3.3556 / −9.3676 / 0.5673 / 0.2435 |
+| 1e-2 | 4.0536 / −1.0098 / 0.6013 / 0.2470 | 3.6981 / −1.6724 / 0.5964 / 0.2435 | 3.5557 / −2.4316 / 0.6048 / 0.2610 | 3.2606 / −4.1804 / 0.5822 / 0.2565 | 3.0768 / −5.9462 / 0.5758 / 0.2460 |
+| 3e-2 | 4.3654 / −0.6413 / 0.6146 / 0.2540 | 4.0545 / −0.6725 / 0.6088 / 0.2675 | 3.9138 / −0.6776 / 0.5919 / 0.2675 | 3.7604 / −0.6446 / 0.6025 / 0.2590 | 3.6675 / −0.8578 / 0.5946 / 0.2680 |
+| 1e-1 | 6.9814 / −0.5386 / 0.5715 / 0.3215 | 6.9907 / −0.4968 / 0.5860 / 0.3320 | 6.9801 / −0.5229 / 0.5748 / 0.3295 | 6.9837 / −0.5111 / 0.5611 / 0.2940 | 7.0375 / −0.5043 / 0.5714 / 0.3090 |
+
+The LOAO constant floor is R² `−0.0182`, ordering `0.5000`, top-1 `0.2450`.
+
+| lr | nonfinite epoch | stable L/R/O/T | last material improvement L/R/O/T | parameter L2 at 500, mean [min, max] | admissible |
+|---:|---:|:---:|:---:|---:|:---:|
+| 1e-4 | — | no/yes/yes/yes | 500/—/200/100 | 20.1142 [20.0881, 20.1392] | no |
+| 3e-4 | — | no/no/no/no | 500/—/100/100 | 20.9484 [20.8421, 21.1510] | no |
+| **1e-3 current** | — | no/no/no/no | 500/—/100/500 | 24.4650 [24.0095, 24.8120] | **no** |
+| 3e-3 | — | no/no/yes/yes | 400/—/100/300 | 28.5537 [27.4223, 29.2034] | no |
+| 1e-2 | — | no/no/no/no | 500/—/300/300 | 36.3600 [34.5891, 38.4680] | no |
+| 3e-2 | — | no/no/no/no | 500/400/400/500 | 49.5050 [44.2282, 54.1369] | no |
+| 1e-1 | — | yes/yes/no/no | 100/400/500/500 | 64.2650 [60.9167, 71.5657] | no |
+
+[RUN] C2 makes the distinction between objective and held-out behavior plain.
+For `1e-4` the held-out metrics stabilized but loss still fell 2.30%. At
+`1e-1` loss stabilized, but ordering moved 0.0103 and top-1 moved 0.0150. The
+current `1e-3` loss fell 6.27% while held-out R² worsened from `−0.9543` to
+`−1.5946`; its parameters were still growing in scale.
+
+## C3 — repaired joint v2, sealed `(64,64)` ReLU set head
+
+Each epoch cell is `training loss / held-out R² / ordering / top-1`. Metrics
+are over the full bounded-catalogue support, including hard-zero
+empty/singleton predictions.
+
+| lr | epoch 100 | epoch 200 | epoch 300 | epoch 400 | epoch 500 |
+|---:|---:|---:|---:|---:|---:|
+| 1e-4 | 4.1578 / 0.7002 / 0.5232 / 0.3333 | 2.7559 / 0.6940 / 0.5264 / 0.4167 | 2.3419 / 0.6912 / 0.5216 / 0.4167 | 2.1070 / 0.6888 / 0.5216 / 0.4167 | 1.9399 / 0.6918 / 0.5172 / 0.4167 |
+| 3e-4 | 2.6540 / 0.7022 / 0.5324 / 0.3333 | 2.0528 / 0.7028 / 0.5166 / 0.3333 | 1.7959 / 0.7033 / 0.5188 / 0.4167 | 1.6415 / 0.6999 / 0.5297 / 0.4167 | 1.5283 / 0.6999 / 0.5277 / 0.4167 |
+| **1e-3 current** | 2.1448 / 0.6985 / 0.5530 / 0.3333 | 1.7700 / 0.6776 / 0.5650 / 0.2500 | 1.5452 / 0.6462 / 0.5601 / 0.1667 | 1.3710 / 0.6184 / 0.5632 / 0.1667 | 1.2482 / 0.5980 / 0.5322 / 0.2500 |
+| 3e-3 | 2.1260 / 0.6694 / 0.5079 / 0.3333 | 1.7308 / 0.6392 / 0.5170 / 0.1667 | 1.4959 / 0.6073 / 0.5285 / 0.2500 | 1.3318 / 0.5779 / 0.5356 / 0.2500 | 1.2075 / 0.5660 / 0.5476 / 0.2500 |
+| 1e-2 | 4.6832 / 0.7463 / 0.5163 / 0.4167 | 2.9272 / 0.7299 / 0.5129 / 0.4167 | 2.1349 / 0.6979 / 0.5186 / 0.2500 | 1.7651 / 0.6591 / 0.5263 / 0.2500 | 1.5987 / 0.6362 / 0.5292 / 0.2500 |
+| 3e-2 | 5.7997 / 0.7293 / 0.5231 / 0.5833 | 4.4611 / 0.7260 / 0.5426 / 0.5000 | 3.8471 / 0.7065 / 0.5520 / 0.4167 | 4.8113 / 0.6457 / 0.5359 / 0.4167 | 3.5468 / 0.5318 / 0.5609 / 0.4167 |
+| 1e-1 | 14.1383 / 0.5176 / 0.4800 / 0.5000 | 9.2375 / 0.5794 / 0.5063 / 0.4167 | 112.8674 / −1.5620 / 0.5167 / 0.3333 | 6.3259 / 0.6328 / 0.4952 / 0.4167 | 5.8247 / 0.6502 / 0.5107 / 0.4167 |
+
+The ordinary LOAO constant floor is R² `−0.0005`, ordering `0.5000`, top-1
+`0.0000`. Because the head is structurally anchored at zero for size<2, an
+anchored-constant supplement gives R² `0.0021`, ordering `0.6204`, and top-1
+`0.1667`. Both are references only and do not enter convergence selection.
+
+| lr | nonfinite epoch | stable L/R/O/T | last material improvement L/R/O/T | parameter L2 at 500, mean [min, max] | admissible |
+|---:|---:|:---:|:---:|---:|:---:|
+| 1e-4 | — | no/yes/yes/yes | 500/100/—/200 | 16.0990 [16.0823, 16.1087] | no |
+| 3e-4 | — | no/yes/yes/yes | 500/100/400/300 | 16.2619 [16.2102, 16.3287] | no |
+| **1e-3 current** | — | no/no/no/no | 500/100/200/500 | 16.7769 [16.6407, 16.9185] | **no** |
+| 3e-3 | — | no/no/no/yes | 500/100/500/300 | 17.7046 [17.1192, 18.0505] | no |
+| 1e-2 | — | no/no/yes/yes | 500/100/400/100 | 18.9376 [18.3115, 19.7152] | no |
+| 3e-2 | — | no/no/no/yes | 500/100/500/100 | 30.5874 [28.9012, 35.6704] | no |
+| 1e-1 | — | no/no/no/yes | 500/500/500/400 | 78.5207 [78.0527, 79.2058] | no |
+
+[RUN] Every C3 loss still moved by at least 6.89% from 400 to 500, and the
+current `1e-3` moved by 8.96%. At `1e-1`, the epoch-300 loss spike and large
+parameter norm distinguish instability from non-finite divergence: it is
+finite, but plainly not converged.
+
+## What is verified, derived, and inferred
+
+[RUN] The machine result contains seven points per route, all five requested
+checkpoints per point, all 21 epoch-500 parameter-norm summaries, the constant
+floors, and the earliest-divergence field. All input hashes matched before and
+after. `learner.py` remained byte-identical at SHA-256
+`09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01`.
+
+[RUN] The sweep used only
+`/home/sat/mcrl-leo-handover/.venv/bin/python`, one Python process,
+`nice=15`, and all BLAS thread variables equal to one. Its printed peak line
+was `PEAK_RSS_KB=113016` (about 110.4 MiB), far below 5 GiB. It did not write
+to the C2 or C3 source workspaces or any live-job directory.
+
+[DERIVED] A decreasing training objective with degrading held-out R² is not a
+contradiction: they are evaluated on different anchor partitions. It is also
+not an EE statement. Parameter L2 is reported over weights and biases only;
+the mean and range are over LOAO fold models, not over learner seeds.
+
+[INFERRED] The parameter-scale gradients and continuing loss motion distinguish
+these cases from collapsed constant heads. But because no rate satisfies the
+fixed convergence condition, predictive-quality differences among rates must
+not be used to choose a winner from this run. A longer prospectively declared
+horizon (or a separate optimization-validity design) is required before any
+learning rate can be certified for these architectures.
+
+## Reproducibility
+
+Machine-readable results are in
+`.scratch/lr-convergence-sweep/results.json`; the fixed rule is in
+`.scratch/lr-convergence-sweep/spec.md`; and the isolated runner is
+`.scratch/lr-convergence-sweep/run_sweep.py`. Their SHA-256 values before final
+report validation were respectively `9424c6d8…84861`, `0484ffbf…f9b19`, and
+`dde9a8e9…0fc6`.
+
+exec
+/bin/bash -lc "sed -n '240,620p' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py
+jq '.environment, .routes.C3 // .C3 // keys' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json | head -240
+rg -n \"class AdamMLPHead|def update|LEGACY_TRAINER_LITERALS|C3|batch\" /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py
+sed -n '1,300p' /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py
+find /home/sat/mcrl-v025-horizon-ws -maxdepth 2 -name CONTEXT.md -o -name '*.md' -print" in /home/sat/mcrl-v025-horizon-ws
+ succeeded in 0ms:
+    credit = 0.0
+    pairs = 0
+    top1_hits = 0
+    group_count = 0
+    for group_id in np.unique(group):
+        indices = np.flatnonzero(group == group_id)
+        if indices.size < 2:
+            continue
+        target = truth[indices]
+        score = prediction[indices]
+        left, right = np.triu_indices(indices.size, 1)
+        target_delta = target[left] - target[right]
+        score_delta = score[left] - score[right]
+        keep = np.abs(target_delta) > 1e-12
+        target_delta = target_delta[keep]
+        score_delta = score_delta[keep]
+        pairs += int(target_delta.size)
+        credit += float(np.sum(np.sign(target_delta) == np.sign(score_delta)))
+        credit += 0.5 * float(np.sum(np.abs(score_delta) <= 1e-15))
+        selected = int(np.argmax(score))
+        top1_hits += int(target[selected] >= target.max() - 1e-12)
+        group_count += 1
+    return {
+        "r2": float(1.0 - rss / tss) if tss else math.nan,
+        "pairwise_ordering": float(credit / pairs) if pairs else math.nan,
+        "top1_accuracy": float(top1_hits / group_count) if group_count else math.nan,
+        "rows": int(truth.size),
+        "pairs": pairs,
+        "groups": group_count,
+    }
+
+
+def run_pair(data: PairData, lr: float, maximum_epoch: int = 500, maximum_folds: int | None = None) -> dict[str, object]:
+    folds = list(np.unique(data.anchor))
+    if maximum_folds is not None:
+        folds = folds[:maximum_folds]
+    checkpoints = tuple(value for value in CHECKPOINTS if value <= maximum_epoch)
+    predictions = {epoch: np.full(data.y.shape, np.nan) for epoch in checkpoints}
+    objectives = {epoch: [] for epoch in checkpoints}
+    norms = {epoch: [] for epoch in checkpoints}
+    divergence_rows = []
+    literal = dict(LEGACY_TRAINER_LITERALS[data.route])
+    literal["learning_rate"] = lr
+    started = time.perf_counter()
+    for fold_number, value in enumerate(folds, start=1):
+        test = data.anchor == value
+        train = ~test
+        batch = pair_batch(data, train)
+        head = AdamMLPHead.create(data.x.shape[1], literal, np.random.default_rng(SEED))
+        for epoch in range(maximum_epoch + 1):
+            if epoch in checkpoints:
+                loss = pair_objective(head, batch)
+                if not math.isfinite(loss) or not parameters_finite(head):
+                    divergence_rows.append({"fold": int(value), "epoch": epoch, "phase": "checkpoint"})
+                    break
+                objectives[epoch].append((loss, int(batch.target_deltas.size)))
+                norms[epoch].append(parameter_norm(head))
+                predictions[epoch][test] = head._forward(data.x[test])[0]
+            if epoch == maximum_epoch:
+                break
+            with np.errstate(all="ignore"):
+                loss_before_update = head.update(batch)
+            if not math.isfinite(loss_before_update) or not parameters_finite(head):
+                divergence_rows.append({"fold": int(value), "epoch": epoch + 1, "phase": "update"})
+                break
+        print(json.dumps({
+            "event": "fold", "route": data.route, "lr": lr,
+            "fold": fold_number, "folds": len(folds),
+            "diverged": bool(divergence_rows and divergence_rows[-1]["fold"] == int(value)),
+        }), flush=True)
+    usable = np.isin(data.anchor, np.asarray(folds))
+    trajectory = {}
+    for epoch in checkpoints:
+        finite_predictions = bool(np.isfinite(predictions[epoch][usable]).all())
+        if len(objectives[epoch]) == len(folds) and finite_predictions:
+            weighted_loss = sum(value * count for value, count in objectives[epoch]) / sum(count for _, count in objectives[epoch])
+            trajectory[str(epoch)] = {
+                "training_objective": float(weighted_loss),
+                "held_out": metric(predictions[epoch][usable], data.y[usable], data.group[usable]),
+                "parameter_l2": summarize(norms[epoch]),
+            }
+        else:
+            trajectory[str(epoch)] = None
+    return finalize_cell(
+        data.route, lr, trajectory, divergence_rows,
+        wall_s=time.perf_counter() - started,
+        schema=data.schema, schema_sha256=data.schema_sha256,
+        folds=len(folds), rows=int(usable.sum()), groups=int(np.unique(data.group[usable]).size),
+        pair_limit=PAIR_LIMIT,
+    )
+
+
+def c3_loss(head: AdamMLPHead, anchors: Iterable[C3Anchor]) -> tuple[float, int]:
+    squared = 0.0
+    count = 0
+    for anchor in anchors:
+        target = anchor.truth[anchor.train_indices]
+        prediction = head._forward(anchor.x)[0]
+        squared += float(np.square(prediction - target).sum())
+        count += int(target.size)
+    return float(head.loss_weight * squared / count), count
+
+
+def c3_update(head: AdamMLPHead, anchors: Iterable[C3Anchor]) -> float:
+    grad_w = [np.zeros_like(value) for value in head.weights]
+    grad_b = [np.zeros_like(value) for value in head.biases]
+    squared = 0.0
+    count = 0
+    for anchor in anchors:
+        target = anchor.truth[anchor.train_indices]
+        prediction, activations, preactivations = head._forward(anchor.x)
+        residual = prediction - target
+        chunk_w, chunk_b = head._backward(activations, preactivations, residual)
+        for total, chunk in zip(grad_w, chunk_w, strict=True):
+            total += chunk
+        for total, chunk in zip(grad_b, chunk_b, strict=True):
+            total += chunk
+        squared += float(np.square(residual).sum())
+        count += int(target.size)
+    scale = 2.0 * head.loss_weight / count
+    head._adam([value * scale for value in grad_w], [value * scale for value in grad_b])
+    return float(head.loss_weight * squared / count)
+
+
+def c3_metric(predictions: list[np.ndarray], anchors: tuple[C3Anchor, ...]) -> dict[str, float | int]:
+    truth = np.concatenate([anchor.truth for anchor in anchors])
+    prediction = np.concatenate(predictions)
+    group = np.concatenate([
+        np.full(anchor.truth.shape, index, dtype=np.int16)
+        for index, anchor in enumerate(anchors)
+    ])
+    return metric(prediction, truth, group)
+
+
+def run_c3(data: C3Data, lr: float, maximum_epoch: int = 500, maximum_folds: int | None = None) -> dict[str, object]:
+    fold_indices = list(range(len(data.anchors)))
+    if maximum_folds is not None:
+        fold_indices = fold_indices[:maximum_folds]
+    checkpoints = tuple(value for value in CHECKPOINTS if value <= maximum_epoch)
+    predictions: dict[int, list[np.ndarray | None]] = {
+        epoch: [None] * len(fold_indices) for epoch in checkpoints
+    }
+    objectives = {epoch: [] for epoch in checkpoints}
+    norms = {epoch: [] for epoch in checkpoints}
+    divergence_rows = []
+    literal = dict(LEGACY_TRAINER_LITERALS["C3"])
+    literal["learning_rate"] = lr
+    started = time.perf_counter()
+    for local_fold, test_index in enumerate(fold_indices):
+        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != test_index)
+        test = data.anchors[test_index]
+        head = AdamMLPHead.create(test.x.shape[1], literal, np.random.default_rng(SEED))
+        for epoch in range(maximum_epoch + 1):
+            if epoch in checkpoints:
+                loss, count = c3_loss(head, train)
+                if not math.isfinite(loss) or not parameters_finite(head):
+                    divergence_rows.append({"fold": test.path.stem, "epoch": epoch, "phase": "checkpoint"})
+                    break
+                objectives[epoch].append((loss, count))
+                norms[epoch].append(parameter_norm(head))
+                prediction = np.zeros_like(test.truth)
+                prediction[test.train_indices] = head._forward(test.x)[0]
+                predictions[epoch][local_fold] = prediction
+            if epoch == maximum_epoch:
+                break
+            with np.errstate(all="ignore"):
+                loss_before_update = c3_update(head, train)
+            if not math.isfinite(loss_before_update) or not parameters_finite(head):
+                divergence_rows.append({"fold": test.path.stem, "epoch": epoch + 1, "phase": "update"})
+                break
+        print(json.dumps({
+            "event": "fold", "route": "C3", "lr": lr,
+            "fold": local_fold + 1, "folds": len(fold_indices),
+            "diverged": bool(divergence_rows and divergence_rows[-1]["fold"] == test.path.stem),
+        }), flush=True)
+    selected_anchors = tuple(data.anchors[index] for index in fold_indices)
+    trajectory = {}
+    for epoch in checkpoints:
+        complete = len(objectives[epoch]) == len(fold_indices) and all(
+            value is not None for value in predictions[epoch]
+        )
+        if complete:
+            weighted_loss = sum(value * count for value, count in objectives[epoch]) / sum(count for _, count in objectives[epoch])
+            trajectory[str(epoch)] = {
+                "training_objective": float(weighted_loss),
+                "held_out": c3_metric([value for value in predictions[epoch] if value is not None], selected_anchors),
+                "parameter_l2": summarize(norms[epoch]),
+            }
+        else:
+            trajectory[str(epoch)] = None
+    return finalize_cell(
+        "C3", lr, trajectory, divergence_rows,
+        wall_s=time.perf_counter() - started,
+        schema=data.schema, schema_sha256=data.schema_sha256,
+        folds=len(fold_indices), rows=sum(anchor.truth.size for anchor in selected_anchors),
+        groups=len(selected_anchors), pair_limit=None,
+    )
+
+
+def summarize(values: list[float]) -> dict[str, float]:
+    return {
+        "mean": float(np.mean(values)), "minimum": float(np.min(values)),
+        "maximum": float(np.max(values)), "rms": float(np.sqrt(np.mean(np.square(values)))),
+    }
+
+
+def finalize_cell(
+    route: str, lr: float, trajectory: dict[str, object], divergence_rows: list[dict[str, object]],
+    **metadata: object,
+) -> dict[str, object]:
+    divergence_epoch = min((int(row["epoch"]) for row in divergence_rows), default=None)
+    stable = None
+    changes = None
+    if divergence_epoch is None and trajectory.get("400") is not None and trajectory.get("500") is not None:
+        left = trajectory["400"]
+        right = trajectory["500"]
+        objective_relative = abs(float(right["training_objective"]) - float(left["training_objective"])) / max(
+            abs(float(left["training_objective"])), 1e-12
+        )
+        changes = {
+            "objective_relative_abs": objective_relative,
+            "r2_absolute": abs(float(right["held_out"]["r2"]) - float(left["held_out"]["r2"])),
+            "pairwise_ordering_absolute": abs(float(right["held_out"]["pairwise_ordering"]) - float(left["held_out"]["pairwise_ordering"])),
+            "top1_accuracy_absolute": abs(float(right["held_out"]["top1_accuracy"]) - float(left["held_out"]["top1_accuracy"])),
+        }
+        stable = {
+            "objective": changes["objective_relative_abs"] <= STABILITY_TOLERANCES["objective_relative"],
+            "r2": changes["r2_absolute"] <= STABILITY_TOLERANCES["r2_absolute"],
+            "pairwise_ordering": changes["pairwise_ordering_absolute"] <= STABILITY_TOLERANCES["pairwise_ordering_absolute"],
+            "top1_accuracy": changes["top1_accuracy_absolute"] <= STABILITY_TOLERANCES["top1_accuracy_absolute"],
+        }
+    last_improved = {key: None for key in ("objective", "r2", "pairwise_ordering", "top1_accuracy")}
+    for previous, current in zip(CHECKPOINTS[:-1], CHECKPOINTS[1:], strict=True):
+        left = trajectory.get(str(previous))
+        right = trajectory.get(str(current))
+        if left is None or right is None:
+            continue
+        relative_drop = (float(left["training_objective"]) - float(right["training_objective"])) / max(
+            abs(float(left["training_objective"])), 1e-12
+        )
+        if relative_drop > STABILITY_TOLERANCES["objective_relative"]:
+            last_improved["objective"] = current
+        for key, tolerance_key in (
+            ("r2", "r2_absolute"),
+            ("pairwise_ordering", "pairwise_ordering_absolute"),
+            ("top1_accuracy", "top1_accuracy_absolute"),
+        ):
+            improvement = float(right["held_out"][key]) - float(left["held_out"][key])
+            if improvement > STABILITY_TOLERANCES[tolerance_key]:
+                last_improved[key] = current
+    admissible = bool(divergence_epoch is None and stable is not None and all(stable.values()))
+    return {
+        "route": route, "learning_rate": lr,
+        "divergence": {
+            "diverged": divergence_epoch is not None,
+            "earliest_epoch": divergence_epoch,
+            "fold_events": divergence_rows,
+            "criterion": "non-finite objective or trainable parameter",
+        },
+        "trajectory": trajectory,
+        "stability_400_to_500": stable,
+        "changes_400_to_500": changes,
+        "last_material_improvement_epoch": last_improved,
+        "admissible_on_convergence": admissible,
+        **metadata,
+    }
+
+
+def constant_floor_pair(data: PairData) -> dict[str, object]:
+    prediction = np.empty_like(data.y)
+    for value in np.unique(data.anchor):
+        test = data.anchor == value
+        prediction[test] = float(data.y[~test].mean())
+    return metric(prediction, data.y, data.group)
+
+
+def constant_floor_c3(data: C3Data, anchored: bool) -> dict[str, object]:
+    predictions = []
+    for test_index, test in enumerate(data.anchors):
+        train = [anchor for index, anchor in enumerate(data.anchors) if index != test_index]
+        if anchored:
+            values = np.concatenate([anchor.truth[anchor.train_indices] for anchor in train])
+            prediction = np.zeros_like(test.truth)
+            prediction[test.train_indices] = float(values.mean())
+        else:
+            values = np.concatenate([anchor.truth for anchor in train])
+            prediction = np.full_like(test.truth, float(values.mean()))
+        predictions.append(prediction)
+    return c3_metric(predictions, data.anchors)
+
+
+def inventory(c1: PairData, c2: PairData, c3: C3Data) -> dict[str, object]:
+    sizes = np.concatenate([anchor.size for anchor in c3.anchors])
+    unique, counts = np.unique(sizes, return_counts=True)
+    return {
+        "C1": {"anchors": int(np.unique(c1.anchor).size), "rows": int(c1.y.size), "groups": int(np.unique(c1.group).size)},
+        "C2": {"anchors": int(np.unique(c2.anchor).size), "rows": int(c2.y.size), "groups": int(np.unique(c2.group).size)},
+        "C3": {
+            "anchors": len(c3.anchors), "rows": int(sum(anchor.truth.size for anchor in c3.anchors)),
+            "trainable_rows": int(sum(anchor.train_indices.size for anchor in c3.anchors)),
+            "coalition_size_counts": {str(int(size)): int(count) for size, count in zip(unique, counts, strict=True)},
+        },
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--routes", nargs="+", choices=("C1", "C2", "C3"), default=("C1", "C2", "C3"))
+    parser.add_argument("--lrs", nargs="+", type=float, default=LRS)
+    parser.add_argument("--smoke", action="store_true")
+    args = parser.parse_args()
+    verify_runtime()
+    OUT.mkdir(parents=True, exist_ok=True)
+    learner_path = ROOT / "src/mcrl/stagec_v025/learner.py"
+    c1, c2, c3 = load_c1(), load_c2(), load_c3()
+    inputs = (*c1.input_files, *c2.input_files, *(anchor.path for anchor in c3.anchors), learner_path)
+    before = {str(path): file_sha256(path) for path in inputs}
+    maximum_epoch = 2 if args.smoke else 500
+    maximum_folds = 1 if args.smoke else None
+    cells = []
+    for route in args.routes:
+        for lr in args.lrs:
+            tag = f"{route.lower()}-lr-{lr:.0e}".replace("e-0", "e-")
+            cache = OUT / f"{tag}.json"
+            if cache.exists() and not args.smoke:
+                cell = json.loads(cache.read_text(encoding="utf-8"))
+                print(json.dumps({"event": "cache", "route": route, "lr": lr}), flush=True)
+            else:
+                if route == "C1":
+                    cell = run_pair(c1, lr, maximum_epoch, maximum_folds)
+                elif route == "C2":
+                    cell = run_pair(c2, lr, maximum_epoch, maximum_folds)
+                else:
+                    cell = run_c3(c3, lr, maximum_epoch, maximum_folds)
+                if not args.smoke:
+                    atomic_json(cache, cell)
+            cells.append(cell)
+            print(json.dumps({
+                "event": "cell", "route": route, "lr": lr,
+                "admissible": cell["admissible_on_convergence"],
+                "wall_s": cell["wall_s"],
+            }), flush=True)
+    after = {str(path): file_sha256(path) for path in inputs}
+    changed = [path for path in before if before[path] != after[path]]
+    if changed:
+        raise RuntimeError(f"read-only inputs changed during sweep: {changed}")
+    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if peak_kb * 1024 >= RSS_LIMIT_BYTES:
+        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
+    result = {
+        "schema": "mcrl-v025-lr-convergence-sweep-v1",
+        "status": "DIAGNOSTIC_NOT_CLAIM",
+        "routes": list(args.routes), "learning_rates": list(args.lrs),
+        "seed": SEED, "checkpoints": list(CHECKPOINTS),
+        "stability_tolerances": STABILITY_TOLERANCES,
+        "inventory": inventory(c1, c2, c3),
+        "constant_floors": {
+            "C1": constant_floor_pair(c1), "C2": constant_floor_pair(c2),
+            "C3": constant_floor_c3(c3, anchored=False),
+            "C3_anchored_supplement": constant_floor_c3(c3, anchored=True),
+        },
+        "cells": cells,
+        "resource_policy": {
+            "python_processes": 1, "nice": os.nice(0), "blas_threads": 1,
+            "rlimit_as_bytes": RSS_LIMIT_BYTES, "peak_rss_kb": peak_kb,
+        },
+        "input_sha256_before": before, "input_sha256_after": after,
+        "changed_inputs": changed,
+        "scope": {
+            "loss_use": "convergence diagnostic only; never EE evidence",
+            "ee_quantities_computed": False, "production_training": False,
+            "policy_run": False, "acceptance_test": False,
+        },
+    }
+    output = OUT / ("smoke.json" if args.smoke else "results.json")
+    atomic_json(output, result)
+    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
+    print(json.dumps({"written": str(output), "changed_inputs": changed}), flush=True)
+
+
+if __name__ == "__main__":
+jq: error (at /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json:3091): Cannot index array with string "C3"
+null
+26:Route = Literal["C1", "C2", "C3"]
+27:ROUTES: tuple[Route, ...] = ("C1", "C2", "C3")
+28:LEARNED_ARMS = ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL")
+31:    "FULL": {"C1": "informed", "C2": "informed", "C3": "informed"},
+32:    "DROP_C1": {"C1": "neutral", "C2": "informed", "C3": "informed"},
+33:    "DROP_C2": {"C1": "informed", "C2": "neutral", "C3": "informed"},
+34:    "DROP_C3": {"C1": "informed", "C2": "informed", "C3": "neutral"},
+35:    "ALL_NEUTRAL_CONTROL": {"C1": "neutral", "C2": "neutral", "C3": "neutral"},
+45:LEGACY_TRAINER_LITERALS: Mapping[str, object] = {
+56:    "C3": {
+61:    "batch": "one_typed_deterministic_full_batch_update_per_route_per_source_epoch",
+67:LEGACY_TRAINER_LITERALS_SHA256 = canonical_sha256(LEGACY_TRAINER_LITERALS)
+72:    """A typed fixed aggregate batch. There is intentionally no next state."""
+113:            raise StageCContractError("pairwise batch must be nonempty and finite")
+120:            raise StageCContractError("pairwise batch physics digest is invalid")
+122:            "schema": "mcrl-v025-stagec-pairwise-batch-v1",
+150:            raise StageCContractError("neutral source route disagrees with batch")
+176:    if route == "C3":
+177:        # Compatibility-only build-1 synthetic batch.  Contract-v1 training
+178:        # uses CoalitionBatch and never consumes a per-action C3 label.
+187:def build_pairwise_batches(shards: Sequence[SourceShard]) -> dict[Route, PairwiseBatch]:
+277:    def update(self, batch: PairwiseBatch, *, learning_rate: float, gauge_weight: float) -> float:
+280:        reference_q = batch.reference_states @ self.weights + self.bias
+281:        candidate_q = batch.candidate_states @ self.weights + self.bias
+282:        residual = candidate_q - reference_q - batch.target_deltas
+283:        count = float(batch.target_deltas.size)
+284:        gradient_w = (2.0 / count) * ((batch.candidate_states - batch.reference_states).T @ residual)
+285:        gradient_w += (2.0 * gauge_weight / count) * (batch.reference_states.T @ reference_q)
+332:        batches: Mapping[Route, PairwiseBatch],
+336:        if set(batches) != set(ROUTES):
+337:            raise StageCContractError("orchestrator needs exactly C1/C2/C3 batches")
+339:        self.batches = dict(batches)
+342:        dimensions = {route: batch.reference_states.shape[1] for route, batch in batches.items()}
+352:    def batch_digests(self) -> dict[str, str]:
+353:        return {route: self.batches[route].digest for route in ROUTES}
+358:            batch.source_authority_sha256 for batch in self.batches.values()
+361:            raise StageCContractError("route batches disagree on source authority")
+365:        """One deterministic pass over C1, C2, C3 fixed aggregate batches."""
+369:            informed = self.batches[route]
+372:                batch = informed if SOURCE_MAP[arm][route] == "informed" else neutral
+374:                    batch,
+407:            "batch_digests": self.batch_digests,
+416:                "kind": "deterministic_full_batch_gradient_descent",
+433:            "batch_digests": self.batch_digests,
+451:            "kind": "deterministic_full_batch_gradient_descent",
+534:            strata=("setting_id", "coalition_size" if route == "C3" else "action_count"),
+537:            optimization_dose="one_full_batch_update_per_source_epoch",
+545:    """Typed C3 scalar batch over complete set-conditioned contexts."""
+567:            raise StageCContractError("C3 coalition batch cannot be empty")
+570:            raise StageCContractError("C3 coalition shards mix physics digests")
+574:            raise StageCContractError("C3 coalition member width drifted")
+590:            raise StageCContractError("C3 scalar target shape drifted")
+605:            "schema": "mcrl-v025-stagec-c3-coalition-batch-v2",
+635:        if definition.route != "C3":
+636:            raise StageCContractError("C3 batch requires the C3 neutral definition")
+650:                    "informed_batch": self.digest,
+659:class AdamMLPHead:
+778:    def update(self, batch: PairwiseBatch) -> float:
+779:        reference, ref_a, ref_z = self._forward(batch.reference_states)
+780:        candidate, cand_a, cand_z = self._forward(batch.candidate_states)
+781:        residual = candidate - reference - batch.target_deltas
+793:    def update_scalar(self, states: np.ndarray, targets: np.ndarray) -> float:
+840:    def update(self, batch: CoalitionBatch) -> float:
+841:        return self.network.update_scalar(batch.invariant_states, batch.target_psi)
+883:    def update(self, batch: CoalitionBatch, *, learning_rate: float) -> float:
+884:        hidden = self._hidden(batch.invariant_states)
+886:        residual = predictions - batch.target_psi
+887:        count = float(batch.target_psi.size)
+893:        self.input_weights -= learning_rate * scale * (hidden_gradient.T @ batch.invariant_states)
+900:            raise StageCContractError("non-finite C3 learner update")
+903:    def fit_closed_form(self, batch: CoalitionBatch, *, ridge: float = 1e-10) -> float:
+906:        hidden = self._hidden(batch.invariant_states)
+909:        solution = np.linalg.solve(gram, design.T @ batch.target_psi)
+912:        residual = design @ solution - batch.target_psi
+947:        raise StageCContractError("C3 requires complete coalition context")
+964:            "C3": self.psi.payload(),
+969:    """C7 matched five-arm learner with a scalar set-conditioned C3 route."""
+975:        q1_batch: PairwiseBatch,
+976:        q2_batch: PairwiseBatch,
+977:        c3_batch: CoalitionBatch,
+980:        if q1_batch.route != "C1" or q2_batch.route != "C2":
+981:            raise StageCContractError("v1 action batches must be C1 then C2")
+986:        if len({q1_batch.physics_digest, q2_batch.physics_digest, c3_batch.physics_digest}) != 1:
+987:            raise StageCContractError("C1/C2/C3 training physics digests disagree")
+989:        self.q1_batch = q1_batch
+990:        self.q2_batch = q2_batch
+991:        self.c3_batch = c3_batch
+993:        self.physics_digest = q1_batch.physics_digest
+997:                q1_batch.reference_states.shape[1], LEGACY_TRAINER_LITERALS["C1"], rng
+1000:                q2_batch.reference_states.shape[1], LEGACY_TRAINER_LITERALS["C2"], rng
+1004:                    c3_batch.invariant_states.shape[1], LEGACY_TRAINER_LITERALS["C3"], rng
+1006:                c3_batch.member_width,
+1012:        # Engineering-only pilot lever: neutral batches are immutable and
+1015:        self._neutral_q1 = q1_batch.neutral(self.neutral_sources["C1"])
+1016:        self._neutral_q2 = q2_batch.neutral(self.neutral_sources["C2"])
+1017:        self._neutral_c3 = c3_batch.neutral(self.neutral_sources["C3"])
+1025:        for route, informed in (("C1", self.q1_batch), ("C2", self.q2_batch)):
+1028:                batch = informed if SOURCE_MAP[arm][route] == "informed" else neutral
+1031:                losses[arm][route] = head.update(batch)
+1034:            batch = self.c3_batch if SOURCE_MAP[arm]["C3"] == "informed" else self._neutral_c3
+1037:            losses[arm]["C3"] = head.update(batch)
+1073:            "legacy_trainer_literals": dict(LEGACY_TRAINER_LITERALS),
+1074:            "legacy_trainer_literals_sha256": LEGACY_TRAINER_LITERALS_SHA256,
+1078:            "batch_digests": {
+1079:                "C1": self.q1_batch.digest,
+1080:                "C2": self.q2_batch.digest,
+1081:                "C3": self.c3_batch.digest,
+1152:            or payload.get("legacy_trainer_literals_sha256") != LEGACY_TRAINER_LITERALS_SHA256
+1154:            != LEGACY_TRAINER_LITERALS_SHA256
+1160:            or payload.get("batch_digests") != {
+1161:                "C1": self.q1_batch.digest, "C2": self.q2_batch.digest, "C3": self.c3_batch.digest
+1180:            self._restore_adam_head(psi.network, model_payload["C3"])
+1200:    "LEGACY_EPOCH_BUDGET", "LEGACY_TRAINER_LITERALS", "LEGACY_TRAINER_LITERALS_SHA256",
+1202:    "V1ThreeRouteModel", "build_pairwise_batches", "default_synthetic_neutral_sources",
+"""Deterministic pairwise zero-bootstrap learner and six-arm orchestration."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Literal, Mapping, Sequence
+
+import numpy as np
+from mcrl.physics_v025.tapes import seed_from_domain
+
+from .canonical import (
+    StageCContractError,
+    canonical_sha256,
+    file_sha256,
+    float_hex,
+    parse_float_hex,
+    read_verified_json,
+    write_once_json,
+)
+from .shards import SourceShard
+from .state import Q1_SCHEMA_SHA256, Q2_SCHEMA_SHA256, SourceRow
+from .coalitions import CoalitionContext, CoalitionShard
+
+
+Route = Literal["C1", "C2", "C3"]
+ROUTES: tuple[Route, ...] = ("C1", "C2", "C3")
+LEARNED_ARMS = ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL")
+ARM_ORDER = (*LEARNED_ARMS, "BASELINE")
+SOURCE_MAP: Mapping[str, Mapping[Route, str]] = {
+    "FULL": {"C1": "informed", "C2": "informed", "C3": "informed"},
+    "DROP_C1": {"C1": "neutral", "C2": "informed", "C3": "informed"},
+    "DROP_C2": {"C1": "informed", "C2": "neutral", "C3": "informed"},
+    "DROP_C3": {"C1": "informed", "C2": "informed", "C3": "neutral"},
+    "ALL_NEUTRAL_CONTROL": {"C1": "neutral", "C2": "neutral", "C3": "neutral"},
+}
+CHECKPOINT_SCHEMA = "mcrl-v025-stagec-lineage-checkpoint-v1"
+CHECKPOINT_EVERY_SOURCE_EPOCHS = 100
+LEGACY_EPOCH_BUDGET = 2000
+LEARNER_SEED_DOMAINS = tuple(f"V025_LEARNER/seed/{index}" for index in range(1, 13))
+LEARNER_SEEDS = tuple(seed_from_domain(domain) for domain in LEARNER_SEED_DOMAINS)
+
+# Literal copy of the heterogeneous V0.23 seam and the production classes it
+# delegates to.  Only input_dim is supplied by the sealed Stage-C schemas.
+LEGACY_TRAINER_LITERALS: Mapping[str, object] = {
+    "C1": {
+        "hidden_layers": (8,), "activation": "relu", "learning_rate": 1.0e-2,
+        "adam_betas": (0.9, 0.999), "adam_epsilon": 1.0e-8,
+        "weight_decay": 0.0, "gauge_beta": 0.2, "loss_weight": 1.0,
+    },
+    "C2": {
+        "hidden_layers": (100, 50, 50), "activation": "tanh", "learning_rate": 1.0e-3,
+        "adam_betas": (0.9, 0.999), "adam_epsilon": 1.0e-8,
+        "weight_decay": 0.0, "gauge_beta": 0.1, "loss_weight": 1.0,
+    },
+    "C3": {
+        "hidden_layers": (64, 64), "activation": "relu", "learning_rate": 1.0e-3,
+        "adam_betas": (0.9, 0.999), "adam_epsilon": 1.0e-8,
+        "weight_decay": 0.0, "loss_weight": 1.0,
+    },
+    "batch": "one_typed_deterministic_full_batch_update_per_route_per_source_epoch",
+    "route_order": ROUTES,
+    "epoch_budget": LEGACY_EPOCH_BUDGET,
+    "stopping": "exact_epoch_budget_no_early_selection",
+    "serialization": "all_heads_and_adam_state_with_authenticated_source_cursor",
+}
+LEGACY_TRAINER_LITERALS_SHA256 = canonical_sha256(LEGACY_TRAINER_LITERALS)
+
+
+@dataclass(frozen=True, slots=True)
+class PairwiseBatch:
+    """A typed fixed aggregate batch. There is intentionally no next state."""
+
+    route: Route
+    reference_states: np.ndarray
+    candidate_states: np.ndarray
+    target_deltas: np.ndarray
+    row_identities: tuple[str, ...]
+    source_authority_sha256: str
+    source_identity: str
+    physics_digest: str
+    digest: str
+
+    @classmethod
+    def create(
+        cls,
+        route: Route,
+        reference_states: Sequence[Sequence[float]],
+        candidate_states: Sequence[Sequence[float]],
+        target_deltas: Sequence[float],
+        row_identities: Sequence[str],
+        source_authority_sha256: str,
+        *,
+        source_identity: str = "informed",
+        physics_digest: str,
+    ) -> "PairwiseBatch":
+        reference = np.asarray(reference_states, dtype=np.float64)
+        candidate = np.asarray(candidate_states, dtype=np.float64)
+        targets = np.asarray(target_deltas, dtype=np.float64)
+        identities = tuple(row_identities)
+        if route not in ROUTES:
+            raise StageCContractError("unknown pairwise route")
+        if reference.ndim != 2 or candidate.shape != reference.shape:
+            raise StageCContractError("pairwise state tensors must be equal rank-2 arrays")
+        if targets.shape != (reference.shape[0],) or len(identities) != reference.shape[0]:
+            raise StageCContractError("pairwise target/identity count drifted")
+        if (
+            reference.shape[0] < 1
+            or not np.isfinite(reference).all()
+            or not np.isfinite(candidate).all()
+            or not np.isfinite(targets).all()
+        ):
+            raise StageCContractError("pairwise batch must be nonempty and finite")
+        if len(source_authority_sha256) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in source_authority_sha256
+        ):
+            raise StageCContractError("source authority must be a lowercase SHA-256")
+        if len(physics_digest) != 64 or any(character not in "0123456789abcdef" for character in physics_digest):
+            raise StageCContractError("pairwise batch physics digest is invalid")
+        payload = {
+            "schema": "mcrl-v025-stagec-pairwise-batch-v1",
+            "route": route,
+            "shape": list(reference.shape),
+            "reference": [[float_hex(v) for v in row] for row in reference],
+            "candidate": [[float_hex(v) for v in row] for row in candidate],
+            "targets": [float_hex(v) for v in targets],
+            "row_identities": list(identities),
+            "source_authority_sha256": source_authority_sha256,
+            "source_identity": source_identity,
+            "physics_digest": physics_digest,
+            "zero_bootstrap": True,
+        }
+        return cls(
+            route,
+            reference,
+            candidate,
+            targets,
+            identities,
+            source_authority_sha256,
+            source_identity,
+            physics_digest,
+            canonical_sha256(payload),
+        )
+
+    def neutral(
+        self, definition: "NeutralSourceDefinition | None" = None
+    ) -> "PairwiseBatch":
+        if definition is not None and definition.route != self.route:
+            raise StageCContractError("neutral source route disagrees with batch")
+        return PairwiseBatch.create(
+            self.route,
+            self.reference_states,
+            self.candidate_states,
+            np.zeros_like(self.target_deltas),
+            self.row_identities,
+            self.source_authority_sha256,
+            source_identity=(
+                "neutral:legacy"
+                if definition is None
+                else f"neutral:{definition.digest}"
+            ),
+            physics_digest=self.physics_digest,
+        )
+
+
+def _route_state(row: SourceRow, route: Route) -> tuple[float, ...]:
+    if route == "C1":
+        return row.q1_state
+    if route == "C2":
+        return row.q2_state
+    return (*row.q1_state, *row.q2_state)
+
+
+def _route_label(row: SourceRow, route: Route) -> float:
+    if route == "C3":
+        # Compatibility-only build-1 synthetic batch.  Contract-v1 training
+        # uses CoalitionBatch and never consumes a per-action C3 label.
+        return 0.0
+    field = {
+        "C1": row.c1_label_normalized_hex,
+        "C2": row.c2_label_normalized_hex,
+    }[route]
+    return parse_float_hex(field, field=f"{route}.normalized_label")
+
+
+def build_pairwise_batches(shards: Sequence[SourceShard]) -> dict[Route, PairwiseBatch]:
+    rows = tuple(row for shard in shards for row in shard.rows)
+    physics = {row.physics_digest for row in rows}
+    if len(physics) != 1:
+        raise StageCContractError("pairwise source shards mix physics digests")
+    physics_digest = next(iter(physics))
+    source_authority_sha256 = canonical_sha256(
+        {
+            "schema": "mcrl-v025-stagec-source-authority-v1",
+            "shards": [shard.file_sha256 for shard in shards],
+            "authorities": sorted(
+                {
+                    (
+                        row.code_digest,
+                        row.physics_digest,
+                        row.launch_digest,
+                        row.catalogue_digest,
+                        row.provider_digest,
+                        row.archive_digest,
+                        row.setting_digest,
+                        row.calibration_digest,
+                        row.allocation_manifest_digest,
+                        row.q1_schema_sha256,
+                        row.q2_schema_sha256,
+                    )
+                    for row in rows
+                }
+            ),
+        }
+    )
+    groups: dict[tuple[str, str, int], list[SourceRow]] = {}
+    for row in rows:
+        groups.setdefault((row.world_id, row.anchor_id, row.user_id), []).append(row)
+    by_route: dict[Route, PairwiseBatch] = {}
+    for route in ROUTES:
+        references: list[tuple[float, ...]] = []
+        candidates: list[tuple[float, ...]] = []
+        targets: list[float] = []
+        identities: list[str] = []
+        for key in sorted(groups):
+            ordered = sorted(groups[key], key=lambda row: row.action_index)
+            shared_mask = ordered[0].action_mask
+            if any(row.action_mask != shared_mask for row in ordered):
+                raise StageCContractError("user-anchor rows disagree on the legal mask")
+            expected_indices = [
+                index for index, enabled in enumerate(shared_mask) if enabled
+            ]
+            if [row.action_index for row in ordered] != expected_indices:
+                raise StageCContractError("user-anchor rows do not cover each legal action once")
+            if sum(row.null_action for row in ordered) != 1:
+                raise StageCContractError("user-anchor requires exactly one legal null action")
+            reference_rows = [row for row in ordered if row.reference_action]
+            if len(reference_rows) != 1:
+                raise StageCContractError("every user-anchor requires exactly one BASE row")
+            reference = reference_rows[0]
+            for candidate in ordered:
+                if candidate.reference_action or not candidate.action_mask[candidate.action_index]:
+                    continue
+                references.append(_route_state(reference, route))
+                candidates.append(_route_state(candidate, route))
+                targets.append(_route_label(candidate, route) - _route_label(reference, route))
+                identities.append(
+                    f"{candidate.world_id}|{candidate.anchor_id}|{candidate.user_id}|{candidate.action_index}"
+                )
+        by_route[route] = PairwiseBatch.create(
+            route,
+            references,
+            candidates,
+            targets,
+            identities,
+            source_authority_sha256,
+            physics_digest=physics_digest,
+        )
+    return by_route
+
+
+@dataclass(slots=True)
+class LinearHead:
+    weights: np.ndarray
+    bias: float
+
+    def clone(self) -> "LinearHead":
+        return LinearHead(self.weights.copy(), float(self.bias))
+
+    def score(self, state: Sequence[float]) -> float:
+        values = np.asarray(state, dtype=np.float64)
+        if values.shape != self.weights.shape:
+            raise StageCContractError("learner state shape drifted")
+        return float(values @ self.weights + self.bias)
+
+    def update(self, batch: PairwiseBatch, *, learning_rate: float, gauge_weight: float) -> float:
+        # Pairwise fixed-target regression with a reference-zero gauge. No
+        # reward, next state, target network, discount, or bootstrap exists.
+        reference_q = batch.reference_states @ self.weights + self.bias
+        candidate_q = batch.candidate_states @ self.weights + self.bias
+        residual = candidate_q - reference_q - batch.target_deltas
+        count = float(batch.target_deltas.size)
+        gradient_w = (2.0 / count) * ((batch.candidate_states - batch.reference_states).T @ residual)
+        gradient_w += (2.0 * gauge_weight / count) * (batch.reference_states.T @ reference_q)
+        gradient_b = float((2.0 * gauge_weight / count) * reference_q.sum())
+        self.weights -= learning_rate * gradient_w
+        self.bias -= learning_rate * gradient_b
+        loss = float(np.mean(residual * residual) + gauge_weight * np.mean(reference_q * reference_q))
+        if not np.isfinite(self.weights).all() or not np.isfinite(self.bias) or not np.isfinite(loss):
+            raise StageCContractError("non-finite learner update")
+        return loss
+
+
+@dataclass(slots=True)
+class ThreeRouteModel:
+    heads: dict[Route, LinearHead]
+
+    def clone(self) -> "ThreeRouteModel":
+        return ThreeRouteModel({route: head.clone() for route, head in self.heads.items()})
+
+exec
+/bin/bash -lc "sed -n '640,830p' /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py
+jq '{schema,status,seed,checkpoints,stability_tolerances,inventory,resource_policy,scope,C3: [.cells[] | select(.route==\"C3\" and .learning_rate==0.001)][0]}' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json
+sha256sum /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/spec.md /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py
+ps -eo pid,ni,comm,args --sort=pid | rg 'python|PID' | head -60
+cat /proc/loadavg" in /home/sat/mcrl-v025-horizon-ws
+ succeeded in 0ms:
+            contexts=self.contexts,
+            invariant_states=self.invariant_states.copy(),
+            target_psi=np.zeros_like(self.target_psi),
+            row_identities=self.row_identities,
+            source_authority_sha256=self.source_authority_sha256,
+            source_identity=f"neutral:{definition.digest}",
+            physics_digest=self.physics_digest,
+            member_width=self.member_width,
+            digest=canonical_sha256(
+                {
+                    "informed_batch": self.digest,
+                    "neutral_source_sha256": definition.digest,
+                    "targets": [float_hex(0.0) for _ in self.target_psi],
+                }
+            ),
+        )
+
+
+@dataclass(slots=True)
+class AdamMLPHead:
+    """Legacy-shaped MLP trained by a literal Adam pairwise objective."""
+
+    weights: list[np.ndarray]
+    biases: list[np.ndarray]
+    first_moment_w: list[np.ndarray]
+    second_moment_w: list[np.ndarray]
+    first_moment_b: list[np.ndarray]
+    second_moment_b: list[np.ndarray]
+    activation: str
+    learning_rate: float
+    beta1: float
+    beta2: float
+    epsilon: float
+    weight_decay: float
+    gauge_beta: float
+    loss_weight: float
+    adam_step: int = 0
+
+    @classmethod
+    def create(cls, input_dim: int, literal: Mapping[str, object], rng: np.random.Generator) -> "AdamMLPHead":
+        widths = (input_dim, *tuple(int(value) for value in literal["hidden_layers"]), 1)
+        weights = [
+            rng.normal(0.0, np.sqrt(2.0 / max(1, left)), (left, right))
+            for left, right in zip(widths[:-1], widths[1:], strict=True)
+        ]
+        biases = [np.zeros(right, dtype=np.float64) for right in widths[1:]]
+        return cls(
+            weights=weights,
+            biases=biases,
+            first_moment_w=[np.zeros_like(value) for value in weights],
+            second_moment_w=[np.zeros_like(value) for value in weights],
+            first_moment_b=[np.zeros_like(value) for value in biases],
+            second_moment_b=[np.zeros_like(value) for value in biases],
+            activation=str(literal["activation"]),
+            learning_rate=float(literal["learning_rate"]),
+            beta1=float(tuple(literal["adam_betas"])[0]),
+            beta2=float(tuple(literal["adam_betas"])[1]),
+            epsilon=float(literal["adam_epsilon"]),
+            weight_decay=float(literal["weight_decay"]),
+            gauge_beta=float(literal.get("gauge_beta", 0.0)),
+            loss_weight=float(literal["loss_weight"]),
+        )
+
+    def clone(self) -> "AdamMLPHead":
+        return AdamMLPHead(
+            *(
+                [[value.copy() for value in group] for group in (
+                    self.weights, self.biases, self.first_moment_w, self.second_moment_w,
+                    self.first_moment_b, self.second_moment_b,
+                )]
+            ),
+            self.activation, self.learning_rate, self.beta1, self.beta2,
+            self.epsilon, self.weight_decay, self.gauge_beta, self.loss_weight,
+            self.adam_step,
+        )
+
+    def _forward(self, values: np.ndarray) -> tuple[np.ndarray, list[np.ndarray], list[np.ndarray]]:
+        current = np.asarray(values, dtype=np.float64)
+        activations = [current]
+        preactivations: list[np.ndarray] = []
+        for index, (weights, bias) in enumerate(zip(self.weights, self.biases, strict=True)):
+            pre = current @ weights + bias
+            preactivations.append(pre)
+            if index == len(self.weights) - 1:
+                current = pre
+            elif self.activation == "relu":
+                current = np.maximum(pre, 0.0)
+            else:
+                current = np.tanh(pre)
+            activations.append(current)
+        return current[:, 0], activations, preactivations
+
+    def score(self, state: Sequence[float]) -> float:
+        value, _, _ = self._forward(np.asarray(state, dtype=np.float64)[None, :])
+        return float(value[0])
+
+    def _backward(
+        self, activations: list[np.ndarray], preactivations: list[np.ndarray], output_gradient: np.ndarray
+    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+        gradient = output_gradient[:, None]
+        weight_gradients = [np.empty_like(value) for value in self.weights]
+        bias_gradients = [np.empty_like(value) for value in self.biases]
+        for index in reversed(range(len(self.weights))):
+            weight_gradients[index] = activations[index].T @ gradient
+            bias_gradients[index] = gradient.sum(axis=0)
+            if index:
+                gradient = gradient @ self.weights[index].T
+                if self.activation == "relu":
+                    gradient *= preactivations[index - 1] > 0.0
+                else:
+                    hidden = activations[index]
+                    gradient *= 1.0 - hidden * hidden
+        return weight_gradients, bias_gradients
+
+    def _adam(self, grad_w: list[np.ndarray], grad_b: list[np.ndarray]) -> None:
+        self.adam_step += 1
+        for parameter, gradient, first, second in zip(
+            self.weights, grad_w, self.first_moment_w, self.second_moment_w, strict=True
+        ):
+            gradient = gradient + self.weight_decay * parameter
+            first *= self.beta1
+            first += (1.0 - self.beta1) * gradient
+            second *= self.beta2
+            second += (1.0 - self.beta2) * gradient * gradient
+            corrected_m = first / (1.0 - self.beta1**self.adam_step)
+            corrected_v = second / (1.0 - self.beta2**self.adam_step)
+            parameter -= self.learning_rate * corrected_m / (np.sqrt(corrected_v) + self.epsilon)
+        for parameter, gradient, first, second in zip(
+            self.biases, grad_b, self.first_moment_b, self.second_moment_b, strict=True
+        ):
+            first *= self.beta1
+            first += (1.0 - self.beta1) * gradient
+            second *= self.beta2
+            second += (1.0 - self.beta2) * gradient * gradient
+            parameter -= self.learning_rate * (first / (1.0 - self.beta1**self.adam_step)) / (
+                np.sqrt(second / (1.0 - self.beta2**self.adam_step)) + self.epsilon
+            )
+
+    def update(self, batch: PairwiseBatch) -> float:
+        reference, ref_a, ref_z = self._forward(batch.reference_states)
+        candidate, cand_a, cand_z = self._forward(batch.candidate_states)
+        residual = candidate - reference - batch.target_deltas
+        count = float(len(residual))
+        scale = 2.0 * self.loss_weight / count
+        cand_w, cand_b = self._backward(cand_a, cand_z, scale * residual)
+        ref_gradient = scale * (-residual + self.gauge_beta * reference)
+        ref_w, ref_b = self._backward(ref_a, ref_z, ref_gradient)
+        self._adam(
+            [left + right for left, right in zip(cand_w, ref_w, strict=True)],
+            [left + right for left, right in zip(cand_b, ref_b, strict=True)],
+        )
+        return float(self.loss_weight * np.mean(residual * residual + self.gauge_beta * reference * reference))
+
+    def update_scalar(self, states: np.ndarray, targets: np.ndarray) -> float:
+        prediction, activations, preactivations = self._forward(states)
+        residual = prediction - targets
+        scale = 2.0 * self.loss_weight / float(len(residual))
+        gradients = self._backward(activations, preactivations, scale * residual)
+        self._adam(*gradients)
+        return float(self.loss_weight * np.mean(residual * residual))
+
+    def payload(self) -> dict[str, object]:
+        encode = lambda arrays: [
+            [[float_hex(value) for value in row] for row in array]
+            if array.ndim == 2 else [float_hex(value) for value in array]
+            for array in arrays
+        ]
+        return {
+            "kind": "legacy_heterogeneous_adam_mlp",
+            "activation": self.activation,
+            "weights_hex": encode(self.weights),
+            "biases_hex": encode(self.biases),
+            "adam_first_moment_weights_hex": encode(self.first_moment_w),
+            "adam_second_moment_weights_hex": encode(self.second_moment_w),
+            "adam_first_moment_biases_hex": encode(self.first_moment_b),
+            "adam_second_moment_biases_hex": encode(self.second_moment_b),
+            "adam_step": self.adam_step,
+            "optimizer": {
+                "kind": "Adam", "learning_rate": self.learning_rate,
+                "betas": [self.beta1, self.beta2], "epsilon": self.epsilon,
+                "weight_decay": self.weight_decay,
+            },
+            "gauge_beta": self.gauge_beta,
+            "loss_weight": self.loss_weight,
+        }
+
+
+@dataclass(slots=True)
+class AdamSetInteractionHead:
+    network: AdamMLPHead
+    member_width: int
+{
+  "schema": "mcrl-v025-lr-convergence-sweep-v1",
+  "status": "DIAGNOSTIC_NOT_CLAIM",
+  "seed": 6407676579069309528,
+  "checkpoints": [
+    0,
+    100,
+    200,
+    300,
+    400,
+    500
+  ],
+  "stability_tolerances": {
+    "objective_relative": 0.01,
+    "pairwise_ordering_absolute": 0.005,
+    "r2_absolute": 0.01,
+    "top1_accuracy_absolute": 0.005
+  },
+  "inventory": {
+    "C1": {
+      "anchors": 37,
+      "groups": 3700,
+      "rows": 36360
+    },
+    "C2": {
+      "anchors": 20,
+      "groups": 2000,
+      "rows": 19647
+    },
+    "C3": {
+      "anchors": 12,
+      "coalition_size_counts": {
+        "0": 12,
+        "1": 9394,
+        "100": 24,
+        "2": 2331,
+        "3": 93,
+        "4": 47,
+        "5": 40,
+        "6": 1,
+        "7": 2,
+        "8": 3
+      },
+      "rows": 11947,
+      "trainable_rows": 2541
+    }
+  },
+  "resource_policy": {
+    "blas_threads": 1,
+    "nice": 15,
+    "peak_rss_kb": 113016,
+    "python_processes": 1,
+    "rlimit_as_bytes": 5368709120
+  },
+  "scope": {
+    "acceptance_test": false,
+    "ee_quantities_computed": false,
+    "loss_use": "convergence diagnostic only; never EE evidence",
+    "policy_run": false,
+    "production_training": false
+  },
+  "C3": {
+    "admissible_on_convergence": false,
+    "changes_400_to_500": {
+      "objective_relative_abs": 0.08957485327043486,
+      "pairwise_ordering_absolute": 0.03100437139593626,
+      "r2_absolute": 0.020387168038220826,
+      "top1_accuracy_absolute": 0.08333333333333334
+    },
+    "divergence": {
+      "criterion": "non-finite objective or trainable parameter",
+      "diverged": false,
+      "earliest_epoch": null,
+      "fold_events": []
+    },
+    "folds": 12,
+    "groups": 12,
+    "last_material_improvement_epoch": {
+      "objective": 500,
+      "pairwise_ordering": 200,
+      "r2": 100,
+      "top1_accuracy": 500
+    },
+    "learning_rate": 0.001,
+    "pair_limit": null,
+    "route": "C3",
+    "rows": 11947,
+    "schema": "mcrl-v025-stagec-q1-action-v2",
+    "schema_sha256": "66ed4a3f9222ac7f20f4334ffab92f6164d2dad203cbac7f7d4e1728ae4ad654",
+    "stability_400_to_500": {
+      "objective": false,
+      "pairwise_ordering": false,
+      "r2": false,
+      "top1_accuracy": false
+    },
+    "trajectory": {
+      "0": {
+        "held_out": {
+          "groups": 12,
+          "pairs": 2095898,
+          "pairwise_ordering": 0.6066659732486982,
+          "r2": -2.5558552147289695,
+          "rows": 11947,
+          "top1_accuracy": 0.0
+        },
+        "parameter_l2": {
+          "maximum": 16.01253640293514,
+          "mean": 16.012536402935144,
+          "minimum": 16.01253640293514,
+          "rms": 16.012536402935137
+        },
+        "training_objective": 131.37644537702388
+      },
+      "100": {
+        "held_out": {
+          "groups": 12,
+          "pairs": 2095898,
+          "pairwise_ordering": 0.5529620239152859,
+          "r2": 0.6984926965912139,
+          "rows": 11947,
+          "top1_accuracy": 0.3333333333333333
+        },
+        "parameter_l2": {
+          "maximum": 16.11099527799555,
+          "mean": 16.084496961114176,
+          "minimum": 16.065101115231737,
+          "rms": 16.084501098556146
+        },
+        "training_objective": 2.144771338491116
+      },
+      "200": {
+        "held_out": {
+          "groups": 12,
+          "pairs": 2095898,
+          "pairwise_ordering": 0.5650346534039348,
+          "r2": 0.6775526042002138,
+          "rows": 11947,
+          "top1_accuracy": 0.25
+        },
+        "parameter_l2": {
+          "maximum": 16.237358615061503,
+          "mean": 16.185305459627376,
+          "minimum": 16.139434321328842,
+          "rms": 16.185324514757433
+        },
+        "training_objective": 1.7699937894194775
+      },
+      "300": {
+        "held_out": {
+          "groups": 12,
+          "pairs": 2095898,
+          "pairwise_ordering": 0.5601097954194336,
+          "r2": 0.646160105235497,
+          "rows": 11947,
+          "top1_accuracy": 0.16666666666666666
+        },
+        "parameter_l2": {
+          "maximum": 16.399833965304218,
+          "mean": 16.34158059590373,
+          "minimum": 16.258910223947083,
+          "rms": 16.341637581158235
+        },
+        "training_objective": 1.5452144924845055
+      },
+      "400": {
+        "held_out": {
+          "groups": 12,
+          "pairs": 2095898,
+          "pairwise_ordering": 0.5631862810117668,
+          "r2": 0.6183542687326595,
+          "rows": 11947,
+          "top1_accuracy": 0.16666666666666666
+        },
+        "parameter_l2": {
+          "maximum": 16.63623023532799,
+          "mean": 16.54773992164755,
+          "minimum": 16.417821412203704,
+          "rms": 16.54788476564246
+        },
+        "training_objective": 1.370979930641038
+      },
+      "500": {
+        "held_out": {
+          "groups": 12,
+          "pairs": 2095898,
+          "pairwise_ordering": 0.5321819096158306,
+          "r2": 0.5979671006944387,
+          "rows": 11947,
+          "top1_accuracy": 0.25
+        },
+        "parameter_l2": {
+          "maximum": 16.91847754855107,
+          "mean": 16.776851928827273,
+          "minimum": 16.640745503847292,
+          "rms": 16.777095401373767
+        },
+        "training_objective": 1.248174604517156
+      }
+    },
+    "wall_s": 35.55068465700606
+  }
+}
+0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19  /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/spec.md
+dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6  /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py
+9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861  /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json
+09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01  /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py
+    PID  NI COMMAND         COMMAND
+      1   0 codex           codex-linux-sandbox --sandbox-policy-cwd /home/sat/mcrl-v025-horizon-ws --command-cwd /home/sat/mcrl-v025-horizon-ws --permission-profile {"type":"managed","file_system":{"type":"restricted","entries":[{"path":{"type":"special","value":{"kind":"root"}},"access":"read"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-horizon-ws"},"access":"write"},{"path":{"type":"special","value":{"kind":"slash_tmp"}},"access":"write"},{"path":{"type":"special","value":{"kind":"tmpdir"}},"access":"write"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-horizon-ws/.git"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-horizon-ws/.agents"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-horizon-ws/.codex"},"access":"read","missing_path_behavior":"skip"}]},"network":"restricted"} --apply-seccomp-then-exec -- /bin/bash -c __CODEX_SNAPSHOT_OVERRIDE_SET_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS+x}" __CODEX_SNAPSHOT_OVERRIDE_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS-}" __CODEX_SNAPSHOT_OVERRIDE_SET_1="${CODEX_PERMISSION_PROFILE+x}" __CODEX_SNAPSHOT_OVERRIDE_1="${CODEX_PERMISSION_PROFILE-}" __CODEX_SNAPSHOT_OVERRIDE_SET_2="${CODEX_PLUGIN_METRICS_OUTPUT+x}" __CODEX_SNAPSHOT_OVERRIDE_2="${CODEX_PLUGIN_METRICS_OUTPUT-}" __CODEX_SNAPSHOT_OVERRIDE_SET_3="${CODEX_SESSION_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_3="${CODEX_SESSION_ID-}" __CODEX_SNAPSHOT_OVERRIDE_SET_4="${CODEX_THREAD_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_4="${CODEX_THREAD_ID-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0="${ALL_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_0="${ALL_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1="${BUNDLE_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_1="${BUNDLE_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2="${BUNDLE_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_2="${BUNDLE_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3="${BUNDLE_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_3="${BUNDLE_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4="${BUNDLE_SSL_CA_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_4="${BUNDLE_SSL_CA_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5="${CARGO_HTTP_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_5="${CARGO_HTTP_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6="${CODEX_CA_CERTIFICATE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_6="${CODEX_CA_CERTIFICATE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8="${CODEX_NETWORK_PROXY_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_8="${CODEX_NETWORK_PROXY_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9="${CODEX_NETWORK_PROXY_ATTRIBUTION+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_9="${CODEX_NETWORK_PROXY_ATTRIBUTION-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12="${CURL_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_12="${CURL_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13="${DOCKER_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_13="${DOCKER_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14="${DOCKER_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_14="${DOCKER_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15="${ELECTRON_GET_USE_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_15="${ELECTRON_GET_USE_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16="${FTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_16="${FTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17="${GIT_SSL_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_17="${GIT_SSL_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18="${HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_18="${HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19="${HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_19="${HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20="${NODE_EXTRA_CA_CERTS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_20="${NODE_EXTRA_CA_CERTS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21="${NODE_USE_ENV_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_21="${NODE_USE_ENV_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22="${NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_22="${NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23="${NPM_CONFIG_CAFILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_23="${NPM_CONFIG_CAFILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24="${NPM_CONFIG_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_24="${NPM_CONFIG_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25="${NPM_CONFIG_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_25="${NPM_CONFIG_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26="${NPM_CONFIG_NOPROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_26="${NPM_CONFIG_NOPROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27="${NPM_CONFIG_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_27="${NPM_CONFIG_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28="${PIP_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_28="${PIP_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29="${PIP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_29="${PIP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30="${REQUESTS_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_30="${REQUESTS_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31="${SSL_CERT_FILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_31="${SSL_CERT_FILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32="${WSS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_32="${WSS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33="${WS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_33="${WS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34="${YARN_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_34="${YARN_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35="${YARN_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_35="${YARN_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36="${YARN_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_36="${YARN_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37="${all_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_37="${all_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38="${ftp_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_38="${ftp_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39="${http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_39="${http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40="${https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_40="${https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41="${no_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_41="${no_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42="${npm_config_cafile+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_42="${npm_config_cafile-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43="${npm_config_http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_43="${npm_config_http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44="${npm_config_https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_44="${npm_config_https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45="${npm_config_noproxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_45="${npm_config_noproxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46="${npm_config_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_46="${npm_config_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47="${ws_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_47="${ws_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48="${wss_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_48="${wss_proxy-}" __CODEX_SNAPSHOT_PROXY_ENV_SET="${CODEX_NETWORK_PROXY_ACTIVE+x}"  if . '/home/sat/.codex/shell_snapshots/01a08bee-1943-72c0-98ef-fdba94bbe2d6.1789054032204288268.sh' >/dev/null 2>&1; then :; fi  if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_0}" ]; then export CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS="${__CODEX_SNAPSHOT_OVERRIDE_0}"; else unset CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_1}" ]; then export CODEX_PERMISSION_PROFILE="${__CODEX_SNAPSHOT_OVERRIDE_1}"; else unset CODEX_PERMISSION_PROFILE; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_2}" ]; then export CODEX_PLUGIN_METRICS_OUTPUT="${__CODEX_SNAPSHOT_OVERRIDE_2}"; else unset CODEX_PLUGIN_METRICS_OUTPUT; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_3}" ]; then export CODEX_SESSION_ID="${__CODEX_SNAPSHOT_OVERRIDE_3}"; else unset CODEX_SESSION_ID; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_4}" ]; then export CODEX_THREAD_ID="${__CODEX_SNAPSHOT_OVERRIDE_4}"; else unset CODEX_THREAD_ID; fi if [ -n "$__CODEX_SNAPSHOT_PROXY_ENV_SET" ] || [ -n "${CODEX_NETWORK_PROXY_ACTIVE+x}" ]; then if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0}" ]; then export ALL_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_0}"; else unset ALL_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1}" ]; then export BUNDLE_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_1}"; else unset BUNDLE_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2}" ]; then export BUNDLE_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_2}"; else unset BUNDLE_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3}" ]; then export BUNDLE_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_3}"; else unset BUNDLE_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4}" ]; then export BUNDLE_SSL_CA_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_4}"; else unset BUNDLE_SSL_CA_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5}" ]; then export CARGO_HTTP_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_5}"; else unset CARGO_HTTP_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6}" ]; then export CODEX_CA_CERTIFICATE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_6}"; else unset CODEX_CA_CERTIFICATE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7}" ]; then export CODEX_NETWORK_ALLOW_LOCAL_BINDING="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_7}"; else unset CODEX_NETWORK_ALLOW_LOCAL_BINDING; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8}" ]; then export CODEX_NETWORK_PROXY_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_8}"; else unset CODEX_NETWORK_PROXY_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9}" ]; then export CODEX_NETWORK_PROXY_ATTRIBUTION="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_9}"; else unset CODEX_NETWORK_PROXY_ATTRIBUTION; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10}" ]; then export CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_10}"; else unset CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11}" ]; then export CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_11}"; else unset CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12}" ]; then export CURL_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_12}"; else unset CURL_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13}" ]; then export DOCKER_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_13}"; else unset DOCKER_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14}" ]; then export DOCKER_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_14}"; else unset DOCKER_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15}" ]; then export ELECTRON_GET_USE_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_15}"; else unset ELECTRON_GET_USE_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16}" ]; then export FTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_16}"; else unset FTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17}" ]; then export GIT_SSL_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_17}"; else unset GIT_SSL_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18}" ]; then export HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_18}"; else unset HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19}" ]; then export HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_19}"; else unset HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20}" ]; then export NODE_EXTRA_CA_CERTS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_20}"; else unset NODE_EXTRA_CA_CERTS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21}" ]; then export NODE_USE_ENV_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_21}"; else unset NODE_USE_ENV_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22}" ]; then export NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_22}"; else unset NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23}" ]; then export NPM_CONFIG_CAFILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_23}"; else unset NPM_CONFIG_CAFILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24}" ]; then export NPM_CONFIG_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_24}"; else unset NPM_CONFIG_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25}" ]; then export NPM_CONFIG_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_25}"; else unset NPM_CONFIG_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26}" ]; then export NPM_CONFIG_NOPROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_26}"; else unset NPM_CONFIG_NOPROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27}" ]; then export NPM_CONFIG_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_27}"; else unset NPM_CONFIG_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28}" ]; then export PIP_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_28}"; else unset PIP_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29}" ]; then export PIP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_29}"; else unset PIP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30}" ]; then export REQUESTS_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_30}"; else unset REQUESTS_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31}" ]; then export SSL_CERT_FILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_31}"; else unset SSL_CERT_FILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32}" ]; then export WSS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_32}"; else unset WSS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33}" ]; then export WS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_33}"; else unset WS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34}" ]; then export YARN_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_34}"; else unset YARN_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35}" ]; then export YARN_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_35}"; else unset YARN_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36}" ]; then export YARN_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_36}"; else unset YARN_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37}" ]; then export all_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_37}"; else unset all_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38}" ]; then export ftp_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_38}"; else unset ftp_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39}" ]; then export http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_39}"; else unset http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40}" ]; then export https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_40}"; else unset https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41}" ]; then export no_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_41}"; else unset no_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42}" ]; then export npm_config_cafile="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_42}"; else unset npm_config_cafile; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43}" ]; then export npm_config_http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_43}"; else unset npm_config_http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44}" ]; then export npm_config_https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_44}"; else unset npm_config_https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45}" ]; then export npm_config_noproxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_45}"; else unset npm_config_noproxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46}" ]; then export npm_config_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_46}"; else unset npm_config_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47}" ]; then export ws_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_47}"; else unset ws_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48}" ]; then export wss_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_48}"; else unset wss_proxy; fi fi if [ -n "${PATH:-}" ]; then export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path':"$PATH"; else export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path'; fi  exec '/bin/bash' -c 'sed -n '"'"'640,830p'"'"' /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py jq '"'"'{schema,status,seed,checkpoints,stability_tolerances,inventory,resource_policy,scope,C3: [.cells[] | select(.route=="C3" and .learning_rate==0.001)][0]}'"'"' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json sha256sum /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/spec.md /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py ps -eo pid,ni,comm,args --sort=pid | rg '"'"'python|PID'"'"' | head -60 cat /proc/loadavg'
+      2   0 bash            /bin/bash -c sed -n '640,830p' /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py jq '{schema,status,seed,checkpoints,stability_tolerances,inventory,resource_policy,scope,C3: [.cells[] | select(.route=="C3" and .learning_rate==0.001)][0]}' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json sha256sum /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/spec.md /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json /home/sat/mcrl-v025-c1c2-ws/src/mcrl/stagec_v025/learner.py ps -eo pid,ni,comm,args --sort=pid | rg 'python|PID' | head -60 cat /proc/loadavg
+      7   0 rg              rg python|PID
+11.18 18.35 16.43 14/1305 8
+
+codex
+The original C3 implementation confirms the needed seam: full-batch computes one gradient over all size≥2 training rows, while minibatching can call the same sealed head’s scalar update on subsets. I will evaluate the full training objective at every checkpoint in both arms; minibatch loss from the last small batch will not substitute for the common objective.
+
+Before running, I’m freezing the remaining procedural choices: batch size 256; per-fold deterministic shuffles without replacement within each pass; every remainder batch is used; the row stream reshuffles for the next pass; model initialisation remains the sealed seed, and shuffling gets an independent domain-separated seed. The original four-part rule will compare each cadence point with the immediately preceding 100-update point.
+exec
+/bin/bash -lc "rg -n \"def seed_from_domain\" /home/sat/mcrl-v025-c1c2-ws/src /home/sat/mcrl-leo-handover/src 2>/dev/null | head -20
+rg -n \"seed_from_domain\" /home/sat/mcrl-v025-c1c2-ws/src/mcrl/physics_v025/tapes.py /home/sat/mcrl-leo-handover/src/mcrl/physics_v025/tapes.py 2>/dev/null
+sed -n '1,120p' /home/sat/mcrl-v025-c1c2-ws/src/mcrl/physics_v025/tapes.py
+stat -c '%n %s bytes' /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py /home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json
+cat /proc/loadavg" in /home/sat/mcrl-v025-horizon-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-c1c2-ws/src/mcrl/physics_v025/tapes.py:49:def seed_from_domain(domain: str) -> int:
+/home/sat/mcrl-v025-c1c2-ws/src/mcrl/physics_v025/tapes.py:49:def seed_from_domain(domain: str) -> int:
+/home/sat/mcrl-v025-c1c2-ws/src/mcrl/physics_v025/tapes.py:749:        if self.seed != seed_from_domain(self.domain) or self.split != self.protocol.split:
+/home/sat/mcrl-v025-c1c2-ws/src/mcrl/physics_v025/tapes.py:986:    world_seed = seed_from_domain(domain)
+/home/sat/mcrl-v025-c1c2-ws/src/mcrl/physics_v025/tapes.py:1046:    seed = seed_from_domain(domain)
+/home/sat/mcrl-v025-c1c2-ws/src/mcrl/physics_v025/tapes.py:1264:    "seed_from_domain",
+"""Fresh TRAIN world and immutable exogenous-tape construction for V0.25.
+
+The builder consumes only primitive snapshots from an injected provider.  In
+particular it never copies, pickles, or retains an environment (or a Skyfield
+``Satrec``).  The provider's physical inventory is read and frozen before the
+first action is formed; every arm and every matrix cell subsequently shares
+the same detached tape.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import datetime as dt
+import hashlib
+import json
+import math
+from typing import Callable, Iterable, Mapping, Protocol, Sequence
+
+import numpy as np
+
+from mcrl.errors import MCRLContractError
+
+from .architectures import BeamIdentity, Geometry, Link
+from .channel import interference_receive_gain_linear, keyed_fading_gain
+from .constants_v025 import (
+    D2_MEASUREMENT_STEP_S,
+    D2_SUBINTERVALS,
+    DECISION_INTERVAL_S,
+    IDENTITY_REFRESH_DECISIONS,
+    MINIMUM_ELEVATION_DEG,
+    RX_GAIN_MAX_DBI,
+    SINR_MIN,
+)
+from .energy import HardwareInventory
+
+
+PROBE_WORLD_DOMAINS = tuple(f"V025_PROBE_R2/world/{index}" for index in range(1, 5))
+CALIBRATION_WORLD_DOMAINS = tuple(f"V025_CAL_R2/world/{index}" for index in range(1, 3))
+DEVELOPMENT_WORLD_DOMAINS = tuple(f"V025_PROBE/world/{index}" for index in range(1, 5))
+KAT_WORLD_DOMAINS = tuple(f"V025_KAT/world/{index}" for index in range(1, 5))
+SYNTHETIC_WORLD_DOMAINS = tuple(
+    f"V025_SYNTHETIC_REAL/world/{index}" for index in range(1, 5)
+)
+SMOKE_WORLD_DOMAINS = ("V025_SMOKE/world/1",)
+REFERENCE_CARRIERS = ("nearest-eligible", "stay-if-possible", "random-masked")
+CANDIDATE_REFRESH_N = 4
+
+
+def seed_from_domain(domain: str) -> int:
+    """Apply the repository's prospective SHA-256 domain seed rule."""
+
+    if not isinstance(domain, str) or not domain or not domain.isascii():
+        raise MCRLContractError("seed domain must be nonempty ASCII")
+    return int.from_bytes(hashlib.sha256(domain.encode("ascii")).digest()[:8], "big") & (
+        (1 << 63) - 1
+    )
+
+
+def canonical_bytes(value: object) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("ascii")
+    except (TypeError, ValueError, UnicodeError) as error:
+        raise MCRLContractError("tape payload is not canonical finite ASCII JSON") from error
+
+
+def digest_payload(value: object) -> str:
+    return hashlib.sha256(canonical_bytes(value)).hexdigest()
+
+
+def _step_array_digest(step: "PrimitiveStepArrays", *, boundary_zero_only: bool = False) -> str:
+    """Canonical digest for an array snapshot without multi-gigabyte JSON."""
+
+    digest = hashlib.sha256()
+    for name in step.__dataclass_fields__:
+        value = np.asarray(getattr(step, name))
+        if boundary_zero_only and value.ndim > 0 and value.shape[0] == 48:
+            value = value[:1]
+        contiguous = np.ascontiguousarray(value)
+        header = canonical_bytes(
+            {"name": name, "dtype": contiguous.dtype.str, "shape": list(contiguous.shape)}
+        )
+        digest.update(len(header).to_bytes(8, "big"))
+        digest.update(header)
+        payload = contiguous.tobytes(order="C")
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
+def reference_policy_manifest() -> dict[str, object]:
+    definitions = {
+        "nearest-eligible": "minimum slant among visible D2-eligible physical candidates; physical-ID tie",
+        "stay-if-possible": "retain incumbent physical identity while legal, else nearest-eligible",
+        "random-masked": "uniform index from a SHA-256 world/step/user key over sorted legal identities",
+    }
+    return {
+        "schema": "mcrl-v025-fixed-reference-carriers-v1",
+        "order": list(REFERENCE_CARRIERS),
+        "definitions": definitions,
+        "sha256": digest_payload(definitions),
+    }
+
+
+def _f(value: float) -> str:
+    if not math.isfinite(value):
+        raise MCRLContractError("tape scalar must be finite")
+    return float(value).hex()
+
+
+@dataclass(frozen=True)
+class UserLayout:
+    user_id: int
+    latitude_deg: float
+    longitude_deg: float
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py 27018 bytes
+/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/results.json 98773 bytes
+11.53 16.92 16.07 14/1294 31
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/run_horizon.py
+/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/spec.md
+diff --git a/.scratch/horizon-lever/run_horizon.py b/.scratch/horizon-lever/run_horizon.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d8a28f5d1c2969c2d9bf422eb2c9821d0da2570
+--- /dev/null
++++ b/.scratch/horizon-lever/run_horizon.py
+@@ -0,0 +1,404 @@
++#!/usr/bin/env python3
++"""C3 horizon-vs-minibatch convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Callable
++
++
++ROOT = Path("/home/sat/mcrl-v025-horizon-ws")
++OUT = ROOT / ".scratch/horizon-lever"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BATCH_SIZE = 256
++SHUFFLE_DOMAIN = "V025_HORIZON/C3/minibatch-shuffle/seed/1"
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 19:
++        raise RuntimeError(f"process niceness is not 19: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def record_checkpoint(sweep, head, train, test):
++    loss, count = sweep.c3_loss(head, train)
++    if not math.isfinite(loss) or not sweep.parameters_finite(head):
++        raise RuntimeError("non-finite objective or parameter at checkpoint")
++    prediction = sweep.np.zeros_like(test.truth)
++    prediction[test.train_indices] = head._forward(test.x)[0]
++    return loss, count, sweep.parameter_norm(head), prediction
++
++
++def make_minibatch_updater(sweep, head, train) -> Callable[[], float]:
++    states = sweep.np.concatenate([anchor.x for anchor in train], axis=0)
++    targets = sweep.np.concatenate([
++        anchor.truth[anchor.train_indices] for anchor in train
++    ])
++    rng = sweep.np.random.default_rng(sweep.seed_from_domain(SHUFFLE_DOMAIN))
++    order = sweep.np.empty(0, dtype=sweep.np.int64)
++    cursor = 0
++
++    def update() -> float:
++        nonlocal order, cursor
++        if cursor >= order.size:
++            order = rng.permutation(states.shape[0])
++            cursor = 0
++        stop = min(cursor + BATCH_SIZE, order.size)
++        selected = order[cursor:stop]
++        cursor = stop
++        return head.update_scalar(states[selected], targets[selected])
++
++    return update
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def run_arm(sweep, data, arm: str, progress: list[int], total_work: int) -> dict[str, object]:
++    checkpoints = tuple(range(0, MAX_UPDATES + 1, CADENCE))
++    predictions = {step: [None] * len(data.anchors) for step in checkpoints}
++    objectives = {step: [] for step in checkpoints}
++    norms = {step: [] for step in checkpoints}
++    interval_total = {step: [] for step in checkpoints[1:]}
++    interval_update = {step: [] for step in checkpoints[1:]}
++    interval_checkpoint = {step: [] for step in checkpoints[1:]}
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    arm_started = time.perf_counter()
++    load_observed = [guard_load()]
++
++    for fold_index, test in enumerate(data.anchors):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        fold_started = time.perf_counter()
++        head = sweep.AdamMLPHead.create(
++            test.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        initial_started = time.perf_counter()
++        loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++        initial_checkpoint_s = time.perf_counter() - initial_started
++        objectives[0].append((loss, count))
++        norms[0].append(norm)
++        predictions[0][fold_index] = prediction
++        if arm == "A":
++            updater = lambda: sweep.c3_update(head, train)
++        else:
++            updater = make_minibatch_updater(sweep, head, train)
++
++        previous_end = fold_started
++        update_accumulator = 0.0
++        for step in range(1, MAX_UPDATES + 1):
++            update_started = time.perf_counter()
++            with sweep.np.errstate(all="ignore"):
++                loss_before_update = updater()
++            update_accumulator += time.perf_counter() - update_started
++            if not math.isfinite(loss_before_update) or not sweep.parameters_finite(head):
++                raise RuntimeError(f"arm {arm} fold {fold_index + 1} diverged at update {step}")
++            if step % CADENCE:
++                continue
++            checkpoint_started = time.perf_counter()
++            loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++            checkpoint_s = time.perf_counter() - checkpoint_started
++            objectives[step].append((loss, count))
++            norms[step].append(norm)
++            predictions[step][fold_index] = prediction
++            now = time.perf_counter()
++            interval_total[step].append(now - previous_end)
++            interval_update[step].append(update_accumulator)
++            interval_checkpoint[step].append(checkpoint_s + (initial_checkpoint_s if step == CADENCE else 0.0))
++            previous_end = now
++            update_accumulator = 0.0
++            progress[0] += CADENCE
++            current_load = load_average()
++            load_observed.append(current_load)
++            print(
++                f"step {progress[0]}/{total_work} arm={arm} "
++                f"fold={fold_index + 1}/{len(data.anchors)} update={step}/{MAX_UPDATES} "
++                f"load1={current_load:.2f}",
++                flush=True,
++            )
++            if current_load > 30.0:
++                raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    trajectory = {}
++    for step in checkpoints:
++        weighted_loss = sum(value * count for value, count in objectives[step]) / sum(
++            count for _, count in objectives[step]
++        )
++        held_out = sweep.c3_metric(
++            [value for value in predictions[step] if value is not None], data.anchors
++        )
++        trajectory[str(step)] = {
++            "training_objective": float(weighted_loss),
++            "held_out": held_out,
++            "parameter_l2": sweep.summarize(norms[step]),
++        }
++
++    checks = {}
++    first_admissible = None
++    for step in checkpoints[1:]:
++        check = stability(sweep, trajectory[str(step - CADENCE)], trajectory[str(step)])
++        checks[str(step)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = step
++
++    total_by_interval = [sum(interval_total[step]) for step in checkpoints[1:]]
++    update_by_interval = [sum(interval_update[step]) for step in checkpoints[1:]]
++    checkpoint_by_interval = [sum(interval_checkpoint[step]) for step in checkpoints[1:]]
++    cumulative = []
++    running = 0.0
++    for value in total_by_interval:
++        running += value
++        cumulative.append(running)
++    return {
++        "arm": arm,
++        "procedure": "full_batch" if arm == "A" else "minibatch",
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "wall_s": time.perf_counter() - arm_started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": total_by_interval,
++            "update_only_s_per_100_updates_across_12_loao_folds": update_by_interval,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": checkpoint_by_interval,
++            "cumulative_total_s_across_12_loao_folds": cumulative,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(total_by_interval) / len(total_by_interval),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(update_by_interval) / len(update_by_interval),
++            "per_fold_interval_total_s": {str(step): interval_total[step] for step in checkpoints[1:]},
++        },
++        "maximum_observed_load1": max(load_observed),
++    }
++
++
++def equal_wall_comparison(arms: dict[str, dict[str, object]]) -> dict[str, object]:
++    a = arms["A"]
++    b = arms["B"]
++    a_times = a["timing"]["cumulative_total_s_across_12_loao_folds"]
++    b_times = b["timing"]["cumulative_total_s_across_12_loao_folds"]
++
++    def reached(times: list[float], budget: float) -> int:
++        return CADENCE * sum(value <= budget for value in times)
++
++    comparisons = []
++    for label, budget in (
++        ("arm_a_cap_time", a_times[-1]),
++        ("arm_b_cap_time", b_times[-1]),
++        ("common_cap_time", min(a_times[-1], b_times[-1])),
++    ):
++        comparisons.append({
++            "budget_label": label,
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": reached(b_times, budget),
++        })
++    if b["first_admissible_update"] is not None:
++        budget = b_times[b["first_admissible_update"] // CADENCE - 1]
++        comparisons.append({
++            "budget_label": "arm_b_first_admissible_time",
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": b["first_admissible_update"],
++        })
++    return {"comparisons": comparisons}
++
++
++def main() -> None:
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    before = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    data = sweep.load_c3()
++    c3_paths = tuple(anchor.path for anchor in data.anchors)
++    c3_before = {str(path): file_sha256(path) for path in c3_paths}
++    shuffle_seed = sweep.seed_from_domain(SHUFFLE_DOMAIN)
++    total_work = 2 * len(data.anchors) * MAX_UPDATES
++    progress = [0]
++    started = time.perf_counter()
++    arms = {}
++    status = "complete"
++    pause_reason = None
++    try:
++        arms["A"] = run_arm(sweep, data, "A", progress, total_work)
++        arms["B"] = run_arm(sweep, data, "B", progress, total_work)
++    except LoadPause as error:
++        status = "paused_load"
++        pause_reason = str(error)
++    after = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    c3_after = {str(path): file_sha256(path) for path in c3_paths}
++    changed = [path for path in (*before, *c3_before) if (before | c3_before)[path] != (after | c3_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    original = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    original_c3 = next(
++        cell for cell in original["cells"]
++        if cell["route"] == "C3" and cell["learning_rate"] == 1e-3
++    )
++    reproduction = None
++    if "A" in arms:
++        fields = ("training_objective", "held_out")
++        reproduction = {
++            str(step): all(
++                arms["A"]["trajectory"][str(step)][field]
++                == original_c3["trajectory"][str(step)][field]
++                for field in fields
++            )
++            for step in range(0, 501, 100)
++        }
++    result = {
++        "schema": "mcrl-v025-horizon-lever-diagnostic-v1",
++        "status": status,
++        "pause_reason": pause_reason,
++        "scope": {
++            "diagnostic_not_claim": True,
++            "ee_quantities_computed": False,
++            "selection_on_ee": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "route": "C3",
++        "learning_rate": 1e-3,
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "maximum_updates": MAX_UPDATES,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "minibatch": {
++            "batch_size": BATCH_SIZE,
++            "shuffle_rng": "numpy Generator(PCG64)",
++            "shuffle_seed_domain": SHUFFLE_DOMAIN,
++            "shuffle_seed": shuffle_seed,
++            "replacement": False,
++            "replacement_scope": "without replacement within each pass; rows recur after reshuffle next pass",
++            "remainder_batch_used": True,
++            "fresh_same_seed_per_loao_fold": True,
++            "classification": "training-procedure change, not a hyperparameter",
++        },
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(path) for path in c3_paths],
++        },
++        "arms": arms,
++        "equal_wall": equal_wall_comparison(arms) if len(arms) == 2 else None,
++        "arm_a_reproduces_lr_sweep_0_to_500": reproduction,
++        "resource_policy": {
++            "python_processes": 1,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1,
++            "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb,
++            "initial_load1": initial_load,
++            "final_load1": load_average(),
++            "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before,
++        "source_sha256_after": after,
++        "c3_input_sha256_before": c3_before,
++        "c3_input_sha256_after": c3_after,
++        "changed_inputs": changed,
++    }
++    atomic_json(OUT / "results.json", result)
++    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
++    print(json.dumps({
++        "written": str(OUT / "results.json"),
++        "status": status,
++        "changed_inputs": changed,
++    }), flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/horizon-lever/spec.md b/.scratch/horizon-lever/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5514c3edfb7444e34a389659db0f542a5f7e7f4c
+--- /dev/null
++++ b/.scratch/horizon-lever/spec.md
+@@ -0,0 +1,63 @@
++# HORIZON lever diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This file is fixed before either horizon arm is fit.
++
++## Question and fixed inputs
++
++- Diagnose whether C3 convergence under-run is addressed by more full-batch
++  updates (Arm A) or by minibatch updates (Arm B). This is one route and one
++  seed, not a learning-rate grid and not a learning-rate selection.
++- Use the twelve fixed C3 LOAO anchors named by the LRSWEEP harness, including
++  only size>=2 rows for training and retaining the declared hard-zero
++  empty/singleton predictions for held-out diagnostics.
++- Use model seed `V025_LEARNER/seed/1` (`6407676579069309528`), C3 learning
++  rate `1e-3`, and every other architecture and Adam literal unchanged.
++- Import and reuse the LRSWEEP harness at
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`
++  (SHA-256 `dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6`),
++  its frozen rule (SHA-256
++  `0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19`),
++  and its results (SHA-256
++  `9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861`)
++  directly and without modifying those artifacts.
++
++## Common cadence and rule
++
++- Cap both arms at 4,000 optimizer updates and evaluate at update 0 and every
++  100 updates through 4,000.
++- At each destination cadence `k`, apply LRSWEEP's identical four checks to
++  `k-100 -> k`: objective relative absolute motion <= 0.01; held-out level R2
++  absolute motion <= 0.01; held-out within-group ordering absolute motion <=
++  0.005; held-out top-1 absolute motion <= 0.005. The first finite destination
++  cadence satisfying all four is that arm's first admissible update.
++- The checkpoint training objective is always evaluated on the complete LOAO
++  training fold, including for Arm B. A last-minibatch loss is not used.
++
++## Arms
++
++- Arm A: the LRSWEEP C3 full-batch gradient aggregation verbatim, one Adam
++  update over all eleven training anchors per optimizer step.
++- Arm B: batch size 256. For each LOAO fold, concatenate the eleven training
++  anchors in the fixed LRSWEEP filename order. Initialise an independent PCG64
++  generator from the SHA-256 domain seed
++  `V025_HORIZON/C3/minibatch-shuffle/seed/1`. At the start of every pass,
++  generate a permutation of all training rows; consume consecutive batches of
++  256 without replacement within that pass; include the final remainder batch;
++  then reshuffle for the next pass. Rows recur across passes. Each fold starts
++  a fresh generator at the same declared shuffle seed. This deterministic
++  ordering is separate from the unchanged model-initialisation seed.
++- Minibatching is a training-procedure change, not a hyperparameter.
++
++## Scope and resources
++
++- Metrics are convergence diagnostics only and are never evidence about EE.
++  Compute no EE quantity and perform no selection on EE.
++- Read only the twelve C3 files fixed in LRSWEEP. Do not discover or read any
++  evaluation-only claim dates.
++- Run both arms sequentially in one Python process using only
++  `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, all named BLAS
++  thread variables equal to one, and an address-space limit below 3 GiB.
++- Print progress as `step k/N` and print peak RSS. If one-minute load average
++  exceeds 30 at a cadence boundary, stop before more training and record a
++  load pause rather than pushing through.
++
+
+diff --git a/.scratch/horizon-lever/run_horizon.py b/.scratch/horizon-lever/run_horizon.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1d8a28f5d1c2969c2d9bf422eb2c9821d0da2570
+--- /dev/null
++++ b/.scratch/horizon-lever/run_horizon.py
+@@ -0,0 +1,404 @@
++#!/usr/bin/env python3
++"""C3 horizon-vs-minibatch convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++from typing import Callable
++
++
++ROOT = Path("/home/sat/mcrl-v025-horizon-ws")
++OUT = ROOT / ".scratch/horizon-lever"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BATCH_SIZE = 256
++SHUFFLE_DOMAIN = "V025_HORIZON/C3/minibatch-shuffle/seed/1"
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 19:
++        raise RuntimeError(f"process niceness is not 19: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def record_checkpoint(sweep, head, train, test):
++    loss, count = sweep.c3_loss(head, train)
++    if not math.isfinite(loss) or not sweep.parameters_finite(head):
++        raise RuntimeError("non-finite objective or parameter at checkpoint")
++    prediction = sweep.np.zeros_like(test.truth)
++    prediction[test.train_indices] = head._forward(test.x)[0]
++    return loss, count, sweep.parameter_norm(head), prediction
++
++
++def make_minibatch_updater(sweep, head, train) -> Callable[[], float]:
++    states = sweep.np.concatenate([anchor.x for anchor in train], axis=0)
++    targets = sweep.np.concatenate([
++        anchor.truth[anchor.train_indices] for anchor in train
++    ])
++    rng = sweep.np.random.default_rng(sweep.seed_from_domain(SHUFFLE_DOMAIN))
++    order = sweep.np.empty(0, dtype=sweep.np.int64)
++    cursor = 0
++
++    def update() -> float:
++        nonlocal order, cursor
++        if cursor >= order.size:
++            order = rng.permutation(states.shape[0])
++            cursor = 0
++        stop = min(cursor + BATCH_SIZE, order.size)
++        selected = order[cursor:stop]
++        cursor = stop
++        return head.update_scalar(states[selected], targets[selected])
++
++    return update
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def run_arm(sweep, data, arm: str, progress: list[int], total_work: int) -> dict[str, object]:
++    checkpoints = tuple(range(0, MAX_UPDATES + 1, CADENCE))
++    predictions = {step: [None] * len(data.anchors) for step in checkpoints}
++    objectives = {step: [] for step in checkpoints}
++    norms = {step: [] for step in checkpoints}
++    interval_total = {step: [] for step in checkpoints[1:]}
++    interval_update = {step: [] for step in checkpoints[1:]}
++    interval_checkpoint = {step: [] for step in checkpoints[1:]}
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    arm_started = time.perf_counter()
++    load_observed = [guard_load()]
++
++    for fold_index, test in enumerate(data.anchors):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        fold_started = time.perf_counter()
++        head = sweep.AdamMLPHead.create(
++            test.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        initial_started = time.perf_counter()
++        loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++        initial_checkpoint_s = time.perf_counter() - initial_started
++        objectives[0].append((loss, count))
++        norms[0].append(norm)
++        predictions[0][fold_index] = prediction
++        if arm == "A":
++            updater = lambda: sweep.c3_update(head, train)
++        else:
++            updater = make_minibatch_updater(sweep, head, train)
++
++        previous_end = fold_started
++        update_accumulator = 0.0
++        for step in range(1, MAX_UPDATES + 1):
++            update_started = time.perf_counter()
++            with sweep.np.errstate(all="ignore"):
++                loss_before_update = updater()
++            update_accumulator += time.perf_counter() - update_started
++            if not math.isfinite(loss_before_update) or not sweep.parameters_finite(head):
++                raise RuntimeError(f"arm {arm} fold {fold_index + 1} diverged at update {step}")
++            if step % CADENCE:
++                continue
++            checkpoint_started = time.perf_counter()
++            loss, count, norm, prediction = record_checkpoint(sweep, head, train, test)
++            checkpoint_s = time.perf_counter() - checkpoint_started
++            objectives[step].append((loss, count))
++            norms[step].append(norm)
++            predictions[step][fold_index] = prediction
++            now = time.perf_counter()
++            interval_total[step].append(now - previous_end)
++            interval_update[step].append(update_accumulator)
++            interval_checkpoint[step].append(checkpoint_s + (initial_checkpoint_s if step == CADENCE else 0.0))
++            previous_end = now
++            update_accumulator = 0.0
++            progress[0] += CADENCE
++            current_load = load_average()
++            load_observed.append(current_load)
++            print(
++                f"step {progress[0]}/{total_work} arm={arm} "
++                f"fold={fold_index + 1}/{len(data.anchors)} update={step}/{MAX_UPDATES} "
++                f"load1={current_load:.2f}",
++                flush=True,
++            )
++            if current_load > 30.0:
++                raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    trajectory = {}
++    for step in checkpoints:
++        weighted_loss = sum(value * count for value, count in objectives[step]) / sum(
++            count for _, count in objectives[step]
++        )
++        held_out = sweep.c3_metric(
++            [value for value in predictions[step] if value is not None], data.anchors
++        )
++        trajectory[str(step)] = {
++            "training_objective": float(weighted_loss),
++            "held_out": held_out,
++            "parameter_l2": sweep.summarize(norms[step]),
++        }
++
++    checks = {}
++    first_admissible = None
++    for step in checkpoints[1:]:
++        check = stability(sweep, trajectory[str(step - CADENCE)], trajectory[str(step)])
++        checks[str(step)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = step
++
++    total_by_interval = [sum(interval_total[step]) for step in checkpoints[1:]]
++    update_by_interval = [sum(interval_update[step]) for step in checkpoints[1:]]
++    checkpoint_by_interval = [sum(interval_checkpoint[step]) for step in checkpoints[1:]]
++    cumulative = []
++    running = 0.0
++    for value in total_by_interval:
++        running += value
++        cumulative.append(running)
++    return {
++        "arm": arm,
++        "procedure": "full_batch" if arm == "A" else "minibatch",
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "wall_s": time.perf_counter() - arm_started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": total_by_interval,
++            "update_only_s_per_100_updates_across_12_loao_folds": update_by_interval,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": checkpoint_by_interval,
++            "cumulative_total_s_across_12_loao_folds": cumulative,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(total_by_interval) / len(total_by_interval),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(update_by_interval) / len(update_by_interval),
++            "per_fold_interval_total_s": {str(step): interval_total[step] for step in checkpoints[1:]},
++        },
++        "maximum_observed_load1": max(load_observed),
++    }
++
++
++def equal_wall_comparison(arms: dict[str, dict[str, object]]) -> dict[str, object]:
++    a = arms["A"]
++    b = arms["B"]
++    a_times = a["timing"]["cumulative_total_s_across_12_loao_folds"]
++    b_times = b["timing"]["cumulative_total_s_across_12_loao_folds"]
++
++    def reached(times: list[float], budget: float) -> int:
++        return CADENCE * sum(value <= budget for value in times)
++
++    comparisons = []
++    for label, budget in (
++        ("arm_a_cap_time", a_times[-1]),
++        ("arm_b_cap_time", b_times[-1]),
++        ("common_cap_time", min(a_times[-1], b_times[-1])),
++    ):
++        comparisons.append({
++            "budget_label": label,
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": reached(b_times, budget),
++        })
++    if b["first_admissible_update"] is not None:
++        budget = b_times[b["first_admissible_update"] // CADENCE - 1]
++        comparisons.append({
++            "budget_label": "arm_b_first_admissible_time",
++            "wall_s": budget,
++            "arm_a_update": reached(a_times, budget),
++            "arm_b_update": b["first_admissible_update"],
++        })
++    return {"comparisons": comparisons}
++
++
++def main() -> None:
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    before = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    data = sweep.load_c3()
++    c3_paths = tuple(anchor.path for anchor in data.anchors)
++    c3_before = {str(path): file_sha256(path) for path in c3_paths}
++    shuffle_seed = sweep.seed_from_domain(SHUFFLE_DOMAIN)
++    total_work = 2 * len(data.anchors) * MAX_UPDATES
++    progress = [0]
++    started = time.perf_counter()
++    arms = {}
++    status = "complete"
++    pause_reason = None
++    try:
++        arms["A"] = run_arm(sweep, data, "A", progress, total_work)
++        arms["B"] = run_arm(sweep, data, "B", progress, total_work)
++    except LoadPause as error:
++        status = "paused_load"
++        pause_reason = str(error)
++    after = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    c3_after = {str(path): file_sha256(path) for path in c3_paths}
++    changed = [path for path in (*before, *c3_before) if (before | c3_before)[path] != (after | c3_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    original = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    original_c3 = next(
++        cell for cell in original["cells"]
++        if cell["route"] == "C3" and cell["learning_rate"] == 1e-3
++    )
++    reproduction = None
++    if "A" in arms:
++        fields = ("training_objective", "held_out")
++        reproduction = {
++            str(step): all(
++                arms["A"]["trajectory"][str(step)][field]
++                == original_c3["trajectory"][str(step)][field]
++                for field in fields
++            )
++            for step in range(0, 501, 100)
++        }
++    result = {
++        "schema": "mcrl-v025-horizon-lever-diagnostic-v1",
++        "status": status,
++        "pause_reason": pause_reason,
++        "scope": {
++            "diagnostic_not_claim": True,
++            "ee_quantities_computed": False,
++            "selection_on_ee": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "route": "C3",
++        "learning_rate": 1e-3,
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "maximum_updates": MAX_UPDATES,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "minibatch": {
++            "batch_size": BATCH_SIZE,
++            "shuffle_rng": "numpy Generator(PCG64)",
++            "shuffle_seed_domain": SHUFFLE_DOMAIN,
++            "shuffle_seed": shuffle_seed,
++            "replacement": False,
++            "replacement_scope": "without replacement within each pass; rows recur after reshuffle next pass",
++            "remainder_batch_used": True,
++            "fresh_same_seed_per_loao_fold": True,
++            "classification": "training-procedure change, not a hyperparameter",
++        },
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(path) for path in c3_paths],
++        },
++        "arms": arms,
++        "equal_wall": equal_wall_comparison(arms) if len(arms) == 2 else None,
++        "arm_a_reproduces_lr_sweep_0_to_500": reproduction,
++        "resource_policy": {
++            "python_processes": 1,
++            "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1,
++            "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb,
++            "initial_load1": initial_load,
++            "final_load1": load_average(),
++            "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before,
++        "source_sha256_after": after,
++        "c3_input_sha256_before": c3_before,
++        "c3_input_sha256_after": c3_after,
++        "changed_inputs": changed,
++    }
++    atomic_json(OUT / "results.json", result)
++    print(f"PEAK_RSS_KB={peak_kb}", flush=True)
++    print(json.dumps({
++        "written": str(OUT / "results.json"),
++        "status": status,
++        "changed_inputs": changed,
++    }), flush=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/horizon-lever/spec.md b/.scratch/horizon-lever/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..5514c3edfb7444e34a389659db0f542a5f7e7f4c
+--- /dev/null
++++ b/.scratch/horizon-lever/spec.md
+@@ -0,0 +1,63 @@
++# HORIZON lever diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This file is fixed before either horizon arm is fit.
++
++## Question and fixed inputs
++
++- Diagnose whether C3 convergence under-run is addressed by more full-batch
++  updates (Arm A) or by minibatch updates (Arm B). This is one route and one
++  seed, not a learning-rate grid and not a learning-rate selection.
++- Use the twelve fixed C3 LOAO anchors named by the LRSWEEP harness, including
++  only size>=2 rows for training and retaining the declared hard-zero
++  empty/singleton predictions for held-out diagnostics.
++- Use model seed `V025_LEARNER/seed/1` (`6407676579069309528`), C3 learning
++  rate `1e-3`, and every other architecture and Adam literal unchanged.
++- Import and reuse the LRSWEEP harness at
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`
++  (SHA-256 `dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6`),
++  its frozen rule (SHA-256
++  `0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19`),
++  and its results (SHA-256
++  `9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861`)
++  directly and without modifying those artifacts.
++
++## Common cadence and rule
++
++- Cap both arms at 4,000 optimizer updates and evaluate at update 0 and every
++  100 updates through 4,000.
++- At each destination cadence `k`, apply LRSWEEP's identical four checks to
++  `k-100 -> k`: objective relative absolute motion <= 0.01; held-out level R2
++  absolute motion <= 0.01; held-out within-group ordering absolute motion <=
++  0.005; held-out top-1 absolute motion <= 0.005. The first finite destination
++  cadence satisfying all four is that arm's first admissible update.
++- The checkpoint training objective is always evaluated on the complete LOAO
++  training fold, including for Arm B. A last-minibatch loss is not used.
++
++## Arms
++
++- Arm A: the LRSWEEP C3 full-batch gradient aggregation verbatim, one Adam
++  update over all eleven training anchors per optimizer step.
++- Arm B: batch size 256. For each LOAO fold, concatenate the eleven training
++  anchors in the fixed LRSWEEP filename order. Initialise an independent PCG64
++  generator from the SHA-256 domain seed
++  `V025_HORIZON/C3/minibatch-shuffle/seed/1`. At the start of every pass,
++  generate a permutation of all training rows; consume consecutive batches of
++  256 without replacement within that pass; include the final remainder batch;
++  then reshuffle for the next pass. Rows recur across passes. Each fold starts
++  a fresh generator at the same declared shuffle seed. This deterministic
++  ordering is separate from the unchanged model-initialisation seed.
++- Minibatching is a training-procedure change, not a hyperparameter.
++
++## Scope and resources
++
++- Metrics are convergence diagnostics only and are never evidence about EE.
++  Compute no EE quantity and perform no selection on EE.
++- Read only the twelve C3 files fixed in LRSWEEP. Do not discover or read any
++  evaluation-only claim dates.
++- Run both arms sequentially in one Python process using only
++  `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 19, all named BLAS
++  thread variables equal to one, and an address-space limit below 3 GiB.
++- Print progress as `step k/N` and print peak RSS. If one-minute load average
++  exceeds 30 at a cadence boundary, stop before more training and record a
++  load pause rather than pushing through.
++
+

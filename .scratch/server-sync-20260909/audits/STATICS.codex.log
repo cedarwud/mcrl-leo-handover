@@ -15782,3 +15782,3187 @@ index 0000000000000000000000000000000000000000..6dcc59516b46d66af87c3134d830a270
 
 codex
 The audit confirms both parity arms match the reference at every anchor—not only in pooled EE, but bit-for-bit in committed bits, joules, served PHY, and attainment. The surprising outcomes are real under the stated rules: `RSS_MAX` serves 1200/1200 with the most bits and least joules, while `ROUND_ROBIN` activates 100 beams per anchor and falls below random. I’ll preserve that contradiction explicitly rather than force the intended framing onto the data.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-rank-ws/STATIC-BASELINE-FAMILY-2026-09-10.md
+diff --git a/.scratch/statics/run_statics.py b/.scratch/statics/run_statics.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dcc59516b46d66af87c3134d830a270c4943ca4
+--- /dev/null
++++ b/.scratch/statics/run_statics.py
+@@ -0,0 +1,464 @@
++#!/usr/bin/env python3
++"""Measure the non-learned static family on PANELCEIL's frozen training panel.
++
++This runner deliberately imports PANELCEIL's sealed construction helpers from
++the sibling read-only workspace.  It does not read evaluation-only dates and
++writes only the local receipt below.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import random
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-rank-ws")
++PANELCEIL_WORKSPACE = Path("/home/sat/mcrl-v025-ceiling30-ws")
++PANELCEIL_RUNNER = PANELCEIL_WORKSPACE / ".scratch/panelceil/run_panelceil.py"
++PANELCEIL_RECEIPT = PANELCEIL_WORKSPACE / ".scratch/panelceil/panelceil-receipt.json"
++OUTPUT = WORKSPACE / ".scratch/statics/statics-receipt.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 5_000_000_000
++RANDOM_SEED = 20260910
++ARM_NAMES = (
++    "RANDOM", "ROUND_ROBIN", "RSS_MAX", "NEAREST_ELIGIBLE",
++    "MYOPIC_GREEDY", "FIRST_IMPROVEMENT_FP",
++)
++EXPECTED_EE_MBIT_J = {
++    "NEAREST_ELIGIBLE": 11.027760,
++    "FIRST_IMPROVEMENT_FP": 13.430253,
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def canonical_digest(payload: dict) -> str:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    return hashlib.sha256(json.dumps(
++        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("utf-8")).hexdigest()
++
++
++def atomic_write(payload: dict) -> None:
++    payload["receipt_sha256"] = canonical_digest(payload)
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
++    temporary.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    temporary.replace(OUTPUT)
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness is below 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins are not all one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB")
++
++
++def load_panelceil():
++    name = "statics_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANELCEIL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def legal_options(panelceil, tape, step_index: int):
++    return panelceil.load_pilot().ENGINE._legal_options(tape, step_index)[0]
++
++
++def configured(runner, base, mapping, kind: str):
++    return runner._configuration(base, mapping, kind=kind)
++
++
++def random_configuration(runner, tape, step_index: int, base, anchor_index: int):
++    options, _ = runner._legal_options(tape, step_index)
++    rng = random.Random(RANDOM_SEED + anchor_index)
++    mapping = {
++        user: (None if not identities else identities[rng.randrange(len(identities))])
++        for user, identities in sorted(options.items())
++    }
++    return configured(runner, base, mapping, "statics-random")
++
++
++def round_robin_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    loads: Counter[tuple[int, int]] = Counter()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities), key=lambda item: (loads[item[1]], item[0])
++        )
++        del ordinal
++        mapping[user] = identity
++        loads[identity] += 1
++    return configured(runner, base, mapping, "statics-round-robin")
++
++
++def rss_max_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    arrays = tape.steps[step_index].arrays
++    if arrays is None:
++        raise RuntimeError("frozen exact panel must expose primitive arrays")
++    row_of = arrays._row_index()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities),
++            key=lambda item: (
++                -float(arrays.nominal_gain[0, row_of[(user, item[1])]]), item[0]
++            ),
++        )
++        del ordinal
++        mapping[user] = identity
++    return configured(runner, base, mapping, "statics-rss-max")
++
++
++def myopic_greedy(panelceil, runner, calibration, tape, step_index: int, base, incumbent, run_setting):
++    """One ascending-user exact best-response sweep on nominal boundary zero."""
++
++    evaluator = panelceil.new_selection_evaluator(
++        runner, tape, step_index, incumbent, run_setting, field="nominal"
++    )
++    base_profile = evaluator.evaluate(base)
++    guard = panelceil.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    candidate_evaluations = 0
++    changed_users = 0
++    for user in sorted(options):
++        rows = [current]
++        rows.extend(
++            panelceil.candidate(
++                runner, base, current, user, identity, "statics-myopic-greedy"
++            )
++            for identity in options[user]
++            if identity != current.mapping[user]
++        )
++        for offset in range(0, len(rows), panelceil.UNILATERAL_BATCH_SIZE):
++            evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++        candidate_evaluations += len(rows)
++        eligible = []
++        for row in rows:
++            profile = evaluator._evaluated.get(row.configuration_id)
++            if profile is None or panelceil.served(profile) < guard:
++                continue
++            value: Fraction = panelceil.objective(
++                runner, calibration, incumbent, row, profile, rekeys
++            )
++            eligible.append((value, row.configuration_id, row))
++        if not eligible:
++            raise RuntimeError("myopic step lost its guarded incumbent")
++        selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++        changed_users += selected.mapping[user] != current.mapping[user]
++        current = selected
++    return current, {
++        "algorithm": "one ascending-user exact greedy sweep",
++        "physics": "nominal boundary 0",
++        "objective": "F = decoded bits - eta_ref * joules",
++        "guard": f"served PHY >= base served PHY ({guard})",
++        "tie_break": "lexicographically smallest stable configuration ID",
++        "candidate_batch_size": panelceil.UNILATERAL_BATCH_SIZE,
++        "candidate_evaluations_including_incumbents": candidate_evaluations,
++        "users_changing_choice": changed_users,
++        "legal_option_census": census,
++    }
++
++
++def diversity(config, options) -> dict[str, object]:
++    mapping = config.mapping
++    chosen = [identity for identity in mapping.values() if identity is not None]
++    counts = Counter(chosen)
++    user_count = len(mapping)
++    ordinals = []
++    for user, identity in sorted(mapping.items()):
++        if identity is None:
++            continue
++        try:
++            ordinals.append(options[user].index(identity))
++        except ValueError as error:
++            raise RuntimeError(f"user {user} selected a non-legal identity") from error
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / user_count,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++        "argmax_distinct": len(set(ordinals)),
++        "assigned_users": len(chosen),
++        "user_count": user_count,
++    }
++
++
++def committed_one(panelceil, runner, tape, step_index, incumbent, run_setting, name, config):
++    return panelceil.committed_metrics(
++        runner, tape, step_index, incumbent, run_setting, {name: config}
++    )[name]
++
++
++def pool(anchors, arm: str) -> dict[str, object]:
++    rows = [anchor["arms"][arm]["committed"] for anchor in anchors]
++    bits = math.fsum(float(row["bits"]) for row in rows)
++    joules = math.fsum(float(row["joules"]) for row in rows)
++    diversities = [anchor["arms"][arm]["diversity"] for anchor in anchors]
++    timings = [anchor["arms"][arm]["timing"] for anchor in anchors]
++    result: dict[str, object] = {
++        "bits": bits,
++        "joules": joules,
++        "ee_bit_per_j": bits / joules,
++        "served_count": sum(int(row["served_count"]) for row in rows),
++        "rate_target_attained_count": sum(
++            int(row["rate_target_attained_count"]) for row in rows
++        ),
++        "user_count": sum(int(row["user_count"]) for row in rows),
++    }
++    for field in ("modal_frac", "active_beams", "active_satellites", "argmax_distinct"):
++        values = [float(row[field]) for row in diversities]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++        }
++    for field in ("selection_seconds", "committed_seconds", "wall_seconds"):
++        values = [float(row[field]) for row in timings]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++            "total": math.fsum(values),
++        }
++    return result
++
++
++def main() -> int:
++    assert_runtime()
++    panelceil = load_panelceil()
++    panel = panelceil.frozen_panel()
++    source_receipt = json.loads(PANELCEIL_RECEIPT.read_text(encoding="utf-8"))
++    if (
++        source_receipt.get("status") != "COMPLETE"
++        or source_receipt.get("receipt_sha256") != panelceil.canonical_digest(source_receipt)
++    ):
++        raise RuntimeError("PANELCEIL reference receipt is not sealed and complete")
++    pilot = panelceil.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panelceil.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    tape_seconds = time.perf_counter() - tape_started
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB after tape")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++
++    payload = {
++        "schema": "mcrl-v025-static-baseline-family-v1",
++        "status": "RUNNING",
++        "claim_status": "DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM",
++        "panel": panel,
++        "panel_count": len(panel),
++        "panelceil_runner_sha256": sha256(PANELCEIL_RUNNER),
++        "panelceil_receipt_sha256": source_receipt["receipt_sha256"],
++        "world_tape": {
++            "domain": tape.domain, "seed": tape.seed, "digest": tape.digest,
++            "construction_seconds": tape_seconds,
++        },
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "process_count": 1,
++        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
++        "random_seed": RANDOM_SEED,
++        "anchors": [],
++    }
++    if OUTPUT.exists():
++        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
++        if previous.get("panel") != panel or previous.get("random_seed") != RANDOM_SEED:
++            raise RuntimeError("existing receipt does not match this frozen construction")
++        payload["anchors"] = previous.get("anchors", [])
++    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
++
++    for position, panel_row in enumerate(panel, 1):
++        index = int(panel_row["global_anchor_index"])
++        if index in completed:
++            print(
++                f"anchor {position}/{len(panel)} resume-complete peak RSS "
++                f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++            )
++            continue
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        options, _ = runner._legal_options(tape, step_index)
++
++        configs = {}
++        selection_seconds = {}
++        detail = {}
++
++        started = time.perf_counter()
++        configs["NEAREST_ELIGIBLE"] = runner._base_configuration(tape, step_index, carrier)
++        selection_seconds["NEAREST_ELIGIBLE"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RANDOM"] = random_configuration(runner, tape, step_index, base, index)
++        selection_seconds["RANDOM"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["ROUND_ROBIN"] = round_robin_configuration(runner, tape, step_index, base)
++        selection_seconds["ROUND_ROBIN"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RSS_MAX"] = rss_max_configuration(runner, tape, step_index, base)
++        selection_seconds["RSS_MAX"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["MYOPIC_GREEDY"], detail["MYOPIC_GREEDY"] = myopic_greedy(
++            panelceil, runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        selection_seconds["MYOPIC_GREEDY"] = time.perf_counter() - started
++
++        first = panelceil.first_improvement(
++            runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        configs["FIRST_IMPROVEMENT_FP"] = first.selected
++        selection_seconds["FIRST_IMPROVEMENT_FP"] = float(
++            first.receipt["total_including_certificate_seconds"]
++        )
++        detail["FIRST_IMPROVEMENT_FP"] = first.receipt
++
++        reference_anchor = source_receipt["anchors"][index]
++        if (
++            configs["NEAREST_ELIGIBLE"].configuration_id
++            != reference_anchor["committed"]["BASE"]["configuration_id"]
++            or configs["FIRST_IMPROVEMENT_FP"].configuration_id
++            != reference_anchor["committed"]["U_FIRST"]["configuration_id"]
++        ):
++            raise RuntimeError(f"parity configuration mismatch at anchor {index}")
++
++        arms = {}
++        for name in ARM_NAMES:
++            commit_started = time.perf_counter()
++            committed = committed_one(
++                panelceil, runner, tape, step_index, incumbent, run_setting,
++                name, configs[name],
++            )
++            committed_seconds = time.perf_counter() - commit_started
++            arms[name] = {
++                "configuration_id": configs[name].configuration_id,
++                "assignments": [
++                    [user, None if identity is None else list(identity)]
++                    for user, identity in configs[name].assignments
++                ],
++                "committed": committed,
++                "diversity": diversity(configs[name], options),
++                "timing": {
++                    "selection_seconds": selection_seconds[name],
++                    "committed_seconds": committed_seconds,
++                    "wall_seconds": selection_seconds[name] + committed_seconds,
++                },
++                "detail": detail.get(name),
++            }
++
++        row = {
++            "global_anchor_index": index,
++            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
++            "step_index": step_index,
++            "carrier": carrier,
++            "arms": arms,
++            "peak_rss_bytes": peak_rss_bytes(),
++        }
++        if row["peak_rss_bytes"] >= MAX_RSS_BYTES:
++            raise MemoryError("peak RSS is not below 5 GB")
++        payload["anchors"].append(row)
++        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
++        payload["pooled"] = {
++            arm: pool(payload["anchors"], arm) for arm in ARM_NAMES
++        }
++        payload["peak_rss_bytes"] = peak_rss_bytes()
++        atomic_write(payload)
++        print(
++            f"anchor {position}/{len(panel)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB "
++            + json.dumps({
++                "global": index,
++                "myopic_s": round(selection_seconds["MYOPIC_GREEDY"], 3),
++                "first_fp_s": round(selection_seconds["FIRST_IMPROVEMENT_FP"], 3),
++            }, sort_keys=True),
++            flush=True,
++        )
++
++    payload["pooled"] = {arm: pool(payload["anchors"], arm) for arm in ARM_NAMES}
++    parity = {}
++    for arm, expected in EXPECTED_EE_MBIT_J.items():
++        observed = float(payload["pooled"][arm]["ee_bit_per_j"]) / 1e6
++        parity[arm] = {
++            "expected_rounded_6_mbit_per_j": expected,
++            "observed_mbit_per_j": observed,
++            "rounded_6_match": round(observed, 6) == expected,
++            "all_anchor_configuration_ids_match_panelceil": True,
++        }
++    payload["parity"] = parity
++    payload["both_parity_checks_reproduced"] = all(
++        bool(row["rounded_6_match"]) for row in parity.values()
++    )
++    payload["status"] = "COMPLETE" if payload["both_parity_checks_reproduced"] else "PARITY_FAILED"
++    payload["peak_rss_bytes"] = peak_rss_bytes()
++    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
++    atomic_write(payload)
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({
++        arm: payload["pooled"][arm]["ee_bit_per_j"] / 1e6 for arm in ARM_NAMES
++    }, sort_keys=True), flush=True)
++    print(f"both_parity_checks_reproduced={payload['both_parity_checks_reproduced']}", flush=True)
++    return 0 if payload["both_parity_checks_reproduced"] else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/STATIC-BASELINE-FAMILY-2026-09-10.md b/STATIC-BASELINE-FAMILY-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7a45b041fe2c7410081523ce91571459812d9f7
+--- /dev/null
++++ b/STATIC-BASELINE-FAMILY-2026-09-10.md
+@@ -0,0 +1,127 @@
++**Pooled EE: `RANDOM` 11.233999, `ROUND_ROBIN` 3.441227, `RSS_MAX` 41.621560, `MYOPIC_GREEDY` 28.668530, `NEAREST_ELIGIBLE` parity 11.027760, and `FIRST_IMPROVEMENT_FP` parity 13.430253 Mbit/J; both parity checks reproduced.**
++
++# Static baseline family on the training panel — 2026-09-10
++
++`DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM`. No learner or checkpoint was read, trained, scored, or ranked. Loss values supply no evidence here. Only the frozen 12-anchor development prefix was used; no evaluation-only claim date was read.
++
++## Exact arm definitions
++
++Every arm uses `PANELCEIL`'s frozen global anchors 0–11 in declared order, the complete boundary-0 legal set (visible, D2-eligible, and cell-reachable), the `a-r0` corrected provisioning path, the anchor's declared prior-step incumbent, and singleton evaluation over all 48 realised boundaries. The reported numerator is saturated full-buffer successfully decoded forward-downlink information bits with **no demand cap**. Pooled EE is `sum(bits) / sum(joules)`, never a mean of anchor-local ratios.
++
++The service guard has the same scope as in `PANELCEIL`: it filters candidates for objective-based selection (`MYOPIC_GREEDY` and `FIRST_IMPROVEMENT_FP`). A direct static rule is evaluated as selected, even when its realised served count is poor; rejection or resampling would change `RANDOM` from uniform and conceal precisely the below-random outcomes this measurement is meant to expose. All six arms use the same legal-option guard.
++
++- **`RANDOM`.** At global anchor `i`, initialise Python's MT19937 `random.Random` with `20260910 + i`. Visit users in ascending ID order and draw independently and uniformly from that user's complete declared legal-option tuple. A user is null only if that tuple is empty. There is one draw, with no rejection, service resampling, objective lookup, or demand information.
++
++- **`ROUND_ROBIN`.** Visit users in ascending ID order. For each user, choose the legal physical beam `(NORAD, cell)` having the smallest assignment count accumulated so far. Break equal-load ties by the option's declared order, which is increasing decision-boundary slant range and then physical identity. This equalises user count by legal beam; it does not optimise link quality, satellite count, interference, power, or the declared objective.
++
++- **`RSS_MAX`.** For each user independently, choose the legal option with maximum decision-boundary `nominal_gain`, i.e. wanted-link received watts per beam RF watt. Break an exact tie by declared legal-option order. It uses no demand, occupancy, cross-interference, energy, or realised fading.
++
++- **`NEAREST_ELIGIBLE`.** This is the requested parity label for the exact `PANELCEIL` `BASE` construction: reconstruct each frozen anchor's declared carrier mapping at that step, then set a user to null if it has no live legal action. On anchors whose carrier is `nearest-eligible`, that carrier means best D2 margin in the user's own cell with the first valid slot-order tie-break. The 12-anchor panel also deliberately contains `stay-if-possible` and `random-masked` carrier anchors, so the pooled 11.027760 parity value is the carrier-conditioned `BASE`, not a fresh nearest-only reassignment on all 12 rows. This distinction is required to reproduce `PANELCEIL` exactly.
++
++- **`MYOPIC_GREEDY`.** Start from that anchor's `PANELCEIL` `BASE` and make exactly one ascending-user sweep. For the current user, hold all other assignments fixed; evaluate the incumbent choice and every legal replacement on **nominal boundary 0** in ordered microbatches of 16; retain candidates whose served-PHY count is at least the initial base count; and choose the largest exact `F = decoded bits - eta_ref * joules`, breaking an exact tie by lexicographically smallest stable configuration ID. Commit the choice immediately for later users. There is no second sweep and no future-boundary selection information.
++
++- **`FIRST_IMPROVEMENT_FP`.** This reruns the certified `PANELCEIL` construction: start from the same base; select on exact **realised boundary-0** `F`; visit ascending users and their declared legal options; accept the first strict improvement meeting the initial base served-PHY guard within ordered microbatches of 16; repeat passes until a complete final pass finds no strict guarded improvement. The 48-boundary result never feeds selection.
++
++`modal_frac` below is the largest physical-beam occupancy divided by all 100 users at an anchor. `active beams/satellites` counts distinct non-null physical `(NORAD, cell)` identities and distinct NORADs. `argmax_distinct` counts distinct zero-based declared legal-option ordinals selected across users; it is an action-slot diversity diagnostic, not a physical-beam count. Diversity entries are the mean across 12 anchors followed by `[minimum, maximum]`.
++
++## Verified by running code
++
++### Pooled outcomes
++
++| arm | pooled bits | pooled joules | pooled EE (Mbit/J) | served PHY | rate-target attained | modal_frac | active beams | active satellites | argmax_distinct |
++|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| `RANDOM` | 1.288605626013e12 | 114705.864740 | 11.233999 | 1102/1200 | 141/1200 | 0.0333 [0.02, 0.05] | 81.750 [72, 86] | 8.583 [8, 9] | 27.500 [25, 28] |
++| `ROUND_ROBIN` | 7.537530520000e11 | 219036.120671 | 3.441227 | 798/1200 | 48/1200 | 0.0100 [0.01, 0.01] | 100.000 [100, 100] | 4.750 [4, 5] | 11.500 [11, 13] |
++| `RSS_MAX` | 1.653612586627e12 | 39729.712050 | 41.621560 | 1200/1200 | 297/1200 | 0.0500 [0.05, 0.05] | 47.750 [46, 50] | 5.000 [5, 5] | 5.250 [3, 8] |
++| `NEAREST_ELIGIBLE` | 1.121297101614e12 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 | 0.0425 [0.02, 0.05] | 57.333 [41, 90] | 5.333 [3, 9] | 10.667 [1, 28] |
++| `MYOPIC_GREEDY` | 1.527584566003e12 | 53284.369866 | 28.668530 | 1186/1200 | 258/1200 | 0.0300 [0.01, 0.05] | 89.417 [47, 100] | 7.833 [5, 9] | 16.250 [1, 26] |
++| `FIRST_IMPROVEMENT_FP` | 1.255889055879e12 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 | 0.0408 [0.02, 0.05] | 64.167 [41, 90] | 6.250 [3, 9] | 14.417 [1, 28] |
++
++The corresponding pooled served-PHY rates are 91.833%, 66.500%, 100.000%, 80.000%, 98.833%, and 86.333% in table order. Rate-target attainment is 11.750%, 4.000%, 24.750%, 10.583%, 21.500%, and 12.250%.
++
++### Parity gate
++
++Both parity gates pass. All 12 configuration IDs matched the sealed `PANELCEIL` receipt for both arms. An independent row-by-row diff also found exact equality of committed bits, joules, served-PHY count, and rate-target-attainment count at every anchor.
++
++| parity arm | expected EE | observed EE | rounded-six result | pooled bits | pooled joules | served | attained |
++|---|---:|---:|---|---:|---:|---:|---:|
++| `NEAREST_ELIGIBLE` / `PANELCEIL BASE` | 11.027760 | 11.027760227532 | pass | 1.121297101614e12 | 101679.495970 | 960/1200 | 127/1200 |
++| `FIRST_IMPROVEMENT_FP` | 13.430253 | 13.430252781856 | pass | 1.255889055879e12 | 93511.944732 | 1036/1200 | 147/1200 |
++
++### Wall-clock by anchor
++
++Each entry is `selection / end-to-end` seconds. End-to-end adds that arm's independent singleton 48-boundary committed evaluation. Tape construction (222.563 s, shared once by every arm) is excluded from arm timings. For the fixed point, selection includes its terminal certificate, exactly as in `PANELCEIL`.
++
++| global anchor | carrier | `RANDOM` | `ROUND_ROBIN` | `RSS_MAX` | `NEAREST_ELIGIBLE` | `MYOPIC_GREEDY` | `FIRST_IMPROVEMENT_FP` |
++|---:|---|---:|---:|---:|---:|---:|---:|
++| 0 | nearest-eligible | .002818 / .303287 | .002607 / .059063 | .003892 / .145811 | .000236 / .161853 | 5.456901 / 5.532978 | 4.341399 / 4.502410 |
++| 1 | stay-if-possible | .002654 / .255480 | .002631 / .060160 | .003817 / .146391 | .000269 / .160989 | 5.505847 / 5.583911 | 4.144753 / 4.305702 |
++| 2 | random-masked | .002756 / .177900 | .002630 / .057802 | .003876 / .145935 | .000282 / .243325 | 5.302749 / 5.345201 | 4.755255 / 4.998975 |
++| 3 | nearest-eligible | .002751 / .336844 | .002641 / .083404 | .003648 / .198837 | .000300 / .170462 | 5.219370 / 5.391113 | 4.389278 / 4.560558 |
++| 4 | stay-if-possible | .002928 / .223756 | .002681 / .083229 | .004182 / .198985 | .000298 / .180493 | 5.776191 / 5.856508 | 4.375899 / 4.555498 |
++| 5 | random-masked | .002738 / .766961 | .002579 / .084710 | .004034 / .200519 | .000304 / .322672 | 5.254159 / 5.310803 | 5.217818 / 5.540263 |
++| 6 | nearest-eligible | .002583 / .544976 | .002542 / .141758 | .003850 / .517014 | .000278 / .305039 | 7.236447 / 7.640597 | 4.942540 / 5.248655 |
++| 7 | stay-if-possible | .002695 / .169184 | .002525 / .145334 | .003633 / .514654 | .000274 / .345009 | 6.238417 / 6.310437 | 45.171579 / 45.316361 |
++| 8 | random-masked | .002344 / .273302 | .002606 / .142241 | .003579 / .513144 | .000282 / .450956 | 7.035742 / 7.095645 | 7.285334 / 7.737017 |
++| 9 | nearest-eligible | .002665 / .374680 | .002598 / .116862 | .003798 / .919762 | .000294 / .899210 | 11.448226 / 12.008537 | 8.272072 / 9.173329 |
++| 10 | stay-if-possible | .002859 / .590253 | .002631 / .120288 | .003830 / .943261 | .000316 / .378621 | 7.428929 / 7.487751 | 121.330814 / 121.678617 |
++| 11 | random-masked | .002582 / .477036 | .002564 / .124715 | .003656 / .934686 | .000341 / .450081 | 9.161437 / 9.352503 | 9.417967 / 9.871781 |
++| **mean** | — | **.002698 / .374471** | **.002603 / .101631** | **.003816 / .448250** | **.000289 / .339059** | **6.755368 / 6.909665** | **18.637059 / 18.957430** |
++
++### Cheapest-to-most-expensive ordering
++
++This ordering uses mean **selection** wall-clock, because committed 48-boundary scoring is a common measurement operation rather than policy decision cost. The final column records mean end-to-end measurement time for completeness.
++
++| cost order | arm | mean selection s/anchor | pooled EE (Mbit/J) | mean end-to-end s/anchor |
++|---:|---|---:|---:|---:|
++| 1 | `NEAREST_ELIGIBLE` | 0.000289 | 11.027760 | 0.339059 |
++| 2 | `ROUND_ROBIN` | 0.002603 | 3.441227 | 0.101631 |
++| 3 | `RANDOM` | 0.002698 | 11.233999 | 0.374471 |
++| 4 | `RSS_MAX` | 0.003816 | 41.621560 | 0.448250 |
++| 5 | `MYOPIC_GREEDY` | 6.755368 | 28.668530 | 6.909665 |
++| 6 | `FIRST_IMPROVEMENT_FP` | 18.637059 | 13.430253 | 18.957430 |
++
++The one-process run completed in 572.791 s including shared tape construction. Peak RSS was **2.517 GiB** (2,702,925,824 bytes), below 5 GB. The process ran at niceness 15 under `/home/sat/mcrl-leo-handover/.venv/bin/python`; all six recorded BLAS/OpenMP thread controls were `1`.
++
++## Derived on paper from verified aggregates
++
++- `ROUND_ROBIN / RANDOM - 1 = -69.367747%`.
++- `NEAREST_ELIGIBLE / RANDOM - 1 = -1.835849%`.
++- `MYOPIC_GREEDY / RANDOM - 1 = +155.194334%`.
++- `RSS_MAX / RANDOM - 1 = +270.496366%`.
++- `MYOPIC_GREEDY / FIRST_IMPROVEMENT_FP - 1 = +113.462328%`.
++- `RSS_MAX / FIRST_IMPROVEMENT_FP - 1 = +209.908983%`.
++
++These are arithmetic relations only; they are not learned-policy claims and are not inferred from losses.
++
++## Inferred
++
++The intended comparison structure remains useful, but this measurement changes what may honestly be called its floors and ceiling:
++
++- The weak-static family is the reference family a learned proposal must be placed against. On this panel it is not a narrow floor: its observed span is 3.441227–41.621560 Mbit/J. In particular, clearing only the carrier-conditioned base or random does not clear `RSS_MAX` under the definition above.
++
++- `FIRST_IMPROVEMENT_FP` remains the designated strong classical-search comparator and is not a required learned win target, as stipulated. It is **not an empirical numerical upper bound on this measured family**: `MYOPIC_GREEDY` and `RSS_MAX` are higher. Calling 13.430253 a universal ceiling after this run would contradict the verified table.
++
++- `RANDOM` remains the sanity reference. `ROUND_ROBIN` is 69.37% below it and must be reported. The diversity evidence does not support calling this particular failure crowding: it has the lowest possible measured `modal_frac` (0.01) and exactly 100 active beams at every anchor. Its poor result instead coincides with over-dispersion, 219,036 J (the largest denominator), only 798/1200 served, and just 48/1200 attaining target. Thus “below random implies crowding” is not valid without the occupancy diagnostics; this arm fails for a different static pathology.
++
++- `RSS_MAX`'s high EE is not an artefact of dropping users: it serves 1200/1200, attains 297/1200, has the largest pooled numerator, and the smallest pooled energy denominator. Under declared full-buffer/no-demand-cap scoring, it is the strongest measured arm despite being demand-blind.
++
++- `MYOPIC_GREEDY` is a single nominal sweep, whereas the fixed point selects strict moves on realised boundary 0 from a carrier-conditioned start. Their ordering therefore does not show a certification error or make either algorithm a global optimizer. It shows that the local fixed-point construction is start-, information-, and traversal-dependent.
++
++No learned arm is ranked here.
++
++## Machine evidence and reproduction
++
++```text
++33fa7c31a219a190db8d985ce81b85893bf8d4024f9af4fe8b1c5ac64adf17b5  .scratch/statics/statics-receipt.json  [canonical content digest]
++dd81d45b6cc81291518aaa5fd1276be99d2f0f9d818c4445054620d3f0dc93a5  .scratch/statics/statics-receipt.json  [file SHA-256]
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  .scratch/statics/run_statics.py
++09e3e9c5e01f96bb879170ee1c31f752448f33fa6772284fabe8cbbea7fbceca  PANELCEIL receipt  [canonical content digest, read-only]
++dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95  PANELCEIL runner  [read-only]
++```
++
++World tape: domain `V025_PROBE/world/1`, seed `5261619120743994529`, digest `43718040fd7157edc158a8f8cd32418c619dacae1ef1114094f115805f027bf0`.
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/statics/run_statics.py
++```
+
+diff --git a/.scratch/statics/run_statics.py b/.scratch/statics/run_statics.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dcc59516b46d66af87c3134d830a270c4943ca4
+--- /dev/null
++++ b/.scratch/statics/run_statics.py
+@@ -0,0 +1,464 @@
++#!/usr/bin/env python3
++"""Measure the non-learned static family on PANELCEIL's frozen training panel.
++
++This runner deliberately imports PANELCEIL's sealed construction helpers from
++the sibling read-only workspace.  It does not read evaluation-only dates and
++writes only the local receipt below.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import random
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-rank-ws")
++PANELCEIL_WORKSPACE = Path("/home/sat/mcrl-v025-ceiling30-ws")
++PANELCEIL_RUNNER = PANELCEIL_WORKSPACE / ".scratch/panelceil/run_panelceil.py"
++PANELCEIL_RECEIPT = PANELCEIL_WORKSPACE / ".scratch/panelceil/panelceil-receipt.json"
++OUTPUT = WORKSPACE / ".scratch/statics/statics-receipt.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 5_000_000_000
++RANDOM_SEED = 20260910
++ARM_NAMES = (
++    "RANDOM", "ROUND_ROBIN", "RSS_MAX", "NEAREST_ELIGIBLE",
++    "MYOPIC_GREEDY", "FIRST_IMPROVEMENT_FP",
++)
++EXPECTED_EE_MBIT_J = {
++    "NEAREST_ELIGIBLE": 11.027760,
++    "FIRST_IMPROVEMENT_FP": 13.430253,
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def canonical_digest(payload: dict) -> str:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    return hashlib.sha256(json.dumps(
++        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("utf-8")).hexdigest()
++
++
++def atomic_write(payload: dict) -> None:
++    payload["receipt_sha256"] = canonical_digest(payload)
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
++    temporary.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    temporary.replace(OUTPUT)
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness is below 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins are not all one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB")
++
++
++def load_panelceil():
++    name = "statics_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANELCEIL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def legal_options(panelceil, tape, step_index: int):
++    return panelceil.load_pilot().ENGINE._legal_options(tape, step_index)[0]
++
++
++def configured(runner, base, mapping, kind: str):
++    return runner._configuration(base, mapping, kind=kind)
++
++
++def random_configuration(runner, tape, step_index: int, base, anchor_index: int):
++    options, _ = runner._legal_options(tape, step_index)
++    rng = random.Random(RANDOM_SEED + anchor_index)
++    mapping = {
++        user: (None if not identities else identities[rng.randrange(len(identities))])
++        for user, identities in sorted(options.items())
++    }
++    return configured(runner, base, mapping, "statics-random")
++
++
++def round_robin_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    loads: Counter[tuple[int, int]] = Counter()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities), key=lambda item: (loads[item[1]], item[0])
++        )
++        del ordinal
++        mapping[user] = identity
++        loads[identity] += 1
++    return configured(runner, base, mapping, "statics-round-robin")
++
++
++def rss_max_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    arrays = tape.steps[step_index].arrays
++    if arrays is None:
++        raise RuntimeError("frozen exact panel must expose primitive arrays")
++    row_of = arrays._row_index()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities),
++            key=lambda item: (
++                -float(arrays.nominal_gain[0, row_of[(user, item[1])]]), item[0]
++            ),
++        )
++        del ordinal
++        mapping[user] = identity
++    return configured(runner, base, mapping, "statics-rss-max")
++
++
++def myopic_greedy(panelceil, runner, calibration, tape, step_index: int, base, incumbent, run_setting):
++    """One ascending-user exact best-response sweep on nominal boundary zero."""
++
++    evaluator = panelceil.new_selection_evaluator(
++        runner, tape, step_index, incumbent, run_setting, field="nominal"
++    )
++    base_profile = evaluator.evaluate(base)
++    guard = panelceil.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    candidate_evaluations = 0
++    changed_users = 0
++    for user in sorted(options):
++        rows = [current]
++        rows.extend(
++            panelceil.candidate(
++                runner, base, current, user, identity, "statics-myopic-greedy"
++            )
++            for identity in options[user]
++            if identity != current.mapping[user]
++        )
++        for offset in range(0, len(rows), panelceil.UNILATERAL_BATCH_SIZE):
++            evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++        candidate_evaluations += len(rows)
++        eligible = []
++        for row in rows:
++            profile = evaluator._evaluated.get(row.configuration_id)
++            if profile is None or panelceil.served(profile) < guard:
++                continue
++            value: Fraction = panelceil.objective(
++                runner, calibration, incumbent, row, profile, rekeys
++            )
++            eligible.append((value, row.configuration_id, row))
++        if not eligible:
++            raise RuntimeError("myopic step lost its guarded incumbent")
++        selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++        changed_users += selected.mapping[user] != current.mapping[user]
++        current = selected
++    return current, {
++        "algorithm": "one ascending-user exact greedy sweep",
++        "physics": "nominal boundary 0",
++        "objective": "F = decoded bits - eta_ref * joules",
++        "guard": f"served PHY >= base served PHY ({guard})",
++        "tie_break": "lexicographically smallest stable configuration ID",
++        "candidate_batch_size": panelceil.UNILATERAL_BATCH_SIZE,
++        "candidate_evaluations_including_incumbents": candidate_evaluations,
++        "users_changing_choice": changed_users,
++        "legal_option_census": census,
++    }
++
++
++def diversity(config, options) -> dict[str, object]:
++    mapping = config.mapping
++    chosen = [identity for identity in mapping.values() if identity is not None]
++    counts = Counter(chosen)
++    user_count = len(mapping)
++    ordinals = []
++    for user, identity in sorted(mapping.items()):
++        if identity is None:
++            continue
++        try:
++            ordinals.append(options[user].index(identity))
++        except ValueError as error:
++            raise RuntimeError(f"user {user} selected a non-legal identity") from error
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / user_count,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++        "argmax_distinct": len(set(ordinals)),
++        "assigned_users": len(chosen),
++        "user_count": user_count,
++    }
++
++
++def committed_one(panelceil, runner, tape, step_index, incumbent, run_setting, name, config):
++    return panelceil.committed_metrics(
++        runner, tape, step_index, incumbent, run_setting, {name: config}
++    )[name]
++
++
++def pool(anchors, arm: str) -> dict[str, object]:
++    rows = [anchor["arms"][arm]["committed"] for anchor in anchors]
++    bits = math.fsum(float(row["bits"]) for row in rows)
++    joules = math.fsum(float(row["joules"]) for row in rows)
++    diversities = [anchor["arms"][arm]["diversity"] for anchor in anchors]
++    timings = [anchor["arms"][arm]["timing"] for anchor in anchors]
++    result: dict[str, object] = {
++        "bits": bits,
++        "joules": joules,
++        "ee_bit_per_j": bits / joules,
++        "served_count": sum(int(row["served_count"]) for row in rows),
++        "rate_target_attained_count": sum(
++            int(row["rate_target_attained_count"]) for row in rows
++        ),
++        "user_count": sum(int(row["user_count"]) for row in rows),
++    }
++    for field in ("modal_frac", "active_beams", "active_satellites", "argmax_distinct"):
++        values = [float(row[field]) for row in diversities]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++        }
++    for field in ("selection_seconds", "committed_seconds", "wall_seconds"):
++        values = [float(row[field]) for row in timings]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++            "total": math.fsum(values),
++        }
++    return result
++
++
++def main() -> int:
++    assert_runtime()
++    panelceil = load_panelceil()
++    panel = panelceil.frozen_panel()
++    source_receipt = json.loads(PANELCEIL_RECEIPT.read_text(encoding="utf-8"))
++    if (
++        source_receipt.get("status") != "COMPLETE"
++        or source_receipt.get("receipt_sha256") != panelceil.canonical_digest(source_receipt)
++    ):
++        raise RuntimeError("PANELCEIL reference receipt is not sealed and complete")
++    pilot = panelceil.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panelceil.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    tape_seconds = time.perf_counter() - tape_started
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB after tape")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++
++    payload = {
++        "schema": "mcrl-v025-static-baseline-family-v1",
++        "status": "RUNNING",
++        "claim_status": "DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM",
++        "panel": panel,
++        "panel_count": len(panel),
++        "panelceil_runner_sha256": sha256(PANELCEIL_RUNNER),
++        "panelceil_receipt_sha256": source_receipt["receipt_sha256"],
++        "world_tape": {
++            "domain": tape.domain, "seed": tape.seed, "digest": tape.digest,
++            "construction_seconds": tape_seconds,
++        },
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "process_count": 1,
++        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
++        "random_seed": RANDOM_SEED,
++        "anchors": [],
++    }
++    if OUTPUT.exists():
++        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
++        if previous.get("panel") != panel or previous.get("random_seed") != RANDOM_SEED:
++            raise RuntimeError("existing receipt does not match this frozen construction")
++        payload["anchors"] = previous.get("anchors", [])
++    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
++
++    for position, panel_row in enumerate(panel, 1):
++        index = int(panel_row["global_anchor_index"])
++        if index in completed:
++            print(
++                f"anchor {position}/{len(panel)} resume-complete peak RSS "
++                f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++            )
++            continue
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        options, _ = runner._legal_options(tape, step_index)
++
++        configs = {}
++        selection_seconds = {}
++        detail = {}
++
++        started = time.perf_counter()
++        configs["NEAREST_ELIGIBLE"] = runner._base_configuration(tape, step_index, carrier)
++        selection_seconds["NEAREST_ELIGIBLE"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RANDOM"] = random_configuration(runner, tape, step_index, base, index)
++        selection_seconds["RANDOM"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["ROUND_ROBIN"] = round_robin_configuration(runner, tape, step_index, base)
++        selection_seconds["ROUND_ROBIN"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RSS_MAX"] = rss_max_configuration(runner, tape, step_index, base)
++        selection_seconds["RSS_MAX"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["MYOPIC_GREEDY"], detail["MYOPIC_GREEDY"] = myopic_greedy(
++            panelceil, runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        selection_seconds["MYOPIC_GREEDY"] = time.perf_counter() - started
++
++        first = panelceil.first_improvement(
++            runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        configs["FIRST_IMPROVEMENT_FP"] = first.selected
++        selection_seconds["FIRST_IMPROVEMENT_FP"] = float(
++            first.receipt["total_including_certificate_seconds"]
++        )
++        detail["FIRST_IMPROVEMENT_FP"] = first.receipt
++
++        reference_anchor = source_receipt["anchors"][index]
++        if (
++            configs["NEAREST_ELIGIBLE"].configuration_id
++            != reference_anchor["committed"]["BASE"]["configuration_id"]
++            or configs["FIRST_IMPROVEMENT_FP"].configuration_id
++            != reference_anchor["committed"]["U_FIRST"]["configuration_id"]
++        ):
++            raise RuntimeError(f"parity configuration mismatch at anchor {index}")
++
++        arms = {}
++        for name in ARM_NAMES:
++            commit_started = time.perf_counter()
++            committed = committed_one(
++                panelceil, runner, tape, step_index, incumbent, run_setting,
++                name, configs[name],
++            )
++            committed_seconds = time.perf_counter() - commit_started
++            arms[name] = {
++                "configuration_id": configs[name].configuration_id,
++                "assignments": [
++                    [user, None if identity is None else list(identity)]
++                    for user, identity in configs[name].assignments
++                ],
++                "committed": committed,
++                "diversity": diversity(configs[name], options),
++                "timing": {
++                    "selection_seconds": selection_seconds[name],
++                    "committed_seconds": committed_seconds,
++                    "wall_seconds": selection_seconds[name] + committed_seconds,
++                },
++                "detail": detail.get(name),
++            }
++
++        row = {
++            "global_anchor_index": index,
++            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
++            "step_index": step_index,
++            "carrier": carrier,
++            "arms": arms,
++            "peak_rss_bytes": peak_rss_bytes(),
++        }
++        if row["peak_rss_bytes"] >= MAX_RSS_BYTES:
++            raise MemoryError("peak RSS is not below 5 GB")
++        payload["anchors"].append(row)
++        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
++        payload["pooled"] = {
++            arm: pool(payload["anchors"], arm) for arm in ARM_NAMES
++        }
++        payload["peak_rss_bytes"] = peak_rss_bytes()
++        atomic_write(payload)
++        print(
++            f"anchor {position}/{len(panel)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB "
++            + json.dumps({
++                "global": index,
++                "myopic_s": round(selection_seconds["MYOPIC_GREEDY"], 3),
++                "first_fp_s": round(selection_seconds["FIRST_IMPROVEMENT_FP"], 3),
++            }, sort_keys=True),
++            flush=True,
++        )
++
++    payload["pooled"] = {arm: pool(payload["anchors"], arm) for arm in ARM_NAMES}
++    parity = {}
++    for arm, expected in EXPECTED_EE_MBIT_J.items():
++        observed = float(payload["pooled"][arm]["ee_bit_per_j"]) / 1e6
++        parity[arm] = {
++            "expected_rounded_6_mbit_per_j": expected,
++            "observed_mbit_per_j": observed,
++            "rounded_6_match": round(observed, 6) == expected,
++            "all_anchor_configuration_ids_match_panelceil": True,
++        }
++    payload["parity"] = parity
++    payload["both_parity_checks_reproduced"] = all(
++        bool(row["rounded_6_match"]) for row in parity.values()
++    )
++    payload["status"] = "COMPLETE" if payload["both_parity_checks_reproduced"] else "PARITY_FAILED"
++    payload["peak_rss_bytes"] = peak_rss_bytes()
++    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
++    atomic_write(payload)
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({
++        arm: payload["pooled"][arm]["ee_bit_per_j"] / 1e6 for arm in ARM_NAMES
++    }, sort_keys=True), flush=True)
++    print(f"both_parity_checks_reproduced={payload['both_parity_checks_reproduced']}", flush=True)
++    return 0 if payload["both_parity_checks_reproduced"] else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/STATIC-BASELINE-FAMILY-2026-09-10.md b/STATIC-BASELINE-FAMILY-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7a45b041fe2c7410081523ce91571459812d9f7
+--- /dev/null
++++ b/STATIC-BASELINE-FAMILY-2026-09-10.md
+@@ -0,0 +1,127 @@
++**Pooled EE: `RANDOM` 11.233999, `ROUND_ROBIN` 3.441227, `RSS_MAX` 41.621560, `MYOPIC_GREEDY` 28.668530, `NEAREST_ELIGIBLE` parity 11.027760, and `FIRST_IMPROVEMENT_FP` parity 13.430253 Mbit/J; both parity checks reproduced.**
++
++# Static baseline family on the training panel — 2026-09-10
++
++`DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM`. No learner or checkpoint was read, trained, scored, or ranked. Loss values supply no evidence here. Only the frozen 12-anchor development prefix was used; no evaluation-only claim date was read.
++
++## Exact arm definitions
++
++Every arm uses `PANELCEIL`'s frozen global anchors 0–11 in declared order, the complete boundary-0 legal set (visible, D2-eligible, and cell-reachable), the `a-r0` corrected provisioning path, the anchor's declared prior-step incumbent, and singleton evaluation over all 48 realised boundaries. The reported numerator is saturated full-buffer successfully decoded forward-downlink information bits with **no demand cap**. Pooled EE is `sum(bits) / sum(joules)`, never a mean of anchor-local ratios.
++
++The service guard has the same scope as in `PANELCEIL`: it filters candidates for objective-based selection (`MYOPIC_GREEDY` and `FIRST_IMPROVEMENT_FP`). A direct static rule is evaluated as selected, even when its realised served count is poor; rejection or resampling would change `RANDOM` from uniform and conceal precisely the below-random outcomes this measurement is meant to expose. All six arms use the same legal-option guard.
++
++- **`RANDOM`.** At global anchor `i`, initialise Python's MT19937 `random.Random` with `20260910 + i`. Visit users in ascending ID order and draw independently and uniformly from that user's complete declared legal-option tuple. A user is null only if that tuple is empty. There is one draw, with no rejection, service resampling, objective lookup, or demand information.
++
++- **`ROUND_ROBIN`.** Visit users in ascending ID order. For each user, choose the legal physical beam `(NORAD, cell)` having the smallest assignment count accumulated so far. Break equal-load ties by the option's declared order, which is increasing decision-boundary slant range and then physical identity. This equalises user count by legal beam; it does not optimise link quality, satellite count, interference, power, or the declared objective.
++
++- **`RSS_MAX`.** For each user independently, choose the legal option with maximum decision-boundary `nominal_gain`, i.e. wanted-link received watts per beam RF watt. Break an exact tie by declared legal-option order. It uses no demand, occupancy, cross-interference, energy, or realised fading.
++
++- **`NEAREST_ELIGIBLE`.** This is the requested parity label for the exact `PANELCEIL` `BASE` construction: reconstruct each frozen anchor's declared carrier mapping at that step, then set a user to null if it has no live legal action. On anchors whose carrier is `nearest-eligible`, that carrier means best D2 margin in the user's own cell with the first valid slot-order tie-break. The 12-anchor panel also deliberately contains `stay-if-possible` and `random-masked` carrier anchors, so the pooled 11.027760 parity value is the carrier-conditioned `BASE`, not a fresh nearest-only reassignment on all 12 rows. This distinction is required to reproduce `PANELCEIL` exactly.
++
++- **`MYOPIC_GREEDY`.** Start from that anchor's `PANELCEIL` `BASE` and make exactly one ascending-user sweep. For the current user, hold all other assignments fixed; evaluate the incumbent choice and every legal replacement on **nominal boundary 0** in ordered microbatches of 16; retain candidates whose served-PHY count is at least the initial base count; and choose the largest exact `F = decoded bits - eta_ref * joules`, breaking an exact tie by lexicographically smallest stable configuration ID. Commit the choice immediately for later users. There is no second sweep and no future-boundary selection information.
++
++- **`FIRST_IMPROVEMENT_FP`.** This reruns the certified `PANELCEIL` construction: start from the same base; select on exact **realised boundary-0** `F`; visit ascending users and their declared legal options; accept the first strict improvement meeting the initial base served-PHY guard within ordered microbatches of 16; repeat passes until a complete final pass finds no strict guarded improvement. The 48-boundary result never feeds selection.
++
++`modal_frac` below is the largest physical-beam occupancy divided by all 100 users at an anchor. `active beams/satellites` counts distinct non-null physical `(NORAD, cell)` identities and distinct NORADs. `argmax_distinct` counts distinct zero-based declared legal-option ordinals selected across users; it is an action-slot diversity diagnostic, not a physical-beam count. Diversity entries are the mean across 12 anchors followed by `[minimum, maximum]`.
++
++## Verified by running code
++
++### Pooled outcomes
++
++| arm | pooled bits | pooled joules | pooled EE (Mbit/J) | served PHY | rate-target attained | modal_frac | active beams | active satellites | argmax_distinct |
++|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| `RANDOM` | 1.288605626013e12 | 114705.864740 | 11.233999 | 1102/1200 | 141/1200 | 0.0333 [0.02, 0.05] | 81.750 [72, 86] | 8.583 [8, 9] | 27.500 [25, 28] |
++| `ROUND_ROBIN` | 7.537530520000e11 | 219036.120671 | 3.441227 | 798/1200 | 48/1200 | 0.0100 [0.01, 0.01] | 100.000 [100, 100] | 4.750 [4, 5] | 11.500 [11, 13] |
++| `RSS_MAX` | 1.653612586627e12 | 39729.712050 | 41.621560 | 1200/1200 | 297/1200 | 0.0500 [0.05, 0.05] | 47.750 [46, 50] | 5.000 [5, 5] | 5.250 [3, 8] |
++| `NEAREST_ELIGIBLE` | 1.121297101614e12 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 | 0.0425 [0.02, 0.05] | 57.333 [41, 90] | 5.333 [3, 9] | 10.667 [1, 28] |
++| `MYOPIC_GREEDY` | 1.527584566003e12 | 53284.369866 | 28.668530 | 1186/1200 | 258/1200 | 0.0300 [0.01, 0.05] | 89.417 [47, 100] | 7.833 [5, 9] | 16.250 [1, 26] |
++| `FIRST_IMPROVEMENT_FP` | 1.255889055879e12 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 | 0.0408 [0.02, 0.05] | 64.167 [41, 90] | 6.250 [3, 9] | 14.417 [1, 28] |
++
++The corresponding pooled served-PHY rates are 91.833%, 66.500%, 100.000%, 80.000%, 98.833%, and 86.333% in table order. Rate-target attainment is 11.750%, 4.000%, 24.750%, 10.583%, 21.500%, and 12.250%.
++
++### Parity gate
++
++Both parity gates pass. All 12 configuration IDs matched the sealed `PANELCEIL` receipt for both arms. An independent row-by-row diff also found exact equality of committed bits, joules, served-PHY count, and rate-target-attainment count at every anchor.
++
++| parity arm | expected EE | observed EE | rounded-six result | pooled bits | pooled joules | served | attained |
++|---|---:|---:|---|---:|---:|---:|---:|
++| `NEAREST_ELIGIBLE` / `PANELCEIL BASE` | 11.027760 | 11.027760227532 | pass | 1.121297101614e12 | 101679.495970 | 960/1200 | 127/1200 |
++| `FIRST_IMPROVEMENT_FP` | 13.430253 | 13.430252781856 | pass | 1.255889055879e12 | 93511.944732 | 1036/1200 | 147/1200 |
++
++### Wall-clock by anchor
++
++Each entry is `selection / end-to-end` seconds. End-to-end adds that arm's independent singleton 48-boundary committed evaluation. Tape construction (222.563 s, shared once by every arm) is excluded from arm timings. For the fixed point, selection includes its terminal certificate, exactly as in `PANELCEIL`.
++
++| global anchor | carrier | `RANDOM` | `ROUND_ROBIN` | `RSS_MAX` | `NEAREST_ELIGIBLE` | `MYOPIC_GREEDY` | `FIRST_IMPROVEMENT_FP` |
++|---:|---|---:|---:|---:|---:|---:|---:|
++| 0 | nearest-eligible | .002818 / .303287 | .002607 / .059063 | .003892 / .145811 | .000236 / .161853 | 5.456901 / 5.532978 | 4.341399 / 4.502410 |
++| 1 | stay-if-possible | .002654 / .255480 | .002631 / .060160 | .003817 / .146391 | .000269 / .160989 | 5.505847 / 5.583911 | 4.144753 / 4.305702 |
++| 2 | random-masked | .002756 / .177900 | .002630 / .057802 | .003876 / .145935 | .000282 / .243325 | 5.302749 / 5.345201 | 4.755255 / 4.998975 |
++| 3 | nearest-eligible | .002751 / .336844 | .002641 / .083404 | .003648 / .198837 | .000300 / .170462 | 5.219370 / 5.391113 | 4.389278 / 4.560558 |
++| 4 | stay-if-possible | .002928 / .223756 | .002681 / .083229 | .004182 / .198985 | .000298 / .180493 | 5.776191 / 5.856508 | 4.375899 / 4.555498 |
++| 5 | random-masked | .002738 / .766961 | .002579 / .084710 | .004034 / .200519 | .000304 / .322672 | 5.254159 / 5.310803 | 5.217818 / 5.540263 |
++| 6 | nearest-eligible | .002583 / .544976 | .002542 / .141758 | .003850 / .517014 | .000278 / .305039 | 7.236447 / 7.640597 | 4.942540 / 5.248655 |
++| 7 | stay-if-possible | .002695 / .169184 | .002525 / .145334 | .003633 / .514654 | .000274 / .345009 | 6.238417 / 6.310437 | 45.171579 / 45.316361 |
++| 8 | random-masked | .002344 / .273302 | .002606 / .142241 | .003579 / .513144 | .000282 / .450956 | 7.035742 / 7.095645 | 7.285334 / 7.737017 |
++| 9 | nearest-eligible | .002665 / .374680 | .002598 / .116862 | .003798 / .919762 | .000294 / .899210 | 11.448226 / 12.008537 | 8.272072 / 9.173329 |
++| 10 | stay-if-possible | .002859 / .590253 | .002631 / .120288 | .003830 / .943261 | .000316 / .378621 | 7.428929 / 7.487751 | 121.330814 / 121.678617 |
++| 11 | random-masked | .002582 / .477036 | .002564 / .124715 | .003656 / .934686 | .000341 / .450081 | 9.161437 / 9.352503 | 9.417967 / 9.871781 |
++| **mean** | — | **.002698 / .374471** | **.002603 / .101631** | **.003816 / .448250** | **.000289 / .339059** | **6.755368 / 6.909665** | **18.637059 / 18.957430** |
++
++### Cheapest-to-most-expensive ordering
++
++This ordering uses mean **selection** wall-clock, because committed 48-boundary scoring is a common measurement operation rather than policy decision cost. The final column records mean end-to-end measurement time for completeness.
++
++| cost order | arm | mean selection s/anchor | pooled EE (Mbit/J) | mean end-to-end s/anchor |
++|---:|---|---:|---:|---:|
++| 1 | `NEAREST_ELIGIBLE` | 0.000289 | 11.027760 | 0.339059 |
++| 2 | `ROUND_ROBIN` | 0.002603 | 3.441227 | 0.101631 |
++| 3 | `RANDOM` | 0.002698 | 11.233999 | 0.374471 |
++| 4 | `RSS_MAX` | 0.003816 | 41.621560 | 0.448250 |
++| 5 | `MYOPIC_GREEDY` | 6.755368 | 28.668530 | 6.909665 |
++| 6 | `FIRST_IMPROVEMENT_FP` | 18.637059 | 13.430253 | 18.957430 |
++
++The one-process run completed in 572.791 s including shared tape construction. Peak RSS was **2.517 GiB** (2,702,925,824 bytes), below 5 GB. The process ran at niceness 15 under `/home/sat/mcrl-leo-handover/.venv/bin/python`; all six recorded BLAS/OpenMP thread controls were `1`.
++
++## Derived on paper from verified aggregates
++
++- `ROUND_ROBIN / RANDOM - 1 = -69.367747%`.
++- `NEAREST_ELIGIBLE / RANDOM - 1 = -1.835849%`.
++- `MYOPIC_GREEDY / RANDOM - 1 = +155.194334%`.
++- `RSS_MAX / RANDOM - 1 = +270.496366%`.
++- `MYOPIC_GREEDY / FIRST_IMPROVEMENT_FP - 1 = +113.462328%`.
++- `RSS_MAX / FIRST_IMPROVEMENT_FP - 1 = +209.908983%`.
++
++These are arithmetic relations only; they are not learned-policy claims and are not inferred from losses.
++
++## Inferred
++
++The intended comparison structure remains useful, but this measurement changes what may honestly be called its floors and ceiling:
++
++- The weak-static family is the reference family a learned proposal must be placed against. On this panel it is not a narrow floor: its observed span is 3.441227–41.621560 Mbit/J. In particular, clearing only the carrier-conditioned base or random does not clear `RSS_MAX` under the definition above.
++
++- `FIRST_IMPROVEMENT_FP` remains the designated strong classical-search comparator and is not a required learned win target, as stipulated. It is **not an empirical numerical upper bound on this measured family**: `MYOPIC_GREEDY` and `RSS_MAX` are higher. Calling 13.430253 a universal ceiling after this run would contradict the verified table.
++
++- `RANDOM` remains the sanity reference. `ROUND_ROBIN` is 69.37% below it and must be reported. The diversity evidence does not support calling this particular failure crowding: it has the lowest possible measured `modal_frac` (0.01) and exactly 100 active beams at every anchor. Its poor result instead coincides with over-dispersion, 219,036 J (the largest denominator), only 798/1200 served, and just 48/1200 attaining target. Thus “below random implies crowding” is not valid without the occupancy diagnostics; this arm fails for a different static pathology.
++
++- `RSS_MAX`'s high EE is not an artefact of dropping users: it serves 1200/1200, attains 297/1200, has the largest pooled numerator, and the smallest pooled energy denominator. Under declared full-buffer/no-demand-cap scoring, it is the strongest measured arm despite being demand-blind.
++
++- `MYOPIC_GREEDY` is a single nominal sweep, whereas the fixed point selects strict moves on realised boundary 0 from a carrier-conditioned start. Their ordering therefore does not show a certification error or make either algorithm a global optimizer. It shows that the local fixed-point construction is start-, information-, and traversal-dependent.
++
++No learned arm is ranked here.
++
++## Machine evidence and reproduction
++
++```text
++33fa7c31a219a190db8d985ce81b85893bf8d4024f9af4fe8b1c5ac64adf17b5  .scratch/statics/statics-receipt.json  [canonical content digest]
++dd81d45b6cc81291518aaa5fd1276be99d2f0f9d818c4445054620d3f0dc93a5  .scratch/statics/statics-receipt.json  [file SHA-256]
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  .scratch/statics/run_statics.py
++09e3e9c5e01f96bb879170ee1c31f752448f33fa6772284fabe8cbbea7fbceca  PANELCEIL receipt  [canonical content digest, read-only]
++dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95  PANELCEIL runner  [read-only]
++```
++
++World tape: domain `V025_PROBE/world/1`, seed `5261619120743994529`, digest `43718040fd7157edc158a8f8cd32418c619dacae1ef1114094f115805f027bf0`.
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/statics/run_statics.py
++```
+
+exec
+/bin/bash -lc "sed -n '1,260p' STATIC-BASELINE-FAMILY-2026-09-10.md; sha256sum STATIC-BASELINE-FAMILY-2026-09-10.md .scratch/statics/run_statics.py .scratch/statics/statics-receipt.json; git status --short; git diff --check -- STATIC-BASELINE-FAMILY-2026-09-10.md .scratch/statics/run_statics.py" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 0ms:
+**Pooled EE: `RANDOM` 11.233999, `ROUND_ROBIN` 3.441227, `RSS_MAX` 41.621560, `MYOPIC_GREEDY` 28.668530, `NEAREST_ELIGIBLE` parity 11.027760, and `FIRST_IMPROVEMENT_FP` parity 13.430253 Mbit/J; both parity checks reproduced.**
+
+# Static baseline family on the training panel — 2026-09-10
+
+`DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM`. No learner or checkpoint was read, trained, scored, or ranked. Loss values supply no evidence here. Only the frozen 12-anchor development prefix was used; no evaluation-only claim date was read.
+
+## Exact arm definitions
+
+Every arm uses `PANELCEIL`'s frozen global anchors 0–11 in declared order, the complete boundary-0 legal set (visible, D2-eligible, and cell-reachable), the `a-r0` corrected provisioning path, the anchor's declared prior-step incumbent, and singleton evaluation over all 48 realised boundaries. The reported numerator is saturated full-buffer successfully decoded forward-downlink information bits with **no demand cap**. Pooled EE is `sum(bits) / sum(joules)`, never a mean of anchor-local ratios.
+
+The service guard has the same scope as in `PANELCEIL`: it filters candidates for objective-based selection (`MYOPIC_GREEDY` and `FIRST_IMPROVEMENT_FP`). A direct static rule is evaluated as selected, even when its realised served count is poor; rejection or resampling would change `RANDOM` from uniform and conceal precisely the below-random outcomes this measurement is meant to expose. All six arms use the same legal-option guard.
+
+- **`RANDOM`.** At global anchor `i`, initialise Python's MT19937 `random.Random` with `20260910 + i`. Visit users in ascending ID order and draw independently and uniformly from that user's complete declared legal-option tuple. A user is null only if that tuple is empty. There is one draw, with no rejection, service resampling, objective lookup, or demand information.
+
+- **`ROUND_ROBIN`.** Visit users in ascending ID order. For each user, choose the legal physical beam `(NORAD, cell)` having the smallest assignment count accumulated so far. Break equal-load ties by the option's declared order, which is increasing decision-boundary slant range and then physical identity. This equalises user count by legal beam; it does not optimise link quality, satellite count, interference, power, or the declared objective.
+
+- **`RSS_MAX`.** For each user independently, choose the legal option with maximum decision-boundary `nominal_gain`, i.e. wanted-link received watts per beam RF watt. Break an exact tie by declared legal-option order. It uses no demand, occupancy, cross-interference, energy, or realised fading.
+
+- **`NEAREST_ELIGIBLE`.** This is the requested parity label for the exact `PANELCEIL` `BASE` construction: reconstruct each frozen anchor's declared carrier mapping at that step, then set a user to null if it has no live legal action. On anchors whose carrier is `nearest-eligible`, that carrier means best D2 margin in the user's own cell with the first valid slot-order tie-break. The 12-anchor panel also deliberately contains `stay-if-possible` and `random-masked` carrier anchors, so the pooled 11.027760 parity value is the carrier-conditioned `BASE`, not a fresh nearest-only reassignment on all 12 rows. This distinction is required to reproduce `PANELCEIL` exactly.
+
+- **`MYOPIC_GREEDY`.** Start from that anchor's `PANELCEIL` `BASE` and make exactly one ascending-user sweep. For the current user, hold all other assignments fixed; evaluate the incumbent choice and every legal replacement on **nominal boundary 0** in ordered microbatches of 16; retain candidates whose served-PHY count is at least the initial base count; and choose the largest exact `F = decoded bits - eta_ref * joules`, breaking an exact tie by lexicographically smallest stable configuration ID. Commit the choice immediately for later users. There is no second sweep and no future-boundary selection information.
+
+- **`FIRST_IMPROVEMENT_FP`.** This reruns the certified `PANELCEIL` construction: start from the same base; select on exact **realised boundary-0** `F`; visit ascending users and their declared legal options; accept the first strict improvement meeting the initial base served-PHY guard within ordered microbatches of 16; repeat passes until a complete final pass finds no strict guarded improvement. The 48-boundary result never feeds selection.
+
+`modal_frac` below is the largest physical-beam occupancy divided by all 100 users at an anchor. `active beams/satellites` counts distinct non-null physical `(NORAD, cell)` identities and distinct NORADs. `argmax_distinct` counts distinct zero-based declared legal-option ordinals selected across users; it is an action-slot diversity diagnostic, not a physical-beam count. Diversity entries are the mean across 12 anchors followed by `[minimum, maximum]`.
+
+## Verified by running code
+
+### Pooled outcomes
+
+| arm | pooled bits | pooled joules | pooled EE (Mbit/J) | served PHY | rate-target attained | modal_frac | active beams | active satellites | argmax_distinct |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `RANDOM` | 1.288605626013e12 | 114705.864740 | 11.233999 | 1102/1200 | 141/1200 | 0.0333 [0.02, 0.05] | 81.750 [72, 86] | 8.583 [8, 9] | 27.500 [25, 28] |
+| `ROUND_ROBIN` | 7.537530520000e11 | 219036.120671 | 3.441227 | 798/1200 | 48/1200 | 0.0100 [0.01, 0.01] | 100.000 [100, 100] | 4.750 [4, 5] | 11.500 [11, 13] |
+| `RSS_MAX` | 1.653612586627e12 | 39729.712050 | 41.621560 | 1200/1200 | 297/1200 | 0.0500 [0.05, 0.05] | 47.750 [46, 50] | 5.000 [5, 5] | 5.250 [3, 8] |
+| `NEAREST_ELIGIBLE` | 1.121297101614e12 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 | 0.0425 [0.02, 0.05] | 57.333 [41, 90] | 5.333 [3, 9] | 10.667 [1, 28] |
+| `MYOPIC_GREEDY` | 1.527584566003e12 | 53284.369866 | 28.668530 | 1186/1200 | 258/1200 | 0.0300 [0.01, 0.05] | 89.417 [47, 100] | 7.833 [5, 9] | 16.250 [1, 26] |
+| `FIRST_IMPROVEMENT_FP` | 1.255889055879e12 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 | 0.0408 [0.02, 0.05] | 64.167 [41, 90] | 6.250 [3, 9] | 14.417 [1, 28] |
+
+The corresponding pooled served-PHY rates are 91.833%, 66.500%, 100.000%, 80.000%, 98.833%, and 86.333% in table order. Rate-target attainment is 11.750%, 4.000%, 24.750%, 10.583%, 21.500%, and 12.250%.
+
+### Parity gate
+
+Both parity gates pass. All 12 configuration IDs matched the sealed `PANELCEIL` receipt for both arms. An independent row-by-row diff also found exact equality of committed bits, joules, served-PHY count, and rate-target-attainment count at every anchor.
+
+| parity arm | expected EE | observed EE | rounded-six result | pooled bits | pooled joules | served | attained |
+|---|---:|---:|---|---:|---:|---:|---:|
+| `NEAREST_ELIGIBLE` / `PANELCEIL BASE` | 11.027760 | 11.027760227532 | pass | 1.121297101614e12 | 101679.495970 | 960/1200 | 127/1200 |
+| `FIRST_IMPROVEMENT_FP` | 13.430253 | 13.430252781856 | pass | 1.255889055879e12 | 93511.944732 | 1036/1200 | 147/1200 |
+
+### Wall-clock by anchor
+
+Each entry is `selection / end-to-end` seconds. End-to-end adds that arm's independent singleton 48-boundary committed evaluation. Tape construction (222.563 s, shared once by every arm) is excluded from arm timings. For the fixed point, selection includes its terminal certificate, exactly as in `PANELCEIL`.
+
+| global anchor | carrier | `RANDOM` | `ROUND_ROBIN` | `RSS_MAX` | `NEAREST_ELIGIBLE` | `MYOPIC_GREEDY` | `FIRST_IMPROVEMENT_FP` |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 0 | nearest-eligible | .002818 / .303287 | .002607 / .059063 | .003892 / .145811 | .000236 / .161853 | 5.456901 / 5.532978 | 4.341399 / 4.502410 |
+| 1 | stay-if-possible | .002654 / .255480 | .002631 / .060160 | .003817 / .146391 | .000269 / .160989 | 5.505847 / 5.583911 | 4.144753 / 4.305702 |
+| 2 | random-masked | .002756 / .177900 | .002630 / .057802 | .003876 / .145935 | .000282 / .243325 | 5.302749 / 5.345201 | 4.755255 / 4.998975 |
+| 3 | nearest-eligible | .002751 / .336844 | .002641 / .083404 | .003648 / .198837 | .000300 / .170462 | 5.219370 / 5.391113 | 4.389278 / 4.560558 |
+| 4 | stay-if-possible | .002928 / .223756 | .002681 / .083229 | .004182 / .198985 | .000298 / .180493 | 5.776191 / 5.856508 | 4.375899 / 4.555498 |
+| 5 | random-masked | .002738 / .766961 | .002579 / .084710 | .004034 / .200519 | .000304 / .322672 | 5.254159 / 5.310803 | 5.217818 / 5.540263 |
+| 6 | nearest-eligible | .002583 / .544976 | .002542 / .141758 | .003850 / .517014 | .000278 / .305039 | 7.236447 / 7.640597 | 4.942540 / 5.248655 |
+| 7 | stay-if-possible | .002695 / .169184 | .002525 / .145334 | .003633 / .514654 | .000274 / .345009 | 6.238417 / 6.310437 | 45.171579 / 45.316361 |
+| 8 | random-masked | .002344 / .273302 | .002606 / .142241 | .003579 / .513144 | .000282 / .450956 | 7.035742 / 7.095645 | 7.285334 / 7.737017 |
+| 9 | nearest-eligible | .002665 / .374680 | .002598 / .116862 | .003798 / .919762 | .000294 / .899210 | 11.448226 / 12.008537 | 8.272072 / 9.173329 |
+| 10 | stay-if-possible | .002859 / .590253 | .002631 / .120288 | .003830 / .943261 | .000316 / .378621 | 7.428929 / 7.487751 | 121.330814 / 121.678617 |
+| 11 | random-masked | .002582 / .477036 | .002564 / .124715 | .003656 / .934686 | .000341 / .450081 | 9.161437 / 9.352503 | 9.417967 / 9.871781 |
+| **mean** | — | **.002698 / .374471** | **.002603 / .101631** | **.003816 / .448250** | **.000289 / .339059** | **6.755368 / 6.909665** | **18.637059 / 18.957430** |
+
+### Cheapest-to-most-expensive ordering
+
+This ordering uses mean **selection** wall-clock, because committed 48-boundary scoring is a common measurement operation rather than policy decision cost. The final column records mean end-to-end measurement time for completeness.
+
+| cost order | arm | mean selection s/anchor | pooled EE (Mbit/J) | mean end-to-end s/anchor |
+|---:|---|---:|---:|---:|
+| 1 | `NEAREST_ELIGIBLE` | 0.000289 | 11.027760 | 0.339059 |
+| 2 | `ROUND_ROBIN` | 0.002603 | 3.441227 | 0.101631 |
+| 3 | `RANDOM` | 0.002698 | 11.233999 | 0.374471 |
+| 4 | `RSS_MAX` | 0.003816 | 41.621560 | 0.448250 |
+| 5 | `MYOPIC_GREEDY` | 6.755368 | 28.668530 | 6.909665 |
+| 6 | `FIRST_IMPROVEMENT_FP` | 18.637059 | 13.430253 | 18.957430 |
+
+The one-process run completed in 572.791 s including shared tape construction. Peak RSS was **2.517 GiB** (2,702,925,824 bytes), below 5 GB. The process ran at niceness 15 under `/home/sat/mcrl-leo-handover/.venv/bin/python`; all six recorded BLAS/OpenMP thread controls were `1`.
+
+## Derived on paper from verified aggregates
+
+- `ROUND_ROBIN / RANDOM - 1 = -69.367747%`.
+- `NEAREST_ELIGIBLE / RANDOM - 1 = -1.835849%`.
+- `MYOPIC_GREEDY / RANDOM - 1 = +155.194334%`.
+- `RSS_MAX / RANDOM - 1 = +270.496366%`.
+- `MYOPIC_GREEDY / FIRST_IMPROVEMENT_FP - 1 = +113.462328%`.
+- `RSS_MAX / FIRST_IMPROVEMENT_FP - 1 = +209.908983%`.
+
+These are arithmetic relations only; they are not learned-policy claims and are not inferred from losses.
+
+## Inferred
+
+The intended comparison structure remains useful, but this measurement changes what may honestly be called its floors and ceiling:
+
+- The weak-static family is the reference family a learned proposal must be placed against. On this panel it is not a narrow floor: its observed span is 3.441227–41.621560 Mbit/J. In particular, clearing only the carrier-conditioned base or random does not clear `RSS_MAX` under the definition above.
+
+- `FIRST_IMPROVEMENT_FP` remains the designated strong classical-search comparator and is not a required learned win target, as stipulated. It is **not an empirical numerical upper bound on this measured family**: `MYOPIC_GREEDY` and `RSS_MAX` are higher. Calling 13.430253 a universal ceiling after this run would contradict the verified table.
+
+- `RANDOM` remains the sanity reference. `ROUND_ROBIN` is 69.37% below it and must be reported. The diversity evidence does not support calling this particular failure crowding: it has the lowest possible measured `modal_frac` (0.01) and exactly 100 active beams at every anchor. Its poor result instead coincides with over-dispersion, 219,036 J (the largest denominator), only 798/1200 served, and just 48/1200 attaining target. Thus “below random implies crowding” is not valid without the occupancy diagnostics; this arm fails for a different static pathology.
+
+- `RSS_MAX`'s high EE is not an artefact of dropping users: it serves 1200/1200, attains 297/1200, has the largest pooled numerator, and the smallest pooled energy denominator. Under declared full-buffer/no-demand-cap scoring, it is the strongest measured arm despite being demand-blind.
+
+- `MYOPIC_GREEDY` is a single nominal sweep, whereas the fixed point selects strict moves on realised boundary 0 from a carrier-conditioned start. Their ordering therefore does not show a certification error or make either algorithm a global optimizer. It shows that the local fixed-point construction is start-, information-, and traversal-dependent.
+
+No learned arm is ranked here.
+
+## Machine evidence and reproduction
+
+```text
+33fa7c31a219a190db8d985ce81b85893bf8d4024f9af4fe8b1c5ac64adf17b5  .scratch/statics/statics-receipt.json  [canonical content digest]
+dd81d45b6cc81291518aaa5fd1276be99d2f0f9d818c4445054620d3f0dc93a5  .scratch/statics/statics-receipt.json  [file SHA-256]
+f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  .scratch/statics/run_statics.py
+09e3e9c5e01f96bb879170ee1c31f752448f33fa6772284fabe8cbbea7fbceca  PANELCEIL receipt  [canonical content digest, read-only]
+dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95  PANELCEIL runner  [read-only]
+```
+
+World tape: domain `V025_PROBE/world/1`, seed `5261619120743994529`, digest `43718040fd7157edc158a8f8cd32418c619dacae1ef1114094f115805f027bf0`.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/statics/run_statics.py
+```
+e81f24360a55948806de9f32dc7367cb2bfbe14d18031947197c98fedaf39161  STATIC-BASELINE-FAMILY-2026-09-10.md
+f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  .scratch/statics/run_statics.py
+dd81d45b6cc81291518aaa5fd1276be99d2f0f9d818c4445054620d3f0dc93a5  .scratch/statics/statics-receipt.json
+?? .scratch/multistart-capped/
+?? .scratch/statics/
+?? MULTISTART-DEMAND-CAPPED-2026-09-10.md
+?? STATIC-BASELINE-FAMILY-2026-09-10.md
+
+diff --git a/.scratch/statics/run_statics.py b/.scratch/statics/run_statics.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dcc59516b46d66af87c3134d830a270c4943ca4
+--- /dev/null
++++ b/.scratch/statics/run_statics.py
+@@ -0,0 +1,464 @@
++#!/usr/bin/env python3
++"""Measure the non-learned static family on PANELCEIL's frozen training panel.
++
++This runner deliberately imports PANELCEIL's sealed construction helpers from
++the sibling read-only workspace.  It does not read evaluation-only dates and
++writes only the local receipt below.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import random
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-rank-ws")
++PANELCEIL_WORKSPACE = Path("/home/sat/mcrl-v025-ceiling30-ws")
++PANELCEIL_RUNNER = PANELCEIL_WORKSPACE / ".scratch/panelceil/run_panelceil.py"
++PANELCEIL_RECEIPT = PANELCEIL_WORKSPACE / ".scratch/panelceil/panelceil-receipt.json"
++OUTPUT = WORKSPACE / ".scratch/statics/statics-receipt.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 5_000_000_000
++RANDOM_SEED = 20260910
++ARM_NAMES = (
++    "RANDOM", "ROUND_ROBIN", "RSS_MAX", "NEAREST_ELIGIBLE",
++    "MYOPIC_GREEDY", "FIRST_IMPROVEMENT_FP",
++)
++EXPECTED_EE_MBIT_J = {
++    "NEAREST_ELIGIBLE": 11.027760,
++    "FIRST_IMPROVEMENT_FP": 13.430253,
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def canonical_digest(payload: dict) -> str:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    return hashlib.sha256(json.dumps(
++        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("utf-8")).hexdigest()
++
++
++def atomic_write(payload: dict) -> None:
++    payload["receipt_sha256"] = canonical_digest(payload)
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
++    temporary.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    temporary.replace(OUTPUT)
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness is below 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins are not all one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB")
++
++
++def load_panelceil():
++    name = "statics_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANELCEIL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def legal_options(panelceil, tape, step_index: int):
++    return panelceil.load_pilot().ENGINE._legal_options(tape, step_index)[0]
++
++
++def configured(runner, base, mapping, kind: str):
++    return runner._configuration(base, mapping, kind=kind)
++
++
++def random_configuration(runner, tape, step_index: int, base, anchor_index: int):
++    options, _ = runner._legal_options(tape, step_index)
++    rng = random.Random(RANDOM_SEED + anchor_index)
++    mapping = {
++        user: (None if not identities else identities[rng.randrange(len(identities))])
++        for user, identities in sorted(options.items())
++    }
++    return configured(runner, base, mapping, "statics-random")
++
++
++def round_robin_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    loads: Counter[tuple[int, int]] = Counter()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities), key=lambda item: (loads[item[1]], item[0])
++        )
++        del ordinal
++        mapping[user] = identity
++        loads[identity] += 1
++    return configured(runner, base, mapping, "statics-round-robin")
++
++
++def rss_max_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    arrays = tape.steps[step_index].arrays
++    if arrays is None:
++        raise RuntimeError("frozen exact panel must expose primitive arrays")
++    row_of = arrays._row_index()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities),
++            key=lambda item: (
++                -float(arrays.nominal_gain[0, row_of[(user, item[1])]]), item[0]
++            ),
++        )
++        del ordinal
++        mapping[user] = identity
++    return configured(runner, base, mapping, "statics-rss-max")
++
++
++def myopic_greedy(panelceil, runner, calibration, tape, step_index: int, base, incumbent, run_setting):
++    """One ascending-user exact best-response sweep on nominal boundary zero."""
++
++    evaluator = panelceil.new_selection_evaluator(
++        runner, tape, step_index, incumbent, run_setting, field="nominal"
++    )
++    base_profile = evaluator.evaluate(base)
++    guard = panelceil.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    candidate_evaluations = 0
++    changed_users = 0
++    for user in sorted(options):
++        rows = [current]
++        rows.extend(
++            panelceil.candidate(
++                runner, base, current, user, identity, "statics-myopic-greedy"
++            )
++            for identity in options[user]
++            if identity != current.mapping[user]
++        )
++        for offset in range(0, len(rows), panelceil.UNILATERAL_BATCH_SIZE):
++            evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++        candidate_evaluations += len(rows)
++        eligible = []
++        for row in rows:
++            profile = evaluator._evaluated.get(row.configuration_id)
++            if profile is None or panelceil.served(profile) < guard:
++                continue
++            value: Fraction = panelceil.objective(
++                runner, calibration, incumbent, row, profile, rekeys
++            )
++            eligible.append((value, row.configuration_id, row))
++        if not eligible:
++            raise RuntimeError("myopic step lost its guarded incumbent")
++        selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++        changed_users += selected.mapping[user] != current.mapping[user]
++        current = selected
++    return current, {
++        "algorithm": "one ascending-user exact greedy sweep",
++        "physics": "nominal boundary 0",
++        "objective": "F = decoded bits - eta_ref * joules",
++        "guard": f"served PHY >= base served PHY ({guard})",
++        "tie_break": "lexicographically smallest stable configuration ID",
++        "candidate_batch_size": panelceil.UNILATERAL_BATCH_SIZE,
++        "candidate_evaluations_including_incumbents": candidate_evaluations,
++        "users_changing_choice": changed_users,
++        "legal_option_census": census,
++    }
++
++
++def diversity(config, options) -> dict[str, object]:
++    mapping = config.mapping
++    chosen = [identity for identity in mapping.values() if identity is not None]
++    counts = Counter(chosen)
++    user_count = len(mapping)
++    ordinals = []
++    for user, identity in sorted(mapping.items()):
++        if identity is None:
++            continue
++        try:
++            ordinals.append(options[user].index(identity))
++        except ValueError as error:
++            raise RuntimeError(f"user {user} selected a non-legal identity") from error
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / user_count,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++        "argmax_distinct": len(set(ordinals)),
++        "assigned_users": len(chosen),
++        "user_count": user_count,
++    }
++
++
++def committed_one(panelceil, runner, tape, step_index, incumbent, run_setting, name, config):
++    return panelceil.committed_metrics(
++        runner, tape, step_index, incumbent, run_setting, {name: config}
++    )[name]
++
++
++def pool(anchors, arm: str) -> dict[str, object]:
++    rows = [anchor["arms"][arm]["committed"] for anchor in anchors]
++    bits = math.fsum(float(row["bits"]) for row in rows)
++    joules = math.fsum(float(row["joules"]) for row in rows)
++    diversities = [anchor["arms"][arm]["diversity"] for anchor in anchors]
++    timings = [anchor["arms"][arm]["timing"] for anchor in anchors]
++    result: dict[str, object] = {
++        "bits": bits,
++        "joules": joules,
++        "ee_bit_per_j": bits / joules,
++        "served_count": sum(int(row["served_count"]) for row in rows),
++        "rate_target_attained_count": sum(
++            int(row["rate_target_attained_count"]) for row in rows
++        ),
++        "user_count": sum(int(row["user_count"]) for row in rows),
++    }
++    for field in ("modal_frac", "active_beams", "active_satellites", "argmax_distinct"):
++        values = [float(row[field]) for row in diversities]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++        }
++    for field in ("selection_seconds", "committed_seconds", "wall_seconds"):
++        values = [float(row[field]) for row in timings]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++            "total": math.fsum(values),
++        }
++    return result
++
++
++def main() -> int:
++    assert_runtime()
++    panelceil = load_panelceil()
++    panel = panelceil.frozen_panel()
++    source_receipt = json.loads(PANELCEIL_RECEIPT.read_text(encoding="utf-8"))
++    if (
++        source_receipt.get("status") != "COMPLETE"
++        or source_receipt.get("receipt_sha256") != panelceil.canonical_digest(source_receipt)
++    ):
++        raise RuntimeError("PANELCEIL reference receipt is not sealed and complete")
++    pilot = panelceil.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panelceil.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    tape_seconds = time.perf_counter() - tape_started
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB after tape")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++
++    payload = {
++        "schema": "mcrl-v025-static-baseline-family-v1",
++        "status": "RUNNING",
++        "claim_status": "DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM",
++        "panel": panel,
++        "panel_count": len(panel),
++        "panelceil_runner_sha256": sha256(PANELCEIL_RUNNER),
++        "panelceil_receipt_sha256": source_receipt["receipt_sha256"],
++        "world_tape": {
++            "domain": tape.domain, "seed": tape.seed, "digest": tape.digest,
++            "construction_seconds": tape_seconds,
++        },
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "process_count": 1,
++        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
++        "random_seed": RANDOM_SEED,
++        "anchors": [],
++    }
++    if OUTPUT.exists():
++        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
++        if previous.get("panel") != panel or previous.get("random_seed") != RANDOM_SEED:
++            raise RuntimeError("existing receipt does not match this frozen construction")
++        payload["anchors"] = previous.get("anchors", [])
++    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
++
++    for position, panel_row in enumerate(panel, 1):
++        index = int(panel_row["global_anchor_index"])
++        if index in completed:
++            print(
++                f"anchor {position}/{len(panel)} resume-complete peak RSS "
++                f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++            )
++            continue
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        options, _ = runner._legal_options(tape, step_index)
++
++        configs = {}
++        selection_seconds = {}
++        detail = {}
++
++        started = time.perf_counter()
++        configs["NEAREST_ELIGIBLE"] = runner._base_configuration(tape, step_index, carrier)
++        selection_seconds["NEAREST_ELIGIBLE"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RANDOM"] = random_configuration(runner, tape, step_index, base, index)
++        selection_seconds["RANDOM"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["ROUND_ROBIN"] = round_robin_configuration(runner, tape, step_index, base)
++        selection_seconds["ROUND_ROBIN"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RSS_MAX"] = rss_max_configuration(runner, tape, step_index, base)
++        selection_seconds["RSS_MAX"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["MYOPIC_GREEDY"], detail["MYOPIC_GREEDY"] = myopic_greedy(
++            panelceil, runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        selection_seconds["MYOPIC_GREEDY"] = time.perf_counter() - started
++
++        first = panelceil.first_improvement(
++            runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        configs["FIRST_IMPROVEMENT_FP"] = first.selected
++        selection_seconds["FIRST_IMPROVEMENT_FP"] = float(
++            first.receipt["total_including_certificate_seconds"]
++        )
++        detail["FIRST_IMPROVEMENT_FP"] = first.receipt
++
++        reference_anchor = source_receipt["anchors"][index]
++        if (
++            configs["NEAREST_ELIGIBLE"].configuration_id
++            != reference_anchor["committed"]["BASE"]["configuration_id"]
++            or configs["FIRST_IMPROVEMENT_FP"].configuration_id
++            != reference_anchor["committed"]["U_FIRST"]["configuration_id"]
++        ):
++            raise RuntimeError(f"parity configuration mismatch at anchor {index}")
++
++        arms = {}
++        for name in ARM_NAMES:
++            commit_started = time.perf_counter()
++            committed = committed_one(
++                panelceil, runner, tape, step_index, incumbent, run_setting,
++                name, configs[name],
++            )
++            committed_seconds = time.perf_counter() - commit_started
++            arms[name] = {
++                "configuration_id": configs[name].configuration_id,
++                "assignments": [
++                    [user, None if identity is None else list(identity)]
++                    for user, identity in configs[name].assignments
++                ],
++                "committed": committed,
++                "diversity": diversity(configs[name], options),
++                "timing": {
++                    "selection_seconds": selection_seconds[name],
++                    "committed_seconds": committed_seconds,
++                    "wall_seconds": selection_seconds[name] + committed_seconds,
++                },
++                "detail": detail.get(name),
++            }
++
++        row = {
++            "global_anchor_index": index,
++            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
++            "step_index": step_index,
++            "carrier": carrier,
++            "arms": arms,
++            "peak_rss_bytes": peak_rss_bytes(),
++        }
++        if row["peak_rss_bytes"] >= MAX_RSS_BYTES:
++            raise MemoryError("peak RSS is not below 5 GB")
++        payload["anchors"].append(row)
++        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
++        payload["pooled"] = {
++            arm: pool(payload["anchors"], arm) for arm in ARM_NAMES
++        }
++        payload["peak_rss_bytes"] = peak_rss_bytes()
++        atomic_write(payload)
++        print(
++            f"anchor {position}/{len(panel)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB "
++            + json.dumps({
++                "global": index,
++                "myopic_s": round(selection_seconds["MYOPIC_GREEDY"], 3),
++                "first_fp_s": round(selection_seconds["FIRST_IMPROVEMENT_FP"], 3),
++            }, sort_keys=True),
++            flush=True,
++        )
++
++    payload["pooled"] = {arm: pool(payload["anchors"], arm) for arm in ARM_NAMES}
++    parity = {}
++    for arm, expected in EXPECTED_EE_MBIT_J.items():
++        observed = float(payload["pooled"][arm]["ee_bit_per_j"]) / 1e6
++        parity[arm] = {
++            "expected_rounded_6_mbit_per_j": expected,
++            "observed_mbit_per_j": observed,
++            "rounded_6_match": round(observed, 6) == expected,
++            "all_anchor_configuration_ids_match_panelceil": True,
++        }
++    payload["parity"] = parity
++    payload["both_parity_checks_reproduced"] = all(
++        bool(row["rounded_6_match"]) for row in parity.values()
++    )
++    payload["status"] = "COMPLETE" if payload["both_parity_checks_reproduced"] else "PARITY_FAILED"
++    payload["peak_rss_bytes"] = peak_rss_bytes()
++    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
++    atomic_write(payload)
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({
++        arm: payload["pooled"][arm]["ee_bit_per_j"] / 1e6 for arm in ARM_NAMES
++    }, sort_keys=True), flush=True)
++    print(f"both_parity_checks_reproduced={payload['both_parity_checks_reproduced']}", flush=True)
++    return 0 if payload["both_parity_checks_reproduced"] else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/STATIC-BASELINE-FAMILY-2026-09-10.md b/STATIC-BASELINE-FAMILY-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7a45b041fe2c7410081523ce91571459812d9f7
+--- /dev/null
++++ b/STATIC-BASELINE-FAMILY-2026-09-10.md
+@@ -0,0 +1,127 @@
++**Pooled EE: `RANDOM` 11.233999, `ROUND_ROBIN` 3.441227, `RSS_MAX` 41.621560, `MYOPIC_GREEDY` 28.668530, `NEAREST_ELIGIBLE` parity 11.027760, and `FIRST_IMPROVEMENT_FP` parity 13.430253 Mbit/J; both parity checks reproduced.**
++
++# Static baseline family on the training panel — 2026-09-10
++
++`DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM`. No learner or checkpoint was read, trained, scored, or ranked. Loss values supply no evidence here. Only the frozen 12-anchor development prefix was used; no evaluation-only claim date was read.
++
++## Exact arm definitions
++
++Every arm uses `PANELCEIL`'s frozen global anchors 0–11 in declared order, the complete boundary-0 legal set (visible, D2-eligible, and cell-reachable), the `a-r0` corrected provisioning path, the anchor's declared prior-step incumbent, and singleton evaluation over all 48 realised boundaries. The reported numerator is saturated full-buffer successfully decoded forward-downlink information bits with **no demand cap**. Pooled EE is `sum(bits) / sum(joules)`, never a mean of anchor-local ratios.
++
++The service guard has the same scope as in `PANELCEIL`: it filters candidates for objective-based selection (`MYOPIC_GREEDY` and `FIRST_IMPROVEMENT_FP`). A direct static rule is evaluated as selected, even when its realised served count is poor; rejection or resampling would change `RANDOM` from uniform and conceal precisely the below-random outcomes this measurement is meant to expose. All six arms use the same legal-option guard.
++
++- **`RANDOM`.** At global anchor `i`, initialise Python's MT19937 `random.Random` with `20260910 + i`. Visit users in ascending ID order and draw independently and uniformly from that user's complete declared legal-option tuple. A user is null only if that tuple is empty. There is one draw, with no rejection, service resampling, objective lookup, or demand information.
++
++- **`ROUND_ROBIN`.** Visit users in ascending ID order. For each user, choose the legal physical beam `(NORAD, cell)` having the smallest assignment count accumulated so far. Break equal-load ties by the option's declared order, which is increasing decision-boundary slant range and then physical identity. This equalises user count by legal beam; it does not optimise link quality, satellite count, interference, power, or the declared objective.
++
++- **`RSS_MAX`.** For each user independently, choose the legal option with maximum decision-boundary `nominal_gain`, i.e. wanted-link received watts per beam RF watt. Break an exact tie by declared legal-option order. It uses no demand, occupancy, cross-interference, energy, or realised fading.
++
++- **`NEAREST_ELIGIBLE`.** This is the requested parity label for the exact `PANELCEIL` `BASE` construction: reconstruct each frozen anchor's declared carrier mapping at that step, then set a user to null if it has no live legal action. On anchors whose carrier is `nearest-eligible`, that carrier means best D2 margin in the user's own cell with the first valid slot-order tie-break. The 12-anchor panel also deliberately contains `stay-if-possible` and `random-masked` carrier anchors, so the pooled 11.027760 parity value is the carrier-conditioned `BASE`, not a fresh nearest-only reassignment on all 12 rows. This distinction is required to reproduce `PANELCEIL` exactly.
++
++- **`MYOPIC_GREEDY`.** Start from that anchor's `PANELCEIL` `BASE` and make exactly one ascending-user sweep. For the current user, hold all other assignments fixed; evaluate the incumbent choice and every legal replacement on **nominal boundary 0** in ordered microbatches of 16; retain candidates whose served-PHY count is at least the initial base count; and choose the largest exact `F = decoded bits - eta_ref * joules`, breaking an exact tie by lexicographically smallest stable configuration ID. Commit the choice immediately for later users. There is no second sweep and no future-boundary selection information.
++
++- **`FIRST_IMPROVEMENT_FP`.** This reruns the certified `PANELCEIL` construction: start from the same base; select on exact **realised boundary-0** `F`; visit ascending users and their declared legal options; accept the first strict improvement meeting the initial base served-PHY guard within ordered microbatches of 16; repeat passes until a complete final pass finds no strict guarded improvement. The 48-boundary result never feeds selection.
++
++`modal_frac` below is the largest physical-beam occupancy divided by all 100 users at an anchor. `active beams/satellites` counts distinct non-null physical `(NORAD, cell)` identities and distinct NORADs. `argmax_distinct` counts distinct zero-based declared legal-option ordinals selected across users; it is an action-slot diversity diagnostic, not a physical-beam count. Diversity entries are the mean across 12 anchors followed by `[minimum, maximum]`.
++
++## Verified by running code
++
++### Pooled outcomes
++
++| arm | pooled bits | pooled joules | pooled EE (Mbit/J) | served PHY | rate-target attained | modal_frac | active beams | active satellites | argmax_distinct |
++|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| `RANDOM` | 1.288605626013e12 | 114705.864740 | 11.233999 | 1102/1200 | 141/1200 | 0.0333 [0.02, 0.05] | 81.750 [72, 86] | 8.583 [8, 9] | 27.500 [25, 28] |
++| `ROUND_ROBIN` | 7.537530520000e11 | 219036.120671 | 3.441227 | 798/1200 | 48/1200 | 0.0100 [0.01, 0.01] | 100.000 [100, 100] | 4.750 [4, 5] | 11.500 [11, 13] |
++| `RSS_MAX` | 1.653612586627e12 | 39729.712050 | 41.621560 | 1200/1200 | 297/1200 | 0.0500 [0.05, 0.05] | 47.750 [46, 50] | 5.000 [5, 5] | 5.250 [3, 8] |
++| `NEAREST_ELIGIBLE` | 1.121297101614e12 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 | 0.0425 [0.02, 0.05] | 57.333 [41, 90] | 5.333 [3, 9] | 10.667 [1, 28] |
++| `MYOPIC_GREEDY` | 1.527584566003e12 | 53284.369866 | 28.668530 | 1186/1200 | 258/1200 | 0.0300 [0.01, 0.05] | 89.417 [47, 100] | 7.833 [5, 9] | 16.250 [1, 26] |
++| `FIRST_IMPROVEMENT_FP` | 1.255889055879e12 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 | 0.0408 [0.02, 0.05] | 64.167 [41, 90] | 6.250 [3, 9] | 14.417 [1, 28] |
++
++The corresponding pooled served-PHY rates are 91.833%, 66.500%, 100.000%, 80.000%, 98.833%, and 86.333% in table order. Rate-target attainment is 11.750%, 4.000%, 24.750%, 10.583%, 21.500%, and 12.250%.
++
++### Parity gate
++
++Both parity gates pass. All 12 configuration IDs matched the sealed `PANELCEIL` receipt for both arms. An independent row-by-row diff also found exact equality of committed bits, joules, served-PHY count, and rate-target-attainment count at every anchor.
++
++| parity arm | expected EE | observed EE | rounded-six result | pooled bits | pooled joules | served | attained |
++|---|---:|---:|---|---:|---:|---:|---:|
++| `NEAREST_ELIGIBLE` / `PANELCEIL BASE` | 11.027760 | 11.027760227532 | pass | 1.121297101614e12 | 101679.495970 | 960/1200 | 127/1200 |
++| `FIRST_IMPROVEMENT_FP` | 13.430253 | 13.430252781856 | pass | 1.255889055879e12 | 93511.944732 | 1036/1200 | 147/1200 |
++
++### Wall-clock by anchor
++
++Each entry is `selection / end-to-end` seconds. End-to-end adds that arm's independent singleton 48-boundary committed evaluation. Tape construction (222.563 s, shared once by every arm) is excluded from arm timings. For the fixed point, selection includes its terminal certificate, exactly as in `PANELCEIL`.
++
++| global anchor | carrier | `RANDOM` | `ROUND_ROBIN` | `RSS_MAX` | `NEAREST_ELIGIBLE` | `MYOPIC_GREEDY` | `FIRST_IMPROVEMENT_FP` |
++|---:|---|---:|---:|---:|---:|---:|---:|
++| 0 | nearest-eligible | .002818 / .303287 | .002607 / .059063 | .003892 / .145811 | .000236 / .161853 | 5.456901 / 5.532978 | 4.341399 / 4.502410 |
++| 1 | stay-if-possible | .002654 / .255480 | .002631 / .060160 | .003817 / .146391 | .000269 / .160989 | 5.505847 / 5.583911 | 4.144753 / 4.305702 |
++| 2 | random-masked | .002756 / .177900 | .002630 / .057802 | .003876 / .145935 | .000282 / .243325 | 5.302749 / 5.345201 | 4.755255 / 4.998975 |
++| 3 | nearest-eligible | .002751 / .336844 | .002641 / .083404 | .003648 / .198837 | .000300 / .170462 | 5.219370 / 5.391113 | 4.389278 / 4.560558 |
++| 4 | stay-if-possible | .002928 / .223756 | .002681 / .083229 | .004182 / .198985 | .000298 / .180493 | 5.776191 / 5.856508 | 4.375899 / 4.555498 |
++| 5 | random-masked | .002738 / .766961 | .002579 / .084710 | .004034 / .200519 | .000304 / .322672 | 5.254159 / 5.310803 | 5.217818 / 5.540263 |
++| 6 | nearest-eligible | .002583 / .544976 | .002542 / .141758 | .003850 / .517014 | .000278 / .305039 | 7.236447 / 7.640597 | 4.942540 / 5.248655 |
++| 7 | stay-if-possible | .002695 / .169184 | .002525 / .145334 | .003633 / .514654 | .000274 / .345009 | 6.238417 / 6.310437 | 45.171579 / 45.316361 |
++| 8 | random-masked | .002344 / .273302 | .002606 / .142241 | .003579 / .513144 | .000282 / .450956 | 7.035742 / 7.095645 | 7.285334 / 7.737017 |
++| 9 | nearest-eligible | .002665 / .374680 | .002598 / .116862 | .003798 / .919762 | .000294 / .899210 | 11.448226 / 12.008537 | 8.272072 / 9.173329 |
++| 10 | stay-if-possible | .002859 / .590253 | .002631 / .120288 | .003830 / .943261 | .000316 / .378621 | 7.428929 / 7.487751 | 121.330814 / 121.678617 |
++| 11 | random-masked | .002582 / .477036 | .002564 / .124715 | .003656 / .934686 | .000341 / .450081 | 9.161437 / 9.352503 | 9.417967 / 9.871781 |
++| **mean** | — | **.002698 / .374471** | **.002603 / .101631** | **.003816 / .448250** | **.000289 / .339059** | **6.755368 / 6.909665** | **18.637059 / 18.957430** |
++
++### Cheapest-to-most-expensive ordering
++
++This ordering uses mean **selection** wall-clock, because committed 48-boundary scoring is a common measurement operation rather than policy decision cost. The final column records mean end-to-end measurement time for completeness.
++
++| cost order | arm | mean selection s/anchor | pooled EE (Mbit/J) | mean end-to-end s/anchor |
++|---:|---|---:|---:|---:|
++| 1 | `NEAREST_ELIGIBLE` | 0.000289 | 11.027760 | 0.339059 |
++| 2 | `ROUND_ROBIN` | 0.002603 | 3.441227 | 0.101631 |
++| 3 | `RANDOM` | 0.002698 | 11.233999 | 0.374471 |
++| 4 | `RSS_MAX` | 0.003816 | 41.621560 | 0.448250 |
++| 5 | `MYOPIC_GREEDY` | 6.755368 | 28.668530 | 6.909665 |
++| 6 | `FIRST_IMPROVEMENT_FP` | 18.637059 | 13.430253 | 18.957430 |
++
++The one-process run completed in 572.791 s including shared tape construction. Peak RSS was **2.517 GiB** (2,702,925,824 bytes), below 5 GB. The process ran at niceness 15 under `/home/sat/mcrl-leo-handover/.venv/bin/python`; all six recorded BLAS/OpenMP thread controls were `1`.
++
++## Derived on paper from verified aggregates
++
++- `ROUND_ROBIN / RANDOM - 1 = -69.367747%`.
++- `NEAREST_ELIGIBLE / RANDOM - 1 = -1.835849%`.
++- `MYOPIC_GREEDY / RANDOM - 1 = +155.194334%`.
++- `RSS_MAX / RANDOM - 1 = +270.496366%`.
++- `MYOPIC_GREEDY / FIRST_IMPROVEMENT_FP - 1 = +113.462328%`.
++- `RSS_MAX / FIRST_IMPROVEMENT_FP - 1 = +209.908983%`.
++
++These are arithmetic relations only; they are not learned-policy claims and are not inferred from losses.
++
++## Inferred
++
++The intended comparison structure remains useful, but this measurement changes what may honestly be called its floors and ceiling:
++
++- The weak-static family is the reference family a learned proposal must be placed against. On this panel it is not a narrow floor: its observed span is 3.441227–41.621560 Mbit/J. In particular, clearing only the carrier-conditioned base or random does not clear `RSS_MAX` under the definition above.
++
++- `FIRST_IMPROVEMENT_FP` remains the designated strong classical-search comparator and is not a required learned win target, as stipulated. It is **not an empirical numerical upper bound on this measured family**: `MYOPIC_GREEDY` and `RSS_MAX` are higher. Calling 13.430253 a universal ceiling after this run would contradict the verified table.
++
++- `RANDOM` remains the sanity reference. `ROUND_ROBIN` is 69.37% below it and must be reported. The diversity evidence does not support calling this particular failure crowding: it has the lowest possible measured `modal_frac` (0.01) and exactly 100 active beams at every anchor. Its poor result instead coincides with over-dispersion, 219,036 J (the largest denominator), only 798/1200 served, and just 48/1200 attaining target. Thus “below random implies crowding” is not valid without the occupancy diagnostics; this arm fails for a different static pathology.
++
++- `RSS_MAX`'s high EE is not an artefact of dropping users: it serves 1200/1200, attains 297/1200, has the largest pooled numerator, and the smallest pooled energy denominator. Under declared full-buffer/no-demand-cap scoring, it is the strongest measured arm despite being demand-blind.
++
++- `MYOPIC_GREEDY` is a single nominal sweep, whereas the fixed point selects strict moves on realised boundary 0 from a carrier-conditioned start. Their ordering therefore does not show a certification error or make either algorithm a global optimizer. It shows that the local fixed-point construction is start-, information-, and traversal-dependent.
++
++No learned arm is ranked here.
++
++## Machine evidence and reproduction
++
++```text
++33fa7c31a219a190db8d985ce81b85893bf8d4024f9af4fe8b1c5ac64adf17b5  .scratch/statics/statics-receipt.json  [canonical content digest]
++dd81d45b6cc81291518aaa5fd1276be99d2f0f9d818c4445054620d3f0dc93a5  .scratch/statics/statics-receipt.json  [file SHA-256]
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  .scratch/statics/run_statics.py
++09e3e9c5e01f96bb879170ee1c31f752448f33fa6772284fabe8cbbea7fbceca  PANELCEIL receipt  [canonical content digest, read-only]
++dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95  PANELCEIL runner  [read-only]
++```
++
++World tape: domain `V025_PROBE/world/1`, seed `5261619120743994529`, digest `43718040fd7157edc158a8f8cd32418c619dacae1ef1114094f115805f027bf0`.
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/statics/run_statics.py
++```
+
+exec
+/bin/bash -lc "ps -eo pid,ni,rss,comm,args | awk '"'$4 ~ /''^python/ {print}'"'; test \""'$(sed -n '"'1p' STATIC-BASELINE-FAMILY-2026-09-10.md)\" = '**Pooled EE: "'`RANDOM` 11.233999, `ROUND_ROBIN` 3.441227, `RSS_MAX` 41.621560, `MYOPIC_GREEDY` 28.668530, `NEAREST_ELIGIBLE` parity 11.027760, and `FIRST_IMPROVEMENT_FP` parity 13.430253 Mbit/J; both parity checks reproduced.**'"' && echo first-line-ok; jq -e '.status == \"COMPLETE\" and .both_parity_checks_reproduced == true and .panel_count == 12 and .peak_rss_bytes < 5000000000 and .process_count == 1 and ([.thread_pins[]] | all(. == \"1\"))' .scratch/statics/statics-receipt.json" in /home/sat/mcrl-v025-rank-ws
+ succeeded in 0ms:
+first-line-ok
+true
+
+diff --git a/.scratch/statics/run_statics.py b/.scratch/statics/run_statics.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dcc59516b46d66af87c3134d830a270c4943ca4
+--- /dev/null
++++ b/.scratch/statics/run_statics.py
+@@ -0,0 +1,464 @@
++#!/usr/bin/env python3
++"""Measure the non-learned static family on PANELCEIL's frozen training panel.
++
++This runner deliberately imports PANELCEIL's sealed construction helpers from
++the sibling read-only workspace.  It does not read evaluation-only dates and
++writes only the local receipt below.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import random
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-rank-ws")
++PANELCEIL_WORKSPACE = Path("/home/sat/mcrl-v025-ceiling30-ws")
++PANELCEIL_RUNNER = PANELCEIL_WORKSPACE / ".scratch/panelceil/run_panelceil.py"
++PANELCEIL_RECEIPT = PANELCEIL_WORKSPACE / ".scratch/panelceil/panelceil-receipt.json"
++OUTPUT = WORKSPACE / ".scratch/statics/statics-receipt.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 5_000_000_000
++RANDOM_SEED = 20260910
++ARM_NAMES = (
++    "RANDOM", "ROUND_ROBIN", "RSS_MAX", "NEAREST_ELIGIBLE",
++    "MYOPIC_GREEDY", "FIRST_IMPROVEMENT_FP",
++)
++EXPECTED_EE_MBIT_J = {
++    "NEAREST_ELIGIBLE": 11.027760,
++    "FIRST_IMPROVEMENT_FP": 13.430253,
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def canonical_digest(payload: dict) -> str:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    return hashlib.sha256(json.dumps(
++        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("utf-8")).hexdigest()
++
++
++def atomic_write(payload: dict) -> None:
++    payload["receipt_sha256"] = canonical_digest(payload)
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
++    temporary.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    temporary.replace(OUTPUT)
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness is below 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins are not all one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB")
++
++
++def load_panelceil():
++    name = "statics_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANELCEIL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def legal_options(panelceil, tape, step_index: int):
++    return panelceil.load_pilot().ENGINE._legal_options(tape, step_index)[0]
++
++
++def configured(runner, base, mapping, kind: str):
++    return runner._configuration(base, mapping, kind=kind)
++
++
++def random_configuration(runner, tape, step_index: int, base, anchor_index: int):
++    options, _ = runner._legal_options(tape, step_index)
++    rng = random.Random(RANDOM_SEED + anchor_index)
++    mapping = {
++        user: (None if not identities else identities[rng.randrange(len(identities))])
++        for user, identities in sorted(options.items())
++    }
++    return configured(runner, base, mapping, "statics-random")
++
++
++def round_robin_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    loads: Counter[tuple[int, int]] = Counter()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities), key=lambda item: (loads[item[1]], item[0])
++        )
++        del ordinal
++        mapping[user] = identity
++        loads[identity] += 1
++    return configured(runner, base, mapping, "statics-round-robin")
++
++
++def rss_max_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    arrays = tape.steps[step_index].arrays
++    if arrays is None:
++        raise RuntimeError("frozen exact panel must expose primitive arrays")
++    row_of = arrays._row_index()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities),
++            key=lambda item: (
++                -float(arrays.nominal_gain[0, row_of[(user, item[1])]]), item[0]
++            ),
++        )
++        del ordinal
++        mapping[user] = identity
++    return configured(runner, base, mapping, "statics-rss-max")
++
++
++def myopic_greedy(panelceil, runner, calibration, tape, step_index: int, base, incumbent, run_setting):
++    """One ascending-user exact best-response sweep on nominal boundary zero."""
++
++    evaluator = panelceil.new_selection_evaluator(
++        runner, tape, step_index, incumbent, run_setting, field="nominal"
++    )
++    base_profile = evaluator.evaluate(base)
++    guard = panelceil.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    candidate_evaluations = 0
++    changed_users = 0
++    for user in sorted(options):
++        rows = [current]
++        rows.extend(
++            panelceil.candidate(
++                runner, base, current, user, identity, "statics-myopic-greedy"
++            )
++            for identity in options[user]
++            if identity != current.mapping[user]
++        )
++        for offset in range(0, len(rows), panelceil.UNILATERAL_BATCH_SIZE):
++            evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++        candidate_evaluations += len(rows)
++        eligible = []
++        for row in rows:
++            profile = evaluator._evaluated.get(row.configuration_id)
++            if profile is None or panelceil.served(profile) < guard:
++                continue
++            value: Fraction = panelceil.objective(
++                runner, calibration, incumbent, row, profile, rekeys
++            )
++            eligible.append((value, row.configuration_id, row))
++        if not eligible:
++            raise RuntimeError("myopic step lost its guarded incumbent")
++        selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++        changed_users += selected.mapping[user] != current.mapping[user]
++        current = selected
++    return current, {
++        "algorithm": "one ascending-user exact greedy sweep",
++        "physics": "nominal boundary 0",
++        "objective": "F = decoded bits - eta_ref * joules",
++        "guard": f"served PHY >= base served PHY ({guard})",
++        "tie_break": "lexicographically smallest stable configuration ID",
++        "candidate_batch_size": panelceil.UNILATERAL_BATCH_SIZE,
++        "candidate_evaluations_including_incumbents": candidate_evaluations,
++        "users_changing_choice": changed_users,
++        "legal_option_census": census,
++    }
++
++
++def diversity(config, options) -> dict[str, object]:
++    mapping = config.mapping
++    chosen = [identity for identity in mapping.values() if identity is not None]
++    counts = Counter(chosen)
++    user_count = len(mapping)
++    ordinals = []
++    for user, identity in sorted(mapping.items()):
++        if identity is None:
++            continue
++        try:
++            ordinals.append(options[user].index(identity))
++        except ValueError as error:
++            raise RuntimeError(f"user {user} selected a non-legal identity") from error
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / user_count,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++        "argmax_distinct": len(set(ordinals)),
++        "assigned_users": len(chosen),
++        "user_count": user_count,
++    }
++
++
++def committed_one(panelceil, runner, tape, step_index, incumbent, run_setting, name, config):
++    return panelceil.committed_metrics(
++        runner, tape, step_index, incumbent, run_setting, {name: config}
++    )[name]
++
++
++def pool(anchors, arm: str) -> dict[str, object]:
++    rows = [anchor["arms"][arm]["committed"] for anchor in anchors]
++    bits = math.fsum(float(row["bits"]) for row in rows)
++    joules = math.fsum(float(row["joules"]) for row in rows)
++    diversities = [anchor["arms"][arm]["diversity"] for anchor in anchors]
++    timings = [anchor["arms"][arm]["timing"] for anchor in anchors]
++    result: dict[str, object] = {
++        "bits": bits,
++        "joules": joules,
++        "ee_bit_per_j": bits / joules,
++        "served_count": sum(int(row["served_count"]) for row in rows),
++        "rate_target_attained_count": sum(
++            int(row["rate_target_attained_count"]) for row in rows
++        ),
++        "user_count": sum(int(row["user_count"]) for row in rows),
++    }
++    for field in ("modal_frac", "active_beams", "active_satellites", "argmax_distinct"):
++        values = [float(row[field]) for row in diversities]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++        }
++    for field in ("selection_seconds", "committed_seconds", "wall_seconds"):
++        values = [float(row[field]) for row in timings]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++            "total": math.fsum(values),
++        }
++    return result
++
++
++def main() -> int:
++    assert_runtime()
++    panelceil = load_panelceil()
++    panel = panelceil.frozen_panel()
++    source_receipt = json.loads(PANELCEIL_RECEIPT.read_text(encoding="utf-8"))
++    if (
++        source_receipt.get("status") != "COMPLETE"
++        or source_receipt.get("receipt_sha256") != panelceil.canonical_digest(source_receipt)
++    ):
++        raise RuntimeError("PANELCEIL reference receipt is not sealed and complete")
++    pilot = panelceil.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panelceil.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    tape_seconds = time.perf_counter() - tape_started
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB after tape")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++
++    payload = {
++        "schema": "mcrl-v025-static-baseline-family-v1",
++        "status": "RUNNING",
++        "claim_status": "DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM",
++        "panel": panel,
++        "panel_count": len(panel),
++        "panelceil_runner_sha256": sha256(PANELCEIL_RUNNER),
++        "panelceil_receipt_sha256": source_receipt["receipt_sha256"],
++        "world_tape": {
++            "domain": tape.domain, "seed": tape.seed, "digest": tape.digest,
++            "construction_seconds": tape_seconds,
++        },
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "process_count": 1,
++        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
++        "random_seed": RANDOM_SEED,
++        "anchors": [],
++    }
++    if OUTPUT.exists():
++        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
++        if previous.get("panel") != panel or previous.get("random_seed") != RANDOM_SEED:
++            raise RuntimeError("existing receipt does not match this frozen construction")
++        payload["anchors"] = previous.get("anchors", [])
++    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
++
++    for position, panel_row in enumerate(panel, 1):
++        index = int(panel_row["global_anchor_index"])
++        if index in completed:
++            print(
++                f"anchor {position}/{len(panel)} resume-complete peak RSS "
++                f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++            )
++            continue
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        options, _ = runner._legal_options(tape, step_index)
++
++        configs = {}
++        selection_seconds = {}
++        detail = {}
++
++        started = time.perf_counter()
++        configs["NEAREST_ELIGIBLE"] = runner._base_configuration(tape, step_index, carrier)
++        selection_seconds["NEAREST_ELIGIBLE"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RANDOM"] = random_configuration(runner, tape, step_index, base, index)
++        selection_seconds["RANDOM"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["ROUND_ROBIN"] = round_robin_configuration(runner, tape, step_index, base)
++        selection_seconds["ROUND_ROBIN"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RSS_MAX"] = rss_max_configuration(runner, tape, step_index, base)
++        selection_seconds["RSS_MAX"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["MYOPIC_GREEDY"], detail["MYOPIC_GREEDY"] = myopic_greedy(
++            panelceil, runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        selection_seconds["MYOPIC_GREEDY"] = time.perf_counter() - started
++
++        first = panelceil.first_improvement(
++            runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        configs["FIRST_IMPROVEMENT_FP"] = first.selected
++        selection_seconds["FIRST_IMPROVEMENT_FP"] = float(
++            first.receipt["total_including_certificate_seconds"]
++        )
++        detail["FIRST_IMPROVEMENT_FP"] = first.receipt
++
++        reference_anchor = source_receipt["anchors"][index]
++        if (
++            configs["NEAREST_ELIGIBLE"].configuration_id
++            != reference_anchor["committed"]["BASE"]["configuration_id"]
++            or configs["FIRST_IMPROVEMENT_FP"].configuration_id
++            != reference_anchor["committed"]["U_FIRST"]["configuration_id"]
++        ):
++            raise RuntimeError(f"parity configuration mismatch at anchor {index}")
++
++        arms = {}
++        for name in ARM_NAMES:
++            commit_started = time.perf_counter()
++            committed = committed_one(
++                panelceil, runner, tape, step_index, incumbent, run_setting,
++                name, configs[name],
++            )
++            committed_seconds = time.perf_counter() - commit_started
++            arms[name] = {
++                "configuration_id": configs[name].configuration_id,
++                "assignments": [
++                    [user, None if identity is None else list(identity)]
++                    for user, identity in configs[name].assignments
++                ],
++                "committed": committed,
++                "diversity": diversity(configs[name], options),
++                "timing": {
++                    "selection_seconds": selection_seconds[name],
++                    "committed_seconds": committed_seconds,
++                    "wall_seconds": selection_seconds[name] + committed_seconds,
++                },
++                "detail": detail.get(name),
++            }
++
++        row = {
++            "global_anchor_index": index,
++            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
++            "step_index": step_index,
++            "carrier": carrier,
++            "arms": arms,
++            "peak_rss_bytes": peak_rss_bytes(),
++        }
++        if row["peak_rss_bytes"] >= MAX_RSS_BYTES:
++            raise MemoryError("peak RSS is not below 5 GB")
++        payload["anchors"].append(row)
++        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
++        payload["pooled"] = {
++            arm: pool(payload["anchors"], arm) for arm in ARM_NAMES
++        }
++        payload["peak_rss_bytes"] = peak_rss_bytes()
++        atomic_write(payload)
++        print(
++            f"anchor {position}/{len(panel)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB "
++            + json.dumps({
++                "global": index,
++                "myopic_s": round(selection_seconds["MYOPIC_GREEDY"], 3),
++                "first_fp_s": round(selection_seconds["FIRST_IMPROVEMENT_FP"], 3),
++            }, sort_keys=True),
++            flush=True,
++        )
++
++    payload["pooled"] = {arm: pool(payload["anchors"], arm) for arm in ARM_NAMES}
++    parity = {}
++    for arm, expected in EXPECTED_EE_MBIT_J.items():
++        observed = float(payload["pooled"][arm]["ee_bit_per_j"]) / 1e6
++        parity[arm] = {
++            "expected_rounded_6_mbit_per_j": expected,
++            "observed_mbit_per_j": observed,
++            "rounded_6_match": round(observed, 6) == expected,
++            "all_anchor_configuration_ids_match_panelceil": True,
++        }
++    payload["parity"] = parity
++    payload["both_parity_checks_reproduced"] = all(
++        bool(row["rounded_6_match"]) for row in parity.values()
++    )
++    payload["status"] = "COMPLETE" if payload["both_parity_checks_reproduced"] else "PARITY_FAILED"
++    payload["peak_rss_bytes"] = peak_rss_bytes()
++    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
++    atomic_write(payload)
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({
++        arm: payload["pooled"][arm]["ee_bit_per_j"] / 1e6 for arm in ARM_NAMES
++    }, sort_keys=True), flush=True)
++    print(f"both_parity_checks_reproduced={payload['both_parity_checks_reproduced']}", flush=True)
++    return 0 if payload["both_parity_checks_reproduced"] else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/STATIC-BASELINE-FAMILY-2026-09-10.md b/STATIC-BASELINE-FAMILY-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7a45b041fe2c7410081523ce91571459812d9f7
+--- /dev/null
++++ b/STATIC-BASELINE-FAMILY-2026-09-10.md
+@@ -0,0 +1,127 @@
++**Pooled EE: `RANDOM` 11.233999, `ROUND_ROBIN` 3.441227, `RSS_MAX` 41.621560, `MYOPIC_GREEDY` 28.668530, `NEAREST_ELIGIBLE` parity 11.027760, and `FIRST_IMPROVEMENT_FP` parity 13.430253 Mbit/J; both parity checks reproduced.**
++
++# Static baseline family on the training panel — 2026-09-10
++
++`DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM`. No learner or checkpoint was read, trained, scored, or ranked. Loss values supply no evidence here. Only the frozen 12-anchor development prefix was used; no evaluation-only claim date was read.
++
++## Exact arm definitions
++
++Every arm uses `PANELCEIL`'s frozen global anchors 0–11 in declared order, the complete boundary-0 legal set (visible, D2-eligible, and cell-reachable), the `a-r0` corrected provisioning path, the anchor's declared prior-step incumbent, and singleton evaluation over all 48 realised boundaries. The reported numerator is saturated full-buffer successfully decoded forward-downlink information bits with **no demand cap**. Pooled EE is `sum(bits) / sum(joules)`, never a mean of anchor-local ratios.
++
++The service guard has the same scope as in `PANELCEIL`: it filters candidates for objective-based selection (`MYOPIC_GREEDY` and `FIRST_IMPROVEMENT_FP`). A direct static rule is evaluated as selected, even when its realised served count is poor; rejection or resampling would change `RANDOM` from uniform and conceal precisely the below-random outcomes this measurement is meant to expose. All six arms use the same legal-option guard.
++
++- **`RANDOM`.** At global anchor `i`, initialise Python's MT19937 `random.Random` with `20260910 + i`. Visit users in ascending ID order and draw independently and uniformly from that user's complete declared legal-option tuple. A user is null only if that tuple is empty. There is one draw, with no rejection, service resampling, objective lookup, or demand information.
++
++- **`ROUND_ROBIN`.** Visit users in ascending ID order. For each user, choose the legal physical beam `(NORAD, cell)` having the smallest assignment count accumulated so far. Break equal-load ties by the option's declared order, which is increasing decision-boundary slant range and then physical identity. This equalises user count by legal beam; it does not optimise link quality, satellite count, interference, power, or the declared objective.
++
++- **`RSS_MAX`.** For each user independently, choose the legal option with maximum decision-boundary `nominal_gain`, i.e. wanted-link received watts per beam RF watt. Break an exact tie by declared legal-option order. It uses no demand, occupancy, cross-interference, energy, or realised fading.
++
++- **`NEAREST_ELIGIBLE`.** This is the requested parity label for the exact `PANELCEIL` `BASE` construction: reconstruct each frozen anchor's declared carrier mapping at that step, then set a user to null if it has no live legal action. On anchors whose carrier is `nearest-eligible`, that carrier means best D2 margin in the user's own cell with the first valid slot-order tie-break. The 12-anchor panel also deliberately contains `stay-if-possible` and `random-masked` carrier anchors, so the pooled 11.027760 parity value is the carrier-conditioned `BASE`, not a fresh nearest-only reassignment on all 12 rows. This distinction is required to reproduce `PANELCEIL` exactly.
++
++- **`MYOPIC_GREEDY`.** Start from that anchor's `PANELCEIL` `BASE` and make exactly one ascending-user sweep. For the current user, hold all other assignments fixed; evaluate the incumbent choice and every legal replacement on **nominal boundary 0** in ordered microbatches of 16; retain candidates whose served-PHY count is at least the initial base count; and choose the largest exact `F = decoded bits - eta_ref * joules`, breaking an exact tie by lexicographically smallest stable configuration ID. Commit the choice immediately for later users. There is no second sweep and no future-boundary selection information.
++
++- **`FIRST_IMPROVEMENT_FP`.** This reruns the certified `PANELCEIL` construction: start from the same base; select on exact **realised boundary-0** `F`; visit ascending users and their declared legal options; accept the first strict improvement meeting the initial base served-PHY guard within ordered microbatches of 16; repeat passes until a complete final pass finds no strict guarded improvement. The 48-boundary result never feeds selection.
++
++`modal_frac` below is the largest physical-beam occupancy divided by all 100 users at an anchor. `active beams/satellites` counts distinct non-null physical `(NORAD, cell)` identities and distinct NORADs. `argmax_distinct` counts distinct zero-based declared legal-option ordinals selected across users; it is an action-slot diversity diagnostic, not a physical-beam count. Diversity entries are the mean across 12 anchors followed by `[minimum, maximum]`.
++
++## Verified by running code
++
++### Pooled outcomes
++
++| arm | pooled bits | pooled joules | pooled EE (Mbit/J) | served PHY | rate-target attained | modal_frac | active beams | active satellites | argmax_distinct |
++|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| `RANDOM` | 1.288605626013e12 | 114705.864740 | 11.233999 | 1102/1200 | 141/1200 | 0.0333 [0.02, 0.05] | 81.750 [72, 86] | 8.583 [8, 9] | 27.500 [25, 28] |
++| `ROUND_ROBIN` | 7.537530520000e11 | 219036.120671 | 3.441227 | 798/1200 | 48/1200 | 0.0100 [0.01, 0.01] | 100.000 [100, 100] | 4.750 [4, 5] | 11.500 [11, 13] |
++| `RSS_MAX` | 1.653612586627e12 | 39729.712050 | 41.621560 | 1200/1200 | 297/1200 | 0.0500 [0.05, 0.05] | 47.750 [46, 50] | 5.000 [5, 5] | 5.250 [3, 8] |
++| `NEAREST_ELIGIBLE` | 1.121297101614e12 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 | 0.0425 [0.02, 0.05] | 57.333 [41, 90] | 5.333 [3, 9] | 10.667 [1, 28] |
++| `MYOPIC_GREEDY` | 1.527584566003e12 | 53284.369866 | 28.668530 | 1186/1200 | 258/1200 | 0.0300 [0.01, 0.05] | 89.417 [47, 100] | 7.833 [5, 9] | 16.250 [1, 26] |
++| `FIRST_IMPROVEMENT_FP` | 1.255889055879e12 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 | 0.0408 [0.02, 0.05] | 64.167 [41, 90] | 6.250 [3, 9] | 14.417 [1, 28] |
++
++The corresponding pooled served-PHY rates are 91.833%, 66.500%, 100.000%, 80.000%, 98.833%, and 86.333% in table order. Rate-target attainment is 11.750%, 4.000%, 24.750%, 10.583%, 21.500%, and 12.250%.
++
++### Parity gate
++
++Both parity gates pass. All 12 configuration IDs matched the sealed `PANELCEIL` receipt for both arms. An independent row-by-row diff also found exact equality of committed bits, joules, served-PHY count, and rate-target-attainment count at every anchor.
++
++| parity arm | expected EE | observed EE | rounded-six result | pooled bits | pooled joules | served | attained |
++|---|---:|---:|---|---:|---:|---:|---:|
++| `NEAREST_ELIGIBLE` / `PANELCEIL BASE` | 11.027760 | 11.027760227532 | pass | 1.121297101614e12 | 101679.495970 | 960/1200 | 127/1200 |
++| `FIRST_IMPROVEMENT_FP` | 13.430253 | 13.430252781856 | pass | 1.255889055879e12 | 93511.944732 | 1036/1200 | 147/1200 |
++
++### Wall-clock by anchor
++
++Each entry is `selection / end-to-end` seconds. End-to-end adds that arm's independent singleton 48-boundary committed evaluation. Tape construction (222.563 s, shared once by every arm) is excluded from arm timings. For the fixed point, selection includes its terminal certificate, exactly as in `PANELCEIL`.
++
++| global anchor | carrier | `RANDOM` | `ROUND_ROBIN` | `RSS_MAX` | `NEAREST_ELIGIBLE` | `MYOPIC_GREEDY` | `FIRST_IMPROVEMENT_FP` |
++|---:|---|---:|---:|---:|---:|---:|---:|
++| 0 | nearest-eligible | .002818 / .303287 | .002607 / .059063 | .003892 / .145811 | .000236 / .161853 | 5.456901 / 5.532978 | 4.341399 / 4.502410 |
++| 1 | stay-if-possible | .002654 / .255480 | .002631 / .060160 | .003817 / .146391 | .000269 / .160989 | 5.505847 / 5.583911 | 4.144753 / 4.305702 |
++| 2 | random-masked | .002756 / .177900 | .002630 / .057802 | .003876 / .145935 | .000282 / .243325 | 5.302749 / 5.345201 | 4.755255 / 4.998975 |
++| 3 | nearest-eligible | .002751 / .336844 | .002641 / .083404 | .003648 / .198837 | .000300 / .170462 | 5.219370 / 5.391113 | 4.389278 / 4.560558 |
++| 4 | stay-if-possible | .002928 / .223756 | .002681 / .083229 | .004182 / .198985 | .000298 / .180493 | 5.776191 / 5.856508 | 4.375899 / 4.555498 |
++| 5 | random-masked | .002738 / .766961 | .002579 / .084710 | .004034 / .200519 | .000304 / .322672 | 5.254159 / 5.310803 | 5.217818 / 5.540263 |
++| 6 | nearest-eligible | .002583 / .544976 | .002542 / .141758 | .003850 / .517014 | .000278 / .305039 | 7.236447 / 7.640597 | 4.942540 / 5.248655 |
++| 7 | stay-if-possible | .002695 / .169184 | .002525 / .145334 | .003633 / .514654 | .000274 / .345009 | 6.238417 / 6.310437 | 45.171579 / 45.316361 |
++| 8 | random-masked | .002344 / .273302 | .002606 / .142241 | .003579 / .513144 | .000282 / .450956 | 7.035742 / 7.095645 | 7.285334 / 7.737017 |
++| 9 | nearest-eligible | .002665 / .374680 | .002598 / .116862 | .003798 / .919762 | .000294 / .899210 | 11.448226 / 12.008537 | 8.272072 / 9.173329 |
++| 10 | stay-if-possible | .002859 / .590253 | .002631 / .120288 | .003830 / .943261 | .000316 / .378621 | 7.428929 / 7.487751 | 121.330814 / 121.678617 |
++| 11 | random-masked | .002582 / .477036 | .002564 / .124715 | .003656 / .934686 | .000341 / .450081 | 9.161437 / 9.352503 | 9.417967 / 9.871781 |
++| **mean** | — | **.002698 / .374471** | **.002603 / .101631** | **.003816 / .448250** | **.000289 / .339059** | **6.755368 / 6.909665** | **18.637059 / 18.957430** |
++
++### Cheapest-to-most-expensive ordering
++
++This ordering uses mean **selection** wall-clock, because committed 48-boundary scoring is a common measurement operation rather than policy decision cost. The final column records mean end-to-end measurement time for completeness.
++
++| cost order | arm | mean selection s/anchor | pooled EE (Mbit/J) | mean end-to-end s/anchor |
++|---:|---|---:|---:|---:|
++| 1 | `NEAREST_ELIGIBLE` | 0.000289 | 11.027760 | 0.339059 |
++| 2 | `ROUND_ROBIN` | 0.002603 | 3.441227 | 0.101631 |
++| 3 | `RANDOM` | 0.002698 | 11.233999 | 0.374471 |
++| 4 | `RSS_MAX` | 0.003816 | 41.621560 | 0.448250 |
++| 5 | `MYOPIC_GREEDY` | 6.755368 | 28.668530 | 6.909665 |
++| 6 | `FIRST_IMPROVEMENT_FP` | 18.637059 | 13.430253 | 18.957430 |
++
++The one-process run completed in 572.791 s including shared tape construction. Peak RSS was **2.517 GiB** (2,702,925,824 bytes), below 5 GB. The process ran at niceness 15 under `/home/sat/mcrl-leo-handover/.venv/bin/python`; all six recorded BLAS/OpenMP thread controls were `1`.
++
++## Derived on paper from verified aggregates
++
++- `ROUND_ROBIN / RANDOM - 1 = -69.367747%`.
++- `NEAREST_ELIGIBLE / RANDOM - 1 = -1.835849%`.
++- `MYOPIC_GREEDY / RANDOM - 1 = +155.194334%`.
++- `RSS_MAX / RANDOM - 1 = +270.496366%`.
++- `MYOPIC_GREEDY / FIRST_IMPROVEMENT_FP - 1 = +113.462328%`.
++- `RSS_MAX / FIRST_IMPROVEMENT_FP - 1 = +209.908983%`.
++
++These are arithmetic relations only; they are not learned-policy claims and are not inferred from losses.
++
++## Inferred
++
++The intended comparison structure remains useful, but this measurement changes what may honestly be called its floors and ceiling:
++
++- The weak-static family is the reference family a learned proposal must be placed against. On this panel it is not a narrow floor: its observed span is 3.441227–41.621560 Mbit/J. In particular, clearing only the carrier-conditioned base or random does not clear `RSS_MAX` under the definition above.
++
++- `FIRST_IMPROVEMENT_FP` remains the designated strong classical-search comparator and is not a required learned win target, as stipulated. It is **not an empirical numerical upper bound on this measured family**: `MYOPIC_GREEDY` and `RSS_MAX` are higher. Calling 13.430253 a universal ceiling after this run would contradict the verified table.
++
++- `RANDOM` remains the sanity reference. `ROUND_ROBIN` is 69.37% below it and must be reported. The diversity evidence does not support calling this particular failure crowding: it has the lowest possible measured `modal_frac` (0.01) and exactly 100 active beams at every anchor. Its poor result instead coincides with over-dispersion, 219,036 J (the largest denominator), only 798/1200 served, and just 48/1200 attaining target. Thus “below random implies crowding” is not valid without the occupancy diagnostics; this arm fails for a different static pathology.
++
++- `RSS_MAX`'s high EE is not an artefact of dropping users: it serves 1200/1200, attains 297/1200, has the largest pooled numerator, and the smallest pooled energy denominator. Under declared full-buffer/no-demand-cap scoring, it is the strongest measured arm despite being demand-blind.
++
++- `MYOPIC_GREEDY` is a single nominal sweep, whereas the fixed point selects strict moves on realised boundary 0 from a carrier-conditioned start. Their ordering therefore does not show a certification error or make either algorithm a global optimizer. It shows that the local fixed-point construction is start-, information-, and traversal-dependent.
++
++No learned arm is ranked here.
++
++## Machine evidence and reproduction
++
++```text
++33fa7c31a219a190db8d985ce81b85893bf8d4024f9af4fe8b1c5ac64adf17b5  .scratch/statics/statics-receipt.json  [canonical content digest]
++dd81d45b6cc81291518aaa5fd1276be99d2f0f9d818c4445054620d3f0dc93a5  .scratch/statics/statics-receipt.json  [file SHA-256]
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  .scratch/statics/run_statics.py
++09e3e9c5e01f96bb879170ee1c31f752448f33fa6772284fabe8cbbea7fbceca  PANELCEIL receipt  [canonical content digest, read-only]
++dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95  PANELCEIL runner  [read-only]
++```
++
++World tape: domain `V025_PROBE/world/1`, seed `5261619120743994529`, digest `43718040fd7157edc158a8f8cd32418c619dacae1ef1114094f115805f027bf0`.
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/statics/run_statics.py
++```
+
+codex
+Completed [STATIC-BASELINE-FAMILY-2026-09-10.md](/home/sat/mcrl-v025-rank-ws/STATIC-BASELINE-FAMILY-2026-09-10.md).
+
+Key results:
+
+- `RANDOM`: 11.233999 Mbit/J
+- `ROUND_ROBIN`: 3.441227
+- `RSS_MAX`: 41.621560
+- `MYOPIC_GREEDY`: 28.668530
+- `NEAREST_ELIGIBLE`: 11.027760 — parity passed
+- `FIRST_IMPROVEMENT_FP`: 13.430253 — parity passed
+
+Notably, `ROUND_ROBIN` is 69.37% below random despite minimal concentration; it fails through over-dispersion and high energy use, not crowding. Conversely, `RSS_MAX` serves 1200/1200 and substantially exceeds the designated strong-search comparator.
+
+Machine evidence is in [statics-receipt.json](/home/sat/mcrl-v025-rank-ws/.scratch/statics/statics-receipt.json) and [run_statics.py](/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py). Peak RSS was 2.517 GiB using one nice-15, single-threaded Python process.
+diff --git a/.scratch/statics/run_statics.py b/.scratch/statics/run_statics.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dcc59516b46d66af87c3134d830a270c4943ca4
+--- /dev/null
++++ b/.scratch/statics/run_statics.py
+@@ -0,0 +1,464 @@
++#!/usr/bin/env python3
++"""Measure the non-learned static family on PANELCEIL's frozen training panel.
++
++This runner deliberately imports PANELCEIL's sealed construction helpers from
++the sibling read-only workspace.  It does not read evaluation-only dates and
++writes only the local receipt below.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import random
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-rank-ws")
++PANELCEIL_WORKSPACE = Path("/home/sat/mcrl-v025-ceiling30-ws")
++PANELCEIL_RUNNER = PANELCEIL_WORKSPACE / ".scratch/panelceil/run_panelceil.py"
++PANELCEIL_RECEIPT = PANELCEIL_WORKSPACE / ".scratch/panelceil/panelceil-receipt.json"
++OUTPUT = WORKSPACE / ".scratch/statics/statics-receipt.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 5_000_000_000
++RANDOM_SEED = 20260910
++ARM_NAMES = (
++    "RANDOM", "ROUND_ROBIN", "RSS_MAX", "NEAREST_ELIGIBLE",
++    "MYOPIC_GREEDY", "FIRST_IMPROVEMENT_FP",
++)
++EXPECTED_EE_MBIT_J = {
++    "NEAREST_ELIGIBLE": 11.027760,
++    "FIRST_IMPROVEMENT_FP": 13.430253,
++}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def canonical_digest(payload: dict) -> str:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    return hashlib.sha256(json.dumps(
++        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("utf-8")).hexdigest()
++
++
++def atomic_write(payload: dict) -> None:
++    payload["receipt_sha256"] = canonical_digest(payload)
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
++    temporary.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    temporary.replace(OUTPUT)
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def assert_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness is below 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins are not all one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB")
++
++
++def load_panelceil():
++    name = "statics_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANELCEIL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def legal_options(panelceil, tape, step_index: int):
++    return panelceil.load_pilot().ENGINE._legal_options(tape, step_index)[0]
++
++
++def configured(runner, base, mapping, kind: str):
++    return runner._configuration(base, mapping, kind=kind)
++
++
++def random_configuration(runner, tape, step_index: int, base, anchor_index: int):
++    options, _ = runner._legal_options(tape, step_index)
++    rng = random.Random(RANDOM_SEED + anchor_index)
++    mapping = {
++        user: (None if not identities else identities[rng.randrange(len(identities))])
++        for user, identities in sorted(options.items())
++    }
++    return configured(runner, base, mapping, "statics-random")
++
++
++def round_robin_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    loads: Counter[tuple[int, int]] = Counter()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities), key=lambda item: (loads[item[1]], item[0])
++        )
++        del ordinal
++        mapping[user] = identity
++        loads[identity] += 1
++    return configured(runner, base, mapping, "statics-round-robin")
++
++
++def rss_max_configuration(runner, tape, step_index: int, base):
++    options, _ = runner._legal_options(tape, step_index)
++    arrays = tape.steps[step_index].arrays
++    if arrays is None:
++        raise RuntimeError("frozen exact panel must expose primitive arrays")
++    row_of = arrays._row_index()
++    mapping = {}
++    for user, identities in sorted(options.items()):
++        if not identities:
++            mapping[user] = None
++            continue
++        ordinal, identity = min(
++            enumerate(identities),
++            key=lambda item: (
++                -float(arrays.nominal_gain[0, row_of[(user, item[1])]]), item[0]
++            ),
++        )
++        del ordinal
++        mapping[user] = identity
++    return configured(runner, base, mapping, "statics-rss-max")
++
++
++def myopic_greedy(panelceil, runner, calibration, tape, step_index: int, base, incumbent, run_setting):
++    """One ascending-user exact best-response sweep on nominal boundary zero."""
++
++    evaluator = panelceil.new_selection_evaluator(
++        runner, tape, step_index, incumbent, run_setting, field="nominal"
++    )
++    base_profile = evaluator.evaluate(base)
++    guard = panelceil.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    candidate_evaluations = 0
++    changed_users = 0
++    for user in sorted(options):
++        rows = [current]
++        rows.extend(
++            panelceil.candidate(
++                runner, base, current, user, identity, "statics-myopic-greedy"
++            )
++            for identity in options[user]
++            if identity != current.mapping[user]
++        )
++        for offset in range(0, len(rows), panelceil.UNILATERAL_BATCH_SIZE):
++            evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++        candidate_evaluations += len(rows)
++        eligible = []
++        for row in rows:
++            profile = evaluator._evaluated.get(row.configuration_id)
++            if profile is None or panelceil.served(profile) < guard:
++                continue
++            value: Fraction = panelceil.objective(
++                runner, calibration, incumbent, row, profile, rekeys
++            )
++            eligible.append((value, row.configuration_id, row))
++        if not eligible:
++            raise RuntimeError("myopic step lost its guarded incumbent")
++        selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++        changed_users += selected.mapping[user] != current.mapping[user]
++        current = selected
++    return current, {
++        "algorithm": "one ascending-user exact greedy sweep",
++        "physics": "nominal boundary 0",
++        "objective": "F = decoded bits - eta_ref * joules",
++        "guard": f"served PHY >= base served PHY ({guard})",
++        "tie_break": "lexicographically smallest stable configuration ID",
++        "candidate_batch_size": panelceil.UNILATERAL_BATCH_SIZE,
++        "candidate_evaluations_including_incumbents": candidate_evaluations,
++        "users_changing_choice": changed_users,
++        "legal_option_census": census,
++    }
++
++
++def diversity(config, options) -> dict[str, object]:
++    mapping = config.mapping
++    chosen = [identity for identity in mapping.values() if identity is not None]
++    counts = Counter(chosen)
++    user_count = len(mapping)
++    ordinals = []
++    for user, identity in sorted(mapping.items()):
++        if identity is None:
++            continue
++        try:
++            ordinals.append(options[user].index(identity))
++        except ValueError as error:
++            raise RuntimeError(f"user {user} selected a non-legal identity") from error
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / user_count,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++        "argmax_distinct": len(set(ordinals)),
++        "assigned_users": len(chosen),
++        "user_count": user_count,
++    }
++
++
++def committed_one(panelceil, runner, tape, step_index, incumbent, run_setting, name, config):
++    return panelceil.committed_metrics(
++        runner, tape, step_index, incumbent, run_setting, {name: config}
++    )[name]
++
++
++def pool(anchors, arm: str) -> dict[str, object]:
++    rows = [anchor["arms"][arm]["committed"] for anchor in anchors]
++    bits = math.fsum(float(row["bits"]) for row in rows)
++    joules = math.fsum(float(row["joules"]) for row in rows)
++    diversities = [anchor["arms"][arm]["diversity"] for anchor in anchors]
++    timings = [anchor["arms"][arm]["timing"] for anchor in anchors]
++    result: dict[str, object] = {
++        "bits": bits,
++        "joules": joules,
++        "ee_bit_per_j": bits / joules,
++        "served_count": sum(int(row["served_count"]) for row in rows),
++        "rate_target_attained_count": sum(
++            int(row["rate_target_attained_count"]) for row in rows
++        ),
++        "user_count": sum(int(row["user_count"]) for row in rows),
++    }
++    for field in ("modal_frac", "active_beams", "active_satellites", "argmax_distinct"):
++        values = [float(row[field]) for row in diversities]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++        }
++    for field in ("selection_seconds", "committed_seconds", "wall_seconds"):
++        values = [float(row[field]) for row in timings]
++        result[field] = {
++            "mean": math.fsum(values) / len(values),
++            "min": min(values),
++            "max": max(values),
++            "total": math.fsum(values),
++        }
++    return result
++
++
++def main() -> int:
++    assert_runtime()
++    panelceil = load_panelceil()
++    panel = panelceil.frozen_panel()
++    source_receipt = json.loads(PANELCEIL_RECEIPT.read_text(encoding="utf-8"))
++    if (
++        source_receipt.get("status") != "COMPLETE"
++        or source_receipt.get("receipt_sha256") != panelceil.canonical_digest(source_receipt)
++    ):
++        raise RuntimeError("PANELCEIL reference receipt is not sealed and complete")
++    pilot = panelceil.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panelceil.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    tape_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    tape_seconds = time.perf_counter() - tape_started
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 5 GB after tape")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++
++    payload = {
++        "schema": "mcrl-v025-static-baseline-family-v1",
++        "status": "RUNNING",
++        "claim_status": "DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM",
++        "panel": panel,
++        "panel_count": len(panel),
++        "panelceil_runner_sha256": sha256(PANELCEIL_RUNNER),
++        "panelceil_receipt_sha256": source_receipt["receipt_sha256"],
++        "world_tape": {
++            "domain": tape.domain, "seed": tape.seed, "digest": tape.digest,
++            "construction_seconds": tape_seconds,
++        },
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "process_count": 1,
++        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
++        "random_seed": RANDOM_SEED,
++        "anchors": [],
++    }
++    if OUTPUT.exists():
++        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
++        if previous.get("panel") != panel or previous.get("random_seed") != RANDOM_SEED:
++            raise RuntimeError("existing receipt does not match this frozen construction")
++        payload["anchors"] = previous.get("anchors", [])
++    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
++
++    for position, panel_row in enumerate(panel, 1):
++        index = int(panel_row["global_anchor_index"])
++        if index in completed:
++            print(
++                f"anchor {position}/{len(panel)} resume-complete peak RSS "
++                f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++            )
++            continue
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        options, _ = runner._legal_options(tape, step_index)
++
++        configs = {}
++        selection_seconds = {}
++        detail = {}
++
++        started = time.perf_counter()
++        configs["NEAREST_ELIGIBLE"] = runner._base_configuration(tape, step_index, carrier)
++        selection_seconds["NEAREST_ELIGIBLE"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RANDOM"] = random_configuration(runner, tape, step_index, base, index)
++        selection_seconds["RANDOM"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["ROUND_ROBIN"] = round_robin_configuration(runner, tape, step_index, base)
++        selection_seconds["ROUND_ROBIN"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["RSS_MAX"] = rss_max_configuration(runner, tape, step_index, base)
++        selection_seconds["RSS_MAX"] = time.perf_counter() - started
++
++        started = time.perf_counter()
++        configs["MYOPIC_GREEDY"], detail["MYOPIC_GREEDY"] = myopic_greedy(
++            panelceil, runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        selection_seconds["MYOPIC_GREEDY"] = time.perf_counter() - started
++
++        first = panelceil.first_improvement(
++            runner, calibration, tape, step_index, base, incumbent, run_setting
++        )
++        configs["FIRST_IMPROVEMENT_FP"] = first.selected
++        selection_seconds["FIRST_IMPROVEMENT_FP"] = float(
++            first.receipt["total_including_certificate_seconds"]
++        )
++        detail["FIRST_IMPROVEMENT_FP"] = first.receipt
++
++        reference_anchor = source_receipt["anchors"][index]
++        if (
++            configs["NEAREST_ELIGIBLE"].configuration_id
++            != reference_anchor["committed"]["BASE"]["configuration_id"]
++            or configs["FIRST_IMPROVEMENT_FP"].configuration_id
++            != reference_anchor["committed"]["U_FIRST"]["configuration_id"]
++        ):
++            raise RuntimeError(f"parity configuration mismatch at anchor {index}")
++
++        arms = {}
++        for name in ARM_NAMES:
++            commit_started = time.perf_counter()
++            committed = committed_one(
++                panelceil, runner, tape, step_index, incumbent, run_setting,
++                name, configs[name],
++            )
++            committed_seconds = time.perf_counter() - commit_started
++            arms[name] = {
++                "configuration_id": configs[name].configuration_id,
++                "assignments": [
++                    [user, None if identity is None else list(identity)]
++                    for user, identity in configs[name].assignments
++                ],
++                "committed": committed,
++                "diversity": diversity(configs[name], options),
++                "timing": {
++                    "selection_seconds": selection_seconds[name],
++                    "committed_seconds": committed_seconds,
++                    "wall_seconds": selection_seconds[name] + committed_seconds,
++                },
++                "detail": detail.get(name),
++            }
++
++        row = {
++            "global_anchor_index": index,
++            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
++            "step_index": step_index,
++            "carrier": carrier,
++            "arms": arms,
++            "peak_rss_bytes": peak_rss_bytes(),
++        }
++        if row["peak_rss_bytes"] >= MAX_RSS_BYTES:
++            raise MemoryError("peak RSS is not below 5 GB")
++        payload["anchors"].append(row)
++        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
++        payload["pooled"] = {
++            arm: pool(payload["anchors"], arm) for arm in ARM_NAMES
++        }
++        payload["peak_rss_bytes"] = peak_rss_bytes()
++        atomic_write(payload)
++        print(
++            f"anchor {position}/{len(panel)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB "
++            + json.dumps({
++                "global": index,
++                "myopic_s": round(selection_seconds["MYOPIC_GREEDY"], 3),
++                "first_fp_s": round(selection_seconds["FIRST_IMPROVEMENT_FP"], 3),
++            }, sort_keys=True),
++            flush=True,
++        )
++
++    payload["pooled"] = {arm: pool(payload["anchors"], arm) for arm in ARM_NAMES}
++    parity = {}
++    for arm, expected in EXPECTED_EE_MBIT_J.items():
++        observed = float(payload["pooled"][arm]["ee_bit_per_j"]) / 1e6
++        parity[arm] = {
++            "expected_rounded_6_mbit_per_j": expected,
++            "observed_mbit_per_j": observed,
++            "rounded_6_match": round(observed, 6) == expected,
++            "all_anchor_configuration_ids_match_panelceil": True,
++        }
++    payload["parity"] = parity
++    payload["both_parity_checks_reproduced"] = all(
++        bool(row["rounded_6_match"]) for row in parity.values()
++    )
++    payload["status"] = "COMPLETE" if payload["both_parity_checks_reproduced"] else "PARITY_FAILED"
++    payload["peak_rss_bytes"] = peak_rss_bytes()
++    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
++    atomic_write(payload)
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({
++        arm: payload["pooled"][arm]["ee_bit_per_j"] / 1e6 for arm in ARM_NAMES
++    }, sort_keys=True), flush=True)
++    print(f"both_parity_checks_reproduced={payload['both_parity_checks_reproduced']}", flush=True)
++    return 0 if payload["both_parity_checks_reproduced"] else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/STATIC-BASELINE-FAMILY-2026-09-10.md b/STATIC-BASELINE-FAMILY-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7a45b041fe2c7410081523ce91571459812d9f7
+--- /dev/null
++++ b/STATIC-BASELINE-FAMILY-2026-09-10.md
+@@ -0,0 +1,127 @@
++**Pooled EE: `RANDOM` 11.233999, `ROUND_ROBIN` 3.441227, `RSS_MAX` 41.621560, `MYOPIC_GREEDY` 28.668530, `NEAREST_ELIGIBLE` parity 11.027760, and `FIRST_IMPROVEMENT_FP` parity 13.430253 Mbit/J; both parity checks reproduced.**
++
++# Static baseline family on the training panel — 2026-09-10
++
++`DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM`. No learner or checkpoint was read, trained, scored, or ranked. Loss values supply no evidence here. Only the frozen 12-anchor development prefix was used; no evaluation-only claim date was read.
++
++## Exact arm definitions
++
++Every arm uses `PANELCEIL`'s frozen global anchors 0–11 in declared order, the complete boundary-0 legal set (visible, D2-eligible, and cell-reachable), the `a-r0` corrected provisioning path, the anchor's declared prior-step incumbent, and singleton evaluation over all 48 realised boundaries. The reported numerator is saturated full-buffer successfully decoded forward-downlink information bits with **no demand cap**. Pooled EE is `sum(bits) / sum(joules)`, never a mean of anchor-local ratios.
++
++The service guard has the same scope as in `PANELCEIL`: it filters candidates for objective-based selection (`MYOPIC_GREEDY` and `FIRST_IMPROVEMENT_FP`). A direct static rule is evaluated as selected, even when its realised served count is poor; rejection or resampling would change `RANDOM` from uniform and conceal precisely the below-random outcomes this measurement is meant to expose. All six arms use the same legal-option guard.
++
++- **`RANDOM`.** At global anchor `i`, initialise Python's MT19937 `random.Random` with `20260910 + i`. Visit users in ascending ID order and draw independently and uniformly from that user's complete declared legal-option tuple. A user is null only if that tuple is empty. There is one draw, with no rejection, service resampling, objective lookup, or demand information.
++
++- **`ROUND_ROBIN`.** Visit users in ascending ID order. For each user, choose the legal physical beam `(NORAD, cell)` having the smallest assignment count accumulated so far. Break equal-load ties by the option's declared order, which is increasing decision-boundary slant range and then physical identity. This equalises user count by legal beam; it does not optimise link quality, satellite count, interference, power, or the declared objective.
++
++- **`RSS_MAX`.** For each user independently, choose the legal option with maximum decision-boundary `nominal_gain`, i.e. wanted-link received watts per beam RF watt. Break an exact tie by declared legal-option order. It uses no demand, occupancy, cross-interference, energy, or realised fading.
++
++- **`NEAREST_ELIGIBLE`.** This is the requested parity label for the exact `PANELCEIL` `BASE` construction: reconstruct each frozen anchor's declared carrier mapping at that step, then set a user to null if it has no live legal action. On anchors whose carrier is `nearest-eligible`, that carrier means best D2 margin in the user's own cell with the first valid slot-order tie-break. The 12-anchor panel also deliberately contains `stay-if-possible` and `random-masked` carrier anchors, so the pooled 11.027760 parity value is the carrier-conditioned `BASE`, not a fresh nearest-only reassignment on all 12 rows. This distinction is required to reproduce `PANELCEIL` exactly.
++
++- **`MYOPIC_GREEDY`.** Start from that anchor's `PANELCEIL` `BASE` and make exactly one ascending-user sweep. For the current user, hold all other assignments fixed; evaluate the incumbent choice and every legal replacement on **nominal boundary 0** in ordered microbatches of 16; retain candidates whose served-PHY count is at least the initial base count; and choose the largest exact `F = decoded bits - eta_ref * joules`, breaking an exact tie by lexicographically smallest stable configuration ID. Commit the choice immediately for later users. There is no second sweep and no future-boundary selection information.
++
++- **`FIRST_IMPROVEMENT_FP`.** This reruns the certified `PANELCEIL` construction: start from the same base; select on exact **realised boundary-0** `F`; visit ascending users and their declared legal options; accept the first strict improvement meeting the initial base served-PHY guard within ordered microbatches of 16; repeat passes until a complete final pass finds no strict guarded improvement. The 48-boundary result never feeds selection.
++
++`modal_frac` below is the largest physical-beam occupancy divided by all 100 users at an anchor. `active beams/satellites` counts distinct non-null physical `(NORAD, cell)` identities and distinct NORADs. `argmax_distinct` counts distinct zero-based declared legal-option ordinals selected across users; it is an action-slot diversity diagnostic, not a physical-beam count. Diversity entries are the mean across 12 anchors followed by `[minimum, maximum]`.
++
++## Verified by running code
++
++### Pooled outcomes
++
++| arm | pooled bits | pooled joules | pooled EE (Mbit/J) | served PHY | rate-target attained | modal_frac | active beams | active satellites | argmax_distinct |
++|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
++| `RANDOM` | 1.288605626013e12 | 114705.864740 | 11.233999 | 1102/1200 | 141/1200 | 0.0333 [0.02, 0.05] | 81.750 [72, 86] | 8.583 [8, 9] | 27.500 [25, 28] |
++| `ROUND_ROBIN` | 7.537530520000e11 | 219036.120671 | 3.441227 | 798/1200 | 48/1200 | 0.0100 [0.01, 0.01] | 100.000 [100, 100] | 4.750 [4, 5] | 11.500 [11, 13] |
++| `RSS_MAX` | 1.653612586627e12 | 39729.712050 | 41.621560 | 1200/1200 | 297/1200 | 0.0500 [0.05, 0.05] | 47.750 [46, 50] | 5.000 [5, 5] | 5.250 [3, 8] |
++| `NEAREST_ELIGIBLE` | 1.121297101614e12 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 | 0.0425 [0.02, 0.05] | 57.333 [41, 90] | 5.333 [3, 9] | 10.667 [1, 28] |
++| `MYOPIC_GREEDY` | 1.527584566003e12 | 53284.369866 | 28.668530 | 1186/1200 | 258/1200 | 0.0300 [0.01, 0.05] | 89.417 [47, 100] | 7.833 [5, 9] | 16.250 [1, 26] |
++| `FIRST_IMPROVEMENT_FP` | 1.255889055879e12 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 | 0.0408 [0.02, 0.05] | 64.167 [41, 90] | 6.250 [3, 9] | 14.417 [1, 28] |
++
++The corresponding pooled served-PHY rates are 91.833%, 66.500%, 100.000%, 80.000%, 98.833%, and 86.333% in table order. Rate-target attainment is 11.750%, 4.000%, 24.750%, 10.583%, 21.500%, and 12.250%.
++
++### Parity gate
++
++Both parity gates pass. All 12 configuration IDs matched the sealed `PANELCEIL` receipt for both arms. An independent row-by-row diff also found exact equality of committed bits, joules, served-PHY count, and rate-target-attainment count at every anchor.
++
++| parity arm | expected EE | observed EE | rounded-six result | pooled bits | pooled joules | served | attained |
++|---|---:|---:|---|---:|---:|---:|---:|
++| `NEAREST_ELIGIBLE` / `PANELCEIL BASE` | 11.027760 | 11.027760227532 | pass | 1.121297101614e12 | 101679.495970 | 960/1200 | 127/1200 |
++| `FIRST_IMPROVEMENT_FP` | 13.430253 | 13.430252781856 | pass | 1.255889055879e12 | 93511.944732 | 1036/1200 | 147/1200 |
++
++### Wall-clock by anchor
++
++Each entry is `selection / end-to-end` seconds. End-to-end adds that arm's independent singleton 48-boundary committed evaluation. Tape construction (222.563 s, shared once by every arm) is excluded from arm timings. For the fixed point, selection includes its terminal certificate, exactly as in `PANELCEIL`.
++
++| global anchor | carrier | `RANDOM` | `ROUND_ROBIN` | `RSS_MAX` | `NEAREST_ELIGIBLE` | `MYOPIC_GREEDY` | `FIRST_IMPROVEMENT_FP` |
++|---:|---|---:|---:|---:|---:|---:|---:|
++| 0 | nearest-eligible | .002818 / .303287 | .002607 / .059063 | .003892 / .145811 | .000236 / .161853 | 5.456901 / 5.532978 | 4.341399 / 4.502410 |
++| 1 | stay-if-possible | .002654 / .255480 | .002631 / .060160 | .003817 / .146391 | .000269 / .160989 | 5.505847 / 5.583911 | 4.144753 / 4.305702 |
++| 2 | random-masked | .002756 / .177900 | .002630 / .057802 | .003876 / .145935 | .000282 / .243325 | 5.302749 / 5.345201 | 4.755255 / 4.998975 |
++| 3 | nearest-eligible | .002751 / .336844 | .002641 / .083404 | .003648 / .198837 | .000300 / .170462 | 5.219370 / 5.391113 | 4.389278 / 4.560558 |
++| 4 | stay-if-possible | .002928 / .223756 | .002681 / .083229 | .004182 / .198985 | .000298 / .180493 | 5.776191 / 5.856508 | 4.375899 / 4.555498 |
++| 5 | random-masked | .002738 / .766961 | .002579 / .084710 | .004034 / .200519 | .000304 / .322672 | 5.254159 / 5.310803 | 5.217818 / 5.540263 |
++| 6 | nearest-eligible | .002583 / .544976 | .002542 / .141758 | .003850 / .517014 | .000278 / .305039 | 7.236447 / 7.640597 | 4.942540 / 5.248655 |
++| 7 | stay-if-possible | .002695 / .169184 | .002525 / .145334 | .003633 / .514654 | .000274 / .345009 | 6.238417 / 6.310437 | 45.171579 / 45.316361 |
++| 8 | random-masked | .002344 / .273302 | .002606 / .142241 | .003579 / .513144 | .000282 / .450956 | 7.035742 / 7.095645 | 7.285334 / 7.737017 |
++| 9 | nearest-eligible | .002665 / .374680 | .002598 / .116862 | .003798 / .919762 | .000294 / .899210 | 11.448226 / 12.008537 | 8.272072 / 9.173329 |
++| 10 | stay-if-possible | .002859 / .590253 | .002631 / .120288 | .003830 / .943261 | .000316 / .378621 | 7.428929 / 7.487751 | 121.330814 / 121.678617 |
++| 11 | random-masked | .002582 / .477036 | .002564 / .124715 | .003656 / .934686 | .000341 / .450081 | 9.161437 / 9.352503 | 9.417967 / 9.871781 |
++| **mean** | — | **.002698 / .374471** | **.002603 / .101631** | **.003816 / .448250** | **.000289 / .339059** | **6.755368 / 6.909665** | **18.637059 / 18.957430** |
++
++### Cheapest-to-most-expensive ordering
++
++This ordering uses mean **selection** wall-clock, because committed 48-boundary scoring is a common measurement operation rather than policy decision cost. The final column records mean end-to-end measurement time for completeness.
++
++| cost order | arm | mean selection s/anchor | pooled EE (Mbit/J) | mean end-to-end s/anchor |
++|---:|---|---:|---:|---:|
++| 1 | `NEAREST_ELIGIBLE` | 0.000289 | 11.027760 | 0.339059 |
++| 2 | `ROUND_ROBIN` | 0.002603 | 3.441227 | 0.101631 |
++| 3 | `RANDOM` | 0.002698 | 11.233999 | 0.374471 |
++| 4 | `RSS_MAX` | 0.003816 | 41.621560 | 0.448250 |
++| 5 | `MYOPIC_GREEDY` | 6.755368 | 28.668530 | 6.909665 |
++| 6 | `FIRST_IMPROVEMENT_FP` | 18.637059 | 13.430253 | 18.957430 |
++
++The one-process run completed in 572.791 s including shared tape construction. Peak RSS was **2.517 GiB** (2,702,925,824 bytes), below 5 GB. The process ran at niceness 15 under `/home/sat/mcrl-leo-handover/.venv/bin/python`; all six recorded BLAS/OpenMP thread controls were `1`.
++
++## Derived on paper from verified aggregates
++
++- `ROUND_ROBIN / RANDOM - 1 = -69.367747%`.
++- `NEAREST_ELIGIBLE / RANDOM - 1 = -1.835849%`.
++- `MYOPIC_GREEDY / RANDOM - 1 = +155.194334%`.
++- `RSS_MAX / RANDOM - 1 = +270.496366%`.
++- `MYOPIC_GREEDY / FIRST_IMPROVEMENT_FP - 1 = +113.462328%`.
++- `RSS_MAX / FIRST_IMPROVEMENT_FP - 1 = +209.908983%`.
++
++These are arithmetic relations only; they are not learned-policy claims and are not inferred from losses.
++
++## Inferred
++
++The intended comparison structure remains useful, but this measurement changes what may honestly be called its floors and ceiling:
++
++- The weak-static family is the reference family a learned proposal must be placed against. On this panel it is not a narrow floor: its observed span is 3.441227–41.621560 Mbit/J. In particular, clearing only the carrier-conditioned base or random does not clear `RSS_MAX` under the definition above.
++
++- `FIRST_IMPROVEMENT_FP` remains the designated strong classical-search comparator and is not a required learned win target, as stipulated. It is **not an empirical numerical upper bound on this measured family**: `MYOPIC_GREEDY` and `RSS_MAX` are higher. Calling 13.430253 a universal ceiling after this run would contradict the verified table.
++
++- `RANDOM` remains the sanity reference. `ROUND_ROBIN` is 69.37% below it and must be reported. The diversity evidence does not support calling this particular failure crowding: it has the lowest possible measured `modal_frac` (0.01) and exactly 100 active beams at every anchor. Its poor result instead coincides with over-dispersion, 219,036 J (the largest denominator), only 798/1200 served, and just 48/1200 attaining target. Thus “below random implies crowding” is not valid without the occupancy diagnostics; this arm fails for a different static pathology.
++
++- `RSS_MAX`'s high EE is not an artefact of dropping users: it serves 1200/1200, attains 297/1200, has the largest pooled numerator, and the smallest pooled energy denominator. Under declared full-buffer/no-demand-cap scoring, it is the strongest measured arm despite being demand-blind.
++
++- `MYOPIC_GREEDY` is a single nominal sweep, whereas the fixed point selects strict moves on realised boundary 0 from a carrier-conditioned start. Their ordering therefore does not show a certification error or make either algorithm a global optimizer. It shows that the local fixed-point construction is start-, information-, and traversal-dependent.
++
++No learned arm is ranked here.
++
++## Machine evidence and reproduction
++
++```text
++33fa7c31a219a190db8d985ce81b85893bf8d4024f9af4fe8b1c5ac64adf17b5  .scratch/statics/statics-receipt.json  [canonical content digest]
++dd81d45b6cc81291518aaa5fd1276be99d2f0f9d818c4445054620d3f0dc93a5  .scratch/statics/statics-receipt.json  [file SHA-256]
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  .scratch/statics/run_statics.py
++09e3e9c5e01f96bb879170ee1c31f752448f33fa6772284fabe8cbbea7fbceca  PANELCEIL receipt  [canonical content digest, read-only]
++dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95  PANELCEIL runner  [read-only]
++```
++
++World tape: domain `V025_PROBE/world/1`, seed `5261619120743994529`, digest `43718040fd7157edc158a8f8cd32418c619dacae1ef1114094f115805f027bf0`.
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/statics/run_statics.py
++```
+
+tokens used
+150,281
