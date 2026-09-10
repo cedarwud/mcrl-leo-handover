@@ -6804,3 +6804,2262 @@ ba867d0df8c2bb6147026c0aa688bfec0f42fc25a48865d30f546e5ca1297f49  /home/sat/mcrl
 1e56e8d72453de3533fc6d22a10500c6fc0db5069c03096cee6ac0ce4e1221e0  /home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1.1-AMENDMENT-2026-09-09.md
 cef157faba4ac748a63e1b579cd6a7d58d375400fa0d569df11a2f977cfe2594  /home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1.2-AMENDMENT-2026-09-09.md
 
+exec
+/bin/bash -lc 'ls -l /home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt /home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/status.json 2>&1 || true
+sha256sum /home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt 2>/dev/null || true' in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 0ms:
+-rw-rw-r-- 1 sat sat 1012407 Sep  8 13:54 /home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt
+-rw-rw-r-- 1 sat sat    3251 Sep  8 13:54 /home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/status.json
+e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b  /home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt
+
+codex
+Part 1 is now decisive: the external arm’s checkpoint and V0.23 inference adapter exist, but the V0.25 code never constructs that adapter’s native 112-D observation or routes its selected profile into `a-r0`. I will run one read-only authentication/load smoke of the legacy adapter (not a panel measurement), with the required interpreter, niceness, thread pins, RSS cap, and explicit `anchor 0/20`, then write the stop report.
+exec
+/bin/bash -lc "env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 BLIS_NUM_THREADS=1 PYTHONPATH=/home/sat/mcrl-v025-retrain-ws/src nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python -c 'import importlib.util,json,os,resource,sys; p=\"/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py\"; s=importlib.util.spec_from_file_location(\"baseline_adapter\",p); m=importlib.util.module_from_spec(s); sys.modules[s.name]=m; s.loader.exec_module(m); a=m.BaselineAdapter.from_artifacts(); rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024; print(json.dumps({\"binding\":a.binding(),\"checkpoint\":str(a.checkpoint_path),\"nice\":os.getpriority(os.PRIO_PROCESS,0),\"python\":sys.executable,\"thread_pins\":{k:os.environ[k] for k in (\"OMP_NUM_THREADS\",\"OPENBLAS_NUM_THREADS\",\"MKL_NUM_THREADS\",\"NUMEXPR_NUM_THREADS\",\"VECLIB_MAXIMUM_THREADS\",\"BLIS_NUM_THREADS\")}},sort_keys=True)); print(\"anchor 0/20\"); print(f\"peak RSS: {rss} bytes ({rss/1024/1024:.2f} MiB)\"); assert rss < 5_000_000_000'" in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 1013ms:
+{"binding": {"action_dim": 28, "checkpoint_sha256": "e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b", "contract_fields_excluded": true, "state_dim": 112, "training_episodes": 9000}, "checkpoint": "/home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt", "nice": 15, "python": "/home/sat/mcrl-leo-handover/.venv/bin/python", "thread_pins": {"BLIS_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "NUMEXPR_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "VECLIB_MAXIMUM_THREADS": "1"}}
+anchor 0/20
+peak RSS: 524275712 bytes (499.99 MiB)
+
+collab: Wait
+exec
+/bin/bash -lc "rg -n 'BASELINE|carrier_base|selections\\[' /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py | sed -n '1,220p'
+rg -n 'StepEvaluator|evaluate_many|boundary_indices|selection' /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py | sed -n '1,260p'
+rg -n 'StepEvaluator|evaluate_many|boundary_indices|SELECTION_BOUNDARY' /home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | head -220" in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 0ms:
+82:REPORTED_ARMS = (*LEARNED_ARMS, "BASELINE", "S0", "S_UNI")
+1223:            "arm": "BASELINE",
+1582:        selections[(seed, "S0")] = exact_s0
+1584:            selections[(seed, arm)] = min(
+1588:            "top_choice_agreement": selections[(seed, "FULL")].assignments == exact_choice.assignments,
+1644:                carrier_base = built["base"]
+1652:                    carrier_base,
+1658:                    carrier_base, standard_catalogue
+1661:                    carrier_base, standard_catalogue, current, rows
+1665:                    base=carrier_base,
+1676:                    tape, step_index, carrier_base, u, standard_catalogue,
+1697:                    "P-a0": (carrier_base, standard_catalogue, exact_a0),
+1722:                        selections[(seed, "FULL")].assignments:
+1723:                        selections[(seed, "FULL")]
+1733:                        selections[(seed, "BASELINE")] = carrier_base
+1734:                        selections[(seed, "S_UNI")] = u
+1747:                            config = selections[(seed, arm)]
+1789:                        full_config = selections[(seed, "FULL")]
+1791:                        base_profile = realised.evaluate(carrier_base)
+1813:                        for user in sorted(carrier_base.mapping):
+1814:                            if full_config.mapping[user] == carrier_base.mapping[user]:
+1816:                            mapping = carrier_base.mapping
+1818:                            singleton = ENGINE._configuration(carrier_base, mapping, kind="pilot-report-singleton")
+1998:        f"learned arms {list(PILOT_ARMS)} plus BASELINE, S0, S_UNI; "
+2032:        f"Learned arm-seed lineages ran with concurrency {training_manifest['concurrency']}; external BASELINE seed records were emitted separately. Neutral batches were hoisted once per worker. Each learned lineage completed {LEGACY_EPOCH_BUDGET} source epochs with a checkpoint every 100 epochs; **this report evaluates the epoch-{EVAL_EPOCH} checkpoint**.",
+2082:        "1. Learned neutral-source experiment: run here (FULL, DROP_C1, DROP_C2, DROP_C3, ALL_NEUTRAL_CONTROL, BASELINE).",
+2135:                             "nearest carrier, 2 seeds, FULL/DROP_C3/BASELINE, epoch 200")
+2145:        REPORTED_ARMS = (*PILOT_ARMS, "BASELINE", "S0", "S_UNI")
+281:    evaluator = ENGINE.StepEvaluator(
+308:        options, census = ENGINE._selection_shortlist(
+389:    current = ENGINE.StepEvaluator(
+393:        boundary_indices=(0,),
+513:        current.evaluate_many((base, selected))
+555:    current = ENGINE.StepEvaluator(
+564:        boundary_indices=(0,),
+570:    current.evaluate_many(tuple(unique.values()))
+771:        current.evaluate_many(catalogue)
+773:        factors = ENGINE._selection_factor_scores(
+1321:        evaluator.evaluate_many((proposed,))
+1332:        evaluator.evaluate_many((candidate,))
+1351:    evaluator.evaluate_many(catalogue)
+1368:    evaluator.evaluate_many(tuple({
+1515:    evaluator.evaluate_many(tuple(allowed))
+1529:    selections = {}
+1582:        selections[(seed, "S0")] = exact_s0
+1584:            selections[(seed, arm)] = min(
+1588:            "top_choice_agreement": selections[(seed, "FULL")].assignments == exact_choice.assignments,
+1600:    return selections, diagnostics
+1700:                realised = ENGINE.StepEvaluator(
+1710:                    selections, diagnostics = _select_for_anchor(
+1722:                        selections[(seed, "FULL")].assignments:
+1723:                        selections[(seed, "FULL")]
+1733:                        selections[(seed, "BASELINE")] = carrier_base
+1734:                        selections[(seed, "S_UNI")] = u
+1739:                    realised.evaluate_many(
+1741:                            **{row.assignments: row for row in selections.values()},
+1747:                            config = selections[(seed, arm)]
+1789:                        full_config = selections[(seed, "FULL")]
+1819:                            realised.evaluate_many((singleton,))
+2013:        "This is quarantined engineering evidence only. No scientific conclusion, configuration selection, or claim is made.",
+156:SELECTION_BOUNDARY_INDICES = (0, 12, 24, 36, 47)
+199:        "selection_boundary_indices": list(SELECTION_BOUNDARY_INDICES),
+593:        nominal = StepEvaluator(
+601:            boundary_indices=(0,),
+604:        nominal.evaluate_many(rank_rows)
+763:class StepEvaluator:
+777:        boundary_indices: tuple[int, ...] = tuple(range(48)),
+787:        self.boundary_indices = boundary_indices
+793:    def evaluate_many(self, configs: Sequence[Configuration]) -> None:
+823:            boundary_indices=self.boundary_indices,
+898:        evaluations = len(missing) * len(self.boundary_indices)
+1094:            nominal_evaluator = StepEvaluator(
+1103:            nominal_evaluator.evaluate_many(catalog)
+1119:            evaluated = StepEvaluator(
+1194:        evaluator = StepEvaluator(
+1365:    evaluator: StepEvaluator,
+1615:        evaluator = StepEvaluator(
+1623:            boundary_indices=SELECTION_BOUNDARY_INDICES,
+1625:        evaluator.evaluate_many(configs)
+1710:    evaluator: StepEvaluator,
+1738:    evaluator.evaluate_many([config for _subset, config in configs])
+1837:    evaluator: StepEvaluator,
+1906:            evaluator.evaluate_many(
+2006:    nominal_evaluator = StepEvaluator(
+2608:    selection_evaluator = StepEvaluator(
+2617:        boundary_indices=(0,),
+2619:    selection_evaluator.evaluate_many(catalog)
+2757:    evaluator = StepEvaluator(
+2769:    evaluator.evaluate_many(unique_selected)
+3021:            "stage1_boundary_indices": [0],
+3022:            "selection_boundary_indices": list(SELECTION_BOUNDARY_INDICES),
+
+exec
+/bin/bash -lc "nl -ba /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py | sed -n '1600,1765p'
+nl -ba /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py | sed -n '1765,1830p'
+nl -ba /home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | sed -n '755,925p'" in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 0ms:
+  1600	    return selections, diagnostics
+  1601	
+  1602	
+  1603	def evaluate(output: Path, calibration, model_payloads, batches):
+  1604	    phase_started = time.perf_counter()
+  1605	    cpu_started = time.process_time()
+  1606	    print(json.dumps({"artifact_label": LABEL, "phase": "evaluation",
+  1607	                      "event": "restore_models_start"}), flush=True)
+  1608	    models = _restore_models(model_payloads, batches)
+  1609	    setting = ENGINE._setting("a-r0")
+  1610	    run_setting = ENGINE.run_setting_for("a-r0")
+  1611	    records = []
+  1612	    phase_latencies = []
+  1613	    for world_offset, domain in enumerate(EVALUATION_WORLDS, start=3):
+  1614	        tape_started = time.perf_counter()
+  1615	        print(json.dumps({"artifact_label": LABEL, "phase": "evaluation",
+  1616	                          "event": "tape_build_start", "world": domain,
+  1617	                          "steps": EVAL_TAPE_STEPS}), flush=True)
+  1618	        tape = build_world_tape(
+  1619	            domain=domain,
+  1620	            provider=LegacyWorldProvider(role="pilot-evaluation"),
+  1621	            steps=EVAL_TAPE_STEPS,
+  1622	            start_time_s=0.0,
+  1623	        )
+  1624	        print(json.dumps({"artifact_label": LABEL, "phase": "evaluation",
+  1625	                          "event": "tape_build_done", "world": domain,
+  1626	                          "wall_s": time.perf_counter() - tape_started}), flush=True)
+  1627	        anchor_index = 0
+  1628	        for step_index in range(EVAL_ANCHOR_STEPS):
+  1629	            for carrier in ENGINE.REFERENCE_CARRIERS[:EVAL_CARRIER_LIMIT]:
+  1630	                anchor_started = time.perf_counter()
+  1631	                feature_started = time.perf_counter()
+  1632	                built = _build_anchor_rows(
+  1633	                    tape=tape,
+  1634	                    setting=setting,
+  1635	                    run_setting=run_setting,
+  1636	                    calibration=calibration,
+  1637	                    step_index=step_index,
+  1638	                    carrier=carrier,
+  1639	                    anchor_index=anchor_index,
+  1640	                    include_coalition=False,
+  1641	                    full_legal_actions=True,
+  1642	                )
+  1643	                feature_wall = time.perf_counter() - feature_started
+  1644	                carrier_base = built["base"]
+  1645	                incumbent = built["incumbent"]
+  1646	                rows = built["rows_by_user_action"]
+  1647	                current = built["current_evaluator"]
+  1648	                standard_started = time.perf_counter()
+  1649	                standard_catalogue, _ = ENGINE._catalogue_with_census(
+  1650	                    tape,
+  1651	                    step_index,
+  1652	                    carrier_base,
+  1653	                    setting=setting,
+  1654	                    calibration=calibration,
+  1655	                    run_setting=run_setting,
+  1656	                )
+  1657	                exact_a0 = _structural_interactions(
+  1658	                    carrier_base, standard_catalogue
+  1659	                )
+  1660	                exact_s0 = _exact_s0_boundary0(
+  1661	                    carrier_base, standard_catalogue, current, rows
+  1662	                )
+  1663	                standard_wall = time.perf_counter() - standard_started
+  1664	                u, u_iterations, u_wall, u_missed, u_certificate = ENGINE._s_uni_select(
+  1665	                    base=carrier_base,
+  1666	                    incumbent=incumbent,
+  1667	                    tape=tape,
+  1668	                    step_index=step_index,
+  1669	                    evaluator=current,
+  1670	                    calibration=calibration,
+  1671	                    compute_budget_s=5.0,
+  1672	                    run_setting=run_setting,
+  1673	                    cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+  1674	                )
+  1675	                u_catalogue, ranked_users, u_catalogue_wall = _build_u_catalogue(
+  1676	                    tape, step_index, carrier_base, u, standard_catalogue,
+  1677	                    current, calibration, rows,
+  1678	                )
+  1679	                exact_u = _structural_interactions(u, u_catalogue)
+  1680	                u_joint_catalogue = tuple(
+  1681	                    row for row in u_catalogue
+  1682	                    if len(exact_u[row.configuration_id]["changed"]) >= 2
+  1683	                )
+  1684	                exact_u.update(
+  1685	                    _exact_interactions(
+  1686	                        u, incumbent, u_joint_catalogue, current, calibration
+  1687	                    )
+  1688	                )
+  1689	                u_positive_joint_rows = [
+  1690	                    row for row in exact_u.values()
+  1691	                    if len(row["changed"]) >= 2 and row["joint"] > 0.0
+  1692	                ]
+  1693	                u_positive_joint_sizes = sorted(
+  1694	                    {len(row["changed"]) for row in u_positive_joint_rows}
+  1695	                )
+  1696	                variants = {
+  1697	                    "P-a0": (carrier_base, standard_catalogue, exact_a0),
+  1698	                    "P-u": (u, u_catalogue, exact_u),
+  1699	                }
+  1700	                realised = ENGINE.StepEvaluator(
+  1701	                    tape,
+  1702	                    setting,
+  1703	                    step_index,
+  1704	                    transition_from=incumbent,
+  1705	                    cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+  1706	                    field="realised",
+  1707	                    run_setting=run_setting,
+  1708	                )
+  1709	                for variant, (catalogue_anchor, catalogue, exact) in variants.items():
+  1710	                    selections, diagnostics = _select_for_anchor(
+  1711	                        variant,
+  1712	                        catalogue_anchor,
+  1713	                        catalogue,
+  1714	                        exact,
+  1715	                        models,
+  1716	                        rows,
+  1717	                        tape,
+  1718	                        step_index,
+  1719	                        exact_s0,
+  1720	                    )
+  1721	                    selected_full_catalogue = tuple({
+  1722	                        selections[(seed, "FULL")].assignments:
+  1723	                        selections[(seed, "FULL")]
+  1724	                        for seed in LEARNER_SEEDS
+  1725	                    }.values())
+  1726	                    exact.update(
+  1727	                        _exact_interactions(
+  1728	                            catalogue_anchor, incumbent, selected_full_catalogue,
+  1729	                            current, calibration,
+  1730	                        )
+  1731	                    )
+  1732	                    for seed in LEARNER_SEEDS:
+  1733	                        selections[(seed, "BASELINE")] = carrier_base
+  1734	                        selections[(seed, "S_UNI")] = u
+  1735	                    additive_configs = {
+  1736	                        row["additive_choice"].assignments: row["additive_choice"]
+  1737	                        for row in diagnostics.values()
+  1738	                    }
+  1739	                    realised.evaluate_many(
+  1740	                        tuple({
+  1741	                            **{row.assignments: row for row in selections.values()},
+  1742	                            **additive_configs,
+  1743	                        }.values())
+  1744	                    )
+  1745	                    for seed in LEARNER_SEEDS:
+  1746	                        for arm in REPORTED_ARMS:
+  1747	                            config = selections[(seed, arm)]
+  1748	                            profile = realised.evaluate(config)
+  1749	                            outcome = profile.outcome()
+  1750	                            handovers = ENGINE._physical_events(
+  1751	                                incumbent,
+  1752	                                config,
+  1753	                                cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+  1754	                            )
+  1755	                            exact_row = exact.get(config.configuration_id, {"psi": 0.0, "joint": 0.0, "changed": ()})
+  1756	                            records.append(
+  1757	                                {
+  1758	                                    "artifact_label": LABEL,
+  1759	                                    "world_id": domain,
+  1760	                                    "world_seed": tape.seed,
+  1761	                                    "anchor_index": anchor_index,
+  1762	                                    "step_index": step_index,
+  1763	                                    "carrier": carrier,
+  1764	                                    "catalogue_anchor": variant,
+  1765	                                    "learner_seed": seed,
+  1765	                                    "learner_seed": seed,
+  1766	                                    "arm": arm,
+  1767	                                    "configuration_id": config.configuration_id,
+  1768	                                    "changed_users": config.changed_users,
+  1769	                                    "bits": profile.bits,
+  1770	                                    "joules": profile.joules,
+  1771	                                    "pooled_ee_bits_per_j": None if profile.joules == 0 else profile.bits / profile.joules,
+  1772	                                    "availability": float(outcome.useful_availability),
+  1773	                                    "handover_count": sum(event.kind in {"beam_change", "satellite_change", "reentry"} for event in handovers),
+  1774	                                    "handover_opportunities": len(handovers),
+  1775	                                    "rf_cap_hits": profile.rf_cap_hits,
+  1776	                                    "rf_transmission_observations": profile.rf_transmission_observations,
+  1777	                                    "psi_anchor_normalized": exact_row["psi"],
+  1778	                                    "joint_delta_anchor_normalized": exact_row["joint"],
+  1779	                                    "top_choice_agreement": diagnostics.get(seed, {}).get("top_choice_agreement") if arm == "FULL" else None,
+  1780	                                    "c2_tie_break": diagnostics.get(seed, {}).get("c2_tie") if arm == "FULL" else None,
+  1781	                                    "u_any_positive_joint_escape": bool(u_positive_joint_rows),
+  1782	                                    "u_positive_joint_sizes": u_positive_joint_sizes,
+  1783	                                    "s_uni_iterations": u_iterations,
+  1784	                                    "s_uni_wall_s": u_wall,
+  1785	                                    "s_uni_deadline_missed": u_missed,
+  1786	                                    "s_uni_termination_certificate": u_certificate,
+  1787	                                }
+  1788	                            )
+  1789	                        full_config = selections[(seed, "FULL")]
+  1790	                        additive_config = diagnostics[seed]["additive_choice"]
+  1791	                        base_profile = realised.evaluate(carrier_base)
+  1792	                        full_profile = realised.evaluate(full_config)
+  1793	                        additive_profile = realised.evaluate(additive_config)
+  1794	                        full_row = records[-len(REPORTED_ARMS)]
+  1795	                        v_ca_bits = full_profile.bits - additive_profile.bits
+  1796	                        v_ca_energy_bits = -float(calibration.eta_ref) * (
+  1797	                            full_profile.joules - additive_profile.joules
+  1798	                        )
+  1799	                        v_ca_phi_bits = float(calibration.kappa_bits_per_user_step) * float(
+  1800	                            ENGINE._phi_for(incumbent, full_config)
+  1801	                            - ENGINE._phi_for(incumbent, additive_config)
+  1802	                        )
+  1803	                        full_row.update({
+  1804	                            "v_ca_bits_component": v_ca_bits,
+  1805	                            "v_ca_energy_component_bits": v_ca_energy_bits,
+  1806	                            "v_ca_phi_component_bits": v_ca_phi_bits,
+  1807	                            "v_ca_net_bits": v_ca_bits + v_ca_energy_bits + v_ca_phi_bits,
+  1808	                            "additive_choice_joint_delta": exact.get(
+  1809	                                additive_config.configuration_id, {"joint": 0.0}
+  1810	                            )["joint"],
+  1811	                        })
+  1812	                        singles = []
+  1813	                        for user in sorted(carrier_base.mapping):
+  1814	                            if full_config.mapping[user] == carrier_base.mapping[user]:
+  1815	                                continue
+  1816	                            mapping = carrier_base.mapping
+  1817	                            mapping[user] = full_config.mapping[user]
+  1818	                            singleton = ENGINE._configuration(carrier_base, mapping, kind="pilot-report-singleton")
+  1819	                            realised.evaluate_many((singleton,))
+  1820	                            if singleton.configuration_id not in realised._invalid:
+  1821	                                singles.append(realised.evaluate(singleton))
+  1822	                        if singles:
+  1823	                            decomposition = matched_anchor_decomposition(
+  1824	                                base=(base_profile.outcome(),),
+  1825	                                selected=(full_profile.outcome(),),
+  1826	                                singleton_selected=tuple((row.outcome(),) for row in singles),
+  1827	                            )
+  1828	                            full_row["g_A"] = float(decomposition.g_additive)
+  1829	                            full_row["g_I"] = float(decomposition.g_interaction)
+  1830	                phase_latencies.append(
+   755	        InterruptionEvent(event.user_id, decision_time_s, mapping[event.kind])
+   756	        for event in _physical_events(
+   757	            before, after, cell_rekeyed_users=cell_rekeyed_users
+   758	        )
+   759	        if event.kind in mapping
+   760	    )
+   761	
+   762	
+   763	class StepEvaluator:
+   764	    """Architecture/configuration cache; treatment cells only rescore it."""
+   765	
+   766	    def __init__(
+   767	        self,
+   768	        tape: ExogenousWorldTape,
+   769	        setting: PhysicsSetting,
+   770	        step_index: int,
+   771	        *,
+   772	        transition_from: Configuration,
+   773	        cell_rekeyed_users: Iterable[int] = (),
+   774	        field: str = "realised",
+   775	        counter: EvaluationCounter | None = None,
+   776	        run_setting: SealedRunSetting | None = None,
+   777	        boundary_indices: tuple[int, ...] = tuple(range(48)),
+   778	    ) -> None:
+   779	        self.tape = tape
+   780	        self.setting = setting
+   781	        self.step_index = step_index
+   782	        self.transition_from = transition_from
+   783	        self.cell_rekeyed_users = tuple(cell_rekeyed_users)
+   784	        self.field = field
+   785	        self.counter = counter
+   786	        self.run_setting = run_setting_for(setting.label) if run_setting is None else run_setting
+   787	        self.boundary_indices = boundary_indices
+   788	        self._shared: dict[str, object] = {}
+   789	        self._evaluated: dict[str, EvaluatedProfile] = {}
+   790	        self._invalid: set[str] = set()
+   791	        self.physical_evaluations = 0
+   792	
+   793	    def evaluate_many(self, configs: Sequence[Configuration]) -> None:
+   794	        """Populate the cache through the dense real-world ``a-r0`` path."""
+   795	
+   796	        missing = [row for row in configs if row.configuration_id not in self._evaluated]
+   797	        step = self.tape.steps[self.step_index]
+   798	        if not missing or step.arrays is None or self.setting.label != "a-r0":
+   799	            for config in missing:
+   800	                self.evaluate(config)
+   801	            return
+   802	        arrays = step.arrays
+   803	        row_of = arrays._row_index()
+   804	        users = tuple(int(value) for value in arrays.users)
+   805	        selected = np.full((len(missing), len(users)), -1, dtype=np.int64)
+   806	        absent = np.zeros(len(missing), dtype=np.bool_)
+   807	        for config_index, config in enumerate(missing):
+   808	            mapping = config.mapping
+   809	            for user_column, user in enumerate(users):
+   810	                identity = mapping[user]
+   811	                if identity is not None:
+   812	                    row = row_of.get((user, identity))
+   813	                    if row is None:
+   814	                        absent[config_index] = True
+   815	                    else:
+   816	                        selected[config_index, user_column] = row
+   817	        result = evaluate_ar_tdm_catalogue(
+   818	            arrays,
+   819	            selected,
+   820	            field=self.field,
+   821	            rate_target_bps=self.run_setting.rate_target_bps,
+   822	            circuit_power_per_active_chain_w=self.run_setting.circuit_power_per_active_chain_w,
+   823	            boundary_indices=self.boundary_indices,
+   824	        )
+   825	        mode_names = ("NO_MODE",) + tuple(row.name for row in ACM_MODES)
+   826	        for index, config in enumerate(missing):
+   827	            if absent[index] or not bool(result.valid[index]):
+   828	                self._invalid.add(config.configuration_id)
+   829	                continue
+   830	            per_user_bits = {
+   831	                user: float(result.bits[index, column])
+   832	                for column, user in enumerate(users)
+   833	            }
+   834	            decoding = {
+   835	                user: float(result.decoding_time_s[index, column])
+   836	                for column, user in enumerate(users)
+   837	            }
+   838	            served = {user: decoding[user] > 0.0 for user in users}
+   839	            feasible = {
+   840	                user: bool(result.feasible[index, column])
+   841	                for column, user in enumerate(users)
+   842	            }
+   843	            attained = {
+   844	                user: bool(result.attained[index, column])
+   845	                for column, user in enumerate(users)
+   846	            }
+   847	            score = CellScore(
+   848	                self.setting,
+   849	                per_user_bits,
+   850	                float(result.joules[index]),
+   851	                decoding,
+   852	                dict(decoding),
+   853	                served,
+   854	                attained,
+   855	                feasible,
+   856	                None,
+   857	                self.run_setting.rate_target_bps,
+   858	                True,
+   859	                float(result.residual_w[index]),
+   860	            )
+   861	            components = {
+   862	                "pa_j": float(result.pa_j[index]),
+   863	                "circuit_j": float(result.circuit_j[index]),
+   864	                "standby_j": 0.0,
+   865	                "baseband_j": float(result.baseband_j[index]),
+   866	                "bus_j": 0.0,
+   867	            }
+   868	            counts = {
+   869	                name: int(result.mode_counts[index, column])
+   870	                for column, name in enumerate(mode_names)
+   871	                if result.mode_counts[index, column]
+   872	            }
+   873	            profile = EvaluatedProfile(
+   874	                config,
+   875	                score,
+   876	                components,
+   877	                (
+   878	                    0.0
+   879	                    if self.run_setting.circuit_power_per_active_chain_w == 0.0
+   880	                    else components["circuit_j"] / self.run_setting.circuit_power_per_active_chain_w
+   881	                ),
+   882	                components["baseband_j"] / 0.200,
+   883	                counts,
+   884	                int(result.plateau_users[index]),
+   885	                len(users),
+   886	                int(result.cap_hits[index]),
+   887	                int(result.transmissions[index]),
+   888	                None,
+   889	                {0: "INVALID", 1: "CONVERGED", 2: "CONVERGED_SLOW"}[
+   890	                    int(result.certificate_status[index])
+   891	                ],
+   892	                int(result.certificate_iterations[index]),
+   893	                float(result.max_rf_power_w[index]),
+   894	                float(result.min_decoding_margin_db[index]),
+   895	                float(result.mean_acm_se_bit_s_hz[index]),
+   896	            )
+   897	            self._evaluated[config.configuration_id] = profile
+   898	        evaluations = len(missing) * len(self.boundary_indices)
+   899	        self.physical_evaluations += evaluations
+   900	        if self.counter is not None:
+   901	            self.counter.boundary_evaluations += evaluations
+   902	
+   903	    def evaluate(self, config: Configuration) -> EvaluatedProfile:
+   904	        if config.configuration_id in self._evaluated:
+   905	            return self._evaluated[config.configuration_id]
+   906	        geometry = self.tape.geometry_for(step_index=self.step_index, assignments=config.mapping)
+   907	        shared = build_shared_tape(
+   908	            self.setting.architecture,
+   909	            geometry,
+   910	            self.tape.inventory,
+   911	            field=self.field,  # type: ignore[arg-type]
+   912	            roster=tuple(user.user_id for user in self.tape.user_layout),
+   913	            config=RadiationConfig(rate_target_bps=self.run_setting.rate_target_bps),
+   914	            circuit_power_per_active_chain_w=self.run_setting.circuit_power_per_active_chain_w,
+   915	        )
+   916	        event_ledger = _interruption_events(
+   917	            self.transition_from,
+   918	            config,
+   919	            shared.integrated[0].time_s,
+   920	            cell_rekeyed_users=self.cell_rekeyed_users,
+   921	        )
+   922	        score = score_setting(
+   923	            shared,
+   924	            self.setting,
+   925	            discontinuities=discontinuities_from_event_ledger(
+
+exec
+/bin/bash -lc "rg -n --hidden --glob '*.py' --glob '*.md' --glob '"'!artifacts/**'"' --glob '"'!archive/**'"' 'V025_PROBE_R2|20-anchor|20 anchor|steps 0-4|steps 0..4' /home/sat/mcrl-v025-{selector,surface,crowd,retrain}-ws | head -300" in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-retrain-ws/C3-PANEL-HARNESS-2026-09-10.md:1:INCOMPLETE — the reusable instrument exists, but the required full panel is not yet sound; at the inherited 20-anchor, 12-seed, four-world scale under both rules its present measured-cost projection is **185.15 worker-hours + 15.5077 × E seconds** for caller-declared epoch count `E`.
+/home/sat/mcrl-v025-retrain-ws/src/mcrl/physics_v025/tapes.py:37:PROBE_WORLD_DOMAINS = tuple(f"V025_PROBE_R2/world/{index}" for index in range(1, 5))
+/home/sat/mcrl-v025-retrain-ws/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:218:(`c3-focal-nonfocal-oracle-pilot-v03-r1.json`): 20 anchors, 498 evaluated
+/home/sat/mcrl-v025-retrain-ws/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:219:unilateral candidates, 473 service-safe, 15/20 anchors with positive C3 action
+/home/sat/mcrl-v025-retrain-ws/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:260:- C1/C3: >= 20 anchors x >= 3 focal users x full 27-alternative enumeration,
+/home/sat/mcrl-v025-retrain-ws/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-selector-ws/V025-PILOT-TRACK-DECLARATION-2026-09-09.md:16:The pilot worlds are already quarantined from the claim panel (world 1 was opened before sealing; the formal panel uses the `V025_PROBE_R2` / `V025_CAL_R2` namespaces and reserved claim dates). The pilot uses the same code as Track S, so every integration defect it finds is a real defect of the confirmatory path, found earlier and more cheaply.
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1750:        raise C3SScreenError("S0 timing basis lacks 120 anchors")
+/home/sat/mcrl-v025-retrain-ws/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v024-regime-b-design/PREREG-V024-REGIME-B-DRAFT-CODEX-GPT6-ASTRA-2026-09-08.md:75:Reference carriers 固定 `nearest-eligible`、`stay-if-possible`、`random-masked`，不是 trained lineages。每 grid 為4×3×10=120 anchors、12,000 opportunities；共用 B physical tape，逐 grid 重算 delivered bits。
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v024-regime-b-design/PREREG-V024-REGIME-B-DRAFT-CODEX-GPT6-ASTRA-2026-09-08.md:108:每個 §4 合格點均使用相同120 anchors，比較：
+/home/sat/mcrl-v025-selector-ws/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/archive/multi-catfish-pre-v03-2026-08-31/docs/C3-REWARD-ALIGNED-STAGE0-CORE-GATE-2026-08-28.md:44:  and pooled 20-anchor two-choice support floor, without imputation.
+/home/sat/mcrl-v025-retrain-ws/archive/multi-catfish-pre-v03-2026-08-31/docs/C3-REWARD-ALIGNED-STAGE0-CORE-GATE-2026-08-28.md:85:   and hashes for the already-frozen 150-row/20-anchor floor.
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-chatgpt-package-20260908/06-E1-RESULT-RECORD.md:13:| panel | 4 derived worlds × 3 lineages × 10 steps = 120 anchors, 100 users, N = 12 000 opportunities |
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-chatgpt-package-20260908/outside-round3/astra-c3s-docx.md:29:The appropriate interpretation of S0 is consequently narrow. 04-S0-PROBE-RESULT.md, “Information-gap diagnostic,” reports per-anchor Spearman mean 0.910408, median 0.922043 and range 0.687133–0.984614 over 120 anchors. Selection used nominal values; reported EE used realised tape rows. This demonstrates useful candidate-ranking agreement under the simulator’s nominal-to-fading discrepancy on those anchors. It is not 91% decision accuracy, a 9% performance gap, an EE guarantee, or a robustness test against wrong PA parameters, stale occupancy, geometry error or calibration bias.
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-controller-handoff-20260907/REVIEW-E1-CONSISTENCY-AGY-2026-09-08.md:18:   All constants match across documents: \(\lambda = 118424222.8550065\) bits/J, \(\kappa = 10097071012.757404\) bits, \(\Delta t = 30.08\) s (\(47 \times 0.640\) s), service margin \(= 0.001\), users \(= 100\), lineages = `2026092101–03`. Panel steps align with memo rules: E1 uses 10 steps (`0..9`, 120 anchors; E1 line 100, Memo line 60), while candidate kill screens use 2 steps (`0..1`, 24 anchors; C-A line 118, C-B line 94, C-C line 97, Memo line 109).
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-controller-handoff-20260907/DRAFT-C3-EXISTENCE-TEST-CONTRACT-E1-CODEX-GPT6-ASTRA-2026-09-08.md:23:Let \(P\) contain all 120 anchors. For complete physical profile \(x\) at anchor \(p\), define interval bits \(B_{px}\), network joules \(E_{px}\), and served-user count \(C_{px}\). Let \(b_p\) be BASE, \(N=12000\), and
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-controller-handoff-20260907/DRAFT-C3-EXISTENCE-TEST-CONTRACT-E1-CODEX-GPT6-ASTRA-2026-09-08.md:108:**Underspecified pooling chosen:** one global ratio and service constraint over all 120 anchors. World/lineage breakdowns are descriptive; F2’s direction-vote gates are not inherited.
+/home/sat/mcrl-v025-selector-ws/.scratch/c3-v04/run_v07_c2_d2.py:873:            raise V07D2RunnerError("D2 prepare must contain exactly 20 anchors")
+/home/sat/mcrl-v025-selector-ws/.scratch/c3-v04/run_v07_c2_d2.py:980:        raise V07D2RunnerError("D2 prepare does not contain 20 anchors")
+/home/sat/mcrl-v025-selector-ws/.scratch/c3-v04/run_v07_c2_d2.py:1606:        raise V07D2RunnerError("D2 prepare does not contain exactly 20 anchors")
+/home/sat/mcrl-v025-selector-ws/src/mcrl/physics_v025/tapes.py:37:PROBE_WORLD_DOMAINS = tuple(f"V025_PROBE_R2/world/{index}" for index in range(1, 5))
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v018-relational-zr/equivalence-r3-failure/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-selector-ws/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:218:(`c3-focal-nonfocal-oracle-pilot-v03-r1.json`): 20 anchors, 498 evaluated
+/home/sat/mcrl-v025-selector-ws/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:219:unilateral candidates, 473 service-safe, 15/20 anchors with positive C3 action
+/home/sat/mcrl-v025-selector-ws/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:260:- C1/C3: >= 20 anchors x >= 3 focal users x full 27-alternative enumeration,
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3-existence-e1/E1-RESULT-RECORD-2026-09-08.md:13:| panel | 4 derived worlds × 3 lineages × 10 steps = 120 anchors, 100 users, N = 12 000 opportunities |
+/home/sat/mcrl-v025-selector-ws/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md:23:Let \(P\) contain all 120 anchors. For complete physical profile \(x\) at anchor \(p\), define interval bits \(B_{px}\), network joules \(E_{px}\), and served-user count \(C_{px}\). Let \(b_p\) be BASE, \(N=12000\), and
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md:108:**Underspecified pooling chosen:** one global ratio and service constraint over all 120 anchors. World/lineage breakdowns are descriptive; F2’s direction-vote gates are not inherited.
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v024-regime-b-chatgpt-package-20260908/05-E1-CONTRACT-SEALED.md:23:Let \(P\) contain all 120 anchors. For complete physical profile \(x\) at anchor \(p\), define interval bits \(B_{px}\), network joules \(E_{px}\), and served-user count \(C_{px}\). Let \(b_p\) be BASE, \(N=12000\), and
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v024-regime-b-chatgpt-package-20260908/05-E1-CONTRACT-SEALED.md:108:**Underspecified pooling chosen:** one global ratio and service constraint over all 120 anchors. World/lineage breakdowns are descriptive; F2’s direction-vote gates are not inherited.
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v024-regime-b-chatgpt-package-20260908/04-E1-RESULT-RECORD.md:13:| panel | 4 derived worlds × 3 lineages × 10 steps = 120 anchors, 100 users, N = 12 000 opportunities |
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3-existence-e1/CONTROLLER-REVIEW-E1-CONTRACT-2026-09-08.md:19:4. Pooling: one global ratio and one global service constraint over all 120 anchors; per-world/lineage breakdowns
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v025-physics-successor/probe/SEAL-PACKAGE-DRAFT-2026-09-08.md:146:| `V025_PROBE_R2/world/1` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v025-physics-successor/probe/SEAL-PACKAGE-DRAFT-2026-09-08.md:147:| `V025_PROBE_R2/world/2` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v025-physics-successor/probe/SEAL-PACKAGE-DRAFT-2026-09-08.md:148:| `V025_PROBE_R2/world/3` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v025-physics-successor/probe/SEAL-PACKAGE-DRAFT-2026-09-08.md:149:| `V025_PROBE_R2/world/4` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v023-c3s-variants-chatgpt-package-20260908/10-RELATED-WORK-C3S.md:29:The appropriate interpretation of S0 is consequently narrow. 04-S0-PROBE-RESULT.md, “Information-gap diagnostic,” reports per-anchor Spearman mean 0.910408, median 0.922043 and range 0.687133–0.984614 over 120 anchors. Selection used nominal values; reported EE used realised tape rows. This demonstrates useful candidate-ranking agreement under the simulator’s nominal-to-fading discrepancy on those anchors. It is not 91% decision accuracy, a 9% performance gap, an EE guarantee, or a robustness test against wrong PA parameters, stale occupancy, geometry error or calibration bias.
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4D-REPORT-2026-09-08.md:151:| six immutable `V025_PROBE_R2` / `V025_CAL_R2` manifests | `NOT_RUN_REAL_ANCHOR_GATE` |
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v018-relational-zr/equivalence-r2-failure/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-selector-ws/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PIPELINE-AUDITS-CD-2026-09-08.md:8:4. **Probe world quarantine (C4):** `V025_PROBE/world/1` was opened by the provider rehearsal before sealing (real bits/joules printed in the provider log). It is quarantined for development, rehearsal and KATs together with worlds 2–4 of that namespace. The formal matrix uses fresh domains `V025_PROBE_R2/world/{1..4}` and `V025_CAL_R2/world/{1..2}`, allocated prospectively; synthetic and KAT worlds live under `V025_SYNTHETIC/*` and `V025_PROVIDER_KAT/*`; every world identity includes provider source, archive, split and allocation-manifest digests.
+/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md:1:**The S0 and C3-S v1 artefacts exist and confirm S0 `+1.812631%` and C3-S FULL `+2.883167%` against their learned Q1+Q2 `BASE` references—not unilateral fixed points—but S0's joint-catalogue construction was not strictly deployable-only; the smallest V0.25 settling experiment is a no-new-learner, 20-anchor `V025_PROBE_R2` matched S0-versus-repaired-Q1+Q2-`a0` screen using the sealed bounded catalogue, one internally consistent dense boundary-0 selection path, and realised dense full-48 full-buffer pooled EE.**
+/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md:21:**VERIFIED correction to the controller shorthand.** S0's score used nominal fade-free physics, but its joint candidates came from E1 tapes whose evacuation groups were formed from a realised-fading BASE profile. The `+1.812631%` S0 arm therefore cannot be described strictly as “using only deployable information” when candidate formation is included. This is material: S0 selected joint rows on 109/120 anchors. C3-S v1 repaired the boundary by rebuilding the evacuation catalogue from a detached fade-free nominal BASE evaluation.
+/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md:104:over 120 anchors, with pooled served users over 12,000 opportunities. Per anchor, `B = interval_s * sum(link_rate_bps)` and `E = interval_s * system_power_w`. There is no demand/delivery cap: this is the same **full-buffer decodable-throughput numerator** now declared by V0.25. The physical integration is not the same implementation: V0.23 uses its current-interval endpoint convention, while V0.25's committed authority in use is dense full-48 integration.
+/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md:119:**VERIFIED.** TRAIN domains `C3_EXISTENCE_E1/world/{1..4}` yield seeds `861587764845384088`, `3943897440191533562`, `5747196377242098234`, and `4004348767321774260`. They are crossed with frozen Q1/Q2 lineages `2026092101`, `2026092102`, and `2026092103`, at steps `0..9`: 12 units, 120 anchors, 100 users/anchor. The physical episode-start dates are not serialized in the S0 result, E1 terminal receipt, or tapes. The lineage numbers are identifiers, not date evidence. The report/run date is 2026-09-08.
+/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md:258:**Panel.** Exactly the 20 development anchors already used by the latency receipt: `V025_PROBE_R2/world/{1..4}`, steps `0..4`, with the receipt's nearest-eligible base assignments. One frozen learner lineage is enough for this structural screen. Do not use or inspect any of the 48 evaluation-only claim dates.
+/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md:267:**Outcome scoring.** Evaluate `A0` and `S0-V025` from the same snapshot with a fresh realised dense full-48 batch. Pool exact sums across all 20 anchors:
+/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md:277:**Computational cost specification, not a time estimate.** Per anchor: one existing repaired-Q1/Q2 proposal; one sealed catalogue build with singleton nominal outcomes retained; one added dense boundary-0 batch for the multi-user rows; exact score/guard/tie; and one realised dense full-48 batch containing the two selected profiles. Across 20 anchors that is 20 catalogue builds, 20 added multi-user batches, and 40 committed-profile endpoint evaluations. The adjacent 22-anchor inventory suggests about 207 multi-user rows per anchor, but the run must record the actual FULL20 count rather than assume it. No C3 training is required. Execute only under `nice -n 15`, all BLAS thread variables set to 1, one Python process (never more than two), enforced peak RSS below 4 GB, and without overlapping or disturbing the live jobs.
+/home/sat/mcrl-v025-selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md:279:**Latency readout.** Run once without suppressing the real 10 s cancellation/fallback; charge only post-validated-`a0` coordinator time per contract, but also report presentation-to-commit for comparability with today's receipt. The result must include fallback B/E/service. This single 20-anchor run then answers both questions the existing artefacts cannot: realised structural headroom on V0.25 and actual per-anchor cost of the correct integrated set decoder.
+/home/sat/mcrl-v025-selector-ws/.scratch/catfish-design-data/C3-REWARD-ALIGNED-STAGE0-SPEC-V2-2026-08-27.md:323:   anchor and total paired support is at least 20 anchors;
+/home/sat/mcrl-v025-selector-ws/archive/multi-catfish-pre-v03-2026-08-31/docs/C3-REWARD-ALIGNED-STAGE0-CORE-GATE-2026-08-28.md:44:  and pooled 20-anchor two-choice support floor, without imputation.
+/home/sat/mcrl-v025-selector-ws/archive/multi-catfish-pre-v03-2026-08-31/docs/C3-REWARD-ALIGNED-STAGE0-CORE-GATE-2026-08-28.md:85:   and hashes for the already-frozen 150-row/20-anchor floor.
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:200:(`c3-focal-nonfocal-oracle-pilot-v03-r1.json`): 20 anchors, 498 evaluated
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:201:unilateral candidates, 473 service-safe, 15/20 anchors with positive C3 action
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:242:- C1/C3: >= 20 anchors x >= 3 focal users x full 27-alternative enumeration,
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/source/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:200:(`c3-focal-nonfocal-oracle-pilot-v03-r1.json`): 20 anchors, 498 evaluated
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:201:unilateral candidates, 473 service-safe, 15/20 anchors with positive C3 action
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v03-web-agent-package-20260831-r2/docs/MULTI-CATFISH-MCRL-V03-10EP-ABLATION-AUDIT-2026-08-31.md:242:- C1/C3: >= 20 anchors x >= 3 focal users x full 27-alternative enumeration,
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c3s-screen/run_v023_c3s_screen.py:1750:        raise C3SScreenError("S0 timing basis lacks 120 anchors")
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/.scratch/c3-v04/run_v07_c2_d2.py:873:            raise V07D2RunnerError("D2 prepare must contain exactly 20 anchors")
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/.scratch/c3-v04/run_v07_c2_d2.py:980:        raise V07D2RunnerError("D2 prepare does not contain 20 anchors")
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/.scratch/c3-v04/run_v07_c2_d2.py:1606:        raise V07D2RunnerError("D2 prepare does not contain exactly 20 anchors")
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c3-existence-e1/E1-RESULT-RECORD-2026-09-08.md:13:| panel | 4 derived worlds × 3 lineages × 10 steps = 120 anchors, 100 users, N = 12 000 opportunities |
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md:23:Let \(P\) contain all 120 anchors. For complete physical profile \(x\) at anchor \(p\), define interval bits \(B_{px}\), network joules \(E_{px}\), and served-user count \(C_{px}\). Let \(b_p\) be BASE, \(N=12000\), and
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c3-existence-e1/V023-C3-EXISTENCE-TEST-CONTRACT-E1-2026-09-08.md:108:**Underspecified pooling chosen:** one global ratio and service constraint over all 120 anchors. World/lineage breakdowns are descriptive; F2’s direction-vote gates are not inherited.
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c3-existence-e1/CONTROLLER-REVIEW-E1-CONTRACT-2026-09-08.md:19:4. Pooling: one global ratio and one global service constraint over all 120 anchors; per-world/lineage breakdowns
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/source/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c3s-chatgpt-package-20260908/06-E1-RESULT-RECORD.md:13:| panel | 4 derived worlds × 3 lineages × 10 steps = 120 anchors, 100 users, N = 12 000 opportunities |
+/home/sat/mcrl-v025-selector-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/source/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c3s-chatgpt-package-20260908/outside-round3/astra-c3s-docx.md:29:The appropriate interpretation of S0 is consequently narrow. 04-S0-PROBE-RESULT.md, “Information-gap diagnostic,” reports per-anchor Spearman mean 0.910408, median 0.922043 and range 0.687133–0.984614 over 120 anchors. Selection used nominal values; reported EE used realised tape rows. This demonstrates useful candidate-ranking agreement under the simulator’s nominal-to-fading discrepancy on those anchors. It is not 91% decision accuracy, a 9% performance gap, an EE guarantee, or a robustness test against wrong PA parameters, stale occupancy, geometry error or calibration bias.
+/home/sat/mcrl-v025-retrain-ws/.scratch/c3-v04/run_v07_c2_d2.py:873:            raise V07D2RunnerError("D2 prepare must contain exactly 20 anchors")
+/home/sat/mcrl-v025-retrain-ws/.scratch/c3-v04/run_v07_c2_d2.py:980:        raise V07D2RunnerError("D2 prepare does not contain 20 anchors")
+/home/sat/mcrl-v025-retrain-ws/.scratch/c3-v04/run_v07_c2_d2.py:1606:        raise V07D2RunnerError("D2 prepare does not contain exactly 20 anchors")
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v024-regime-b-design/PREREG-V024-REGIME-B-DRAFT-CODEX-GPT6-ASTRA-2026-09-08.md:75:Reference carriers 固定 `nearest-eligible`、`stay-if-possible`、`random-masked`，不是 trained lineages。每 grid 為4×3×10=120 anchors、12,000 opportunities；共用 B physical tape，逐 grid 重算 delivered bits。
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v024-regime-b-design/PREREG-V024-REGIME-B-DRAFT-CODEX-GPT6-ASTRA-2026-09-08.md:108:每個 §4 合格點均使用相同120 anchors，比較：
+/home/sat/mcrl-v025-retrain-ws/V025-PILOT-TRACK-DECLARATION-2026-09-09.md:16:The pilot worlds are already quarantined from the claim panel (world 1 was opened before sealing; the formal panel uses the `V025_PROBE_R2` / `V025_CAL_R2` namespaces and reserved claim dates). The pilot uses the same code as Track S, so every integration defect it finds is a real defect of the confirmatory path, found earlier and more cheaply.
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/.scratch/c3-v04/run_v07_c2_d2.py:873:            raise V07D2RunnerError("D2 prepare must contain exactly 20 anchors")
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/.scratch/c3-v04/run_v07_c2_d2.py:980:        raise V07D2RunnerError("D2 prepare does not contain 20 anchors")
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v012-zero-energy-c3-oracle-20260903-r1/source/.scratch/c3-v04/run_v07_c2_d2.py:1606:        raise V07D2RunnerError("D2 prepare does not contain exactly 20 anchors")
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-c1-c3-r1/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r2/source/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-c2-chatgpt-diagnostic-package-20260902-r3/source/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-v04-web-agent-package-20260901-rc/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v018-relational-zr/equivalence-r2-failure/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-controller-handoff-20260907/DRAFT-C3-EXISTENCE-TEST-CONTRACT-E1-CODEX-GPT6-ASTRA-2026-09-08.md:23:Let \(P\) contain all 120 anchors. For complete physical profile \(x\) at anchor \(p\), define interval bits \(B_{px}\), network joules \(E_{px}\), and served-user count \(C_{px}\). Let \(b_p\) be BASE, \(N=12000\), and
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-controller-handoff-20260907/DRAFT-C3-EXISTENCE-TEST-CONTRACT-E1-CODEX-GPT6-ASTRA-2026-09-08.md:108:**Underspecified pooling chosen:** one global ratio and service constraint over all 120 anchors. World/lineage breakdowns are descriptive; F2’s direction-vote gates are not inherited.
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v024-regime-b-chatgpt-package-20260908/05-E1-CONTRACT-SEALED.md:23:Let \(P\) contain all 120 anchors. For complete physical profile \(x\) at anchor \(p\), define interval bits \(B_{px}\), network joules \(E_{px}\), and served-user count \(C_{px}\). Let \(b_p\) be BASE, \(N=12000\), and
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v024-regime-b-chatgpt-package-20260908/05-E1-CONTRACT-SEALED.md:108:**Underspecified pooling chosen:** one global ratio and service constraint over all 120 anchors. World/lineage breakdowns are descriptive; F2’s direction-vote gates are not inherited.
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-controller-handoff-20260907/REVIEW-E1-CONSISTENCY-AGY-2026-09-08.md:18:   All constants match across documents: \(\lambda = 118424222.8550065\) bits/J, \(\kappa = 10097071012.757404\) bits, \(\Delta t = 30.08\) s (\(47 \times 0.640\) s), service margin \(= 0.001\), users \(= 100\), lineages = `2026092101–03`. Panel steps align with memo rules: E1 uses 10 steps (`0..9`, 120 anchors; E1 line 100, Memo line 60), while candidate kill screens use 2 steps (`0..1`, 24 anchors; C-A line 118, C-B line 94, C-C line 97, Memo line 109).
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v024-regime-b-chatgpt-package-20260908/04-E1-RESULT-RECORD.md:13:| panel | 4 derived worlds × 3 lineages × 10 steps = 120 anchors, 100 users, N = 12 000 opportunities |
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/docs/MULTI-CATFISH-MCRL-V04-C3-VICTIM-BURDEN-DECISION-2026-09-01.md:35:census observed positive C3 action headroom at 15/20 anchors, and every one of
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v025-physics-successor/probe/SEAL-PACKAGE-DRAFT-2026-09-08.md:146:| `V025_PROBE_R2/world/1` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v025-physics-successor/probe/SEAL-PACKAGE-DRAFT-2026-09-08.md:147:| `V025_PROBE_R2/world/2` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v025-physics-successor/probe/SEAL-PACKAGE-DRAFT-2026-09-08.md:148:| `V025_PROBE_R2/world/3` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v025-physics-successor/probe/SEAL-PACKAGE-DRAFT-2026-09-08.md:149:| `V025_PROBE_R2/world/4` | `PENDING_NOT_RUN` | `SUPERSEDED_R1_SYNTHETIC` |
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-PIPELINE-AUDITS-CD-2026-09-08.md:8:4. **Probe world quarantine (C4):** `V025_PROBE/world/1` was opened by the provider rehearsal before sealing (real bits/joules printed in the provider log). It is quarantined for development, rehearsal and KATs together with worlds 2–4 of that namespace. The formal matrix uses fresh domains `V025_PROBE_R2/world/{1..4}` and `V025_CAL_R2/world/{1..2}`, allocated prospectively; synthetic and KAT worlds live under `V025_SYNTHETIC/*` and `V025_PROVIDER_KAT/*`; every world identity includes provider source, archive, split and allocation-manifest digests.
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v025-physics-successor/V025-ENGINE-STAGE4D-REPORT-2026-09-08.md:151:| six immutable `V025_PROBE_R2` / `V025_CAL_R2` manifests | `NOT_RUN_REAL_ANCHOR_GATE` |
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c3s-variants-chatgpt-package-20260908/10-RELATED-WORK-C3S.md:29:The appropriate interpretation of S0 is consequently narrow. 04-S0-PROBE-RESULT.md, “Information-gap diagnostic,” reports per-anchor Spearman mean 0.910408, median 0.922043 and range 0.687133–0.984614 over 120 anchors. Selection used nominal values; reported EE used realised tape rows. This demonstrates useful candidate-ranking agreement under the simulator’s nominal-to-fading discrepancy on those anchors. It is not 91% decision accuracy, a 9% performance gap, an EE guarantee, or a robustness test against wrong PA parameters, stale occupancy, geometry error or calibration bias.
+/home/sat/mcrl-v025-retrain-ws/.scratch/catfish-design-data/C3-REWARD-ALIGNED-STAGE0-SPEC-V2-2026-08-27.md:323:   anchor and total paired support is at least 20 anchors;
+/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v018-relational-zr/equivalence-r3-failure/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/artifacts/multi-catfish-c2-chatgpt-review-package-20260902-r1/source/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/.scratch/epoch-trend/clean-source/src/mcrl/runtime/ee_axis_v07_c2_parallel_manifest.py:630:                "Stage-A budget must be exactly 20 anchors x 3 lineages = 60 cells"
+/home/sat/mcrl-v025-retrain-ws/.scratch/epoch-trend/clean-source/src/mcrl/physics_v025/tapes.py:37:PROBE_WORLD_DOMAINS = tuple(f"V025_PROBE_R2/world/{index}" for index in range(1, 5))
+
+context compacted
+codex
+The independent trace agrees with the local finding: the only executable policy is the authenticated legacy MODQN adapter; V0.25 has no sealed observation/action bridge to it. I’m consolidating the source-backed definition and the smallest owner decision/implementation needed, with Parts 2–3 explicitly left unrun.
+exec
+/bin/bash -lc "sed -n '1,260p' .scratch/baseline-reference/part1.md && rg -n \"BaselineAdapter|load_baseline_policy|FixedPolicyEpisodeAdapter|def main|run_episode\" /home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py" in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 0ms:
+# Part 1 — identity and runnable status of external `BASELINE`
+
+**Conclusion: no declared MODQN `BASELINE` is runnable end to end against the current V0.25 `a-r0` physics. The only complete MODQN implementation is the V0.23 authenticated adapter/episode path. The present V0.25 pilot instead assigns the `BASELINE` label to a geometry carrier-base configuration, which is a different policy. Therefore Parts 2–3 must not run until the owner binds the V0.25 baseline semantics and a bridge implements them.**
+
+No evaluation-only claim dates were read, no Python process or policy evaluation was run, and no sealed artefact was changed. The only write is this requested note.
+
+## 1. What `BASELINE` is
+
+### Sealed declaration
+
+The V0.25 sealed contract names only an **“external BASELINE”** in the arm inventory; it does not define its policy, checkpoint, or training regime: `/home/sat/mcrl-v025-harness-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:21`. The V0.25 controller decisions add only that “the external BASELINE's implementation sha256 is recorded in the allocation manifest,” without naming the implementation or digest: `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECISIONS-STAGEC-SPEC-2026-09-08.md:10`.
+
+The predecessor sealed scientific declaration supplies the inherited semantic identity explicitly:
+
+> “`BASELINE` is the unchanged, externally authenticated pre-Catfish MODQN policy admitted through `.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py` source and is never a trained arm.”
+
+Source: `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md:103`. Its companion contract binds the checkpoint as SHA-256 `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`, 112-dimensional state, 9000 training episodes, empty successor routes, and a distinct status/authentication digest: `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md:182`–`187`.
+
+### Exact decision rule in the authenticated adapter
+
+This is a **specific frozen, shared-policy, three-objective MODQN checkpoint**, not a hand-written geometry rule, not the learned V0.25 `a0 = argmax(Q1+Q2)` proposal, and not a new V0.25 training configuration.
+
+The exact rule, derived directly from the adapter, is, independently for each user `u`,
+
+```text
+score_u(j) = 0.5 Q_1(s_u,j) + 0.3 Q_2(s_u,j) + 0.2 Q_3(s_u,j)
+a_u = lowest-index argmax of score_u(j) over legal j
+a_u = -1 (NO_OP) when no action is legal
+```
+
+The code's exact description is:
+
+> “This is MODQN's original weighted masked argmax: invalid actions are -inf and numpy's argmax supplies the lowest-index tie break.”
+
+Source: `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:720`–`731`. The weights `(0.5, 0.3, 0.2)`, shared policy mode, 112-state/28-action dimensions, network shape `(100, 50, 50)`, `tanh`, and exact frozen trainer configuration are pinned at `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:34`–`44` and `:68`–`108`. `select_actions` applies the same scalarised networks and masked argmax user by user at `:747`–`766`. The class authenticates and loads exactly the bound checkpoint, then freezes all network parameters, at `:561`–`612`.
+
+The checkpoint-selection rule is also fixed: primary report `final-episode-policy`; the secondary best-eval policy was not implemented (`:56`–`65`). Thus the object is the completed final checkpoint at episode index 8999 (`:39`–`40`, `:330`–`340`), not an outcome-selected checkpoint.
+
+## 2. Runnable implementation status
+
+### What exists and runs in the legacy/V0.23 environment
+
+- Policy adapter: `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py`.
+- Policy entry points: `BaselineAdapter.from_artifacts(...)` (`:561`–`612`) followed by `BaselineAdapter.select_actions(states, masks)` (`:747`–`766`).
+- V0.23 end-to-end runner: `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py`.
+- V0.23 runner entry seam: `load_baseline_policy(...)` (`:667`–`694`) and `FixedPolicyEpisodeAdapter.run_episode(...)` (`:1189` onward). Inside its ten-step legacy episode loop it calls only `policy.adapter.select_actions(states, masks)` for `BASELINE`, then commits those 28-slot actions to `TrainerEnvironment.step`: `:1268`–`1301`.
+
+The authenticated checkpoint exists at `/home/sat/mcrl-v025-harness-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt`; a read-only `sha256sum` matched the adapter's expected digest above. This establishes artifact availability, not V0.25 compatibility.
+
+### What does not exist for V0.25 `a-r0`
+
+No current V0.25 path builds the baseline's legacy 112-D observations/28-slot masks from an `ExogenousWorldTape`, calls the authenticated `BaselineAdapter`, maps its slot indices back to V0.25 physical identities, validates/repairs the resulting joint profile, and submits that profile to the V0.25 `StepEvaluator`.
+
+The concrete current paths show the gap:
+
+- `run_v025_pilot_c3.py` reports `BASELINE` but limits learned selection to `PILOT_ARMS = tuple(LEARNED_ARMS)`: `/home/sat/mcrl-v025-harness-ws/scripts/run_v025_pilot_c3.py:77`–`80`, and `_select_for_anchor` constructs scores only for `PILOT_ARMS`: `:1503`–`1564`.
+- Its training receipt calls `BASELINE` an `external_policy` with value **“fixed carrier proposal”**, rather than authenticating the MODQN checkpoint: `:1198`–`1210`.
+- Its evaluation then assigns `selections[(seed, "BASELINE")] = carrier_base`: `:1710`–`1712`. The V0.25 engine constructs that base from the tape's precomputed carrier assignment and merely nulls users with no live legal action: `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:380`–`404`. This is not the weighted shared-Q policy above.
+- The newer checkpoint scorer defines its arm inventory as only the five learned neutral-source arms and is expressly “physics-free”: `/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:2`–`6` and `:40`–`48`. It has no baseline checkpoint loader, no baseline action selection, and no baseline outcome arm.
+
+Accordingly, the V0.25 code contains a runnable geometry control mislabeled `BASELINE`, but **does not contain a runnable V0.25 implementation of the declared external MODQN baseline**. The geometry control cannot be substituted for MODQN without redefining the acceptance gate.
+
+## 3. Decision-time information / comparison class
+
+The authenticated MODQN adapter consumes, for every user, exactly four arrays of length 28 plus an action mask:
+
+1. `access_vector`: one-hot or empty current beam assignment;
+2. `channel_quality`: linear SNR to each candidate beam, encoded as `log1p(SNR)`;
+3. `beam_offsets`: one off-axis angle in radians per candidate beam;
+4. `beam_loads`: global, ungated pre-admission demand per physical beam, divided by the number of users;
+5. the Boolean legality mask over the same 28 action slots.
+
+The field definitions are at `/home/sat/mcrl-v025-harness-ws/src/mcrl/env/step_types.py:73`–`107` and `:128`–`138`; the encoding is at `/home/sat/mcrl-v025-harness-ws/src/mcrl/runtime/state_encoding.py:54`–`64` and `:66`–`128`. The adapter explicitly strips all `contract_fields` extensions and passes `include_contract_block=False`: `/home/sat/mcrl-v025-harness-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:431`–`459`. Its action space is the legacy fixed `4 satellites x 7 slots = 28` layout: `/home/sat/mcrl-v025-harness-ws/src/mcrl/env/action_contract.py:40`–`69`.
+
+Comparison class: a single set of three Q networks is shared across users (`policy_sharing_mode = "shared"`), and each user's action is selected independently after observing its local 28-candidate arrays plus the global beam-load vector. It has no C1/C2/C3 successor source routes, no V0.25 bounded catalogue, no V0.25 joint-physics outputs, no cross-gain matrix, and no forecast horizon. It is therefore less informed than the V0.25 coordinator interface described at `/home/sat/mcrl-v025-harness-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:5`–`9`; that information difference must be kept explicit rather than hiding it behind the common word “BASELINE.”
+
+## 4. Is V0.25 training/configuration declared?
+
+**No. The V0.25 seal is silent.** It names `external BASELINE` and says a future allocation manifest must record an implementation SHA-256, but it does not bind:
+
+- whether the unchanged V0.23 checkpoint must be replayed or a MODQN must be retrained on V0.25 physics;
+- a baseline checkpoint digest or adapter closure digest;
+- a V0.25-to-legacy 4x7 candidate-slot construction;
+- how V0.25 nominal gains, angles, loads, incumbent state, and legal masks populate the 112-D legacy input;
+- how selected 28-slot actions map back to V0.25 `(satellite, beam)` physical identities;
+- what deterministic repair/fallback applies if independently selected actions form an invalid V0.25 joint configuration.
+
+The legacy adapter's embedded trainer configuration is exact, but it describes the already-completed V0.23 checkpoint; it is not a declaration that this configuration is to be rerun under V0.25. Choosing reuse, retraining, or the geometry carrier rule would change the comparator and is an owner decision, not an implementation default.
+
+## 5. Smallest work that would make it measurable
+
+1. **Owner seal first:** bind one comparator identity. The smallest continuity-preserving choice would be to explicitly bind the unchanged checkpoint digest and adapter closure already sealed in V0.23, but the current V0.25 declaration does not authorize making that choice on the owner's behalf. The seal must also bind the V0.25 observation/action projection and invalid-profile repair/fallback.
+2. **One thin V0.25 bridge module:** deterministically construct the baseline's 4x7 action roster, `UserState` batch, and `ActionMask` batch from each V0.25 tape anchor; call `BaselineAdapter.select_actions`; translate actions to a V0.25 `Configuration`; enforce the newly sealed validation/repair rule.
+3. **Wire and prove it:** add the bridge to the current development-panel runner/scorer, authenticate the checkpoint and implementation digests, and add KATs for 112-D field identity, mask/slot/physical-identity round trips, lowest-index ties, empty masks, joint invalidity handling, and unchanged checkpoint bytes. Only then can the required fresh dense `evaluate_many` measurement be meaningful.
+
+## Evidence classification
+
+- **Verified by static primary-source inspection:** sealed arm wording; legacy checkpoint binding and exact adapter code; legacy end-to-end call path; V0.25 pilot/scorer omissions and geometry substitution; checkpoint file presence and SHA-256.
+- **Verified by running policy/physics code:** none (deliberately; Part 1 only, no measurement).
+- **Derived on paper from the executable adapter:** the formula `0.5 Q1 + 0.3 Q2 + 0.2 Q3`, legal-mask restriction, lowest-index tie break, and `NO_OP` on an empty mask.
+- **Inferred:** that a V0.25 observation/action projection plus joint-profile rule requires a scientific owner decision. The need follows from the mismatch between the legacy 28-slot input/action contract and the current V0.25 physical-identity configuration interface, but no sealed V0.25 text resolves it.
+667:def load_baseline_policy(
+676:        from baseline_adapter import BaselineAdapter
+678:        adapter = BaselineAdapter.from_artifacts(
+1090:class FixedPolicyEpisodeAdapter:
+1189:    def run_episode(
+1815:            row = adapter.run_episode(
+2758:        adapter: FixedPolicyEpisodeAdapter,
+2798:        if admission_mapping is None and not isinstance(adapter, FixedPolicyEpisodeAdapter):
+3054:                    row = self.adapter.run_episode(
+3192:    "FixedPolicyEpisodeAdapter",
+3219:    "load_baseline_policy",
+
+exec
+/bin/bash -lc "nl -ba /home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md | sed -n '1,35p'; nl -ba /home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md | sed -n '50,62p;96,110p'; nl -ba /home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md | sed -n '178,190p'; nl -ba /home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py | sed -n '1,15p;34,44p;68,108p;394,470p;561,612p;687,766p'; nl -ba /home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py | sed -n '70,90p;1190,1238p;1284,1302p;1498,1568p;1604,1615p;1638,1650p;1694,1712p;1726,1748p'; nl -ba /home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py | sed -n '1,55p'" in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 0ms:
+     1	# V025 stages 6–8 contract v1 — source generation, learner, evaluation (controller; sealed 2026-09-08 ≈ 18:45 UTC; supersedes v0; no successor training exists)
+     2	
+     3	Sources folded in: astra contract review (`ADJUDICATION-STAGES-6-8-CONTRACT-CODEX-GPT6-ASTRA-2026-09-08.md`), round-7 outside opinions (Q&A + Deep Research), pipeline audits B/C/D, first-principles review. All three reviewers returned `CONTRACT=REVISE`, `C3_IDENTIFIABLE=NO` as written, `POWERED=NO`; v1 resolves each named item. Nothing here is conditioned on any outcome.
+     4	
+     5	## A. Information interfaces (declared, equalised across arms)
+     6	A1. **I_heads** (per user i, per legal action): the completed Q1 and Q2 schemas of §B; observation access = current nominal geometry of user i's candidates, i's history, the previous committed served set excluding i (b⁻₋ᵢ) at decision time; derived features as frozen; model access = none (no joint physics); compute = one forward pass.
+     7	A2. **I_coordinator** (per anchor): global nominal geometry with beam-specific cross gains, all users' legal sets, b⁻, the reference proposal a⁰, the bounded catalogue 𝒞 (decision 4/CB-2), the nominal model 𝓜 (no realised fading, no future TLE beyond the declared forecast horizon), and the outputs of 𝓜 for each profile in 𝒞 (joint load, coupled powers, interference, activation, service, bits, energy, continuation). Compute = the declared budget (§F).
+     8	A3. **Two distinct references:** a⁰ (the reference proposal for the score decomposition; = the per-user argmax of Q1 + Q2, validated as a profile) and the previous committed association (the reference for handover/Φ/event accounting). Never conflated.
+     9	A4. **Equalised between FULL and every DROP/comparator arm:** primitive access and timestamps, forecast method, physical identities, catalogue construction (authenticated identical catalogues at matched anchors), joint search, guards, tie-breaking, validation, deadline, fallback. Any learned pruning is part of the declared intervention. An exact evaluator may never reinsert a removed score through ranking, pruning or a score-dependent guard.
+    10	
+    11	## B. Stage 6 — rows and labels
+    12	B1. One production builder from tapes; every row carries world/user/action/time/schema/setting/calibration lineage; TRAIN asserted at construction; dependency-allowlist KAT (labels are functions of visible primitives, masks, keyed fading, declared state only).
+    13	B2. **Q1 schema** (per action; scales frozen in the spec v1 draft): nominal rate-target SINR margin, required power / cap, mode SE, occupancy excluding focal, beam- and satellite-active bits before focal insertion, off-axis angle, remaining D2 time, remaining visibility time, refresh phase; history: previous served association one-hot, previous served load per candidate, previous beam/satellite activity, previous beam max RF / cap; `missing_incumbent`. No recurrence power, entry-gain ratio or segment age.
+    14	B3. **Q2 schema:** the frozen 21 fields + `missing_incumbent`; background = b⁻₋ᵢ projected to the decision instant; occupancy excludes focal; activation before focal insertion.
+    15	B4. **F and Φ:** F(a) = B(a) − η_ref·E(a) − Φ(a), with Φ the signed handover/QoS preference in κ units charged exactly once inside F. Unilateral increments dᵢ = F(aᵢ, a⁰₋ᵢ) − F(a⁰); interaction residual Ψ_A = F(a_A, a⁰₋A) − F(a⁰) − Σᵢ∈A dᵢ. **C1(config) = Σᵢ∈A dᵢ; C3(config) = Ψ_A; identity C1 + C3 = F(a_A) − F(a⁰) exactly** (KAT); a second KAT states the physical identity without Φ. C2 = declared continuation value excluding the immediate term (three offsets, −κ per absorbing lost offset). κ per stage-4 item 24; all in bits / κ.
+    16	B5. **C3 training rows** carry the complete coalition context: anchor, a⁰, the changed-user set A, their selected actions a_A, the global resource context (occupancy, activation, shared capacity, interference summary per affected beam), and the label Ψ_A / κ. Coalition size for label computation is capped at |A| ≤ 4 (2^|A| subset evaluations bounded); larger evacuation sets are labelled by the capped decomposition and flagged. Per-user Shapley credit is reporting only (pairs: Ψ/2 each), never a training target.
+    17	
+    18	## C. Stage 7 — learner, arms, deployment
+    19	C1. **Heads:** Q1, Q2 by pairwise zero-bootstrap regression on typed deterministic aggregate batches (legacy heterogeneous design); the deployed two-head action is the per-user masked argmax of the normalised Q1 + Q2, validated as a jointly legal profile (deterministic repair rule for conflicts, KAT with a jointly infeasible pair). This estimates a supervised surrogate of the declared targets, not a Bellman value; the claim is worded accordingly.
+    20	C2. **C3 learner form:** a **set-conditioned scalar interaction head** Ψ̂_θ(Z_t, a⁰, A, a_A): permutation-invariant over A, anchored Ψ̂(∅) = Ψ̂({u}) = 0, trained on the residual Ψ_A / κ over the coalition support of the bounded catalogue; deployed S3 optimises the **complete** score C1 + C2 + Ψ̂ over 𝒞 with the sealed service guard, budget and fallback. S0 = the same selector with the exact Ψ_A in place of Ψ̂. S_UNI = iterated exact unilateral improvement to a local optimum (every legal unilateral alternative evaluated with the same nominal joint physics at each iterate, deterministic improving move, atomic commit of the final profile only, termination certificate reported).
+    21	C3. **Arms and estimands (four named experiments, never conflated):** (i) *learned neutral-source experiment* (primary for the C1/C2/C3 claims): FULL, DROP_C1, DROP_C2, DROP_C3 by neutral-source substitution of the named route with all routes retained, updated and deployed; ALL_NEUTRAL_CONTROL; external BASELINE; claim wording: "informative source training for route x improved pooled EE relative to the specified neutral source training, with the other routes informative and all heads retained"; (ii) *oracle factor-score removal* (physics regime map, stage-4 item 18); (iii) *checkpoint knockout* (secondary: zero the deployed contribution, machinery fixed; measures reliance and exposes hidden score restoration); (iv) *architecture removal* — named, not run.
+    22	C4. **Coordination attribution (beyond the source claim):** FULL (S3) > DROP_C3 **and** FULL > the S_UNI-equipped comparator on held-out realised pooled EE, QoS margins met, plus decision-relevant nonadditivity (the selected profile differs from the additive/unilateral optimum at a reported fraction of anchors, including rejected harmful joint moves) — the requirement "g_I ≠ 0" is withdrawn. **Learned value (S3 vs matched S0)** is one predeclared axis: realised closed-loop pooled EE under equal computation budget including timeouts; matching S0 at lower compute is an acceleration claim, reported separately.
+    23	C5. **Neutral sources** sealed before generation: generator, labels, support, strata, overlap, row weights, optimisation dose; "identical batches across arms" means identical within a route/source identity; every DROP checkpoint retains all heads, the neutral-trained head differs from initialisation and participates in deployment (KATs).
+    24	C6. **Zero results are allowed and informative:** a zero C3 source marginal ends the positive C3 claim under this scope; an interval excluding the practical margin supports "no practically relevant benefit"; a lower-bound failure alone is inconclusive; neither permits changing features, catalogues, sources or regimes until C3 becomes positive.
+    25	C7. **Epochs, checkpoints, seeds:** deterministic aggregate epochs with sealed row counts/order/digests; checkpoints every 100 source epochs with `completed_source_epochs` and batch digests; **12 learner seeds** (§E), each lineage sharing one serialised initialisation and identical source batches per route identity across arms; `learner_seed` and `world_seed` separate everywhere.
+    26	
+    27	## D. Stage 8 — panel, statistics, harness
+    28	D1. **Panel:** 6 arms × 12 learner seeds × 2 worlds per TRAIN date over the ≈ 160 claim dates (≈ 320 worlds per arm-seed; ≈ 30 steps per world), allocation manifest sealed with role-wise date disjointness (claim dates unused by any successor development activity; legacy overlap recorded); no TEST.
+    29	D2. **Estimator:** pooled ΣB/ΣE; primary interval = two-way pigeonhole bootstrap over dates × learner seeds with arms paired within resamples and the ratio recomputed per draw (central 95 % percentile); one-way cluster bootstrap and delta-method supplementary; seedwise paired effects reported; δ = +0.5 % relative with the 2.5th-percentile lower bound (v1.4); QoS margins with additive numerators/denominators inside draws (stage-2 decision 6, item 37).
+    30	D3. **Zero outcomes:** B = 0 with E > 0 is EE = 0 (defined); a draw is undefined only when a denominator (E or the comparator's EE) is 0 — recorded and counted, never substituted (amends decision CD-3).
+    31	D4. **Multiplicity and claim:** the conditional intersection–union conjunction for `a-r0` is the single primary claim; components are reported with their own intervals but no component-wise discovery is claimed; all other cells exploratory; TRAIN-only wording enforced by the report schema.
+    32	D5. **Harness:** attempt registry (STARTED before outcomes), canonical per-step receipts, merge re-aggregation from rows, conformance suite (NULL ≡ BASE per step, real-step dry-run of every arm, write-once sha256 receipts, authority manifest), same physics/endpoint digest as training, one terminal adjudication.
+    33	
+    34	## E. Power (declared prospectively; sensitivities, not measurements)
+    35	Planning alternative Δ* = +2 % relative (both reviewers: a true +1 % is not detectable with ≈ 160 dates under any seed count if the date SD is ≈ 5 %). Variance sensitivities: date SD 3 / 5 / 10 %, seed SD 1 / 2 %. With date SD 5 %, seed SD 1 %, 160 dates, 12 seeds and negligible residual variance, the per-contrast one-sided power at the 2.5 % level is ≈ 0.86 (SE ≈ 0.49 %); the three-contrast conjunction ≈ 0.64 if independent. With 5 seeds it is ≈ 0.70 / 0.34. 12 seeds is the declared design; the date component caps further gains. The crossed-cluster inference test (§G T3) calibrates the actual procedure at 5 and 12 seeds before any real evaluation.
+    50	- Train seed: `2927175120652069826` — reused unchanged from the pre-outcome derivation
+    51	  (first 64 SHA-256 bits of domain `MCRL_V023_FIVE_ARM_100E_TRAIN_SEED_V1`, sign bit cleared). No C3 schedule seed exists.
+    52	- Sampling: the provider's deterministic per-route sampler with recorded consumed-file order; both modes of all 16
+    53	  mode×world shards of the r8 root are the only inputs. Split `SOURCE_TRAIN`; `TEST` closed.
+    54	- Model and optimiser constants are exactly the V2 100E values for Q1 and Q2 (§3); no learning-rate, width, kappa or
+    55	  beta variant exists. Q1 and Q2 have separate configuration records, heads, update paths and optimiser states.
+    56	- Deployment rule for all later stages: learned arms deploy masked, unweighted `Q1+Q2`, choosing the lowest legal
+    57	  action index on ties; no per-head weights. `BASELINE` deploys exclusively through its unchanged authenticated MODQN
+    58	  adapter.
+    59	- Claim ceiling: `TRAIN_DEVELOPMENT_C1C2_SUCCESSOR_SOURCE_TRAINING_NO_C3_NO_TEST_NO_EFFICACY`.
+    60	
+    61	
+    62	## 3. Frozen learner configuration
+    96	four-arm coverage, mask-safe actions, unchanged policy bytes, identical initial-world and keyed-field digests, ten
+    97	completed steps per arm, finite bits/energy receipts, and recorded per-phase wall times. Its EE directions are
+    98	descriptive only; one world promotes, rejects or tunes nothing.
+    99	
+   100	
+   101	## 6. Physical development evaluation ladder (stage C)
+   102	
+   103	- Arms: exactly `FULL2, DROP_C1, DROP_C2, BASELINE`. `BASELINE` is the unchanged, externally authenticated pre-Catfish
+   104	  MODQN policy admitted through `.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py`
+   105	  source and is never a trained arm. No arm is renamed.
+   106	- Episode structure: 100 users, 10 committed decision steps per episode, `TRAIN` simulator split only, one lineage.
+   107	- World binding rule (declared now, extends the 2026-09-06 development-evaluation scheme): episode `k` (1-based,
+   108	  cumulative across rungs) runs world `world-{k:06d}` with world seed `2026090600 + k`; the same worlds and keyed
+   109	  fields are shared by all four arms (matched design). No world is replaced after opening.
+   110	- Ladder: freeze one `9000`-world plan (world ids, seeds, keyed fields, arm order, plan digest) before any computation;
+   178	owner notification before 9000. A valid scientific stop ends this experiment's schedule and does not authorise another attempt under this document;
+   179	an `INVALID_RUN` permits only documented infrastructure repair and replay of the smallest invalid unit, preserving valid
+   180	outcomes and every scientific declaration.
+   181	
+   182	## 9. Bindings required before seal (from the astra review; none may be filled from an outcome)
+   183	
+   184	- r8: `MANIFEST.sha256` digest, `receipt.json` digest, literal `COMPLETE` line (§1).
+   185	- `BASELINE`: checkpoint SHA-256 `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b` (adapter
+   186	  `EXPECTED_CHECKPOINT_SHA256`), state dimension `112`, `9000`-episode checkpoint, status/authentication digest distinct
+   187	  from the policy digest, adapter closure digest, and empty source routes (`routes = []`).
+   188	- Learner: initialisation bytes digest; sampler and consumed-file order policy; C1/C2 formulas, objectives and
+   189	  optimiser defaults (digest of the model configuration record without Q3); factory v3, runner, launcher, diagnostic,
+   190	  policy adapters and the independent verifier code manifests; predecessor authority digests that the loaders check.
+     1	"""Read-only adapter for the authenticated pre-Catfish Main MODQN policy.
+     2	
+     3	This module deliberately owns only checkpoint admission, native state
+     4	encoding, and deployment-time action selection.  It does not construct a
+     5	trainer, an optimizer, an environment, or any training state.
+     6	"""
+     7	
+     8	from __future__ import annotations
+     9	
+    10	import hashlib
+    11	import io
+    12	import json
+    13	import os
+    14	import stat
+    15	from collections.abc import Mapping, Sequence
+    34	EXPECTED_CHECKPOINT_SHA256 = (
+    35	    "e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b"
+    36	)
+    37	EXPECTED_STATE_DIM = 112
+    38	EXPECTED_ACTION_DIM = 28
+    39	EXPECTED_EPISODES = 9000
+    40	EXPECTED_CHECKPOINT_EPISODE = EXPECTED_EPISODES - 1
+    41	EXPECTED_HIDDEN_LAYERS = (100, 50, 50)
+    42	EXPECTED_ACTIVATION = "tanh"
+    43	EXPECTED_OBJECTIVE_WEIGHTS = (0.5, 0.3, 0.2)
+    44	CONTRACT_FIELDS_EXCLUDED = True
+    68	# This is the complete resolved trainer_config carried by the authenticated
+    69	# checkpoint.  Keeping the expected mapping here prevents a future loader
+    70	# from silently accepting a different state transform, objective row, or run
+    71	# protocol while still reusing the same network dimensions.
+    72	EXPECTED_TRAINER_CONFIG = MappingProxyType(
+    73	    {
+    74	        "hidden_layers": (100, 50, 50),
+    75	        "activation": "tanh",
+    76	        "learning_rate": 0.001,
+    77	        "discount_factor": 0.9,
+    78	        "batch_size": 128,
+    79	        "episodes": 9000,
+    80	        "objective_weights": (0.5, 0.3, 0.2),
+    81	        "epsilon_start": 1.0,
+    82	        "epsilon_end": 0.01,
+    83	        "epsilon_decay_episodes": 2000,
+    84	        "target_update_every_episodes": 50,
+    85	        "replay_capacity": 50000,
+    86	        "policy_sharing_mode": "shared",
+    87	        "snr_encoding": "log1p",
+    88	        "theta_encoding": "raw_radians",
+    89	        "offset_scale_km": 100.0,
+    90	        "load_normalization": "divide_by_num_users",
+    91	        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+    92	        "checkpoint_primary_report": "final-episode-policy",
+    93	        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+    94	        "training_experiment_kind": "baseline",
+    95	        "training_experiment_id": "",
+    96	        "method_family": "MODQN-baseline",
+    97	        "phase": "baseline",
+    98	        "comparison_role": "not-applicable",
+    99	        "r1_reward_label": "system-energy-efficiency",
+   100	        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+   101	        "reward_calibration_enabled": True,
+   102	        "reward_calibration_mode": "divide-by-fixed-scales",
+   103	        "reward_calibration_source": "probe-P3-and-analytic-bound",
+   104	        "reward_calibration_scales": (2029238.4328742754, 1.0, 6.0),
+   105	        "reward_normalization_mode": "raw-unscaled",
+   106	        "load_balance_calibration_mode": "baseline-paper-weight",
+   107	        "device": "cpu",
+   108	    }
+   394	def _validate_user_state(user_state: UserState) -> None:
+   395	    if not isinstance(user_state, UserState):
+   396	        raise BaselineAdapterError(
+   397	            f"state must be native UserState, got {type(user_state).__name__}"
+   398	        )
+   399	    arrays = {
+   400	        "access_vector": user_state.access_vector,
+   401	        "channel_quality": user_state.channel_quality,
+   402	        "beam_offsets": user_state.beam_offsets,
+   403	        "beam_loads": user_state.beam_loads,
+   404	    }
+   405	    for field, value in arrays.items():
+   406	        if type(value) is not np.ndarray:
+   407	            raise BaselineAdapterError(f"state.{field} must be a numpy array")
+   408	        if value.shape != (EXPECTED_ACTION_DIM,):
+   409	            raise BaselineAdapterError(
+   410	                f"state.{field} must have shape ({EXPECTED_ACTION_DIM},), "
+   411	                f"got {value.shape}"
+   412	            )
+   413	        if value.dtype.kind not in "biuf":
+   414	            raise BaselineAdapterError(
+   415	                f"state.{field} must have a real numeric dtype, got {value.dtype}"
+   416	            )
+   417	        if not bool(np.isfinite(value).all()):
+   418	            raise BaselineAdapterError(f"state.{field} contains nonfinite values")
+   419	
+   420	    access = user_state.access_vector
+   421	    if not bool(np.isin(access, (0, 1)).all()):
+   422	        raise BaselineAdapterError("state.access_vector must be binary")
+   423	    if int(np.count_nonzero(access)) > 1:
+   424	        raise BaselineAdapterError("state.access_vector must be one-hot or empty")
+   425	    if bool(np.any(user_state.channel_quality < 0)):
+   426	        raise BaselineAdapterError("state.channel_quality must be non-negative")
+   427	    if bool(np.any(user_state.beam_loads < 0)):
+   428	        raise BaselineAdapterError("state.beam_loads must be non-negative")
+   429	
+   430	
+   431	def _native_user_state(user_state: UserState) -> UserState:
+   432	    """Return the baseline's four-array state, excluding every extension."""
+   433	
+   434	    return UserState(
+   435	        access_vector=user_state.access_vector,
+   436	        channel_quality=user_state.channel_quality,
+   437	        beam_offsets=user_state.beam_offsets,
+   438	        beam_loads=user_state.beam_loads,
+   439	        contract_fields=None,
+   440	    )
+   441	
+   442	
+   443	def _encode_native_user_state(
+   444	    user_state: UserState,
+   445	    *,
+   446	    num_users: int,
+   447	    config: _EncodingConfig,
+   448	) -> np.ndarray:
+   449	    """Validate and encode only the authenticated native 112-D surface."""
+   450	
+   451	    _validate_user_count(num_users)
+   452	    _validate_user_state(user_state)
+   453	    try:
+   454	        encoded = encode_state(
+   455	            _native_user_state(user_state),
+   456	            num_users,
+   457	            config,
+   458	            include_contract_block=False,
+   459	        )
+   460	    except Exception as exc:
+   461	        raise BaselineAdapterError("native UserState encoding failed") from exc
+   462	    encoded = np.asarray(encoded, dtype=np.float32)
+   463	    if encoded.shape != (EXPECTED_STATE_DIM,):
+   464	        raise BaselineAdapterError(
+   465	            f"encoded state must have shape ({EXPECTED_STATE_DIM},), "
+   466	            f"got {encoded.shape}"
+   467	        )
+   468	    if not bool(np.isfinite(encoded).all()):
+   469	        raise BaselineAdapterError("encoded state contains nonfinite values")
+   470	    return encoded.copy()
+   561	    @classmethod
+   562	    def from_artifacts(
+   563	        cls,
+   564	        checkpoint_path: str | Path = DEFAULT_CHECKPOINT_PATH,
+   565	        status_path: str | Path = DEFAULT_STATUS_PATH,
+   566	    ) -> "BaselineAdapter":
+   567	        """Authenticate and load the exact completed Main checkpoint."""
+   568	
+   569	        checkpoint_path = Path(checkpoint_path)
+   570	        status_path = Path(status_path)
+   571	        checkpoint_bytes = _read_regular_file(
+   572	            checkpoint_path, label="checkpoint"
+   573	        )
+   574	        checkpoint_sha256 = hashlib.sha256(checkpoint_bytes).hexdigest()
+   575	        if checkpoint_sha256 != EXPECTED_CHECKPOINT_SHA256:
+   576	            raise BaselineAdapterError(
+   577	                "checkpoint SHA-256 mismatch: expected "
+   578	                f"{EXPECTED_CHECKPOINT_SHA256}, got {checkpoint_sha256}"
+   579	            )
+   580	
+   581	        status = _parse_status(
+   582	            _read_regular_file(status_path, label="status.json")
+   583	        )
+   584	        _validate_status(status, checkpoint_path=checkpoint_path)
+   585	        payload = _load_payload(checkpoint_bytes)
+   586	
+   587	        q_networks: list[torch.nn.Module] = []
+   588	        for index, state in enumerate(payload["q_networks"]):
+   589	            network = DQNNetwork(
+   590	                EXPECTED_STATE_DIM,
+   591	                EXPECTED_ACTION_DIM,
+   592	                EXPECTED_HIDDEN_LAYERS,
+   593	                EXPECTED_ACTIVATION,
+   594	            )
+   595	            try:
+   596	                network.load_state_dict(state, strict=True)
+   597	            except (RuntimeError, TypeError) as exc:
+   598	                raise BaselineAdapterError(
+   599	                    f"q_networks[{index}] failed strict loading"
+   600	                ) from exc
+   601	            network.eval()
+   602	            for parameter in network.parameters():
+   603	                parameter.requires_grad_(False)
+   604	            q_networks.append(network)
+   605	
+   606	        return cls(
+   607	            checkpoint_path=checkpoint_path,
+   608	            status_path=status_path,
+   609	            checkpoint_sha256=checkpoint_sha256,
+   610	            trainer_config=payload["trainer_config"],
+   611	            q_networks=tuple(q_networks),
+   612	        )
+   687	    def _objective_q_values(self, encoded: np.ndarray) -> np.ndarray:
+   688	        if encoded.ndim != 2 or encoded.shape[1] != EXPECTED_STATE_DIM:
+   689	            raise BaselineAdapterError("encoded state batch is not 112-dimensional")
+   690	        if not bool(np.isfinite(encoded).all()):
+   691	            raise BaselineAdapterError("encoded state batch contains nonfinite values")
+   692	
+   693	        state_tensor = torch.tensor(encoded, dtype=torch.float32, device="cpu")
+   694	        with torch.inference_mode():
+   695	            rows = [network(state_tensor) for network in self._q_networks]
+   696	        q_values = []
+   697	        for index, row in enumerate(rows):
+   698	            if tuple(row.shape) != (encoded.shape[0], EXPECTED_ACTION_DIM):
+   699	                raise BaselineAdapterError(
+   700	                    f"q_networks[{index}] emitted the wrong action dimension"
+   701	                )
+   702	            array = row.detach().cpu().numpy()
+   703	            if not bool(np.isfinite(array).all()):
+   704	                raise BaselineAdapterError(
+   705	                    f"q_networks[{index}] emitted nonfinite values"
+   706	                )
+   707	            q_values.append(array)
+   708	        return np.stack(q_values, axis=0)
+   709	
+   710	    def _scalarized_q_values(self, encoded: np.ndarray) -> np.ndarray:
+   711	        q_values = self._objective_q_values(encoded)
+   712	        scalarized = sum(
+   713	            weight * q_values[index]
+   714	            for index, weight in enumerate(self._objective_weights)
+   715	        )
+   716	        if not bool(np.isfinite(scalarized).all()):
+   717	            raise BaselineAdapterError("scalarized Q values are nonfinite")
+   718	        return scalarized
+   719	
+   720	    @staticmethod
+   721	    def _masked_argmax(scalarized_row: np.ndarray, mask: np.ndarray) -> int:
+   722	        valid = np.flatnonzero(mask)
+   723	        if valid.size == 0:
+   724	            return int(NO_OP_ACTION)
+   725	        masked = scalarized_row.copy()
+   726	        masked[~mask] = -np.inf
+   727	        if not bool(np.isfinite(masked[mask]).all()):
+   728	            raise BaselineAdapterError("valid masked scalarized Q is nonfinite")
+   729	        # This is MODQN's original weighted masked argmax: invalid actions are
+   730	        # -inf and numpy's argmax supplies the lowest-index tie break.
+   731	        return int(np.argmax(masked))
+   732	
+   733	    def select_action(
+   734	        self,
+   735	        user_state: UserState,
+   736	        action_mask: ActionMask,
+   737	        *,
+   738	        num_users: int,
+   739	    ) -> int:
+   740	        """Select one greedy masked action, or the native no-op sentinel."""
+   741	
+   742	        encoded = self.encode_user_state(user_state, num_users=num_users)
+   743	        mask = _validate_action_mask(action_mask)
+   744	        scalarized = self._scalarized_q_values(encoded[None, :])
+   745	        return self._masked_argmax(scalarized[0], mask)
+   746	
+   747	    def select_actions(
+   748	        self,
+   749	        states: Sequence[UserState],
+   750	        masks: Sequence[ActionMask],
+   751	    ) -> np.ndarray:
+   752	        """Select the original weighted masked argmax for each native user."""
+   753	
+   754	        if not isinstance(masks, (list, tuple)):
+   755	            raise BaselineAdapterError("masks must be a list or tuple")
+   756	        if len(states) != len(masks):
+   757	            raise BaselineAdapterError(
+   758	                f"state/mask count mismatch: {len(states)} != {len(masks)}"
+   759	            )
+   760	        encoded = self.encode_states(states)
+   761	        validated_masks = [_validate_action_mask(mask) for mask in masks]
+   762	        scalarized = self._scalarized_q_values(encoded)
+   763	        actions = np.empty(len(validated_masks), dtype=np.int64)
+   764	        for index, mask in enumerate(validated_masks):
+   765	            actions[index] = self._masked_argmax(scalarized[index], mask)
+   766	        return actions
+    70	
+    71	
+    72	LABEL = "PILOT_NOT_CLAIM"
+    73	PILOT_SCHEMA = "mcrl-v025-learned-c3-real-physics-pilot-v1"
+    74	ROOT = Path(__file__).resolve().parents[1]
+    75	ENGINE_PATH = ROOT / ".scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py"
+    76	DEFAULT_OUTPUT = ROOT / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
+    77	REPORT_PATH = ROOT / "V025-PILOT-C3-REPORT-2026-09-09.md"
+    78	TRAIN_WORLDS = DEVELOPMENT_WORLD_DOMAINS[:2]
+    79	EVALUATION_WORLDS = DEVELOPMENT_WORLD_DOMAINS[2:4]
+    80	LEARNER_DOMAINS = tuple(f"V025_LEARNER/seed/{index}" for index in range(1, 5))
+    81	LEARNER_SEEDS = tuple(seed_from_domain(domain) for domain in LEARNER_DOMAINS)
+    82	REPORTED_ARMS = (*LEARNED_ARMS, "BASELINE", "S0", "S_UNI")
+    83	# --- minimal-pilot scale knobs (engineering only; overridden from main()) ---
+    84	# Defaults reproduce the original full-scale pilot exactly.
+    85	PILOT_ARMS = tuple(LEARNED_ARMS)
+    86	EVAL_ANCHOR_STEPS = 30
+    87	EVAL_CARRIER_LIMIT = None
+    88	EVAL_EPOCH = LEGACY_EPOCH_BUDGET
+    89	ROW_WORLD_GLOB = "world-*"
+    90	ROW_ANCHOR_LIMIT = None
+  1190	    phase_started = time.perf_counter()
+  1191	    q_batches = {
+  1192	        route: _aggregate_pair_batch(batch)
+  1193	        for route, batch in build_pairwise_batches(source_shards).items()
+  1194	    }
+  1195	    _TRAIN_Q1, _TRAIN_Q2 = q_batches["C1"], q_batches["C2"]
+  1196	    _TRAIN_C3 = CoalitionBatch.create(coalition_shards)
+  1197	    _TRAIN_NEUTRAL = default_synthetic_neutral_sources()
+  1198	    _TRAIN_OUTPUT = str(output)
+  1199	    tasks = [(seed, arm) for seed in LEARNER_SEEDS for arm in LEARNED_ARMS]
+  1200	    results = []
+  1201	    context = mp.get_context("fork")
+  1202	    with ProcessPoolExecutor(max_workers=16, mp_context=context) as executor:
+  1203	        future_to_task = {executor.submit(_train_one, task): task for task in tasks}
+  1204	        for future in as_completed(future_to_task):
+  1205	            result = future.result()
+  1206	            results.append(result)
+  1207	            print(
+  1208	                json.dumps(
+  1209	                    {
+  1210	                        "artifact_label": LABEL,
+  1211	                        "phase": "train",
+  1212	                        "arm": result["arm"],
+  1213	                        "learner_seed": result["learner_seed"],
+  1214	                        "completed": len(results),
+  1215	                        "total": len(tasks),
+  1216	                    }
+  1217	                ),
+  1218	                flush=True,
+  1219	            )
+  1220	    baseline = [
+  1221	        {
+  1222	            "artifact_label": LABEL,
+  1223	            "arm": "BASELINE",
+  1224	            "learner_seed": seed,
+  1225	            "completed_source_epochs": 0,
+  1226	            "external_policy": "fixed carrier proposal",
+  1227	            "wall_s": 0.0,
+  1228	            "core_s": 0.0,
+  1229	            "checkpoint_count": 0,
+  1230	        }
+  1231	        for seed in LEARNER_SEEDS
+  1232	    ]
+  1233	    serializable = [{key: value for key, value in row.items() if key != "model_payload"} for row in results]
+  1234	    manifest = {
+  1235	        "schema": f"{PILOT_SCHEMA}-training-manifest-v1",
+  1236	        "artifact_label": LABEL,
+  1237	        "concurrency": 16,
+  1238	        "neutral_batches_hoisted": True,
+  1284	    }
+  1285	    batches = (
+  1286	        q_batches["C1"], q_batches["C2"],
+  1287	        CoalitionBatch.create(coalition_shards), default_synthetic_neutral_sources(),
+  1288	    )
+  1289	    model_payloads = {}
+  1290	    for seed in LEARNER_SEEDS:
+  1291	        for arm in PILOT_ARMS:
+  1292	            checkpoint = output / "checkpoints" / (
+  1293	                f"{LABEL}-seed-{seed}-{arm}-epoch-{EVAL_EPOCH:04d}.json"
+  1294	            )
+  1295	            payload = json.loads(checkpoint.read_text(encoding="ascii"))
+  1296	            model_payloads[(seed, arm)] = payload["model"]
+  1297	    return row_manifest, training_manifest, calibration, model_payloads, batches
+  1298	
+  1299	
+  1300	def _restore_models(payloads, batches):
+  1301	    q1, q2, c3, neutral = batches
+  1302	    restored = {}
+  1498	            ),
+  1499	        )[: ENGINE.TOP_PROPOSALS]
+  1500	        top_ids.extend(row.configuration_id for row in ranked)
+  1501	    allowed = [base] + [row for row in unilateral if row.configuration_id in top_ids]
+  1502	    allowed.extend(
+  1503	        row for row in catalogue
+  1504	        if row.changed_users > 1
+  1505	        and all(
+  1506	            any(
+  1507	                proposal.mapping[user] == identity
+  1508	                for proposal in unilateral
+  1509	                if proposal.configuration_id in top_ids
+  1510	            )
+  1511	            for user, identity in row.assignments
+  1512	            if identity != base.mapping[user]
+  1513	        )
+  1514	    )
+  1515	    evaluator.evaluate_many(tuple(allowed))
+  1516	    allowed = [
+  1517	        row for row in allowed if row.configuration_id not in evaluator._invalid
+  1518	    ]
+  1519	    return min(
+  1520	        allowed,
+  1521	        key=lambda row: (-evaluator.evaluate(row).bits, row.configuration_id),
+  1522	    )
+  1523	
+  1524	
+  1525	def _select_for_anchor(
+  1526	    anchor_name, anchor, catalogue, exact, models, rows_by_user_action,
+  1527	    tape, step_index, exact_s0,
+  1528	):
+  1529	    selections = {}
+  1530	    diagnostics = {}
+  1531	    legal_catalogue = [row for row in catalogue if row.configuration_id in exact]
+  1532	    contexts = {}
+  1533	    for config in legal_catalogue:
+  1534	        if len(exact[config.configuration_id]["changed"]) >= 2:
+  1535	            contexts[config.configuration_id] = _coalition_context(
+  1536	                tape=tape, step_index=step_index, anchor=anchor,
+  1537	                selected=config, rows_by_user_action=rows_by_user_action,
+  1538	            )
+  1539	    for seed in LEARNER_SEEDS:
+  1540	        exact_scores = []
+  1541	        additive_scores = []
+  1542	        learned_scores_by_arm = {arm: [] for arm in PILOT_ARMS}
+  1543	        deltas_by_arm = {}
+  1544	        c2_tie_pairs = 0
+  1545	        c2_eligible_pairs = 0
+  1546	        for arm in PILOT_ARMS:
+  1547	            model = models[(seed, arm)]
+  1548	            deltas = {}
+  1549	            for (user, action), row in rows_by_user_action.items():
+  1550	                reference = rows_by_user_action[(user, anchor.mapping[user])]
+  1551	                q2_delta = model.q2.score(row.q2_state) - model.q2.score(reference.q2_state)
+  1552	                deltas[(user, action)] = (
+  1553	                    model.q1.score(row.q1_state) - model.q1.score(reference.q1_state)
+  1554	                    + q2_delta
+  1555	                )
+  1556	                if arm == "FULL" and action != anchor.mapping[user]:
+  1557	                    c2_eligible_pairs += 1
+  1558	                    c2_tie_pairs += int(q2_delta == 0.0)
+  1559	            deltas_by_arm[arm] = deltas
+  1560	        c2_tie_fraction = (
+  1561	            c2_tie_pairs / c2_eligible_pairs if c2_eligible_pairs else None
+  1562	        )
+  1563	        for config in legal_catalogue:
+  1564	            context = contexts.get(config.configuration_id)
+  1565	            full_additive = math.fsum(
+  1566	                deltas_by_arm["FULL"][(user, config.mapping[user])]
+  1567	                for user in anchor.mapping
+  1568	            )
+  1604	    phase_started = time.perf_counter()
+  1605	    cpu_started = time.process_time()
+  1606	    print(json.dumps({"artifact_label": LABEL, "phase": "evaluation",
+  1607	                      "event": "restore_models_start"}), flush=True)
+  1608	    models = _restore_models(model_payloads, batches)
+  1609	    setting = ENGINE._setting("a-r0")
+  1610	    run_setting = ENGINE.run_setting_for("a-r0")
+  1611	    records = []
+  1612	    phase_latencies = []
+  1613	    for world_offset, domain in enumerate(EVALUATION_WORLDS, start=3):
+  1614	        tape_started = time.perf_counter()
+  1615	        print(json.dumps({"artifact_label": LABEL, "phase": "evaluation",
+  1638	                    carrier=carrier,
+  1639	                    anchor_index=anchor_index,
+  1640	                    include_coalition=False,
+  1641	                    full_legal_actions=True,
+  1642	                )
+  1643	                feature_wall = time.perf_counter() - feature_started
+  1644	                carrier_base = built["base"]
+  1645	                incumbent = built["incumbent"]
+  1646	                rows = built["rows_by_user_action"]
+  1647	                current = built["current_evaluator"]
+  1648	                standard_started = time.perf_counter()
+  1649	                standard_catalogue, _ = ENGINE._catalogue_with_census(
+  1650	                    tape,
+  1694	                    {len(row["changed"]) for row in u_positive_joint_rows}
+  1695	                )
+  1696	                variants = {
+  1697	                    "P-a0": (carrier_base, standard_catalogue, exact_a0),
+  1698	                    "P-u": (u, u_catalogue, exact_u),
+  1699	                }
+  1700	                realised = ENGINE.StepEvaluator(
+  1701	                    tape,
+  1702	                    setting,
+  1703	                    step_index,
+  1704	                    transition_from=incumbent,
+  1705	                    cell_rekeyed_users=ENGINE._rekeyed_users(tape, step_index),
+  1706	                    field="realised",
+  1707	                    run_setting=run_setting,
+  1708	                )
+  1709	                for variant, (catalogue_anchor, catalogue, exact) in variants.items():
+  1710	                    selections, diagnostics = _select_for_anchor(
+  1711	                        variant,
+  1712	                        catalogue_anchor,
+  1726	                    exact.update(
+  1727	                        _exact_interactions(
+  1728	                            catalogue_anchor, incumbent, selected_full_catalogue,
+  1729	                            current, calibration,
+  1730	                        )
+  1731	                    )
+  1732	                    for seed in LEARNER_SEEDS:
+  1733	                        selections[(seed, "BASELINE")] = carrier_base
+  1734	                        selections[(seed, "S_UNI")] = u
+  1735	                    additive_configs = {
+  1736	                        row["additive_choice"].assignments: row["additive_choice"]
+  1737	                        for row in diagnostics.values()
+  1738	                    }
+  1739	                    realised.evaluate_many(
+  1740	                        tuple({
+  1741	                            **{row.assignments: row for row in selections.values()},
+  1742	                            **additive_configs,
+  1743	                        }.values())
+  1744	                    )
+  1745	                    for seed in LEARNER_SEEDS:
+  1746	                        for arm in REPORTED_ARMS:
+  1747	                            config = selections[(seed, arm)]
+  1748	                            profile = realised.evaluate(config)
+     1	#!/home/sat/mcrl-leo-handover/.venv/bin/python
+     2	"""Score Stage-C five-arm checkpoints on both declared reporting axes.
+     3	
+     4	The scorer is deliberately physics-free.  A panel file owns the common
+     5	catalogue, full-buffer physical outcomes, certified fixed point, and the
+     6	same-budget anytime incumbent.  Checkpoints own only the learned scores.
+     7	"""
+     8	
+     9	from __future__ import annotations
+    10	
+    11	import argparse
+    12	import csv
+    13	import hashlib
+    14	import json
+    15	import math
+    16	import os
+    17	from pathlib import Path
+    18	import random
+    19	import resource
+    20	import statistics
+    21	import sys
+    22	from typing import Iterable, Mapping, Sequence
+    23	
+    24	
+    25	THREAD_VARIABLES = (
+    26	    "OMP_NUM_THREADS",
+    27	    "OPENBLAS_NUM_THREADS",
+    28	    "MKL_NUM_THREADS",
+    29	    "NUMEXPR_NUM_THREADS",
+    30	    "VECLIB_MAXIMUM_THREADS",
+    31	    "BLIS_NUM_THREADS",
+    32	)
+    33	for _name in THREAD_VARIABLES:
+    34	    os.environ[_name] = "1"
+    35	
+    36	INTERPRETER = Path("/home/sat/mcrl-leo-handover/.venv/bin/python")
+    37	MAX_RSS_BYTES = 5_000_000_000
+    38	REQUIRED_NICE = 15
+    39	PROCESS_COUNT = 1
+    40	ARMS = ("FULL", "DROP_C1", "DROP_C2", "DROP_C3", "ALL_NEUTRAL_CONTROL")
+    41	ROUTES = ("C1", "C2", "C3")
+    42	EXPECTED_SOURCE_MAP = {
+    43	    "FULL": {"C1": "informed", "C2": "informed", "C3": "informed"},
+    44	    "DROP_C1": {"C1": "neutral", "C2": "informed", "C3": "informed"},
+    45	    "DROP_C2": {"C1": "informed", "C2": "neutral", "C3": "informed"},
+    46	    "DROP_C3": {"C1": "informed", "C2": "informed", "C3": "neutral"},
+    47	    "ALL_NEUTRAL_CONTROL": {"C1": "neutral", "C2": "neutral", "C3": "neutral"},
+    48	}
+    49	CHECKPOINT_SCHEMA = "mcrl-v025-stagec-v1-lineage-checkpoint-v1"
+    50	PANEL_SCHEMA = "mcrl-v025-dual-axis-scoring-panel-v1"
+    51	RESULT_SCHEMA = "mcrl-v025-dual-axis-score-result-v1"
+    52	SMOKE_CHECKPOINT_SHA256 = "bcf99d209c62782eb524ff609e2008d8e8a59828e733791a9e1d9b43fb310428"
+    53	NUMERATOR = (
+    54	    "sum of saturated full-buffer successfully decoded forward-downlink information bits; "
+    55	    "rate target is a power-control setpoint; no demand cap"
+
+codex
+The report will distinguish three similarly named objects that cannot be conflated: the sealed V0.25 arm label, the authenticated V0.23 MODQN checkpoint, and the V0.25 pilot’s fixed carrier proposal. Only the second is actually MODQN, and no declared bridge connects it to the first on `a-r0`.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-modqn-ws/BASELINE-MODQN-REFERENCE-2026-09-10.md
+diff --git a/BASELINE-MODQN-REFERENCE-2026-09-10.md b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..05ba26674152b9c5b98641ffb09f1abd7cd89dce
+--- /dev/null
++++ b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+@@ -0,0 +1,153 @@
++**No runnable V0.25 external `BASELINE` exists: pooled EE and active-beam count are therefore unmeasured, and learned `a0` cannot be placed above or below it on this panel.**
++
++# BASELINE / MODQN reference — design-phase determination
++
++Date: 2026-09-10  
++Scope: development anchors only; no evaluation-only claim dates read  
++Status: Part 1 complete; Parts 2 and 3 intentionally not run under the requested stop rule
++
++## Finding
++
++The current V0.25 seal names an **“external BASELINE”** but does not bind an executable policy, checkpoint, training regime, or a mapping between V0.25 observations/actions and the predecessor MODQN interface. The predecessor seal does identify `BASELINE`: it is one particular frozen, authenticated pre-Catfish MODQN checkpoint. That checkpoint and its read-only adapter still load, but their complete runnable environment path is V0.23-era. No end-to-end path submits that policy's decisions to the current V0.25 `a-r0` `StepEvaluator`.
++
++The current pilot's object called `BASELINE` is instead `carrier_base`, recorded as a **“fixed carrier proposal.”** It is a geometry control, not the authenticated MODQN policy. Its existing V0.25 outcome numbers cannot measure the owner's MODQN gate.
++
++## 1. Exact identity and decision rule
++
++### What the sealed declarations say
++
++The current V0.25 contract's arm inventory contains only the words **“external BASELINE”**; it supplies no further identity in that contract ([V0.25 contract, C3](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:21)).
++
++The predecessor scientific declaration is precise:
++
++> “`BASELINE` is the unchanged, externally authenticated pre-Catfish MODQN policy admitted through `.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py` source and is never a trained arm.”
++
++([V0.23 scientific declaration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md:103)) Its companion contract binds checkpoint SHA-256 `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`, state dimension 112, 9,000 training episodes, and empty learned routes ([V0.23 development contract](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md:182)).
++
++### Exact policy
++
++`BASELINE` is a **specific frozen MODQN checkpoint using a shared set of three Q networks**. It is not learned `a0 = masked argmax(Q1+Q2)`, not a hand-written allocation rule, and not merely a training configuration.
++
++For each user `u` and legacy action slot `j`, it computes
++
++```text
++score_u(j) = 0.5 Q1(s_u,j) + 0.3 Q2(s_u,j) + 0.2 Q3(s_u,j)
++
++a_u = lowest-index argmax_j score_u(j), over legal j only
++a_u = -1 (NO_OP), if no action is legal
++```
++
++The adapter itself states:
++
++> “This is MODQN's original weighted masked argmax: invalid actions are -inf and numpy's argmax supplies the lowest-index tie break.”
++
++([baseline adapter](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:720)) The bound dimensions, hidden layers, activation, weights, shared-policy mode, state transforms, and completed training configuration are fixed in the same file ([constants](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:34), [trainer configuration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:68)). The checkpoint-selection rule is the final-episode policy; the bound checkpoint is episode index 8999, after 9,000 episodes. `select_actions` applies the weighted masked argmax independently to every user's row ([selection entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747)).
++
++## 2. Runnable implementation status
++
++### What exists
++
++The read-only legacy policy implementation is:
++
++- File: [baseline_adapter.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:1)
++- Entry points: `BaselineAdapter.from_artifacts(...)` ([loader](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:561)) and `BaselineAdapter.select_actions(states, masks)` ([selector](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747))
++- Bound checkpoint: `/home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt`
++- Legacy physical runner: [v023_c1c2_successor_physical_runner.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:667), through `load_baseline_policy(...)` and `FixedPolicyEpisodeAdapter.run_episode(...)` ([episode entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:1189)).
++
++This is runnable against the legacy/V0.23 state, action, and environment contract. A read-only smoke load authenticated the checkpoint and instantiated its three networks. That establishes artifact integrity and legacy executability only; it is not a V0.25 outcome measurement.
++
++### What does not exist
++
++There is no runnable V0.25 path that does all of the following:
++
++1. constructs the baseline's authentic 112-dimensional observations and 28-slot masks from a V0.25 `ExogenousWorldTape` anchor;
++2. calls the authenticated checkpoint;
++3. maps the returned legacy slot indices to V0.25 physical identities and a joint `Configuration` under a sealed rule;
++4. validates or repairs independently chosen actions under a sealed V0.25 joint-profile rule; and
++5. includes that configuration in the required fresh dense `StepEvaluator.evaluate_many(...)` call.
++
++The governing V0.25 code confirms the mismatch:
++
++- `REPORTED_ARMS` includes `BASELINE`, but `PILOT_ARMS` contains learned arms only ([pilot inventory](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:82)).
++- Training iterates only learned arms, while the manifest describes `BASELINE` as `external_policy: "fixed carrier proposal"` ([pilot training/manifest](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1199), [exact manifest field](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1220)).
++- At evaluation, the code explicitly performs `selections[(seed, "BASELINE")] = carrier_base` ([pilot assignment](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1732)).
++- The newer Stage-C scorer declares only the five learned arms and describes itself as physics-free ([scorer](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:1), [arm tuple](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:40)). It has no `BASELINE` policy path.
++
++Therefore the current V0.25 `carrier_base` results, and the older roughly 3.72 Mbit/J V0.23 results, are both unusable as the requested V0.25 external-MODQN comparator: the former is the wrong policy and the latter is the wrong physics.
++
++## 3. Decision-time information and comparison class
++
++For every user, the authenticated checkpoint consumes four arrays of 28 entries, plus a Boolean legal-action mask over the same 28 slots:
++
++1. `access_vector`: current access, one-hot or empty;
++2. `channel_quality`: linear candidate-beam SNR, encoded as `log1p(SNR)`;
++3. `beam_offsets`: candidate-beam off-axis angle in raw radians;
++4. `beam_loads`: global pre-admission load for each physical beam, divided by the number of users; and
++5. the legal-action mask.
++
++The adapter validates those four arrays and deliberately strips every contract extension ([input validation and native surface](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:394)). Thus `112 = 4 × 28`; the mask restricts selection but is not part of the 112 numeric features.
++
++Its comparison class is a shared per-user policy: all users use the same three networks, each user observes its own access/SNR/angle vectors plus the globally shared beam-load vector, and each action is selected independently subject to its mask. It does not consume the V0.25 coordinator's joint cross-gain matrix, bounded catalogue, joint-physics outputs, reference proposal, or future horizon ([V0.25 information interfaces](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:5)).
++
++## 4. V0.25 training/configuration declaration
++
++**The V0.25 sealed declaration is silent.** It does not say whether V0.25 must:
++
++- replay the exact V0.23 checkpoint;
++- retrain MODQN against V0.25 physics;
++- use some other MODQN checkpoint; or
++- use the pilot's fixed carrier proposal.
++
++It also does not bind the V0.25-to-legacy observation/action projection or a deterministic invalid-joint-profile rule. The legacy adapter's embedded training configuration precisely authenticates the already-completed V0.23 checkpoint; it is not an instruction to retrain that configuration on V0.25.
++
++Choosing among those possibilities would redefine the comparator. This is a scientific-owner gap, not an implementation choice that may be filled here.
++
++## 5. Smallest work that would make the gate measurable
++
++The irreducible first step is an owner-sealed comparator binding. It must name checkpoint reuse versus retraining and bind the checkpoint/implementation digests, the 4×7 candidate-slot roster, every V0.25-to-legacy input field, physical-identity round trip, and the joint invalidity fallback/repair behavior.
++
++Once that decision exists, the smallest code work is a thin, read-only V0.25 policy bridge with known-answer tests for input identity, masks, slot mapping, lowest-index ties, empty masks, joint invalidity, and unchanged checkpoint bytes. The bridge then needs to be wired into one development-panel measurement entry point.
++
++That entry point must assert the evaluator rule requested here, per anchor:
++
++- selection: create **one fresh dense** `StepEvaluator(boundary_indices=(0,))`, then include `BASE` and every candidate in its first `evaluate_many(...)` call; no scalar `evaluate(...)` and no foreign cache may precede it;
++- endpoints: create **one separate fresh realised dense full-48** evaluator, then include `BASE` and all endpoints in one `evaluate_many(...)` call; and
++- assert fresh caches, evaluator identity separation, boundary sets, and membership of `BASE` in both relevant batch calls.
++
++Only after those bindings, tests, and assertions exist can pooled EE, bits, joules, served PHY, rate-target attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` be scientifically computed.
++
++## Parts 2 and 3 — not run
++
++The user's stop condition applies because Part 1 found no runnable V0.25 implementation of the declared MODQN comparator.
++
++- No 20-anchor V025_PROBE_R2 outcome evaluation was run.
++- `BASELINE` pooled EE, bits, joules, served PHY, attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` are **unmeasured**, not zero.
++- Learned `a0` was not evaluated or selected from the completed v1 checkpoints, so no checkpoint/seed/epoch is reported and no above/below comparison is made.
++- `BASELINE` concentration versus spread is unknown. The supplied negative `d(EE)/d(active)` result therefore cannot diagnose this missing comparator. Calling the fixed carrier proposal's active count the MODQN active count would be a category error.
++- No loss value was used as evidence about EE.
++
++## Evidence classification and resource receipt
++
++### Verified by running code
++
++A single read-only Python process used exactly `/home/sat/mcrl-leo-handover/.venv/bin/python`, under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. It authenticated and loaded the legacy adapter/checkpoint, asserted the 112-state/28-action binding and the 5 GB cap, and did not invoke physics or inspect a panel anchor.
++
++```text
++anchor 0/20
++peak RSS: 524275712 bytes (499.99 MiB)
++python processes used: 1 (hard cap: 3)
++nice: 15
++BLAS/thread pins: all 1
++```
++
++### Verified by primary-source inspection
++
++The current seal's bare arm wording; the predecessor checkpoint binding; exact adapter rule and inputs; legacy runner entry points; current V0.25 pilot substitution; and current scorer omission. The checkpoint file's SHA-256 matched `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`.
++
++### Derived on paper
++
++The displayed scalarization formula, `112 = 4 × 28`, and the classification of the mask as a selection constraint rather than a numeric state block follow directly from the executable constants and encoding path.
++
++### Inferred
++
++An owner decision is required before a V0.25 bridge can be scientific, because no sealed V0.25 text resolves checkpoint identity, input projection, action mapping, or invalid joint behavior. No efficacy or V0.25 EE inference is made.
+
+diff --git a/BASELINE-MODQN-REFERENCE-2026-09-10.md b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..05ba26674152b9c5b98641ffb09f1abd7cd89dce
+--- /dev/null
++++ b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+@@ -0,0 +1,153 @@
++**No runnable V0.25 external `BASELINE` exists: pooled EE and active-beam count are therefore unmeasured, and learned `a0` cannot be placed above or below it on this panel.**
++
++# BASELINE / MODQN reference — design-phase determination
++
++Date: 2026-09-10  
++Scope: development anchors only; no evaluation-only claim dates read  
++Status: Part 1 complete; Parts 2 and 3 intentionally not run under the requested stop rule
++
++## Finding
++
++The current V0.25 seal names an **“external BASELINE”** but does not bind an executable policy, checkpoint, training regime, or a mapping between V0.25 observations/actions and the predecessor MODQN interface. The predecessor seal does identify `BASELINE`: it is one particular frozen, authenticated pre-Catfish MODQN checkpoint. That checkpoint and its read-only adapter still load, but their complete runnable environment path is V0.23-era. No end-to-end path submits that policy's decisions to the current V0.25 `a-r0` `StepEvaluator`.
++
++The current pilot's object called `BASELINE` is instead `carrier_base`, recorded as a **“fixed carrier proposal.”** It is a geometry control, not the authenticated MODQN policy. Its existing V0.25 outcome numbers cannot measure the owner's MODQN gate.
++
++## 1. Exact identity and decision rule
++
++### What the sealed declarations say
++
++The current V0.25 contract's arm inventory contains only the words **“external BASELINE”**; it supplies no further identity in that contract ([V0.25 contract, C3](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:21)).
++
++The predecessor scientific declaration is precise:
++
++> “`BASELINE` is the unchanged, externally authenticated pre-Catfish MODQN policy admitted through `.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py` source and is never a trained arm.”
++
++([V0.23 scientific declaration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md:103)) Its companion contract binds checkpoint SHA-256 `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`, state dimension 112, 9,000 training episodes, and empty learned routes ([V0.23 development contract](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md:182)).
++
++### Exact policy
++
++`BASELINE` is a **specific frozen MODQN checkpoint using a shared set of three Q networks**. It is not learned `a0 = masked argmax(Q1+Q2)`, not a hand-written allocation rule, and not merely a training configuration.
++
++For each user `u` and legacy action slot `j`, it computes
++
++```text
++score_u(j) = 0.5 Q1(s_u,j) + 0.3 Q2(s_u,j) + 0.2 Q3(s_u,j)
++
++a_u = lowest-index argmax_j score_u(j), over legal j only
++a_u = -1 (NO_OP), if no action is legal
++```
++
++The adapter itself states:
++
++> “This is MODQN's original weighted masked argmax: invalid actions are -inf and numpy's argmax supplies the lowest-index tie break.”
++
++([baseline adapter](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:720)) The bound dimensions, hidden layers, activation, weights, shared-policy mode, state transforms, and completed training configuration are fixed in the same file ([constants](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:34), [trainer configuration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:68)). The checkpoint-selection rule is the final-episode policy; the bound checkpoint is episode index 8999, after 9,000 episodes. `select_actions` applies the weighted masked argmax independently to every user's row ([selection entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747)).
++
++## 2. Runnable implementation status
++
++### What exists
++
++The read-only legacy policy implementation is:
++
++- File: [baseline_adapter.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:1)
++- Entry points: `BaselineAdapter.from_artifacts(...)` ([loader](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:561)) and `BaselineAdapter.select_actions(states, masks)` ([selector](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747))
++- Bound checkpoint: `/home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt`
++- Legacy physical runner: [v023_c1c2_successor_physical_runner.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:667), through `load_baseline_policy(...)` and `FixedPolicyEpisodeAdapter.run_episode(...)` ([episode entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:1189)).
++
++This is runnable against the legacy/V0.23 state, action, and environment contract. A read-only smoke load authenticated the checkpoint and instantiated its three networks. That establishes artifact integrity and legacy executability only; it is not a V0.25 outcome measurement.
++
++### What does not exist
++
++There is no runnable V0.25 path that does all of the following:
++
++1. constructs the baseline's authentic 112-dimensional observations and 28-slot masks from a V0.25 `ExogenousWorldTape` anchor;
++2. calls the authenticated checkpoint;
++3. maps the returned legacy slot indices to V0.25 physical identities and a joint `Configuration` under a sealed rule;
++4. validates or repairs independently chosen actions under a sealed V0.25 joint-profile rule; and
++5. includes that configuration in the required fresh dense `StepEvaluator.evaluate_many(...)` call.
++
++The governing V0.25 code confirms the mismatch:
++
++- `REPORTED_ARMS` includes `BASELINE`, but `PILOT_ARMS` contains learned arms only ([pilot inventory](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:82)).
++- Training iterates only learned arms, while the manifest describes `BASELINE` as `external_policy: "fixed carrier proposal"` ([pilot training/manifest](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1199), [exact manifest field](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1220)).
++- At evaluation, the code explicitly performs `selections[(seed, "BASELINE")] = carrier_base` ([pilot assignment](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1732)).
++- The newer Stage-C scorer declares only the five learned arms and describes itself as physics-free ([scorer](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:1), [arm tuple](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:40)). It has no `BASELINE` policy path.
++
++Therefore the current V0.25 `carrier_base` results, and the older roughly 3.72 Mbit/J V0.23 results, are both unusable as the requested V0.25 external-MODQN comparator: the former is the wrong policy and the latter is the wrong physics.
++
++## 3. Decision-time information and comparison class
++
++For every user, the authenticated checkpoint consumes four arrays of 28 entries, plus a Boolean legal-action mask over the same 28 slots:
++
++1. `access_vector`: current access, one-hot or empty;
++2. `channel_quality`: linear candidate-beam SNR, encoded as `log1p(SNR)`;
++3. `beam_offsets`: candidate-beam off-axis angle in raw radians;
++4. `beam_loads`: global pre-admission load for each physical beam, divided by the number of users; and
++5. the legal-action mask.
++
++The adapter validates those four arrays and deliberately strips every contract extension ([input validation and native surface](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:394)). Thus `112 = 4 × 28`; the mask restricts selection but is not part of the 112 numeric features.
++
++Its comparison class is a shared per-user policy: all users use the same three networks, each user observes its own access/SNR/angle vectors plus the globally shared beam-load vector, and each action is selected independently subject to its mask. It does not consume the V0.25 coordinator's joint cross-gain matrix, bounded catalogue, joint-physics outputs, reference proposal, or future horizon ([V0.25 information interfaces](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:5)).
++
++## 4. V0.25 training/configuration declaration
++
++**The V0.25 sealed declaration is silent.** It does not say whether V0.25 must:
++
++- replay the exact V0.23 checkpoint;
++- retrain MODQN against V0.25 physics;
++- use some other MODQN checkpoint; or
++- use the pilot's fixed carrier proposal.
++
++It also does not bind the V0.25-to-legacy observation/action projection or a deterministic invalid-joint-profile rule. The legacy adapter's embedded training configuration precisely authenticates the already-completed V0.23 checkpoint; it is not an instruction to retrain that configuration on V0.25.
++
++Choosing among those possibilities would redefine the comparator. This is a scientific-owner gap, not an implementation choice that may be filled here.
++
++## 5. Smallest work that would make the gate measurable
++
++The irreducible first step is an owner-sealed comparator binding. It must name checkpoint reuse versus retraining and bind the checkpoint/implementation digests, the 4×7 candidate-slot roster, every V0.25-to-legacy input field, physical-identity round trip, and the joint invalidity fallback/repair behavior.
++
++Once that decision exists, the smallest code work is a thin, read-only V0.25 policy bridge with known-answer tests for input identity, masks, slot mapping, lowest-index ties, empty masks, joint invalidity, and unchanged checkpoint bytes. The bridge then needs to be wired into one development-panel measurement entry point.
++
++That entry point must assert the evaluator rule requested here, per anchor:
++
++- selection: create **one fresh dense** `StepEvaluator(boundary_indices=(0,))`, then include `BASE` and every candidate in its first `evaluate_many(...)` call; no scalar `evaluate(...)` and no foreign cache may precede it;
++- endpoints: create **one separate fresh realised dense full-48** evaluator, then include `BASE` and all endpoints in one `evaluate_many(...)` call; and
++- assert fresh caches, evaluator identity separation, boundary sets, and membership of `BASE` in both relevant batch calls.
++
++Only after those bindings, tests, and assertions exist can pooled EE, bits, joules, served PHY, rate-target attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` be scientifically computed.
++
++## Parts 2 and 3 — not run
++
++The user's stop condition applies because Part 1 found no runnable V0.25 implementation of the declared MODQN comparator.
++
++- No 20-anchor V025_PROBE_R2 outcome evaluation was run.
++- `BASELINE` pooled EE, bits, joules, served PHY, attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` are **unmeasured**, not zero.
++- Learned `a0` was not evaluated or selected from the completed v1 checkpoints, so no checkpoint/seed/epoch is reported and no above/below comparison is made.
++- `BASELINE` concentration versus spread is unknown. The supplied negative `d(EE)/d(active)` result therefore cannot diagnose this missing comparator. Calling the fixed carrier proposal's active count the MODQN active count would be a category error.
++- No loss value was used as evidence about EE.
++
++## Evidence classification and resource receipt
++
++### Verified by running code
++
++A single read-only Python process used exactly `/home/sat/mcrl-leo-handover/.venv/bin/python`, under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. It authenticated and loaded the legacy adapter/checkpoint, asserted the 112-state/28-action binding and the 5 GB cap, and did not invoke physics or inspect a panel anchor.
++
++```text
++anchor 0/20
++peak RSS: 524275712 bytes (499.99 MiB)
++python processes used: 1 (hard cap: 3)
++nice: 15
++BLAS/thread pins: all 1
++```
++
++### Verified by primary-source inspection
++
++The current seal's bare arm wording; the predecessor checkpoint binding; exact adapter rule and inputs; legacy runner entry points; current V0.25 pilot substitution; and current scorer omission. The checkpoint file's SHA-256 matched `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`.
++
++### Derived on paper
++
++The displayed scalarization formula, `112 = 4 × 28`, and the classification of the mask as a selection constraint rather than a numeric state block follow directly from the executable constants and encoding path.
++
++### Inferred
++
++An owner decision is required before a V0.25 bridge can be scientific, because no sealed V0.25 text resolves checkpoint identity, input projection, action mapping, or invalid joint behavior. No efficacy or V0.25 EE inference is made.
+
+exec
+/bin/bash -lc "test -f BASELINE-MODQN-REFERENCE-2026-09-10.md && sed -n '1,24p' BASELINE-MODQN-REFERENCE-2026-09-10.md && git diff --check -- BASELINE-MODQN-REFERENCE-2026-09-10.md && wc -l BASELINE-MODQN-REFERENCE-2026-09-10.md" in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 0ms:
+**No runnable V0.25 external `BASELINE` exists: pooled EE and active-beam count are therefore unmeasured, and learned `a0` cannot be placed above or below it on this panel.**
+
+# BASELINE / MODQN reference — design-phase determination
+
+Date: 2026-09-10  
+Scope: development anchors only; no evaluation-only claim dates read  
+Status: Part 1 complete; Parts 2 and 3 intentionally not run under the requested stop rule
+
+## Finding
+
+The current V0.25 seal names an **“external BASELINE”** but does not bind an executable policy, checkpoint, training regime, or a mapping between V0.25 observations/actions and the predecessor MODQN interface. The predecessor seal does identify `BASELINE`: it is one particular frozen, authenticated pre-Catfish MODQN checkpoint. That checkpoint and its read-only adapter still load, but their complete runnable environment path is V0.23-era. No end-to-end path submits that policy's decisions to the current V0.25 `a-r0` `StepEvaluator`.
+
+The current pilot's object called `BASELINE` is instead `carrier_base`, recorded as a **“fixed carrier proposal.”** It is a geometry control, not the authenticated MODQN policy. Its existing V0.25 outcome numbers cannot measure the owner's MODQN gate.
+
+## 1. Exact identity and decision rule
+
+### What the sealed declarations say
+
+The current V0.25 contract's arm inventory contains only the words **“external BASELINE”**; it supplies no further identity in that contract ([V0.25 contract, C3](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:21)).
+
+The predecessor scientific declaration is precise:
+
+> “`BASELINE` is the unchanged, externally authenticated pre-Catfish MODQN policy admitted through `.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py` source and is never a trained arm.”
+
+153 BASELINE-MODQN-REFERENCE-2026-09-10.md
+
+diff --git a/BASELINE-MODQN-REFERENCE-2026-09-10.md b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..05ba26674152b9c5b98641ffb09f1abd7cd89dce
+--- /dev/null
++++ b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+@@ -0,0 +1,153 @@
++**No runnable V0.25 external `BASELINE` exists: pooled EE and active-beam count are therefore unmeasured, and learned `a0` cannot be placed above or below it on this panel.**
++
++# BASELINE / MODQN reference — design-phase determination
++
++Date: 2026-09-10  
++Scope: development anchors only; no evaluation-only claim dates read  
++Status: Part 1 complete; Parts 2 and 3 intentionally not run under the requested stop rule
++
++## Finding
++
++The current V0.25 seal names an **“external BASELINE”** but does not bind an executable policy, checkpoint, training regime, or a mapping between V0.25 observations/actions and the predecessor MODQN interface. The predecessor seal does identify `BASELINE`: it is one particular frozen, authenticated pre-Catfish MODQN checkpoint. That checkpoint and its read-only adapter still load, but their complete runnable environment path is V0.23-era. No end-to-end path submits that policy's decisions to the current V0.25 `a-r0` `StepEvaluator`.
++
++The current pilot's object called `BASELINE` is instead `carrier_base`, recorded as a **“fixed carrier proposal.”** It is a geometry control, not the authenticated MODQN policy. Its existing V0.25 outcome numbers cannot measure the owner's MODQN gate.
++
++## 1. Exact identity and decision rule
++
++### What the sealed declarations say
++
++The current V0.25 contract's arm inventory contains only the words **“external BASELINE”**; it supplies no further identity in that contract ([V0.25 contract, C3](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:21)).
++
++The predecessor scientific declaration is precise:
++
++> “`BASELINE` is the unchanged, externally authenticated pre-Catfish MODQN policy admitted through `.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py` source and is never a trained arm.”
++
++([V0.23 scientific declaration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md:103)) Its companion contract binds checkpoint SHA-256 `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`, state dimension 112, 9,000 training episodes, and empty learned routes ([V0.23 development contract](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md:182)).
++
++### Exact policy
++
++`BASELINE` is a **specific frozen MODQN checkpoint using a shared set of three Q networks**. It is not learned `a0 = masked argmax(Q1+Q2)`, not a hand-written allocation rule, and not merely a training configuration.
++
++For each user `u` and legacy action slot `j`, it computes
++
++```text
++score_u(j) = 0.5 Q1(s_u,j) + 0.3 Q2(s_u,j) + 0.2 Q3(s_u,j)
++
++a_u = lowest-index argmax_j score_u(j), over legal j only
++a_u = -1 (NO_OP), if no action is legal
++```
++
++The adapter itself states:
++
++> “This is MODQN's original weighted masked argmax: invalid actions are -inf and numpy's argmax supplies the lowest-index tie break.”
++
++([baseline adapter](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:720)) The bound dimensions, hidden layers, activation, weights, shared-policy mode, state transforms, and completed training configuration are fixed in the same file ([constants](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:34), [trainer configuration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:68)). The checkpoint-selection rule is the final-episode policy; the bound checkpoint is episode index 8999, after 9,000 episodes. `select_actions` applies the weighted masked argmax independently to every user's row ([selection entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747)).
++
++## 2. Runnable implementation status
++
++### What exists
++
++The read-only legacy policy implementation is:
++
++- File: [baseline_adapter.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:1)
++- Entry points: `BaselineAdapter.from_artifacts(...)` ([loader](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:561)) and `BaselineAdapter.select_actions(states, masks)` ([selector](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747))
++- Bound checkpoint: `/home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt`
++- Legacy physical runner: [v023_c1c2_successor_physical_runner.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:667), through `load_baseline_policy(...)` and `FixedPolicyEpisodeAdapter.run_episode(...)` ([episode entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:1189)).
++
++This is runnable against the legacy/V0.23 state, action, and environment contract. A read-only smoke load authenticated the checkpoint and instantiated its three networks. That establishes artifact integrity and legacy executability only; it is not a V0.25 outcome measurement.
++
++### What does not exist
++
++There is no runnable V0.25 path that does all of the following:
++
++1. constructs the baseline's authentic 112-dimensional observations and 28-slot masks from a V0.25 `ExogenousWorldTape` anchor;
++2. calls the authenticated checkpoint;
++3. maps the returned legacy slot indices to V0.25 physical identities and a joint `Configuration` under a sealed rule;
++4. validates or repairs independently chosen actions under a sealed V0.25 joint-profile rule; and
++5. includes that configuration in the required fresh dense `StepEvaluator.evaluate_many(...)` call.
++
++The governing V0.25 code confirms the mismatch:
++
++- `REPORTED_ARMS` includes `BASELINE`, but `PILOT_ARMS` contains learned arms only ([pilot inventory](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:82)).
++- Training iterates only learned arms, while the manifest describes `BASELINE` as `external_policy: "fixed carrier proposal"` ([pilot training/manifest](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1199), [exact manifest field](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1220)).
++- At evaluation, the code explicitly performs `selections[(seed, "BASELINE")] = carrier_base` ([pilot assignment](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1732)).
++- The newer Stage-C scorer declares only the five learned arms and describes itself as physics-free ([scorer](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:1), [arm tuple](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:40)). It has no `BASELINE` policy path.
++
++Therefore the current V0.25 `carrier_base` results, and the older roughly 3.72 Mbit/J V0.23 results, are both unusable as the requested V0.25 external-MODQN comparator: the former is the wrong policy and the latter is the wrong physics.
++
++## 3. Decision-time information and comparison class
++
++For every user, the authenticated checkpoint consumes four arrays of 28 entries, plus a Boolean legal-action mask over the same 28 slots:
++
++1. `access_vector`: current access, one-hot or empty;
++2. `channel_quality`: linear candidate-beam SNR, encoded as `log1p(SNR)`;
++3. `beam_offsets`: candidate-beam off-axis angle in raw radians;
++4. `beam_loads`: global pre-admission load for each physical beam, divided by the number of users; and
++5. the legal-action mask.
++
++The adapter validates those four arrays and deliberately strips every contract extension ([input validation and native surface](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:394)). Thus `112 = 4 × 28`; the mask restricts selection but is not part of the 112 numeric features.
++
++Its comparison class is a shared per-user policy: all users use the same three networks, each user observes its own access/SNR/angle vectors plus the globally shared beam-load vector, and each action is selected independently subject to its mask. It does not consume the V0.25 coordinator's joint cross-gain matrix, bounded catalogue, joint-physics outputs, reference proposal, or future horizon ([V0.25 information interfaces](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:5)).
++
++## 4. V0.25 training/configuration declaration
++
++**The V0.25 sealed declaration is silent.** It does not say whether V0.25 must:
++
++- replay the exact V0.23 checkpoint;
++- retrain MODQN against V0.25 physics;
++- use some other MODQN checkpoint; or
++- use the pilot's fixed carrier proposal.
++
++It also does not bind the V0.25-to-legacy observation/action projection or a deterministic invalid-joint-profile rule. The legacy adapter's embedded training configuration precisely authenticates the already-completed V0.23 checkpoint; it is not an instruction to retrain that configuration on V0.25.
++
++Choosing among those possibilities would redefine the comparator. This is a scientific-owner gap, not an implementation choice that may be filled here.
++
++## 5. Smallest work that would make the gate measurable
++
++The irreducible first step is an owner-sealed comparator binding. It must name checkpoint reuse versus retraining and bind the checkpoint/implementation digests, the 4×7 candidate-slot roster, every V0.25-to-legacy input field, physical-identity round trip, and the joint invalidity fallback/repair behavior.
++
++Once that decision exists, the smallest code work is a thin, read-only V0.25 policy bridge with known-answer tests for input identity, masks, slot mapping, lowest-index ties, empty masks, joint invalidity, and unchanged checkpoint bytes. The bridge then needs to be wired into one development-panel measurement entry point.
++
++That entry point must assert the evaluator rule requested here, per anchor:
++
++- selection: create **one fresh dense** `StepEvaluator(boundary_indices=(0,))`, then include `BASE` and every candidate in its first `evaluate_many(...)` call; no scalar `evaluate(...)` and no foreign cache may precede it;
++- endpoints: create **one separate fresh realised dense full-48** evaluator, then include `BASE` and all endpoints in one `evaluate_many(...)` call; and
++- assert fresh caches, evaluator identity separation, boundary sets, and membership of `BASE` in both relevant batch calls.
++
++Only after those bindings, tests, and assertions exist can pooled EE, bits, joules, served PHY, rate-target attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` be scientifically computed.
++
++## Parts 2 and 3 — not run
++
++The user's stop condition applies because Part 1 found no runnable V0.25 implementation of the declared MODQN comparator.
++
++- No 20-anchor V025_PROBE_R2 outcome evaluation was run.
++- `BASELINE` pooled EE, bits, joules, served PHY, attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` are **unmeasured**, not zero.
++- Learned `a0` was not evaluated or selected from the completed v1 checkpoints, so no checkpoint/seed/epoch is reported and no above/below comparison is made.
++- `BASELINE` concentration versus spread is unknown. The supplied negative `d(EE)/d(active)` result therefore cannot diagnose this missing comparator. Calling the fixed carrier proposal's active count the MODQN active count would be a category error.
++- No loss value was used as evidence about EE.
++
++## Evidence classification and resource receipt
++
++### Verified by running code
++
++A single read-only Python process used exactly `/home/sat/mcrl-leo-handover/.venv/bin/python`, under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. It authenticated and loaded the legacy adapter/checkpoint, asserted the 112-state/28-action binding and the 5 GB cap, and did not invoke physics or inspect a panel anchor.
++
++```text
++anchor 0/20
++peak RSS: 524275712 bytes (499.99 MiB)
++python processes used: 1 (hard cap: 3)
++nice: 15
++BLAS/thread pins: all 1
++```
++
++### Verified by primary-source inspection
++
++The current seal's bare arm wording; the predecessor checkpoint binding; exact adapter rule and inputs; legacy runner entry points; current V0.25 pilot substitution; and current scorer omission. The checkpoint file's SHA-256 matched `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`.
++
++### Derived on paper
++
++The displayed scalarization formula, `112 = 4 × 28`, and the classification of the mask as a selection constraint rather than a numeric state block follow directly from the executable constants and encoding path.
++
++### Inferred
++
++An owner decision is required before a V0.25 bridge can be scientific, because no sealed V0.25 text resolves checkpoint identity, input projection, action mapping, or invalid joint behavior. No efficacy or V0.25 EE inference is made.
+
+codex
+The requested Markdown report is written and passes a whitespace/diff check. It records `anchor 0/20` rather than fabricating panel progress, because the mandated stop occurred before evaluation; the sole Python smoke load peaked at 499.99 MiB with all thread and niceness constraints satisfied.
+exec
+/bin/bash -lc 'git status --short -- BASELINE-MODQN-REFERENCE-2026-09-10.md .scratch/baseline-reference/part1.md && sha256sum BASELINE-MODQN-REFERENCE-2026-09-10.md' in /home/sat/mcrl-v025-modqn-ws
+ succeeded in 0ms:
+?? .scratch/baseline-reference/part1.md
+?? BASELINE-MODQN-REFERENCE-2026-09-10.md
+ae39e4aa2bb4266e3584eb45de68b1e782d23681346b92c063042693d32c1435  BASELINE-MODQN-REFERENCE-2026-09-10.md
+
+diff --git a/BASELINE-MODQN-REFERENCE-2026-09-10.md b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..05ba26674152b9c5b98641ffb09f1abd7cd89dce
+--- /dev/null
++++ b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+@@ -0,0 +1,153 @@
++**No runnable V0.25 external `BASELINE` exists: pooled EE and active-beam count are therefore unmeasured, and learned `a0` cannot be placed above or below it on this panel.**
++
++# BASELINE / MODQN reference — design-phase determination
++
++Date: 2026-09-10  
++Scope: development anchors only; no evaluation-only claim dates read  
++Status: Part 1 complete; Parts 2 and 3 intentionally not run under the requested stop rule
++
++## Finding
++
++The current V0.25 seal names an **“external BASELINE”** but does not bind an executable policy, checkpoint, training regime, or a mapping between V0.25 observations/actions and the predecessor MODQN interface. The predecessor seal does identify `BASELINE`: it is one particular frozen, authenticated pre-Catfish MODQN checkpoint. That checkpoint and its read-only adapter still load, but their complete runnable environment path is V0.23-era. No end-to-end path submits that policy's decisions to the current V0.25 `a-r0` `StepEvaluator`.
++
++The current pilot's object called `BASELINE` is instead `carrier_base`, recorded as a **“fixed carrier proposal.”** It is a geometry control, not the authenticated MODQN policy. Its existing V0.25 outcome numbers cannot measure the owner's MODQN gate.
++
++## 1. Exact identity and decision rule
++
++### What the sealed declarations say
++
++The current V0.25 contract's arm inventory contains only the words **“external BASELINE”**; it supplies no further identity in that contract ([V0.25 contract, C3](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:21)).
++
++The predecessor scientific declaration is precise:
++
++> “`BASELINE` is the unchanged, externally authenticated pre-Catfish MODQN policy admitted through `.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py` source and is never a trained arm.”
++
++([V0.23 scientific declaration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md:103)) Its companion contract binds checkpoint SHA-256 `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`, state dimension 112, 9,000 training episodes, and empty learned routes ([V0.23 development contract](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md:182)).
++
++### Exact policy
++
++`BASELINE` is a **specific frozen MODQN checkpoint using a shared set of three Q networks**. It is not learned `a0 = masked argmax(Q1+Q2)`, not a hand-written allocation rule, and not merely a training configuration.
++
++For each user `u` and legacy action slot `j`, it computes
++
++```text
++score_u(j) = 0.5 Q1(s_u,j) + 0.3 Q2(s_u,j) + 0.2 Q3(s_u,j)
++
++a_u = lowest-index argmax_j score_u(j), over legal j only
++a_u = -1 (NO_OP), if no action is legal
++```
++
++The adapter itself states:
++
++> “This is MODQN's original weighted masked argmax: invalid actions are -inf and numpy's argmax supplies the lowest-index tie break.”
++
++([baseline adapter](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:720)) The bound dimensions, hidden layers, activation, weights, shared-policy mode, state transforms, and completed training configuration are fixed in the same file ([constants](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:34), [trainer configuration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:68)). The checkpoint-selection rule is the final-episode policy; the bound checkpoint is episode index 8999, after 9,000 episodes. `select_actions` applies the weighted masked argmax independently to every user's row ([selection entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747)).
++
++## 2. Runnable implementation status
++
++### What exists
++
++The read-only legacy policy implementation is:
++
++- File: [baseline_adapter.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:1)
++- Entry points: `BaselineAdapter.from_artifacts(...)` ([loader](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:561)) and `BaselineAdapter.select_actions(states, masks)` ([selector](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747))
++- Bound checkpoint: `/home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt`
++- Legacy physical runner: [v023_c1c2_successor_physical_runner.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:667), through `load_baseline_policy(...)` and `FixedPolicyEpisodeAdapter.run_episode(...)` ([episode entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:1189)).
++
++This is runnable against the legacy/V0.23 state, action, and environment contract. A read-only smoke load authenticated the checkpoint and instantiated its three networks. That establishes artifact integrity and legacy executability only; it is not a V0.25 outcome measurement.
++
++### What does not exist
++
++There is no runnable V0.25 path that does all of the following:
++
++1. constructs the baseline's authentic 112-dimensional observations and 28-slot masks from a V0.25 `ExogenousWorldTape` anchor;
++2. calls the authenticated checkpoint;
++3. maps the returned legacy slot indices to V0.25 physical identities and a joint `Configuration` under a sealed rule;
++4. validates or repairs independently chosen actions under a sealed V0.25 joint-profile rule; and
++5. includes that configuration in the required fresh dense `StepEvaluator.evaluate_many(...)` call.
++
++The governing V0.25 code confirms the mismatch:
++
++- `REPORTED_ARMS` includes `BASELINE`, but `PILOT_ARMS` contains learned arms only ([pilot inventory](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:82)).
++- Training iterates only learned arms, while the manifest describes `BASELINE` as `external_policy: "fixed carrier proposal"` ([pilot training/manifest](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1199), [exact manifest field](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1220)).
++- At evaluation, the code explicitly performs `selections[(seed, "BASELINE")] = carrier_base` ([pilot assignment](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1732)).
++- The newer Stage-C scorer declares only the five learned arms and describes itself as physics-free ([scorer](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:1), [arm tuple](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:40)). It has no `BASELINE` policy path.
++
++Therefore the current V0.25 `carrier_base` results, and the older roughly 3.72 Mbit/J V0.23 results, are both unusable as the requested V0.25 external-MODQN comparator: the former is the wrong policy and the latter is the wrong physics.
++
++## 3. Decision-time information and comparison class
++
++For every user, the authenticated checkpoint consumes four arrays of 28 entries, plus a Boolean legal-action mask over the same 28 slots:
++
++1. `access_vector`: current access, one-hot or empty;
++2. `channel_quality`: linear candidate-beam SNR, encoded as `log1p(SNR)`;
++3. `beam_offsets`: candidate-beam off-axis angle in raw radians;
++4. `beam_loads`: global pre-admission load for each physical beam, divided by the number of users; and
++5. the legal-action mask.
++
++The adapter validates those four arrays and deliberately strips every contract extension ([input validation and native surface](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:394)). Thus `112 = 4 × 28`; the mask restricts selection but is not part of the 112 numeric features.
++
++Its comparison class is a shared per-user policy: all users use the same three networks, each user observes its own access/SNR/angle vectors plus the globally shared beam-load vector, and each action is selected independently subject to its mask. It does not consume the V0.25 coordinator's joint cross-gain matrix, bounded catalogue, joint-physics outputs, reference proposal, or future horizon ([V0.25 information interfaces](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:5)).
++
++## 4. V0.25 training/configuration declaration
++
++**The V0.25 sealed declaration is silent.** It does not say whether V0.25 must:
++
++- replay the exact V0.23 checkpoint;
++- retrain MODQN against V0.25 physics;
++- use some other MODQN checkpoint; or
++- use the pilot's fixed carrier proposal.
++
++It also does not bind the V0.25-to-legacy observation/action projection or a deterministic invalid-joint-profile rule. The legacy adapter's embedded training configuration precisely authenticates the already-completed V0.23 checkpoint; it is not an instruction to retrain that configuration on V0.25.
++
++Choosing among those possibilities would redefine the comparator. This is a scientific-owner gap, not an implementation choice that may be filled here.
++
++## 5. Smallest work that would make the gate measurable
++
++The irreducible first step is an owner-sealed comparator binding. It must name checkpoint reuse versus retraining and bind the checkpoint/implementation digests, the 4×7 candidate-slot roster, every V0.25-to-legacy input field, physical-identity round trip, and the joint invalidity fallback/repair behavior.
++
++Once that decision exists, the smallest code work is a thin, read-only V0.25 policy bridge with known-answer tests for input identity, masks, slot mapping, lowest-index ties, empty masks, joint invalidity, and unchanged checkpoint bytes. The bridge then needs to be wired into one development-panel measurement entry point.
++
++That entry point must assert the evaluator rule requested here, per anchor:
++
++- selection: create **one fresh dense** `StepEvaluator(boundary_indices=(0,))`, then include `BASE` and every candidate in its first `evaluate_many(...)` call; no scalar `evaluate(...)` and no foreign cache may precede it;
++- endpoints: create **one separate fresh realised dense full-48** evaluator, then include `BASE` and all endpoints in one `evaluate_many(...)` call; and
++- assert fresh caches, evaluator identity separation, boundary sets, and membership of `BASE` in both relevant batch calls.
++
++Only after those bindings, tests, and assertions exist can pooled EE, bits, joules, served PHY, rate-target attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` be scientifically computed.
++
++## Parts 2 and 3 — not run
++
++The user's stop condition applies because Part 1 found no runnable V0.25 implementation of the declared MODQN comparator.
++
++- No 20-anchor V025_PROBE_R2 outcome evaluation was run.
++- `BASELINE` pooled EE, bits, joules, served PHY, attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` are **unmeasured**, not zero.
++- Learned `a0` was not evaluated or selected from the completed v1 checkpoints, so no checkpoint/seed/epoch is reported and no above/below comparison is made.
++- `BASELINE` concentration versus spread is unknown. The supplied negative `d(EE)/d(active)` result therefore cannot diagnose this missing comparator. Calling the fixed carrier proposal's active count the MODQN active count would be a category error.
++- No loss value was used as evidence about EE.
++
++## Evidence classification and resource receipt
++
++### Verified by running code
++
++A single read-only Python process used exactly `/home/sat/mcrl-leo-handover/.venv/bin/python`, under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. It authenticated and loaded the legacy adapter/checkpoint, asserted the 112-state/28-action binding and the 5 GB cap, and did not invoke physics or inspect a panel anchor.
++
++```text
++anchor 0/20
++peak RSS: 524275712 bytes (499.99 MiB)
++python processes used: 1 (hard cap: 3)
++nice: 15
++BLAS/thread pins: all 1
++```
++
++### Verified by primary-source inspection
++
++The current seal's bare arm wording; the predecessor checkpoint binding; exact adapter rule and inputs; legacy runner entry points; current V0.25 pilot substitution; and current scorer omission. The checkpoint file's SHA-256 matched `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`.
++
++### Derived on paper
++
++The displayed scalarization formula, `112 = 4 × 28`, and the classification of the mask as a selection constraint rather than a numeric state block follow directly from the executable constants and encoding path.
++
++### Inferred
++
++An owner decision is required before a V0.25 bridge can be scientific, because no sealed V0.25 text resolves checkpoint identity, input projection, action mapping, or invalid joint behavior. No efficacy or V0.25 EE inference is made.
+
+codex
+Report written: [BASELINE-MODQN-REFERENCE-2026-09-10.md](/home/sat/mcrl-v025-modqn-ws/BASELINE-MODQN-REFERENCE-2026-09-10.md).
+
+Finding: no runnable V0.25 external MODQN `BASELINE` exists. The authenticated legacy policy is a shared, masked argmax of `0.5Q1 + 0.3Q2 + 0.2Q3`, but V0.25 lacks a sealed observation/action bridge. Its pilot’s `BASELINE` is instead a fixed carrier proposal.
+
+Per the stop rule, Parts 2–3 were not run; all metrics and the `a0` comparison remain unmeasured.
+
+```text
+anchor 0/20
+peak RSS: 524275712 bytes (499.99 MiB)
+python processes used: 1 (hard cap: 3)
+```
+
+No sealed artifacts or evaluation-only claim dates were touched.
+diff --git a/BASELINE-MODQN-REFERENCE-2026-09-10.md b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..05ba26674152b9c5b98641ffb09f1abd7cd89dce
+--- /dev/null
++++ b/BASELINE-MODQN-REFERENCE-2026-09-10.md
+@@ -0,0 +1,153 @@
++**No runnable V0.25 external `BASELINE` exists: pooled EE and active-beam count are therefore unmeasured, and learned `a0` cannot be placed above or below it on this panel.**
++
++# BASELINE / MODQN reference — design-phase determination
++
++Date: 2026-09-10  
++Scope: development anchors only; no evaluation-only claim dates read  
++Status: Part 1 complete; Parts 2 and 3 intentionally not run under the requested stop rule
++
++## Finding
++
++The current V0.25 seal names an **“external BASELINE”** but does not bind an executable policy, checkpoint, training regime, or a mapping between V0.25 observations/actions and the predecessor MODQN interface. The predecessor seal does identify `BASELINE`: it is one particular frozen, authenticated pre-Catfish MODQN checkpoint. That checkpoint and its read-only adapter still load, but their complete runnable environment path is V0.23-era. No end-to-end path submits that policy's decisions to the current V0.25 `a-r0` `StepEvaluator`.
++
++The current pilot's object called `BASELINE` is instead `carrier_base`, recorded as a **“fixed carrier proposal.”** It is a geometry control, not the authenticated MODQN policy. Its existing V0.25 outcome numbers cannot measure the owner's MODQN gate.
++
++## 1. Exact identity and decision rule
++
++### What the sealed declarations say
++
++The current V0.25 contract's arm inventory contains only the words **“external BASELINE”**; it supplies no further identity in that contract ([V0.25 contract, C3](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:21)).
++
++The predecessor scientific declaration is precise:
++
++> “`BASELINE` is the unchanged, externally authenticated pre-Catfish MODQN policy admitted through `.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py` source and is never a trained arm.”
++
++([V0.23 scientific declaration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-SCIENTIFIC-DECLARATION-2026-09-07.md:103)) Its companion contract binds checkpoint SHA-256 `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`, state dimension 112, 9,000 training episodes, and empty learned routes ([V0.23 development contract](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor/V023-C1C2-SUCCESSOR-DEVELOPMENT-CONTRACT-2026-09-07.md:182)).
++
++### Exact policy
++
++`BASELINE` is a **specific frozen MODQN checkpoint using a shared set of three Q networks**. It is not learned `a0 = masked argmax(Q1+Q2)`, not a hand-written allocation rule, and not merely a training configuration.
++
++For each user `u` and legacy action slot `j`, it computes
++
++```text
++score_u(j) = 0.5 Q1(s_u,j) + 0.3 Q2(s_u,j) + 0.2 Q3(s_u,j)
++
++a_u = lowest-index argmax_j score_u(j), over legal j only
++a_u = -1 (NO_OP), if no action is legal
++```
++
++The adapter itself states:
++
++> “This is MODQN's original weighted masked argmax: invalid actions are -inf and numpy's argmax supplies the lowest-index tie break.”
++
++([baseline adapter](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:720)) The bound dimensions, hidden layers, activation, weights, shared-policy mode, state transforms, and completed training configuration are fixed in the same file ([constants](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:34), [trainer configuration](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:68)). The checkpoint-selection rule is the final-episode policy; the bound checkpoint is episode index 8999, after 9,000 episodes. `select_actions` applies the weighted masked argmax independently to every user's row ([selection entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747)).
++
++## 2. Runnable implementation status
++
++### What exists
++
++The read-only legacy policy implementation is:
++
++- File: [baseline_adapter.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:1)
++- Entry points: `BaselineAdapter.from_artifacts(...)` ([loader](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:561)) and `BaselineAdapter.select_actions(states, masks)` ([selector](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:747))
++- Bound checkpoint: `/home/sat/mcrl-v025-retrain-ws/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt`
++- Legacy physical runner: [v023_c1c2_successor_physical_runner.py](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:667), through `load_baseline_policy(...)` and `FixedPolicyEpisodeAdapter.run_episode(...)` ([episode entry point](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-c1c2-successor-physical-evaluation/v023_c1c2_successor_physical_runner.py:1189)).
++
++This is runnable against the legacy/V0.23 state, action, and environment contract. A read-only smoke load authenticated the checkpoint and instantiated its three networks. That establishes artifact integrity and legacy executability only; it is not a V0.25 outcome measurement.
++
++### What does not exist
++
++There is no runnable V0.25 path that does all of the following:
++
++1. constructs the baseline's authentic 112-dimensional observations and 28-slot masks from a V0.25 `ExogenousWorldTape` anchor;
++2. calls the authenticated checkpoint;
++3. maps the returned legacy slot indices to V0.25 physical identities and a joint `Configuration` under a sealed rule;
++4. validates or repairs independently chosen actions under a sealed V0.25 joint-profile rule; and
++5. includes that configuration in the required fresh dense `StepEvaluator.evaluate_many(...)` call.
++
++The governing V0.25 code confirms the mismatch:
++
++- `REPORTED_ARMS` includes `BASELINE`, but `PILOT_ARMS` contains learned arms only ([pilot inventory](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:82)).
++- Training iterates only learned arms, while the manifest describes `BASELINE` as `external_policy: "fixed carrier proposal"` ([pilot training/manifest](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1199), [exact manifest field](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1220)).
++- At evaluation, the code explicitly performs `selections[(seed, "BASELINE")] = carrier_base` ([pilot assignment](/home/sat/mcrl-v025-retrain-ws/scripts/run_v025_pilot_c3.py:1732)).
++- The newer Stage-C scorer declares only the five learned arms and describes itself as physics-free ([scorer](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:1), [arm tuple](/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py:40)). It has no `BASELINE` policy path.
++
++Therefore the current V0.25 `carrier_base` results, and the older roughly 3.72 Mbit/J V0.23 results, are both unusable as the requested V0.25 external-MODQN comparator: the former is the wrong policy and the latter is the wrong physics.
++
++## 3. Decision-time information and comparison class
++
++For every user, the authenticated checkpoint consumes four arrays of 28 entries, plus a Boolean legal-action mask over the same 28 slots:
++
++1. `access_vector`: current access, one-hot or empty;
++2. `channel_quality`: linear candidate-beam SNR, encoded as `log1p(SNR)`;
++3. `beam_offsets`: candidate-beam off-axis angle in raw radians;
++4. `beam_loads`: global pre-admission load for each physical beam, divided by the number of users; and
++5. the legal-action mask.
++
++The adapter validates those four arrays and deliberately strips every contract extension ([input validation and native surface](/home/sat/mcrl-v025-retrain-ws/.scratch/multi-catfish-v023-baseline-adapter/baseline_adapter.py:394)). Thus `112 = 4 × 28`; the mask restricts selection but is not part of the 112 numeric features.
++
++Its comparison class is a shared per-user policy: all users use the same three networks, each user observes its own access/SNR/angle vectors plus the globally shared beam-load vector, and each action is selected independently subject to its mask. It does not consume the V0.25 coordinator's joint cross-gain matrix, bounded catalogue, joint-physics outputs, reference proposal, or future horizon ([V0.25 information interfaces](/home/sat/mcrl-v025-retrain-ws/V025-STAGES-6-8-CONTRACT-v1-2026-09-08.md:5)).
++
++## 4. V0.25 training/configuration declaration
++
++**The V0.25 sealed declaration is silent.** It does not say whether V0.25 must:
++
++- replay the exact V0.23 checkpoint;
++- retrain MODQN against V0.25 physics;
++- use some other MODQN checkpoint; or
++- use the pilot's fixed carrier proposal.
++
++It also does not bind the V0.25-to-legacy observation/action projection or a deterministic invalid-joint-profile rule. The legacy adapter's embedded training configuration precisely authenticates the already-completed V0.23 checkpoint; it is not an instruction to retrain that configuration on V0.25.
++
++Choosing among those possibilities would redefine the comparator. This is a scientific-owner gap, not an implementation choice that may be filled here.
++
++## 5. Smallest work that would make the gate measurable
++
++The irreducible first step is an owner-sealed comparator binding. It must name checkpoint reuse versus retraining and bind the checkpoint/implementation digests, the 4×7 candidate-slot roster, every V0.25-to-legacy input field, physical-identity round trip, and the joint invalidity fallback/repair behavior.
++
++Once that decision exists, the smallest code work is a thin, read-only V0.25 policy bridge with known-answer tests for input identity, masks, slot mapping, lowest-index ties, empty masks, joint invalidity, and unchanged checkpoint bytes. The bridge then needs to be wired into one development-panel measurement entry point.
++
++That entry point must assert the evaluator rule requested here, per anchor:
++
++- selection: create **one fresh dense** `StepEvaluator(boundary_indices=(0,))`, then include `BASE` and every candidate in its first `evaluate_many(...)` call; no scalar `evaluate(...)` and no foreign cache may precede it;
++- endpoints: create **one separate fresh realised dense full-48** evaluator, then include `BASE` and all endpoints in one `evaluate_many(...)` call; and
++- assert fresh caches, evaluator identity separation, boundary sets, and membership of `BASE` in both relevant batch calls.
++
++Only after those bindings, tests, and assertions exist can pooled EE, bits, joules, served PHY, rate-target attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` be scientifically computed.
++
++## Parts 2 and 3 — not run
++
++The user's stop condition applies because Part 1 found no runnable V0.25 implementation of the declared MODQN comparator.
++
++- No 20-anchor V025_PROBE_R2 outcome evaluation was run.
++- `BASELINE` pooled EE, bits, joules, served PHY, attainment, `modal_frac`, active beams/satellites, and `argmax_distinct` are **unmeasured**, not zero.
++- Learned `a0` was not evaluated or selected from the completed v1 checkpoints, so no checkpoint/seed/epoch is reported and no above/below comparison is made.
++- `BASELINE` concentration versus spread is unknown. The supplied negative `d(EE)/d(active)` result therefore cannot diagnose this missing comparator. Calling the fixed carrier proposal's active count the MODQN active count would be a category error.
++- No loss value was used as evidence about EE.
++
++## Evidence classification and resource receipt
++
++### Verified by running code
++
++A single read-only Python process used exactly `/home/sat/mcrl-leo-handover/.venv/bin/python`, under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. It authenticated and loaded the legacy adapter/checkpoint, asserted the 112-state/28-action binding and the 5 GB cap, and did not invoke physics or inspect a panel anchor.
++
++```text
++anchor 0/20
++peak RSS: 524275712 bytes (499.99 MiB)
++python processes used: 1 (hard cap: 3)
++nice: 15
++BLAS/thread pins: all 1
++```
++
++### Verified by primary-source inspection
++
++The current seal's bare arm wording; the predecessor checkpoint binding; exact adapter rule and inputs; legacy runner entry points; current V0.25 pilot substitution; and current scorer omission. The checkpoint file's SHA-256 matched `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`.
++
++### Derived on paper
++
++The displayed scalarization formula, `112 = 4 × 28`, and the classification of the mask as a selection constraint rather than a numeric state block follow directly from the executable constants and encoding path.
++
++### Inferred
++
++An owner decision is required before a V0.25 bridge can be scientific, because no sealed V0.25 text resolves checkpoint identity, input projection, action mapping, or invalid joint behavior. No efficacy or V0.25 EE inference is made.
+
+tokens used
+280,363
